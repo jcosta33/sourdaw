@@ -1,3 +1,4 @@
+import { resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
 import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import {
     ADD_NOTES_MAX_NOTES_PER_COMMAND,
@@ -616,6 +617,15 @@ function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeActi
         };
     }
     if (action.type === 'addSend') {
+        // A send being created has no level to measure a relative request
+        // from, so it is measured from the full copy of the signal it taps,
+        // exactly as the handler measures it. A request the send law refuses
+        // never lands, so the projection leaves the context alone rather than
+        // showing a send that cannot exist.
+        const level = resolveSendLevelFields(action.payload, SEND_LEVEL_LAW.unity);
+        if (!level.ok) {
+            return context;
+        }
         return {
             ...context,
             tracks: context.tracks.map((track) => {
@@ -626,7 +636,12 @@ function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeActi
                     ...track,
                     sends: [
                         ...(track.sends ?? []),
-                        { busId: action.payload.busId, level: action.payload.level, preFader: false },
+                        {
+                            busId: action.payload.busId,
+                            level: level.linear,
+                            levelDb: toLevelDb(level.linear),
+                            preFader: false,
+                        },
                     ],
                 };
             }),

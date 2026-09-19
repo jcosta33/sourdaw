@@ -1,3 +1,5 @@
+import { toLevelDb } from '#/utils/audioLevelLaw';
+
 import {
     type ProjectContext,
     type ProjectContextDeviceParameter,
@@ -59,6 +61,7 @@ function createProjectedTrack(
         armed: false,
         frozen: false,
         gain: 0.8,
+        gainDb: toLevelDb(0.8),
         pan: 0,
         automationMode: 'read',
         outputId: context.tracks.find((track) => track.kind === 'master')?.id ?? 'master',

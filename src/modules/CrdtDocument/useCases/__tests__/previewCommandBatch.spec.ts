@@ -38,6 +38,19 @@ import { captureProjectRevision } from '../captureProjectRevision';
 import { createCommandPreviewWorkspace } from '../createCommandPreviewWorkspace';
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
 
+/**
+ * The linear amplitude a fixture action states. Level commands accept decibel
+ * forms too, so the field is optional on the payload; these fixtures always
+ * state an amplitude, and a missing one is a broken fixture rather than a
+ * silent zero.
+ */
+function statedLinearGain(payload: { gain?: number }): number {
+    if (payload.gain === undefined) {
+        throw new Error('Expected the action to state a linear amplitude');
+    }
+    return payload.gain;
+}
+
 describe('previewCommandBatch', () => {
     beforeEach(() => {
         automergeRepository.reset();
@@ -502,11 +515,11 @@ describe('previewCommandBatch', () => {
             storage: createAutomergeStorage<{ gain: number }>('root', 'previewGain'),
         });
         gainStore.hydrate();
-        const execute = vi.fn((action: { payload: { expectedGain: number; gain: number } }) => {
+        const execute = vi.fn((action: { payload: { expectedGain: number; gain?: number } }) => {
             if (gainStore.value?.gain !== action.payload.expectedGain) {
                 return { status: 'conflict' as const };
             }
-            gainStore.set({ gain: action.payload.gain });
+            gainStore.set({ gain: statedLinearGain(action.payload) });
             return { status: 'written' as const };
         });
         registerHandlerMap({
@@ -518,7 +531,7 @@ describe('previewCommandBatch', () => {
                         payload: {
                             trackId: action.payload.trackId,
                             gain: gainStore.value?.gain ?? action.payload.expectedGain,
-                            expectedGain: action.payload.gain,
+                            expectedGain: statedLinearGain(action.payload),
                         },
                     },
                     label: 'Set preview track gain',

@@ -1,10 +1,56 @@
+import { type LevelResolution, resolveSendLevelFields } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { setSend } from '../../useCases/device/sendManagement/setSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { getPlannedTrackState } from '../getPlannedTrackState';
+
+type SetSendAction = Extract<AppAction, { type: 'setSend' }>;
+
+/** The linear amplitude this action asks for, whichever way it asked; the
+ *  decibel forms resolve against the send's live level. */
+function requestedLevel(action: SetSendAction, currentLevel: number): LevelResolution {
+    return resolveSendLevelFields(action.payload, currentLevel);
+}
 
 export const handleSetSend = createHandler<'setSend'>({
+    validate: (action, context) => {
+        const state = getTrackStoreState();
+        const track = state?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        const target = state?.tracks.find((candidate) => candidate.id === action.payload.busId);
+        const eligible =
+            !!track &&
+            !!target &&
+            getTrackEligibility(track.kind).acceptsSend &&
+            getTrackEligibility(target.kind).acceptsRoutingEndpoint;
+        if (!eligible) {
+            // `execute`'s own eligibility branch reports a graceful `no-write`
+            // unless a caller staked an expectation on the send existing; validate
+            // must let that pass through rather than turn it into a batch conflict.
+            return action.payload.expectedLevel === undefined && action.payload.expectedPreFader === undefined;
+        }
+        // A second `setSend` on the same send in one batch must predict from what
+        // an earlier action in it will leave the send at: `validate` runs for
+        // every action in the batch before any `execute`, so a live-only read
+        // here would reject a legal compounding batch — including a grouped
+        // undo's own atomic replay of two `setSend` inverses — as conflicted.
+        const plannedSend = getPlannedTrackState(context, action.payload.trackId)?.sends.find(
+            (send) => send.busId === action.payload.busId
+        );
+        const existing = plannedSend ?? track.sends.find((send) => send.busId === action.payload.busId);
+        if (!existing) {
+            return false;
+        }
+        if (
+            (action.payload.expectedLevel !== undefined && existing.level !== action.payload.expectedLevel) ||
+            (action.payload.expectedPreFader !== undefined && existing.preFader !== action.payload.expectedPreFader)
+        ) {
+            return false;
+        }
+        return requestedLevel(action, existing.level).ok;
+    },
     execute: (alpha) => {
         const state = getTrackStoreState();
         const track = state?.tracks.find((candidate) => candidate.id === alpha.payload.trackId);
@@ -28,13 +74,13 @@ export const handleSetSend = createHandler<'setSend'>({
         ) {
             return { status: 'conflict' };
         }
-        const runtimeEffect = setSend(
-            alpha.payload.trackId,
-            alpha.payload.busId,
-            alpha.payload.level,
-            existing.preFader,
-            { deferRuntimeEffect: true }
-        );
+        const requested = requestedLevel(alpha, existing.level);
+        if (!requested.ok) {
+            return { status: 'conflict', reason: requested.reason };
+        }
+        const runtimeEffect = setSend(alpha.payload.trackId, alpha.payload.busId, requested.linear, existing.preFader, {
+            deferRuntimeEffect: true,
+        });
         if (!runtimeEffect) {
             return { status: 'conflict' };
         }
@@ -57,9 +103,10 @@ export const handleSetSend = createHandler<'setSend'>({
         ) {
             return false;
         }
-        return existing.level === action.payload.level;
+        const requested = requestedLevel(action, existing.level);
+        return requested.ok && existing.level === requested.linear;
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const label = 'Set send level';
         const state = getTrackStoreState();
         const track = state?.tracks.find((time) => time.id === alpha.payload.trackId);
@@ -72,8 +119,24 @@ export const handleSetSend = createHandler<'setSend'>({
         ) {
             return { label, inverseAction: null };
         }
-        const existing = track.sends.find((state) => state.busId === alpha.payload.busId);
+        // A second `setSend` on the same send in one batch must predict from what
+        // an earlier action in it will leave the send at, the same reason a
+        // repeated `setTrackGain` does: `describe` runs for every action before
+        // any `execute`, so a live-only prediction here would build an inverse
+        // whose `expectedLevel` the batch's own sequential execution can never
+        // match.
+        const plannedTrack = context ? getPlannedTrackState(context, alpha.payload.trackId) : undefined;
+        const plannedSend = plannedTrack?.sends.find((send) => send.busId === alpha.payload.busId);
+        const existing = plannedSend ?? track.sends.find((state) => state.busId === alpha.payload.busId);
         if (!existing) {
+            return { label, inverseAction: null };
+        }
+        // The inverse puts back the stored amplitude and expects the one this
+        // action is about to write, so it refuses rather than clobbering a level
+        // something else moved. Both are stated linearly whatever form the
+        // forward action used.
+        const requested = requestedLevel(alpha, existing.level);
+        if (!requested.ok) {
             return { label, inverseAction: null };
         }
         return {
@@ -84,7 +147,24 @@ export const handleSetSend = createHandler<'setSend'>({
                     trackId: alpha.payload.trackId,
                     busId: alpha.payload.busId,
                     level: existing.level,
-                    expectedLevel: alpha.payload.level,
+                    expectedLevel: requested.linear,
+                    expectedPreFader: existing.preFader,
+                },
+            },
+            // Without this, `redo.ts` would replay the forward action's own
+            // `deltaDb`/`gainDb`, re-resolving it against whatever level the send
+            // holds at redo time instead of the level this `describe` actually
+            // predicted — the redo could land somewhere the retained inverse never
+            // expects, conflicting on every later undo. Stated linearly, the same
+            // way the inverse is, so replay always lands exactly where forward
+            // execution did.
+            redoAction: {
+                type: 'setSend',
+                payload: {
+                    trackId: alpha.payload.trackId,
+                    busId: alpha.payload.busId,
+                    level: requested.linear,
+                    expectedLevel: existing.level,
                     expectedPreFader: existing.preFader,
                 },
             },

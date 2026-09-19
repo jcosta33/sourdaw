@@ -17,6 +17,19 @@ import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandE
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
+/**
+ * The linear amplitude a fixture action states. Level commands accept decibel
+ * forms too, so the field is optional on the payload; these fixtures always
+ * state an amplitude, and a missing one is a broken fixture rather than a
+ * silent zero.
+ */
+function statedLinearGain(payload: { gain?: number }): number {
+    if (payload.gain === undefined) {
+        throw new Error('Expected the action to state a linear amplitude');
+    }
+    return payload.gain;
+}
+
 const GAIN_COMMAND_ID = '11111111-1111-4111-8111-111111111111';
 const PAN_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
 
@@ -779,7 +792,7 @@ describe('command batch contract', () => {
                         return { status: 'conflict' };
                     }
                     executionOrder.push('gain');
-                    track.gain = action.payload.gain;
+                    track.gain = statedLinearGain(action.payload);
                     const reconcilePostCommit = async () => {
                         executionOrder.push('post-commit');
                         controller.abort();
@@ -799,7 +812,7 @@ describe('command batch contract', () => {
                         payload: {
                             trackId: action.payload.trackId,
                             gain: action.payload.expectedGain,
-                            expectedGain: action.payload.gain,
+                            expectedGain: statedLinearGain(action.payload),
                         },
                     },
                 }),

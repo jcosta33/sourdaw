@@ -6,6 +6,18 @@ import { type AppAction } from '#/utils/handlerContract';
 import { analyzeMix, type AnalyzeMixOutput } from '../../../useCases/analyzeMix';
 import { handleAutoFixMix } from '../handleAutoFixMix';
 
+/**
+ * The linear amplitude an action states. Every level command now accepts
+ * decibels too, so the field is optional on the payload; these fixtures state
+ * amplitudes, and a missing one is a broken fixture rather than a silent zero.
+ */
+function statedLinearLevel(payload: { gain?: number }): number {
+    if (payload.gain === undefined) {
+        throw new Error('Expected the action to state a linear amplitude');
+    }
+    return payload.gain;
+}
+
 type TrackStateForMixAnalysis = {
     tracks: Array<{ id: string; gain?: number }>;
 };
@@ -208,11 +220,11 @@ describe('handleAutoFixMix', () => {
         // Same overshoot -> same reduction factor; applied to each current fader.
         const overshootDb = 2 - -0.5; // peak - clip threshold
         const factor = 10 ** (-(overshootDb + 3) / 20);
-        expect(loud.payload.gain).toBeCloseTo(0.9 * factor, 6);
-        expect(quiet.payload.gain).toBeCloseTo(0.3 * factor, 6);
+        expect(statedLinearLevel(loud.payload)).toBeCloseTo(0.9 * factor, 6);
+        expect(statedLinearLevel(quiet.payload)).toBeCloseTo(0.3 * factor, 6);
         // The two faders must NOT collapse to one value (the old peak-derived bug).
-        expect(loud.payload.gain).not.toBeCloseTo(quiet.payload.gain, 6);
-        expect(loud.payload.gain).toBeGreaterThan(quiet.payload.gain);
+        expect(statedLinearLevel(loud.payload)).not.toBeCloseTo(statedLinearLevel(quiet.payload), 6);
+        expect(statedLinearLevel(loud.payload)).toBeGreaterThan(statedLinearLevel(quiet.payload));
     });
 
     it('should refresh the analysis only after waiting for the analyser to settle', async () => {
@@ -517,7 +529,7 @@ describe('handleAutoFixMix', () => {
             ) {
                 throw new Error('conflict: master gain diverged');
             }
-            committed_master_percents.push(action.payload.gain * 100);
+            committed_master_percents.push(statedLinearLevel(action.payload) * 100);
         });
 
         await expect(handleAutoFixMix.execute({ type: 'autoFixMix' })).rejects.toThrow(/conflict/);

@@ -441,6 +441,8 @@ describe('getProjectContext', () => {
             startBeat: 0,
             endBeat: 4,
             gain: 1.2,
+            // The same level the planner's commands speak in, beside the stored one.
+            gainDb: 1.5836249209524964,
             locked: false,
             muted: true,
             color: '#ff5500',
@@ -470,7 +472,9 @@ describe('getProjectContext', () => {
                 },
             ],
         });
-        expect(context.tracks[0]?.sends).toEqual([{ busId: 'bus-1', level: 0.3, preFader: false }]);
+        expect(context.tracks[0]?.sends).toEqual([
+            { busId: 'bus-1', level: 0.3, levelDb: -10.457574905606752, preFader: false },
+        ]);
 
         // Second track (midi)
         expect(context.tracks[1]?.clips[0]).toMatchObject({
@@ -545,6 +549,7 @@ describe('getProjectContext', () => {
                 name: 'Gain',
                 enabled: true,
                 minValue: 0,
+                minValueDb: -60,
                 // The ceiling this track-gain lane really has, not the `1` the
                 // document stores. Written before the fader gained its `+6 dB`
                 // of headroom, it still records unity — and a provider handed
@@ -552,6 +557,7 @@ describe('getProjectContext', () => {
                 // plainly can, so `addAutomationPoint` refuses the ride the user
                 // asked for on an old project and takes it on a new one.
                 maxValue: FADER_MAX_GAIN,
+                maxValueDb: 5.999999999999998,
                 points: [
                     { beat: 0, value: 0.4, curve: 'linear' },
                     { beat: 8, value: 0.8, curve: 'smooth' },
@@ -565,9 +571,11 @@ describe('getProjectContext', () => {
                 name: 'Clip Gain',
                 enabled: true,
                 minValue: 0,
+                minValueDb: -60,
                 // Untouched at `1`: a clip's own gain is not a fader, and the
                 // headroom the strip gained says nothing about it.
                 maxValue: 1,
+                maxValueDb: 0,
                 points: [{ beat: 0, value: 1, curve: 'linear' }],
             },
         ]);

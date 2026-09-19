@@ -1,3 +1,5 @@
+import { CLIP_GAIN_LAW, CLIP_MAX_GAIN, describeLevelLawDb } from '#/utils/audioLevelLaw';
+
 import { tool, type ToolSchema } from './Types';
 
 const DEVICE_TYPES = [
@@ -155,12 +157,20 @@ export const clipTools: readonly ToolSchema[] = [
     ),
     tool(
         'setClipGain',
-        'Set clip volume. 0.0=silence, 1.0=unity, 2.0=+6dB.',
+        `Set clip volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(CLIP_GAIN_LAW)}.`,
         {
             clipId: { type: 'string' },
-            gain: { type: 'number', description: '0.0 to 2.0' },
+            gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(CLIP_GAIN_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the clip's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(CLIP_GAIN_LAW)}`,
+            },
+            gain: {
+                type: 'number',
+                description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). 0.0 to ${String(CLIP_MAX_GAIN)}`,
+            },
         },
-        ['clipId', 'gain']
+        ['clipId']
     ),
     tool(
         'setClipColor',

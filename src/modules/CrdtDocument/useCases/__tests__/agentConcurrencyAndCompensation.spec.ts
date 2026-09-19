@@ -37,6 +37,19 @@ import { inspectAgentProjectDivergence } from '../inspectAgentProjectDivergence'
 import { projectCrdtToStores } from '../projection/projectProjection';
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
 
+/**
+ * The linear amplitude a fixture action states. Level commands accept decibel
+ * forms too, so the field is optional on the payload; these fixtures always
+ * state an amplitude, and a missing one is a broken fixture rather than a
+ * silent zero.
+ */
+function statedLinearGain(payload: { gain?: number }): number {
+    if (payload.gain === undefined) {
+        throw new Error('Expected the action to state a linear amplitude');
+    }
+    return payload.gain;
+}
+
 const projectionMocks = vi.hoisted(() => ({ hydrate: vi.fn() }));
 
 vi.mock('../projection/projectSlotProjections', () => ({
@@ -130,7 +143,7 @@ function registerTargetGainHandler(
                 inverseAction: {
                     type: 'setTrackGain',
                     payload: {
-                        expectedGain: action.payload.gain,
+                        expectedGain: statedLinearGain(action.payload),
                         gain: action.payload.expectedGain,
                         trackId: action.payload.trackId,
                     },
@@ -145,7 +158,7 @@ function registerTargetGainHandler(
                 }
                 targetStorage.set({
                     ...targets,
-                    [action.payload.trackId]: { ...target, gain: action.payload.gain },
+                    [action.payload.trackId]: { ...target, gain: statedLinearGain(action.payload) },
                 });
                 return { status: 'written' };
             },

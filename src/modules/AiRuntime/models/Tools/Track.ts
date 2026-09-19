@@ -1,4 +1,9 @@
-import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
+import {
+    describeLevelLawDb,
+    FADER_GAIN_RANGE_DESCRIPTION,
+    FADER_MAX_GAIN_LABEL,
+    TRACK_FADER_LAW,
+} from '#/utils/audioLevelLaw';
 
 import { tool, type ToolSchema } from './Types';
 
@@ -58,12 +63,20 @@ export const trackTools: readonly ToolSchema[] = [
     ]),
     tool(
         'setTrackGain',
-        `Set track volume. 0.0=silence, 0.8=default, 1.0=unity, ${FADER_MAX_GAIN_LABEL}=max.`,
+        `Set track volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         {
             trackId: { type: 'string' },
-            gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION },
+            gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(TRACK_FADER_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the track's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+            },
+            gain: {
+                type: 'number',
+                description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). ${FADER_GAIN_RANGE_DESCRIPTION}, ${FADER_MAX_GAIN_LABEL}=max`,
+            },
         },
-        ['trackId', 'gain']
+        ['trackId']
     ),
     tool(
         'setTrackPan',

@@ -1644,4 +1644,78 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ kind: 'audio' })).toBe(false);
         });
     });
+
+    // A level command takes one of three forms, and the payload guard is the
+    // first place a provider-sourced one meets that rule.
+    describe('decibel level arguments', () => {
+        function admits(actionType: RuntimeActionType, payload: unknown): boolean {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            if (guard === 'unchecked') {
+                throw new Error(`Expected ${actionType} to carry a payload guard`);
+            }
+            return guard(payload);
+        }
+
+        it.each([
+            ['setTrackGain absolute', 'setTrackGain', { trackId: 'track-1', gainDb: -3 }],
+            ['setTrackGain relative', 'setTrackGain', { trackId: 'track-1', deltaDb: -2 }],
+            ['setMasterGain absolute', 'setMasterGain', { gainDb: 0 }],
+            ['setMasterGain relative', 'setMasterGain', { deltaDb: 2 }],
+            ['setClipGain absolute', 'setClipGain', { clipId: 'clip-1', gainDb: 6 }],
+            ['setClipGain relative', 'setClipGain', { clipId: 'clip-1', deltaDb: 3 }],
+            ['setSend absolute', 'setSend', { trackId: 'track-1', busId: 'bus-1', levelDb: -6 }],
+            ['addSend relative', 'addSend', { trackId: 'track-1', busId: 'bus-1', deltaDb: -6 }],
+            ['addAutomationPoint absolute', 'addAutomationPoint', { laneId: 'lane-1', beat: 4, valueDb: -6 }],
+            ['addAutomationPoint relative', 'addAutomationPoint', { laneId: 'lane-1', beat: 4, deltaDb: -6 }],
+        ] as const)('should admit %s', (_label, actionType, payload) => {
+            expect(admits(actionType, payload)).toBe(true);
+        });
+
+        it.each([
+            ['two forms of the same level', 'setTrackGain', { trackId: 'track-1', gain: 1, gainDb: 0 }],
+            ['a linear level and a change', 'setTrackGain', { trackId: 'track-1', gain: 1, deltaDb: -2 }],
+            ['no level at all', 'setTrackGain', { trackId: 'track-1' }],
+            ['an absolute level above the fader ceiling', 'setTrackGain', { trackId: 'track-1', gainDb: 7 }],
+            ['an absolute level below the fader floor', 'setTrackGain', { trackId: 'track-1', gainDb: -61 }],
+            ['a change larger than the fader spans', 'setTrackGain', { trackId: 'track-1', deltaDb: 61 }],
+            ['two forms on the master', 'setMasterGain', { gain: 1, deltaDb: 0 }],
+            ['an absolute level above the clip ceiling', 'setClipGain', { clipId: 'clip-1', gainDb: 7 }],
+            ['a send level above unity', 'setSend', { trackId: 'track-1', busId: 'bus-1', levelDb: 1 }],
+            ['a created send above unity', 'addSend', { trackId: 'track-1', busId: 'bus-1', levelDb: 1 }],
+            [
+                'two forms on an automation point',
+                'addAutomationPoint',
+                { laneId: 'lane-1', beat: 4, value: 0.5, valueDb: -6 },
+            ],
+            ['both decibel forms on the track fader', 'setTrackGain', { trackId: 'track-1', gainDb: 0, deltaDb: -2 }],
+            ['both decibel forms on the master fader', 'setMasterGain', { gainDb: 0, deltaDb: -2 }],
+            ['both decibel forms on the clip', 'setClipGain', { clipId: 'clip-1', gainDb: 0, deltaDb: 3 }],
+            [
+                'both decibel forms on a send',
+                'setSend',
+                { trackId: 'track-1', busId: 'bus-1', levelDb: -6, deltaDb: -3 },
+            ],
+            [
+                'both decibel forms on a created send',
+                'addSend',
+                { trackId: 'track-1', busId: 'bus-1', levelDb: -6, deltaDb: -3 },
+            ],
+            [
+                'both decibel forms on an automation point',
+                'addAutomationPoint',
+                { laneId: 'lane-1', beat: 4, valueDb: -6, deltaDb: -3 },
+            ],
+            [
+                'an automation change larger than the law spans',
+                'addAutomationPoint',
+                {
+                    laneId: 'lane-1',
+                    beat: 4,
+                    deltaDb: -61,
+                },
+            ],
+        ] as const)('should reject %s', (_label, actionType, payload) => {
+            expect(admits(actionType, payload)).toBe(false);
+        });
+    });
 });
