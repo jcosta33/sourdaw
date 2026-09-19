@@ -1,0 +1,31 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_ed5aa36a3ba357::t_669dd5fd2171e4 72-86
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_ed5aa36a3ba357::t_ebb4c2acca0f76 48,50,96,148-151,279-311,321,324,525-526,572-574,630,654,763,772,815-854,865,916,942,970,1009,1049,1059,1094,1104,1141,1173,1186,1195,1220,1240,1256,1265,1290,1327,1359,1380,1393,1404,1554
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_ed5aa36a3ba357::t_d3a3f6880d28ab 38,40,75-81,137-141,354,496-502,505-527,660,693-727,736-742,773,793-794,816,840,870,885,911,937,988,1013,1039,1066,1100
+scripts/__tests__/reviewRepair.spec.ts
+  s_ed5aa36a3ba357::t_1aaf57a22a8c14 26-28,85,96-103,465,467-469,474-499,710,713,719,722,728,744-745,839-840
+scripts/confirmReviewRepairs.ts
+  s_ed5aa36a3ba357::t_02aa159d034030 44,328
+scripts/repairReviewFinding.ts
+  s_ed5aa36a3ba357::t_59ddc600331292 39-40,64,364-372,415,446
+scripts/reviewRepair.ts
+  s_ed5aa36a3ba357::t_5dd22f8b68ef26 52-54,57,81,268-301,418-424
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "32c1e73ea8ea5620e026635b6dfb4c348ad881f5",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
