@@ -8,6 +8,7 @@ import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
@@ -233,6 +234,11 @@ export const exportStems: ExportStemsFn = async function exportStems(
             checkCancel();
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+            // One frame scheduler for this stem's context, created with it: a
+            // second scheduler over the same context would collide on every
+            // shared suspend frame, and the loser would reach its writes only
+            // through the rejection fallback, at the wrong time.
+            const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
             const boundPads = toasterParentIds.has(track.id)
                 ? tracks.tracks.filter((candidate) => {
@@ -363,6 +369,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         deviceEntriesByTrack,
                         honorMuted: false,
                         regionStartBeat: 0,
+                        scheduleFrame,
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                     });
                 }
@@ -400,6 +407,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         deviceEntriesByTrack,
                         honorMuted: false,
                         regionStartBeat: 0,
+                        scheduleFrame,
                         vcaMultiplier: deriveVcaMultiplier({
                             vcaGroupId: keySourceTrack.vcaGroupId,
                             groups: vcaGroups,

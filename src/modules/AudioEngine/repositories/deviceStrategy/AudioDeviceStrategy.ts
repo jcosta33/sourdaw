@@ -1,3 +1,4 @@
+import { type OfflineCurveWriteTargets } from '../../models/OfflineCurveWriteTargets';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
@@ -28,14 +29,21 @@ export type OfflineAutomationTarget = {
 /**
  * How offline device-param automation for one parameter reaches a device. A
  * device either exposes one or more real `AudioParam`s (scheduled with the
- * shared AU-1 curve kernel) or accepts frame-addressed segments its worklet
- * interpolates. This is the single capability the offline scheduler routes all
+ * shared AU-1 curve kernel), accepts frame-addressed segments its worklet
+ * interpolates, or is written as a device-side curve at the frames its compiled
+ * points fall on. This is the single capability the offline scheduler routes all
  * device automation through — no hardcoded param map, no opt-in node list
  * (finding OE-3).
  */
 export type OfflineAutomationBinding =
     | { readonly kind: 'audioParam'; readonly targets: readonly OfflineAutomationTarget[] }
-    | { readonly kind: 'segments'; readonly apply: (segments: readonly OfflineAutomationSegment[]) => void };
+    | { readonly kind: 'segments'; readonly apply: (segments: readonly OfflineAutomationSegment[]) => void }
+    /**
+     * A frame-addressed write: this value has no `AudioParam`, because the cap is
+     * the rebuilt `WaveShaper` curve, so it is applied at a sample frame instead
+     * of scheduled on a param.
+     */
+    | { readonly kind: 'curveWrite'; readonly targets: OfflineCurveWriteTargets };
 
 /**
  * One note-on, addressed by name.

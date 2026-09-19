@@ -6,6 +6,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createExportError } from '../errors/ExportError';
 import { type AudioGraphApplyResult, type AudioGraphCommand } from '../models/AudioGraphBackend';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
@@ -296,6 +297,13 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+        // Exactly one frame scheduler per OfflineAudioContext, created here at
+        // the root that owns the context and threaded into every track's
+        // scheduling. Registering a suspend for a frame one already covers
+        // throws, so a second scheduler over the same context — one per track,
+        // device or call — would reach its frames only through the rejection
+        // fallback, at the wrong time.
+        const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
         const masterGain = offlineCtx.createGain();
         masterGain.gain.value = masterGainValue;
         masterGain.connect(offlineCtx.destination);
@@ -456,6 +464,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: 0,
+                scheduleFrame,
                 // Same multiplier the strip was seeded with, so a gain lane on a
                 // VCA-member track rides its group instead of nullifying it.
                 vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,

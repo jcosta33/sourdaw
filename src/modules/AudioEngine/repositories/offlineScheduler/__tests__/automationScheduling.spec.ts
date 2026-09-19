@@ -1,12 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { clampDeviceParameterValue, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
+import { makeCeilingClipCurve } from '../../devices/dynamics/makeCeilingClipCurve';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
 
@@ -1168,5 +1170,223 @@ describe('scheduleTrackAutomation — stepped device parameters offline', () => 
         const rounded = deviceSpace.map((value) => Math.round(value * 1e9) / 1e9);
         expect(rounded.filter((value) => !Number.isInteger(value))).toEqual([]);
         expect(distinctRun(rounded)).toEqual([...BIT_DEPTH_LIVE_DELIVERY]);
+    });
+});
+
+/**
+ * The limiter ceiling is the one device parameter with no AudioParam: its cap is
+ * the clipper's rebuilt WaveShaper curve, so `WebAudioDeviceStrategy` answers a
+ * `curveWrite` binding and the scheduler writes the pair at each compiled point
+ * through the render's frame scheduler (#4437).
+ */
+describe('scheduleTrackAutomation — a frame-addressed ceiling lane (#4437)', () => {
+    /** Arrangement's shipped law for `builtin-limiter/lim-ceiling`. */
+    const limiterCeilingLaw = {
+        acceptsAutomation: () => true,
+        clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) =>
+            clampDeviceParameterValue({ deviceType: 'builtin-limiter', paramId: 'lim-ceiling', value }),
+        quantiseValue: ({ value }: { value: number }) => value,
+    };
+
+    function makeLimiterNode(): OfflineDeviceNode {
+        const node = createOfflineDeviceNode({
+            context: asBaseAudioContext(createMockAudioContext()),
+            deviceType: 'builtin-limiter',
+        });
+        if (!node) {
+            throw new Error('expected a builtin-limiter offline node');
+        }
+        return node;
+    }
+
+    function ceilingLane() {
+        // -5 dB is inside the lane's declared -60..12 but past the descriptor's
+        // -3..0, so the device clamp is the only law that can pull it to -3.
+        return makeLane({
+            parameterId: 'device-1:lim-ceiling',
+            parameterName: 'Ceiling',
+            minValue: -60,
+            maxValue: 12,
+            points: [
+                { beat: 0, value: -0.3, curve: 'linear', tension: 0 },
+                { beat: 4, value: -5, curve: 'linear', tension: 0 },
+            ],
+        });
+    }
+
+    /** Records every `(time, call)` so a case can run them as the suspend handler does. */
+    function makeFrameScheduler() {
+        const calls: { time: number | undefined; run: () => void }[] = [];
+        return {
+            calls,
+            scheduleFrame: (time: number | undefined, call: () => void): void => {
+                calls.push({ time, run: call });
+            },
+        };
+    }
+
+    it('writes the ceiling gain and the rebuilt clip curve at each point, clamped by the device law', () => {
+        const node = makeLimiterNode();
+        const ceiling = node.namedNodes!.ceiling as GainNode;
+        const clipper = node.namedNodes!.clipper as unknown as { curve: Float32Array | null };
+        const { calls, scheduleFrame } = makeFrameScheduler();
+
+        scheduleTrackAutomationFixture({
+            lanes: [ceilingLane()],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', node)],
+            deviceParameterLaw: limiterCeilingLaw,
+            durationSeconds: 5,
+            defaultTempo: 120,
+            changes: [],
+            scheduleFrame,
+        });
+
+        // 120 bpm → 0.5 s/beat, so the two points land at 0 s and 2 s, in order.
+        expect(calls.map((call) => call.time)).toEqual([0, 2]);
+        for (const call of calls) {
+            call.run();
+        }
+
+        const clampedGain = dbToGain(-3);
+        expect(ceiling.gain.value).toBeCloseTo(clampedGain, 12);
+        expect(clipper.curve).toEqual(makeCeilingClipCurve(clampedGain));
+        // The static factory curve for -0.3 dB is not what the later point
+        // writes: a static-only write reds here.
+        expect(clipper.curve).not.toEqual(makeCeilingClipCurve(dbToGain(-0.3)));
+    });
+
+    it('keeps time order when a later segment writes a louder ceiling', () => {
+        const node = makeLimiterNode();
+        const ceiling = node.namedNodes!.ceiling as GainNode;
+        const { calls, scheduleFrame } = makeFrameScheduler();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:lim-ceiling',
+                    minValue: -3,
+                    maxValue: 0,
+                    points: [
+                        { beat: 0, value: -3, curve: 'linear', tension: 0 },
+                        { beat: 2, value: -1, curve: 'linear', tension: 0 },
+                        { beat: 4, value: -0.3, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', node)],
+            deviceParameterLaw: limiterCeilingLaw,
+            durationSeconds: 5,
+            defaultTempo: 120,
+            changes: [],
+            scheduleFrame,
+        });
+
+        const times = calls.map((call) => call.time) as number[];
+        expect(times.length).toBeGreaterThan(0);
+        // Points are compiled in time order, and the writes ride them in that
+        // order: a later write must never be scheduled before an earlier one.
+        expect(times).toEqual([...times].sort((alpha, beta) => alpha - beta));
+        calls.at(-1)!.run();
+        expect(ceiling.gain.value).toBeCloseTo(dbToGain(-0.3), 12);
+    });
+
+    it('drops a write the render cannot reach instead of letting a rejected suspend fire it at once', () => {
+        const node = makeLimiterNode();
+        const ceiling = node.namedNodes!.ceiling as GainNode;
+        const { calls, scheduleFrame } = makeFrameScheduler();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:lim-ceiling',
+                    minValue: -3,
+                    maxValue: 0,
+                    points: [{ beat: 0, value: -1, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', node)],
+            deviceParameterLaw: limiterCeilingLaw,
+            durationSeconds: 1,
+            defaultTempo: 120,
+            changes: [],
+            sampleRate: 1_000,
+            // The compensation shift pushes the lane's point two seconds past a
+            // one-second render. Its suspend would be rejected, and the frame
+            // scheduler's rejection fallback would fire the write at once.
+            compensationDelaySec: 2,
+            scheduleFrame,
+        });
+
+        // Only the region-start seed (which the shift re-anchors at 0) lands.
+        expect(calls.map((call) => call.time)).toEqual([0]);
+        for (const call of calls) {
+            call.run();
+        }
+        expect(ceiling.gain.value).toBeCloseTo(dbToGain(-1), 12);
+    });
+
+    it('fails closed when the render provides no frame scheduler instead of dropping the lane', () => {
+        const node = makeLimiterNode();
+        const ceiling = node.namedNodes!.ceiling as GainNode;
+        const clipper = node.namedNodes!.clipper as unknown as { curve: Float32Array | null };
+        const staticCurve = clipper.curve;
+        const staticCeilingGain = ceiling.gain.value;
+
+        expect(() =>
+            scheduleTrackAutomationFixture({
+                lanes: [ceilingLane()],
+                trackId: 'track-1',
+                trackGainNode: { gain: makeParam() } as unknown as GainNode,
+                trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+                deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', node)],
+                deviceParameterLaw: limiterCeilingLaw,
+                durationSeconds: 5,
+                defaultTempo: 120,
+                changes: [],
+            })
+        ).toThrow(/lim-ceiling/);
+
+        // The refusal is the whole observable: nothing was half-applied.
+        expect(ceiling.gain.value).toBe(staticCeilingGain);
+        expect(clipper.curve).toBe(staticCurve);
+    });
+
+    it('drops the lane without refusing on a strip that cannot reach the print', () => {
+        const node = makeLimiterNode();
+        const ceiling = node.namedNodes!.ceiling as GainNode;
+        const staticCeilingGain = ceiling.gain.value;
+
+        // #4376: a strip whose output cannot reach the print contributes
+        // silence, so failing the export over its lane would fail it over audio
+        // that was never going to be in the print.
+        scheduleTrackAutomationFixture({
+            lanes: [ceilingLane()],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
+                {
+                    deviceId: 'device-1',
+                    deviceType: 'builtin-limiter',
+                    contributesAudio: false,
+                    strategy: new WebAudioDeviceStrategy(node, 'builtin-limiter'),
+                },
+            ],
+            deviceParameterLaw: limiterCeilingLaw,
+            durationSeconds: 5,
+            defaultTempo: 120,
+            changes: [],
+        });
+
+        expect(ceiling.gain.value).toBe(staticCeilingGain);
     });
 });

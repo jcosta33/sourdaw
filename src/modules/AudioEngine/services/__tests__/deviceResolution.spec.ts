@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
-import { resolveDeviceParam, resolveDrumKit } from '../deviceResolution';
+import { asBaseAudioContext, createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { createOfflineDeviceNode } from '../../repositories/deviceNodeFactory';
+import { resolveDeviceCurveWriteTargets, resolveDeviceParam, resolveDrumKit } from '../deviceResolution';
 
 describe('resolveDrumKit', () => {
     it('should return null when no drum kit device is present', () => {
@@ -53,5 +55,39 @@ describe('resolveDeviceParam', () => {
 
         expect(resolveDeviceParam('builtin-gain', 'unknown', node)).toBeNull();
         expect(resolveDeviceParam('unknown-device', 'gain-level', node)).toBeNull();
+    });
+});
+
+describe('resolveDeviceCurveWriteTargets', () => {
+    it('resolves the limiter ceiling to its own ceiling gain and clipper shaper', () => {
+        const node = createOfflineDeviceNode({
+            context: asBaseAudioContext(createMockAudioContext()),
+            deviceType: 'builtin-limiter',
+        });
+        if (!node) {
+            throw new Error('expected a builtin-limiter offline node');
+        }
+
+        const targets = resolveDeviceCurveWriteTargets('builtin-limiter', 'lim-ceiling', node);
+
+        // The pair is the nodes `applyLimiterParams` writes, not copies.
+        expect(targets?.ceiling).toBe(node.namedNodes?.ceiling);
+        expect(targets?.clipper).toBe(node.namedNodes?.clipper);
+    });
+
+    it('resolves nothing for the limiter controls that carry real AudioParams', () => {
+        const limiter = createOfflineDeviceNode({
+            context: asBaseAudioContext(createMockAudioContext()),
+            deviceType: 'builtin-limiter',
+        })!;
+        const gain = createOfflineDeviceNode({
+            context: asBaseAudioContext(createMockAudioContext()),
+            deviceType: 'builtin-gain',
+        })!;
+
+        expect(resolveDeviceCurveWriteTargets('builtin-limiter', 'lim-threshold', limiter)).toBeNull();
+        expect(resolveDeviceCurveWriteTargets('builtin-limiter', 'lim-release', limiter)).toBeNull();
+        expect(resolveDeviceCurveWriteTargets('builtin-limiter', 'not-a-parameter', limiter)).toBeNull();
+        expect(resolveDeviceCurveWriteTargets('builtin-gain', 'lim-ceiling', gain)).toBeNull();
     });
 });

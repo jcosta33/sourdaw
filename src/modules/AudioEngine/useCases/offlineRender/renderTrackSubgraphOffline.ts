@@ -2,6 +2,7 @@ import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Ar
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { connectOfflineSidechainRoutes } from '../../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
@@ -176,6 +177,10 @@ export async function renderTrackSubgraphOffline({
         return null;
     }
     const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+    // One frame scheduler for this context, created with it: a second suspend
+    // for a frame one scheduler already covers throws, so the freeze/bounce
+    // path shares one rather than creating one per device or per track.
+    const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
 
     const sidechainRoutes = sidechainStore.value?.routes ?? [];
 
@@ -353,6 +358,7 @@ export async function renderTrackSubgraphOffline({
                 deviceEntriesByTrack,
                 honorMuted: false,
                 regionStartBeat: 0,
+                scheduleFrame,
                 tallyStartSeconds: historySeconds,
                 includeAutomation: track.id === targetTrackId ? includeAutomation : true,
                 // Same rule as the strip seed: a `gain` or `pan` lane drives the very
