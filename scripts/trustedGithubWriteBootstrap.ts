@@ -35,6 +35,8 @@ export type TrustedGithubWriteCommand =
     | 'review:accept'
     | 'review:publish'
     | 'review:publish:recover'
+    | 'review:repair'
+    | 'review:confirm'
     | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
@@ -264,6 +266,32 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/wasmToolchainPins.ts',
         'scripts/workspaceManifestFingerprint.ts',
     ],
+    'review:repair': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/repairReviewFinding.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewRiskPolicy.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:confirm': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/confirmReviewRepairs.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/reviewDossier.ts',
+        'scripts/reviewRiskPolicy.ts',
+        'scripts/reviewDiffSummary.ts',
+        'scripts/wasm-artifacts.ts',
+        'scripts/wasmToolchainPins.ts',
+        'scripts/workspaceManifestFingerprint.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/resolveThread.ts',
@@ -281,6 +309,8 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'review:accept': { path: 'scripts/acceptReview.ts', runner: 'runAcceptReviewCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
     'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
+    'review:repair': { path: 'scripts/repairReviewFinding.ts', runner: 'runRepairReviewFindingCli' },
+    'review:confirm': { path: 'scripts/confirmReviewRepairs.ts', runner: 'runConfirmReviewRepairsCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
@@ -1381,12 +1411,14 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'review:accept' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||
+        value === 'review:repair' ||
+        value === 'review:confirm' ||
         value === 'review:resolve'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|review:accept|review:publish|review:publish:recover|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve> [args...]'
     );
 }
 
