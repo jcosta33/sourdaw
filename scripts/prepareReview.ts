@@ -19,7 +19,8 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
-import { formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
+import { changedReviewPaths, formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
+import { planReviewRisk } from './reviewRiskPolicy.ts';
 
 export type ReviewPullRequest = {
     number: number;
@@ -99,8 +100,16 @@ export function readReviewBundleContext(destination: string): ReviewBundleContex
     return parseReviewBundleContext(readFileSync(join(destination, 'manifest.json'), 'utf8'), destination);
 }
 
+/**
+ * Whether the caller has already put a document of their own at the bundle root: `review.json` and
+ * `discarded.json` from the review round, `acceptance.json` from acceptance, or `dossier.json` from
+ * the durable head-bound dossier. Any of them means the bundle records a judgement about a specific
+ * head and must not be silently replaced by one about a different base or head.
+ */
 function hasCallerReviewDocuments(destination: string): boolean {
-    return ['review.json', 'discarded.json', 'acceptance.json'].some((name) => existsSync(join(destination, name)));
+    return ['review.json', 'discarded.json', 'acceptance.json', 'dossier.json'].some((name) =>
+        existsSync(join(destination, name))
+    );
 }
 
 function assertReusableBundleContext(destination: string, expected: ReviewBundleContext): void {
@@ -127,13 +136,24 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
     const pullRequest = port.pullRequest(number);
     port.fetchShas(pullRequest.baseRefOid, pullRequest.headRefOid);
     const baseSha = port.mergeBase(pullRequest.baseRefOid, pullRequest.headRefOid);
+    // One numstat read feeds both the size summary and the risk plan, so the sizes the plan reasons
+    // about are the exact sizes the bundle reports, and git is not spawned twice for the same diff.
+    const numstat = port.numstat(baseSha, pullRequest.headRefOid);
     const agents = port.showFile(baseSha, 'AGENTS.md');
     const claude = port.showFile(baseSha, 'CLAUDE.md');
     const decisionFiles = port.listDecisionFiles(baseSha);
     const files: Record<string, string> = {
         'diff.patch': port.diff(baseSha, pullRequest.headRefOid),
-        'review-size.json': `${formatReviewDiffSummary(
-            summarizeReviewDiff(port.primaryRoot(), port.numstat(baseSha, pullRequest.headRefOid))
+        'review-size.json': `${formatReviewDiffSummary(summarizeReviewDiff(port.primaryRoot(), numstat))}\n`,
+        'risk-plan.json': `${JSON.stringify(
+            planReviewRisk({
+                pr: pullRequest.number,
+                headSha: pullRequest.headRefOid,
+                baseSha,
+                paths: changedReviewPaths(port.primaryRoot(), numstat),
+            }),
+            null,
+            4
         )}\n`,
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
         'contracts/AGENTS.md': agents,
@@ -169,13 +189,13 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
 }
 
 /**
- * The `generated` list a previous install recorded in its own `manifest.json`, or `undefined` when
- * that record is unavailable: no manifest, an unparseable one, one whose `generated` field is
- * missing, or one whose `generated` field holds something other than an array of strings.
- * `undefined` means the previous generated set is unknown, not empty — `preserveCallerFiles` treats
- * those two differently; see its doc comment.
+ * The `generated` list a bundle's own `manifest.json` records, or `undefined` when that record is
+ * unavailable: no manifest, an unparseable one, one whose `generated` field is missing, or one whose
+ * `generated` field holds something other than an array of strings. `undefined` means the generated
+ * set is unknown, not empty — `preserveCallerFiles` treats those two differently, and the dossier
+ * gate reads a manifest without the entry as a bundle that predates risk plans entirely.
  */
-function previousGeneratedSet(destination: string): ReadonlySet<string> | undefined {
+export function readBundleGeneratedSet(destination: string): ReadonlySet<string> | undefined {
     try {
         const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8')) as {
             generated?: unknown;
@@ -203,9 +223,9 @@ function previousGeneratedSet(destination: string): ReadonlySet<string> | undefi
  * `rootOnly` is set whenever that previous record is unknown — no manifest, one predating this
  * field, or one this function cannot parse. Without it, there is no way to tell a caller's file from
  * a stale artifact of a base that has since moved, so classification falls back to position instead
- * of name: the caller writes `review.json` and `discarded.json` beside each other at the bundle
- * root, and every nested path belongs to the script. A nested file is therefore presumed generated
- * and dropped, not carried forward on a guess.
+ * of name: the caller writes `review.json`, `discarded.json`, and `dossier.json` beside each other
+ * at the bundle root, and every nested path belongs to the script. A nested file is therefore
+ * presumed generated and dropped, not carried forward on a guess.
  */
 function preserveCallerFiles(
     source: string,
@@ -295,7 +315,7 @@ export function installBundleAtomically(
             writeFileSync(target, contents);
         }
         if (existsSync(destination)) {
-            const previousGenerated = previousGeneratedSet(destination);
+            const previousGenerated = readBundleGeneratedSet(destination);
             const generated = new Set([...(previousGenerated ?? []), ...Object.keys(files)]);
             preserveCallerFiles(destination, staging, generated, previousGenerated === undefined);
             renameSync(destination, previous);
