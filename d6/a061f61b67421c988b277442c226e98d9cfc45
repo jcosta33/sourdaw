@@ -1,0 +1,42 @@
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_3b6af3e3a97e92 311,317-318,321-322
+  s_9e15f5b7ec3308::t_3d97ee9ec03a96 506-507
+  s_9e15f5b7ec3308::t_63a48bda62911b 26-27,31-34
+  s_9e15f5b7ec3308::t_1a2bf9b87da1b7 394-395
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_9e15f5b7ec3308::t_0e2747c8a90fc4 4
+  s_9e15f5b7ec3308::t_0be698df8b9456 3
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_b1b7c3eff9cdc2 232
+  s_9e15f5b7ec3308::t_b0f2ab21e5c380 158-159
+  s_9e15f5b7ec3308::t_eefe5ad5cb358d 147-148
+  s_9e15f5b7ec3308::t_a885551a354c1d 179-181,183,190,192-193,227
+  s_9e15f5b7ec3308::t_bfbec74872bac9 194-195,202-203,228,234,353-354,366-367
+release/open-source-inventory.json
+  s_9e15f5b7ec3308::t_25b8920747059e 2376
+  s_9e15f5b7ec3308::t_75612073d625ee 1509
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  s_9e15f5b7ec3308::t_085c33429f89c1 165,169-177
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidance.ts
+  s_9e15f5b7ec3308::t_2529ad243b2718 1-19
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidancePrimary.ts
+  s_9e15f5b7ec3308::t_147b165203ddd8 1-588
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptorsGuidanceSecondary.ts
+  s_9e15f5b7ec3308::t_d1c92403facd81 1-592
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d6a061f61b67421c988b277442c226e98d9cfc45",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
