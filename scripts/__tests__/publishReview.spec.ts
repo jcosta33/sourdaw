@@ -4992,6 +4992,7 @@ describe('fresh reviewer dossier publication', () => {
             document?: unknown;
             documentName?: string;
             manifest?: Record<string, unknown>;
+            labels?: { name: string; description?: string }[];
             writable?: boolean;
         } = {}
     ) {
@@ -5025,7 +5026,7 @@ describe('fresh reviewer dossier publication', () => {
         const port: PublishReviewPort = {
             primaryRoot: () => root,
             assertApprovalContext: (publishedNumber, publishedHead) => approvalContext(publishedHead, publishedNumber),
-            pullRequest: () => ({ state: 'OPEN', head }),
+            pullRequest: () => ({ state: 'OPEN', head, labels: input.labels }),
             readReviewJson: (path) => {
                 calls.push(`read:${path}`);
                 return readJsonFile(path);
@@ -5266,6 +5267,149 @@ describe('fresh reviewer dossier publication', () => {
             expect(fixture.writes).toHaveLength(1);
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.requiredStances).toEqual([gateStance, 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes two draws on one stance and persists both completed entries', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'review-model-2',
+                        modelTier: 'strongest',
+                        outcome: 'blocker-found',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            // The stance set is the dispatch; the second draw extends model diversity, not the count.
+            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(
+                persisted.events
+                    .filter((event) => event.kind === 'stance-completed')
+                    .map((event) => event.reviewerModel)
+            ).toEqual(['review-model', 'review-model-2', 'review-model']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('does not let a second draw of one stance trip the stances.json gate', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'review-model-2',
+                        modelTier: 'strongest',
+                        outcome: 'clean',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(parseReviewDossier(fixture.readDossier()).requiredStances).toEqual(['correctness', 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a draw on an authoring model without its own exhaustion, naming the stance, and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'glm-5.3-flash', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            // The document-level refusal never names a stance, so this message proves the
+            // per-draw records reached the diversity gate.
+            expect(message).toMatch(/review stance "correctness" drew reviewer model "glm-5\.3-flash"/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes the mixed round when the fallen-back draw carries its own exhaustion', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: {
+                ...reviewDocument,
+                body: 'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.',
+            },
+            dossier: dossierInput({
+                stances: [
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'glm-5.3-flash',
+                        modelTier: 'strongest',
+                        outcome: 'clean',
+                        exhaustion: 'every other harness on this machine was committed to another lane',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            // The per-draw exhaustion round-trips into the persisted record.
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const correctness = persisted.events.find(
+                (event) => event.kind === 'stance-completed' && event.stance === 'correctness'
+            );
+            if (correctness?.kind !== 'stance-completed') {
+                throw new Error('fixture must carry a correctness draw');
+            }
+            expect(correctness.exhaustion).toBe('every other harness on this machine was committed to another lane');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('keeps the whole-round fallback working when the dossier draws carry no authoring-model draw', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: {
+                ...reviewDocument,
+                body: 'Whole-round fallback: reviewed on glm-5.3-flash after every other harness was unavailable.',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+            dossier: dossierInput(),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

@@ -199,7 +199,7 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
         label: 'a duplicate free-form stance',
         value: { ...INPUT, stances: [GATE_CORRESPONDENCE_STANCE, GATE_CORRESPONDENCE_STANCE] },
         message:
-            /input stances\[1\]\.stance duplicates stances\[0\]\.stance: gate-correspondence correctness — a dossier entry the record does not carry must never publish/,
+            /input stances\[1\] repeats stances\[0\]'s stance and reviewerModel: gate-correspondence correctness — a dossier entry the record does not carry must never publish on model-gate-correspondence/,
     },
     {
         label: 'an unknown model tier',
@@ -224,7 +224,22 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
     {
         label: 'a duplicate stance',
         value: { ...INPUT, stances: [CORRECTNESS_STANCE, CORRECTNESS_STANCE] },
-        message: /input stances\[1\]\.stance duplicates stances\[0\]\.stance: correctness/,
+        message: /input stances\[1\] repeats stances\[0\]'s stance and reviewerModel: correctness on model-correctness/,
+    },
+    {
+        label: 'a blank exhaustion',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, exhaustion: '   ' }] },
+        message: /input stances\[0\]\.exhaustion must be a non-blank string/,
+    },
+    {
+        label: 'a multiline exhaustion',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, exhaustion: 'first\nsecond' }] },
+        message: /input stances\[0\]\.exhaustion value at index 0 contains a line separator/,
+    },
+    {
+        label: 'an edge-untrimmed exhaustion',
+        value: { ...INPUT, stances: [{ ...CORRECTNESS_STANCE, exhaustion: ' padded reason ' }] },
+        message: /input stances\[0\]\.exhaustion value at index 0 is not edge-trimmed/,
     },
     {
         label: 'a malformed evidence entry',
@@ -291,7 +306,7 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
                 comments: [],
                 recommendation: 'approve',
             }),
-        message: /input stances\[1\]\.stance duplicates stances\[0\]\.stance/,
+        message: /input stances\[1\] repeats stances\[0\]'s stance and reviewerModel/,
     },
     {
         label: 'a recommendation the caller did not derive',
@@ -854,6 +869,91 @@ describe('buildReviewDossier', () => {
         ]);
         const persisted = parseReviewDossier(JSON.parse(result.canonical));
         expect(persisted.requiredStances).toEqual([GATE_CORRESPONDENCE_STANCE.stance, 'test-validity']);
+    });
+
+    it('assembles several draws on one stance and round-trips through the persisted record', () => {
+        const secondCorrectnessDraw: ReviewDossierStanceInput = {
+            stance: 'correctness',
+            reviewerModel: 'model-correctness-second',
+            modelTier: 'strongest',
+            outcome: 'clean',
+        };
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: { ...INPUT, stances: [CORRECTNESS_STANCE, secondCorrectnessDraw, TEST_VALIDITY_STANCE] },
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        const persisted = parseReviewDossier(JSON.parse(result.canonical));
+        expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+        expect(completedStances(persisted)).toEqual([CORRECTNESS_STANCE, secondCorrectnessDraw, TEST_VALIDITY_STANCE]);
+
+        const replay = buildReviewDossier({
+            plan: PLAN,
+            raw: JSON.parse(result.canonical),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        expect(replay.fromPersisted).toBe(true);
+        expect(replay.canonical).toBe(result.canonical);
+    });
+
+    it('does not trip the stances.json correspondence gate on a second draw of one stance', () => {
+        const secondCorrectnessDraw: ReviewDossierStanceInput = {
+            ...CORRECTNESS_STANCE,
+            reviewerModel: 'model-correctness-second',
+        };
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: { ...INPUT, stances: [CORRECTNESS_STANCE, secondCorrectnessDraw, TEST_VALIDITY_STANCE] },
+            recordedStances: ['correctness', 'test-validity'],
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        expect(completedStances(result.dossier).map((entry) => entry.stance)).toEqual([
+            'correctness',
+            'correctness',
+            'test-validity',
+        ]);
+    });
+
+    it('carries a draw exhaustion into the record and verifies it on reparse', () => {
+        const exhaustedDraw: ReviewDossierStanceInput = {
+            ...TEST_VALIDITY_STANCE,
+            exhaustion: 'every other harness on this machine was committed to another lane',
+        };
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: { ...INPUT, stances: [CORRECTNESS_STANCE, exhaustedDraw] },
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+
+        expect(result.fromPersisted).toBe(false);
+        const persisted = parseReviewDossier(JSON.parse(result.canonical));
+        expect(completedStances(persisted).at(-1)).toEqual(exhaustedDraw);
+        expect(serializeReviewDossier(persisted)).toBe(result.canonical);
+    });
+
+    it('carries exhaustion only on the input draws that declare it', () => {
+        const parsed = parseReviewDossierInput({
+            ...INPUT,
+            stances: [
+                { ...CORRECTNESS_STANCE, exhaustion: 'every other harness was logged out' },
+                TEST_VALIDITY_STANCE,
+            ],
+        });
+
+        expect(parsed.stances[0]?.exhaustion).toBe('every other harness was logged out');
+        expect(parsed.stances[1]?.exhaustion).toBeUndefined();
     });
 
     it('publishes a dossier whose recorded stances differ from the plan menu, answering to the record', () => {
