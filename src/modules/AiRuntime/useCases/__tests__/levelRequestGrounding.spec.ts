@@ -206,6 +206,20 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: 1.5 } }]);
     });
 
+    it('grounds the whole decibel fraction and refuses its numerator alone', () => {
+        const prompt = 'lower Vocals by 1/2 dB';
+
+        const fraction = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -0.5 } }], prompt);
+        const numerator = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -1 } }], prompt);
+
+        expect(fraction.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, deltaDb: -0.5 } }]);
+        expect(numerator.actions).toEqual([]);
+        expect(
+            bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, deltaDb: -1 } }], 'lower Vocals by 1/0 dB')
+                .actions
+        ).toEqual([]);
+    });
+
     it('grounds an absolute track level and refuses the change and amplitude readings', () => {
         const prompt = 'set Vocals volume to -6 dB';
 
@@ -216,6 +230,27 @@ describe('a level stated in decibels reaches the handler in decibels', () => {
         expect(destination.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, gainDb: -6 } }]);
         expect(asChange.actions).toEqual([]);
         expect(asAmplitude.actions).toEqual([]);
+    });
+
+    it('binds an absolute destination instead of its stated source level', () => {
+        const prompt = 'set Vocals volume from -12 dB to -6 dB';
+
+        const destination = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, gainDb: -6 } }], prompt);
+        const source = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, gainDb: -12 } }], prompt);
+        const asAmplitude = bridge([{ name: 'setTrackGain', arguments: { trackId: vocals.id, gain: 0.5 } }], prompt);
+
+        expect(destination.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, gainDb: -6 } }]);
+        expect(source.actions).toEqual([]);
+        expect(asAmplitude.actions).toEqual([]);
+    });
+
+    it('grounds unity when an absolute connector states zero decibels', () => {
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: vocals.id, gainDb: 0 } }],
+            'set Vocals volume to 0 dB'
+        );
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, gainDb: 0 } }]);
     });
 
     it('reads a level placed with at as the level to land on', () => {

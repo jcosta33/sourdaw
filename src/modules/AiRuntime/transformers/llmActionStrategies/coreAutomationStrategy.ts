@@ -1,4 +1,5 @@
 import { gainLaneLevelLaw, type LevelArgument, resolveLevelArgument } from '#/utils/audioLevelLaw';
+import { evaluateAutomationLaneAtBeat } from '#/utils/evaluateAutomationLaneAtBeat';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -40,7 +41,12 @@ function drawsLinearGain(lane: AutomationLaneTarget): boolean {
  * empty lane draws nothing there. Where that level lands is left to the handler,
  * which reads the live lane rather than this projection of it.
  */
-function admitsAutomationLevel(lane: AutomationLaneTarget, argument: LevelArgument): boolean {
+function admitsAutomationLevel(
+    lane: AutomationLaneTarget,
+    argument: LevelArgument,
+    beat: number,
+    lanes: readonly AutomationLaneTarget[]
+): boolean {
     if ('linear' in argument) {
         return argument.linear >= lane.minValue && argument.linear <= lane.maxValue;
     }
@@ -48,7 +54,18 @@ function admitsAutomationLevel(lane: AutomationLaneTarget, argument: LevelArgume
         return false;
     }
     if ('deltaDb' in argument) {
-        return lane.points.length > 0;
+        const current = evaluateAutomationLaneAtBeat({
+            laneId: lane.id,
+            beat,
+            getLane: (id) => lanes.find((candidate) => candidate.id === id),
+            resolveLaneCeiling: (candidate) => candidate.maxValue,
+            resolveLaneDeclaredMax: (candidate) => candidate.declaredMaxValue ?? candidate.maxValue,
+        });
+        if (current === null) {
+            return false;
+        }
+        const resolution = resolveLevelArgument(argument, current, gainLaneLevelLaw(lane));
+        return resolution.ok && resolution.linear >= lane.minValue && resolution.linear <= lane.maxValue;
     }
     const resolution = resolveLevelArgument(argument, lane.minValue, gainLaneLevelLaw(lane));
     return resolution.ok && resolution.linear >= lane.minValue && resolution.linear <= lane.maxValue;
@@ -184,7 +201,7 @@ const coreAutomationStrategyDefinitions = [
                 args.beat < 0 ||
                 !Number.isFinite(lane.minValue) ||
                 !Number.isFinite(lane.maxValue) ||
-                !admitsAutomationLevel(lane, level.argument) ||
+                !admitsAutomationLevel(lane, level.argument, args.beat, context.automationLanes ?? []) ||
                 lane.points.some((point) => point.beat === args.beat)
             ) {
                 return rejection(

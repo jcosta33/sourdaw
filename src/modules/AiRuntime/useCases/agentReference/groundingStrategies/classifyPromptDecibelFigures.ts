@@ -1,4 +1,5 @@
 import { normalizePromptText } from './normalizePromptText';
+import { parsePromptNumberValue } from './parsePromptNumberValue';
 
 /** One number the prompt states, as the scope tokenizer found it. */
 export type PromptNumber = {
@@ -31,6 +32,9 @@ const ARTICLES: ReadonlySet<string> = new Set(['a', 'an', 'the']);
 
 /** Words that put the figure where the level should land. */
 const ABSOLUTE_CONNECTORS: ReadonlySet<string> = new Set(['at', 'to']);
+
+/** Words that bind a figure as the starting state rather than the requested destination. */
+const SOURCE_CONNECTORS: ReadonlySet<string> = new Set(['from']);
 
 /** Words that put the figure on the distance the level should move. */
 const RELATIVE_CONNECTORS: ReadonlySet<string> = new Set(['by', 'down', 'up']);
@@ -119,8 +123,8 @@ function getRelativeSign(
 function classifyFigure(maskedScope: string, number: PromptNumber, unitEnd: number): PromptDecibelFigure {
     const precedingWord = getPrecedingWord(maskedScope, number);
     const followingWord = getFollowingWord(maskedScope, unitEnd);
-    const db = Number.parseFloat(number.raw);
-    if (!Number.isFinite(db)) {
+    const db = parsePromptNumberValue(number.raw);
+    if (db === null || SOURCE_CONNECTORS.has(precedingWord)) {
         return { db: null, form: 'unstated' };
     }
     if (ABSOLUTE_CONNECTORS.has(precedingWord)) {

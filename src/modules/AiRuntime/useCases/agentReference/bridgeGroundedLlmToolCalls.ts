@@ -97,6 +97,7 @@ import { isNegatedIntent } from './groundingStrategies/isNegatedIntent';
 import { maskProjectReferences } from './groundingStrategies/maskProjectReferences';
 import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { parsePromptNumberValue } from './groundingStrategies/parsePromptNumberValue';
 import { groundPostScopeAdmission } from './groundingStrategies/postScopeAdmissionStrategy';
 import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTargetEvidenceAdmissionStrategy';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
@@ -1863,13 +1864,7 @@ function normalizePromptNumber(
 ): number {
     const isPercentage = number.raw.endsWith('%');
     const rawWithoutPercentage = isPercentage ? number.raw.slice(0, -1) : number.raw;
-    const fractionParts = rawWithoutPercentage.split('/');
-    let rawValue = Number.parseFloat(rawWithoutPercentage);
-    if (fractionParts.length === 2) {
-        const numerator = Number.parseFloat(fractionParts[0]!.trim());
-        const denominator = Number.parseFloat(fractionParts[1]!.trim());
-        rawValue = denominator === 0 ? Number.NaN : numerator / denominator;
-    }
+    const rawValue = parsePromptNumberValue(rawWithoutPercentage) ?? Number.NaN;
     const value = scalePromptNumber(rawValue, isPercentage, valueRule, automationLane);
     if (valueRule.direction !== 'pan') {
         return value;
