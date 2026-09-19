@@ -115,7 +115,13 @@ export type NativeOfflineRenderInput = Readonly<{
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix — audible plus cue-send-only. */
     scheduledTracks: readonly Track[];
-    scheduledTrackIds: ReadonlySet<string>;
+    /**
+     * The strips whose device-chain output can reach what this render prints,
+     * by the shared print-reachability computation (#4376). A strip outside it
+     * contributes silence, so a device the native mapper cannot hold degrades
+     * there instead of refusing the whole export.
+     */
+    contributingTrackIds: ReadonlySet<string>;
     soloGatedByTrackId: ReadonlyMap<string, boolean>;
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     onWarning?: (message: string) => void;
@@ -172,7 +178,7 @@ export async function renderOfflineWithNativeEngine(
         resolveTempoAtBeat,
         renderableTracks,
         scheduledTracks,
-        scheduledTrackIds,
+        contributingTrackIds,
         soloGatedByTrackId,
         vcaMultiplierByTrackId,
         onWarning,
@@ -227,7 +233,7 @@ export async function renderOfflineWithNativeEngine(
                   state,
                   devices,
                   honorMuted: true,
-                  contributesAudio: scheduledTrackIds.has(track.id),
+                  contributesAudio: contributingTrackIds.has(track.id),
               }
             : {
                   kind: 'create-track-strip',
@@ -236,7 +242,7 @@ export async function renderOfflineWithNativeEngine(
                   state,
                   devices,
                   honorMuted: true,
-                  contributesAudio: scheduledTrackIds.has(track.id),
+                  contributesAudio: contributingTrackIds.has(track.id),
               };
     });
 

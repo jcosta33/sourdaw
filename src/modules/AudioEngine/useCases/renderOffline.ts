@@ -12,6 +12,7 @@ import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
 import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
+import { collectWiredSidechainDetectorRoutes } from './offlineRender/collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineRenderBackend } from './offlineRender/createOfflineRenderBackend';
@@ -23,6 +24,7 @@ import { renderOfflineWithNativeEngine } from './offlineRender/renderOfflineWith
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { resolveOutputTarget } from './offlineRender/resolveOutputTarget';
+import { resolvePrintReachability } from './offlineRender/resolvePrintReachability';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
 import { selectOfflineRenderEngine } from './offlineRender/selectOfflineRenderEngine';
@@ -163,17 +165,11 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // Snapshot once: every strip and every gain lane in this render must see
         // the same group levels, however long the render takes.
         const vcaGroups = getVcaGroupsState();
-        const routableSidechainTargets = new Set<object>();
-        for (const route of sidechainRoutes) {
-            const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
-            const targetTrack = allRenderableTracks.find((track) => track.id === route.targetTrackId);
-            const targetDevice = targetTrack?.devices.find(
-                (device) => device.id === route.targetDeviceId && !device.bypassed
-            );
-            if (sourceTrack && targetDevice?.type === 'builtin-sidechain-compressor') {
-                routableSidechainTargets.add(targetDevice);
-            }
-        }
+        const wiredDetectorRoutes = collectWiredSidechainDetectorRoutes({
+            tracks: allRenderableTracks,
+            routes: sidechainRoutes,
+        });
+        const routableSidechainTargets = new Set<object>(wiredDetectorRoutes.map((route) => route.targetDevice));
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -198,14 +194,14 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // their cue sends silent; scheduling them would only render work that cannot
         // reach the mix. A muted track with no live pre-fader send is also skipped.
         //
-        // Resolved *before* the strips are built, because a strip has to know
-        // whether it will be scheduled: a strip that is never scheduled
-        // contributes silence, so an unrenderable device on it must degrade
-        // rather than fail the whole export. Bus membership is read off the
-        // track kind rather than off `busStripsById`, which does not exist yet
-        // and is filled from exactly this set of tracks.
+        // Bus membership is read off the track kind rather than off
+        // `busStripsById`, which does not exist yet and is filled from exactly
+        // this set of tracks.
         const busTrackIds = new Set(
             allRenderableTracks.filter((track) => track.kind === 'bus').map((track) => track.id)
+        );
+        const trackTrackIds = new Set(
+            allRenderableTracks.filter((track) => track.kind !== 'bus').map((track) => track.id)
         );
         const sourceTrackIds = new Set(sourceTracks.map((track) => track.id));
         const cueSendOnlyTracks = allRenderableTracks.filter((track) => {
@@ -215,7 +211,35 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             return track.sends.some((send) => send.preFader && busTrackIds.has(send.busId));
         });
         const scheduledTracks = [...sourceTracks, ...cueSendOnlyTracks];
-        const scheduledTrackIds = new Set(scheduledTracks.map((track) => track.id));
+
+        // Which strips this render's print can actually carry (#4376), resolved
+        // before the strips are built because each strip has to be told: an
+        // unrenderable device on a strip whose output cannot reach the print
+        // degrades, while one that can fails the whole export. The mixdown
+        // honours every strip's mute, so a route cut downstream — a track
+        // routed into a muted bus — leaves an upstream contributor silent even
+        // though that contributor is unmuted and scheduled.
+        const contributingTrackIds = resolvePrintReachability({
+            tracks: allRenderableTracks,
+            honorMuted: () => true,
+            sendsRendered: () => true,
+            detectorRoutes: wiredDetectorRoutes,
+            isSoloGated: (trackId) => soloGatedByTrackId.get(trackId) ?? false,
+            resolveOutputRoute: (track) => {
+                const outputTarget = resolveOutputTarget({
+                    outputId: track.outputId,
+                    busStripIds: busTrackIds,
+                    trackStripIds: trackTrackIds,
+                });
+                if (outputTarget.kind === 'bus') {
+                    return { kind: 'strip', trackId: outputTarget.busId };
+                }
+                if (outputTarget.kind === 'track') {
+                    return { kind: 'strip', trackId: outputTarget.trackId };
+                }
+                return { kind: 'prints' };
+            },
+        });
 
         // A VCA-member track plays through its group master, so the bounce has
         // to fold the same multiplier into its fader. This is the same
@@ -252,7 +276,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 resolveTempoAtBeat,
                 renderableTracks: allRenderableTracks,
                 scheduledTracks,
-                scheduledTrackIds,
+                contributingTrackIds,
                 soloGatedByTrackId,
                 vcaMultiplierByTrackId,
                 onWarning,
@@ -321,7 +345,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                               state,
                               devices: track.devices,
                               honorMuted: true,
-                              contributesAudio: scheduledTrackIds.has(track.id),
+                              contributesAudio: contributingTrackIds.has(track.id),
                           }
                         : {
                               kind: 'create-track-strip',
@@ -330,7 +354,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                               state,
                               devices: track.devices,
                               honorMuted: true,
-                              contributesAudio: scheduledTrackIds.has(track.id),
+                              contributesAudio: contributingTrackIds.has(track.id),
                           },
                 ],
             });

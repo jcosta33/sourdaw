@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 
@@ -212,13 +212,16 @@ describe('renderOffline effective audibility (OE-4)', () => {
     });
 
     type SendFixture = { busId: string; level: number; preFader: boolean };
+    type DeviceFixture = { id: string; type: string; bypassed: boolean };
 
     const audioTrack = (over: {
         id: string;
         kind?: string;
         soloed?: boolean;
         muted?: boolean;
+        soloSafe?: boolean;
         outputId?: string;
+        devices?: DeviceFixture[];
         sends?: SendFixture[];
     }) => ({
         id: over.id,
@@ -226,9 +229,9 @@ describe('renderOffline effective audibility (OE-4)', () => {
         disabled: false,
         muted: over.muted ?? false,
         soloed: over.soloed ?? false,
-        soloSafe: false,
+        soloSafe: over.soloSafe ?? false,
         outputId: over.outputId ?? 'hw_out',
-        devices: [],
+        devices: over.devices ?? ([] as DeviceFixture[]),
         sends: over.sends ?? ([] as SendFixture[]),
     });
 
@@ -501,6 +504,247 @@ describe('renderOffline effective audibility (OE-4)', () => {
             await renderOffline(4);
 
             expect(scheduledTrackIds()).not.toContain('strings');
+        });
+    });
+
+    // #4376 — a strip's own mute is not the only cut this render honours, and the
+    // old answer (`scheduledTrackIds`, which saw only audible tracks and
+    // pre-fader-send-only ones) could not see a route dying at a *downstream*
+    // mute. Reachability is read from the routing graph now; the observable is
+    // the per-strip `contributesAudio` the chain build — and the native mapper —
+    // refuses on.
+    describe('print reachability (#4376)', () => {
+        const COMPRESSOR: DeviceFixture = {
+            id: 'comp-1',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+        };
+
+        const stripCallFor = (trackId: string): Record<string, unknown> | undefined => {
+            const call = offlineRenderMocks.createOfflineTrackStrip.mock.calls.find(
+                (candidate) => candidate[1].id === trackId
+            );
+            return call?.[2];
+        };
+
+        const contributes = (trackId: string): unknown => stripCallFor(trackId)?.contributesAudio;
+
+        async function seedSidechainRoutes(routes: readonly { source: string; target: string }[]): Promise<void> {
+            const { sidechainStore } = await import('#/modules/Routing/stores');
+            sidechainStore.set({
+                ...sidechainStore.value!,
+                routes: routes.map((route, index) => ({
+                    id: `route-${index}`,
+                    sourceTrackId: route.source,
+                    targetTrackId: route.target,
+                    targetDeviceId: COMPRESSOR.id,
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                })),
+            });
+        }
+
+        afterEach(async () => {
+            const { sidechainStore } = await import('#/modules/Routing/stores');
+            sidechainStore.set({ ...sidechainStore.value!, routes: [] });
+        });
+
+        it('keeps every strip on a printing route contributing, the direction that must never be silent', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'upstream', outputId: 'mid-bus' }),
+                    audioTrack({ id: 'mid-bus', kind: 'bus' }),
+                    audioTrack({ id: 'lead' }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            // Upstream is listed first, so its answer only exists once the
+            // fixpoint has carried reachability back from master through mid-bus.
+            expect(contributes('upstream')).toBe(true);
+            expect(contributes('mid-bus')).toBe(true);
+            expect(contributes('lead')).toBe(true);
+        });
+
+        it('stops a contributor whose only route dies at a muted bus, though the track itself is unmuted and scheduled', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'plugin-track', outputId: 'muted-bus' }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                    audioTrack({ id: 'comp-target', devices: [COMPRESSOR] }),
+                ])
+            );
+            await seedSidechainRoutes([{ source: 'muted-bus', target: 'comp-target' }]);
+            primeRender();
+
+            await renderOffline(4);
+
+            // Unmuted and scheduled is not the question: its only route is cut.
+            expect(scheduledTrackIds()).toContain('plugin-track');
+            expect(contributes('plugin-track')).toBe(false);
+            expect(contributes('comp-target')).toBe(true);
+        });
+
+        it('stops a contributor routed through a muted non-key bus, because the mixdown honours that bus mute', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'plugin-track', outputId: 'muted-bus' }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('muted-bus')).toBe(false);
+            expect(contributes('plugin-track')).toBe(false);
+        });
+
+        it('keeps a muted key source contributing when a rendered pre-fader send still carries it', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'comp-target', devices: [COMPRESSOR] }),
+                    audioTrack({
+                        id: 'kick-key',
+                        muted: true,
+                        sends: [{ busId: 'cue-bus', level: 1, preFader: true }],
+                    }),
+                    audioTrack({ id: 'cue-bus', kind: 'bus' }),
+                ])
+            );
+            await seedSidechainRoutes([{ source: 'kick-key', target: 'comp-target' }]);
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('kick-key')).toBe(true);
+        });
+
+        it('stops a muted key source with no rendered send from contributing', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'comp-target', devices: [COMPRESSOR] }),
+                    audioTrack({ id: 'kick-key', muted: true, outputId: 'muted-bus' }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                ])
+            );
+            await seedSidechainRoutes([{ source: 'kick-key', target: 'comp-target' }]);
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('kick-key')).toBe(false);
+        });
+
+        it('stops a muted track whose only send is post-fader, because the mute node sits ahead of that tap', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({
+                        id: 'fx',
+                        muted: true,
+                        sends: [{ busId: 'reverb-bus', level: 1, preFader: false }],
+                    }),
+                    audioTrack({ id: 'reverb-bus', kind: 'bus' }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('reverb-bus')).toBe(true);
+            expect(contributes('fx')).toBe(false);
+        });
+
+        it('keeps an unmuted strip contributing when a live post-fader send still prints past a cut main route', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({
+                        id: 'plugin-track',
+                        outputId: 'muted-bus',
+                        sends: [{ busId: 'fx-bus', level: 1, preFader: false }],
+                    }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                    audioTrack({ id: 'fx-bus', kind: 'bus' }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            // The post-fader tap sits downstream of the mute, and this strip's
+            // own mute is not the one that cut its main route.
+            expect(contributes('fx-bus')).toBe(true);
+            expect(contributes('plugin-track')).toBe(true);
+        });
+
+        it('keeps a key contributing whose detector feed changes a printed compressor, though its own route is cut', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'comp-target', devices: [COMPRESSOR] }),
+                    audioTrack({ id: 'kick-key', outputId: 'muted-bus' }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                ])
+            );
+            await seedSidechainRoutes([{ source: 'kick-key', target: 'comp-target' }]);
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('kick-key')).toBe(true);
+        });
+
+        it('stops a key whose keyed compressor itself does not print', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'comp-target', outputId: 'muted-bus', devices: [COMPRESSOR] }),
+                    audioTrack({ id: 'kick-key', outputId: 'muted-bus' }),
+                    audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                ])
+            );
+            await seedSidechainRoutes([{ source: 'kick-key', target: 'comp-target' }]);
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('comp-target')).toBe(false);
+            expect(contributes('kick-key')).toBe(false);
+        });
+
+        it('stops a self-keyed muted target from contributing, because its key feed is post-mute', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([audioTrack({ id: 'comp-target', muted: true, devices: [COMPRESSOR] })])
+            );
+            await seedSidechainRoutes([{ source: 'comp-target', target: 'comp-target' }]);
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('comp-target')).toBe(false);
+        });
+
+        it('stops a solo-gated strip, whose closed pre-fader tap silences its output and its sends', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    audioTrack({ id: 'lead', soloed: true }),
+                    // Solo-safe, so the gate leaves this bus open and reachable —
+                    // the send would carry the gated track if the gate did not
+                    // close the tap ahead of it.
+                    audioTrack({ id: 'safe-bus', kind: 'bus', soloSafe: true }),
+                    audioTrack({
+                        id: 'gated',
+                        sends: [{ busId: 'safe-bus', level: 1, preFader: true }],
+                    }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(contributes('safe-bus')).toBe(true);
+            expect(contributes('gated')).toBe(false);
+            expect(contributes('lead')).toBe(true);
         });
     });
 });
