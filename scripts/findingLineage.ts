@@ -377,3 +377,30 @@ export function parseFindingLineage(body: string): FindingLineage | undefined {
     assertLineageShape(lineage);
     return lineage;
 }
+
+/** The bare marker payload as a file may carry it, before any marker line is added. */
+function parseBareLineage(text: string): FindingLineage {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        return fail('finding lineage document is neither a marker body nor a JSON object');
+    }
+    const lineage = readLineage(parsed);
+    assertLineageShape(lineage);
+    return lineage;
+}
+
+/**
+ * A lineage document as an orchestrator writes it to disk: either the rendered marker body itself or
+ * the bare JSON object its marker line would carry. `parseFindingLineage` owns the marker form and
+ * keeps its own contract — no marker line is `undefined` — so the bare form is read here instead of
+ * widening that function into treating arbitrary prose as a record.
+ */
+export function parseFindingLineageDocument(text: string): FindingLineage {
+    const marked = parseFindingLineage(text);
+    if (marked !== undefined) {
+        return marked;
+    }
+    return parseBareLineage(text);
+}
