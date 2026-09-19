@@ -133,7 +133,7 @@ function admitPromptRequest(input: PromptChatRequestInput): PromptRequestAdmissi
         requestedRoute: input.requestedRoute,
         selectedRouteId:
             input.backend === 'none'
-                ? null
+                ? undefined
                 : `${input.backend}:${getModelProviderName(input.backend)}:${getBackendModelId(input.backend)}`,
         scope: input.options?.scope,
         grants: input.options?.grants,

@@ -581,7 +581,7 @@ describe('orchestratePromptChatRequest', () => {
             options: undefined,
         });
 
-        expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ selectedRouteId: null }));
+        expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ selectedRouteId: undefined }));
         expect(mocks.claim).toHaveBeenCalledWith(
             expect.objectContaining({ workId: 'local-planning', ownerKind: 'analysis' })
         );

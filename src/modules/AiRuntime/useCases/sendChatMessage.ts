@@ -66,21 +66,22 @@ export async function sendChatMessage(
         streaming: interactionMode === 'explain',
     });
 
+    if (interactionMode !== 'explain') {
+        return orchestratePromptChatRequest({ userText, requestedRoute, backend, interactionMode, options });
+    }
+
     // Explain streams from one selected backend. Prompt mode can admit a
     // deterministic plan even when no provider route is available.
-    if (interactionMode === 'explain' && backend === 'none') {
+    if (backend === 'none') {
         throw createAiRuntimeError(
             'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
         );
     }
-    if (interactionMode === 'explain' && backend === 'webllm' && !getLlmEngine()) {
+    if (backend === 'webllm' && !getLlmEngine()) {
         throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
     }
-    if (interactionMode === 'explain' && backend === 'cloud' && !isCloudAvailable()) {
+    if (backend === 'cloud' && !isCloudAvailable()) {
         throw createAiRuntimeError('Hosted AI is not configured.');
-    }
-    if (interactionMode !== 'explain') {
-        return orchestratePromptChatRequest({ userText, requestedRoute, backend, interactionMode, options });
     }
 
     const runId = `agent-run-${crypto.randomUUID()}`;
