@@ -1,0 +1,21 @@
+crates/daw-dsp/benches/wasm/server.mjs
+  s_9e15f5b7ec3308::t_c08520be6236e1 34-42,59,64-65,92,116,118,122-124,126,130,133-134
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_9e15f5b7ec3308::t_8a2b07a0672482 22-133,148-167,171-175,177,179,185-188,206,224-225,227,243,252,258-263,323,336-362,372-376,386-390,400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f71db4f2791c04882dc7947e10c90576c25f4d85",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
