@@ -1,0 +1,34 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/coreAutomationStrategy.ts
+  s_ed5aa36a3ba357::t_214afcac88f6cd 56-58
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/parsePromptNumberValue.ts
+  s_ed5aa36a3ba357::t_214afcac88f6cd 3-8,11-12
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_ed5aa36a3ba357::t_2dcf66617d387f 223-242
+  s_ed5aa36a3ba357::t_fcb193bd91d72a 243
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/coreAutomationStrategy.spec.ts
+  s_ed5aa36a3ba357::t_2dcf66617d387f 264,285,290,294-300
+src/modules/AiRuntime/useCases/__tests__/linkedAutomationLevelAdmission.spec.ts
+  s_ed5aa36a3ba357::t_2dcf66617d387f 1-2,4-141,143-154,158-163
+  s_ed5aa36a3ba357::t_5f5c17e0bb7cdb 3
+  s_ed5aa36a3ba357::t_cae27e7d69254f 142,155-157
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_18703a395a5f8a 1905
+  s_ed5aa36a3ba357::t_214afcac88f6cd 1890-1904,1906-1922
+  s_ed5aa36a3ba357::t_cae27e7d69254f 1884-1887
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bc25765adc5099535307b91b8faec9c06c17582f",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
