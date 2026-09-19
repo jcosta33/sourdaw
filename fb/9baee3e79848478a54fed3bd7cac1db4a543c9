@@ -1,0 +1,16 @@
+scripts/__tests__/rulesetHardening.spec.ts
+  h_1228e573df1f42 1-742
+scripts/rulesetHardening.ts
+  h_1228e573df1f42 1-579
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fb9baee3e79848478a54fed3bd7cac1db4a543c9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
