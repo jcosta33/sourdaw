@@ -632,8 +632,23 @@ function leadingCommandToken(segment: string): string {
     }
 }
 
-/** Whether one segment reads as a tool invocation rather than a step a reviewer can perform. */
+/**
+ * Words that make a segment teach an observation rather than recite a launch: inflected stems,
+ * matched at word start so `confirm` reaches `confirms`/`confirmed` while `format` never matches,
+ * plus the play phrases a listening check is written with.
+ */
+const OBSERVATION_CUE =
+    /\b(?:confirm|verif|observ|check|see|expect|watch|listen|hear|notice|open|click|appear|render|show|display|audible)\w*|\b(?:press play|(?:plays?|played) back)\b/i;
+
+/**
+ * Whether one segment reads as a tool invocation rather than a step a reviewer can perform. Both
+ * halves must hold: the leading token is a command head, and the whole segment carries no
+ * observation cue — a launch that teaches what to confirm behind a comma is a step, not narration.
+ */
 function isCommandNarration(segment: string): boolean {
+    if (OBSERVATION_CUE.test(segment)) {
+        return false;
+    }
     const token = leadingCommandToken(segment).split(/\s+/)[0] ?? '';
     return COMMAND_HEADS.has(token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
 }
@@ -653,9 +668,11 @@ function testInstructionSegments(text: string): string[] {
 }
 
 /**
- * Whether every segment of `text` narrates a command. Deliberately fail-open at the margins: any
- * prose segment — "Open the app and …", "No user-visible change; …", even `None.` — makes this
- * false, and only a list that is nothing but commands reads as narration.
+ * Whether every segment of `text` narrates a command. A segment is narration only when its whole
+ * body is a tool invocation: the leading token must be a command head and the segment must carry
+ * no observation cue, so "Run `pnpm dev` and confirm the transport play button toggles" is a step
+ * a reviewer can perform, not narration. Deliberately fail-open at the margins: any prose segment
+ * — "Open the app and …", "No user-visible change; …", even `None.` — makes this false.
  */
 export function commandOnlyTestInstructions(text: string): boolean {
     const segments = testInstructionSegments(text);

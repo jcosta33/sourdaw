@@ -790,6 +790,26 @@ describe('product-scope test instructions', () => {
         ).toBe(false);
     });
 
+    it.each([
+        [
+            'a launch that teaches its observation behind a comma',
+            'Run `pnpm dev` and confirm the transport play button toggles.',
+        ],
+        [
+            'a backticked launch followed by observation clauses',
+            '`pnpm dev`, open the arrangement view, confirm the fader renders',
+        ],
+        [
+            'a numbered step pairing the command with its observation',
+            '1. `pnpm dev` then open the arrangement view and confirm the new clip handle appears',
+        ],
+    ])('passes %s', (_label, instructions) => {
+        // The launch head alone does not make these narration: each teaches what to observe, so
+        // the whole-segment cue rule keeps them acceptable for a product-scope change.
+        expect(commandOnlyTestInstructions(instructions)).toBe(false);
+        expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
+    });
+
     it('drops empty segments from separators and blank lines instead of counting them', () => {
         // Whitespace-only text has no segment at all, so it is not command narration — the emptiness
         // gate lives in composePublishBody, not here.

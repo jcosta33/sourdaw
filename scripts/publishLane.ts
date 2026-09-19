@@ -1772,11 +1772,14 @@ export function shellPort(
             }
             console.log(formatReviewDiffSummary(summarizeReviewDiff(lane, result.stdout)));
         },
+        // Merge-base range, like reportDiff above: a two-dot range would diff against main's moving
+        // tip, so unrelated origin/main movement past the merge base would fabricate product scope
+        // for a lane that never touched it.
         changedPaths: (lane, baseSha, headSha) =>
             changedReviewPaths(
                 primaryRoot,
                 Buffer.from(
-                    spawnCapture(executables.git, ['diff', '--numstat', '-z', `${baseSha}..${headSha}`], {
+                    spawnCapture(executables.git, ['diff', '--numstat', '-z', `${baseSha}...${headSha}`], {
                         cwd: lane,
                         env: session.env,
                         trim: false,

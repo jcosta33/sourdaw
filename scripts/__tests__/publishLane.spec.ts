@@ -255,7 +255,10 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`conflicts:${base}:${head}`);
             return input.conflictingPaths ?? [];
         },
-        changedPaths: () => input.changedPaths ?? [],
+        changedPaths: (lane, baseSha, headSha) => {
+            calls.push(`changedPaths:${lane}:${baseSha}:${headSha}`);
+            return input.changedPaths ?? [];
+        },
         // The queried branch is the entire authorization decision on the legacy path, so it goes
         // into the ledger: a fake that discarded it would stay green if resolution asked about a
         // sibling lane's branch, or a constant.
@@ -1217,6 +1220,9 @@ describe('lane publish', () => {
         expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
             COMMAND_ONLY_TEST_REFUSAL
         );
+        // The gate read the lane's own diff over the exact base and head the port carries before
+        // refusing, so the classification is the lane's, not a guess.
+        expect(calls).toContain(`changedPaths:${ISSUE_LANE}:base:abc`);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
@@ -1242,12 +1248,19 @@ describe('lane publish', () => {
     });
 
     it('preserves a body verbatim through a product-scope update without re-judging it', () => {
-        const { port, calls, bodies } = fakePort({ existing: 41, changedPaths: [PRODUCT_SCOPE_PATH] });
+        // The preserved body is command-only on purpose: keying the gate on the resolved value
+        // instead of the flag would re-judge it and redden this update, which must succeed with
+        // the in-flight pull request's How-to-test carried through untouched.
+        const { port, calls, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, COMMAND_ONLY_TEST),
+            changedPaths: [PRODUCT_SCOPE_PATH],
+        });
 
         expect(publishLane(12, port)).toBe(41);
 
         expect(calls).toContain('edit:41');
-        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${TEST_INSTRUCTIONS}`);
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${COMMAND_ONLY_TEST}`);
     });
 
     it('skips the gate for test files under a product tree', () => {
@@ -2216,6 +2229,59 @@ describe('lane publish', () => {
                 binary: false,
             });
             expect(isProductScopeChange(paths)).toBe(true);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The two-dot mutation this pins: diffing against main's moving tip instead of the merge base
+     * answers an empty numstat once main advances past the lane, so the lane's own scripts change
+     * vanishes from the read. The merge-base range must still see that change — and, because a
+     * scripts path is never product scope, must classify the lane as not firing the gate, whatever
+     * product paths unrelated main movement carries.
+     */
+    it('classifies a scripts-only lane by its merge base, never by advanced main', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-range-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            git(['checkout', '-b', 'agent/12/scripts']);
+            mkdirSync(join(repository, 'scripts'), { recursive: true });
+            writeFileSync(join(repository, 'scripts', 'fixture.ts'), 'export const fixture = 1;\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(scripts): fixture lane change']);
+            const laneHead = git(['rev-parse', 'HEAD']);
+
+            git(['checkout', 'main']);
+            const moduleFile = join(PRODUCT_SCOPE_PREFIXES[0], 'foo.ts');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), 'export const foo = 1;\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(audio): unrelated main movement']);
+            const mainTip = git(['rev-parse', 'HEAD']);
+
+            const paths = shellPort(session, repository).changedPaths(repository, mainTip, laneHead);
+
+            // The merge-base view is the lane's own change alone, so the product path main gained
+            // never reaches the classification — and the two-dot mutation would answer [] here.
+            expect(paths).toEqual([
+                { path: 'scripts/fixture.ts', group: 'handwritten', added: 1, deleted: 0, binary: false },
+            ]);
+            expect(isProductScopeChange(paths)).toBe(false);
+            expect(git(['merge-base', mainTip, laneHead])).toBe(base);
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
