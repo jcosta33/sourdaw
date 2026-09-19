@@ -985,7 +985,7 @@ function authorshipRefusal(
     offending: CommitAuthorEmail[],
     remoteHoldsNoLaneCommits: boolean
 ): string {
-    const distinctEmails = [...new Set(offending.map((commit) => commit.email))]
+    const distinctEmails = Array.from(new Set(offending.map((commit) => commit.email)))
         .map(displayCommitAuthorEmail)
         .join(', ');
     const namedCommits = offending
@@ -1003,8 +1003,7 @@ function authorshipRefusal(
         `${namedCommits.join(', ')}. Lane commits must be authored as ${AUTHOR_BOT_COMMIT_NAME} ` +
         `<${AUTHOR_BOT_COMMIT_EMAIL}> through the lane worktree's stamped identity. Commits the resolved ` +
         "bases (origin/main and any stack parent head) already reach are not the lane's to author and are " +
-        'excluded here. Restamp the lane with pnpm lane:identity, then ' +
-        remedy
+        `excluded here. Restamp the lane with pnpm lane:identity, then ${remedy}`
     );
 }
 
@@ -1627,7 +1626,7 @@ function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseShas: string[],
         'log',
         '--format=%h %ae',
         `${deltaBaseSha}..${headSha}`,
-        ...[...new Set(excludedBaseShas)].map((sha) => `^${sha}`),
+        ...excludedBaseShas.map((sha) => `^${sha}`),
     ];
 }
 
