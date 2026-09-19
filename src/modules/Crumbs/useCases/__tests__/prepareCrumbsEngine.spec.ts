@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { toCrumbsDeviceState } from '../../models/CrumbsDeviceState';
-import type { SampleMeta } from '../../models/CrumbsTypes';
 import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../stores/crumbsStore';
 import { captureCrumbsEngine } from '../captureCrumbsEngine';
 import { prepareCrumbsEngine } from '../prepareCrumbsEngine';
+
+import type { SampleMeta } from '../../models/CrumbsTypes';
 
 const { decodeMock, warnMock } = vi.hoisted(() => ({
     decodeMock: vi.fn(),
