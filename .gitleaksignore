@@ -1,13 +1,5 @@
 d0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288
 d0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3355
-# Synthetic credential fixtures from pull request #4399, which asserts that the
-# dossier reader refuses armored private-key headers and therefore has to carry
-# the exact strings it refuses. The head commit composes every one of them from
-# fragments, so it holds no literal of this shape; the self-contained pull-request
-# diff scan walks each commit in the base..head range, so it still sees the
-# literals as their introducing commits first wrote them. Nothing was ever
-# issued: each value is a hand-built header with no key material behind it, and
-# the reader refuses the result exactly as it refuses a real one. Audited 2026-09-19.
 09d9c9209653e7984b3f2a5f838de2e83bdeaac1:scripts/__tests__/reviewDossier.spec.ts:private-key:677
 0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:682
 0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:685
