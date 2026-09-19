@@ -1,0 +1,217 @@
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_ed5aa36a3ba357::t_ae1b50427c0598 1,3,6-10,13,17,40-48,100-109,281-366
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_6b90e970045c87 67,150,210,275-284,286,292,299-306,508-513
+src/app/prepareOfflineDeviceSetup.ts
+  s_ed5aa36a3ba357::t_9ba8938551915d 1-6,9-64,66,113-119,122-128,147-152,159-165,178-184,213-220
+src/modules/Arrangement/stores/gainEnvelopeStore.ts
+  s_ed5aa36a3ba357::t_1ea4566bb9c7a0 152-156,170-171,185-186,188
+src/modules/Arrangement/useCases/__tests__/acceptsExternalPluginAutomationParameter.spec.ts
+  s_ed5aa36a3ba357::t_31682d0fa8e300 34-41
+src/modules/Arrangement/useCases/__tests__/clampExternalPluginAutomationValue.spec.ts
+  s_ed5aa36a3ba357::t_588d786175e663 38-49
+src/modules/Arrangement/useCases/acceptsExternalPluginAutomationParameter.ts
+  s_ed5aa36a3ba357::t_7f8cacaa376272 14-19
+src/modules/Arrangement/useCases/clampExternalPluginAutomationValue.ts
+  s_ed5aa36a3ba357::t_8d82e4e1964a31 24-28
+src/modules/Arrangement/useCases/findExternalPluginAutomationParameter.ts
+  s_ed5aa36a3ba357::t_30b3d41b0a0e1f 20-21,23
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ed5aa36a3ba357::t_17168d98fd078c 1,45-46,48-52,208
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_ed5aa36a3ba357::t_37bc3f8cb76917 134-171
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_ed5aa36a3ba357::t_deec38b1f122fc 139-141,239-240,983-984,996-997,1076-1077,1089-1090
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ed5aa36a3ba357::t_641436c1cfb784 3-10,12-18,21-22,24-26,28-30,87-120,122-131,160-161,163-169,173-186,191-229,231,256-257,259,271-281,283,296,303,343-350,354-358,371-833,883,921,976-983,1026-1037,1047,1156
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_ed5aa36a3ba357::t_12d671c36551a5 11,87,147-152,158-161,180-181,364,419-431
+src/modules/AudioEngine/useCases/configureOfflineDeviceParameterLaw.ts
+  s_ed5aa36a3ba357::t_c143f8aad12b24 3-7,17,24
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_ed5aa36a3ba357::t_2e5312b26d2071 3-12,15,22-24
+src/modules/AudioEngine/useCases/configureOfflineYeastMidiProcessing.ts
+  s_ed5aa36a3ba357::t_c9820b9023ff8b 3-4,6,12
+src/modules/AudioEngine/useCases/index.ts
+  s_ed5aa36a3ba357::t_c569bd6c9f1f91 202-206
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/LatencyCompensationInput.ts
+  s_ed5aa36a3ba357::t_f90209b720ef9f 1-8
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getCompensationDelay.spec.ts
+  s_ed5aa36a3ba357::t_0db6a25c6cce47 138-162
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/reportedDeviceLatency.spec.ts
+  s_ed5aa36a3ba357::t_d9918e7917275d 31,79-85
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/deepestHostedLatencyMs.ts
+  s_ed5aa36a3ba357::t_f8dfb71bc539e7 4,22-26,36-37
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay.ts
+  s_ed5aa36a3ba357::t_311866f346a8eb 4,27-28,34-35,39
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getDeviceLatencyMs.ts
+  s_ed5aa36a3ba357::t_8077628f0f4ee6 33,44
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getMaxTrackLatency.ts
+  s_ed5aa36a3ba357::t_589c3c50fbd2ea 4,6-7,14
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getSidechainKeyDelay.ts
+  s_ed5aa36a3ba357::t_6d70e32cc31537 6,34-38,54-58,62-65
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackDeviceLatencyMs.ts
+  s_ed5aa36a3ba357::t_d3d61dbee97236 1-47
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency.ts
+  s_ed5aa36a3ba357::t_05ee827de71d36 6-7,28-29,31,43-48,53,58,66,71
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  s_ed5aa36a3ba357::t_a8d1a1e33b75c5 31-49
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_ed5aa36a3ba357::t_66cb97172590b1 75-86,106-111,115-118,124-125
+src/modules/AudioEngine/useCases/offlineRender/OfflineRenderSource.ts
+  s_ed5aa36a3ba357::t_fb8000fc7236af 1-44
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_ed5aa36a3ba357::t_fd07809340ded1 1-169
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineAudioBuffers.ts
+  s_ed5aa36a3ba357::t_89646de24a91a7 1-33
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineMusicalProjections.ts
+  s_ed5aa36a3ba357::t_00ecf779c517e5 1-45
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderInput.ts
+  s_ed5aa36a3ba357::t_94c89bb7cdb381 1-77
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderRuntimeInput.ts
+  s_ed5aa36a3ba357::t_7b8ec968e56957 1-45
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineSchedulingInput.ts
+  s_ed5aa36a3ba357::t_2a860ddfdeec22 1-55
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_ed5aa36a3ba357::t_99f51d9ecece01 4,24,95-96
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_ed5aa36a3ba357::t_5d28cc3de1b7e0 46,59,262-263
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_ed5aa36a3ba357::t_d182663aa5fc87 1-55
+src/modules/AudioEngine/useCases/offlineRender/offlineRenderCapturePorts.ts
+  s_ed5aa36a3ba357::t_fd18efc9fa3503 1-45
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineInput.ts
+  s_ed5aa36a3ba357::t_006a72dba36ea4 1-11
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_ed5aa36a3ba357::t_204e1b7324db4b 84,93,229-233,272-274,285,295-297,315,329,399-400
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_ed5aa36a3ba357::t_72c46bb3b2c667 4,18-27,30,38
+src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixAudibility.ts
+  s_ed5aa36a3ba357::t_8171e775649023 1-61
+src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixPlan.ts
+  s_ed5aa36a3ba357::t_a9bb99af001aa0 1-115
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_ed5aa36a3ba357::t_6dc8e07c812b81 24,27-29,60-63,74-77,107
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_ed5aa36a3ba357::t_e8317b2e6b6d22 49-53
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineMix.ts
+  s_ed5aa36a3ba357::t_103408a7480ed8 1-132
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ed5aa36a3ba357::t_7569ad6b79f9a8 44,82,138,201-203,205-207,219,295-297,303,314,321,340,370,792,815-816
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_ed5aa36a3ba357::t_0856e590aeba82 48,69,101
+src/modules/AudioEngine/useCases/offlineRender/tryNativeOfflineRender.ts
+  s_ed5aa36a3ba357::t_1d12d596092090 1-64
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ed5aa36a3ba357::t_9944a777007225 1-3,10-11,13-16
+src/modules/Automation/useCases/automation/__tests__/getAutomationValueAtBeat.spec.ts
+  s_ed5aa36a3ba357::t_93c32bcd5a0ea5 45-51
+src/modules/Automation/useCases/automation/createOfflineAutomationEvaluator.ts
+  s_ed5aa36a3ba357::t_6b5115c01ebfa5 1-9
+src/modules/Automation/useCases/automation/getAutomationValueAtBeat.ts
+  s_ed5aa36a3ba357::t_eb209486797a2d 46-47,49
+src/modules/Automation/useCases/index.ts
+  s_ed5aa36a3ba357::t_0692d29176faaf 72-73
+src/modules/Crumbs/useCases/__tests__/prepareCrumbsEngine.spec.ts
+  s_ed5aa36a3ba357::t_614b4deb451586 3-4,6,95-143
+src/modules/Crumbs/useCases/captureCrumbsEngine.ts
+  s_ed5aa36a3ba357::t_c7bf199e6d6917 1-27
+src/modules/Crumbs/useCases/hydrateCrumbsStateFromDevice.ts
+  s_ed5aa36a3ba357::t_374969379f09c3 1-75
+src/modules/Crumbs/useCases/hydrateCrumbsStateFromProject.ts
+  s_ed5aa36a3ba357::t_447b60f6b973b2 3,5,41
+src/modules/Crumbs/useCases/index.ts
+  s_ed5aa36a3ba357::t_6a442adfc63c94 13
+src/modules/Crumbs/useCases/prepareCrumbsEngine.ts
+  s_ed5aa36a3ba357::t_ad65bad83b8fd3 6,95,139,141,150
+src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts
+  s_ed5aa36a3ba357::t_88b212cbbe6d56 10,18-76
+src/modules/GrandBoule/useCases/captureOfflineGrandBoule.ts
+  s_ed5aa36a3ba357::t_a8a1f5baa82171 1-18
+src/modules/GrandBoule/useCases/index.ts
+  s_ed5aa36a3ba357::t_9afa4493f31ee7 10
+src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts
+  s_ed5aa36a3ba357::t_f06737fc798a77 3,25,30,32
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_ed5aa36a3ba357::t_bcec7683c6b0af 3,5,35-69
+src/modules/Levain/useCases/captureOfflineLevain.ts
+  s_ed5aa36a3ba357::t_8192656fd09e75 1-25
+src/modules/Levain/useCases/hydrateLevainStateFromDevice.ts
+  s_ed5aa36a3ba357::t_0a82f82803b97b 1-28
+src/modules/Levain/useCases/hydrateLevainStateFromProject.ts
+  s_ed5aa36a3ba357::t_0ca64f28240b63 3,5,41
+src/modules/Levain/useCases/index.ts
+  s_ed5aa36a3ba357::t_88b637f14d59b5 13
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ed5aa36a3ba357::t_cfd984e81b7012 2,12,41-47
+src/modules/MIDI/useCases/chordTrack/__tests__/createChordPitchProjector.spec.ts
+  s_ed5aa36a3ba357::t_098a324f37ad2e 11-25
+src/modules/MIDI/useCases/chordTrack/createChordPitchProjector.ts
+  s_ed5aa36a3ba357::t_1958870af75253 2,15
+src/modules/MIDI/useCases/grooveTemplates/__tests__/getScopedGrooveAssignment.spec.ts
+  s_ed5aa36a3ba357::t_f1bfc90b9559a0 24-30
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEvents.spec.ts
+  s_ed5aa36a3ba357::t_584e64c78100dc 35-48
+src/modules/MIDI/useCases/grooveTemplates/createGrooveMidiEventProjector.ts
+  s_ed5aa36a3ba357::t_2bef55728ce9dd 1-5,31-34
+src/modules/MIDI/useCases/grooveTemplates/getGrooveAssignment.ts
+  s_ed5aa36a3ba357::t_3381d6209ea4dd 1-5,12-16
+src/modules/MIDI/useCases/grooveTemplates/getGrooveTemplate.ts
+  s_ed5aa36a3ba357::t_ff71938408b8f2 2,4,6
+src/modules/MIDI/useCases/grooveTemplates/getScopedGrooveAssignment.ts
+  s_ed5aa36a3ba357::t_945190ad69f424 1-5,16-19,21,26
+src/modules/Proof/useCases/__tests__/prepareOfflineProof.spec.ts
+  s_ed5aa36a3ba357::t_d2c2f6ffd75686 13,17-44
+src/modules/Proof/useCases/captureOfflineProof.ts
+  s_ed5aa36a3ba357::t_6725af8842f7b1 1-27
+src/modules/Proof/useCases/index.ts
+  s_ed5aa36a3ba357::t_317110d39f8bb5 5
+src/modules/Proof/useCases/prepareOfflineProof.ts
+  s_ed5aa36a3ba357::t_1d23faad273db1 3-4,10,39-41,45
+src/modules/Toaster/useCases/__tests__/prepareOfflineToaster.spec.ts
+  s_ed5aa36a3ba357::t_cfc652f77f805a 1-50
+src/modules/Toaster/useCases/captureOfflineToaster.ts
+  s_ed5aa36a3ba357::t_e59f416f314a50 1-20
+src/modules/Toaster/useCases/index.ts
+  s_ed5aa36a3ba357::t_b03beda0f0feb9 12
+src/modules/Toaster/useCases/prepareOfflineToaster.ts
+  s_ed5aa36a3ba357::t_3579411273c139 1,11,34-35
+src/modules/Transport/useCases/__tests__/createMusicalPositionProjector.spec.ts
+  s_ed5aa36a3ba357::t_c70a2669b768f9 41-62
+src/modules/Transport/useCases/__tests__/createSamplePositionProjector.spec.ts
+  s_ed5aa36a3ba357::t_be4d5aac206b4b 22-32
+src/modules/Transport/useCases/createMusicalPositionProjector.ts
+  s_ed5aa36a3ba357::t_890f46dd46a066 3-5,7-25
+src/modules/Transport/useCases/createSamplePositionProjector.ts
+  s_ed5aa36a3ba357::t_eb8a3409b94623 2-3,5-17
+src/modules/Yeast/useCases/__tests__/createOfflineYeastMidiProcessor.spec.ts
+  s_ed5aa36a3ba357::t_4efdb2151da720 12,60-205
+src/modules/Yeast/useCases/__tests__/createYeastRuntimeProjection.spec.ts
+  s_ed5aa36a3ba357::t_967e18f97f94aa 13-36
+src/modules/Yeast/useCases/captureOfflineYeastProjections.ts
+  s_ed5aa36a3ba357::t_1ee531eeff1065 1-36
+src/modules/Yeast/useCases/createOfflineYeastMidiProcessor.ts
+  s_ed5aa36a3ba357::t_ed613945ae33d8 6,14-17,24-27,29-38,40-44
+src/modules/Yeast/useCases/createYeastRuntimeProjection.ts
+  s_ed5aa36a3ba357::t_9d62e736e510f8 1,39-42,48-49
+src/modules/Yeast/useCases/getYeastGrooveAssignment.ts
+  s_ed5aa36a3ba357::t_8fcd17d224ced9 1,6-14
+src/modules/Yeast/useCases/index.ts
+  s_ed5aa36a3ba357::t_c3ee2c65ddbf3c 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bddb5e3f8bc41903893f5750405bc1d9af037eb0",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
