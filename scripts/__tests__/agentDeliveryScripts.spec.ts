@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { runAcceptReviewCli } from '../acceptReview.ts';
+import { runConfirmReviewRepairsCli } from '../confirmReviewRepairs.ts';
 import {
     DeliveryMergeRejectedError,
     coordinateDelivery,
@@ -52,6 +53,7 @@ import {
 import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
+import { runRepairReviewFindingCli } from '../repairReviewFinding.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
@@ -570,6 +572,13 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewDossierPublication.ts',
         'reviewerModelDiversity.ts',
         'reviewRiskPolicy.ts',
+        'reviewRepair.ts',
+        'repairReviewFinding.ts',
+        'confirmReviewRepairs.ts',
+        'reviewDiffSummary.ts',
+        'wasm-artifacts.ts',
+        'wasmToolchainPins.ts',
+        'workspaceManifestFingerprint.ts',
         'reviewPublicationRecoveryReceipt.ts',
         'reviewPublicationRemoteInspection.ts',
         'pullRequestReviewState.ts',
@@ -1225,6 +1234,42 @@ describe('package scripts and gitignore', () => {
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                     ...approvalSources,
+                ],
+            },
+            {
+                command: 'review:repair' as const,
+                entry: 'scripts/repairReviewFinding.ts',
+                required: 'scripts/reviewRepair.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/repairReviewFinding.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewRiskPolicy.ts',
+                    'scripts/reviewDiffSummary.ts',
+                    'scripts/wasm-artifacts.ts',
+                    'scripts/wasmToolchainPins.ts',
+                    'scripts/workspaceManifestFingerprint.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:confirm' as const,
+                entry: 'scripts/confirmReviewRepairs.ts',
+                required: 'scripts/reviewRepair.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/confirmReviewRepairs.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewDossier.ts',
+                    'scripts/reviewRiskPolicy.ts',
+                    'scripts/reviewDiffSummary.ts',
+                    'scripts/wasm-artifacts.ts',
+                    'scripts/wasmToolchainPins.ts',
+                    'scripts/workspaceManifestFingerprint.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
                 ],
             },
             {
@@ -2165,6 +2210,28 @@ describe('package scripts and gitignore', () => {
             args: ['3344', '--owner', 'b'.repeat(40)],
         },
         {
+            command: 'review:repair' as const,
+            entry: 'scripts/repairReviewFinding.ts',
+            runner: 'runRepairReviewFindingCli',
+            args: [
+                '3239',
+                '--thread',
+                'PRRT_example',
+                '--head',
+                'a'.repeat(40),
+                '--commit',
+                'b'.repeat(40),
+                '--summary',
+                'Fixed the guard.',
+            ],
+        },
+        {
+            command: 'review:confirm' as const,
+            entry: 'scripts/confirmReviewRepairs.ts',
+            runner: 'runConfirmReviewRepairsCli',
+            args: ['3239', '--head', 'a'.repeat(40)],
+        },
+        {
             command: 'review:resolve' as const,
             entry: 'scripts/resolveThread.ts',
             runner: 'runResolveReviewThreadCli',
@@ -2192,6 +2259,8 @@ describe('package scripts and gitignore', () => {
                 'review:accept': runAcceptReviewCli,
                 'review:publish': runPublishReviewCli,
                 'review:publish:recover': runRecoverPublishReviewLockCli,
+                'review:repair': runRepairReviewFindingCli,
+                'review:confirm': runConfirmReviewRepairsCli,
                 'review:resolve': runResolveReviewThreadCli,
             } as const;
             expect(importedRunners[command]).toBeTypeOf('function');
