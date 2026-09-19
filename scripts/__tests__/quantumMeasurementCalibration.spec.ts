@@ -167,6 +167,33 @@ function expectRefusal(overrides: Partial<QuantumMeasurementCalibrationInput>) {
     return result.failure;
 }
 
+describe('quantum harness scoped type-aware lint', () => {
+    it('passes the scoped oxlint pass over the typed harness files (#4398)', () => {
+        // The census-pinned files (deviceRecipes.js, quantumCostProcessor.js) are
+        // deliberately excluded: typing them moves recorded digests and forces a
+        // reference-machine re-measurement — a sequencing decision the issue keeps
+        // separate. run.mjs and pageHarness.d.mts join the set because tsgolint
+        // resolves this directory's node: imports through the project the runner's
+        // annotations establish; linting a file alone reports the imports as
+        // error-typed, which is an artifact of the standalone parse, not the code.
+        const result = spawnSync(
+            process.execPath,
+            [
+                'node_modules/oxlint/bin/oxlint',
+                '--config',
+                '.oxlintrc.json',
+                'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/renderTable.mjs',
+                'crates/daw-dsp/benches/wasm/server.mjs',
+                'crates/daw-dsp/benches/wasm/pageHarness.d.mts',
+            ],
+            { cwd: repositoryRoot, encoding: 'utf8' }
+        );
+        expect(result.status).toBe(0);
+    });
+});
+
 describe('quantum measurement calibration', () => {
     it('converts every sample with its original segment rate', () => {
         expect(calibrateQuantumMeasurementRows([input()])).toEqual({
