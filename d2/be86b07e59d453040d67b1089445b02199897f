@@ -1,0 +1,19 @@
+scripts/reviewerModelDiversity.ts
+  s_9e15f5b7ec3308::t_b09c75b2d72119 4-15,33-34,55-59,63-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2be86b07e59d453040d67b1089445b02199897f",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
