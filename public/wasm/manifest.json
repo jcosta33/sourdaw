@@ -23,16 +23,16 @@
     },
     "proof-chamber": {
       "crate": "crates/proof-chamber",
-      "crateSourceHash": "sha256:a4e98fddd1f16067dc390645933ffdd129c95a7526bc770ba354627ef665a78a",
+      "crateSourceHash": "sha256:a69a210cb75989c892986b90e77ebdc8d597af074f7c22cb58bbb795cea6008c",
       "schemaHash": "bb96b2010945f0bc",
       "artifacts": {
         "public/wasm/proof-chamber/proof_chamber.js": "sha256:a29e9c67ef8dc4909512a2fee042fb1afb50491d1f9f47c18c6d8d68a4d0d42b",
-        "public/wasm/proof-chamber/proof_chamber_bg.wasm": "sha256:2047c6f0c603d0fa6bb23c624c81b79f7cd82e4cc3089fd226f91254e2ba8586",
-        "public/wasm/proof-chamber/proof_chamber.d.ts": "sha256:061a33f3122e39c5a508667c25cd959b39a24fcaa9acf15f97a4f297711d5f4b",
-        "public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts": "sha256:c95b7c4cfa252d34aefc7cf0dcd53494ca68f60be5db5c153f0bcd2c1bccb918",
+        "public/wasm/proof-chamber/proof_chamber_bg.wasm": "sha256:6d233c244936ce16bb54c6376c2e5a62405490851386c31cf5b71eadc6b97fdd",
+        "public/wasm/proof-chamber/proof_chamber.d.ts": "sha256:286b19dc902955d874d4bcb90c1957fed1b08320f8262afdefdce027c448e92b",
+        "public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts": "sha256:d8aa4f377d70376e88bfcbc16389d389ef354c2d0e20a0d6fd1be72ffdac9aaf",
         "public/wasm/proof-chamber/package.json": "sha256:471aaa2241867add74165e63ee00ba9b88f50747255948b6957fd8201680e565",
         "src/modules/AudioEngine/wasm/proof_chamber.js": "sha256:c38d72006a63905c3ed54f054ad0190b9b545ae5ad2b8a223dc9139c4ad44812",
-        "src/modules/AudioEngine/wasm/proof_chamber.d.ts": "sha256:061a33f3122e39c5a508667c25cd959b39a24fcaa9acf15f97a4f297711d5f4b"
+        "src/modules/AudioEngine/wasm/proof_chamber.d.ts": "sha256:286b19dc902955d874d4bcb90c1957fed1b08320f8262afdefdce027c448e92b"
       }
     },
     "scoring": {
