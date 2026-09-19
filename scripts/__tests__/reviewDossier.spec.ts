@@ -652,7 +652,10 @@ const EIGHT_CHARACTER_BEARER_CREDENTIAL = ['Bearer', 'abcdefgh'].join(' ');
 const LONG_BEARER_CREDENTIAL = ['Bearer', 'abcdefghijklmnopqrstuvwx'].join(' ');
 const SYMBOL_BEARER_CREDENTIAL = ['Bearer', ['abcd', 'ef'].join('_')].join(' ');
 const LATE_DIGIT_BEARER_CREDENTIAL = ['Bearer', ['abcdef', '12345'].join('')].join(' ');
+const TRAILING_DIGIT_BEARER_CREDENTIAL = ['Bearer', ['abc', '1'].join('')].join(' ');
+const TRAILING_SYMBOL_BEARER_CREDENTIAL = ['Bearer', ['abc', '_'].join('')].join(' ');
 const PROSE_BEARER = ['Bearer', 'token'].join(' ');
+const MID_TOKEN_DOT_BEARER_CREDENTIAL = ['Bearer', ['abc', 'def'].join('.')].join(' ');
 const CAPITALISED_SYSTEM_TURN = '{"role":"System","content":"x"}';
 const BENIGN_ADMIN_TURN = '{"role":"admin"}';
 
@@ -723,6 +726,8 @@ describe('assertPublicationSafeEvidence', () => {
         ['a short digit-bearing bearer credential', SHORT_BEARER_CREDENTIAL],
         ['a non-dot-symbol bearer credential', SYMBOL_BEARER_CREDENTIAL],
         ['a late-digit bearer credential', LATE_DIGIT_BEARER_CREDENTIAL],
+        ['a trailing-digit bearer credential', TRAILING_DIGIT_BEARER_CREDENTIAL],
+        ['a trailing-symbol bearer credential', TRAILING_SYMBOL_BEARER_CREDENTIAL],
         ['a twenty-four-character bearer credential', LONG_BEARER_CREDENTIAL],
     ])('should refuse %s by the bearer rule', (_name, value) => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [value])).toThrow(
@@ -806,6 +811,7 @@ describe('assertPublicationSafeEvidence', () => {
         ['the bare bearer token words', PROSE_BEARER],
         ['the lowercase bare bearer token words', 'bearer token'],
         ['a sentence ending on the bearer token words', 'the bearer token.'],
+        ['the bearer word pair with a mid-token dot', MID_TOKEN_DOT_BEARER_CREDENTIAL],
         ['the bearer certificates word pair', 'bearer certificates'],
         ['the bearer instruments word pair', 'bearer instruments'],
         ['a sentence about bearer instruments in the ledger', 'a sentence about bearer instruments in the ledger'],
