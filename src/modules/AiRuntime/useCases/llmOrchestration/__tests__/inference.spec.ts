@@ -162,9 +162,12 @@ describe('generateToolPlanningOutcome', () => {
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
         mocks.backendChain.value = ['cloud'];
-        mocks.generateCloudToolCalls.mockResolvedValue([
-            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
-        ]);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
 
         await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
             {
@@ -180,11 +183,214 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    it('reports the provider-reported usage block for a completed hosted tool plan', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: { inputTokens: 21, outputTokens: 6, cacheReadInputTokens: 3, cacheWriteInputTokens: 8 },
+        });
+        const onProviderResult = vi.fn();
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'complete',
+            strictToolSchemas: true,
+            cacheWriteInputTokens: 8,
+            usage: {
+                inputTokens: 21,
+                outputTokens: 6,
+                cachedInputTokens: 3,
+                provenance: 'provider-reported',
+            },
+        });
+    });
+
+    it('admits a tool-call reply carrying null for an argument the source schema leaves optional', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const addDeviceToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'addDevice',
+                description: 'Add a device to the chain.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        deviceType: { type: 'string' },
+                        afterDeviceId: { type: 'string' },
+                    },
+                    required: ['deviceType'],
+                },
+            },
+        };
+        // OpenAI's strict projection forces every optional property into `required` and
+        // nullable, so a conforming reply carries an explicit `null` for `afterDeviceId`
+        // even though the source schema (what `admitEvent` validates against) leaves it
+        // optional and typed `string`. Without dropping it first, `admitEvent` rejects it.
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'addDevice', arguments: { deviceType: 'eq', afterDeviceId: null } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'add an eq', [addDeviceToolSchema]);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(outcome.status === 'complete' ? outcome.toolCalls : []).toEqual([
+            { id: 'provider-call', name: 'addDevice', arguments: { deviceType: 'eq' } },
+        ]);
+    });
+
+    it('still rejects a null value on an argument the source schema requires', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const addDeviceToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'addDevice',
+                description: 'Add a device to the chain.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        deviceType: { type: 'string' },
+                        afterDeviceId: { type: 'string' },
+                    },
+                    required: ['deviceType'],
+                },
+            },
+        };
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'addDevice', arguments: { deviceType: null } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'add an eq', [addDeviceToolSchema])).rejects.toThrow(
+            'The model provider request failed.'
+        );
+    });
+
+    it('admits a tool-call reply carrying null for an argument a nested items object leaves optional', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const batchProposeToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'command.batch.propose',
+                description: 'Propose a batch of commands.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        items: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: {
+                                    id: { type: 'string' },
+                                    dependsOn: { type: 'array', items: { type: 'string' } },
+                                },
+                                required: ['id'],
+                            },
+                        },
+                    },
+                    required: ['items'],
+                },
+            },
+        };
+        // OpenAI's strict projection applies at every nesting depth: `dependsOn` inside each
+        // `items` object comes back forced into that object's `required` list and nullable,
+        // even though the source item schema leaves it optional.
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'provider-call',
+                    name: 'command.batch.propose',
+                    arguments: { items: [{ id: 'a', dependsOn: null }] },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'propose a batch', [batchProposeToolSchema]);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(outcome.status === 'complete' ? outcome.toolCalls : []).toEqual([
+            { id: 'provider-call', name: 'command.batch.propose', arguments: { items: [{ id: 'a' }] } },
+        ]);
+    });
+
+    it('still rejects a null value on a nested items property the item schema requires', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const batchProposeToolSchema: ToolSchema = {
+            type: 'function',
+            function: {
+                name: 'command.batch.propose',
+                description: 'Propose a batch of commands.',
+                parameters: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        items: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                additionalProperties: false,
+                                properties: {
+                                    id: { type: 'string' },
+                                    dependsOn: { type: 'array', items: { type: 'string' } },
+                                },
+                                required: ['id', 'dependsOn'],
+                            },
+                        },
+                    },
+                    required: ['items'],
+                },
+            },
+        };
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'provider-call',
+                    name: 'command.batch.propose',
+                    arguments: { items: [{ id: 'a', dependsOn: null }] },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(
+            generateToolPlanningOutcome('system', 'propose a batch', [batchProposeToolSchema])
+        ).rejects.toThrow('The model provider request failed.');
+    });
+
     it('admits the compiled request with the single-sourced output budget and wires it to the provider call', async () => {
         mocks.backendChain.value = ['cloud'];
-        mocks.generateCloudToolCalls.mockResolvedValue([
-            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
-        ]);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
         const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
 
         await expect(
@@ -222,9 +428,12 @@ describe('generateToolPlanningOutcome', () => {
 
     it('admits the compiled request with the configured model output ceiling', async () => {
         mocks.backendChain.value = ['cloud'];
-        mocks.generateCloudToolCalls.mockResolvedValue([
-            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
-        ]);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            strictToolSchemas: true,
+            usage: null,
+        });
         expect(configureAgentResourceLimits({ maxModelOutputTokens: 1_024 })).toMatchObject({ status: 'configured' });
         const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
 

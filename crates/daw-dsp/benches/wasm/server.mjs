@@ -31,6 +31,15 @@
  *    bundler resolves them.
  */
 
+/**
+ * What `startServer` hands back: the origin the harness drives the browser at
+ * and the close that ends the listener.
+ *
+ * @typedef {object} StartedServer
+ * @property {string} origin
+ * @property {() => Promise<void>} close
+ */
+
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
@@ -47,12 +56,13 @@ const CONTENT_TYPES = {
 
 /**
  * @param {string} repoRoot absolute path served at `/`
- * @returns {Promise<{ origin: string, close: () => Promise<void> }>}
+ * @returns {Promise<StartedServer>}
  */
 export function startServer(repoRoot) {
     const root = resolve(repoRoot);
 
-    const server = createServer((request, response) => {
+    /** @type {import('node:http').RequestListener} */
+    const handle = (request, response) => {
         // Cross-origin isolation, and the CORP header every subresource needs
         // for COEP: require-corp to let it load at all.
         response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
@@ -79,6 +89,7 @@ export function startServer(repoRoot) {
             filePath = `${filePath}.ts`;
         }
 
+        /** @type {import('node:fs').Stats | undefined} */
         let stats;
         try {
             stats = statSync(filePath);
@@ -102,22 +113,25 @@ export function startServer(repoRoot) {
             return;
         }
 
+        const contentType = /** @type {Record<string, string | undefined>} */ (CONTENT_TYPES)[extname(filePath)];
         response.writeHead(200, {
-            'Content-Type': CONTENT_TYPES[extname(filePath)] ?? 'application/octet-stream',
+            'Content-Type': contentType ?? 'application/octet-stream',
             'Content-Length': String(stats.size),
         });
         createReadStream(filePath).pipe(response);
-    });
+    };
 
-    return new Promise((resolveStart) => {
+    const server = createServer(handle);
+
+    return new Promise((resolve) => {
         server.listen(0, '127.0.0.1', () => {
             const address = server.address();
             const port = typeof address === 'object' && address !== null ? address.port : 0;
-            resolveStart({
+            resolve({
                 origin: `http://localhost:${port}`,
                 close: () =>
-                    new Promise((resolveClose) => {
-                        server.close(() => resolveClose(undefined));
+                    new Promise((resolve) => {
+                        server.close(() => resolve(undefined));
                     }),
             });
         });

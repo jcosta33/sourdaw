@@ -31,6 +31,14 @@ export type OpenAiCompatibleCloudRuntime = Readonly<{
     authentication: HostedLlmAuthentication;
     adapter?: CompiledProviderAdapter | null;
     session_id: string | null;
+    /**
+     * Whether this endpoint accepts OpenAI's strict tool-calling dialect
+     * (`strict: true` plus a bound-free, all-required schema). An OpenAI-compatible
+     * endpoint's dialect support is not self-describing, so this is a per-connection
+     * configuration choice rather than a capability the runtime can detect. Absent
+     * means not opted in, same as `false`.
+     */
+    strict_tool_schemas?: boolean;
 }>;
 
 export type CloudProviderRuntime = AnthropicCloudRuntime | OpenAiCloudRuntime | OpenAiCompatibleCloudRuntime;

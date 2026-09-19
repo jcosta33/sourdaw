@@ -13,6 +13,12 @@ export type HostedLlmConfiguration = {
     authentication: HostedLlmAuthentication;
     /** Ephemeral password-input value; never write this to a store or preference. */
     apiKey: string;
+    /**
+     * Whether an `openai-compatible` endpoint accepts OpenAI's strict tool-calling
+     * dialect. Ignored for `anthropic` and `openai`, which always send strict schemas.
+     * Defaults to `false` when omitted, since dialect support cannot be probed.
+     */
+    strictToolSchemas?: boolean;
 };
 
 export type HostedLlmProviderInfo = {

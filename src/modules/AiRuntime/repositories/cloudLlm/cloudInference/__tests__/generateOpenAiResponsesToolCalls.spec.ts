@@ -111,14 +111,14 @@ describe('generateOpenAiResponsesToolCalls', () => {
                     name: 'project_query',
                     description: 'Query the project',
                     parameters: tools[0]?.function.parameters,
-                    strict: false,
+                    strict: true,
                 },
                 {
                     type: 'function',
                     name: 'muteTrack',
                     description: 'Mute a track',
                     parameters: tools[1]?.function.parameters,
-                    strict: false,
+                    strict: true,
                 },
             ],
             tool_choice: 'auto',
@@ -160,6 +160,8 @@ describe('generateOpenAiResponsesToolCalls', () => {
                 { id: 'call_a', name: 'project.query', arguments: {} },
                 { id: 'call_b', name: 'muteTrack', arguments: { trackId: 'track-1' } },
             ],
+            strictToolSchemas: true,
+            usage: null,
         });
     });
 
@@ -245,9 +247,32 @@ describe('generateOpenAiResponsesToolCalls', () => {
         expect(error.message).not.toContain('sk-secret');
     });
 
+    it('reads provider-reported usage off the response and reports no cache-write figure', async () => {
+        respondWith({
+            id: 'resp_1',
+            status: 'completed',
+            output: [],
+            usage: { input_tokens: 40, output_tokens: 7, input_tokens_details: { cached_tokens: 12 } },
+        });
+
+        const result = await planTools();
+
+        expect(result.usage).toEqual({
+            inputTokens: 40,
+            outputTokens: 7,
+            cacheReadInputTokens: 12,
+            cacheWriteInputTokens: null,
+        });
+    });
+
     it('drops an unusable provider request id instead of reporting it', async () => {
         respondWith({ id: 'x'.repeat(5_000), status: 'completed', output: [] });
 
-        await expect(planTools()).resolves.toEqual({ providerRequestId: null, calls: [] });
+        await expect(planTools()).resolves.toEqual({
+            providerRequestId: null,
+            calls: [],
+            strictToolSchemas: true,
+            usage: null,
+        });
     });
 });
