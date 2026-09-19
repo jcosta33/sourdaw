@@ -1,0 +1,39 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_9e15f5b7ec3308::t_1d28ff8f7134ba 88,101,211-214,635,788-793,796-799,818-892,1072,1074,1076-1077
+  h_1228e573df1f42 7,54-61,272-345,560-572,573-587,588-613,664-666,667-676,677,678-694,695-709,710,786-787,794-795,800-801,803-822
+scripts/reviewDossier.ts
+  s_9e15f5b7ec3308::t_2e71ab542b457e 14
+scripts/reviewRepair.ts
+  s_9e15f5b7ec3308::t_a4d12b3671a30b 17,209,217
+scripts/supersedePullRequest.ts
+  s_9e15f5b7ec3308::t_176c601377d733 116-142,167-168,196
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9e15f5b7ec3308::t_454060d7d2aeb3 572,1073,1188,1210,1233,1256,1275
+scripts/trustedGithubWriteBootstrap.ts
+  s_9e15f5b7ec3308::t_664c230624d404 206,229,253,277,291
+scripts/canonicalRecord.ts
+  h_1228e573df1f42 50-67,68,69,77-82
+scripts/findingLineage.ts
+  h_1228e573df1f42 334-342,343-347,348-350,351,352-364,365,366-369,370,371-373,374-375,376-378,379,380-393,394-395,396-405,414-419
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "789351350ae323da1bac0aa68fc35b80a294c328",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
