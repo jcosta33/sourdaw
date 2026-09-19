@@ -1,0 +1,24 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_1228e573df1f42 2326
+scripts/__tests__/publishReview.spec.ts
+  h_1228e573df1f42 3,190,1042,4973,5181-5236
+scripts/__tests__/reviewDossier.spec.ts
+  h_1228e573df1f42 142-148,243-264,450-460,475,502-507
+scripts/prepareReview.ts
+  h_1228e573df1f42 192-196,198,318
+scripts/publishReview.ts
+  h_1228e573df1f42 3,18-23,87,180-182,188-190,257-258,260-268,476
+scripts/reviewDossier.ts
+  h_1228e573df1f42 205-213,302,352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b98a1c3448637b70203b854b0b7914d7e45484c9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
