@@ -358,6 +358,16 @@ fn out_of_range_diffusion_renders_as_the_clamped_endpoint() {
         !identical(&near_top, &bright),
         "diffusion 0.9 renders identically to diffusion 1.0"
     );
+
+    // The same on the lower side, symmetrically: an interior setting just
+    // above the bottom must sound different from the bottom, so a wrong
+    // lower bound (the 0.1 of the neighbouring mod_rate arm, say) cannot
+    // silently render the whole bottom of the knob as itself.
+    let near_bottom = render(&[("diffusion", 0.1)]);
+    assert!(
+        !identical(&near_bottom, &dark),
+        "diffusion 0.1 renders identically to diffusion 0.0"
+    );
 }
 
 #[test]
