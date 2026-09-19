@@ -25,16 +25,24 @@ export const GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES = [
 ];
 
 /**
+ * @param {string} root
+ * @returns {string}
+ */
+function trackedFileList(root) {
+    return execFileSync('git', ['ls-files', '-z', '--', ...GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES], {
+        cwd: root,
+        encoding: 'utf8',
+    });
+}
+
+/**
  * Sorted repo-relative census paths: the explicit files plus every tracked
  * file under the census directories, recursing into `time_stretch`.
+ *
+ * @param {string} root
+ * @returns {string[]}
  */
 export function grandBouleMeasurementSourcePaths(root) {
-    const directoryFiles = execFileSync(
-        'git',
-        ['ls-files', '-z', '--', ...GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES],
-        { cwd: root, encoding: 'utf8' }
-    )
-        .split('\0')
-        .filter(Boolean);
+    const directoryFiles = trackedFileList(root).split('\0').filter(Boolean);
     return [...GRAND_BOULE_MEASUREMENT_SOURCE_FILES, ...directoryFiles].sort();
 }
