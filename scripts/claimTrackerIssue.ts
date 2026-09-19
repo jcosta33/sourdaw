@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
     REQUIRED_REPOSITORY,
+    assertTrustedExecutingBlob,
     authenticateOrchestratorSession,
     githubAuthorizationGitEnv,
     originMainBlob,
@@ -317,15 +318,19 @@ export function trustedClaimRuntime(env: NodeJS.ProcessEnv = process.env): Trust
 export function assertTrustedClaimLauncherBinding(input: {
     resolvedCwd: string;
     resolvedPrimaryRoot: string;
+    executingFile: string;
     executingSource: string;
     originSource: string | undefined;
 }): void {
     if (input.resolvedCwd !== input.resolvedPrimaryRoot) {
         fail('issue:claim must be launched from the protected primary checkout');
     }
-    if (input.originSource !== undefined && input.executingSource !== input.originSource) {
-        fail('scripts/claimTrackerIssue.ts does not match origin/main; refusing to run a mutated copy');
-    }
+    assertTrustedExecutingBlob(
+        'scripts/claimTrackerIssue.ts',
+        input.executingFile,
+        input.originSource,
+        input.executingSource
+    );
 }
 
 export type ClaimAuthentication = { session: { env: NodeJS.ProcessEnv; dispose: () => void } };
@@ -338,13 +343,15 @@ export type ClaimCliDeps = {
 };
 
 function realClaimCliDeps(runtime: TrustedClaimRuntime): ClaimCliDeps {
+    const executingFile = fileURLToPath(import.meta.url);
     return {
         authenticate: () => authenticateOrchestratorSession(),
         bindLauncher: () =>
             assertTrustedClaimLauncherBinding({
                 resolvedCwd: realpathSync(process.cwd()),
                 resolvedPrimaryRoot: realpathSync(runtime.primaryRoot),
-                executingSource: readFileSync(fileURLToPath(import.meta.url), 'utf8'),
+                executingFile,
+                executingSource: readFileSync(executingFile, 'utf8'),
                 originSource: originMainBlob(
                     'scripts/claimTrackerIssue.ts',
                     process.cwd(),

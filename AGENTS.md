@@ -321,8 +321,9 @@ After create, attach parent/child issues as GitHub sub-issues.
 Every issue needs priority, status, and descriptive labels. On `issue:file`, set an applicable
 milestone by title, never UI number (validation against **open** milestones rejects it before filing),
 and roadmap project membership when applicable; leave either empty rather than force a fit.
-No sanctioned script edits existing issues beyond the claim — `pnpm issue:claim <issue>` swaps the
-status labels and moves the boards; later corrections require manual `gh`, as does
+No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
+<issue>` swaps the status labels and moves the boards, and `pnpm issue:reconcile` applies
+digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
 backfilling a pull request's own labels, milestone, or project membership when it predates
 `lane:publish`'s metadata assertion. Read live metadata
 with `gh label list`, `gh api repos/:owner/:repo/milestones`, and `gh project list --owner <owner>`,

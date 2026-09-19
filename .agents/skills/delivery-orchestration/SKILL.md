@@ -58,9 +58,11 @@ the command, and `pnpm issue:claim <issue>` — run from the protected
 primary checkout — adds the `status:active` label, removes every other
 `status:` label, and moves every board item holding the issue to In
 progress, reading the project's field and option ids live. The script
-refuses an issue that already carries `status:active`, so two agents
-cannot claim one issue. After delivery, verify the issue is closed and
-the board item reads Done; project automation may not move it.
+refuses an issue that already carries `status:active`, making an existing
+claim visible before work starts; the check is read-then-write, not
+atomic, so the survey before `lane:open` remains the guard against two
+claims racing in one window. After delivery, verify the issue is closed
+and the board item reads Done; project automation may not move it.
 
 An issueless lane's worktree and PR are the claim: choose a slug that names
 the change precisely and publish early, before the head is final if

@@ -353,6 +353,7 @@ describe('claim launcher binding', () => {
     const binding = {
         resolvedCwd: '/repo',
         resolvedPrimaryRoot: '/repo',
+        executingFile: '/snapshot/scripts/claimTrackerIssue.ts',
         executingSource: 'source',
         originSource: 'source' as string | undefined,
     };
