@@ -1,0 +1,18 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/curveWriteReachability.spec.ts
+  h_1228e573df1f42 1-136
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  h_1228e573df1f42 22,521-526,529-530,533-538
+src/modules/AudioEngine/repositories/offlineScheduler/quantiseSuspendFrame.ts
+  h_1228e573df1f42 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "99d1d8f1828db399cad40bf06e507309e43af85d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
