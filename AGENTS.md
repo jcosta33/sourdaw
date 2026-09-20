@@ -455,13 +455,13 @@ movement requires no merge; take `main` only for real conflicts or mergeability,
 then requires fresh `Gate` and review.
 
 Dismissing stale reviews on push and requiring approval of the last push are ruleset configuration,
-and only the trusted ruleset command puts them in place or changes them: it canonicalises the live
-ruleset, refuses any change outside the approved pair, refuses a new required context, captures the
-rollback before writing, applies as the verified orchestrator User, and reads back. The command has
-no throwaway-ruleset mode; the canary evidence is a live pull request — a red `Gate` blocking a
-merge, fresh approvals required after each push, unresolved threads blocking, and reviewer App
-confirmations resolving threads (issue #3002 AC-016). Read the live ruleset rather than assume
-either control is on. The reviewer's shadow status
+and only the trusted ruleset command may change them: it plans against the live ruleset, refuses a
+change outside the approved pair or that adds a required context, captures the live ruleset's
+canonical bytes as the rollback before writing, applies as the verified orchestrator User, and
+reads back, failing unless both controls are shown. It has no throwaway-ruleset mode; the canary
+evidence #3002 requires for such a change is a live pull request - a red `Gate` blocking a merge,
+fresh approvals required after each push, unresolved threads blocking, and reviewer App
+confirmations resolving threads. Read the live ruleset rather than assume either control is on. The reviewer's shadow status
 is deliberately non-required: it attests only immutable commit facts about the exact head, never a
 verdict that another commit or a later push can inherit. No wave may make a CI context or a shadow
 status context required, because a required context converts an observation into merge authority —
