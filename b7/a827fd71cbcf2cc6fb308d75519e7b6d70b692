@@ -1,0 +1,323 @@
+src/modules/Toaster/useCases/index.ts
+  s_ed5aa36a3ba357::t_c4a9ee9e6e36d3 13
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_6d689fe73565b6 122-129
+.agents/skills/review-stances/session-lifecycle.md
+  s_ed5aa36a3ba357::t_59c26dac64a4bc 132-141
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_b70346e072a08d 336-361
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_90debe2f92f643 515,627,748
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_b3420f5c8bf8ad 1203-1205
+scripts/__tests__/prContract.spec.ts
+  s_ed5aa36a3ba357::t_05fa4cb1a7ce15 763-777
+scripts/__tests__/resourceGuard.spec.ts
+  s_ed5aa36a3ba357::t_35fe66444ba69e 11,748-749,759-785,1085-1112,1115-1124,1126-1130,1177-1178,1190-1191,1203-1204,1374,1403,1425,1436,1482,1493,1526,1539-1540,1551,1569,1571,1576-1584,1591-1631,1633-1890,1926-2142,2154,2165,2176,2187,2197,2205-2470,2481,2500,2503,2506-2508,2514-2515,2523-2526,2544,2555
+scripts/prContract.ts
+  s_ed5aa36a3ba357::t_74b7759889d934 677,725-727,761
+scripts/resourceGuard.ts
+  s_ed5aa36a3ba357::t_caabff885b8523 5-15,17,1378-1379,1384-1600,1608-1609,1621-1637,1668-1673,1676-1687,1692-1703,1742-1747,1751-1766,1772,1778,1786,1789,1808-1810,1828,1835,1855
+src/app/__tests__/bootstrap.spec.ts
+  s_ed5aa36a3ba357::t_ceaeda24e22b27 383-384,493-495,513-515,574-576,609-611
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_ed5aa36a3ba357::t_671157f3472945 35
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_ed5aa36a3ba357::t_d390553301e5be 1,3,6-10,13,17,31-33,41-43,46-54,106-115,287-372
+src/app/bootstrap.ts
+  s_ed5aa36a3ba357::t_ccb358c72999b3 67,150,210,275-284,286,292,299-306,508-513
+src/app/prepareOfflineDeviceSetup.ts
+  s_ed5aa36a3ba357::t_94e7dd3efe9491 1-6,9-64,66,113-119,122-128,147-152,159-165,178-184,213-220
+src/modules/AiRuntime/errors/HostedToolCallingProtocolError.ts
+  s_ed5aa36a3ba357::t_630d9f929531ea 1-2,5-14
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_378f17f1f59857 4,396-400,402-414,418-446,507,729
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_ed5aa36a3ba357::t_b28c00a7d0cb9a 2-5,261-267
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_ed5aa36a3ba357::t_c6bd25c12ca097 1,17,25,31-88,146-166
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_ed5aa36a3ba357::t_cf4bde716e155f 12,20,22,69-84,87-131,252-253,260,456-457,460,468-487
+src/modules/AiRuntime/useCases/__tests__/hostedUsageAttribution.spec.ts
+  s_ed5aa36a3ba357::t_63bc185da3112b 5,11-12,18-22,26-28,31-32,36-38,49,68-70,107-326
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_ed5aa36a3ba357::t_203fae449d8541 1,20,586-594,597,605-606,608-611
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_ed5aa36a3ba357::t_d10550b9656257 11,17,27-30,33-35,40-41,51,63-84,86,90,92-96,106,109,111,116,121,127-128,139,171-172,202-225,230-231,234-249,252,261,291,314,324-341,343-367,369-377,379-399,419-422,426,431-434,459-462,477,481-482,484-487,494-533,535-536,583
+src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts
+  s_ed5aa36a3ba357::t_087201f6dfb738 201-253
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_ed5aa36a3ba357::t_0b2811f63df47b 7-12,23,63-64,107-112,148-149,161,624-748,767-768,788-790,793,797,830-832,837,843,876,881,923,925-929,934,976,983,985,987-994,996-997,1000
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_ed5aa36a3ba357::t_659ad40c0fa840 19-21,42-44,186,197-253
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_ed5aa36a3ba357::t_3cd9a57f4a641b 5-10,41,56-66,68-87,89-120,123-125,127-144
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_ed5aa36a3ba357::t_6fa83f8fb37530 5,9,19-20,33-39,43-55,59
+src/modules/AiRuntime/useCases/getProviderRouteView.ts
+  s_ed5aa36a3ba357::t_a5ba16b0b391e7 27-28,199-200,204-205,211-213
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_ed5aa36a3ba357::t_201541b62e4548 17,22,130-138,184,526-646
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_ed5aa36a3ba357::t_aa97663ee2639b 8,731,765-776,778-779,783-785,788-804
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_ed5aa36a3ba357::t_5daf582dcd17fe 26-59,68-70,96
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_ed5aa36a3ba357::t_e0ea19617bd47d 9,13,45,60-61,95,342-348,350,352-367,369-372
+src/modules/Arrangement/stores/gainEnvelopeStore.ts
+  s_ed5aa36a3ba357::t_2069541ec56a65 152-156,170-171,185-186,188
+src/modules/Arrangement/useCases/__tests__/acceptsExternalPluginAutomationParameter.spec.ts
+  s_ed5aa36a3ba357::t_a91048a1c99338 34-41
+src/modules/Arrangement/useCases/__tests__/clampExternalPluginAutomationValue.spec.ts
+  s_ed5aa36a3ba357::t_d5c169b9c0d56e 38-49
+src/modules/Arrangement/useCases/acceptsExternalPluginAutomationParameter.ts
+  s_ed5aa36a3ba357::t_ac60f8c13661b6 14-19
+src/modules/Arrangement/useCases/clampExternalPluginAutomationValue.ts
+  s_ed5aa36a3ba357::t_a131668dd09abb 24-28
+src/modules/Arrangement/useCases/findExternalPluginAutomationParameter.ts
+  s_ed5aa36a3ba357::t_d7f54f567f2ed9 20-21,23
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ed5aa36a3ba357::t_5caa994af2532f 1,45-46,48-52,208
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ed5aa36a3ba357::t_bd5dca26d17128 8,1786-1871,1921-1974
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopInputMonitoring.spec.ts
+  s_ed5aa36a3ba357::t_c12a4de67f9eb3 4,140-185,257-292
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ed5aa36a3ba357::t_7d682b9762d6d9 38-39,2575-2578,2647-2649
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_ed5aa36a3ba357::t_31a132f8aa4d96 3-4,537-540,546,549-550,553-572
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_ed5aa36a3ba357::t_0c5faa0b32d4f4 134-171
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_ed5aa36a3ba357::t_19da10242e658f 136-138,236-237,983-984,996-997,1076-1077,1089-1090
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ed5aa36a3ba357::t_611f4b4db365b9 3-10,12-18,22-23,25-30,87-120,122-131,160-161,163-169,173-186,191-229,231,256-257,259,271-281,283,296,303,343-350,354-358,371-833,883,921,976-983,1026-1037,1047,1156
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_ed5aa36a3ba357::t_c4395e77d59f51 11,87,147-152,158-161,180-181,364,419-431
+src/modules/AudioEngine/useCases/configureOfflineDeviceParameterLaw.ts
+  s_ed5aa36a3ba357::t_d0e16eafd56c6d 3-7,17,24
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_ed5aa36a3ba357::t_45d75eac9e4c02 3-12,15,22-24
+src/modules/AudioEngine/useCases/configureOfflineYeastMidiProcessing.ts
+  s_ed5aa36a3ba357::t_32d562564bbdfb 3-4,6,12
+src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.monitorTeardown.spec.ts
+  s_ed5aa36a3ba357::t_561ecbc93de21e 1-120
+src/modules/AudioEngine/useCases/index.ts
+  s_ed5aa36a3ba357::t_f4b5f938edb1c6 202-206
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/LatencyCompensationInput.ts
+  s_ed5aa36a3ba357::t_465a9c2b25a10c 1-8
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getCompensationDelay.spec.ts
+  s_ed5aa36a3ba357::t_5b7241645f65e9 138-162
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/reportedDeviceLatency.spec.ts
+  s_ed5aa36a3ba357::t_9e3f33f878e3ca 31,79-85
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/deepestHostedLatencyMs.ts
+  s_ed5aa36a3ba357::t_c14f9d9fb03f81 4,22-26,36-37
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay.ts
+  s_ed5aa36a3ba357::t_d4ac0bb99daef0 4,27-28,34-35,39
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getDeviceLatencyMs.ts
+  s_ed5aa36a3ba357::t_6eba12f7b867f3 33,44
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getMaxTrackLatency.ts
+  s_ed5aa36a3ba357::t_cd9f9a80170639 4,6-7,14
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getSidechainKeyDelay.ts
+  s_ed5aa36a3ba357::t_dccf1c34dfa41a 6,34-38,54-58,62-65
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackDeviceLatencyMs.ts
+  s_ed5aa36a3ba357::t_020d4e7fef3838 1-47
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency.ts
+  s_ed5aa36a3ba357::t_feefb491a276b7 6-7,28-29,31,43-48,53,58,66,71
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  s_ed5aa36a3ba357::t_e823991baac970 31-49
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_ed5aa36a3ba357::t_00d8d271bbdc47 75-86,106-111,115-118,124-125
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_ed5aa36a3ba357::t_f0ad7b69f9b2f8 184
+src/modules/AudioEngine/useCases/offlineRender/OfflineRenderSource.ts
+  s_ed5aa36a3ba357::t_0e6bfd1290bf00 1-48
+src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts
+  s_ed5aa36a3ba357::t_18e8ebbd42fc59 1,33-35,49-51,250-254
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineContextPreparation.spec.ts
+  s_ed5aa36a3ba357::t_e00c03ad16a2a5 17-20,22-27,34-35,61-62,72-115,117-126,131-132,138-139,141,154-159
+src/modules/AudioEngine/useCases/offlineRender/buildOfflineWebAudioGraph.ts
+  s_ed5aa36a3ba357::t_3ec1efcc1eeefd 1-169
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineAudioBuffers.ts
+  s_ed5aa36a3ba357::t_54ab08aefc4fae 1-35
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineMusicalProjections.ts
+  s_ed5aa36a3ba357::t_a7d8d0a592ba2f 1-51
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderInput.ts
+  s_ed5aa36a3ba357::t_8c943ec373ccfd 1-77
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderRuntimeInput.ts
+  s_ed5aa36a3ba357::t_c9ccc79e1d5805 1-45
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineSchedulingInput.ts
+  s_ed5aa36a3ba357::t_5bf29d5e0fbad1 1-55
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_ed5aa36a3ba357::t_37aae509c90123 4,24,95-96
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_ed5aa36a3ba357::t_50817e63421be4 46,59,262-263
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_ed5aa36a3ba357::t_4244d0e2fa8973 1-59
+src/modules/AudioEngine/useCases/offlineRender/offlineRenderCapturePorts.ts
+  s_ed5aa36a3ba357::t_f47660d3b9d3af 1-45
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineInput.ts
+  s_ed5aa36a3ba357::t_74c9ad0871f5df 1-11
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_ed5aa36a3ba357::t_3a34d9fb2222ad 84,93,229-233,272-274,285,295-297,315,329,399-400
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_ed5aa36a3ba357::t_a4fb7750a1fd26 4,18-27,30,38
+src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixAudibility.ts
+  s_ed5aa36a3ba357::t_968e49c821bc40 1-61
+src/modules/AudioEngine/useCases/offlineRender/resolveOfflineMixPlan.ts
+  s_ed5aa36a3ba357::t_fc7ad324e62bcf 1-116
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_ed5aa36a3ba357::t_75f0f5bc1ba746 24,27-29,60-63,74-77,107
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_ed5aa36a3ba357::t_f535ec2705bace 49-53
+src/modules/AudioEngine/useCases/offlineRender/scheduleOfflineMix.ts
+  s_ed5aa36a3ba357::t_39e4f408950887 1-136
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ed5aa36a3ba357::t_e83cd4167d32ed 45,83,146,210-212,214-216,228,304-306,312,323,330,354,384,806,829-830
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_ed5aa36a3ba357::t_851605ab360ef2 48,69,101
+src/modules/AudioEngine/useCases/offlineRender/tryNativeOfflineRender.ts
+  s_ed5aa36a3ba357::t_51d18ec0a817b6 1-64
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ed5aa36a3ba357::t_afe94bbabb8fbb 1-3,10-11,13-16
+src/modules/Automation/useCases/automation/__tests__/getAutomationValueAtBeat.spec.ts
+  s_ed5aa36a3ba357::t_a31e1c0ba70f77 45-51
+src/modules/Automation/useCases/automation/createOfflineAutomationEvaluator.ts
+  s_ed5aa36a3ba357::t_1aeebf2853a4e9 1-9
+src/modules/Automation/useCases/automation/getAutomationValueAtBeat.ts
+  s_ed5aa36a3ba357::t_c8e13d355f1204 21-22,24
+src/modules/Automation/useCases/index.ts
+  s_ed5aa36a3ba357::t_21dd9985e8ec42 72-73
+src/modules/Crumbs/useCases/__tests__/prepareCrumbsEngine.spec.ts
+  s_ed5aa36a3ba357::t_32f51d5cae820e 3,5,96-144
+src/modules/Crumbs/useCases/captureCrumbsEngine.ts
+  s_ed5aa36a3ba357::t_bb7a549d9c2e5f 1-27
+src/modules/Crumbs/useCases/hydrateCrumbsStateFromDevice.ts
+  s_ed5aa36a3ba357::t_6ba10dc9de1e74 1-75
+src/modules/Crumbs/useCases/hydrateCrumbsStateFromProject.ts
+  s_ed5aa36a3ba357::t_2b243c8921c7f3 3,5,41
+src/modules/Crumbs/useCases/index.ts
+  s_ed5aa36a3ba357::t_6c346be40bbb94 13
+src/modules/Crumbs/useCases/prepareCrumbsEngine.ts
+  s_ed5aa36a3ba357::t_6a673be80fc30e 6,95,139,141,150
+src/modules/GrandBoule/useCases/__tests__/prepareOfflineGrandBoule.spec.ts
+  s_ed5aa36a3ba357::t_9851beacbbb44e 10,18-76
+src/modules/GrandBoule/useCases/captureOfflineGrandBoule.ts
+  s_ed5aa36a3ba357::t_4117d189e7c70c 1-18
+src/modules/GrandBoule/useCases/index.ts
+  s_ed5aa36a3ba357::t_1c34e13834d715 10
+src/modules/GrandBoule/useCases/prepareOfflineGrandBoule.ts
+  s_ed5aa36a3ba357::t_75751ca9cc560c 3,25,30,32
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_ed5aa36a3ba357::t_2dbef16f7178a3 3,5,35-69
+src/modules/Levain/useCases/captureOfflineLevain.ts
+  s_ed5aa36a3ba357::t_81bd443559f47b 1-25
+src/modules/Levain/useCases/hydrateLevainStateFromDevice.ts
+  s_ed5aa36a3ba357::t_d693116f900a69 1-28
+src/modules/Levain/useCases/hydrateLevainStateFromProject.ts
+  s_ed5aa36a3ba357::t_1fd9b3865e6143 3,5,41
+src/modules/Levain/useCases/index.ts
+  s_ed5aa36a3ba357::t_e0e6051acd34c3 13
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ed5aa36a3ba357::t_e6001e48ee7366 2,12,41-47
+src/modules/MIDI/useCases/chordTrack/__tests__/createChordPitchProjector.spec.ts
+  s_ed5aa36a3ba357::t_87fe6daac4b38d 11-25
+src/modules/MIDI/useCases/chordTrack/createChordPitchProjector.ts
+  s_ed5aa36a3ba357::t_be9e395891c2ff 2,15
+src/modules/MIDI/useCases/grooveTemplates/__tests__/getScopedGrooveAssignment.spec.ts
+  s_ed5aa36a3ba357::t_dade29df2ce0d6 24-30
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEvents.spec.ts
+  s_ed5aa36a3ba357::t_33bf5e4cf2fc12 35-48
+src/modules/MIDI/useCases/grooveTemplates/createGrooveMidiEventProjector.ts
+  s_ed5aa36a3ba357::t_51a616f689a028 1-5,31-34
+src/modules/MIDI/useCases/grooveTemplates/getGrooveAssignment.ts
+  s_ed5aa36a3ba357::t_f31aedc22a24f9 1-5,12-16
+src/modules/MIDI/useCases/grooveTemplates/getGrooveTemplate.ts
+  s_ed5aa36a3ba357::t_fbad8d405df079 2,4,6
+src/modules/MIDI/useCases/grooveTemplates/getScopedGrooveAssignment.ts
+  s_ed5aa36a3ba357::t_57102299b5a7de 1-5,16-19,21,26
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_ed5aa36a3ba357::t_bad4f3235fd8e4 39
+src/modules/Proof/useCases/__tests__/prepareOfflineProof.spec.ts
+  s_ed5aa36a3ba357::t_922bcd5abc8e94 13,17-44
+src/modules/Proof/useCases/captureOfflineProof.ts
+  s_ed5aa36a3ba357::t_2d88d0a214a88c 1-27
+src/modules/Proof/useCases/index.ts
+  s_ed5aa36a3ba357::t_d0dca2a840096b 5
+src/modules/Proof/useCases/prepareOfflineProof.ts
+  s_ed5aa36a3ba357::t_3b97b07eb763be 3-4,10,39-41,45
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_ed5aa36a3ba357::t_3f1006efbccb7b 71
+src/modules/Toaster/useCases/__tests__/prepareOfflineToaster.spec.ts
+  s_ed5aa36a3ba357::t_ac906062b28e2e 1-50
+src/modules/Toaster/useCases/captureOfflineToaster.ts
+  s_ed5aa36a3ba357::t_c4b53fd51b0cc2 1-20
+src/modules/Toaster/useCases/prepareOfflineToaster.ts
+  s_ed5aa36a3ba357::t_f472bfdcef8f71 1,11,34-35
+src/modules/Transport/useCases/__tests__/createMusicalPositionProjector.spec.ts
+  s_ed5aa36a3ba357::t_ce0b6cd689a23d 41-62
+src/modules/Transport/useCases/__tests__/createSamplePositionProjector.spec.ts
+  s_ed5aa36a3ba357::t_4b1db98dc9f6b0 22-32
+src/modules/Transport/useCases/createMusicalPositionProjector.ts
+  s_ed5aa36a3ba357::t_dd5fe50349a17c 3-5,7-25
+src/modules/Transport/useCases/createSamplePositionProjector.ts
+  s_ed5aa36a3ba357::t_c05500bfa062fd 2-3,5-17
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_ed5aa36a3ba357::t_3cec6292cc674e 42,137-143
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRouteSection.tsx
+  s_ed5aa36a3ba357::t_d60b30c27c4e51 17,75-81
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_ed5aa36a3ba357::t_3ad4bcd8f904b1 6,8,48-51,114,122-124,145,233-237,240,263,342,348,351-352,520,601-614,670,714-715,717-719,721-722
+src/modules/WorkspaceShell/presentations/hooks/useAgentWorkspaceRunSelection.ts
+  s_ed5aa36a3ba357::t_b07e6f7bcd871b 30,37,39-45
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_ed5aa36a3ba357::t_7bd4d787411b7e 5,59-60,68,96,104,115-126,185,198,217,221,244,257,266,282,355
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_ed5aa36a3ba357::t_bdd41b069a32f9 11,27-35,41,60,105
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_ed5aa36a3ba357::t_2f510e7c2589eb 259-264,640,664
+src/modules/WorkspaceShell/presentations/views/PromptBar.tsx
+  s_ed5aa36a3ba357::t_e086542c6637c1 127,130-131,135-139
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ed5aa36a3ba357::t_7a6e1dab875334 57,250
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_ed5aa36a3ba357::t_084dbb8ef92877 31,44,355-376,623-645
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_ed5aa36a3ba357::t_bd89e62fdab473 66-76,572-582
+src/modules/WorkspaceShell/presentations/views/__tests__/PromptBar.spec.tsx
+  s_ed5aa36a3ba357::t_b44ef17a3140fe 18,45,79,88,99,109,119,127,134-146,152,160,168,177,194,211,224,236,249,263,284,296,310,323,336,347
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ed5aa36a3ba357::t_cec6e240f05968 231,236,326,331
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_ed5aa36a3ba357::t_bc7eea57a8e214 1-197
+src/modules/Yeast/useCases/__tests__/createOfflineYeastMidiProcessor.spec.ts
+  s_ed5aa36a3ba357::t_a9912e275f141e 12,60-205
+src/modules/Yeast/useCases/__tests__/createYeastRuntimeProjection.spec.ts
+  s_ed5aa36a3ba357::t_429247b3065e09 13-36
+src/modules/Yeast/useCases/captureOfflineYeastProjections.ts
+  s_ed5aa36a3ba357::t_60beebb112bd5e 1-36
+src/modules/Yeast/useCases/createOfflineYeastMidiProcessor.ts
+  s_ed5aa36a3ba357::t_5373ba2266cb5e 6,14-17,24-27,29-38,40-44
+src/modules/Yeast/useCases/createYeastRuntimeProjection.ts
+  s_ed5aa36a3ba357::t_f9014020b2865d 1,39-42,48-49
+src/modules/Yeast/useCases/getYeastGrooveAssignment.ts
+  s_ed5aa36a3ba357::t_74c24414e42398 1,6-14
+src/modules/Yeast/useCases/index.ts
+  s_ed5aa36a3ba357::t_bd258a51f0f9fa 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b7a827fd71cbcf2cc6fb308d75519e7b6d70b692",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
