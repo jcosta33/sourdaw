@@ -1,0 +1,35 @@
+scripts/semanticReview.ts
+  s_76aceaed59d84a::t_5e4835d1735dab 24,472-487,490,494
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_76aceaed59d84a::t_6eb4a6f7d48da8 137,148-153,164,1149-1196
+scripts/semanticReview/contracts.ts
+  s_67aad523bfa1af::t_9ecc246276c31e 125-130,143,155,174
+scripts/semanticReview/run.ts
+  s_67aad523bfa1af::t_96713aa9d1ed44 521-526
+scripts/semanticReview/verify.ts
+  s_67aad523bfa1af::t_aa3118a1485371 531-536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3c0b0ea53de7bd6fa56be264e457dacc64a35a11",
+  "prompts": {},
+  "sessions": {
+    "s_67aad523bfa1af": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "97b2a925-a160-4266-a621-d57e01ae5ce1",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_76aceaed59d84a": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "abed143c-e7e3-45a8-a7eb-62ad307b3af9",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
