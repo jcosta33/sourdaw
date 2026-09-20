@@ -1020,11 +1020,26 @@ describe('product-scope test instructions', () => {
         ['a branch switch', 'git switch main'],
         ['a report launch', 'pnpm exec playwright show-report'],
         ['a conjunction pair with an annotation tail', 'pnpm typecheck and pnpm lint, both green'],
+        // A cue verb ending a launch line with no expected result behind it is the command's
+        // trailing argument, not an observation — these shapes border the trailing-cue rule and
+        // were cross-checked against an external semantic judgment before pinning.
+        ['a bare cue after the launch', 'pnpm dev and play'],
+        ['a comma cue with nothing behind it', 'pnpm dev, drag'],
+        ['a see verb with nothing to see', 'npm start and see'],
     ])('refuses %s', (_label, instructions) => {
         // The subcommand slot drops the token behind the leading head whatever it is, and the
         // argument run behind the slot stays annotation-only — none of these teach a step.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('passes a prose-led action list as the fail-open margin', () => {
+        // 'Open' is a cue leading prose, not a launch, so the segment stays prose-led and passes
+        // whatever follows — the documented margin where the gate judges inventories, not quality.
+        const step = 'Open the app and drag';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
     it('keeps noun-clause parentheticals that name UI state', () => {
