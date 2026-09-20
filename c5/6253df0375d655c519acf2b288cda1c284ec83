@@ -1,0 +1,23 @@
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_b8adeb4c325535 1205
+src/modules/AudioEngine/useCases/__tests__/renderOfflineInstrumentSetupCancellation.spec.ts
+  s_ed5aa36a3ba357::t_7e18c8b92373cb 24,32-34,161-168,186-189,191-200
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_ed5aa36a3ba357::t_f1f048fbd83ff5 6,25-28,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c56253df0375d655c519acf2b288cda1c284ec83",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
