@@ -1,0 +1,24 @@
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_1228e573df1f42 164
+src/modules/Project/useCases/projectPersistence/__tests__/newProjectNativeHostAbsent.spec.ts
+  h_1228e573df1f42 98
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  h_1228e573df1f42 40
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_1228e573df1f42 61-81,117-163,173-174
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_1228e573df1f42 55-101,109-112,123-144
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  h_1228e573df1f42 30-39,55-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c98b9f571f60180bb8949f55e495c4ca0726073c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
