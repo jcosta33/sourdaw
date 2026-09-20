@@ -35,6 +35,19 @@ describe('ClipAndDevice tools', () => {
         expect(names).toContain('removeDevice');
     });
 
+    it('grounds device parameter planning in exact context IDs, native units, and ranges', () => {
+        const parameterTool = deviceTools.find((tool) => tool.function.name === 'setDeviceParameter');
+        const serialized = JSON.stringify(parameterTool);
+
+        expect(serialized).toContain('exact native unit and range');
+        for (const parameterId of ['eq-mid-freq', 'comp-ratio', 'rev-mix', 'comp-threshold']) {
+            expect(serialized).toContain(parameterId);
+        }
+        for (const inventedName of ['"frequency"', '"ratio"', '"mix"', '"threshold"']) {
+            expect(serialized).not.toContain(inventedName);
+        }
+    });
+
     it('all tool names are unique across both arrays', () => {
         const allNames = [...clipTools.map((t) => t.function.name), ...deviceTools.map((t) => t.function.name)];
         expect(new Set(allNames).size).toBe(allNames.length);

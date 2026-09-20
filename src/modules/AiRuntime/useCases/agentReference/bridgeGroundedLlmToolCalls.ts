@@ -5,6 +5,7 @@ import {
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
+import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
@@ -19,6 +20,7 @@ import {
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
+import { isValidParameterValue } from '../../transformers/llmActionStrategies/bridgeArgumentGuards';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -1922,6 +1924,53 @@ function findPromptNumbers(maskedScope: string): PromptNumber[] {
     return numbers;
 }
 
+function isRatioUnitDenominator(maskedScope: string, number: PromptNumber): boolean {
+    return /(?:\d|\.)\s*:\s*$/u.test(maskedScope.slice(0, number.index));
+}
+
+function getAdjacentDeviceParameterUnits(
+    actionScope: ActionPromptScope,
+    number: PromptNumber
+): Array<DeviceParameterValueUnit | 'unsupported-ratio' | 'unsupported-unit'> {
+    const units: Array<DeviceParameterValueUnit | 'unsupported-ratio' | 'unsupported-unit'> = number.raw.endsWith('%')
+        ? ['%']
+        : [];
+    let suffix = actionScope.masked.slice(number.end);
+    while (suffix.length > 0) {
+        if (/^\s*:/u.test(suffix)) {
+            const ratio = /^\s*:\s*1(?=$|[\s,;!?)]|\.(?!\d))/u.exec(suffix);
+            if (!ratio) {
+                return [...units, 'unsupported-ratio'];
+            }
+            units.push(':1');
+            suffix = suffix.slice(ratio[0].length);
+            continue;
+        }
+        if (units.length > 0 && /^\s*[/·*]/u.test(suffix)) {
+            return [...units, 'unsupported-unit'];
+        }
+        const parenthesized = /^\s*\(([^)]*)\)/u.exec(suffix);
+        if (parenthesized) {
+            units.push(normalizeDeviceParameterValueUnit(parenthesized[1]?.trim()) ?? 'unsupported-unit');
+            suffix = suffix.slice(parenthesized[0].length);
+            continue;
+        }
+        if (/^\s*\(/u.test(suffix)) {
+            return [...units, 'unsupported-unit'];
+        }
+        const named =
+            /^\s*(%|(?:dB|decibels?|Hz|hertz|ms|milliseconds?|percents?|st|semitones?|s|secs?|seconds?|kHz|kilohertz)\b)/iu.exec(
+                suffix
+            );
+        if (!named) {
+            break;
+        }
+        units.push(normalizeDeviceParameterValueUnit(named[1]) ?? 'unsupported-unit');
+        suffix = suffix.slice(named[0].length);
+    }
+    return units;
+}
+
 /** The decibel figures the request states in the form this rule accepts, and no others. */
 function getStatedDecibelFigures(
     maskedScope: string,
@@ -1954,7 +2003,9 @@ function getExpectedNumbers(
     if (valueRule.kind !== 'number-if-present') {
         return [];
     }
-    const numbers = findPromptNumbers(actionScope.masked);
+    const numbers = findPromptNumbers(actionScope.masked).filter(
+        (number) => valueRule.descriptorUnitSource === undefined || !isRatioUnitDenominator(actionScope.masked, number)
+    );
     if (numbers.length === 0) {
         return [];
     }
@@ -2518,6 +2569,47 @@ function numbersMatch(valueRule: NumberValueRule, expected: number, asserted: nu
     return Math.abs(expected - asserted) < 0.000_001;
 }
 
+function validateDeviceParameterUnitAndBounds(
+    valueRule: NumberValueRule,
+    assertedValue: number,
+    actionScope: ActionPromptScope,
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): boolean {
+    const source = valueRule.descriptorUnitSource;
+    if (source === undefined) {
+        return true;
+    }
+    const deviceId = groundedArguments[source.deviceIdArgument];
+    const paramId = groundedArguments[source.paramIdArgument];
+    const device = context.tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const parameter = device?.parameters?.find((candidate) => candidate.id === paramId);
+    if (!parameter || !isValidParameterValue(parameter, assertedValue)) {
+        return false;
+    }
+    const matchingNumbers = findPromptNumbers(actionScope.masked).filter((number) => {
+        if (isRatioUnitDenominator(actionScope.masked, number)) {
+            return false;
+        }
+        return numbersMatch(valueRule, normalizePromptNumber(number, actionScope, valueRule, undefined), assertedValue);
+    });
+    const adjacentUnits = matchingNumbers.flatMap((number) => getAdjacentDeviceParameterUnits(actionScope, number));
+    if (adjacentUnits.includes('unsupported-ratio')) {
+        return false;
+    }
+    const explicitUnits = adjacentUnits.flatMap((unit) => {
+        return unit === 'unsupported-ratio' || unit === 'unsupported-unit' ? [] : [unit];
+    });
+    const descriptorUnit = normalizeDeviceParameterValueUnit(parameter.unit);
+    if (adjacentUnits.includes('unsupported-unit')) {
+        return descriptorUnit === null && explicitUnits.length === 0;
+    }
+    if (explicitUnits.length === 0) {
+        return true;
+    }
+    return descriptorUnit !== null && explicitUnits.every((unit) => unit === descriptorUnit);
+}
+
 function validateNumberValue(
     valueRule: NumberValueRule,
     assertedValue: unknown,
@@ -3012,6 +3104,31 @@ function validateGroundedValues(
         }
         if (valueRejection) {
             return valueRejection;
+        }
+    }
+    return null;
+}
+
+function validateDescriptorBackedValues(
+    groundingRules: GroundingRules,
+    groundedArguments: Record<string, unknown>,
+    actionScope: ActionPromptScope,
+    context: ProjectContext
+): string | null {
+    for (const valueRule of groundingRules.valueRules) {
+        if (valueRule.kind !== 'number-if-present' || valueRule.descriptorUnitSource === undefined) {
+            continue;
+        }
+        const assertedValue = groundedArguments[valueRule.argument];
+        const expectedNumbers = getExpectedNumbers(actionScope, valueRule, undefined);
+        if (
+            typeof assertedValue !== 'number' ||
+            expectedNumbers === null ||
+            (expectedNumbers.length > 0 &&
+                !expectedNumbers.some((expected) => numbersMatch(valueRule, expected, assertedValue))) ||
+            !validateDeviceParameterUnitAndBounds(valueRule, assertedValue, actionScope, groundedArguments, context)
+        ) {
+            return getValueMismatchReason(valueRule.argument);
         }
     }
     return null;
@@ -3870,6 +3987,15 @@ function groundToolCall({
     });
     if (scopeAdmissionRejection) {
         return rejection(index, call.name, scopeAdmissionRejection);
+    }
+    const descriptorValueRejection = validateDescriptorBackedValues(
+        groundingRules,
+        groundedArguments,
+        actionScope,
+        context
+    );
+    if (descriptorValueRejection) {
+        return rejection(index, call.name, descriptorValueRejection);
     }
     const valueRejection = admitsPlanCreatedObject
         ? null

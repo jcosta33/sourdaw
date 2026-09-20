@@ -292,6 +292,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
         'deviceId',
         'paramId',
         'value',
+        'valueUnit',
         'expectedTrackId',
         'expectedDeviceType',
         'expectedDeviceIds',

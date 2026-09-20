@@ -74,6 +74,116 @@ describe('handleSetDeviceParameter', () => {
         expect(result).toEqual({ status: 'no-write' });
     });
 
+    it('rejects a supplied native unit mismatch before the authoritative write', () => {
+        mocks.setDeviceParameter.mockReturnValue(true);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    devices: [
+                        {
+                            id: 'd1',
+                            type: 'builtin-eq',
+                            parameterValues: { 'eq-mid-freq': 1_000 },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleSetDeviceParameter.execute({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2_400, valueUnit: 'ms' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setDeviceParameter).not.toHaveBeenCalled();
+    });
+
+    it('validates a supplied native unit against a device created earlier in the batch', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', frozen: false, devices: [] }],
+        });
+        const addDevice: Extract<AppAction, { type: 'addDevice' }> = {
+            type: 'addDevice',
+            payload: { trackId: 't1', deviceType: 'builtin-eq', deviceId: 'd1' },
+        };
+        const matching: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2_400, valueUnit: 'Hz' },
+        };
+        const mismatched: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            ...matching,
+            payload: { ...matching.payload, valueUnit: 'ms' },
+        };
+
+        expect(handleSetDeviceParameter.validate?.(matching, { actions: [addDevice, matching], actionIndex: 1 })).toBe(
+            true
+        );
+        expect(
+            handleSetDeviceParameter.validate?.(mismatched, { actions: [addDevice, mismatched], actionIndex: 1 })
+        ).toBe(false);
+    });
+
+    it('uses the current transaction chain when an earlier batch action added a sibling device', () => {
+        mocks.setDeviceParameter.mockReturnValue(true);
+        const beforePrefix = {
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [
+                        {
+                            id: 'd1',
+                            type: 'builtin-eq',
+                            parameterValues: { 'eq-mid-freq': 1_000 },
+                        },
+                    ],
+                },
+            ],
+        };
+        mocks.getTrackStoreState.mockReturnValue(beforePrefix);
+        const addSibling: Extract<AppAction, { type: 'addDevice' }> = {
+            type: 'addDevice',
+            payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'd2' },
+        };
+        const setExisting: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'eq-mid-freq',
+                value: 2_400,
+                valueUnit: 'Hz',
+                expectedTrackId: 't1',
+                expectedDeviceType: 'builtin-eq',
+                expectedDeviceIds: ['d1', 'd2'],
+                expectedValue: 1_000,
+                expectedValuePresent: true,
+                expectedTrackFrozen: false,
+            },
+        };
+        const context = { actions: [addSibling, setExisting], actionIndex: 1 };
+
+        expect(handleSetDeviceParameter.validate?.(setExisting, context)).toBe(true);
+
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    ...beforePrefix.tracks[0]!,
+                    devices: [
+                        beforePrefix.tracks[0]!.devices[0]!,
+                        { id: 'd2', type: 'builtin-compressor', parameterValues: {} },
+                    ],
+                },
+            ],
+        });
+
+        expect(handleSetDeviceParameter.execute(setExisting, context)).toEqual({ status: 'written' });
+        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'eq-mid-freq', 2_400, {
+            automationRecordingPolicy: undefined,
+        });
+    });
+
     it('provides a description reflecting the parameter', () => {
         const desc = handleSetDeviceParameter.describe({
             type: 'setDeviceParameter',
@@ -370,6 +480,107 @@ describe('handleSetDeviceParameter', () => {
             type: 'setDeviceParameter',
             payload: { automationRecordingPolicy: 'suppressed' },
         });
+    });
+
+    it('carries native unit metadata into the inverse and redo it describes', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [
+                        {
+                            id: 'd1',
+                            type: 'builtin-eq',
+                            parameterValues: { 'eq-mid-freq': 1_000 },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2_400, valueUnit: 'Hz' },
+        });
+
+        expect(desc.inverseAction).toMatchObject({
+            type: 'setDeviceParameter',
+            payload: { valueUnit: 'Hz' },
+        });
+        expect(desc.redoAction).toMatchObject({
+            type: 'setDeviceParameter',
+            payload: { valueUnit: 'Hz' },
+        });
+    });
+
+    it.each([
+        { forward: 'Hz', inverse: undefined, redo: 'Hz', accepted: false },
+        { forward: 'Hz', inverse: 'ms', redo: 'Hz', accepted: false },
+        { forward: 'Hz', inverse: 'Hz', redo: undefined, accepted: false },
+        { forward: 'Hz', inverse: 'Hz', redo: 'ms', accepted: false },
+        { forward: undefined, inverse: 'Hz', redo: undefined, accepted: false },
+        { forward: undefined, inverse: undefined, redo: 'Hz', accepted: false },
+        { forward: undefined, inverse: undefined, redo: undefined, accepted: true },
+        { forward: 'Hz', inverse: 'Hz', redo: 'Hz', accepted: true },
+    ] as const)(
+        'validates persisted units $forward / $inverse / $redo without live state: $accepted',
+        ({ forward, inverse, redo, accepted }) => {
+            const result = handleSetDeviceParameter.validateSessionEntry?.({
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit: forward },
+                },
+                inverseAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 1000, valueUnit: inverse },
+                },
+                redoAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit: redo },
+                },
+            });
+
+            expect(result).toBe(accepted);
+            expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([
+        { replayLeg: 'inverseAction', valueUnit: undefined },
+        { replayLeg: 'redoAction', valueUnit: undefined },
+        { replayLeg: 'inverseAction', valueUnit: 'Hz' },
+        { replayLeg: 'redoAction', valueUnit: 'Hz' },
+    ] as const)('rejects a different operation in $replayLeg even with unit $valueUnit', ({ replayLeg, valueUnit }) => {
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit },
+        };
+        const unrelatedAction: Extract<AppAction, { type: 'setTrackGain' }> = {
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0.5, expectedGain: 0.8 },
+        };
+
+        expect(
+            handleSetDeviceParameter.validateSessionEntry?.({
+                action,
+                inverseAction: replayLeg === 'inverseAction' ? unrelatedAction : action,
+                redoAction: replayLeg === 'redoAction' ? unrelatedAction : action,
+            })
+        ).toBe(false);
+        expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, 'Hz'] as const)('accepts null inverse and absent redo with unit %s', (valueUnit) => {
+        expect(
+            handleSetDeviceParameter.validateSessionEntry?.({
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit },
+                },
+                inverseAction: null,
+            })
+        ).toBe(true);
     });
 
     it('leaves the automation-recording maps alone when aborting a suppressed edit', () => {

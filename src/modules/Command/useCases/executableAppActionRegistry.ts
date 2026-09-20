@@ -105,6 +105,10 @@ export type ExecutableAppActionValueRule =
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
           unit?: 'beat-duration' | 'stretch-ratio';
+          descriptorUnitSource?: {
+              deviceIdArgument: string;
+              paramIdArgument: string;
+          };
       }
     | { argument: string; kind: 'string-literal' }
     | { argument: string; kind: 'marker-name' }
@@ -2061,7 +2065,8 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setDeviceParameter',
         risk: 'bounded-reversible',
-        description: 'Adjust a parameter on an existing device.',
+        description:
+            'Adjust one existing device parameter using its exact context device ID, parameter ID, native unit, and range (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold).',
         intentPhrases: ['adjust', 'set', 'change', 'increase', 'decrease'],
         targetRules: [
             { argument: 'deviceId', capability: 'device' },
@@ -2071,15 +2076,26 @@ export const executableAppActionDescriptors = [
                 dependsOn: 'deviceId',
             },
         ],
-        valueRules: [{ argument: 'value', kind: 'number-if-present', qualitativeDirection: 'device-parameter' }],
+        valueRules: [
+            {
+                argument: 'value',
+                kind: 'number-if-present',
+                qualitativeDirection: 'device-parameter',
+                descriptorUnitSource: { deviceIdArgument: 'deviceId', paramIdArgument: 'paramId' },
+            },
+        ],
         parameters: {
             properties: {
                 deviceId: { type: 'string' },
                 paramId: {
                     type: 'string',
-                    description: 'Parameter name (e.g. "frequency", "ratio", "mix", "threshold")',
+                    description:
+                        'Exact parameter ID from context (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold)',
                 },
-                value: { type: 'number', description: 'Parameter value (range depends on the parameter)' },
+                value: {
+                    type: 'number',
+                    description: 'Value in the exact native unit and range declared for that context parameter',
+                },
             },
             required: ['deviceId', 'paramId', 'value'],
         },

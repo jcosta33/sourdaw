@@ -67,7 +67,7 @@ export function createExecutionCommandEnvelope(input: CreateExecutionCommandEnve
     const materialized = materializeSeed(identityMaterialized.action);
     const source = input.options?.source ?? 'manual';
     const argumentsValue = getPayloadRecord(materialized.action);
-    const metadata = compileCommandArgumentMetadata(argumentsValue);
+    const metadata = compileCommandArgumentMetadata(argumentsValue, materialized.action.type);
     const envelope = createVersionedCommandEnvelope({
         action: materialized.action,
         applicationAssignedIds: identityMaterialized.applicationAssignedIds,

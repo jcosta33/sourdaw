@@ -393,6 +393,7 @@ describe('track, routing, and device strategy guards (issue #4110)', () => {
                     deviceId: 'device-vox-eq',
                     paramId: 'mix',
                     value: 0.3,
+                    valueUnit: '%',
                     expectedTrackId: 'track-vox',
                     expectedDeviceType: 'builtin-eq',
                     expectedDeviceIds: ['device-vox-eq'],

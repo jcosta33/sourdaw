@@ -1,3 +1,5 @@
+import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type LlmActionRejection, type SectionPlanningSignature } from '../llmActionBridgeContracts';
@@ -118,12 +120,14 @@ const deviceStrategyDefinitions = [
                     'Expected a descriptor-backed parameter value within project bounds'
                 );
             }
+            const valueUnit = normalizeDeviceParameterValueUnit(parameter.unit);
             return {
                 type: 'setDeviceParameter',
                 payload: {
                     deviceId: target.device.id,
                     paramId: parameter.id,
                     value: args.value,
+                    ...(valueUnit === null ? {} : { valueUnit }),
                     expectedTrackId: target.track.id,
                     expectedDeviceType: target.device.type,
                     expectedDeviceIds: target.track.devices.map((device) => device.id),
