@@ -44,6 +44,14 @@ scripts/prepareReview.ts
         "model": "claude-fable-5-1"
       },
       "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
     }
   }
 }
