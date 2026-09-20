@@ -725,9 +725,10 @@ describe('product-scope test instructions', () => {
         'expected result; automated author or CI check narration is not a substitute';
 
     /**
-     * The full head inventory, spec-owned on purpose: dropping any head from the production set
-     * reddens the equality pin and the dropped head's behavioral iteration instead of silently
-     * un-gating a tool.
+     * The full head inventory, spec-owned on purpose: dropping any head reddens the equality pin.
+     * For a bare head the behavioral iteration reddens too — a second net. For a colon-bearing
+     * head the equality pin is the only net: the dropped head's line still refuses, because the
+     * slash/colon path rule classifies it as command material regardless.
      */
     const COMMAND_HEADS_UNDER_TEST = [
         'bash',
@@ -902,8 +903,18 @@ describe('product-scope test instructions', () => {
 
     it.each([
         ['a wasm-pack build', 'wasm-pack build crates/audio-engine'],
+        // './scripts/seed' carries both a slash and an extension shape, so it drops under either
+        // rule; the extension rule is pinned singly by the leads below and the slash rule by the
+        // prose-position slash token — a leading dot alone is no longer a rule, because every
+        // dot-led lettered token is extension-shaped and the extension rule already drops it.
         ['a dotted script path', './scripts/seed'],
         ['a dotted script path behind a launch', 'node ./scripts/seed'],
+        // The extension rule through a dot-led shape: '.env' ends in dot-plus-letters with no
+        // slash, so only FILE_EXTENSION_SUFFIX makes it command material.
+        ['a dot-led env file', '.env lint all (clean)'],
+        // The extension rule through a plain filename lead: 'data.json' carries no slash or dot
+        // prefix, so deleting FILE_EXTENSION_SUFFIX leaves it a prose word that rescues.
+        ['a data-file lead', 'data.json lint all (green)'],
     ])('refuses %s', (_label, instructions) => {
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
@@ -934,12 +945,47 @@ describe('product-scope test instructions', () => {
     });
 
     it('passes a bare launch whose argument run flows into a step', () => {
-        // 'dev' is the launch's subcommand and drops; the run ends at the vocabulary word 'and',
-        // and the drag cue rescues the rest.
+        // 'dev' is the launch's subcommand slot and drops; the run ends at the vocabulary word
+        // 'and', and the drag cue rescues the rest.
         const step = 'pnpm dev and drag a clip onto a lane, it lands quantized';
 
         expect(commandOnlyTestInstructions(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes an exec chain flowing into a step with in-run cue words', () => {
+        // 'exec' is the subcommand slot; 'playwright' reopens the run; 'open' is a cue inside the
+        // run that ends it and is kept, so the rest of the step rescues the segment.
+        const step = 'pnpm exec playwright open the app and see the mixer render';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a run subcommand with a bare argument', 'pnpm run build'],
+        ['a bare start launch', 'npm start'],
+        ['a staging launch', 'git add .'],
+        ['a branch switch', 'git switch main'],
+        ['a report launch', 'pnpm exec playwright show-report'],
+        ['a conjunction pair with an annotation tail', 'pnpm typecheck and pnpm lint, both green'],
+    ])('refuses %s', (_label, instructions) => {
+        // The subcommand slot drops the token behind the leading head whatever it is, and the
+        // argument run behind the slot stays annotation-only — none of these teach a step.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('keeps noun-clause parentheticals that name UI state', () => {
+        // A parenthetical whose content is not pure annotation keeps its content in the prose, and
+        // the nouns beyond the vocabulary rescue the segment.
+        const tracks = '1. `pnpm dev` (the level meter tracks the input)';
+        const lands = '1. `pnpm dev` (the clip lands quantized to the grid)';
+
+        expect(commandOnlyTestInstructions(tracks)).toBe(false);
+        expect(() => assertObservableTestInstructions(tracks)).not.toThrow();
+        expect(commandOnlyTestInstructions(lands)).toBe(false);
+        expect(() => assertObservableTestInstructions(lands)).not.toThrow();
     });
 
     it('refuses a launch whose argument run stays annotation', () => {

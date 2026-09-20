@@ -131,6 +131,10 @@ const REMAINDER_VOCABULARY = new Set([
     'reddens',
     'errors',
     'is',
+    'see',
+    'ci',
+    'expected',
+    'both',
     'on',
     'with',
     'the',
@@ -172,9 +176,9 @@ const REMAINDER_VOCABULARY = new Set([
 /**
  * Words that make a segment teach an observation rather than recite a launch: inflected stems,
  * matched at word start so `confirm` reaches `confirms`/`confirmed` and `play` reaches `plays`,
- * `played`, and `playback` — the old press-play phrases fold into the `play` stem. Tested against
- * the prose remainder only, never against command text: `wasm:verify` and
- * `checkModelCached.spec.ts` carry their stems inside tokens the remainder has already dropped.
+ * `played`, and `playback`. Tested against the prose remainder only, never against command text:
+ * `wasm:verify` and `checkModelCached.spec.ts` carry their stems inside tokens the remainder has
+ * already dropped.
  */
 const OBSERVATION_CUE =
     /\b(?:confirm|verif|observ|check|watch|listen|hear|notice|open|click|appear|render|show|display|audible|drag|play|press|select|type|toggle|choose|create|remove|delete|move|resize|scroll|hover|arm|record|restart|start|stop|save|undo|redo|zoom|nudge|cut|copy|paste|split|duplicate|rename|edit|adjust|switch|connect|disconnect|enable|disable|import|export|load|reload|clear|reset|apply|add|set)\w*/i;
@@ -233,25 +237,44 @@ function proseRemainder(segment: string): string {
     }
 }
 
-/** Whether a token is command material no prose can ride on: heads, paths, flags, dotted names. */
+/** Whether a token is command material no prose can ride on: heads, paths, flags, filenames. */
 function isCommandToken(token: string): boolean {
     return (
         COMMAND_HEADS.has(token) ||
         /[/\\:]/.test(token) ||
         FILE_EXTENSION_SUFFIX.test(token) ||
         token.startsWith('-') ||
-        token.startsWith('.') ||
-        !/[a-z]/.test(token)
+        isNumberOrPunctuation(token)
     );
+}
+
+/** Whether a token carries no letters at all: a bare number or punctuation. */
+function isNumberOrPunctuation(token: string): boolean {
+    return !/[a-z]/.test(token);
+}
+
+/**
+ * Whether a parenthetical's content is pure annotation: every word in the annotation vocabulary or
+ * a bare number/punctuation token. Annotation strips from the remainder; anything else — a clause
+ * naming UI state — keeps its content in the prose and can rescue the segment.
+ */
+function isAnnotationParenthetical(parenthetical: string): boolean {
+    const tokens = parenthetical
+        .slice(1, -1)
+        .split(/\s+/)
+        .map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+    return tokens.every((token) => token === '' || REMAINDER_VOCABULARY.has(token) || isNumberOrPunctuation(token));
 }
 
 /**
  * The words the segment's leftover prose is made of. Quoted spans go first — backtick and
  * single-quote alike, so prose inside a command's quoted arguments cannot rescue it; a
- * parenthetical is stripped only when it carries no observation cue (`(clean)` is annotation,
- * `(confirm the …)` teaches the step and its content stays). Then the tokens drop: command heads,
- * paths, extensions, flags, pure numbers and punctuation. A launch's own argument run is command
- * material too — after a leading head, bare arguments drop until a word a reader would actually
+ * parenthetical strips only when every word of its content is annotation vocabulary or a
+ * number/punctuation token (`(clean)`, `(140 passed)`), while a clause naming UI state keeps its
+ * content and can rescue the segment (`(the clip lands quantized to the grid)`). Then the tokens
+ * drop: command heads, their subcommand slot, and their argument run — after a leading head the
+ * token behind it is command material whatever it is (`pnpm run build`, `npm start`), and the
+ * argument run opens behind that slot: bare arguments drop until a word a reader would actually
  * read (vocabulary or cue) ends the run and is kept, while a non-colon command head REOPENS the
  * run and drops with it (`pnpm exec cargo build` is launch, subcommand, argument) — a
  * colon-bearing head is the same launch's script name, so the run continues through it — making
@@ -260,10 +283,10 @@ function isCommandToken(token: string): boolean {
 function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
         .replaceAll(QUOTED_SPAN, ' ')
-        .replace(PARENTHETICAL, (parenthetical) => (OBSERVATION_CUE.test(parenthetical) ? parenthetical : ' '));
+        .replace(PARENTHETICAL, (parenthetical) => (isAnnotationParenthetical(parenthetical) ? ' ' : parenthetical));
     const tokens = remainder.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
     const words: string[] = [];
-    let quotingArguments = tokens[0] !== undefined && COMMAND_HEADS.has(tokens[0]);
+    let insideArgumentRun = tokens[0] !== undefined && COMMAND_HEADS.has(tokens[0]);
     for (const [index, word] of tokens.entries()) {
         if (word === '') {
             continue;
@@ -271,24 +294,27 @@ function proseRemainderWords(segment: string): string[] {
         if (index === 0) {
             // The leading command head opens the argument run and is command material itself;
             // any other leading word is prose like any other.
-            if (!quotingArguments && !isCommandToken(word)) {
+            if (!insideArgumentRun && !isCommandToken(word)) {
                 words.push(word);
             }
             continue;
         }
-        if (quotingArguments) {
-            if (COMMAND_HEADS.has(word) && !word.includes(':')) {
-                // A non-colon command head REOPENS the run and drops with it: `pnpm exec cargo
-                // build` is launch, subcommand, argument — all command material.
-                continue;
-            }
-            if (isCommandToken(word)) {
-                // Flags, paths, colon-suffixed tools: command material whose stems (`check` in a
-                // spec path) must never reach the cue test.
+        if (insideArgumentRun && index === 1) {
+            // The subcommand slot: the token behind a leading head is command material whatever
+            // it is — `pnpm run build`, `npm start` — dropped before the argument run opens.
+            continue;
+        }
+        if (insideArgumentRun) {
+            // Heads inside a run are command material too: the subcommand slot handled the
+            // leading launch, so a mid-run head is just another command token (`pnpm exec cargo
+            // build`). Flags, paths, colon-suffixed tools, and kebab-case arguments (`show-report`
+            // in `playwright show-report`) are command material whose cue-bearing halves must
+            // never reach the cue test.
+            if (isCommandToken(word) || word.includes('-')) {
                 continue;
             }
             if (REMAINDER_VOCABULARY.has(word) || OBSERVATION_CUE.test(word)) {
-                quotingArguments = false;
+                insideArgumentRun = false;
                 words.push(word);
                 continue;
             }
