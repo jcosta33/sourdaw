@@ -9,6 +9,7 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION } from '../../models/ModelProviderProtocol';
 import {
     type PendingActionSemanticDiff,
     clearPendingActionConfirmations,
@@ -16,7 +17,9 @@ import {
     supersedePendingActionConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 const REVISION = 'revision-approval-view';
 const GAIN_COMMAND_ID = '33333333-3333-4333-8333-333333333331';
@@ -24,16 +27,11 @@ const REMOVE_COMMAND_ID = '33333333-3333-4333-8333-333333333332';
 
 const mocks = vi.hoisted(() => ({
     captureRevision: vi.fn(),
-    getRouteView: vi.fn(),
     validateApproval: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
-}));
-
-vi.mock('../getProviderRouteView', () => ({
-    getProviderRouteView: mocks.getRouteView,
 }));
 
 vi.mock('../validateAgentRiskApproval', () => ({
@@ -68,10 +66,68 @@ const AGENT_APPROVAL = {
     },
 };
 
-const ROUTE_VIEW = {
-    cost: [{ provider: 'hosted-anthropic', currency: 'USD', amount: 0.02 }],
-    dataDisclosure: { categories: ['prompt-text'], retention: 'none' },
+const ROUTE_COST = {
+    category: 'remoteTokens',
+    reserved: 100,
+    actual: 72,
+    provenance: 'provider-reported' as const,
+    final: true,
 };
+const ROUTE_DISCLOSURE = {
+    categories: ['prompt-text'],
+    retention: {
+        applicationState: 'unknown' as const,
+        abuseMonitoring: 'unknown' as const,
+        promptCache: 'unknown' as const,
+        safetyLegalException: 'unknown' as const,
+        unknown: 'unknown' as const,
+    },
+};
+
+function providerResult(inputTokens: number | null) {
+    return {
+        schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+        provider: 'anthropic' as const,
+        model: 'hosted-model',
+        correlationId: 'provider-attempt-approval-view',
+        status: 'complete' as const,
+        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+        usage: {
+            inputTokens,
+            outputTokens: 9,
+            cachedInputTokens: 5,
+            reasoningTokens: null,
+            provenance: 'provider-reported' as const,
+        },
+        finishReason: 'stop' as const,
+        partialOutputDisposition: 'none' as const,
+        failure: null,
+        ignoredProviderEvents: [],
+        remoteDisclosure: {
+            requestId: 'provider-attempt-approval-view',
+            categories: ['prompt-text' as const],
+            retention: ROUTE_DISCLOSURE.retention,
+        },
+    };
+}
+
+function seedProviderRoute(inputTokens: number | null = 63): void {
+    agentRunLifecycle.create({
+        runId: 'run-approval-view',
+        request: 'Rebalance the drums',
+        mode: 'plan',
+        createdRevision: REVISION,
+        requestedRoute: 'cloud',
+    });
+    agentRunLifecycle.reserveBudget({
+        runId: 'run-approval-view',
+        attemptId: 'provider-attempt-approval-view',
+        category: 'remoteTokens',
+        estimate: 100,
+        provenance: 'versioned-estimate',
+    });
+    recordAgentProviderUsage('run-approval-view', providerResult(inputTokens), 'provider-attempt-approval-view');
+}
 
 function collectStrings(value: unknown, into: string[]): string[] {
     if (typeof value === 'string') {
@@ -193,13 +249,15 @@ describe('getAgentApprovalView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
+        seedProviderRoute();
         mocks.captureRevision.mockReturnValue(REVISION);
-        mocks.getRouteView.mockReturnValue(ROUTE_VIEW);
         mocks.validateApproval.mockReturnValue({ status: 'valid' });
     });
 
     afterEach(() => {
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
     });
 
     // Red when an unknown confirmation id yields a view instead of nothing.
@@ -395,17 +453,36 @@ describe('getAgentApprovalView', () => {
         propose('confirmation-route');
 
         expect(getAgentApprovalView({ confirmationId: 'confirmation-route' })).toMatchObject({
-            cost: ROUTE_VIEW.cost,
-            dataDisclosure: ROUTE_VIEW.dataDisclosure,
+            cost: [ROUTE_COST],
+            dataDisclosure: ROUTE_DISCLOSURE,
         });
-        expect(mocks.getRouteView).toHaveBeenCalledWith({ runId: 'run-approval-view' });
 
-        mocks.getRouteView.mockReturnValue(null);
+        agentRunLifecycle.clear();
 
         expect(getAgentApprovalView({ confirmationId: 'confirmation-route' })).toMatchObject({
             cost: [],
             dataDisclosure: null,
         });
+    });
+
+    it('carries an incomplete provider reservation until later complete usage settles the approval cost', () => {
+        agentRunLifecycle.clear();
+        seedProviderRoute(null);
+        propose('confirmation-incomplete-route');
+
+        expect(getAgentApprovalView({ confirmationId: 'confirmation-incomplete-route' })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 100,
+                actual: 9,
+                provenance: 'versioned-estimate',
+                final: false,
+            },
+        ]);
+
+        recordAgentProviderUsage('run-approval-view', providerResult(63), 'provider-attempt-approval-view');
+
+        expect(getAgentApprovalView({ confirmationId: 'confirmation-incomplete-route' })?.cost).toEqual([ROUTE_COST]);
     });
 
     // Red when the view leaks the serialized batch the caller could execute the proposal from.
