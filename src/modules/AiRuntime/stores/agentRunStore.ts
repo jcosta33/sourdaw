@@ -999,6 +999,14 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             const digest = readString(candidate.digest);
             return id === null || digest === null ? null : { id, digest };
         });
+        const automationLanes = readCollection(rawSnapshot.automationLanes, (candidate) => {
+            if (!isRecord(candidate)) {
+                return null;
+            }
+            const id = readString(candidate.id);
+            const digest = readString(candidate.digest);
+            return id === null || digest === null ? null : { id, digest };
+        });
         const sections =
             rawSnapshot.sections === undefined
                 ? undefined
@@ -1017,8 +1025,13 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             !Array.isArray(rawSnapshot.timeSignature) ||
             rawSnapshot.timeSignature.length !== 2 ||
             !rawSnapshot.timeSignature.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
+            typeof rawSnapshot.masterGain !== 'number' ||
+            !Number.isFinite(rawSnapshot.masterGain) ||
+            (rawSnapshot.masterGainDb !== null &&
+                (typeof rawSnapshot.masterGainDb !== 'number' || !Number.isFinite(rawSnapshot.masterGainDb))) ||
             selectedTrack === undefined ||
             selectableTargets === null ||
+            automationLanes === null ||
             sections === null ||
             readNonNegativeInteger(rawSnapshot.targetCount) === null ||
             typeof rawSnapshot.truncated !== 'boolean'
@@ -1029,8 +1042,11 @@ function readAgentContextEvidence(value: unknown): AgentContextEvidence | null {
             identity,
             tempo: rawSnapshot.tempo,
             timeSignature: [rawSnapshot.timeSignature[0], rawSnapshot.timeSignature[1]] as [number, number],
+            masterGain: rawSnapshot.masterGain,
+            masterGainDb: rawSnapshot.masterGainDb,
             selectedTrack,
             selectableTargets,
+            automationLanes,
             ...(sections === undefined ? {} : { sections }),
             targetCount: readNonNegativeInteger(rawSnapshot.targetCount)!,
             truncated: rawSnapshot.truncated,
@@ -1578,8 +1594,12 @@ function readAgentRun(value: unknown): AgentRun | null {
             : readCollection(value.pendingEffectContinuations, readPendingEffectContinuation);
     const preparedStemImports = readPreparedStemImportRecoveries(value.preparedStemImports);
     const workLeases = readCollection(value.workLeases, readWorkLease);
+    const contextEvidenceHasStaleSchema =
+        isRecord(value.contextEvidence) && value.contextEvidence.schemaVersion !== AGENT_CONTEXT_SCHEMA_VERSION;
     const contextEvidence =
-        value.contextEvidence === undefined ? null : readAgentContextEvidence(value.contextEvidence);
+        value.contextEvidence === undefined || contextEvidenceHasStaleSchema
+            ? null
+            : readAgentContextEvidence(value.contextEvidence);
     const cancellationGeneration = readNonNegativeInteger(value.cancellation.generation);
     const requestedAt = readNullableTimestamp(value.cancellation.requestedAt);
     const cancellationReason = readNullableString(value.cancellation.reason);
@@ -1626,7 +1646,10 @@ function readAgentRun(value: unknown): AgentRun | null {
         temporaryAssets === null ||
         pendingEffectContinuations === null ||
         workLeases === null ||
-        (contextEvidence === null && value.contextEvidence !== undefined && value.contextEvidence !== null) ||
+        (contextEvidence === null &&
+            value.contextEvidence !== undefined &&
+            value.contextEvidence !== null &&
+            !contextEvidenceHasStaleSchema) ||
         cancellationGeneration === null ||
         requestedAt === undefined ||
         cancellationReason === undefined ||

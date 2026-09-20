@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, toLevelDb } from '#/utils/audioLevelLaw';
 
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
@@ -21,6 +21,7 @@ const projectContext: ProjectContext = {
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
+    masterGainDb: toLevelDb(0.8),
     vcaGroups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: ['track-vocals'] }],
     automationLanes: [
         {
@@ -31,6 +32,8 @@ const projectContext: ProjectContext = {
             enabled: true,
             minValue: 0,
             maxValue: 1,
+            minValueDb: -60,
+            maxValueDb: 0,
             points: [{ beat: 4, value: 0.75, curve: 'linear' }],
         },
     ],
@@ -44,6 +47,7 @@ const projectContext: ProjectContext = {
             soloSafe: false,
             armed: false,
             gain: 0.8,
+            gainDb: toLevelDb(0.8),
             pan: 0,
             automationMode: 'read',
             vcaGroupId: 'vca-drums',
@@ -58,6 +62,7 @@ const projectContext: ProjectContext = {
                     startBeat: 0,
                     endBeat: 8,
                     gain: 1,
+                    gainDb: 0,
                     locked: false,
                     muted: false,
                     color: '#112233',
@@ -125,7 +130,7 @@ const projectContext: ProjectContext = {
                     ],
                 },
             ],
-            sends: [{ busId: 'bus-reverb', level: 0.2, preFader: true }],
+            sends: [{ busId: 'bus-reverb', level: 0.2, levelDb: toLevelDb(0.2), preFader: true }],
         },
         {
             id: 'bus-reverb',
@@ -136,6 +141,7 @@ const projectContext: ProjectContext = {
             soloSafe: false,
             armed: false,
             gain: 0.8,
+            gainDb: toLevelDb(0.8),
             pan: 0,
             automationMode: 'read',
             outputId: 'master',
@@ -154,6 +160,7 @@ const projectContext: ProjectContext = {
             soloSafe: false,
             armed: false,
             gain: 0.8,
+            gainDb: toLevelDb(0.8),
             pan: 0,
             automationMode: 'read',
             outputId: 'hw_out',
@@ -3621,6 +3628,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
         expect(userMessage).toContain('"masterGain":0.8');
+        expect(userMessage).toContain(`"masterGainDb":${String(toLevelDb(0.8))}`);
         expect(userMessage).toContain('"productionBrief":{');
         expect(userMessage).toContain('"revision":3');
         expect(userMessage).toContain('"vision":"Intimate verses, explosive choruses"');
@@ -3630,6 +3638,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');
         expect(userMessage).toContain('"id":"lane-vocal-gain"');
+        expect(userMessage).toContain('"minValue":0,"maxValue":1,"minValueDb":-60,"maxValueDb":0');
         expect(userMessage).toContain('"pointCount":1');
         expect(userMessage).not.toContain('"points"');
         expect(userMessage).toContain('"armed":false');
@@ -3639,13 +3648,15 @@ describe('bridgeLlmToolCalls', () => {
         );
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(
-            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false,"midiOffsetBeats":0}]'
+            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"gainDb":0,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false,"midiOffsetBeats":0}]'
         );
         expect(userMessage).not.toContain('"noteCount"');
         expect(userMessage).toContain('"devices"');
         expect(userMessage).toContain('"frequency"');
         expect(userMessage).toContain('"minValue":20');
         expect(userMessage).toContain('"sends"');
+        expect(userMessage).toContain(`"level":0.2,"levelDb":${String(toLevelDb(0.2))}`);
+        expect(userMessage).toContain(`"gain":0.8,"gainDb":${String(toLevelDb(0.8))}`);
         expect(userMessage).toContain('"outputId":"master"');
     });
 

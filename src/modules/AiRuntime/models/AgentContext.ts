@@ -1,4 +1,4 @@
-export const AGENT_CONTEXT_SCHEMA_VERSION = 1 as const;
+export const AGENT_CONTEXT_SCHEMA_VERSION = 2 as const;
 
 export type AgentContextGrants = {
     allowedOperationPrefixes: string[];
@@ -22,8 +22,11 @@ export type AgentContextProjectSnapshot = {
     identity: string;
     tempo: number;
     timeSignature: [number, number];
+    masterGain: number;
+    masterGainDb: number | null;
     selectedTrack: { id: string; digest: string } | null;
     selectableTargets: Array<{ id: string; digest: string }>;
+    automationLanes: Array<{ id: string; digest: string }>;
     sections?: Array<{ id: string; digest: string }>;
     targetCount: number;
     truncated: boolean;

@@ -33,6 +33,14 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
+
+PR #4392 (`5c476c92153`) added linear/decibel project-context fields, but its provider assertion covered only master and track decibels in one projection. It did not inspect the final full and delta messages for paired master, track, send, clip, and gain-lane values.
+
+Coverage gap: the added assertions proved producer objects and a master/track-only provider projection, but did not inspect the correction-round delta or nested level fields.
+
+Probe that would have caught it: inspect `buildAgentContext().message` in full and delta modes, mutate an unselected track's clip, send, and gain lane independently of its gain/name, and require every linear value beside its decibel reading, removals represented, and exactly one law header.
+
 ### 2026-09-19 — an Anthropic usage fixture mirrored the raw-field mapping (escaped via PR #4393)
 
 PR #4393 normalized Anthropic `input_tokens` directly as total input while also exposing cache-read and
