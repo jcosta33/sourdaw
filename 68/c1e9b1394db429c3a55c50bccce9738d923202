@@ -1,0 +1,21 @@
+AGENTS.md
+  s_ed5aa36a3ba357::t_8fd6ac31e5bc38 86-88
+package.json
+  s_ed5aa36a3ba357::t_fdde39c285837e 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "68c1e9b1394db429c3a55c50bccce9738d923202",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
