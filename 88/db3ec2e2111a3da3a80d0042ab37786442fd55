@@ -1,0 +1,27 @@
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_63d33bb4355d4e 122-136
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e39c2d7cf84268 321-334
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_ed5aa36a3ba357::t_a83f721018f482 549-585
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_ed5aa36a3ba357::t_1d4e987f7f207f 97
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_ed5aa36a3ba357::t_8c0d6b971e7d3b 166-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "88db3ec2e2111a3da3a80d0042ab37786442fd55",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
