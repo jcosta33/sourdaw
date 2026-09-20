@@ -343,3 +343,11 @@ Probe that would have caught it: reserve a real hosted attempt, report each requ
 inspect the lifecycle budget plus the real route and approval projections. The reservation must remain non-final until both
 required counters are known; then repeat the complete report and follow it with a partial one. The charge must settle once,
 and both rendered cost surfaces must distinguish the pending reservation from a final provider-reported total.
+
+### 2026-09-20 — compatible choice-count rejection lost billed usage (introduced by PR #4407)
+
+PR #4407 kept an OpenAI-compatible response with zero or multiple choices as a typed, retryable protocol failure, but its fixture stopped at adapter rejection and never proved the already-read usage reached run billing.
+
+Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/cost fixture, so it could preserve rejection identity while dropping the paid result.
+
+Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
