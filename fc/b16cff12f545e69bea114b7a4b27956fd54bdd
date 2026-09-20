@@ -1,0 +1,18 @@
+scripts/__tests__/semanticReview.spec.ts
+  h_1228e573df1f42 39-50
+scripts/semanticReview.ts
+  h_1228e573df1f42 81-82,99,184-187,274,276,278,354
+scripts/semanticReview/gitSource.ts
+  h_1228e573df1f42 139-153,187,224,230,275,281-286,303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fcb16cff12f545e69bea114b7a4b27956fd54bdd",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
