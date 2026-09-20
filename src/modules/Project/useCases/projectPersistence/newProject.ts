@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addTrack, rearmInputMonitoring } from '#/modules/Arrangement/useCases';
 import {
     clearRuntimeCachedAudioBuffers,
     forgetProjectLatchedPedals,
@@ -91,10 +92,17 @@ async function settleAbandonedNewProjectReset(replaced: ReplacedProject | null):
 }
 
 function restorePreviousProjectRuntime(): void {
+    let stripsRestored = false;
     try {
-        ensureTrackStrips();
+        stripsRestored = ensureTrackStrips().status === 'ready';
     } catch (error) {
         logger.warn('[newProject] Previous audio graph restoration failed:', error);
+    }
+    if (stripsRestored) {
+        // The reset above released every monitor capture, so the previous
+        // project's 'on' tracks must re-arm against the strips just rebuilt.
+        // The law settles every start, so a refusal cannot fail this restore.
+        void rearmInputMonitoring(trackStore.value?.tracks ?? []);
     }
     try {
         setAutoSaveHandle(startCrdtAutoSave());
