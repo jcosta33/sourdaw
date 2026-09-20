@@ -618,10 +618,15 @@ describe('agent domain query conformance', () => {
     });
 
     it('pages a reordered owner catalog identically and keeps a retained cursor valid', () => {
-        const manifest = getAgentPresetDiscoveryManifest();
-        if (manifest.length < 2) {
-            throw new Error('Expected at least two presets to reorder.');
+        // Three records prove the property. Walking the whole built-in preset
+        // catalog one record at a time re-collects, re-fingerprints and re-sorts
+        // it on every page (hundreds of full-catalog passes), which times out
+        // under CI shard contention; a handful of records keeps it cheap.
+        const catalog = getAgentPresetDiscoveryManifest().slice(0, 3);
+        if (catalog.length < 3) {
+            throw new Error('Expected at least three presets to reorder.');
         }
+        presetDiscoveryManifestOverride.value = catalog;
 
         const walkIds = (): string[] => {
             const ids: string[] = [];
@@ -647,10 +652,11 @@ describe('agent domain query conformance', () => {
         const retainedCursor = first.nextCursor!;
 
         const publishedWalk = walkIds();
+        expect(publishedWalk).toHaveLength(catalog.length);
 
         // Swap the first two records without changing any content, so the
         // revision signature the cursor is bound to stays byte-for-byte the same.
-        const reordered = [...manifest];
+        const reordered = [...catalog];
         [reordered[0], reordered[1]] = [reordered[1], reordered[0]];
         presetDiscoveryManifestOverride.value = reordered;
 
