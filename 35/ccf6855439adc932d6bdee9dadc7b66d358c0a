@@ -1,0 +1,14 @@
+src/modules/Arrangement/useCases/rearmInputMonitoring.ts
+  h_1228e573df1f42 5-12,25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "35ccf6855439adc932d6bdee9dadc7b66d358c0a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
