@@ -21,6 +21,7 @@ type ExternalDevice = ReturnType<typeof getAgentDeviceFactoryManifest>['devices'
 
 function toBuiltinCandidate(descriptor: BuiltinDescriptor, runtime: BuiltinRuntime | undefined): DiscoveryCandidate {
     const runtimeVersion = runtime?.runtimeVersion ?? RUNTIME_UNAVAILABLE_VERSION;
+    const compositeVersion = `builtin-factory-v2:${descriptor.descriptorVersion}:${descriptor.characterVersion}:${descriptor.presetVersion}:${runtimeVersion}`;
     const unavailableReason = (() => {
         if (descriptor.availability === 'unavailable-on-platform') {
             return 'unavailable-on-platform';
@@ -36,7 +37,7 @@ function toBuiltinCandidate(descriptor: BuiltinDescriptor, runtime: BuiltinRunti
             domain: 'device',
             availability: unavailableReason === null ? 'available' : 'unavailable',
             reason: unavailableReason,
-            version: `builtin-factory-v2:${descriptor.descriptorVersion}:${descriptor.presetVersion}:${runtimeVersion}`,
+            version: compositeVersion,
             evidence: {
                 source: 'builtin-device-manifest',
                 vendor: descriptor.vendor,
@@ -44,6 +45,7 @@ function toBuiltinCandidate(descriptor: BuiltinDescriptor, runtime: BuiltinRunti
                 platform: descriptor.platform,
                 descriptorAvailability: descriptor.availability,
                 descriptorVersion: descriptor.descriptorVersion,
+                characterVersion: descriptor.characterVersion,
                 presetVersion: descriptor.presetVersion,
                 runtimeVersion,
                 presets: descriptor.presets,

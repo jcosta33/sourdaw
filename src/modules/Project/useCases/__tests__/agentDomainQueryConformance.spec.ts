@@ -12,8 +12,10 @@ import {
     getAgentBuiltinDeviceFactoryManifest,
     getAgentPresetDiscoveryManifest,
     getArrangementHandlers,
+    getPluginById,
     getFactoryPresets,
     getUserPresets,
+    getDeviceContractVersionForCommand,
     saveCurrentAsPreset,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
@@ -657,6 +659,33 @@ describe('agent domain query conformance', () => {
         );
     });
 
+    it('rejects an older device cursor when only owner-authored character tags change', () => {
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'device', page: { limit: 1 } }));
+        const descriptor = getPluginById('builtin-distortion');
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find(
+            (device) => device.type === 'builtin-distortion'
+        );
+        if (!descriptor || !beforeFactory || first.nextCursor === null) {
+            throw new Error('Expected a page cursor and the built-in distortion descriptor.');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const commandVersion = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const changed = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+            expect(changed?.descriptorVersion).toBe(commandVersion);
+            expect(changed?.descriptorVersion).toBe(beforeFactory.descriptorVersion);
+            expect(changed?.characterVersion).not.toBe(beforeFactory.characterVersion);
+            expect(() =>
+                queryAgentDiscovery({ domain: 'device', page: { limit: 1, cursor: first.nextCursor! } })
+            ).toThrow('Invalid or stale semantic query cursor');
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
+    });
+
     it('marks a built-in device unavailable when no runtime factory claims its type', () => {
         vi.mocked(getAgentBuiltinDeviceRuntimeManifest).mockReturnValueOnce([]);
 
@@ -703,6 +732,7 @@ describe('agent domain query conformance', () => {
 
         expect(contracts.discovery.operations.map((operation) => operation.name)).toEqual([...AGENT_DISCOVERY_DOMAINS]);
         expect(contracts.discovery.capabilities).toContain('owner-catalog-discovery');
+        expect(contracts.discovery.capabilities).toContain('character-tag-filtering');
         expect(contracts.query.operations.map((operation) => operation.name)).toEqual([
             ...SEMANTIC_PROJECT_QUERY_TYPES,
         ]);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 
-import { type PluginDescriptor, BUILTIN_PLUGINS } from '../../models/DeviceParameter';
+import { type PluginDescriptor, BUILTIN_PLUGINS, getPluginById } from '../../models/DeviceParameter';
 import { getStableContractFingerprint } from '../../models/GetStableContractFingerprint';
 import {
     applyDescriptorGuidance,
@@ -138,6 +138,30 @@ describe('built-in descriptor manifest law', () => {
         expect(manifest.find((device) => device.type === 'faust-tape-delay')?.characterTags).toEqual(['tape']);
         expect(manifest.find((device) => device.type === 'builtin-bitcrusher')?.characterTags).toEqual(['bitcrush']);
         expect(manifest.find((device) => device.type === 'builtin-distortion')?.characterTags).toEqual([]);
+    });
+
+    it('versions descriptor character associations separately from command replay', () => {
+        const descriptor = getPluginById('builtin-distortion');
+        if (!descriptor) {
+            throw new Error('Expected the distortion descriptor');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const beforeCommandVersion = getDeviceContractVersionForCommand(descriptor.id);
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const afterFactory = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+            expect(afterFactory?.descriptorVersion).toBe(beforeFactory?.descriptorVersion);
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(beforeCommandVersion);
+            expect(afterFactory?.characterVersion).toBe(
+                `character-v1:${getStableContractFingerprint({ type: descriptor.id, characterTags: ['tube'] })}`
+            );
+            expect(afterFactory?.characterVersion).not.toBe(beforeFactory?.characterVersion);
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
     });
 
     it('publishes complete owner-authored safety and operating guidance without inferred boilerplate', () => {

@@ -7,6 +7,7 @@ import {
     type DeviceParameterGuidance,
     type PluginDescriptor,
 } from '../models/DeviceParameter';
+import { getStableContractFingerprint } from '../models/GetStableContractFingerprint';
 import { getFactoryPresetContractsByDeviceType } from '../repositories/presets/getFactoryPresetContractsByDeviceType';
 
 import { getDeviceContractVersionForCommand } from './getDeviceContractVersionForCommand';
@@ -27,6 +28,7 @@ type AgentDeviceParameter = {
 type AgentBuiltinDeviceDescriptor = {
     type: string;
     descriptorVersion: string;
+    characterVersion: string;
     presetVersion: string;
     characterTags: readonly NonNullable<PluginDescriptor['characterTags']>[number][];
     capabilities: NonNullable<PluginDescriptor['capabilities']>;
@@ -102,6 +104,10 @@ export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDev
         return {
             type: descriptor.id,
             descriptorVersion,
+            characterVersion: `character-v1:${getStableContractFingerprint({
+                type: descriptor.id,
+                characterTags: descriptor.characterTags ?? [],
+            })}`,
             presetVersion: presetContract.presetVersion,
             characterTags: descriptor.characterTags ?? [],
             capabilities: descriptor.capabilities,

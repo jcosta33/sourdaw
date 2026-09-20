@@ -175,26 +175,42 @@ describe('getDeviceContractVersionForCommand', () => {
         expect(getDeviceContractVersionForCommand('knead')).toMatch(/^descriptor-v1:[0-9a-f]{8}$/);
     });
 
+    it('keeps command replay stable when only descriptor character tags change', () => {
+        const descriptor = getPluginById('builtin-distortion');
+        if (!descriptor) {
+            throw new Error('Expected the distortion descriptor');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const before = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.characterTags = ['tube'];
+
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(before);
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
+    });
+
     it('includes Arrangement-owned guidance in the descriptor fingerprint', () => {
         const descriptor = getPluginById('builtin-compressor');
         if (!descriptor?.guidance) {
             throw new Error('Expected compressor guidance in the authoritative descriptor');
         }
 
-        const mutatedGuidance = {
-            ...descriptor,
-            guidance: {
+        const originalGuidance = descriptor.guidance;
+        const before = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.guidance = {
                 ...descriptor.guidance,
                 usage: 'Mutant guidance that must change the descriptor contract.',
-            },
-        };
+            };
 
-        expect(getDeviceContractVersionForCommand('builtin-compressor')).toBe(
-            `descriptor-v1:${getStableContractFingerprint(descriptor)}`
-        );
-        expect(getDeviceContractVersionForCommand('builtin-compressor')).not.toBe(
-            `descriptor-v1:${getStableContractFingerprint(mutatedGuidance)}`
-        );
+            expect(getDeviceContractVersionForCommand(descriptor.id)).not.toBe(before);
+        } finally {
+            descriptor.guidance = originalGuidance;
+        }
     });
 
     it('includes Arrangement-owned domain capability identity in the descriptor fingerprint', () => {
@@ -203,22 +219,42 @@ describe('getDeviceContractVersionForCommand', () => {
             throw new Error('Expected compressor domain capabilities in the authoritative descriptor');
         }
 
-        const mutatedCapabilities = {
-            ...descriptor,
-            capabilities: {
+        const originalCapabilities = descriptor.capabilities;
+        const before = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.capabilities = {
                 ...descriptor.capabilities,
                 audioProcessing: {
                     availability: 'unavailable' as const,
                     reason: 'Mutant capability that must change the descriptor contract.',
                 },
-            },
-        };
+            };
 
-        expect(getDeviceContractVersionForCommand('builtin-compressor')).toBe(
-            `descriptor-v1:${getStableContractFingerprint(descriptor)}`
-        );
-        expect(getDeviceContractVersionForCommand('builtin-compressor')).not.toBe(
-            `descriptor-v1:${getStableContractFingerprint(mutatedCapabilities)}`
-        );
+            expect(getDeviceContractVersionForCommand(descriptor.id)).not.toBe(before);
+        } finally {
+            descriptor.capabilities = originalCapabilities;
+        }
+    });
+
+    it('includes Arrangement-owned parameter identity in the descriptor fingerprint', () => {
+        const descriptor = getPluginById('builtin-compressor');
+        const firstParameter = descriptor?.parameters[0];
+        if (!descriptor || !firstParameter) {
+            throw new Error('Expected a compressor parameter in the authoritative descriptor');
+        }
+        const originalParameters = descriptor.parameters;
+        const before = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.parameters = [
+                { ...firstParameter, defaultValue: firstParameter.defaultValue + 1 },
+                ...descriptor.parameters.slice(1),
+            ];
+
+            expect(getDeviceContractVersionForCommand(descriptor.id)).not.toBe(before);
+        } finally {
+            descriptor.parameters = originalParameters;
+        }
     });
 });

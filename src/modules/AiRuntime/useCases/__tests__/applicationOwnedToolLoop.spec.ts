@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    getAgentBuiltinDeviceFactoryManifest,
+    getDeviceContractVersionForCommand,
+    getPluginById,
+} from '#/modules/Arrangement/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
@@ -384,6 +389,83 @@ describe('application-owned tool loop', () => {
             reason: 'Provider requested an unavailable application tool.',
         });
         expect(querySemanticProject).not.toHaveBeenCalled();
+    });
+
+    it('re-versions the actual factory-manifest receipt when only character metadata changes', async () => {
+        const readManifest = async (callId: string) => {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: callId,
+                            name: 'device.factory-manifest.read',
+                            arguments: { types: ['builtin-distortion'] },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+            const result = await runApplicationOwnedToolLoop({
+                loopId: `loop-${callId}`,
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+            return result.receipts.find((receipt) => receipt.callId === callId);
+        };
+        const descriptor = getPluginById('builtin-distortion');
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find(
+            (device) => device.type === 'builtin-distortion'
+        );
+        if (!descriptor || !beforeFactory) {
+            throw new Error('Expected the built-in distortion descriptor.');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const commandVersion = getDeviceContractVersionForCommand(descriptor.id);
+        const before = await readManifest('manifest-before-character-change');
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const afterFactory = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+            if (!afterFactory) {
+                throw new Error('Expected the changed built-in distortion descriptor.');
+            }
+            const after = await readManifest('manifest-after-character-change');
+
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(commandVersion);
+            expect(afterFactory.descriptorVersion).toBe(beforeFactory.descriptorVersion);
+            expect(afterFactory.characterVersion).not.toBe(beforeFactory.characterVersion);
+            expect(before?.data).toEqual(
+                expect.objectContaining({
+                    devices: expect.arrayContaining([
+                        expect.objectContaining({
+                            type: descriptor.id,
+                            version: expect.stringContaining(beforeFactory.characterVersion),
+                            versions: expect.objectContaining({
+                                descriptor: beforeFactory.descriptorVersion,
+                                character: beforeFactory.characterVersion,
+                            }),
+                        }),
+                    ]),
+                })
+            );
+            expect(after?.data).toEqual(
+                expect.objectContaining({
+                    devices: expect.arrayContaining([
+                        expect.objectContaining({
+                            type: descriptor.id,
+                            version: expect.stringContaining(afterFactory.characterVersion),
+                            versions: expect.objectContaining({
+                                descriptor: beforeFactory.descriptorVersion,
+                                character: afterFactory.characterVersion,
+                            }),
+                        }),
+                    ]),
+                })
+            );
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
     });
 
     it('refuses a turn that declines and proposes at once, so the outcome of a turn is never ambiguous', async () => {

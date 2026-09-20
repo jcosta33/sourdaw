@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "a36e2b562ae306965c911a4e8182b7ec3daf4644c4efba265c0b06bf2d2ea012"
+        "digest": "ed41c371522647758c9c9a915f5268911c2f223b7a36d9e862d0ea722c2d763c"
     },
     "census": {
         "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "4065f35deaaebf0da8744c3892fc982fa23a3d31aaad615774d9aaf22db5bb70"
+                    "digest": "b3837682fc7ed75af6eb77fd1200975761f511758cbc6edad34c0147cb47877c"
                 }
             ]
         },
@@ -919,7 +919,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
-                    "digest": "9d556b61cb56b102f90f2ddb191947c84901a457567d70301c3f28b5edd88f94"
+                    "digest": "48b63e6ea5c410ced9ac1b1ca919f6946a200c0ea5bf755e72284d8608aefb53"
                 }
             ]
         },
