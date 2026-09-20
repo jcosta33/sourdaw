@@ -968,20 +968,25 @@ export const NO_LANE_SUBJECT_FAILURE =
  * remaining commit, merges included, must carry the author App's commit email — the identity lane
  * worktrees are stamped with at open — and the refusal names each offending commit. Its remedy
  * cannot rewrite base-side history: the offered rebase is gated on its root dominating every
- * excluded base, and when no such rewrite exists — as under a parent head that does not contain
- * the main commits the lane merged — the refusal prescribes re-creating the named commits.
+ * excluded base, and when no such rewrite exists — as under an open parent head that does not
+ * contain the main commits the lane merged, or a merged parent's pre-squash head that squash
+ * semantics keep off main forever — the refusal prescribes re-creating the named commits.
  */
 function assertBotAuthoredDelta(
     lane: ResolvedLane,
     remoteSha: string | undefined,
     comparisonHead: string,
     baseSha: string,
+    stackParentHead: string | undefined,
     headSha: string,
     port: PublishLanePort
 ): void {
     const deltaBase = remoteSha ?? comparisonHead;
+    const excludedBaseShas = Array.from(
+        new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
+    );
     const offending = port
-        .commitAuthorEmails(lane.path, deltaBase, [comparisonHead, baseSha], headSha)
+        .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
         .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
     if (offending.length === 0) {
         return;
@@ -990,9 +995,15 @@ function assertBotAuthoredDelta(
     // rewritten `comparisonHead..head` range holds no base-side commit at all (true for ordinary
     // lanes, where the root is origin/main itself, and for a parent head that already contains
     // current main). A stack child under an open parent can merge newer main commits its parent
-    // head does not dominate — rebasing onto that head would re-author them as the App — so the
-    // refusal falls back to re-creating the listed commits with the stamped identity.
-    const offersRebase = remoteSha === undefined && port.isAncestor(baseSha, comparisonHead, lane.path);
+    // head does not dominate, and a child of a merged parent retains the parent's pre-squash
+    // commits that main can never reach — rebasing onto the root would re-author those base-side
+    // commits as the App — so the refusal falls back to re-creating the listed commits with the
+    // stamped identity.
+    const offersRebase =
+        remoteSha === undefined &&
+        excludedBaseShas
+            .filter((sha) => sha !== comparisonHead)
+            .every((sha) => port.isAncestor(sha, comparisonHead, lane.path));
     fail(authorshipRefusal(lane.branch, deltaBase, comparisonHead, offending, offersRebase));
 }
 
@@ -1239,7 +1250,7 @@ export function publishLane(
     if (rewrites.graftsFile !== undefined || rewrites.replaceRefs > 0) {
         fail(objectStoreRewritesRefusal(lane.branch, rewrites));
     }
-    assertBotAuthoredDelta(lane, remoteSha, comparisonHead, baseSha, headSha, port);
+    assertBotAuthoredDelta(lane, remoteSha, comparisonHead, baseSha, stack?.parentHead, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
