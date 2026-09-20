@@ -188,8 +188,8 @@ interface. Exclude session diaries, unpublished rounds, and mutation tables.
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`,
 `diff.patch`, `review-size.json`, `risk-plan.json`, `pr.md`, and merge-base
-`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff
-and deterministic size report use the actual base/head merge-base; handwritten,
+`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff and
+deterministic size report use the actual base/head merge-base; handwritten,
 test, documentation, and generated changes (including lockfiles) remain visible
 as separate groups, and unknown paths count as handwritten. Paths are keyed by
 head sha. Re-preparing the same head replaces generated files and preserves
@@ -197,13 +197,22 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
+The caller writes `stances.json` into that bundle in two phases: before
+dispatch it holds the derived stance set, one entry per stance naming the
+failure mode that admits it; as each draw reports, its baseline-probe result —
+and its exhaustion when that draw fell back to an authoring model — is
+recorded into the same file. It sits alongside the
+later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
+
 `risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
 it is bound to, the change's `riskClasses`, the `requiredStances` those classes
 earn, and the `triggers` that fired. It is derived from the same path
 classification as `review-size.json`, so the stances and the printed size
-summary cannot disagree. Classes union when several fire, and no class may
-require a stance it did not earn: that is the proportionality rule, and
-`code-craft` is required only by `ordinary`.
+summary cannot disagree. The plan is an input to the caller's stance
+enumeration, never a stance requirement: the dispatched stances are the
+reviewer's task-derived judgement, recorded in `stances.json`. Classes union
+when several fire, and no class may require a stance it did not earn: that is
+the proportionality rule, and `code-craft` is required only by `ordinary`.
 
 - `small` (no specialist surface, handwritten change within the small-change
   budget) — correctness, test-validity.
@@ -222,9 +231,12 @@ can neither widen nor narrow its own review.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. Fresh reviewer publication also carries the head-bound dossier and
 refuses before any remote write when the plan or dossier is missing, malformed,
-or rebound from the head/base/pr it must bind; when the dossier does not
-complete exactly the plan's required stances or claims one the classes did not
-earn; when its accepted findings do not match the document's comments
+or rebound from the head/base/pr it must bind; when the bundle carries
+`stances.json` and the dossier's `stances` entries do not correspond to that
+record as sets of stance names — every draw names a recorded stance and every
+recorded stance carries at least one draw, so several draws on one stance share
+its single entry; when
+its accepted findings do not match the document's comments
 one-to-one; or when its recommendation disagrees with the document's event. It
 then persists the canonical record, `format: 'dossier-v1'`: an append-only event
 chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
@@ -246,7 +258,9 @@ harness, model, and invocation are the dispatching session's choice. When only t
 author's model is available, the same-model review still publishes: `review.json`
 carries `modelExhaustion` (one line naming what made every other model unavailable)
 and the published body names the reviewer model, so the deviation is recorded rather
-than silently accepted.
+than silently accepted. A draw on an authoring model records its own exhaustion; a
+document-level whole-round `modelExhaustion` covers every draw; per-draw exhaustion
+excuses the document-level field in a mixed round.
 
 ## Review document formats
 
@@ -269,10 +283,15 @@ report.
 
 The orchestrator writes the caller-authored `dossier.json` beside `review.json`
 and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
-`pr`/`headSha`/`baseSha`, one `stances` entry per required stance (`stance`,
-`reviewerModel`, `modelTier` of `economy`/`standard`/`strongest`, `outcome` of
-`blocker-found`/`clean`), the bounded `evidence` claims, and `limitations`. The
-accepted findings are not declared there: they are the review document's own
+`pr`/`headSha`/`baseSha`, one completed `stances` entry per dispatched draw — the
+names the bundle's `stances.json` records, plan menu ids or free-form risk names
+alike; one stance may carry several draws with distinct reviewer models — each
+with its `reviewerModel`, `modelTier` of
+`economy`/`standard`/`strongest`, and `outcome` of
+`blocker-found`/`clean`, its `exhaustion` when that draw fell back to an
+authoring model (one line naming what made every other model unavailable for
+that draw), the bounded `evidence` claims, and `limitations`.
+The accepted findings are not declared there: they are the review document's own
 inline comments. `discarded.json` is the orchestrator's discard record and is
 now actually read: an array of `{ finding, stance, reason }`, one entry per
 discarded candidate, each with a one-line reason.
@@ -333,20 +352,34 @@ acceptance on another person's behalf or claim personal human review.
 Push the fix, then record it with `review:repair`, which runs as the author App
 and leaves the thread open. It reads the thread live and refuses one already
 resolved, a `--head` that is not the pull request's live head, or a `--commit`
-outside the reviewed range `base..head`: an ancestor of that head and not of the
-pull request's `baseRefOid`, so the merge base and every pre-pull-request commit
-are refused. It binds the thread's own root comment as
+outside `base..head`: an ancestor of or equal to that head and not an ancestor
+of the pull request's `baseRefOid`, so the merge base and every pre-pull-request
+commit are refused. The repair must also strictly descend the reviewed commit
+from the thread root's live `pullRequestReview.commit.oid`; it may equal the
+live head. The reviewed commit itself, its predecessors, and commits that do
+not descend it are refused. Missing or malformed root review provenance and
+unavailable ancestry comparisons fail closed before posting. It binds the
+thread's own root comment as
 the finding, plus the commit, one-line summary, bounded evidence, and head, and
 posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
 it never resolves. Re-running the same head and commit posts nothing and reports
 the already-recorded state.
 
+For ancestry `B -> P -> R -> H`, let `B` be the PR base and `R` the root finding's
+reviewed commit. `H` qualifies as the repair even when it is the live head.
+`P` predates the finding, and `R` is the revision that received it; neither
+strictly descends `R`, so neither can be recorded or confirmed as its repair.
+
 The reviewer confirms with `review:confirm`, a distinct identity from the
 author's. It resolves, in one pass with deterministic mutation ids, the threads
 whose author-recorded repair validates: same pull request, same thread, same
-head, finding equal to the thread's root comment, repairing commit inside the
-reviewed range `base..head`, record well formed, evidence safe. It fails closed
-— a refused record, a duplicate distinct record, a thread already carrying a
+head, finding equal to the thread's root comment, repairing commit inside
+`base..head` and strictly descending the thread root's live associated review
+commit (`pullRequestReview.commit.oid`), record well formed, evidence safe.
+The repairing commit may equal the live head. Missing or malformed root review
+provenance or an unavailable ancestry comparison fails closed for the whole
+batch before any confirmation or resolution. It also fails closed — a refused
+record, a duplicate distinct record, a thread already carrying a
 confirmation for a different record or a duplicated identical confirmation, a
 rebound identity, a mismatched finding, or a commit outside the reviewed range
 resolves nothing and reports the refusal, leaving the operator to fix the

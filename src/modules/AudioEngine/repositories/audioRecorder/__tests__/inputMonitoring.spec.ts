@@ -9,6 +9,7 @@ type MockMediaStreamTrack = {
 };
 
 type MockMediaStream = {
+    id?: string;
     getTracks: Mock<() => MockMediaStreamTrack[]>;
 };
 
@@ -39,8 +40,8 @@ vi.mock('../../createWebAudioEngine', () => ({
     },
 }));
 
-function createMockStream(tracks: MockMediaStreamTrack[] = []): MockMediaStream {
-    return { getTracks: vi.fn(() => tracks) };
+function createMockStream(tracks: MockMediaStreamTrack[] = [], id?: string): MockMediaStream {
+    return { id, getTracks: vi.fn(() => tracks) };
 }
 
 function createMockSourceNode(): MockMediaStreamAudioSourceNode {
@@ -52,6 +53,19 @@ function createMockSourceNode(): MockMediaStreamAudioSourceNode {
 
 function createMockStrip(gainNode: unknown = {}): MockTrackStrip {
     return { gainNode };
+}
+
+/** The exact deviceId the request named, or undefined for the default device. */
+function requestedDeviceId(constraints: MediaStreamConstraints): string | undefined {
+    const audio = constraints.audio;
+    if (typeof audio !== 'object' || audio.deviceId === undefined) {
+        return undefined;
+    }
+    const deviceId = audio.deviceId;
+    if (typeof deviceId !== 'object' || !('exact' in deviceId)) {
+        return undefined;
+    }
+    return typeof deviceId.exact === 'string' ? deviceId.exact : undefined;
 }
 
 /** A stream whose single device track records every stop request. */
@@ -346,4 +360,164 @@ describe('pending monitor capture ownership', () => {
         expect(await startInputMonitoring('c')).toBe(true);
         expect(getUserMedia).toHaveBeenCalledTimes(2);
     });
+});
+
+describe('keyed monitor captures', () => {
+    beforeEach(() => {
+        Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+            value: { getUserMedia },
+            configurable: true,
+        });
+
+        stopInputMonitoring();
+
+        getUserMedia.mockReset();
+        createMediaStreamSource.mockReset();
+        ensureTrackStrip.mockReset();
+    });
+
+    afterEach(() => {
+        Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+            value: originalMediaDevices,
+            configurable: true,
+        });
+    });
+
+    it('acquires an independent capture per requested input and feeds each edge from its own source', async () => {
+        const streamA = createMockStream([], 'stream-a');
+        const streamB = createMockStream([], 'stream-b');
+        expectDifferentInputs(streamA, streamB);
+        const sourceA = createMockSourceNode();
+        const sourceB = createMockSourceNode();
+        createMediaStreamSource.mockImplementation((stream) => (stream === streamA ? sourceA : sourceB));
+        const gainA = { id: 'gain-a' };
+        const gainB = { id: 'gain-b' };
+        ensureTrackStrip.mockImplementation((trackId) => createMockStrip(trackId === 'a' ? gainA : gainB));
+
+        expect(await startInputMonitoring('a', 'input-1')).toBe(true);
+        expect(await startInputMonitoring('b', 'input-2')).toBe(true);
+
+        expect(getUserMedia).toHaveBeenCalledTimes(2);
+        expect(deviceIdsRequested()).toEqual(['input-1', 'input-2']);
+        expect(createMediaStreamSource).toHaveBeenNthCalledWith(1, streamA);
+        expect(createMediaStreamSource).toHaveBeenNthCalledWith(2, streamB);
+        expect(sourceA.connect).toHaveBeenCalledTimes(1);
+        expect(sourceA.connect).toHaveBeenCalledWith(gainA);
+        expect(sourceB.connect).toHaveBeenCalledTimes(1);
+        expect(sourceB.connect).toHaveBeenCalledWith(gainB);
+    });
+
+    it('shares one acquisition and one source between two tracks naming the same input', async () => {
+        const stream = createMockStream([], 'stream');
+        getUserMedia.mockResolvedValue(stream);
+        const source = createMockSourceNode();
+        createMediaStreamSource.mockReturnValue(source);
+        const gainA = { id: 'gain-a' };
+        const gainB = { id: 'gain-b' };
+        ensureTrackStrip.mockImplementation((trackId) => createMockStrip(trackId === 'a' ? gainA : gainB));
+
+        expect(await startInputMonitoring('a', 'input-1')).toBe(true);
+        expect(await startInputMonitoring('b', 'input-1')).toBe(true);
+
+        expect(getUserMedia).toHaveBeenCalledTimes(1);
+        expect(createMediaStreamSource).toHaveBeenCalledTimes(1);
+        expect(source.connect).toHaveBeenNthCalledWith(1, gainA);
+        expect(source.connect).toHaveBeenNthCalledWith(2, gainB);
+    });
+
+    it('lands concurrent grants on their own keyed source', async () => {
+        const grants = deferredInputs(2);
+        const streamA = createMockStream([], 'stream-a');
+        const streamB = createMockStream([], 'stream-b');
+        const sourceA = createMockSourceNode();
+        const sourceB = createMockSourceNode();
+        createMediaStreamSource.mockImplementation((stream) => (stream === streamA ? sourceA : sourceB));
+        const gainA = { id: 'gain-a' };
+        const gainB = { id: 'gain-b' };
+        ensureTrackStrip.mockImplementation((trackId) => createMockStrip(trackId === 'a' ? gainA : gainB));
+
+        const startingA = startInputMonitoring('a', 'input-1');
+        const startingB = startInputMonitoring('b', 'input-2');
+        await Promise.resolve();
+
+        // Both acquisitions are outstanding before either settles.
+        expect(deviceIdsRequested()).toEqual(['input-1', 'input-2']);
+        grants.grant(0, streamA);
+        grants.grant(1, streamB);
+
+        expect(await startingA).toBe(true);
+        expect(await startingB).toBe(true);
+        expect(sourceA.connect).toHaveBeenCalledWith(gainA);
+        expect(sourceA.connect).not.toHaveBeenCalledWith(gainB);
+        expect(sourceB.connect).toHaveBeenCalledWith(gainB);
+        expect(sourceB.connect).not.toHaveBeenCalledWith(gainA);
+    });
+
+    it('releases a late stream exactly once and connects nothing when both owners leave before its grant', async () => {
+        const { stream, trackStop } = streamWithStoppedTrack();
+        const deferred = deferredGrant();
+
+        const startingA = startInputMonitoring('a', 'input-1');
+        const startingB = startInputMonitoring('b', 'input-1');
+        await Promise.resolve();
+        stopTrackInputMonitoring('a');
+        stopTrackInputMonitoring('b');
+        deferred.grant(stream);
+
+        expect(await startingA).toBe(false);
+        expect(await startingB).toBe(false);
+        expect(getUserMedia).toHaveBeenCalledTimes(1);
+        expect(createMediaStreamSource).not.toHaveBeenCalled();
+        expect(trackStop).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not orphan another key pending grant when one key is refused', async () => {
+        const grants = deferredInputs(2);
+        const streamA = createMockStream([], 'stream-a');
+        const sourceA = createMockSourceNode();
+        createMediaStreamSource.mockReturnValue(sourceA);
+        ensureTrackStrip.mockReturnValue(createMockStrip());
+
+        const startingA = startInputMonitoring('a', 'input-1');
+        const startingB = startInputMonitoring('b', 'input-2');
+        await Promise.resolve();
+
+        grants.reject(1, new Error('missing device'));
+        grants.grant(0, streamA);
+
+        expect(await startingA).toBe(true);
+        expect(await startingB).toBe(false);
+        expect(sourceA.connect).toHaveBeenCalledTimes(1);
+    });
+
+    function expectDifferentInputs(streamA: MockMediaStream, streamB: MockMediaStream): void {
+        getUserMedia.mockImplementation((constraints) =>
+            Promise.resolve(requestedDeviceId(constraints) === 'input-1' ? streamA : streamB)
+        );
+    }
+
+    function deviceIdsRequested(): string[] {
+        return getUserMedia.mock.calls.map(([constraints]) => requestedDeviceId(constraints) ?? '');
+    }
+
+    /** One unresolved getUserMedia per input, so concurrent acquisitions stay outstanding. */
+    function deferredInputs(count: number): {
+        grant: (index: number, stream: MockMediaStream) => void;
+        reject: (index: number, error: Error) => void;
+    } {
+        const resolvers: Array<(stream: MockMediaStream) => void> = [];
+        const rejecters: Array<(error: Error) => void> = [];
+        for (let index = 0; index < count; index += 1) {
+            getUserMedia.mockReturnValueOnce(
+                new Promise<MockMediaStream>((resolve, reject) => {
+                    resolvers.push(resolve);
+                    rejecters.push(reject);
+                })
+            );
+        }
+        return {
+            grant: (index, stream) => resolvers[index]?.(stream),
+            reject: (index, error) => rejecters[index]?.(error),
+        };
+    }
 });

@@ -1,6 +1,7 @@
 import { AGENT_DATA_CATEGORIES, classifyAgentDataPolicy, type AgentDataCategory } from '../models/AgentDataPolicy';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+    MODEL_PROVIDER_USAGE_COUNTER_NAMES,
     type CompiledModelProviderRequest,
     type ModelProviderCapabilities,
     type ModelProviderEvent,
@@ -16,6 +17,7 @@ import {
     type ModelProviderResult,
     type ModelProviderSession,
     type ModelProviderUsage,
+    type ModelProviderUsageCounterName,
 } from '../models/ModelProviderProtocol';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
@@ -313,6 +315,24 @@ function isUsageCounter(value: unknown): value is number | null {
     return value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
 }
 
+function isUsageCounterName(value: unknown): value is ModelProviderUsageCounterName {
+    return typeof value === 'string' && MODEL_PROVIDER_USAGE_COUNTER_NAMES.some((counterName) => counterName === value);
+}
+
+function isValidUnavailableCounters(value: unknown): value is readonly ModelProviderUsageCounterName[] {
+    if (!Array.isArray(value) || value.length > MODEL_PROVIDER_USAGE_COUNTER_NAMES.length) {
+        return false;
+    }
+    const counters = new Set<ModelProviderUsageCounterName>();
+    for (const counter of value) {
+        if (!isUsageCounterName(counter) || counters.has(counter)) {
+            return false;
+        }
+        counters.add(counter);
+    }
+    return true;
+}
+
 function assertProviderEventShape(value: unknown): asserts value is ModelProviderEvent {
     if (!isRecord(value) || typeof value.type !== 'string') {
         throw new TypeError('Provider stream event has an invalid runtime shape.');
@@ -348,7 +368,9 @@ function assertProviderEventShape(value: unknown): asserts value is ModelProvide
             !isUsageCounter(value.usage.inputTokens) ||
             !isUsageCounter(value.usage.outputTokens) ||
             !isUsageCounter(value.usage.cachedInputTokens) ||
+            (value.usage.cacheWriteInputTokens !== undefined && !isUsageCounter(value.usage.cacheWriteInputTokens)) ||
             !isUsageCounter(value.usage.reasoningTokens) ||
+            (value.unavailableCounters !== undefined && !isValidUnavailableCounters(value.unavailableCounters)) ||
             (value.provenance !== 'provider-reported' &&
                 value.provenance !== 'versioned-estimate' &&
                 value.provenance !== 'unavailable')
@@ -535,6 +557,7 @@ function createSession(input: {
         reasoningTokens: null,
         provenance: 'unavailable',
     };
+    const unavailableUsageCounters = new Set<ModelProviderUsageCounterName>();
 
     function assertIdentity(envelope: ModelProviderEventEnvelope | ModelProviderFinishEnvelope): void {
         if (envelope.schemaVersion !== MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION) {
@@ -627,25 +650,71 @@ function createSession(input: {
     function applyUsage(
         mode: 'delta' | 'cumulative-snapshot' | 'final',
         next: Omit<ModelProviderUsage, 'provenance'>,
-        provenance: ModelProviderUsage['provenance']
+        provenance: ModelProviderUsage['provenance'],
+        newlyUnavailableCounters: readonly ModelProviderUsageCounterName[] = []
     ): void {
-        if (mode === 'delta') {
-            const addCounter = (current: number | null, delta: number | null): number | null =>
-                delta === null ? current : (current ?? 0) + delta;
-            usage = {
-                inputTokens: addCounter(usage.inputTokens, next.inputTokens),
-                outputTokens: addCounter(usage.outputTokens, next.outputTokens),
-                cachedInputTokens: addCounter(usage.cachedInputTokens, next.cachedInputTokens),
-                reasoningTokens: addCounter(usage.reasoningTokens, next.reasoningTokens),
-                provenance,
-            };
-            return;
+        for (const counterName of newlyUnavailableCounters) {
+            unavailableUsageCounters.add(counterName);
         }
+        const foldCounter = (
+            counterName: Exclude<ModelProviderUsageCounterName, 'cacheWriteInputTokens'>,
+            current: number | null,
+            nextValue: number | null
+        ): number | null => {
+            if (newlyUnavailableCounters.includes(counterName)) {
+                return null;
+            }
+            if (nextValue === null) {
+                return current;
+            }
+            if (mode !== 'delta') {
+                unavailableUsageCounters.delete(counterName);
+                return nextValue;
+            }
+            if (unavailableUsageCounters.has(counterName)) {
+                return null;
+            }
+            const total = (current ?? 0) + nextValue;
+            if (Number.isSafeInteger(total)) {
+                return total;
+            }
+            unavailableUsageCounters.add(counterName);
+            return null;
+        };
+        const foldCacheWriteInputTokens = (): number | null | undefined => {
+            const currentWasReported = Object.hasOwn(usage, 'cacheWriteInputTokens');
+            const nextWasReported = Object.hasOwn(next, 'cacheWriteInputTokens');
+            const nextValue = next.cacheWriteInputTokens;
+            if (newlyUnavailableCounters.includes('cacheWriteInputTokens')) {
+                return null;
+            }
+            if (!nextWasReported || nextValue === undefined) {
+                return usage.cacheWriteInputTokens;
+            }
+            if (nextValue === null) {
+                return currentWasReported ? usage.cacheWriteInputTokens : null;
+            }
+            if (mode === 'delta') {
+                if (unavailableUsageCounters.has('cacheWriteInputTokens')) {
+                    return null;
+                }
+                const total = (usage.cacheWriteInputTokens ?? 0) + nextValue;
+                if (Number.isSafeInteger(total)) {
+                    return total;
+                }
+                unavailableUsageCounters.add('cacheWriteInputTokens');
+                return null;
+            }
+            unavailableUsageCounters.delete('cacheWriteInputTokens');
+            return nextValue;
+        };
+        const cacheWriteInputTokens = foldCacheWriteInputTokens();
         usage = {
-            inputTokens: next.inputTokens ?? usage.inputTokens,
-            outputTokens: next.outputTokens ?? usage.outputTokens,
-            cachedInputTokens: next.cachedInputTokens ?? usage.cachedInputTokens,
-            reasoningTokens: next.reasoningTokens ?? usage.reasoningTokens,
+            inputTokens: foldCounter('inputTokens', usage.inputTokens, next.inputTokens),
+            outputTokens: foldCounter('outputTokens', usage.outputTokens, next.outputTokens),
+            cachedInputTokens: foldCounter('cachedInputTokens', usage.cachedInputTokens, next.cachedInputTokens),
+            ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
+            reasoningTokens: foldCounter('reasoningTokens', usage.reasoningTokens, next.reasoningTokens),
             provenance,
         };
     }
@@ -762,7 +831,7 @@ function createSession(input: {
                 return;
             }
             if (event.type === 'usage') {
-                applyUsage(event.mode, event.usage, event.provenance);
+                applyUsage(event.mode, event.usage, event.provenance, event.unavailableCounters);
                 return;
             }
             ignoredProviderEvents.push(event.providerEventType);

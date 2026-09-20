@@ -1,22 +1,26 @@
-import { inputMonitoringSession } from './inputMonitoringSession';
+import { inputMonitoringSession, type MonitorCaptureKey } from './inputMonitoringSession';
 import { releaseMonitorCapture } from './releaseMonitorCapture';
 
 /**
- * Explicit global teardown: every listening edge, the shared capture and all
+ * Explicit global teardown: every listening edge, every keyed capture and all
  * pending interest. This is not the implementation of one track's mode change
  * — that is `stopTrackInputMonitoring`, which preserves other tracks' edges.
+ *
+ * Pending acquisitions are orphaned rather than cancelled: each settlement
+ * releases its late stream exactly once and can never connect a fresh edge,
+ * because a start after teardown acquires its own request for that key.
  */
 export function stopInputMonitoring(): void {
-    for (const trackId of [...inputMonitoringSession.monitorEdges.keys()]) {
-        const destination = inputMonitoringSession.monitorEdges.get(trackId);
-        inputMonitoringSession.monitorEdges.delete(trackId);
-        if (destination !== undefined) {
-            inputMonitoringSession.monitorSource?.disconnect(destination);
+    const keys: MonitorCaptureKey[] = [...inputMonitoringSession.captures.keys()];
+    for (const key of keys) {
+        const capture = inputMonitoringSession.captures.get(key);
+        if (capture) {
+            for (const destination of capture.monitorEdges.values()) {
+                capture.monitorSource.disconnect(destination);
+            }
         }
+        releaseMonitorCapture(key);
     }
-    inputMonitoringSession.pendingOwners.clear();
-    // Orphan an unresolved request: its settlement releases the late stream
-    // exactly once, and a fresh start after teardown acquires its own capture.
-    inputMonitoringSession.pendingRequest = null;
-    releaseMonitorCapture();
+    inputMonitoringSession.trackKeys.clear();
+    inputMonitoringSession.pendingRequests.clear();
 }

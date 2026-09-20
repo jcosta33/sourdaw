@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { llmStatusStore } from '#/modules/AiRuntime/stores';
+import { llmStatusStore, pendingActionConfirmationStore } from '#/modules/AiRuntime/stores';
 import {
-    describePlannedAction,
+    type describePlannedAction,
     getProjectContext,
     isComplexPrompt,
     searchPresets,
@@ -45,7 +45,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn() }));
-vi.mock('#/modules/AiRuntime/stores', () => ({ llmStatusStore: { value: { state: 'idle' } } }));
+vi.mock('#/modules/AiRuntime/stores', () => ({
+    llmStatusStore: { value: { state: 'idle' } },
+    pendingActionConfirmationStore: { value: { confirmations: [] } },
+}));
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     submitAdmittedPromptRequest: executionUseCaseMocks.submitAdmittedPromptRequest,
     describePlannedAction: vi.fn((input: Parameters<typeof describePlannedAction>[0]) => {
@@ -108,6 +111,7 @@ const preset = (overrides: Partial<Preset> = {}): Preset => ({
 const fuzzy = (p: Preset): { preset: Preset; score: number } => ({ preset: p, score: 1 });
 const formEvent = { preventDefault: vi.fn() };
 
+let confirmationState: { confirmations: Array<{ id: string; status: string }> } = { confirmations: [] };
 let trackState: {
     tracks: Array<{ id: string; name: string; clips: Array<{ id: string; name: string; type: string }> }>;
     selectedTrackId: string | null;
@@ -115,6 +119,9 @@ let trackState: {
 let clipState: { selectedClipId: string | null; selectedClipIds: string[]; marqueeSelection: null };
 
 vi.mocked(useStore).mockImplementation((store: unknown, fallback: unknown) => {
+    if (store === pendingActionConfirmationStore) {
+        return confirmationState;
+    }
     if (store === trackStore) {
         return trackState;
     }
@@ -135,6 +142,7 @@ describe('usePromptExecution', () => {
             executionUseCaseMocks.promptDraftListeners.add(listener);
             return () => executionUseCaseMocks.promptDraftListeners.delete(listener);
         });
+        confirmationState = { confirmations: [] };
         trackState = { tracks: [], selectedTrackId: null };
         clipState = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
         // clearAllMocks resets call history but not implementations, so tests
@@ -222,28 +230,14 @@ describe('usePromptExecution', () => {
             }
             const requiresConfirmation = planned.result.requiresConfirmation || input.requiresConfirmation === true;
             if (requiresConfirmation) {
-                const preview = {
-                    actions,
-                    actionLabels: actions.map((action: AppAction) =>
-                        describePlannedAction({ action, context: planned.context })
-                    ),
-                    projectRevision: planned.projectRevision,
+                confirmationState = { confirmations: [{ id: 'confirmation-1', status: 'proposed' }] };
+                return {
+                    status: 'awaiting-approval' as const,
+                    runId: 'prompt-run-1',
+                    confirmationId: 'confirmation-1',
                 };
-                Object.defineProperties(preview, {
-                    confirm: {
-                        value: (signal?: AbortSignal) =>
-                            executionUseCaseMocks.executePromptActionGroup({
-                                actions,
-                                prompt: input.prompt,
-                                projectRevision: planned.projectRevision,
-                                signal,
-                                successVerb: 'Confirmed',
-                            }),
-                    },
-                    cancel: { value: () => Promise.resolve() },
-                });
-                return { status: 'awaiting-approval' as const, runId: 'prompt-run-1', preview };
             }
+
             if (input.signal?.aborted) {
                 return { status: 'rejected' as const, runId: 'prompt-run-1' };
             }
@@ -266,7 +260,7 @@ describe('usePromptExecution', () => {
 
         expect(result.current.value).toBe('');
         expect(result.current.isProcessing).toBe(false);
-        expect(result.current.preview).toBeNull();
+        expect(result.current.approval).toBeNull();
         expect(result.current.selectionTags).toEqual([]);
         expect(result.current.willUseLlm).toBe(false);
     });
@@ -345,22 +339,17 @@ describe('usePromptExecution', () => {
     it('previews a destructive preset, skips presets with no actions, and executes a non-destructive one through the action group', async () => {
         const deleteAction: AppAction = { type: 'removeAllTracks' };
         vi.mocked(resolvePresetActions).mockReturnValue([deleteAction]);
-        const { result } = renderHook(() => usePromptExecution());
+        const { result, rerender } = renderHook(() => usePromptExecution());
         const destructive = fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }));
 
         await act(async () => {
             await result.current.executePreset(destructive);
         });
-        expect(result.current.preview).toEqual({
-            actions: [deleteAction],
-            actionLabels: ['removeAllTracks'],
-            rawText: 'Delete track',
-            requiresConfirmation: true,
-            projectRevision: 'revision-1',
-        });
+        expect(result.current.approval).toEqual({ runId: 'prompt-run-1', confirmationId: 'confirmation-1' });
         expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
 
-        act(() => result.current.cancelPreview());
+        confirmationState = { confirmations: [{ id: 'confirmation-1', status: 'cancelled' }] };
+        rerender();
 
         vi.mocked(resolvePresetActions).mockReturnValue([]);
         await act(async () => {
@@ -528,13 +517,7 @@ describe('usePromptExecution', () => {
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
         });
-        expect(result.current.preview).toEqual({
-            actions: [deleteAction],
-            rawText: 'delete Drums',
-            requiresConfirmation: true,
-            actionLabels: ['Remove track "Drums"'],
-            projectRevision: 'revision-1',
-        });
+        expect(result.current.approval).toEqual({ runId: 'prompt-run-1', confirmationId: 'confirmation-1' });
         expect(result.current.value).toBe('delete Drums');
         expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
     });
@@ -615,179 +598,20 @@ describe('usePromptExecution', () => {
         expect(result.current.isProcessing).toBe(false);
     });
 
-    it('confirms an immutable preview once, exposes Stop while committing, and still cancels an idle preview', async () => {
-        const action: AppAction = { type: 'togglePlayback' };
-        executionUseCaseMocks.executePlannedActions.mockImplementationOnce((input) => {
-            return new Promise((resolve) => {
-                input.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true });
-            });
-        });
-        const { result } = renderHook(() => usePromptExecution());
-
-        await act(async () => {
-            await result.current.confirmPreview();
-        });
-        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
-
-        vi.mocked(resolvePresetActions).mockReturnValue([action]);
-        await act(async () => {
-            await result.current.executePreset(
-                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
-            );
-        });
-        act(() => result.current.setValue('tampered text'));
-
-        let confirmation = Promise.resolve();
-        act(() => {
-            confirmation = result.current.confirmPreview();
-            void result.current.confirmPreview();
-        });
-
-        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledTimes(1);
-        expect(executionUseCaseMocks.executePlannedActions).toHaveBeenCalledWith(
-            expect.objectContaining({
-                actions: [action],
-                prompt: 'Delete track',
-                successVerb: 'Confirmed',
-                projectRevision: 'revision-1',
-            })
-        );
-        expect(result.current.preview).toBeNull();
-        expect(result.current.isProcessing).toBe(true);
-
-        const executionSignal = executionUseCaseMocks.executePlannedActions.mock.calls[0]?.[0].signal;
-        expect(executionSignal?.aborted).toBe(false);
-        act(() => result.current.cancelProcessing());
-        expect(executionSignal?.aborted).toBe(true);
-
-        expect(result.current.isProcessing).toBe(true);
-        await act(async () => confirmation);
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
-            'Command cancelled before it committed. No project changes were applied.',
-            []
-        );
-        expect(result.current.isProcessing).toBe(false);
-        expect(result.current.value).toBe('');
-
-        await act(async () => {
-            await result.current.executePreset(
-                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
-            );
-        });
-        act(() => result.current.cancelPreview());
-        expect(result.current.preview).toBeNull();
-    });
-
-    it('refuses a preview action that cannot use the approved command boundary', async () => {
-        const action: AppAction = { type: 'removeAllTracks' };
-        vi.mocked(resolvePresetActions).mockReturnValue([action]);
-        const { result } = renderHook(() => usePromptExecution());
-
-        await act(async () => {
-            await result.current.executePreset(
-                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
-            );
-        });
-        await act(async () => {
-            await result.current.confirmPreview();
-        });
-
-        expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
-            'Command not executed: one or more actions are not available through the approved command boundary.',
-            []
-        );
-    });
-
-    it('notifies the user when a confirmed destructive preview reports a failed execution', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        const { result } = renderHook(() => usePromptExecution());
-
-        await act(async () => {
-            await result.current.executePreset(
-                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
-            );
-        });
-        expect(result.current.preview).not.toBeNull();
-
-        executionUseCaseMocks.executePlannedActions.mockResolvedValueOnce({
-            status: 'failed',
-            reason: 'transaction rejected',
-        });
-        await act(async () => {
-            await result.current.confirmPreview();
-        });
-
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Command not executed: transaction rejected', []);
-        expect(result.current.isProcessing).toBe(false);
-        expect(result.current.value).toBe('');
-    });
-
-    it('logs and notifies instead of leaving an unhandled rejection when confirming a preview throws', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
-        const { result } = renderHook(() => usePromptExecution());
-
-        await act(async () => {
-            await result.current.executePreset(
-                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
-            );
-        });
-        expect(result.current.preview).not.toBeNull();
-
-        executionUseCaseMocks.executePlannedActions.mockRejectedValueOnce(
-            new Error('snapshot transaction never settled')
-        );
-        await act(async () => {
-            // Awaited directly: without the catch inside confirmPreview this rejects,
-            // which is the unhandled rejection the app would ship.
-            await result.current.confirmPreview();
-        });
-
-        expect(vi.mocked(logger.error)).toHaveBeenCalled();
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
-            'Command not executed: the confirmed changes could not be applied.',
-            []
-        );
-        expect(result.current.isProcessing).toBe(false);
-        expect(result.current.value).toBe('');
-    });
-
-    it.each(['synchronous', 'asynchronous'] as const)(
-        'handles a %s approval-preview cancellation failure without retaining the preview',
-        async (failureMode) => {
-            const cancellationError = new Error(`${failureMode} cancellation failed`);
-            const cancel = vi.fn(() => {
-                if (failureMode === 'synchronous') {
-                    throw cancellationError;
-                }
-                return Promise.reject(cancellationError);
-            });
-            executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
-                status: 'awaiting-approval',
-                runId: 'prompt-run-1',
-                preview: {
-                    actions: [{ type: 'togglePlayback' }],
-                    actionLabels: ['Toggle playback'],
-                    projectRevision: 'revision-1',
-                    confirm: vi.fn().mockResolvedValue(undefined),
-                    cancel,
-                },
-            });
-            const { result } = renderHook(() => usePromptExecution());
-            act(() => result.current.setValue('Play'));
-            await act(async () => result.current.handleSubmit(formEvent as never));
-            expect(result.current.preview).not.toBeNull();
-
-            await act(async () => {
-                result.current.cancelPreview();
-                await Promise.resolve();
-            });
-
-            expect(cancel).toHaveBeenCalledOnce();
-            expect(result.current.preview).toBeNull();
-            expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
-                expect.objectContaining({ message: 'Prompt preview cancellation failed' })
-            );
+    // Shared confirm/cancel execution and durability are owned by the canonical
+    // AiRuntime owner specs; this hook only retains their public identity.
+    it.each(['executed', 'cancelled', 'invalidated', 'failed'])(
+        'clears its summary when the shared proposal becomes %s',
+        async (status) => {
+            vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
+            const { result, rerender } = renderHook(() => usePromptExecution());
+            await act(async () => result.current.executePreset(fuzzy(preset({ isDestructive: true }))));
+            expect(result.current.approval).toEqual({ runId: 'prompt-run-1', confirmationId: 'confirmation-1' });
+            expect(executionUseCaseMocks.executePlannedActions).not.toHaveBeenCalled();
+            confirmationState = { confirmations: [{ id: 'confirmation-1', status }] };
+            rerender();
+            expect(result.current.approval).toBeNull();
+            expect(result.current.value).toBe('');
         }
     );
 
@@ -843,7 +667,7 @@ describe('usePromptExecution', () => {
                 fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
             );
         });
-        expect(result.current.preview).not.toBeNull();
+        expect(result.current.approval).not.toBeNull();
         expect(result.current.value).toBe('Delete track');
 
         act(() => {
@@ -887,27 +711,15 @@ describe('usePromptExecution', () => {
         await submission;
     });
 
-    it('cancels a retained awaiting-approval preview when the hook unmounts', async () => {
-        const cancel = vi.fn().mockResolvedValue(undefined);
-        executionUseCaseMocks.submitAdmittedPromptRequest.mockResolvedValueOnce({
-            status: 'awaiting-approval',
-            runId: 'prompt-run-1',
-            preview: {
-                actions: [{ type: 'togglePlayback' }],
-                actionLabels: ['Toggle playback'],
-                projectRevision: 'revision-1',
-                confirm: vi.fn().mockResolvedValue(undefined),
-                cancel,
-            },
-        });
+    it('leaves a handed-off canonical proposal intact when unmounted', async () => {
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
         const { result, unmount } = renderHook(() => usePromptExecution());
-        act(() => result.current.setValue('Play'));
-        await act(async () => result.current.handleSubmit(formEvent as never));
-        expect(result.current.preview).not.toBeNull();
-
+        await act(async () => result.current.executePreset(fuzzy(preset({ isDestructive: true }))));
+        expect(result.current.approval).not.toBeNull();
+        const signal = executionUseCaseMocks.submitAdmittedPromptRequest.mock.calls[0]?.[0].signal;
         unmount();
-
-        expect(cancel).toHaveBeenCalledOnce();
+        expect(signal.aborted).toBe(false);
+        expect(confirmationState.confirmations).toEqual([{ id: 'confirmation-1', status: 'proposed' }]);
     });
 
     it('keeps a TrackList-seeded draft visible until the user explicitly submits it', async () => {

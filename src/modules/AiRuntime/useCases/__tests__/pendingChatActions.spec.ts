@@ -1,3 +1,4 @@
+import { parse } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
@@ -16,6 +17,7 @@ import {
     proposePendingActionConfirmation as storePendingActionConfirmation,
     settlePendingActionResourceLease,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -581,8 +583,18 @@ describe('pending chat action confirmation', () => {
     });
 
     it('should cancel proposed actions without executing them', async () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'confirm-1',
+            request: 'delete drums',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+        });
+        agentRunLifecycle.transitionPhase({ runId: 'confirm-1', phase: 'planning' });
+        agentRunLifecycle.transitionPhase({ runId: 'confirm-1', phase: 'waiting-for-approval' });
         proposePendingActionConfirmation({
             id: 'confirm-1',
+            runId: 'confirm-1',
             prompt: 'delete drums',
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
@@ -590,7 +602,13 @@ describe('pending chat action confirmation', () => {
             projectRevision: 'revision-1',
         });
 
+        expect(agentRunLifecycle.get('confirm-1')?.phase).toBe('waiting-for-approval');
+        expect(getPendingActionConfirmation('confirm-1')?.status).toBe('proposed');
         const result = await cancelPendingChatActions({ confirmationId: 'confirm-1' });
+        expect(parse(window.localStorage.getItem('sourdaw-agent-runs') ?? 'null')).toMatchObject({
+            runs: [expect.objectContaining({ runId: 'confirm-1', phase: 'cancelled' })],
+        });
+        agentRunLifecycle.clear();
 
         expect(result).toEqual({ status: 'cancelled' });
         expect(mocks.executeAppAction).not.toHaveBeenCalled();

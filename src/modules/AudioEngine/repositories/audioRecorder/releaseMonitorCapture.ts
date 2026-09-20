@@ -1,18 +1,18 @@
-import { inputMonitoringSession } from './inputMonitoringSession';
+import { inputMonitoringSession, type MonitorCaptureKey } from './inputMonitoringSession';
 import { stopStreamTracks } from './stopStreamTracks';
 
 /**
- * Releases the shared monitor capture: the source disconnects from everything
- * and the stream's device tracks stop exactly once. Callers guarantee that no
- * per-track edge remains.
+ * Releases one key's capture: the source disconnects from everything and the
+ * stream's device tracks stop exactly once. Removing the capture before either
+ * stop makes a repeated release a no-op instead of a second stop. Callers
+ * guarantee that no per-track edge remains on this key.
  */
-export function releaseMonitorCapture(): void {
-    if (inputMonitoringSession.monitorSource) {
-        inputMonitoringSession.monitorSource.disconnect();
-        inputMonitoringSession.monitorSource = null;
+export function releaseMonitorCapture(key: MonitorCaptureKey): void {
+    const capture = inputMonitoringSession.captures.get(key);
+    if (!capture) {
+        return;
     }
-    if (inputMonitoringSession.monitorStream) {
-        stopStreamTracks(inputMonitoringSession.monitorStream);
-        inputMonitoringSession.monitorStream = null;
-    }
+    inputMonitoringSession.captures.delete(key);
+    capture.monitorSource.disconnect();
+    stopStreamTracks(capture.monitorStream);
 }

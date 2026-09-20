@@ -44,6 +44,16 @@ export type DeviceNodeEntry = {
      * day the two questions are asked at different points.
      */
     releaseWithheld?: true;
+    /**
+     * Whether this device's output can reach the rendered file, copied from the
+     * `contributesAudio` this chain build was handed.
+     *
+     * Required so a future constructor cannot leave it off and have an
+     * automation refusal read `undefined` as "this strip prints": the offline
+     * scheduler refuses an unrenderable lane only for a strip that prints
+     * (#4424), and a silent omission would fail a render over an inaudible one.
+     */
+    contributesAudio: boolean;
 
     // Kept for backwards compatibility with consumers until fully migrated
     nativeDsp?: {
@@ -463,6 +473,7 @@ export const buildDeviceChain = inject({ logger })(
                     deviceType: device.type,
                     node: dn,
                     strategy,
+                    contributesAudio,
                     ...(releaseWithheld ? { releaseWithheld: true as const } : {}),
                     // Proxies for legacy support (to be phased out completely soon)
                     nativeDsp: {

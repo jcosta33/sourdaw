@@ -5,6 +5,7 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { notifyUser } from '../../../../utils/Notification/notifyUser';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
+import { inputMonitoringSession } from '../audioRecorder/inputMonitoringSession';
 
 import {
     createAudioEngineTopologyTestHarness as createAudioEngine,
@@ -1783,6 +1784,36 @@ describe('AudioEngine', () => {
 
     // ── Fix 2: dispose() teardown contract ───────────────────────────────────────
     describe('dispose', () => {
+        type MonitorCaptureFixture = {
+            trackStop: Mock<() => void>;
+            sourceDisconnect: Mock<(...args: unknown[]) => void>;
+        };
+
+        /** Seeds one settled monitor capture exactly as inputMonitoring leaves it. */
+        function seedMonitorCapture(key: string | null, trackId: string, stripGain: unknown): MonitorCaptureFixture {
+            const trackStop = vi.fn<() => void>();
+            const sourceConnect = vi.fn<(...args: unknown[]) => void>();
+            const sourceDisconnect = vi.fn<(...args: unknown[]) => void>();
+            inputMonitoringSession.captures.set(key, {
+                monitorStream: { getTracks: () => [{ stop: trackStop }] } as unknown as MediaStream,
+                monitorSource: {
+                    connect: sourceConnect,
+                    disconnect: sourceDisconnect,
+                } as unknown as MediaStreamAudioSourceNode,
+                monitorEdges: new Map([[trackId, stripGain as AudioNode]]),
+            });
+            inputMonitoringSession.trackKeys.set(trackId, key);
+            return { trackStop, sourceDisconnect };
+        }
+
+        beforeEach(() => {
+            // The monitor session is HMR-persistent module state and must not leak
+            // seeded captures between cases.
+            inputMonitoringSession.captures.clear();
+            inputMonitoringSession.trackKeys.clear();
+            inputMonitoringSession.pendingRequests.clear();
+        });
+
         it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
@@ -1830,6 +1861,62 @@ describe('AudioEngine', () => {
             await engine.dispose();
 
             expect(meterPort.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
+        });
+
+        it('stops every live monitor capture, disconnects its strip edge, and empties the session', async () => {
+            const firstStrip = engine.ensureTrackStrip('t1');
+            const secondStrip = engine.ensureTrackStrip('t2');
+            const defaultCapture = seedMonitorCapture(null, 't1', firstStrip.gainNode);
+            const namedCapture = seedMonitorCapture('input-2', 't2', secondStrip.gainNode);
+            inputMonitoringSession.pendingRequests.set('input-3', Promise.withResolvers<MediaStream>().promise);
+
+            await engine.dispose();
+
+            for (const [capture, strip] of [
+                [defaultCapture, firstStrip],
+                [namedCapture, secondStrip],
+            ] as const) {
+                expect(capture.trackStop).toHaveBeenCalledTimes(1);
+                // The per-track edge releases while its strip node still exists,
+                // then the capture-wide disconnect drops everything else.
+                expect(capture.sourceDisconnect).toHaveBeenCalledWith(strip.gainNode);
+                expect(capture.sourceDisconnect).toHaveBeenCalledWith();
+            }
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputMonitoringSession.trackKeys.size).toBe(0);
+            expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not stop a monitor stream twice or throw when disposal repeats', async () => {
+            const strip = engine.ensureTrackStrip('t1');
+            const capture = seedMonitorCapture(null, 't1', strip.gainNode);
+
+            await engine.dispose();
+            await expect(engine.dispose()).resolves.toBeUndefined();
+
+            expect(capture.trackStop).toHaveBeenCalledTimes(1);
+            expect(inputMonitoringSession.captures.size).toBe(0);
+        });
+
+        it('stops monitor captures before the graph teardown, not after', async () => {
+            const order: string[] = [];
+            const strip = engine.ensureTrackStrip('t1');
+            const capture = seedMonitorCapture(null, 't1', strip.gainNode);
+            capture.sourceDisconnect.mockImplementation(() => {
+                if (!order.includes('monitor-stop')) {
+                    order.push('monitor-stop');
+                }
+            });
+            const resetGraph = engine.resetGraph.bind(engine);
+            vi.spyOn(engine, 'resetGraph').mockImplementation(() => {
+                order.push('graph-teardown');
+                resetGraph();
+            });
+
+            await engine.dispose();
+
+            expect(order).toEqual(['monitor-stop', 'graph-teardown']);
         });
     });
 

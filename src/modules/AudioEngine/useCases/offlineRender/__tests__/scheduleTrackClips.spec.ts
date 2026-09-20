@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { dbToGain } from '#/utils/audioLevelLaw';
 
+import { makeCeilingClipCurve } from '../../../repositories/devices/dynamics/makeCeilingClipCurve';
 import {
     type DeviceNoteExpressionRequest,
     type DeviceNoteOnRequest,
@@ -100,6 +102,8 @@ const mocks = vi.hoisted(() => {
         resolveDrumKit: vi.fn<() => unknown>(() => null),
         checkCancel: vi.fn(),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
+        /** Flips the scheduler double onto the real `scheduleTrackAutomation`. */
+        runProductionScheduler: false,
         projection,
     };
 });
@@ -197,9 +201,22 @@ vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: mocks.getCompensationDelay,
 }));
 
-vi.mock('../../../repositories/offlineScheduler/automationScheduling', () => ({
-    scheduleTrackAutomation: mocks.scheduleTrackAutomation,
-}));
+// The cases below observe the input `scheduleTrackClips` builds for the
+// scheduler, so the scheduler is doubled by default. `runProductionScheduler`
+// flips the double onto the real `scheduleTrackAutomation`, which is what lets
+// the #4424 propagation case observe the production
+// `scheduleTrackClips -> scheduleTrackAutomation` chain end to end.
+vi.mock('../../../repositories/offlineScheduler/automationScheduling', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../repositories/offlineScheduler/automationScheduling')>();
+    return {
+        scheduleTrackAutomation: (input: Parameters<typeof actual.scheduleTrackAutomation>[0]) => {
+            mocks.scheduleTrackAutomation(input);
+            if (mocks.runProductionScheduler) {
+                actual.scheduleTrackAutomation(input);
+            }
+        },
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -266,6 +283,7 @@ function makeInstrumentEntry(): DeviceNodeEntry {
     return {
         deviceId: 'inst-1',
         deviceType: 'fermenter',
+        contributesAudio: true,
         node: {} as DeviceNodeEntry['node'],
         strategy: {} as DeviceNodeEntry['strategy'],
         instrumentControls: {
@@ -1343,6 +1361,159 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
     });
 });
 
+describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => {
+    /** The descriptor facts live admits the limiter ceiling on, restated locally. */
+    const limiterCeilingLaw = {
+        isAutomatable: ({ paramId }: { deviceType: string; paramId: string }) => paramId === 'lim-ceiling',
+        clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) => value,
+        quantiseValue: ({ value }: { deviceType: string; paramId: string; value: number }) => value,
+        acceptsExternalPluginParameter: () => false,
+        clampExternalPluginValue: ({ value }: { externalInstanceId: string; parameterId: string; value: number }) =>
+            value,
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
+        mocks.automationValue.value = null;
+        mocks.transportValue.value = null;
+        mocks.getCompensationDelay.mockReturnValue(0);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
+        offlineDeviceParameterLawState.isAutomatable = null;
+        offlineDeviceParameterLawState.clampValue = null;
+        offlineDeviceParameterLawState.quantiseValue = null;
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
+        offlineDeviceParameterLawState.clampExternalPluginValue = null;
+    });
+
+    afterEach(() => {
+        mocks.runProductionScheduler = false;
+    });
+
+    /**
+     * The limiter ceiling as the strategy answers it: the ceiling gain and the
+     * clipper whose rebuilt curve is the cap, with no AudioParam between them.
+     */
+    function makeLimiterEntry() {
+        const ceiling = { gain: { value: 1 } } as unknown as GainNode;
+        const clipper = { curve: null } as unknown as { curve: Float32Array | null };
+        const entry: DeviceNodeEntry = {
+            deviceId: 'limiter-1',
+            deviceType: 'builtin-limiter',
+            contributesAudio: true,
+            node: {} as DeviceNodeEntry['node'],
+            strategy: {
+                resolveOfflineAutomation: (parameterId: string) => {
+                    if (parameterId !== 'lim-ceiling') {
+                        return null;
+                    }
+                    return { kind: 'curveWrite' as const, targets: { ceiling, clipper } };
+                },
+            } as unknown as DeviceNodeEntry['strategy'],
+        };
+        return { entry, ceiling, clipper };
+    }
+
+    function makeCeilingLane() {
+        return {
+            id: 'lane-ceiling',
+            trackId: 'track-inst',
+            parameterId: 'limiter-1:lim-ceiling',
+            parameterName: 'Ceiling',
+            enabled: true,
+            minValue: -3,
+            maxValue: 0,
+            points: [{ beat: 0, value: -1, curve: 'linear' as const, tension: 0 }],
+        };
+    }
+
+    async function scheduleCeilingLane(
+        pendingWorkletEvents: PendingWorkletEvent[],
+        entry: DeviceNodeEntry,
+        scheduleFrame?: (time: number | undefined, call: () => void) => void
+    ): Promise<void> {
+        const track = makeMidiTrack();
+        track.devices = [
+            {
+                id: 'limiter-1',
+                name: 'Limiter',
+                type: 'builtin-limiter',
+                bypassed: false,
+                parameterValues: { 'lim-ceiling': -1 },
+            },
+        ];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi: makeMidi(),
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                resolveArticulationId: mocks.resolveArticulationId,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+            scheduleFrame,
+        });
+    }
+
+    it('runs the production scheduler through the frame scheduler it was handed', async () => {
+        // The strip is admitted on the descriptor law — the device carries
+        // `lim-ceiling` and the law declares it automatable — and the strategy
+        // answers the frame-addressed binding. Running the real
+        // `scheduleTrackAutomation` here is the point: this observes the whole
+        // `scheduleTrackClips` → `scheduleTrackAutomation` → frame-scheduler
+        // chain, not a double of it.
+        const { entry, ceiling, clipper } = makeLimiterEntry();
+        mocks.automationValue.value = { lanes: [makeCeilingLane()] };
+        configureOfflineDeviceParameterLaw(limiterCeilingLaw);
+        mocks.runProductionScheduler = true;
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+        const scheduled: (number | undefined)[] = [];
+
+        await scheduleCeilingLane(pendingWorkletEvents, entry, (time, call) => {
+            scheduled.push(time);
+            call();
+        });
+
+        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
+        // The lane's single point sits at the region start, so one write.
+        expect(scheduled).toEqual([0]);
+        expect(ceiling.gain.value).toBeCloseTo(dbToGain(-1), 12);
+        expect(clipper.curve).toEqual(makeCeilingClipCurve(dbToGain(-1)));
+    });
+
+    it('fails closed when the caller threaded no frame scheduler instead of dropping the lane', async () => {
+        const { entry, ceiling, clipper } = makeLimiterEntry();
+        mocks.automationValue.value = { lanes: [makeCeilingLane()] };
+        configureOfflineDeviceParameterLaw(limiterCeilingLaw);
+        mocks.runProductionScheduler = true;
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await expect(scheduleCeilingLane(pendingWorkletEvents, entry)).rejects.toThrow(/lim-ceiling/);
+        // Nothing half-applied, and the lane was not silently skipped.
+        expect(ceiling.gain.value).toBe(1);
+        expect(clipper.curve).toBeNull();
+    });
+});
+
 describe('scheduleTrackClips — per-note MPE for offline worklet instruments', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -1388,6 +1559,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         const entry: DeviceNodeEntry = {
             deviceId: 'inst-1',
             deviceType,
+            contributesAudio: true,
             node: strategy.node,
             strategy,
             instrumentControls: {

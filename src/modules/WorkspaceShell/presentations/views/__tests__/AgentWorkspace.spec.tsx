@@ -28,7 +28,7 @@ const agentRunControlsMock = vi.hoisted(() => ({
 const getProviderRouteViewMock = vi.hoisted(() => vi.fn());
 const getAgentApprovalViewMock = vi.hoisted(() => vi.fn());
 const confirmPendingChatActionsMock = vi.hoisted(() => vi.fn());
-const cancelPendingChatActionsMock = vi.hoisted(() => vi.fn());
+const cancelPendingChatActionsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ status: 'cancelled' }));
 const reproposePendingChatActionsMock = vi.hoisted(() => vi.fn());
 const agentRunCancellationMock = vi.hoisted(() => ({ cancel: vi.fn() }));
 const revertAiActionGroupMock = vi.hoisted(() => vi.fn());
@@ -41,6 +41,7 @@ const agentChangeComparisonMock = vi.hoisted(() => ({
 const getAgentChangeComparisonViewMock = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
+    notifyAiChange: vi.fn(),
     agentRunControls: agentRunControlsMock,
     agentRunCancellation: agentRunCancellationMock,
     getProviderRouteView: getProviderRouteViewMock,
@@ -351,6 +352,28 @@ describe('AgentWorkspace', () => {
         expect(summary.getByText('Newest request')).toBeInTheDocument();
     });
 
+    it('consumes each exact-run request once, focuses it, and permits later manual selection', () => {
+        agentRunControlsMock.list.mockReturnValue([
+            projection({ runId: 'run-2', request: 'Newest request' }),
+            projection({ runId: 'run-1', request: 'Older request' }),
+        ]);
+        setRuns([
+            run({ runId: 'run-2', request: 'Newest request' }),
+            run({ runId: 'run-1', request: 'Older request' }),
+        ]);
+        const rendered = render(<AgentWorkspace />);
+        const requestedRun = { runId: 'run-1' };
+        rendered.rerender(<AgentWorkspace requestedRun={requestedRun} />);
+        expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByRole('heading', { name: 'Run summary' })).toHaveFocus();
+        fireEvent.click(screen.getAllByRole('option')[0]!);
+        rendered.rerender(<AgentWorkspace requestedRun={requestedRun} />);
+        expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+        rendered.rerender(<AgentWorkspace requestedRun={{ runId: 'run-1' }} />);
+        expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByRole('heading', { name: 'Run summary' })).toHaveFocus();
+    });
+
     it('keeps the scrolling workspace column from collapsing its sections', () => {
         agentRunControlsMock.list.mockReturnValue([projection({ runId: 'run-1', request: 'Some request' })]);
         setRuns([run({ runId: 'run-1', request: 'Some request' })]);
@@ -595,6 +618,29 @@ describe('AgentWorkspace', () => {
         rerender(<AgentWorkspace />);
 
         expect(screen.getByText('Route not resolved')).toBeInTheDocument();
+    });
+
+    it('renders incomplete provider cost as a reserved estimate in both route and approval views', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        const incompleteCost = {
+            category: 'remoteTokens',
+            reserved: 100,
+            actual: 9,
+            provenance: 'versioned-estimate',
+            final: false,
+        };
+        getProviderRouteViewMock.mockReturnValue({ ...routeView(), cost: [incompleteCost] });
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(approvalView({ cost: [incompleteCost] }));
+
+        render(<AgentWorkspace />);
+
+        expect(screen.getByText('remoteTokens 100 reserved versioned-estimate; known minimum 9')).toBeInTheDocument();
+        expect(
+            screen.getByText('Cost: remoteTokens 100 reserved versioned-estimate; known minimum 9')
+        ).toBeInTheDocument();
     });
 
     it('lists every route option with its admission verdict and the run fallback policy', () => {

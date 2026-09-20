@@ -5,8 +5,8 @@ import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MID
 import { type TransportState } from '#/modules/Transport/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
+import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
-import { MAX_OFFLINE_FRAMES } from '../offlineRender/constants';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { type OfflineTrackStrip } from '../offlineRender/types';
 import { renderOffline } from '../renderOffline';
@@ -353,6 +353,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     {
                         deviceId: 'toaster-device',
                         deviceType: 'toaster',
+                        contributesAudio: true,
                         node,
                         strategy: {
                             node,
@@ -413,6 +414,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     {
                         deviceId: 'compressor-1',
                         deviceType: 'builtin-sidechain-compressor',
+                        contributesAudio: true,
                         node,
                         strategy: {
                             node,
@@ -474,6 +476,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                     {
                         deviceId: 'compressor-1',
                         deviceType: 'builtin-sidechain-compressor',
+                        contributesAudio: true,
                         node,
                         strategy: {
                             node,

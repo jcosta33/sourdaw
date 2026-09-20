@@ -1,11 +1,15 @@
-# Review stance: correctness
+# Lesson library: behavior and invariant defects
 
-Dispatch guidance for the correctness stance: attack what the change does, not what it claims —
-read the whole unit at head, state the invariant it must maintain, and try to construct the input
-or state that breaks it. Per the Review section of `AGENTS.md`, an escape — a defect that reached
-`main` which this stance should have caught — is recorded here as a lesson, and every future
-dispatch of this stance carries this file's lessons. Lessons state the escape, the blind spot, and
-the probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
+Lesson library for behavior and invariant defects — the generic class a derived stance must
+specialize beyond, never a stance name to dispatch: attack what the change does, not what it
+claims — read the whole unit at head, state the invariant it must maintain, and try to construct
+the input or state that breaks it. Per the Review section of `AGENTS.md`, this directory is a
+lesson library, not a stance menu: an escape — a defect that reached `main` whose defect class
+matches this file — is recorded here as a lesson, and every dispatch whose derived stance matches
+this file carries its lessons. Lessons state the escape, the blind spot, and the probe that would
+have caught it. Keep each lesson short enough to paste into a dispatch. A behavior-risk stance
+matching no more specific file carries this file; a stance with a more specific match never
+carries it in addition.
 
 ## Standing probes
 
@@ -134,30 +138,6 @@ Probe that would have caught it: grep `src/**/__tests__` for the record's field 
 (`pendingEffectContinuations` here) and for the literal placeholder values the change retires, name
 every spec that hits, and require the author's evidence to include a run of each.
 
-### 2026-09-04 — a workflow comment's claim about a third-party installer read as evidence (escaped via PR #3548)
-
-PR #3548 added the nightly `desktop-measure` leg. Its install step said "BlackHole is a HAL
-plugin: coreaudiod picks it up as soon as the cask lands it, so nothing here reboots." The cask's
-own caveat prints "You must reboot for the installation of blackhole-2ch to take effect", its pkg
-distribution declares `onConclusion='RequireRestart'` with a post-install script that only fixes
-permissions, and coreaudiod enumerates `/Library/Audio/Plug-Ins/HAL` only when it starts. The first
-hosted run failed at `SwitchAudioSource` with
-`Could not find an audio device named "BlackHole 2ch"`. The approval attacked "whether every step's
-precondition holds in order on a hosted macos-latest runner" and reported all held, having checked
-the claim against the comment rather than the package; actions/runner-images issue 11746 had
-recorded the same failure and the `sudo killall coreaudiod` fix since March 2025.
-
-Blind spot: a comment or pull-request body asserting how a third-party installer, runner image, or
-external service behaves was accepted as evidence, and a job that cannot run on the pull request
-was approved with no run of it at all.
-
-Probe that would have caught it: for every claim about an external component in a workflow diff,
-open that component's primary source — the cask or formula, the installer's distribution and
-post-install scripts, the runner-image release notes, the vendor's open issues — and quote the line
-that supports or contradicts the claim; a caveat, restart flag, or open issue that contradicts the
-comment is the finding. When the job cannot run on the pull request, name the first hosted run as
-the only evidence and require the pull request's test section to say so.
-
 ### 2026-09-05 — a retired renderer body with a carrier rule that still routed to it (escaped via PR #3593; fixed in #3846)
 
 PR #3593 made the native live session the audible carrier and turned the Web Audio
@@ -284,3 +264,23 @@ each backend's advertisement path to the request body actually sent, and read th
 body under the backend's cap with more action tools than the cap admits. A tool the system prompt
 demands must be in the mandatory set of every backend, and the first end-to-end case must run below
 the mock that hides the backend.
+
+### 2026-09-19 — an argument form accepted by the handler but not by the planner path (escaped via PR #4392; fixed in the second task of #4366)
+
+The decibel level forms landed as a handler contract: `handleSetTrackGain` and its siblings resolved
+`gainDb`, `levelDb`, `valueDb` and `deltaDb`, the AiRuntime payload validators admitted them, and the
+system-prompt schemas in `models/Tools/*.ts` advertised them. The planner never sent one. The
+executable registry the planner is actually handed, `getExecutableAppActionToolSchemas()`, still
+advertised the linear key alone and marked it required; the grounding value rules knew no decibel
+unit; and each bridge strategy demanded an exact key set naming the linear key. A model asked for a
+level in decibels therefore had to convert to a linear amplitude against a fader curve it cannot see,
+and every handler spec stayed green while the form was unreachable from a prompt.
+
+Blind spot: the stance read the acceptor the diff touched and treated the new form as accepted, rather
+than asking who else has to admit it before a request can reach that acceptor.
+
+Probe that would have caught it: for every claim that a command accepts a new argument form, list each
+acceptor on the provider path — the handler, the payload validator, the executable registry schema and
+its `required`, the strategy's key set, and the grounding value rules — and drive one call carrying the
+new form through the real planner path end to end. A green handler spec is not evidence for the planner
+path; the narrow acceptor is the one the diff did not touch.

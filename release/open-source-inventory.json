@@ -166,7 +166,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:df7f22dfb518328a0665e7ab55a3b6b1bda29fca0fa62c53c737d81fccd35eed:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:570224735b71bf2a48451be17dcff408b61f7f429d545eca6ed2e0a9f07e806d:release/dependency-license-proofs.json"
+                "sha256:376060d325ad31e7d2dd1de81ab9411631ebecc9eaeedcdb503a911e6cfc14d4:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1200,9 +1200,9 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
-                "tracked-set-sha256:8891ee4b3cdeee4ccc119ea720db966d655e432290c91cdaad8b4d15bcd4ac12:grand-boule-live-runtime",
+                "tracked-set-sha256:dae45a9d53d1a451448839f8aab39631232cda882cb4c1e570943fc48c02e519:grand-boule-live-runtime",
                 "tracked-set-sha256:29916b54b261f27667a4021102e2ff8ec4fa273a3730ad290a717faa455a20d5:grand-boule-project-state",
-                "tracked-set-sha256:900cfc850714835973e48c2fb024c236b90a71188b905b01234219fc8285d692:grand-boule-offline-composition",
+                "tracked-set-sha256:9a464c359163e8314514eca9a29119751eeb5a7d2511caa820511c84a172746d:grand-boule-offline-composition",
                 "tracked-set-sha256:e65cf347580b7d21da3bfd479b45dc7eead1647435c8c0e24fedcd782ec2f4d9:grand-boule-release-proof"
             ],
             "licenses": [
@@ -1694,7 +1694,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "a0b453c853ba24d8373b858998fe2fd349a25035096965ffdc8a5308c1ba455d"
+            "sha256": "a04547fe627175816c843b42dd28ce8bef296dc987f9fc4c3607d275154e1e9b"
         },
         {
             "path": "server/package.json",

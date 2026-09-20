@@ -1,11 +1,12 @@
-# Review stance: security and platform boundaries
+# Lesson library: security and platform boundaries
 
-Dispatch guidance for the stance that attacks native authority, renderer trust, platform
-capabilities, IPC exposure, filesystem access, secrets, or operating-system integration. Per the
-Review section of `AGENTS.md`, an escape — a defect that reached `main` which this stance should
-have caught — is recorded here as a lesson, and every future dispatch of this stance carries this
-file's lessons. Lessons state the escape, the blind spot, and the probe that would have caught it.
-Keep each lesson short enough to paste into a dispatch.
+Lesson library for defects in native authority, renderer trust, platform capabilities, IPC
+exposure, filesystem access, secrets, or operating-system integration. Per the Review section of
+`AGENTS.md`, this directory is a lesson library, not a stance menu: an escape — a defect that
+reached `main` whose defect class matches this file — is recorded here as a lesson, and every
+dispatch whose derived stance matches this file carries its lessons. Lessons state the escape, the
+blind spot, and the probe that would have caught it. Keep each lesson short enough to paste into a
+dispatch.
 
 ## Standing probes
 
@@ -68,3 +69,18 @@ fallback masked it from every later session.
 Probe that would have caught it: for every GitHub mutation a shipped script performs, prove the
 minted permission set admits that mutation class — resolve or create one real thread under the
 minted identity in a fixture repository and require the mutation to succeed before the flow lands.
+
+### 2026-09-19 — repair ancestry used the live tip instead of the finding revision (introduced via PR #4411)
+
+PR #4411 (`ae4793d05f`) rejected a repair equal to the live PR head, forcing an unrelated follow-up
+commit for an ordinary one-commit fix, while accepting commits already present when the finding
+was reviewed. Both author recording and reviewer confirmation used the same wrong revision bound.
+
+Blind spot: review accepted commit inequality as proof of a post-finding repair, and tests encoded
+the tip refusal without binding the root finding to its associated review's commit.
+
+Probe that would have caught it: require a one-commit repair at the live tip to record and confirm;
+refuse the reviewed commit, its predecessors, and a merged sibling that does not descend it, with
+zero mutations for the whole confirmation batch. Read the root comment's review commit from GitHub
+in both production queries, preserve it across pagination, and refuse missing provenance. A reply's
+review or a comment's moving diff commit must never replace the revision that received the finding.

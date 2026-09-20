@@ -19,7 +19,6 @@ function defaultProps(overrides: Record<string, unknown> = {}) {
         enableReasoning: false,
         isGenerating: false,
         inputValue: '',
-        isLlmAvailable: true,
         textareaRef: createRef<HTMLTextAreaElement>(),
         onChange: vi.fn(),
         onKeyDown: vi.fn(),
@@ -62,13 +61,13 @@ describe('ChatComposer — textarea disabled state', () => {
         expect(screen.getByRole('textbox')).toBeDisabled();
     });
 
-    it('disables textarea when LLM is not available', () => {
-        render(<ChatComposer {...defaultProps({ isLlmAvailable: false })} />);
-        expect(screen.getByRole('textbox')).toBeDisabled();
+    it('keeps textarea enabled without requiring model availability', () => {
+        render(<ChatComposer {...defaultProps()} />);
+        expect(screen.getByRole('textbox')).toBeEnabled();
     });
 
     it('enables textarea when not generating and LLM is available', () => {
-        render(<ChatComposer {...defaultProps({ isGenerating: false, isLlmAvailable: true })} />);
+        render(<ChatComposer {...defaultProps({ isGenerating: false })} />);
         expect(screen.getByRole('textbox')).toBeEnabled();
     });
 });
@@ -91,18 +90,18 @@ describe('ChatComposer — action button (Send/Stop)', () => {
     });
 
     it('enables send button when input has text and LLM is available', () => {
-        render(<ChatComposer {...defaultProps({ inputValue: 'hello', isLlmAvailable: true })} />);
+        render(<ChatComposer {...defaultProps({ inputValue: 'hello' })} />);
         const buttons = screen.getAllByRole('button');
         // The action button is the last one (after Command Mode and Think toggles).
         const sendButton = buttons[buttons.length - 1]!;
         expect(sendButton).toBeEnabled();
     });
 
-    it('disables send button when LLM is not available', () => {
-        render(<ChatComposer {...defaultProps({ inputValue: 'hello', isLlmAvailable: false })} />);
+    it('keeps send enabled with nonblank input without requiring model availability', () => {
+        render(<ChatComposer {...defaultProps({ inputValue: 'hello' })} />);
         const buttons = screen.getAllByRole('button');
         const sendButton = buttons[buttons.length - 1]!;
-        expect(sendButton).toBeDisabled();
+        expect(sendButton).toBeEnabled();
     });
 
     it('calls onSend when clicked (not generating)', () => {

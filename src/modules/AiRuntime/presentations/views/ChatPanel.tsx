@@ -532,7 +532,6 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 enableReasoning={chatState.enableReasoning}
                 isGenerating={chatState.isGenerating}
                 inputValue={inputValue}
-                isLlmAvailable={llmAvailable}
                 textareaRef={textareaRef}
                 onChange={setInputValue}
                 onKeyDown={handleKeyDown}

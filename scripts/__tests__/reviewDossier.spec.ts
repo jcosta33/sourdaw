@@ -63,7 +63,7 @@ const SECOND_CORRECTNESS_STANCE: ReviewDossierEvent = {
     outcome: 'clean',
 };
 
-const UNREQUIRED_STANCE: ReviewDossierEvent = {
+const EXTRA_DISPATCHED_STANCE: ReviewDossierEvent = {
     kind: 'stance-completed',
     stance: 'code-craft',
     reviewerModel: 'model-craft',
@@ -371,25 +371,146 @@ describe('assembleReviewDossier evidence safety', () => {
 });
 
 describe('assembleReviewDossier refusals', () => {
-    it('should refuse a duplicate completed stance', () => {
-        expect(() => assembleWith({ events: [...BASE_EVENTS, SECOND_CORRECTNESS_STANCE] })).toThrow(
-            /completes stance more than once: correctness/
+    it('should refuse a second draw repeating a completed stance and reviewer model', () => {
+        expect(() =>
+            assembleWith({
+                events: [...BASE_EVENTS, { ...SECOND_CORRECTNESS_STANCE, reviewerModel: 'model-correctness' }],
+            })
+        ).toThrow(/completes stance correctness more than once on model-correctness/);
+    });
+
+    it('should assemble and round-trip several draws on one stance with distinct reviewer models', () => {
+        const dossier = assembleWith({ events: [...BASE_EVENTS, SECOND_CORRECTNESS_STANCE] });
+
+        expect(dossier.requiredStances).toEqual(['correctness', 'test-validity']);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(completedStances(reparsed).map((entry) => entry.reviewerModel)).toEqual([
+            'model-correctness',
+            'model-test-validity',
+            'model-correctness-second',
+        ]);
+    });
+
+    it('should carry a draw exhaustion through assemble, serialize and parse with the digest verifying', () => {
+        const exhaustedDraw = {
+            stance: 'correctness',
+            reviewerModel: 'model-correctness-second',
+            modelTier: 'economy' as const,
+            outcome: 'clean' as const,
+            exhaustion: 'every other harness on this machine was committed to another lane',
+        };
+        const event: ReviewDossierEvent = { kind: 'stance-completed', ...exhaustedDraw };
+        const dossier = assembleWith({ events: [...BASE_EVENTS, event] });
+
+        expect(completedStances(dossier).at(-1)).toEqual(exhaustedDraw);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(completedStances(reparsed).at(-1)).toEqual(exhaustedDraw);
+        expect(serializeReviewDossier(reparsed)).toBe(serializeReviewDossier(dossier));
+    });
+
+    it('should cover exhaustion in the event digest when present', () => {
+        const draw = {
+            kind: 'stance-completed',
+            stance: 'correctness',
+            reviewerModel: 'model-a',
+            modelTier: 'standard',
+            outcome: 'clean',
+        } as const;
+        const baseline = reviewDossierEventDigest({ ...draw, sequence: 0, previousDigest: GENESIS_DIGEST });
+
+        expect(
+            reviewDossierEventDigest({
+                ...draw,
+                exhaustion: 'every other harness was unavailable',
+                sequence: 0,
+                previousDigest: GENESIS_DIGEST,
+            })
+        ).not.toBe(baseline);
+    });
+
+    it('should refuse an unsafe draw exhaustion and name the field', () => {
+        expect(() =>
+            assembleWith({
+                events: [
+                    ...BASE_EVENTS,
+                    {
+                        ...SECOND_CORRECTNESS_STANCE,
+                        exhaustion: `ghp_${'A'.repeat(24)}`,
+                    },
+                ],
+            })
+        ).toThrow(/event 4 exhaustion value at index 0 contains a GitHub token/);
+    });
+
+    it('should refuse a persisted required stance with no completed record', () => {
+        const mutated = cloneDossier();
+        mutated.requiredStances = ['code-craft', 'correctness', 'test-validity'];
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/has no completed record for required stance: code-craft/);
+    });
+
+    it('should assemble a dispatched stance the plan does not list, recording it as the record stances', () => {
+        const dossier = assembleWith({ events: [...BASE_EVENTS, EXTRA_DISPATCHED_STANCE] });
+
+        expect(dossier.requiredStances).toEqual(['code-craft', 'correctness', 'test-validity']);
+    });
+
+    it('should assemble and round-trip a free-form dispatched stance the plan menu does not name', () => {
+        const freeFormStance = 'gate-correspondence correctness — a dossier entry the record does not carry refuses';
+        const dossier = assembleWith({
+            events: [
+                {
+                    kind: 'stance-completed',
+                    stance: freeFormStance,
+                    reviewerModel: 'model-gate-correspondence',
+                    modelTier: 'standard',
+                    outcome: 'clean',
+                },
+                {
+                    kind: 'finding-discarded',
+                    findingId: 'finding-7',
+                    stance: freeFormStance,
+                    reason: 'not reproducible on this head',
+                },
+            ],
+        });
+
+        expect(dossier.requiredStances).toEqual([freeFormStance]);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(completedStances(reparsed).map((entry) => entry.stance)).toEqual([freeFormStance]);
+        expect(discardedDispositions(reparsed).map((entry) => entry.stance)).toEqual([freeFormStance]);
+    });
+
+    it('should refuse a persisted completed stance its required stances do not carry', () => {
+        const mutated = cloneDossier();
+        mutated.events.push({
+            ...EXTRA_DISPATCHED_STANCE,
+            sequence: mutated.events.length,
+            previousDigest: 'x',
+            digest: 'y',
+        });
+
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /completes a stance its required stances do not carry: code-craft/
         );
     });
 
-    it('should refuse a required stance with no completed record', () => {
-        const withoutCorrectness = BASE_EVENTS.filter(
-            (event) => !(event.kind === 'stance-completed' && event.stance === 'correctness')
-        );
+    it('should refuse a persisted second draw repeating a completed stance and reviewer model', () => {
+        const mutated = cloneDossier();
+        mutated.events.push({
+            kind: 'stance-completed',
+            stance: 'correctness',
+            reviewerModel: 'model-correctness',
+            modelTier: 'economy',
+            outcome: 'clean',
+            sequence: mutated.events.length,
+            previousDigest: 'x',
+            digest: 'y',
+        });
 
-        expect(() => assembleWith({ events: withoutCorrectness })).toThrow(
-            /has no completed record for required stance: correctness/
-        );
-    });
-
-    it('should refuse a completed stance the plan did not require', () => {
-        expect(() => assembleWith({ events: [...BASE_EVENTS, UNREQUIRED_STANCE] })).toThrow(
-            /completes a stance the plan did not require: code-craft/
+        // The total-map refusal fires before the chain verifies the appended record's digest.
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /completes stance correctness more than once on model-correctness/
         );
     });
 
@@ -415,10 +536,10 @@ describe('assembleReviewDossier refusals', () => {
         );
     });
 
-    it('should refuse a discard under a stance the plan did not require', () => {
+    it('should refuse a discard under a stance the record does not carry', () => {
         expect(() =>
             assembleWith({ discarded: [{ finding: 'finding-8', stance: 'code-craft', reason: 'out of scope' }] })
-        ).toThrow(/discards a finding under a stance the plan did not require: code-craft/);
+        ).toThrow(/discards a finding under a stance its required stances do not carry: code-craft/);
     });
 
     it('should refuse a blank discard reason', () => {
@@ -427,10 +548,10 @@ describe('assembleReviewDossier refusals', () => {
         ).toThrow(/discarded\[0\] reason must be a non-blank string/);
     });
 
-    it('should refuse unsorted required stances', () => {
-        expect(() => assembleWith({ plan: { ...PLAN, requiredStances: ['test-validity', 'correctness'] } })).toThrow(
-            /requiredStances must be sorted/
-        );
+    it('should ignore the plan stance menu, deriving the record stances from the dispatch', () => {
+        const dossier = assembleWith({ plan: { ...PLAN, requiredStances: ['test-validity', 'correctness'] } });
+
+        expect(dossier.requiredStances).toEqual(['correctness', 'test-validity']);
     });
 
     it('should refuse unsafe evidence and name the offending field', () => {
@@ -598,6 +719,17 @@ describe('parseReviewDossier refusals', () => {
         );
     });
 
+    it('should refuse a credential-shaped stance name in a persisted record', () => {
+        const mutated = cloneDossier();
+        const record = recordAt(mutated, 0);
+        if (record.kind !== 'stance-completed') {
+            throw new Error('fixture must start with a stance-completed record');
+        }
+        record.stance = `ghp_${'A'.repeat(24)}`;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/event 0 stance value at index 0 contains a GitHub token/);
+    });
+
     it('should refuse a transcript marker in a persisted accepted path', () => {
         const mutated = cloneDossier();
         const record = recordAt(mutated, 1);
@@ -627,6 +759,61 @@ describe('parseReviewDossier refusals', () => {
         expect(Buffer.byteLength(serializeReviewDossier(validDossier()), 'utf8')).toBeLessThanOrEqual(
             REVIEW_DOSSIER_MAX_BYTES
         );
+    });
+});
+
+/**
+ * A record serialized by the chain before `exhaustion` existed: no stance-completed event carries
+ * the key, and every digest covers exactly the five base fields. Pinned as bytes so any change to
+ * the digest preimage — such as including exhaustion unconditionally — breaks verification of
+ * records the previous chain printed, instead of silently re-keying history.
+ */
+const HISTORICAL_SINGLE_DRAW_RECORD = `{
+    "format": "dossier-v1",
+    "pr": 2999,
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "riskClasses": [
+        "small"
+    ],
+    "requiredStances": [
+        "correctness"
+    ],
+    "events": [
+        {
+            "sequence": 0,
+            "previousDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "digest": "4afdab1f7953f72839013972ab241a800e49cf154859b83262f3a3a13e3fb33c",
+            "kind": "stance-completed",
+            "stance": "correctness",
+            "reviewerModel": "model-correctness",
+            "modelTier": "strongest",
+            "outcome": "clean"
+        }
+    ],
+    "evidence": [],
+    "limitations": [],
+    "recommendation": "approve",
+    "headDigest": "4afdab1f7953f72839013972ab241a800e49cf154859b83262f3a3a13e3fb33c",
+    "dossierDigest": "41cbcb3b937c56ba7b48e64f7ed8811f3275f521cb9daca8e1186c616aac6af3"
+}
+`;
+
+describe('historical dossier records', () => {
+    it('should verify a record persisted before exhaustion existed, byte-identically', () => {
+        const historical = JSON.parse(HISTORICAL_SINGLE_DRAW_RECORD);
+
+        expect(() => parseReviewDossier(historical)).not.toThrow();
+        expect(serializeReviewDossier(parseReviewDossier(historical))).toBe(HISTORICAL_SINGLE_DRAW_RECORD);
+    });
+
+    it('should read a historical completed stance with no exhaustion', () => {
+        const [only] = completedStances(parseReviewDossier(JSON.parse(HISTORICAL_SINGLE_DRAW_RECORD)));
+        if (only === undefined) {
+            throw new Error('fixture must carry one completed stance');
+        }
+
+        expect(only.exhaustion).toBeUndefined();
     });
 });
 

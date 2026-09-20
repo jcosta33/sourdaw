@@ -54,6 +54,7 @@ const runtime: AnthropicCloudRuntime = {
 
 const [firstDelta, secondDelta] = FIXTURE.textDeltas;
 const [dottedCall, plainCall] = FIXTURE.toolCalls;
+const ANTHROPIC_CACHE_WRITE_INPUT_TOKENS = 8;
 
 function event(payload: Record<string, unknown>): string {
     return `event: ${String(payload.type)}\ndata: ${JSON.stringify(payload)}\n\n`;
@@ -197,10 +198,13 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
         ],
         stop_reason: 'tool_use',
         usage: {
-            input_tokens: FIXTURE.toolUsage.inputTokens,
+            input_tokens:
+                FIXTURE.toolUsage.inputTokens -
+                FIXTURE.toolUsage.cacheReadInputTokens -
+                ANTHROPIC_CACHE_WRITE_INPUT_TOKENS,
             output_tokens: FIXTURE.toolUsage.outputTokens,
             cache_read_input_tokens: FIXTURE.toolUsage.cacheReadInputTokens,
-            cache_creation_input_tokens: 8,
+            cache_creation_input_tokens: ANTHROPIC_CACHE_WRITE_INPUT_TOKENS,
         },
     };
 }
@@ -474,6 +478,16 @@ describe('generateAnthropicToolCalls turn history', () => {
 describe('generateAnthropicToolCalls usage admission', () => {
     afterEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('reports the inclusive input total while preserving cache read and write counters', async () => {
+        const observed = await harness.planTools('tool-batch');
+
+        expect(observed.usage).toMatchObject({
+            inputTokens: FIXTURE.toolUsage.inputTokens,
+            cacheReadInputTokens: FIXTURE.toolUsage.cacheReadInputTokens,
+            cacheWriteInputTokens: ANTHROPIC_CACHE_WRITE_INPUT_TOKENS,
+        });
     });
 
     it('reads a fractional usage figure as null instead of destroying an admitted plan', async () => {

@@ -111,6 +111,18 @@ export const CONFIRM_REVIEWER_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
+/**
+ * Posting a commit status is gated on the `statuses` permission, which neither reviewer set above
+ * carries: the publication mint is read-only on contents, and confirm's contents write buys thread
+ * resolution, not statuses. The shadow status keeps its own set so no other reviewer command's token
+ * is broadened.
+ */
+export const SHADOW_REVIEWER_MINT_PERMISSIONS = {
+    contents: 'read',
+    pull_requests: 'write',
+    statuses: 'write',
+} as const;
+
 export type Role = 'author' | 'reviewer';
 
 export type RoleCredentials = {
@@ -125,6 +137,7 @@ export type MintPermissions = {
     pull_requests?: 'write';
     issues?: 'write';
     workflows?: 'write';
+    statuses?: 'write';
 };
 
 export type MintedInstallation = {

@@ -2,7 +2,7 @@ import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, u
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { llmStatusStore } from '#/modules/AiRuntime/stores';
+import { llmStatusStore, pendingActionConfirmationStore } from '#/modules/AiRuntime/stores';
 import {
     submitAdmittedPromptRequest,
     isComplexPrompt,
@@ -56,40 +56,8 @@ export type PromptFuzzyResult = {
     score: number;
 };
 
-type PromptAction = ReturnType<typeof resolvePresetActions>[number];
-
-type PromptPreview = {
-    actions: PromptAction[];
-    actionLabels: string[];
-    rawText: string;
-    requiresConfirmation: boolean;
-    projectRevision: string;
-    executionMode?: 'atomic';
-    confirm?: (signal?: AbortSignal) => Promise<unknown>;
-    cancel?: () => Promise<void>;
-};
-
-function createPromptPreview(input: PromptPreview): PromptPreview {
-    const { confirm, cancel, ...visible } = input;
-    Object.defineProperties(visible, {
-        confirm: { value: confirm },
-        cancel: { value: cancel },
-    });
-    return visible;
-}
-
-function cancelPromptPreview(proposal: PromptPreview | null, message: string): void {
-    if (!proposal?.cancel) {
-        return;
-    }
-    try {
-        void proposal.cancel().catch((error: unknown) => {
-            logger.error(new Error(message, { cause: error }));
-        });
-    } catch (error) {
-        logger.error(new Error(message, { cause: error }));
-    }
-}
+type PromptApproval = { runId: string; confirmationId: string };
+const EMPTY_CONFIRMATIONS: NonNullable<typeof pendingActionConfirmationStore.value> = { confirmations: [] };
 
 // ── Hook return type ────────────────────────────────────────────────────
 
@@ -97,7 +65,7 @@ export type PromptExecutionState = {
     value: string;
     setValue: (v: string) => void;
     isProcessing: boolean;
-    preview: PromptPreview | null;
+    approval: PromptApproval | null;
     fuzzyResults: PromptFuzzyResult[];
     selectedIndex: number;
     selectionTags: SelectionTag[];
@@ -113,8 +81,6 @@ export type PromptExecutionState = {
     handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
     handleSubmit: (e: FormEvent) => void | Promise<void>;
     executePreset: (result: PromptFuzzyResult) => Promise<void>;
-    confirmPreview: () => Promise<void>;
-    cancelPreview: () => void;
     cancelProcessing: () => void;
     handleLoadModel: (modelId?: string) => void;
     dismissTag: (id: string) => void;
@@ -127,7 +93,7 @@ export type PromptExecutionState = {
 export const usePromptExecution = (): PromptExecutionState => {
     const [value, setValue] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [preview, setPreview] = useState<PromptPreview | null>(null);
+    const [approval, setApproval] = useState<PromptApproval | null>(null);
     const [fuzzyResults, setFuzzyResults] = useState<PromptFuzzyResult[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(-1);
     const [dismissedTags, setDismissedTags] = useState<Set<string>>(new Set());
@@ -135,28 +101,29 @@ export const usePromptExecution = (): PromptExecutionState => {
     const inputRef = useRef<HTMLInputElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
     const operationRef = useRef<AbortController | null>(null);
-    const previewRef = useRef<PromptPreview | null>(null);
+    const approvalRef = useRef<PromptApproval | null>(null);
 
     useEffect(
         () => () => {
             const operation = operationRef.current;
-            const retainedPreview = previewRef.current;
             operationRef.current = null;
-            previewRef.current = null;
             operation?.abort();
-            cancelPromptPreview(retainedPreview, 'Prompt preview cancellation failed during unmount');
         },
         []
     );
 
-    const showPreview = (proposal: PromptPreview): void => {
-        previewRef.current = proposal;
-        setPreview(proposal);
-    };
-
-    const clearPreview = (): void => {
-        previewRef.current = null;
-        setPreview(null);
+    const confirmations = useStore(pendingActionConfirmationStore, EMPTY_CONFIRMATIONS);
+    const pending = confirmations.confirmations.find((entry) => entry.id === approval?.confirmationId);
+    if (approval && (!pending || pending.status !== 'proposed')) {
+        setApproval(null);
+        setValue('');
+    }
+    useEffect(() => {
+        approvalRef.current = approval;
+    }, [approval]);
+    const showApproval = (proposal: PromptApproval): void => {
+        approvalRef.current = proposal;
+        setApproval(proposal);
     };
 
     const llmStatus = useStore(llmStatusStore, defaultLlmStatus);
@@ -215,7 +182,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Canonical draft admission (voice and seeded text stay draft-only) ─
     useEffect(() => {
         const admitVoiceDraft = createVoicePromptDraftAdmission({
-            isBusy: () => previewRef.current !== null || operationRef.current !== null,
+            isBusy: () => approvalRef.current !== null || operationRef.current !== null,
             appendDraft: (text) => {
                 setValue((prev) => (prev ? `${prev} ${text}` : text));
                 inputRef.current?.focus();
@@ -228,7 +195,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Fuzzy search on input change ────────────────────────────────────
     useEffect(() => {
-        if (preview || isProcessing) {
+        if (approval || isProcessing) {
             // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
@@ -247,11 +214,11 @@ export const usePromptExecution = (): PromptExecutionState => {
             setFuzzyResults(results);
         }
         setSelectedIndex(-1);
-    }, [value, preview, isFocused, isProcessing, trackState, clipSelection]);
+    }, [value, approval, isFocused, isProcessing, trackState, clipSelection]);
 
     // ── Execute preset directly ─────────────────────────────────────────
     const executePreset = async (result: PromptFuzzyResult): Promise<void> => {
-        if (operationRef.current || previewRef.current) {
+        if (operationRef.current || approvalRef.current) {
             return;
         }
         const actions = resolvePresetActions({
@@ -274,18 +241,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 signal: controller.signal,
             });
             if (submission.status === 'awaiting-approval') {
-                const { preview: admitted } = submission;
-                showPreview(
-                    createPromptPreview({
-                        actions: [...admitted.actions],
-                        actionLabels: [...admitted.actionLabels],
-                        rawText: result.preset.label,
-                        requiresConfirmation: true,
-                        projectRevision: admitted.projectRevision,
-                        confirm: admitted.confirm,
-                        cancel: admitted.cancel,
-                    })
-                );
+                showApproval({ runId: submission.runId, confirmationId: submission.confirmationId });
                 setValue(result.preset.label);
                 return;
             }
@@ -298,7 +254,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 operationRef.current = null;
             }
             setIsProcessing(false);
-            if (!previewRef.current) {
+            if (!approvalRef.current) {
                 setValue('');
             }
         }
@@ -307,7 +263,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Full prompt submission (for complex / LLM) ──────────────────────
     const handleSubmit = async (event: FormEvent): Promise<void> => {
         event.preventDefault();
-        if (!value.trim() || operationRef.current || previewRef.current) {
+        if (!value.trim() || operationRef.current || approvalRef.current) {
             return;
         }
 
@@ -323,18 +279,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 signal: controller.signal,
             });
             if (submission.status === 'awaiting-approval') {
-                const { preview: admitted } = submission;
-                showPreview(
-                    createPromptPreview({
-                        actions: [...admitted.actions],
-                        actionLabels: [...admitted.actionLabels],
-                        rawText: value,
-                        requiresConfirmation: true,
-                        projectRevision: admitted.projectRevision,
-                        confirm: admitted.confirm,
-                        cancel: admitted.cancel,
-                    })
-                );
+                showApproval({ runId: submission.runId, confirmationId: submission.confirmationId });
                 shouldClearValue = false;
             }
         } catch (error) {
@@ -355,42 +300,6 @@ export const usePromptExecution = (): PromptExecutionState => {
                 setValue('');
             }
         }
-    };
-
-    const confirmPreview = async (): Promise<void> => {
-        const proposal = previewRef.current;
-        if (!proposal?.confirm || operationRef.current) {
-            return;
-        }
-
-        const controller = new AbortController();
-        operationRef.current = controller;
-        clearPreview();
-        setIsProcessing(true);
-        try {
-            await proposal.confirm(controller.signal);
-        } catch (error) {
-            if (!controller.signal.aborted) {
-                logger.error(new Error('Confirmed preview execution failed', { cause: error }));
-                notifyAiChange('Command not executed: the confirmed changes could not be applied.', []);
-            }
-        } finally {
-            if (operationRef.current === controller) {
-                operationRef.current = null;
-            }
-            setIsProcessing(false);
-            setValue('');
-        }
-    };
-
-    const cancelPreview = (): void => {
-        const proposal = previewRef.current;
-        if (operationRef.current) {
-            operationRef.current.abort();
-            return;
-        }
-        clearPreview();
-        cancelPromptPreview(proposal, 'Prompt preview cancellation failed');
     };
 
     const cancelProcessing = (): void => {
@@ -443,7 +352,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         value,
         setValue,
         isProcessing,
-        preview,
+        approval,
         fuzzyResults,
         selectedIndex,
         selectionTags,
@@ -456,8 +365,6 @@ export const usePromptExecution = (): PromptExecutionState => {
         handleKeyDown,
         handleSubmit,
         executePreset,
-        confirmPreview,
-        cancelPreview,
         cancelProcessing,
         handleLoadModel,
         dismissTag,

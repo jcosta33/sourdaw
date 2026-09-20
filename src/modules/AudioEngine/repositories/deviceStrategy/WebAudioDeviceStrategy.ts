@@ -1,5 +1,5 @@
 import { type Device } from '../../models/TrackViewTypes';
-import { resolveDeviceParamTargets } from '../../services/deviceResolution';
+import { resolveDeviceCurveWriteTargets, resolveDeviceParamTargets } from '../../services/deviceResolution';
 import { applyParams } from '../applyParams';
 import { type OfflineDeviceNode, createOfflineDeviceNode } from '../deviceNodeFactory';
 
@@ -20,6 +20,13 @@ export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
     }
 
     resolveOfflineAutomation(parameterId: string): OfflineAutomationBinding | null {
+        // The curve resolver answers first: a parameter with no AudioParam has no
+        // entry in the parameter table, so asking the table first would report it
+        // unbound and the lane would be dropped.
+        const curveTargets = resolveDeviceCurveWriteTargets(this.deviceType, parameterId, this.node);
+        if (curveTargets) {
+            return { kind: 'curveWrite', targets: curveTargets };
+        }
         const targets = resolveDeviceParamTargets(this.deviceType, parameterId, this.node);
         if (targets.length === 0) {
             return null;

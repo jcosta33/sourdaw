@@ -1,10 +1,10 @@
-# Review stance: test validity
+# Lesson library: test and evidence validity
 
-Dispatch guidance for the test-validity stance. Per the Review section of `AGENTS.md`, an escape —
-a defect that reached `main` which this stance should have caught — is recorded here as a lesson,
-and every future dispatch of this stance carries this file's lessons. Lessons state the escape, the
-blind spot, and the probe that would have caught it. Keep each lesson short enough to paste into a
-dispatch.
+Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
+directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
+defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
+stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
+probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
 ## Standing probes
 
@@ -32,6 +32,21 @@ dispatch.
   incident fixture alone does not discharge the detector's global claim.
 
 ## Lessons from escapes
+
+### 2026-09-19 — an Anthropic usage fixture mirrored the raw-field mapping (escaped via PR #4393)
+
+PR #4393 normalized Anthropic `input_tokens` directly as total input while also exposing cache-read and
+cache-creation counters. Its fixture reported 50 raw, 5 read, and 8 creation tokens, then asserted 50,
+so the test encoded the faulty mapping instead of the provider's documented 63-token billing total.
+
+Blind spot: the adapter test checked that every wire field reached some result field, but never stated
+which counters are subsets and which normalized counter is inclusive. The later attribution helper
+repeated the production mapping, so it could not expose a dropped field in that mapping.
+
+Probe that would have caught it: use unequal raw, cache-read, and cache-write values; assert their
+inclusive total and separate counters through the real provider producer, protocol accumulator, run
+budget, and cost projection. Make the terminal stream event output-only, and require the initial input
+and cache counters to survive without being added twice.
 
 ### 2026-09-18 — a command whose own spec imported it, and a freshness check that healed the state it asserted (escaped via PR #4356)
 
@@ -183,6 +198,30 @@ Probe that would have caught it: for any assertion on a missing-environment erro
 them explicitly; run the spec once with `GITHUB_REPOSITORY`, `GITHUB_ACTIONS`, `CI`, and
 `GITHUB_TOKEN` exported in the shell.
 
+### 2026-09-04 — a workflow comment's claim about a third-party installer read as evidence (escaped via PR #3548)
+
+PR #3548 added the nightly `desktop-measure` leg. Its install step said "BlackHole is a HAL
+plugin: coreaudiod picks it up as soon as the cask lands it, so nothing here reboots." The cask's
+own caveat prints "You must reboot for the installation of blackhole-2ch to take effect", its pkg
+distribution declares `onConclusion='RequireRestart'` with a post-install script that only fixes
+permissions, and coreaudiod enumerates `/Library/Audio/Plug-Ins/HAL` only when it starts. The first
+hosted run failed at `SwitchAudioSource` with
+`Could not find an audio device named "BlackHole 2ch"`. The approval attacked "whether every step's
+precondition holds in order on a hosted macos-latest runner" and reported all held, having checked
+the claim against the comment rather than the package; actions/runner-images issue 11746 had
+recorded the same failure and the `sudo killall coreaudiod` fix since March 2025.
+
+Blind spot: a comment or pull-request body asserting how a third-party installer, runner image, or
+external service behaves was accepted as evidence, and a job that cannot run on the pull request
+was approved with no run of it at all.
+
+Probe that would have caught it: for every claim about an external component in a workflow diff,
+open that component's primary source — the cask or formula, the installer's distribution and
+post-install scripts, the runner-image release notes, the vendor's open issues — and quote the line
+that supports or contradicts the claim; a caveat, restart flag, or open issue that contradicts the
+comment is the finding. When the job cannot run on the pull request, name the first hosted run as
+the only evidence and require the pull request's test section to say so.
+
 ### 2026-09-06 — a barrel consumer broke 28 mock factories (escaped two stances, #3910)
 
 The head added two `#/modules/AudioEngine/useCases` imports to a MIDI dependency object. Twenty-eight
@@ -294,3 +333,29 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.
+
+### 2026-09-20 — incomplete hosted usage released the admitted estimate (escaped via PR #2648)
+
+PR #2648 converted null input or output counters to zero and finalized the budget attempt, so a partial provider report
+could lower the charged ceiling and appear as a complete provider total in route and approval views.
+
+Probe that would have caught it: reserve a real hosted attempt, report each required counter as null independently, and
+inspect the lifecycle budget plus the real route and approval projections. The reservation must remain non-final until both
+required counters are known; then repeat the complete report and follow it with a partial one. The charge must settle once,
+and both rendered cost surfaces must distinguish the pending reservation from a final provider-reported total.
+
+### 2026-09-20 — compatible choice-count rejection lost billed usage (introduced by PR #4407)
+
+PR #4407 kept an OpenAI-compatible response with zero or multiple choices as a typed, retryable protocol failure, but its fixture stopped at adapter rejection and never proved the already-read usage reached run billing.
+
+Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/cost fixture, so it could preserve rejection identity while dropping the paid result.
+
+Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
+
+### 2026-09-20 — mocked cancellation hid failed durable revocation (escaped via PR #1949)
+
+PR #1949 (`ce2ffea3fd`) added run-controller cancellation before pending-confirmation settlement,
+but its owner spec mocked that controller. The mock could not expose live terminal state advancing
+before `Storage.setItem` failed. Use the real lifecycle and cancellation controller, fail the actual
+storage write once, then cancel the same confirmation again. Removing the persistence retry must
+leave the saved run nonterminal and fail the assertion, both with and without cleanup assets.

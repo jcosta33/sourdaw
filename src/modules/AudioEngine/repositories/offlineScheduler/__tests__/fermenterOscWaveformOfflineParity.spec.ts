@@ -102,7 +102,7 @@ function runOfflineSchedule(lanes: AutomationLane[]): ScheduledCall[] {
         trackId: 'track-1',
         trackGainNode: { gain: {} } as unknown as GainNode,
         trackPanNode: { pan: {} } as unknown as StereoPannerNode,
-        deviceEntries: [{ deviceId: DEVICE_ID, deviceType: 'fermenter', strategy }],
+        deviceEntries: [{ deviceId: DEVICE_ID, deviceType: 'fermenter', contributesAudio: true, strategy }],
         durationSeconds: 2,
         defaultTempo: 120,
         changes: [],

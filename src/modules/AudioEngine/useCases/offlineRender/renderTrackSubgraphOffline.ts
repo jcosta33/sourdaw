@@ -1,12 +1,13 @@
 import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
+import { clampRenderFrameCount } from '../../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
-import { clampRenderFrameCount } from './clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
@@ -176,6 +177,10 @@ export async function renderTrackSubgraphOffline({
         return null;
     }
     const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+    // The frame scheduler for this context. One instance per
+    // `OfflineAudioContext` comes back from the factory, so this path's Faust
+    // devices share it rather than racing a second suspend for the same frame.
+    const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
 
     const sidechainRoutes = sidechainStore.value?.routes ?? [];
 
@@ -353,6 +358,7 @@ export async function renderTrackSubgraphOffline({
                 deviceEntriesByTrack,
                 honorMuted: false,
                 regionStartBeat: 0,
+                scheduleFrame,
                 tallyStartSeconds: historySeconds,
                 includeAutomation: track.id === targetTrackId ? includeAutomation : true,
                 // Same rule as the strip seed: a `gain` or `pan` lane drives the very

@@ -41,8 +41,10 @@ habit or agent confidence.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
-author's, recording the fallback in the review document: `modelExhaustion` names what made every
-other model unavailable, and the published body names the reviewer model.
+author's, recording the fallback in the review document: the published body names the reviewer
+model, and a draw on an authoring model records its own exhaustion; a document-level whole-round
+`modelExhaustion` covers every draw; per-draw exhaustion excuses the document-level field in a
+mixed round.
 
 Design the whole requested outcome before dispatch, then give each agent one independently safe
 behavior or behavior-preserving preparation with its required tests. Every dispatch includes the
@@ -71,23 +73,41 @@ Keep reviewers blind: give each the head, diff, and exactly one stance, never ot
 prose, the author's transcript, or orchestrator reasoning. Prior findings anchor reviewers.
 Reviewers never confer; findings meet only in the orchestrator.
 
-Assign one independent stance per material risk, typically about three per PR, never to meet a
-count. Cover applicable risks: correctness; module boundaries and contracts; real-time audio safety;
-project integrity and undo; security and platform boundaries; code craft and readability (naming,
-complexity, nesting, semantic clarity, `docs/07-conventions.md`); test validity.
+Derive the stances from the task, never from a menu or habit: enumerate the material risks this
+diff creates, then assign one independent stance to each, named for the specific risk it attacks.
+A stance any diff would admit — "correctness" above all — is the baseline every reviewer already
+holds, not a stance. Independence is distinct failure modes, never distinct files: stances pinned
+to different touched paths that share one probe library are one stance. Three is a minimum, not a
+target: fewer than three named risks means the enumeration was too narrow. Record the dispatched
+set in the bundle's `stances.json` before dispatch, one line per stance naming the failure mode
+that admits it — the input or state that breaks — never the path the diff touches; as each draw
+reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
+The caller writes it, no script generates it, and the orchestrator confirms its presence and
+substance before acceptance.
 
-Tier reviewers by stance criticality: economy for narrow low-risk checks, standard for behavioral
-and integration risk, strongest for real-time audio, security, data loss, irreversible change, or
-disputed severe findings. Also raise the tier for wide module diffusion, heavy churn on defect-prone
-surfaces, or surfaces touched by many recent lanes. The orchestrator may combine two independent
-strongest-tier draws from different models on one stance to expose different findings; this extends
-model diversity, not the stance count.
+Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
+checks, standard for behavioral and integration risk, strongest for real-time audio, security,
+data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
+diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes.
+The orchestrator may combine two independent strongest-tier draws from different models on one
+stance to expose different findings; this extends model diversity, not the stance count, and each
+draw records its own completed entry and baseline probe.
 
-Test validity is its own stance: establish what must break to fail the check and whether it
-observes what its name claims. A pass alone is not evidence. The reviewer names a mechanical probe:
-revert the behavioral hunk or apply one targeted mutation, then run the named spec; remaining green
-fails the stance. The orchestrator validates or the author repairs in the change's existing lane;
-reviewers have no writable tree.
+Every reviewer carries the baseline posture regardless of stance: establish what must break for
+each existing check to fail and whether it observes what its name claims. A pass alone is not
+evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
+mutation, then run the named spec; remaining green fails the round. Each draw reports its
+baseline probe — the spec it ran, the mutation it applied, the observed result — and its
+exhaustion when it fell back to an authoring model, and the orchestrator records these in
+`stances.json` beside the stances. The orchestrator validates or the
+author repairs in the change's existing lane; reviewers have no writable tree.
+
+Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
+whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without
+any assertion when the entry point is absent, renaming its locator, or failing to mount. The
+baseline probe for a UI case must show it fails when its required entry point is unavailable —
+unconditional admission, or removal of the duplicate with the obligation named in the spec that
+owns the behavior.
 
 Dispatch a posture as well as a surface: try to break the change; report the strongest surviving
 finding with concrete failure inputs or state, or report none. Finding nothing is success; never
@@ -95,7 +115,7 @@ manufacture findings. Tell reviewers that hedged findings without a concrete bre
 
 Scale evidence to the claim. Check findings against the live head and surrounding code, not the
 diff alone. Merge-blocking findings require the reproduction's input, state, or mutation and observed
-result. Test-validity findings name the mutation that should have failed the check but did not.
+result. Baseline-probe findings name the mutation that should have failed the check but did not.
 
 The orchestrator validates every finding against live code before acting. Discard incorrect,
 out-of-scope, or personal-style findings; never forward them. Write each discard and its one-line
@@ -110,19 +130,23 @@ Blind reviewers report only to the orchestrator. Post only validated findings th
 can resolve it. A wrongly posted finding therefore blocks delivery without a repair to make.
 
 `review:prepare` records the change's risk classes — `small`, `ordinary`, `test-only`,
-`cross-domain`, `realtime-audio`, `native-security`, `undo` — and the stances they earn in the head
-bundle's `risk-plan.json`, derived from the same path classification as the size report beside it so
-the two cannot disagree. Classes union when several fire, and no class may require a stance it did
-not earn: `code-craft` is earned only by `ordinary`.
+`cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
+derived from the same path classification as the size report beside it so the two cannot disagree.
+The plan is an input to the stance enumeration, never a stance requirement: its classes and their
+standing stance mapping name risk surfaces the enumeration must weigh, and the derived stances
+remain the orchestrator's judgement recorded in `stances.json`.
 
-Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one entry per
-required stance recording its reviewer model, tier, and outcome, the bounded evidence claims, and the
+Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one completed
+entry per dispatched draw, each recording its stance, reviewer model, tier, and outcome; one stance
+may carry several draws with distinct models, and a draw that fell back to an authoring model
+records its exhaustion. Alongside the draw entries go the bounded evidence claims and the
 limitations. Accepted findings are not declared there; they are the review document's own inline
 comments. `review:publish` refuses a fresh reviewer publication before any remote write when the
-dossier is missing, malformed, or rebound from the head the plan binds; when it does not complete
-exactly the plan's required stances or claims one the classes did not earn; when its accepted findings
-do not match the document's comments one-to-one; or when its recommendation disagrees with the
-document's event. It then persists the canonical append-only record bound to the head; re-publishing
+dossier is missing, malformed, or rebound from the head the plan binds; when the bundle carries
+`stances.json`, every dossier entry must match a recorded stance and every recorded stance an
+entry (draws on one stance share its single recorded entry);
+when its accepted findings do not match the document's comments one-to-one; or when its
+recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head; re-publishing
 the same head replays that record unchanged rather than minting a second one.
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
@@ -147,9 +171,12 @@ reviewer App records independent review; the orchestrator records final acceptan
 `review:accept`, then merges through `deliver` as the verified orchestrator User.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
-(missing, mis-tiered, or mis-prompted). Edit that stance's tracked dispatch guidance under
-`.agents/skills/` so cold orchestrators inherit the escape lesson. Escapes measure review quality;
-fixing without learning does not prove it.
+(missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
+`.agents/skills/review-stances/` whose probes participate in what would have caught it — the
+behavior-and-invariant file is the fallback home when no specific file matches — or mint a new
+file for a defect class none covers, so cold orchestrators inherit the escape lesson. Escapes
+measure review
+quality; fixing without learning does not prove it.
 
 ## Docs
 
@@ -428,6 +455,14 @@ deletion and non-fast-forward, requires squashed PRs, two approving reviews and 
 last push, resolved threads, and `Gate` on the PR head. It is non-strict: unrelated `origin/main`
 movement requires no merge; take `main` only for real conflicts or mergeability, and the new head
 then requires fresh `Gate` and review.
+
+Dismissing stale reviews on push and requiring approval of the last push are ruleset configuration,
+and the live `main` ruleset carries both; either changes only through the trusted ruleset command,
+and only after a canary proves the change against a throwaway ruleset. The reviewer's shadow status
+is deliberately non-required: it attests only immutable commit facts about the exact head, never a
+verdict that another commit or a later push can inherit. No wave may make a CI context or a shadow
+status context required, because a required context converts an observation into merge authority —
+for the shadow status, that would erase the reason it exists.
 
 For committed wasm artifacts, consult `scripts/wasm-artifacts.ts` for package and build-script
 names; they cannot be derived from crate names. Any non-test edit in a package's

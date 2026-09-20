@@ -312,6 +312,7 @@ function createInstrumentEntry(deviceId: string, deviceType: string): DeviceNode
     return {
         deviceId,
         deviceType,
+        contributesAudio: true,
         node: {} as DeviceNodeEntry['node'],
         strategy: {} as DeviceNodeEntry['strategy'],
         instrumentControls: {
@@ -343,6 +344,7 @@ function createHistorySensitiveInstrumentEntry(deviceId: string): DeviceNodeEntr
     return {
         deviceId,
         deviceType: 'fermenter',
+        contributesAudio: true,
         node: {} as DeviceNodeEntry['node'],
         strategy: {} as DeviceNodeEntry['strategy'],
         instrumentControls: {
@@ -1395,6 +1397,7 @@ describe('renderTrackSubgraphOffline', () => {
                 return {
                     deviceId: 'gluten-1',
                     deviceType: 'gluten',
+                    contributesAudio: true,
                     node: {} as DeviceNodeEntry['node'],
                     strategy: { destroy } as unknown as DeviceNodeEntry['strategy'],
                 };

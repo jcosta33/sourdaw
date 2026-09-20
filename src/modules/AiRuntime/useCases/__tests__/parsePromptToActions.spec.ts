@@ -1019,6 +1019,55 @@ describe('parsePromptToActions', () => {
         });
     });
 
+    it('keeps deterministic commands available when provider planning is disabled', async () => {
+        vi.mocked(tryParameterizedPath).mockReturnValue([{ type: 'setTempo', payload: { bpm: 128 } }]);
+
+        const result = await parsePromptToActions(
+            'set tempo to 128',
+            baseContext,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            'disabled'
+        );
+
+        expect(result).toMatchObject({
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            planningOutcome: { kind: 'proposal' },
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('returns actionable availability without invoking a provider when provider planning is disabled', async () => {
+        const result = await parsePromptToActions(
+            'make the chorus feel warmer',
+            baseContext,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            'disabled'
+        );
+
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'make the chorus feel warmer',
+            requiresConfirmation: false,
+            planningOutcome: {
+                kind: 'denied',
+                reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+            },
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
     it.each([
         { prompt: 'save project', actionType: 'saveProject' },
         { prompt: 'new project', actionType: 'newProject' },
