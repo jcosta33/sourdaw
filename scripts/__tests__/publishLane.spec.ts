@@ -208,10 +208,15 @@ function fakePort(input: FakeInput = {}) {
     const dirty = input.dirty ?? false;
     const subject = input.subject === undefined ? DEFAULT_SUBJECT : (input.subject ?? undefined);
     const currentMetadata = input.currentMetadata ?? { labels: [modelLabelName('glm-5.3')], projectTitles: [] };
+    // The refusal table (`REFUSED_PUBLISH_CASES`) is a module-level constant, so its `trees` arrays
+    // outlive any one case. Snapshot the list here so a port never hands the caller's (shared) array
+    // back to `publishLane` by reference: a case that mutates its own list must not rewrite the table
+    // and leak its lanes into the next case in this worker.
+    const trees = input.trees === undefined ? undefined : [...input.trees];
     let pullRequestQueries = 0;
     const port: PublishLanePort = {
         baseSha: () => input.baseSha ?? 'base',
-        worktrees: () => input.trees ?? [worktree()],
+        worktrees: () => trees ?? [worktree()],
         cwd: () => input.cwd ?? PRIMARY_ROOT,
         issueExists: (issue) => {
             calls.push(`issueExists:${issue}`);
@@ -1622,6 +1627,20 @@ describe('lane publish', () => {
         expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(message);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('gives every case its own worktree list instead of the shared refusal table', () => {
+        // The table-driven refusals above share one module-level `trees` array per entry. A port
+        // built from such an input must not hand that array back by reference: if a case mutates its
+        // own list, the change would otherwise rewrite the shared table and leak that case's lanes
+        // into whichever case runs next in this worker.
+        const shared = [worktree(), worktree({ path: '/repo/.agents/worktrees/other', branch: 'agent/12/other' })];
+        const { port } = fakePort({ trees: shared });
+
+        port.worktrees().splice(0, 1);
+
+        expect(shared).toHaveLength(2);
+        expect(shared[0]?.branch).toBe('agent/12/work');
     });
 
     it('parses porcelain worktrees and argv', () => {
