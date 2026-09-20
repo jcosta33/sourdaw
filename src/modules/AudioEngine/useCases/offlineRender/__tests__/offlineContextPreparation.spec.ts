@@ -14,24 +14,25 @@
  *
  *   population    the device types in `OUT_OF_BAND_OFFLINE_MODULE_DEVICE_TYPES`,
  *                 read off the prepare module itself.
- *   expectation   the set of render-context constructors, found by scanning
- *                 `src/` for `new OfflineAudioContext`. Neither list is written
- *                 in this file, so adding a fourth render path that skips the
- *                 prepare reds this without anyone remembering to update it.
+ *   expectation   every render-context constructor whose relative import graph
+ *                 reaches an offline strip builder. Neither list is written in
+ *                 this file, so extracting construction and strip building into
+ *                 separate files cannot make the census lose that route.
  *
- * **Why the scan and not an import graph.** A fourth render path would import
- * `createOfflineTrackStrip` and construct its own context; only reading the
- * source catches it before it ships. The alternative — asserting a list of
- * three filenames — is the exact shape ADR 0015 rule 3 rejects, because the
- * list and the thing it describes would be the same edit.
+ * **Why source plus the import graph.** A fourth render path would construct a
+ * context and reach a strip builder, possibly through an extracted backend.
+ * Following relative imports catches that route before it ships. The named
+ * paths below are only a non-vacuity floor; they do not bound the discovered
+ * population, and every additional discovered route receives the same prepare
+ * assertion.
  *
  * **Limit.** This proves the module is *registered*, not that the resulting
  * node renders the same audio as live. That is AC-0's null, which this spec
  * does not carry.
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -57,8 +58,8 @@ function collectTypeScriptFiles(directory: string, into: string[]): string[] {
 }
 
 /**
- * Files that construct an `OfflineAudioContext` *and* build an offline strip on
- * it. The second condition is what separates a render from a utility context:
+ * Context constructors whose relative import graph reaches an offline strip
+ * builder. The second condition is what separates a render from a utility context:
  * a decode context, a resampler and the 1-frame capability probe in
  * `createWebAudioEngine` all construct one and build no strip, so requiring a
  * worklet prepare of them would be requiring a module fetch for nothing.
@@ -68,30 +69,76 @@ function collectTypeScriptFiles(directory: string, into: string[]): string[] {
  * whose reasoned exemptions outnumber its verdicts is an allow-list by another
  * name.
  */
-function findStripBuildingRenderFiles(): string[] {
+const RELATIVE_IMPORT = /\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\sfrom\s+)?['"](\.[^'"]+)['"]/g;
+const TYPESCRIPT_RESOLUTION_SUFFIXES = ['.ts', '.tsx', '/index.ts', '/index.tsx'] as const;
+
+function resolveRelativeImport(importer: string, specifier: string): string | null {
+    const base = resolve(dirname(importer), specifier);
+    for (const suffix of TYPESCRIPT_RESOLUTION_SUFFIXES) {
+        const candidate = `${base}${suffix}`;
+        if (existsSync(candidate) && statSync(candidate).isFile() && !relative(SRC_ROOT, candidate).startsWith('..')) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+function collectRelativeImportGraph(entry: string): string[] {
+    const visited = new Set<string>();
+    const pending = [entry];
+    while (pending.length > 0) {
+        const path = pending.pop();
+        if (!path || visited.has(path)) {
+            continue;
+        }
+        visited.add(path);
+        const source = readFileSync(path, 'utf8');
+        for (const match of source.matchAll(RELATIVE_IMPORT)) {
+            const specifier = match[1];
+            if (!specifier) {
+                continue;
+            }
+            const dependency = resolveRelativeImport(path, specifier);
+            if (dependency && !visited.has(dependency)) {
+                pending.push(dependency);
+            }
+        }
+    }
+    return [...visited];
+}
+
+type StripBuildingRenderRoute = {
+    owner: string;
+    files: string[];
+};
+
+function findStripBuildingRenderRoutes(): StripBuildingRenderRoute[] {
     const files = collectTypeScriptFiles(SRC_ROOT, []);
-    return files
-        .filter((path) => {
-            const source = readFileSync(path, 'utf8');
-            const constructsContext = source.includes('new OfflineAudioContext');
-            const buildsStrip = source.includes('createOfflineTrackStrip') || source.includes('createOfflineBusStrip');
-            return constructsContext && buildsStrip;
-        })
-        .map((path) => path.slice(SRC_ROOT.length + 1));
+    const contextOwners = files.filter((path) => /\bnew\s+OfflineAudioContext\s*\(/.test(readFileSync(path, 'utf8')));
+    const routes = contextOwners.map((path) => ({ owner: path, files: collectRelativeImportGraph(path) }));
+    const buildsStrip = /\bcreateOffline(?:Track|Bus)Strip\s*\(/;
+    const stripBuildingRoutes = routes.filter(({ files: routeFiles }) =>
+        routeFiles.some((path) => buildsStrip.test(readFileSync(path, 'utf8')))
+    );
+    return stripBuildingRoutes.map(({ owner, files: routeFiles }) => ({
+        owner: relative(SRC_ROOT, owner),
+        files: routeFiles,
+    }));
 }
 
 describe('offline context preparation census', () => {
     it('finds every render path that builds a strip on a context it constructed', () => {
-        const renderFiles = findStripBuildingRenderFiles();
+        const renderRoutes = findStripBuildingRenderRoutes();
+        const renderOwners = renderRoutes.map(({ owner }) => owner);
 
         // Pinned so the enumeration itself cannot go blind. A scan that matched
         // nothing would satisfy the per-file assertion below vacuously — the
         // failure mode ADR 0015's Context describes, where a census spent 41
         // commits comparing an empty extraction against an expectation.
-        expect(renderFiles.length).toBeGreaterThanOrEqual(3);
-        expect(renderFiles).toEqual(
+        expect(renderRoutes.length).toBeGreaterThanOrEqual(3);
+        expect(renderOwners).toEqual(
             expect.arrayContaining([
-                'modules/AudioEngine/useCases/renderOffline.ts',
+                'modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts',
                 'modules/AudioEngine/useCases/exportStems.ts',
                 'modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts',
             ])
@@ -104,10 +151,12 @@ describe('offline context preparation census', () => {
         // the mutation for this assertion actually produces, and it left the
         // first draft of this census green over a freeze path that prepared
         // nothing.
-        const callsPrepare = /\bprepareOfflineContext\s*\(/;
-        const offenders = findStripBuildingRenderFiles().filter(
-            (relativePath) => !callsPrepare.test(readFileSync(join(SRC_ROOT, relativePath), 'utf8'))
-        );
+        const callsPrepare = /\bawait\s+prepareOfflineContext\s*\(/;
+        const offenders = findStripBuildingRenderRoutes()
+            .filter(({ files: routeFiles }) =>
+                routeFiles.every((path) => !callsPrepare.test(readFileSync(path, 'utf8')))
+            )
+            .map(({ owner }) => owner);
 
         expect(
             offenders,

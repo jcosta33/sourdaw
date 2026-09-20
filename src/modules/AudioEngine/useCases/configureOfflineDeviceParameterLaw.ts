@@ -1,6 +1,10 @@
 import { setOfflineDeviceParameterLaw } from '../repositories/offlineScheduler/setOfflineDeviceParameterLaw';
 
-type ConfigureOfflineDeviceParameterLawInput = Parameters<typeof setOfflineDeviceParameterLaw>[0];
+import { offlineRenderCapturePorts } from './offlineRender/offlineRenderCapturePorts';
+
+type ConfigureOfflineDeviceParameterLawInput = Parameters<typeof setOfflineDeviceParameterLaw>[0] & {
+    captureExternalPluginLaw?: NonNullable<typeof offlineRenderCapturePorts.captureExternalPluginLaw>;
+};
 
 /**
  * Hand the audio engine the same device-parameter law the live apply path
@@ -10,12 +14,14 @@ type ConfigureOfflineDeviceParameterLawInput = Parameters<typeof setOfflineDevic
  * automation producer alike.
  */
 export function configureOfflineDeviceParameterLaw({
+    captureExternalPluginLaw,
     isAutomatable,
     clampValue,
     quantiseValue,
     acceptsExternalPluginParameter,
     clampExternalPluginValue,
 }: ConfigureOfflineDeviceParameterLawInput): void {
+    offlineRenderCapturePorts.captureExternalPluginLaw = captureExternalPluginLaw ?? null;
     setOfflineDeviceParameterLaw({
         isAutomatable,
         clampValue,

@@ -380,6 +380,8 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationHandlers: sentinelHandlers('Automation'),
     getAutomationValueAtBeat: () => null,
+    // This fixture has no lanes, so its captured evaluator has no values to read.
+    createOfflineAutomationEvaluator: vi.fn(() => () => null),
     prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
     recordAutomationValue: noop,
@@ -488,6 +490,9 @@ vi.mock('#/modules/Gluten/stores', () => ({
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     prepareOfflineGrandBoule: noop,
+    captureOfflineGrandBoule: vi.fn(() => {
+        throw new Error('bootstrap wiring fixture does not capture Grand Boule state');
+    }),
     projectGrandBouleCalibrationToNativePatch: () => null,
 }));
 
@@ -505,6 +510,9 @@ vi.mock('#/modules/Levain/useCases', () => ({
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
+    captureOfflineLevain: vi.fn(() => {
+        throw new Error('bootstrap wiring fixture does not capture Levain state');
+    }),
     projectLevainDeviceStateToNativePatch: projectLevainDeviceStateToNativePatchMock,
     nativeBankKeyForLevainDeviceState: nativeBankKeyForLevainDeviceStateMock,
     acquireLevainNativeBank: acquireLevainNativeBankMock,
@@ -563,6 +571,9 @@ vi.mock('#/modules/Proof/useCases', () => ({
     unregisterProofDevice: noop,
     syncFullPatch: noop,
     prepareOfflineProof: noop,
+    captureOfflineProof: vi.fn(() => {
+        throw new Error('bootstrap wiring fixture does not capture Proof state');
+    }),
 }));
 
 vi.mock('#/modules/PunchRecording/useCases', () => ({
@@ -595,6 +606,9 @@ vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
         setToasterEventBus: noop,
         setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
         prepareOfflineToaster: noop,
+        captureOfflineToaster: vi.fn(() => {
+            throw new Error('bootstrap wiring fixture does not capture Toaster state');
+        }),
         projectToasterKitToNativePatch: real.projectToasterKitToNativePatch,
         getToasterPresetDeviceState: real.getToasterPresetDeviceState,
     };

@@ -10,6 +10,30 @@ describe('createYeastRuntimeProjection', () => {
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
+    it('resolves assignments and templates from an explicit groove source', () => {
+        createGrooveTemplate({
+            id: 'alternate',
+            name: 'Alternate',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.3, dynamicsOffset: -0.2 }],
+            provenance: { type: 'user', sourceId: 'test' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'yeast-processor',
+            consumerId: getScopedGrooveConsumerId({ ownerId: 'yeast-rack', localId: 'groove-1' }),
+            templateId: 'alternate',
+            amount: 0.8,
+        });
+        const source = structuredClone(grooveTemplateStore.value ?? defaultGrooveTemplateState);
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        const [projection] = createYeastRuntimeProjection(
+            [{ id: 'groove-1', type: 'groove', name: 'Groove', bypassed: false, params: {} }],
+            source
+        );
+        expect(projection?.params).toMatchObject({ groove_amount: 0.8, groove_timing_1: 0.3, groove_dynamics_1: -0.2 });
+        expect(grooveTemplateStore.value?.assignments).toEqual([]);
+    });
+
     it('should adapt MIDI-owned template truth without persisting a Yeast-local template', () => {
         createGrooveTemplate({
             id: 'yeast-pocket',

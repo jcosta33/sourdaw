@@ -1,10 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { fromLevainDeviceState } from '../models/LevainDeviceState';
-import { createDefaultPatch } from '../models/LevainPatch';
-import { defaultLevainState, type LevainState } from '../stores/levainStore';
+import { type LevainState } from '../stores/levainStore';
 
-import { hydrateLevainPatchFromParameterValues } from './hydrateLevainPatchFromParameterValues';
+import { hydrateLevainStateFromDevice } from './hydrateLevainStateFromDevice';
 
 /**
  * Read back the Levain state project truth holds for a device, or `null` when it
@@ -40,20 +38,7 @@ export function hydrateLevainStateFromProject(deviceId: string): LevainState | n
             if (device.id !== deviceId) {
                 continue;
             }
-            const identity = fromLevainDeviceState(device.deviceState);
-            const instrumentId = identity?.instrumentId ?? defaultLevainState.patch.instrumentId;
-            const defaultPatch = createDefaultPatch(instrumentId);
-            const currentArticulation = identity?.currentArticulation ?? defaultPatch.currentArticulation;
-            const patch = hydrateLevainPatchFromParameterValues({
-                patch: { ...defaultPatch, currentArticulation },
-                parameterValues: device.parameterValues,
-            });
-            const entry = patch.articulations.find((articulation) => articulation.type === currentArticulation);
-            return {
-                ...defaultLevainState,
-                patch,
-                currentArticulationDisplay: entry ? entry.name : currentArticulation,
-            };
+            return hydrateLevainStateFromDevice(device);
         }
     }
     return null;

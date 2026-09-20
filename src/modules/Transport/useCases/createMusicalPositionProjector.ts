@@ -1,13 +1,28 @@
 import { getTempoAtBeat } from '../models/TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../models/TimeSignatureMap';
-import { tempoMapStore } from '../stores/tempoMapStore';
-import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
-import { DEFAULT_TEMPO_BPM, transportStore } from '../stores/transportStore';
+import { tempoMapStore, type TempoMapStoreState } from '../stores/tempoMapStore';
+import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../stores/timeSignatureMapStore';
+import { DEFAULT_TEMPO_BPM, transportStore, type TransportState } from '../stores/transportStore';
 
-export function createMusicalPositionProjector() {
-    const transport = structuredClone(transportStore.value);
-    const tempoChanges = structuredClone(tempoMapStore.value?.changes ?? []);
-    const timeSignatureChanges = structuredClone(timeSignatureMapStore.value?.changes ?? []);
+type MusicalPositionSource = {
+    transport: Pick<
+        TransportState,
+        'tempo' | 'timeSignatureNumerator' | 'timeSignatureDenominator' | 'loopStart' | 'loopEnd'
+    > | null;
+    tempoMap: TempoMapStoreState | null;
+    timeSignatureMap: TimeSignatureMapStoreState | null;
+};
+
+export function createMusicalPositionProjector(
+    source: MusicalPositionSource = {
+        transport: transportStore.value,
+        tempoMap: tempoMapStore.value,
+        timeSignatureMap: timeSignatureMapStore.value,
+    }
+) {
+    const transport = structuredClone(source.transport);
+    const tempoChanges = structuredClone(source.tempoMap?.changes ?? []);
+    const timeSignatureChanges = structuredClone(source.timeSignatureMap?.changes ?? []);
     const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const defaultNumerator = transport?.timeSignatureNumerator ?? 4;
     const defaultDenominator = transport?.timeSignatureDenominator ?? 4;

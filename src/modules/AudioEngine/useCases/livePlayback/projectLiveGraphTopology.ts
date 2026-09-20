@@ -181,7 +181,7 @@ function createStripCommand(input: {
     // A bake replaces the chain rather than feeding it — see the header.
     const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id)
         ? []
-        : track.devices.map(projectDeviceForNativeBody);
+        : track.devices.map((device) => projectDeviceForNativeBody(device));
     // Live playback always honours a mute the engineer pressed; only an
     // export chooses otherwise, and only for stems.
     const shared = { name: track.name, state, devices, honorMuted: true } as const;

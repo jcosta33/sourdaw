@@ -30,7 +30,7 @@ function engineSampleRate(): number {
  * of the device's own clock. Reporting it here as well would compensate it
  * twice.
  */
-export function getDeviceLatencyMs(deviceId: string, deviceType: string): number {
+export function getDeviceLatencyMs(deviceId: string, deviceType: string, sampleRate?: number): number {
     if (deviceType === EXTERNAL_PLUGIN_DEVICE_TYPE) {
         return 0;
     }
@@ -41,7 +41,7 @@ export function getDeviceLatencyMs(deviceId: string, deviceType: string): number
     }
 
     if (deviceType === 'builtin-sidechain-compressor') {
-        return (WORKLET_BLOCK_SIZE / engineSampleRate()) * 1000;
+        return (WORKLET_BLOCK_SIZE / (sampleRate ?? engineSampleRate())) * 1000;
     }
 
     return deviceLatencyMap[deviceType] ?? 0;

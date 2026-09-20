@@ -1,7 +1,4 @@
-import { createDefaultKit, type ToasterKit } from '../models/ToasterKit';
-import { fromToasterKitState } from '../models/ToasterKitState';
-import { toasterStore } from '../stores/toasterStore';
-
+import { captureOfflineToaster } from './captureOfflineToaster';
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
 
 export type PrepareOfflineToasterInput = {
@@ -11,6 +8,7 @@ export type PrepareOfflineToasterInput = {
     deviceState?: unknown;
     /** Worklet port of the offline Toaster instance. */
     port: MessagePort;
+    captured?: ReturnType<typeof captureOfflineToaster>;
 };
 
 /**
@@ -33,13 +31,8 @@ export type PrepareOfflineToasterInput = {
  * if neither source exists, project the same application default kit that live
  * device registration creates instead of leaving the Rust constructor kit active.
  */
-export function prepareOfflineToaster({ deviceId, deviceState, port }: PrepareOfflineToasterInput): void {
-    let kit: ToasterKit;
-    if (deviceState === undefined) {
-        kit = toasterStore.value?.[deviceId]?.kit ?? createDefaultKit();
-    } else {
-        kit = fromToasterKitState(deviceState);
-    }
+export function prepareOfflineToaster({ deviceId, deviceState, port, captured }: PrepareOfflineToasterInput): void {
+    const { kit } = captured ?? captureOfflineToaster({ deviceId, deviceState });
 
     for (const message of projectToasterKitToEngineMessages({ kit })) {
         port.postMessage(message);

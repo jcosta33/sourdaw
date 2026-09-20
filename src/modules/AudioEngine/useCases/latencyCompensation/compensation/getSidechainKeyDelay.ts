@@ -3,6 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { getCompensationDelay } from './getCompensationDelay';
 import { getDeviceLatencyMs } from './getDeviceLatencyMs';
 import { getTrackLatency } from './getTrackLatency';
+import { type LatencyCompensationInput } from './LatencyCompensationInput';
 
 export type GetSidechainKeyDelayInput = {
     sourceTrackId: string;
@@ -30,12 +31,11 @@ export type GetSidechainKeyDelayInput = {
  * A negative result means the key already arrives later than the program, which
  * a delay line cannot undo; it clamps to zero rather than widening the error.
  */
-export function getSidechainKeyDelay({
-    sourceTrackId,
-    targetTrackId,
-    targetDeviceId,
-}: GetSidechainKeyDelayInput): number {
-    const tracks = trackStore.value?.tracks;
+export function getSidechainKeyDelay(
+    { sourceTrackId, targetTrackId, targetDeviceId }: GetSidechainKeyDelayInput,
+    input?: LatencyCompensationInput
+): number {
+    const tracks = input?.tracks ?? trackStore.value?.tracks;
     if (!tracks) {
         return 0;
     }
@@ -51,13 +51,18 @@ export function getSidechainKeyDelay({
             break;
         }
         if (!device.bypassed) {
-            upstreamOfDetectorMs += getDeviceLatencyMs(device.id, device.type);
+            if (input) {
+                upstreamOfDetectorMs += input.deviceLatencyMs.get(device.id) ?? 0;
+            } else {
+                upstreamOfDetectorMs += getDeviceLatencyMs(device.id, device.type);
+            }
         }
     }
 
-    const keyChainMs = getTrackLatency(sourceTrackId).deviceLatencyMs;
-    const programArrivalSec = getCompensationDelay(targetTrackId) + upstreamOfDetectorMs / 1000;
-    const keyArrivalSec = getCompensationDelay(sourceTrackId) + keyChainMs / 1000;
+    const keyChainMs = getTrackLatency(sourceTrackId, new Set(), undefined, undefined, input).deviceLatencyMs;
+    const programArrivalSec =
+        getCompensationDelay(targetTrackId, undefined, undefined, input) + upstreamOfDetectorMs / 1000;
+    const keyArrivalSec = getCompensationDelay(sourceTrackId, undefined, undefined, input) + keyChainMs / 1000;
     const alignmentSec = programArrivalSec - keyArrivalSec;
 
     if (alignmentSec <= 0) {
