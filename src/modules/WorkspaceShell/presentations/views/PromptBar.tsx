@@ -2,7 +2,6 @@ import { type ReactElement } from 'react';
 
 import {
     Sparkles,
-    Check,
     X,
     Brain,
     Zap,
@@ -125,28 +124,19 @@ const FuzzyResultItem = ({
 
 // ── Main component ──────────────────────────────────────────────────────
 
-export const PromptBar = (): ReactElement => {
+export const PromptBar = ({ onReviewRun }: { onReviewRun: (runId: string) => void }): ReactElement => {
     const prompt = usePromptExecution();
 
-    // ── Preview mode ────────────────────────────────────────────────────
-    if (prompt.preview) {
+    if (prompt.approval) {
+        const { runId } = prompt.approval;
         return (
             <Row gap={2} className="transport-bar__prompt-preview max-w-full overflow-hidden">
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
-                <div className="flex-1 min-w-0 overflow-hidden">
-                    <Row align="stretch" gap={1} className="overflow-hidden">
-                        {prompt.preview.actionLabels.map((label, index) => (
-                            <DawMicroBadge key={index} className="shrink-0 text-[10px] text-foreground">
-                                {label}
-                            </DawMicroBadge>
-                        ))}
-                    </Row>
-                </div>
-                <Button size="icon-xs" variant="ghost" onClick={prompt.confirmPreview} aria-label="Confirm actions">
-                    <Check className="size-3 text-[var(--color-state-success)]" />
-                </Button>
-                <Button size="icon-xs" variant="ghost" onClick={prompt.cancelPreview} aria-label="Cancel actions">
-                    <X className="size-3 text-destructive-foreground" />
+                <span className="truncate text-xs" role="status">
+                    Changes awaiting review
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => onReviewRun(runId)}>
+                    Review in Agent
                 </Button>
             </Row>
         );

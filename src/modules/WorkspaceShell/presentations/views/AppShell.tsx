@@ -256,6 +256,12 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         setBottomTabState({ value, selectedClipId });
     };
     const activeBottomTab = bottomTab;
+    const [requestedAgentRun, setRequestedAgentRun] = useState<{ runId: string } | null>(null);
+    const reviewAgentRun = (runId: string): void => {
+        setRequestedAgentRun({ runId });
+        setBottomTab('agent');
+        updateWorkspaceState({ mixerOpen: true });
+    };
 
     // The cheat sheet owns its own '?' keydown toggle and is a leaf component, so it
     // cannot be read out of workspace state; it reports its open state up instead.
@@ -631,7 +637,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             case 'elastic':
                 return <ElasticEditorPanel />;
             case 'agent':
-                return <AgentWorkspace />;
+                return <AgentWorkspace requestedRun={requestedAgentRun} />;
             default:
                 return <RoutingMatrix />;
         }
@@ -655,7 +661,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         Skip to content
                     </a>
                 )}
-                <TransportBar />
+                <TransportBar onReviewRun={reviewAgentRun} />
 
                 {/* Non-modal on purpose: it explains a refusal, and every route out
                     of one — the assistant panel, the production brief, undo —

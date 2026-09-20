@@ -27,14 +27,22 @@ export type AgentWorkspaceFocusRequest = 'heading' | 'list' | 'comparison' | nul
  * — because the shared heading/list/comparison dispatch effect also depends on
  * the comparison controller's own ref and needs to live where both meet.
  */
-export function useAgentWorkspaceRunSelection() {
+export function useAgentWorkspaceRunSelection(requestedRun: { runId: string } | null = null) {
     // Run list, route and approvals are read through use cases on every
     // render, not from values the compiler can see change — same reason
     // `AgentWorkspace` itself carries this directive.
     'use no memo';
 
     const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+    const [handledRequest, setHandledRequest] = useState<typeof requestedRun>(null);
     const [focusRequest, setFocusRequest] = useState<AgentWorkspaceFocusRequest>(null);
+    if (requestedRun !== handledRequest) {
+        setHandledRequest(requestedRun);
+        if (requestedRun) {
+            setSelectedRunId(requestedRun.runId);
+            setFocusRequest('heading');
+        }
+    }
     const runListRef = useRef<HTMLDivElement>(null);
     const summaryHeadingRef = useRef<HTMLHeadingElement>(null);
 
