@@ -68,16 +68,24 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
             return;
         }
 
-        // Quantise to the nearest sample frame so float drift between notes that
-        // are meant to share a frame does not split into two suspends.
-        const frame = Math.max(0, Math.round(time * sampleRate));
+        // The integer frame is NOT the frame the context uses: Blink recomputes
+        // it from the exact time it is handed (`size_t frame = when *
+        // sampleRate()`, a truncating cast in floating point), so the
+        // `round(time * sampleRate)` round-trip is lossy near a quantum edge.
+        // Measure the batch key the same way the context will: snap to a sample
+        // frame, rebuild the double handed to suspend(), truncate that back to
+        // the context's frame, then quantise it up to the render quantum.
+        const requestFrame = Math.max(0, Math.round(time * sampleRate));
         // The key and the time are two separate things:
         //   - the key is the quantised frame, so one quantum carries one suspend
         //     and the context never sees a duplicate;
-        //   - the time passed to suspend() stays the caller's raw frame, so the
-        //     context's raw-time rejection is not tripped for a write inside the
-        //     render.
-        const suspendFrame = quantiseSuspendFrame(frame);
+        //   - the time passed to suspend() is this same rebuilt sample-frame
+        //     double (never `contextFrame / sampleRate`, whose own float
+        //     round-trip drifts a quantum up), so a write inside the render is
+        //     not pushed past the render end by quantisation.
+        const suspendTime = requestFrame / sampleRate;
+        const contextFrame = Math.trunc(suspendTime * sampleRate);
+        const suspendFrame = quantiseSuspendFrame(contextFrame);
 
         const existing = callsByFrame.get(suspendFrame);
         if (existing) {
@@ -121,7 +129,7 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
 
         try {
             // Raw frame, not the quantised key: the context rounds it up itself.
-            void ctx.suspend(frame / sampleRate).then(
+            void ctx.suspend(suspendTime).then(
                 () => {
                     fire();
                 },

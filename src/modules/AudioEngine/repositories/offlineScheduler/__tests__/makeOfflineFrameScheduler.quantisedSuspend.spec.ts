@@ -189,4 +189,72 @@ describe('makeOfflineFrameScheduler — keyed by the render-quantum suspend fram
         await flushMicrotasks();
         expect(write).not.toHaveBeenCalled();
     });
+
+    it('merges frames 3328 and 3329 into one suspend (the context maps both to 3328)', () => {
+        const { ctx, suspends, suspendCallCount, rejectionCount } = makeQuantisedContextDouble();
+        const schedule = makeOfflineFrameScheduler(ctx);
+        const first = vi.fn();
+        const second = vi.fn();
+
+        // 3329 / 48000 truncates to 3328 in the context's `size_t frame = when *
+        // sampleRate()`, so both calls land in the same 3328 quantum and must not
+        // register two suspends (the second would be rejected as a duplicate).
+        schedule(3328 / SAMPLE_RATE, first);
+        schedule(3329 / SAMPLE_RATE, second);
+
+        expect(suspendCallCount()).toBe(1);
+        expect(rejectionCount()).toBe(0);
+        expect(suspends).toHaveLength(1);
+        expect(suspends[0]!.frame).toBe(3328);
+        expect(first).not.toHaveBeenCalled();
+        expect(second).not.toHaveBeenCalled();
+    });
+
+    it('keeps frames 3329 and 3456 apart: two suspends, each callback on its own batch', async () => {
+        const { ctx, suspends, suspendCallCount, rejectionCount } = makeQuantisedContextDouble();
+        const schedule = makeOfflineFrameScheduler(ctx);
+        const first = vi.fn();
+        const second = vi.fn();
+
+        // 3329 truncates to 3328 (its own quantum); 3456 truncates to 3455 and
+        // rounds up to 3456, so it must not join 3329's batch and run 128 frames
+        // early.
+        schedule(3329 / SAMPLE_RATE, first);
+        schedule(3456 / SAMPLE_RATE, second);
+
+        expect(suspendCallCount()).toBe(2);
+        expect(rejectionCount()).toBe(0);
+        expect(suspends).toHaveLength(2);
+        expect(suspends[0]!.frame).toBe(3328);
+        expect(suspends[1]!.frame).toBe(3456);
+        expect(first).not.toHaveBeenCalled();
+        expect(second).not.toHaveBeenCalled();
+
+        suspends[0]!.resolve();
+        await flushMicrotasks();
+        expect(first).toHaveBeenCalledTimes(1);
+        expect(second).not.toHaveBeenCalled();
+
+        suspends[1]!.resolve();
+        await flushMicrotasks();
+        expect(second).toHaveBeenCalledTimes(1);
+    });
+
+    it('keys an unstable frame by the context frame it recomputes (6018 -> 6017 -> 6144)', () => {
+        const { ctx, suspends, suspendCallCount, rejectionCount } = makeQuantisedContextDouble();
+        const schedule = makeOfflineFrameScheduler(ctx);
+        const call = vi.fn();
+
+        // 6018 / 48000 truncates to 6017 in the context, not the integer 6018, so
+        // the exact key measures 6017 and rounds it up to 6144 while still passing
+        // the raw 6018 time to suspend().
+        schedule(6018 / SAMPLE_RATE, call);
+
+        expect(suspendCallCount()).toBe(1);
+        expect(rejectionCount()).toBe(0);
+        expect(suspends).toHaveLength(1);
+        expect(suspends[0]!.time).toBe(6018 / SAMPLE_RATE);
+        expect(suspends[0]!.frame).toBe(6144);
+        expect(call).not.toHaveBeenCalled();
+    });
 });
