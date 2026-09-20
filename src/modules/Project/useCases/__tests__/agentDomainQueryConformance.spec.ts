@@ -623,7 +623,8 @@ describe('agent domain query conformance', () => {
         // it on every page (hundreds of full-catalog passes), which times out
         // under CI shard contention; a handful of records keeps it cheap.
         const catalog = getAgentPresetDiscoveryManifest().slice(0, 3);
-        if (catalog.length < 3) {
+        const [firstPreset, secondPreset, thirdPreset] = catalog;
+        if (firstPreset === undefined || secondPreset === undefined || thirdPreset === undefined) {
             throw new Error('Expected at least three presets to reorder.');
         }
         presetDiscoveryManifestOverride.value = catalog;
@@ -657,7 +658,7 @@ describe('agent domain query conformance', () => {
         // Swap the first two records without changing any content, so the
         // revision signature the cursor is bound to stays byte-for-byte the same.
         const reordered = [...catalog];
-        [reordered[0], reordered[1]] = [reordered[1], reordered[0]];
+        [reordered[0], reordered[1]] = [secondPreset, firstPreset];
         presetDiscoveryManifestOverride.value = reordered;
 
         // Page two with the retained cursor reads the next record, not page one
