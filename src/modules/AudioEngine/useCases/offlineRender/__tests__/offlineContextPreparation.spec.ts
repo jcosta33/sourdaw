@@ -147,7 +147,7 @@ describe('offline context preparation census', () => {
         // the mutation for this assertion actually produces, and it left the
         // first draft of this census green over a freeze path that prepared
         // nothing.
-        const callsPrepare = /\bprepareOfflineContext\s*\(/;
+        const callsPrepare = /\bawait\s+prepareOfflineContext\s*\(/;
         const offenders = findStripBuildingRenderRoutes()
             .filter(({ files: routeFiles }) =>
                 routeFiles.every((path) => !callsPrepare.test(readFileSync(path, 'utf8')))
