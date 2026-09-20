@@ -1,0 +1,46 @@
+src/modules/Arrangement/useCases/__tests__/rearmInputMonitoring.spec.ts
+  h_1228e573df1f42 1-63
+src/modules/Arrangement/useCases/index.ts
+  h_1228e573df1f42 45
+src/modules/Arrangement/useCases/rearmInputMonitoring.ts
+  h_1228e573df1f42 1-4,5-12,13-24,25,26-28
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  h_1228e573df1f42 34-35,45-49,131,135-143,178-180,318-355
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  h_1228e573df1f42 3-4,33-34,71-72,77-86,206-208,488-557
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  h_1228e573df1f42 3-4,72,74,78-83
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  h_1228e573df1f42 3-4,95,97,101-106
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  h_1228e573df1f42 6-7,22,28,58-69,199-201,370-407
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  h_1228e573df1f42 3-4,37,39,43-48
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  h_1228e573df1f42 6-13,22,26,30-39,40-54,55-68,84-92,99-101,193-249
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  h_1228e573df1f42 1-2,58-63
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_1228e573df1f42 164
+src/modules/Project/useCases/projectPersistence/__tests__/newProjectNativeHostAbsent.spec.ts
+  h_1228e573df1f42 98
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  h_1228e573df1f42 40
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_1228e573df1f42 61-81,117-163,173-174
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_1228e573df1f42 55-101,109-112,123-144
+release/open-source-inventory.json
+  h_1228e573df1f42 1204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b88383cb221f1e31f9db35bae57587de0b23cae3",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
