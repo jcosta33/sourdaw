@@ -735,22 +735,32 @@ describe('product-scope test instructions', () => {
         'biome',
         'bun',
         'cargo',
+        'cat',
         'cd',
         'cmake',
+        'curl',
         'deno',
+        'diff',
         'docker',
         'dotnet',
+        'echo',
         'electron',
+        'env',
         'eslint',
+        'find',
         'flutter',
         'format',
         'gh',
         'git',
         'go',
         'gradle',
+        'grep',
         'guard',
+        'head',
         'jest',
+        'less',
         'lint',
+        'ls',
         'make',
         'mvn',
         'node',
@@ -765,6 +775,9 @@ describe('product-scope test instructions', () => {
         'rg',
         'rustc',
         'sh',
+        'sort',
+        'tail',
+        'tee',
         'test:barrel-mocks',
         'test:e2e',
         'test:run',
@@ -778,6 +791,9 @@ describe('product-scope test instructions', () => {
         'wasm:all',
         'wasm-pack',
         'wasm:verify',
+        'wc',
+        'which',
+        'xargs',
         'yarn',
     ];
 
@@ -799,6 +815,15 @@ describe('product-scope test instructions', () => {
 
         expect(commandOnlyTestInstructions(list)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(list))).toBe(REFUSAL);
+    });
+
+    it('refuses an inventory whose lead is an ordinary shell-tool sweep', () => {
+        // The head inventory is the un-gating boundary: an unlisted tool word lands as prose and
+        // rescues its own line, laundering the whole inventory behind it.
+        const sweep = "- grep -rn 'handleClip' src/modules/ (ok)\n- pnpm typecheck (clean)";
+
+        expect(commandOnlyTestInstructions(sweep)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(sweep))).toBe(REFUSAL);
     });
 
     it('refuses one semicolon-joined line of commands', () => {
@@ -829,9 +854,9 @@ describe('product-scope test instructions', () => {
         ['a bare compiler head', 'tsc --noEmit'],
         ['a tool head with a conjunction', 'lint + format the touched modules'],
         ['a guard invocation', 'guard --profile focused -- pnpm test:run scripts/x.spec.ts'],
-        // The dotted path pins the leading-dot rule, which alone keeps 'node ./scripts/seed'
-        // refused; the slash/colon rule is pinned by the prose-position slash token below and,
-        // incidentally, by the colon in 'pnpm typecheck:test (OK)'.
+        // Deliberately redundant: the subcommand slot drops './scripts/seed' as the token at
+        // index 1 behind 'node', and the slash rule drops it as a command token either way, so
+        // no single-rule deletion reddens this fixture.
         ['a launch of an extension-less path', 'node ./scripts/seed'],
     ])('refuses %s as the only content', (_label, instructions) => {
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
@@ -852,9 +877,11 @@ describe('product-scope test instructions', () => {
         ['a package-manager exec chain', 'pnpm exec cargo build'],
         ['an exec chain seeding through a script', 'pnpm exec tsx scripts/seed.ts seed-project'],
         ['a commit message quoted in single quotes', "git commit -m 'add the drag handle'"],
+        ['a commit message quoted in double quotes', 'git commit -m "add the drag handle"'],
     ])('refuses %s', (_label, instructions) => {
         // A non-colon head reopens the argument run instead of closing it, and prose quoted inside
-        // the run drops with the run — neither can rescue the launch it belongs to.
+        // the run drops with the run in every shell quote kind — neither can rescue the launch it
+        // belongs to.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
@@ -914,10 +941,9 @@ describe('product-scope test instructions', () => {
 
     it.each([
         ['a wasm-pack build', 'wasm-pack build crates/audio-engine'],
-        // './scripts/seed' carries both a slash and an extension shape, so it drops under either
-        // rule; the extension rule is pinned singly by the leads below and the slash rule by the
-        // prose-position slash token — a leading dot alone is no longer a rule, because every
-        // dot-led lettered token is extension-shaped and the extension rule already drops it.
+        // './scripts/seed' is not extension-shaped — its only dot is leading, with no trailing
+        // dot-letters — so this fixture singly pins the slash rule; the extension rule's nets are
+        // the '.env' and 'data.json' leads below.
         ['a dotted script path', './scripts/seed'],
         ['a dotted script path behind a launch', 'node ./scripts/seed'],
         // The extension rule through a dot-led shape: '.env' ends in dot-plus-letters with no
@@ -971,6 +997,20 @@ describe('product-scope test instructions', () => {
 
         expect(commandOnlyTestInstructions(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a watch launch ending in its own cue-stemmed argument', 'gh run watch'],
+        ['a checks launch trailing the same argument', 'gh pr checks watch'],
+        ['an exec chain ending at its cue-word argument', 'pnpm exec playwright open'],
+        ['an inventory led by one of those launches', '- gh run watch (green)\n- pnpm typecheck (clean)'],
+    ])('refuses %s', (_label, instructions) => {
+        // A run-ending vocabulary-or-cue word rescues only when material follows it: as the
+        // segment's last token it is the command's trailing argument and drops, and a word
+        // followed by nothing but annotation drops with it — while 'open' above keeps the
+        // segment's rescue because the step's words follow it.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
 
     it.each([
@@ -1039,6 +1079,20 @@ describe('product-scope test instructions', () => {
 
         expect(commandOnlyTestInstructions(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('pairs the double quote in every quoted-span rule', () => {
+        // The lead unwrap, the span removal, and the quoted-argument drop must agree on all three
+        // quote kinds: a double-quoted lead is a launch shell, and a double-quoted data-file lead
+        // is command material exactly like its single-quoted spelling.
+        const step = '"pnpm dev" and drag a clip onto a lane, it lands quantized';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+
+        const doubleQuotedLead = '"data.json" (green)';
+        expect(commandOnlyTestInstructions(doubleQuotedLead)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(doubleQuotedLead))).toBe(REFUSAL);
     });
 
     it('passes a reopened argument run that ends at an observation cue', () => {

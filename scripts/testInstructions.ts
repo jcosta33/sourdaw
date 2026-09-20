@@ -42,11 +42,11 @@ const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
 
-/** Leading quoted spans (backtick or single-quote), for peeling the launch off a segment's front. */
-const LEADING_QUOTED_SPAN = /^(`[^`]*`|'[^']*')/;
+/** Leading quoted spans (backtick, single quote, or double quote), for peeling the launch off a segment's front. */
+const LEADING_QUOTED_SPAN = /^(`[^`]*`|'[^']*'|"[^"]*")/;
 
-/** Any terminated quoted span (backtick or single-quote), for removing quoted commands from a segment's prose remainder. */
-const QUOTED_SPAN = /(`[^`]*`|'[^']*')/g;
+/** Any terminated quoted span (backtick, single quote, or double quote), for removing quoted commands from a segment's prose remainder. */
+const QUOTED_SPAN = /(`[^`]*`|'[^']*'|"[^"]*")/g;
 
 /**
  * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. Deliberately
@@ -60,30 +60,41 @@ const TOKEN_EDGE_PUNCTUATION = /^[,;:]+|[,;:]+$/g;
 
 /**
  * The command heads whose mention alone reads as CI or author check narration, not an app step.
- * Exported so the specs can pin the inventory: dropping any head reddens the pin and its
- * behavioral fixture instead of silently un-gating a tool.
+ * Exported so the specs can pin the inventory: dropping any head reddens the equality pin, a bare
+ * head's behavioral iteration reddens too, and for a colon-bearing head the equality pin is the
+ * only net — the path rule still classifies the dropped token.
  */
 export const COMMAND_HEADS = new Set([
     'bash',
     'biome',
     'bun',
     'cargo',
+    'cat',
     'cd',
     'cmake',
+    'curl',
     'deno',
+    'diff',
     'docker',
     'dotnet',
+    'echo',
     'electron',
+    'env',
     'eslint',
+    'find',
     'flutter',
     'format',
     'gh',
     'git',
     'go',
     'gradle',
+    'grep',
     'guard',
+    'head',
     'jest',
+    'less',
     'lint',
+    'ls',
     'make',
     'mvn',
     'node',
@@ -98,6 +109,9 @@ export const COMMAND_HEADS = new Set([
     'rg',
     'rustc',
     'sh',
+    'sort',
+    'tail',
+    'tee',
     'test:barrel-mocks',
     'test:e2e',
     'test:run',
@@ -111,6 +125,9 @@ export const COMMAND_HEADS = new Set([
     'wasm:all',
     'wasm-pack',
     'wasm:verify',
+    'wc',
+    'which',
+    'xargs',
     'yarn',
 ]);
 
@@ -208,7 +225,7 @@ function stripRepeated(value: string, pattern: RegExp): string {
  */
 function leadingQuotedSpanContent(value: string): string {
     const quote = value[0];
-    if (quote !== '`' && quote !== "'") {
+    if (quote !== '`' && quote !== "'" && quote !== '"') {
         return value;
     }
     const closing = value.indexOf(quote, 1);
@@ -278,18 +295,30 @@ function isAnnotationParenthetical(parenthetical: string): boolean {
 }
 
 /**
- * The words the segment's leftover prose is made of. Quoted spans go first — backtick and
- * single-quote alike, so prose inside a command's quoted arguments cannot rescue it; a
+ * Whether a token behind a run-ending word is material: command material or a bare prose word.
+ * Annotation vocabulary and cue words are the words the narration itself is made of, so only one
+ * of them behind the run-ending word leaves it the command's trailing argument.
+ */
+function isMaterialBehindRun(token: string): boolean {
+    return token !== '' && !REMAINDER_VOCABULARY.has(token) && !OBSERVATION_CUE.test(token);
+}
+
+/**
+ * The words the segment's leftover prose is made of. Quoted spans go first — backtick, single
+ * quote, and double quote alike, so prose inside a command's quoted arguments cannot rescue it; a
  * parenthetical strips only when every word of its content is annotation vocabulary or a
  * number/punctuation token (`(clean)`, `(140 passed)`), while a clause naming UI state keeps its
  * content and can rescue the segment (`(the clip lands quantized to the grid)`). Then the tokens
  * drop: command heads, their subcommand slot, and their argument run — after a leading head the
  * token behind it is command material whatever it is (`pnpm run build`, `npm start`), and the
  * argument run opens behind that slot: bare arguments drop until a word a reader would actually
- * read (vocabulary or cue) ends the run and is kept, while a non-colon command head REOPENS the
- * run and drops with it (`pnpm exec cargo build` is launch, subcommand, argument) — a
- * colon-bearing head is the same launch's script name, so the run continues through it — making
- * quoting the launch verdict-neutral and `git fetch origin` narration all the way through.
+ * read (vocabulary or cue) ends the run and is kept — kept only when material follows it, because
+ * as the segment's last token that word is the command's trailing argument and drops
+ * (`gh run watch`), as does a word followed by nothing but annotation (`gh pr checks watch`) —
+ * while a non-colon command head REOPENS the run and drops with it (`pnpm exec cargo build` is
+ * launch, subcommand, argument) — a colon-bearing head is the same launch's script name, so the
+ * run continues through it — making quoting the launch verdict-neutral and `git fetch origin`
+ * narration all the way through.
  */
 function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
@@ -325,6 +354,13 @@ function proseRemainderWords(segment: string): string[] {
                 continue;
             }
             if (REMAINDER_VOCABULARY.has(word) || OBSERVATION_CUE.test(word)) {
+                // A run-ending word rescues only when material follows it: as the segment's last
+                // token — nothing but already-stripped parentheticals behind — it is the command's
+                // trailing argument, and so is a word followed only by more annotation. Dropping
+                // it leaves the run open for whatever little remains behind.
+                if (!tokens.slice(index + 1).some(isMaterialBehindRun)) {
+                    continue;
+                }
                 insideArgumentRun = false;
                 words.push(word);
                 continue;
