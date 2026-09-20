@@ -16,6 +16,10 @@ import {
 import { type workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type YeastProcessorInfo } from '#/modules/Yeast/stores';
 
+export type OfflineAudioBufferSource = Readonly<{
+    get(id: string): AudioBuffer | undefined;
+}>;
+
 /** One document's owner read models. Null/empty values are authoritative, never live fallbacks. */
 export type OfflineRenderProjectSource = {
     tracks: TrackStoreState | null;
@@ -35,7 +39,7 @@ export type OfflineRenderProjectSource = {
 
 /** Runtime/asset facts are separate from document truth and can be captured for a supplied document. */
 export type OfflineRenderRuntimeSource = {
-    buffers: ReadonlyMap<string, AudioBuffer>;
+    buffers: OfflineAudioBufferSource;
     deviceLatencyMs: ReadonlyMap<string, number>;
     loadedExternalInstanceIds: ReadonlySet<string>;
     externalPluginParameters: typeof externalPluginParameterStore.value;

@@ -1,7 +1,9 @@
 import { type Track } from '#/modules/Arrangement/stores';
 
+import { type OfflineAudioBufferSource } from './OfflineRenderSource';
+
 /** Own the PCM so cache eviction and in-place edits cannot alter a pending render. */
-export function captureOfflineAudioBuffers(tracks: readonly Track[], sources: ReadonlyMap<string, AudioBuffer>) {
+export function captureOfflineAudioBuffers(tracks: readonly Track[], sources: OfflineAudioBufferSource) {
     const buffers = new Map<string, AudioBuffer>();
     const ids = new Set<string>();
     for (const track of tracks) {
