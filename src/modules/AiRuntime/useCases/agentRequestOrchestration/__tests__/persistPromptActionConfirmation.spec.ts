@@ -16,6 +16,9 @@ const REMOVE_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
 
 const mocks = vi.hoisted(() => ({
     createResourceLease: vi.fn(),
+    getConfirmation: vi.fn(),
+    settleResource: vi.fn(),
+    updateStatus: vi.fn(),
     describeRisk: vi.fn(),
     normalizeFailure: vi.fn(),
     proposeConfirmation: vi.fn(),
@@ -36,6 +39,9 @@ vi.mock('../../../stores/chatStore', () => ({
 
 vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
     proposePendingActionConfirmation: mocks.proposeConfirmation,
+    getPendingActionConfirmation: mocks.getConfirmation,
+    settlePendingActionResourceLeaseBestEffort: mocks.settleResource,
+    updatePendingActionConfirmationStatus: mocks.updateStatus,
 }));
 
 vi.mock('../../agentErrorAndSaga', () => ({
@@ -177,7 +183,7 @@ const gainHandler = {
 
 describe('persistPromptActionConfirmation', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         mocks.describeRisk.mockReturnValue('Risk approval required.');
         mocks.createResourceLease.mockReturnValue({ bytes: 64 });
         clearHandlerRegistry();
@@ -186,6 +192,63 @@ describe('persistPromptActionConfirmation', () => {
 
     afterEach(() => {
         clearHandlerRegistry();
+    });
+
+    it('does not transfer ownership if lease construction fails', () => {
+        const acquired = vi.fn();
+        mocks.createResourceLease.mockImplementation(() => {
+            throw new Error('Lease construction failed');
+        });
+        expect(() =>
+            persistPromptActionConfirmation({ ...createInput(), onResourceOwnershipAcquired: acquired })
+        ).toThrow('Lease construction failed');
+        expect(acquired).not.toHaveBeenCalled();
+        expect(mocks.proposeConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('releases a constructed lease when admission throws before retaining the confirmation', async () => {
+        const release = vi.fn().mockResolvedValue(undefined);
+        const acquired = vi.fn();
+        mocks.createResourceLease.mockReturnValue({ bytes: 64, release });
+        mocks.proposeConfirmation.mockImplementation(() => {
+            throw new Error('Admission failed');
+        });
+        expect(() =>
+            persistPromptActionConfirmation({ ...createInput(), onResourceOwnershipAcquired: acquired })
+        ).toThrow('Admission failed');
+        expect(acquired).toHaveBeenCalledOnce();
+        expect(acquired.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.proposeConfirmation.mock.invocationCallOrder[0]!
+        );
+        await vi.waitFor(() => expect(release).toHaveBeenCalledOnce());
+    });
+
+    it('leaves refused admission cleanup with its existing owner even when refusal recording fails', () => {
+        const release = vi.fn();
+        mocks.createResourceLease.mockReturnValue({ bytes: 64, release });
+        mocks.proposeConfirmation.mockReturnValue(null);
+        mocks.updateBatchStatus.mockImplementation(() => {
+            throw new Error('Refusal persistence failed');
+        });
+        expect(() => persistPromptActionConfirmation(createInput())).toThrow('Refusal persistence failed');
+        expect(release).not.toHaveBeenCalled();
+    });
+
+    it('settles the canonical lease if a retained proposal cannot enter waiting-for-approval', () => {
+        const release = vi.fn();
+        mocks.createResourceLease.mockReturnValue({ bytes: 64, release });
+        mocks.proposeConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        mocks.getConfirmation.mockReturnValue({ id: 'retained-confirmation' });
+        mocks.transitionPhase.mockImplementation(() => {
+            throw new Error('Phase persistence failed');
+        });
+        expect(() => persistPromptActionConfirmation(createInput())).toThrow('Phase persistence failed');
+        expect(mocks.updateStatus).toHaveBeenCalledWith({ confirmationId: expect.any(String), status: 'failed' });
+        expect(mocks.settleResource).toHaveBeenCalledWith({
+            confirmationId: expect.any(String),
+            disposition: 'discard',
+        });
+        expect(release).not.toHaveBeenCalled();
     });
 
     it('records a terminal capacity rejection in exact lifecycle and chat order', () => {

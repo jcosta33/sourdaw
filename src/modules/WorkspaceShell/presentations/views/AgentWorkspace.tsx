@@ -8,6 +8,7 @@ import {
     cancelPendingChatActions,
     confirmPendingChatActions,
     reproposePendingChatActions,
+    notifyAiChange,
 } from '#/modules/AiRuntime/useCases';
 
 import { AgentApprovalSection } from '../components/agentWorkspace/AgentApprovalSection';
@@ -23,12 +24,21 @@ import { useAgentChangeComparisonController } from '../hooks/useAgentChangeCompa
 import { useAgentWorkspaceFocusDispatch } from '../hooks/useAgentWorkspaceFocusDispatch';
 import { useAgentWorkspaceRunSelection } from '../hooks/useAgentWorkspaceRunSelection';
 
+function cancelApproval(confirmationId: string): void {
+    void cancelPendingChatActions({ confirmationId }).catch((error: unknown) => {
+        notifyAiChange(
+            `Cancellation could not finish: ${error instanceof Error ? error.message : String(error)}. Try Cancel again.`,
+            []
+        );
+    });
+}
+
 /**
  * Bottom-dock surface for agent runs. It reads AiRuntime's run, approval and
  * provider-route projections, passes them to leaf sections, and owns no state
  * beyond which run is selected.
  */
-export const AgentWorkspace = (): ReactElement => {
+export const AgentWorkspace = ({ requestedRun = null }: { requestedRun?: { runId: string } | null }): ReactElement => {
     // The run list and route are read through use cases on every render, not
     // from values the compiler can see change.
     'use no memo';
@@ -47,7 +57,7 @@ export const AgentWorkspace = (): ReactElement => {
         focusRequest,
         setFocusRequest,
         revertHistoryGroup,
-    } = useAgentWorkspaceRunSelection();
+    } = useAgentWorkspaceRunSelection(requestedRun);
     const {
         comparison,
         comparisonAvailability,
@@ -92,9 +102,7 @@ export const AgentWorkspace = (): ReactElement => {
                         onConfirm={(confirmationId) => {
                             void confirmPendingChatActions({ confirmationId });
                         }}
-                        onCancel={(confirmationId) => {
-                            void cancelPendingChatActions({ confirmationId });
-                        }}
+                        onCancel={cancelApproval}
                         onRePreview={(confirmationId, selectedIntentGroupIds) => {
                             void reproposePendingChatActions({ confirmationId, selectedIntentGroupIds });
                         }}

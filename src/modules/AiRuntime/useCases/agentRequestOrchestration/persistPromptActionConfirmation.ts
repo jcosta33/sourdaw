@@ -2,7 +2,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { buildSemanticProjectDiff, describeCommandBatchRecovery } from '#/modules/Command/useCases';
 
 import { updateChatMessage } from '../../stores/chatStore';
-import { proposePendingActionConfirmation } from '../../stores/pendingActionConfirmationStore';
+import {
+    getPendingActionConfirmation,
+    settlePendingActionResourceLeaseBestEffort,
+    updatePendingActionConfirmationStatus,
+    proposePendingActionConfirmation,
+} from '../../stores/pendingActionConfirmationStore';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from '../agentReference/createStemImportConfirmationResourceLease';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -33,6 +38,7 @@ type PersistPromptActionConfirmationInput = {
     parsedCommandBatch: ParsedCommandBatch;
     content: string;
     supersedes?: string | null;
+    onResourceOwnershipAcquired?: () => void;
 };
 
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
@@ -47,76 +53,94 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
         envelope: input.parsedCommandBatch.envelope,
         recoveryByCommandId: described.status === 'described' ? described.recoveryByCommandId : {},
     });
-    const confirmation = proposePendingActionConfirmation({
-        id: confirmationId,
-        runId: input.runId,
-        prompt: input.prompt,
-        assistantMessageId: input.assistantMessageId,
-        actions: input.actions,
-        actionLabels: input.actionLabels,
-        commandEnvelopes: input.commandEnvelopes,
-        commandBatch: input.commandBatch,
-        agentApproval: input.agentApproval,
-        semanticDiff,
-        affectedIds: input.affectedIds,
-        protectedUnchanged: input.protectedUnchanged,
-        risk: {
-            level: input.agentApproval.policy.risk,
-            reason: input.agentApproval.policy.reasons.join(' ') || null,
-        },
-        executionMode: input.executionMode,
-        groupId: input.group.groupId,
-        groupLabel: input.group.groupLabel,
-        projectRevision: input.projectRevision,
-        supersedes: input.supersedes ?? null,
-        resourceLease: createStemImportConfirmationResourceLease(
-            input.actions,
-            `stem-promotion:${confirmationId}`,
-            input.runId
-        ),
-    });
-    if (!confirmation) {
-        const reason = 'Prepared action resources exceed the live confirmation limit.';
-        agentRunLifecycle.updateBatchStatus({
+    const resourceLease = createStemImportConfirmationResourceLease(
+        input.actions,
+        `stem-promotion:${confirmationId}`,
+        input.runId
+    );
+    // Lease construction transfers prepared resources away from run ownership.
+    let confirmation: ReturnType<typeof proposePendingActionConfirmation> | undefined;
+    try {
+        input.onResourceOwnershipAcquired?.();
+        confirmation = proposePendingActionConfirmation({
+            id: confirmationId,
             runId: input.runId,
-            batchId: input.parsedCommandBatch.envelope.batchId,
-            status: 'failed',
+            prompt: input.prompt,
+            assistantMessageId: input.assistantMessageId,
+            actions: input.actions,
+            actionLabels: input.actionLabels,
+            commandEnvelopes: input.commandEnvelopes,
+            commandBatch: input.commandBatch,
+            agentApproval: input.agentApproval,
+            semanticDiff,
+            affectedIds: input.affectedIds,
+            protectedUnchanged: input.protectedUnchanged,
+            risk: {
+                level: input.agentApproval.policy.risk,
+                reason: input.agentApproval.policy.reasons.join(' ') || null,
+            },
+            executionMode: input.executionMode,
+            groupId: input.group.groupId,
+            groupLabel: input.group.groupLabel,
+            projectRevision: input.projectRevision,
+            supersedes: input.supersedes ?? null,
+            resourceLease,
         });
-        agentRunLifecycle.recordError({
-            runId: input.runId,
-            error: normalizeAgentFailure({
-                category: 'budget',
-                source: 'command-execution',
-                related: {
-                    targetIds: [...input.parsedCommandBatch.envelope.scope.targetIds],
-                    commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-                    workIds: [input.parsedCommandBatch.envelope.batchId],
-                },
-                retry: 'never',
-                knownDomain: true,
-            }),
-            terminal: true,
-        });
+        if (!confirmation) {
+            const reason = 'Prepared action resources exceed the live confirmation limit.';
+            agentRunLifecycle.updateBatchStatus({
+                runId: input.runId,
+                batchId: input.parsedCommandBatch.envelope.batchId,
+                status: 'failed',
+            });
+            agentRunLifecycle.recordError({
+                runId: input.runId,
+                error: normalizeAgentFailure({
+                    category: 'budget',
+                    source: 'command-execution',
+                    related: {
+                        targetIds: [...input.parsedCommandBatch.envelope.scope.targetIds],
+                        commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                        workIds: [input.parsedCommandBatch.envelope.batchId],
+                    },
+                    retry: 'never',
+                    knownDomain: true,
+                }),
+                terminal: true,
+            });
+            updateChatMessage(input.assistantMessageId, {
+                isStreaming: false,
+                pendingActionConfirmationStatus: 'failed',
+                error: reason,
+                content:
+                    'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
+            });
+            return null;
+        }
+
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,
-            pendingActionConfirmationStatus: 'failed',
-            error: reason,
-            content:
-                'This proposal was not retained because pending prepared resources reached their safe limit. Resolve or cancel an earlier proposal, then try again.',
+            pendingActionConfirmationId: confirmationId,
+            pendingActionConfirmationStatus: 'proposed',
+            content: `${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
         });
-        return null;
+        agentRunLifecycle.transitionPhase({
+            runId: input.runId,
+            phase: 'waiting-for-approval',
+            revision: input.projectRevision,
+        });
+        return confirmationId;
+    } catch (error) {
+        if (getPendingActionConfirmation(confirmationId)) {
+            updatePendingActionConfirmationStatus({ confirmationId, status: 'failed' });
+            void settlePendingActionResourceLeaseBestEffort({ confirmationId, disposition: 'discard' });
+        } else if (confirmation !== null && resourceLease) {
+            void Promise.resolve()
+                .then(() => resourceLease.release())
+                .catch((releaseError: unknown) => {
+                    logger.error(new Error('Unretained confirmation resource cleanup failed', { cause: releaseError }));
+                });
+        }
+        throw error;
     }
-
-    updateChatMessage(input.assistantMessageId, {
-        isStreaming: false,
-        pendingActionConfirmationId: confirmationId,
-        pendingActionConfirmationStatus: 'proposed',
-        content: `${input.content}\n\n${describeAgentRiskApproval(input.agentApproval)}`,
-    });
-    agentRunLifecycle.transitionPhase({
-        runId: input.runId,
-        phase: 'waiting-for-approval',
-        revision: input.projectRevision,
-    });
-    return confirmationId;
 }
