@@ -28,12 +28,14 @@ function normalizeAnthropicInputUsageState(state: AnthropicInputUsageState): {
 } {
     const counters = [state.rawInputTokens, state.cacheReadInputTokens, state.cacheWriteInputTokens];
     const hasReportedCounter = counters.some((counter) => counter !== undefined);
+    const hasReportedRawInput = state.rawInputTokens !== undefined;
     const hasMalformedCounter = counters.some((counter) => counter === null);
     let totalInputTokens = 0;
     for (const counter of counters) {
         totalInputTokens += counter ?? 0;
     }
-    const inputTotalUnavailable = hasMalformedCounter || !Number.isSafeInteger(totalInputTokens);
+    const inputTotalUnavailable =
+        !hasReportedRawInput || hasMalformedCounter || !Number.isSafeInteger(totalInputTokens);
     const unavailableCounters: ModelProviderUsageCounterName[] = [];
     if (hasReportedCounter && inputTotalUnavailable) {
         unavailableCounters.push('inputTokens');
@@ -46,7 +48,7 @@ function normalizeAnthropicInputUsageState(state: AnthropicInputUsageState): {
     }
     return {
         usage: {
-            inputTokens: hasReportedCounter && !inputTotalUnavailable ? totalInputTokens : null,
+            inputTokens: hasReportedRawInput && !inputTotalUnavailable ? totalInputTokens : null,
             cacheReadInputTokens: state.cacheReadInputTokens ?? null,
             cacheWriteInputTokens: state.cacheWriteInputTokens ?? null,
         },

@@ -456,6 +456,16 @@ describe('generateAnthropicToolCalls', () => {
             cacheReadInputTokens: null,
             cacheWriteInputTokens: 2,
         },
+        {
+            name: 'a missing raw input counter',
+            usage: {
+                output_tokens: 1,
+                cache_read_input_tokens: 5,
+                cache_creation_input_tokens: 8,
+            },
+            cacheReadInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        },
     ])('refuses to undercount $name', async ({ usage, cacheReadInputTokens, cacheWriteInputTokens }) => {
         returnPayload({
             content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],

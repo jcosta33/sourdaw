@@ -22,7 +22,7 @@ type CloudStreamEvent =
           type: 'message_start';
           message: {
               usage: {
-                  input_tokens: number;
+                  input_tokens?: number;
                   output_tokens: number;
                   cache_creation_input_tokens?: number;
                   cache_read_input_tokens?: number;
@@ -342,6 +342,128 @@ describe('streamCloudChatCompletion', () => {
 
         expect(result.usage).toEqual({
             ...expected,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('keeps a never-reported raw input total unknown through cache-only sparse snapshots', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 8,
+                        cache_read_input_tokens: 5,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: 1, cache_read_input_tokens: 5 },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-cache-only-usage',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: null,
+            outputTokens: 1,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('recovers a cache-only input total when a later snapshot reports explicit raw zero', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 8,
+                        cache_read_input_tokens: 5,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: null, stop_sequence: null },
+                usage: { output_tokens: 0, cache_creation_input_tokens: 8 },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { input_tokens: 0, output_tokens: 1 },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-cache-only-recovery',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: 13,
+            outputTokens: 1,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('recovers a malformed raw input count from a later authoritative snapshot', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: 10,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 8,
+                        cache_read_input_tokens: 5,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: null, stop_sequence: null },
+                usage: { input_tokens: -1, output_tokens: 0 },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { input_tokens: 20, output_tokens: 1 },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-malformed-input-recovery',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: 33,
+            outputTokens: 1,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
             reasoningTokens: null,
             provenance: 'provider-reported',
         });
