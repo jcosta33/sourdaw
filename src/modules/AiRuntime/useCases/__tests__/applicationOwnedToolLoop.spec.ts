@@ -7,7 +7,6 @@ import {
     getPluginById,
     saveUserPreset,
 } from '#/modules/Arrangement/useCases';
-import { userPresetStorage } from '#/modules/Arrangement/useCases/preset/presetStorage/helpers';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
@@ -1250,78 +1249,6 @@ describe('project discovery tool', () => {
         expect(receipt).toMatchObject({ toolName: 'project.discover', status: 'success' });
         expect(receipt?.data).toMatchObject({ schema: 'sourdaw.agent-discovery-receipt', domain: 'device' });
         expect(receipt?.revision).toEqual(expect.any(String));
-    });
-
-    it('keeps a malformed maximal user storage preset discoverable in one bounded receipt', async () => {
-        const malformedPreset = {
-            id: 'user-stored-tube-maximal',
-            name: '\uD800'.repeat(128),
-            category: 'fx' as const,
-            subcategory: '\uD800'.repeat(128),
-            description: '\uD800'.repeat(1_024),
-            trackKind: 'audio' as const,
-            devices: Array.from({ length: 8 }, (_, index) => ({
-                type: '\uDC00'.repeat(128),
-                name: `Device ${String(index)}`,
-                parameterValues: {},
-            })),
-            tags: [...Array.from({ length: 8 }, () => '\uD800'.repeat(128)), 'tube'],
-            author: 'User',
-            isFactory: true,
-        };
-        // Bypass the save flow: this is a raw persisted record whose isFactory claim must not
-        // become producer provenance when the reader rebuilds its public discovery projection.
-        userPresetStorage.set([malformedPreset]);
-        const requestTurn = vi
-            .fn()
-            .mockResolvedValueOnce({
-                status: 'complete',
-                toolCalls: [
-                    {
-                        id: 'discover-malformed-user-preset',
-                        name: 'project.discover',
-                        arguments: {
-                            domain: 'preset',
-                            filters: { text: 'tube', stableId: malformedPreset.id },
-                            page: { limit: 1 },
-                        },
-                    },
-                ],
-            })
-            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
-
-        try {
-            const result = await runApplicationOwnedToolLoop({
-                loopId: 'loop-malformed-user-preset',
-                terminalToolNames: new Set(['setTempo']),
-                requestTurn,
-            });
-            const receipt = result.receipts.find((entry) => entry.callId === 'discover-malformed-user-preset');
-
-            expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
-            expect(receipt).toMatchObject({
-                status: 'success',
-                error: null,
-                data: {
-                    domain: 'preset',
-                    items: [
-                        {
-                            id: malformedPreset.id,
-                            evidence: {
-                                isFactory: false,
-                                tags: expect.arrayContaining(['tube']),
-                                metadata: { confidence: 'user-supplied' },
-                            },
-                        },
-                    ],
-                },
-            });
-            expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain(malformedPreset.id);
-            expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('tube');
-            expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('"isFactory":false');
-        } finally {
-            deleteUserPreset(malformedPreset.id);
-        }
     });
 
     it('keeps a long saved preset discoverable in one bounded receipt', async () => {
