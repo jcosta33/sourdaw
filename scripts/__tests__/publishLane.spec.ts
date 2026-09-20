@@ -4059,6 +4059,153 @@ describe('push delta authorship gate', () => {
         }
     });
 
+    /**
+     * Squash-lands a human-authored parent lane onto the fixture main — one squash commit pushed to
+     * the remote — then re-forks the child lane at the parent head and syncs it per the stack
+     * workflow: a bot-authored merge of the parent head and the squash commit. Squash semantics keep
+     * the parent's original commits off `main` forever, so the child retains them only through its
+     * fork point, and only the parent-head exclusion can clear them from the gated range.
+     */
+    function mergedParentFixture(f: ReturnType<typeof authorshipFixture>): {
+        parentCommits: string[];
+        parentHead: string;
+        squashSha: string;
+    } {
+        const parentBranch = 'agent/11/parent';
+        const parentLane = join(f.fixtureRoot, 'parent-lane');
+        fixtureGit(f.primary, ['worktree', 'add', '-b', parentBranch, parentLane]);
+        fixtureGit(f.primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, parentLane]);
+        const parentCommits = [
+            commitInLane(parentLane, 'parent-one.txt', 'chore: parent first advance', 'human'),
+            commitInLane(parentLane, 'parent-two.txt', 'chore: parent second advance', 'human'),
+        ];
+        const parentHead = parentCommits[parentCommits.length - 1]!;
+        // The merge lands as one squash commit on main: its tree carries the parent's content while
+        // its history never will, so `main` cannot reach the parent's original human commits.
+        const parentTree = fixtureGit(parentLane, ['rev-parse', 'HEAD^{tree}']);
+        const squashSha = execFileSync(
+            'git',
+            ['commit-tree', parentTree, '-p', f.baseSha, '-m', 'chore: squash-land parent lane'],
+            {
+                cwd: parentLane,
+                env: fixtureGitEnv({
+                    GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+                    GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                    GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+                    GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                }),
+                encoding: 'utf8',
+            }
+        ).trim();
+        fixtureGit(f.primary, ['merge', '--ff-only', squashSha]);
+        fixtureGit(f.primary, ['push', f.remote, 'main']);
+        // The child forked at the parent head — retaining the parent's pre-squash commits exactly
+        // as `lane:sync-parent` requires — and then merges the landed squash commit on top.
+        fixtureGit(f.primary, ['worktree', 'unlock', f.lane]);
+        fixtureGit(f.primary, ['worktree', 'remove', f.lane]);
+        fixtureGit(f.primary, ['branch', '-f', BRANCH, parentHead]);
+        fixtureGit(f.primary, ['worktree', 'add', f.lane, BRANCH]);
+        fixtureGit(f.primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, f.lane]);
+        execFileSync('git', ['merge', '--no-edit', squashSha], {
+            cwd: f.lane,
+            env: fixtureGitEnv({
+                GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+                GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+                GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+            }),
+            encoding: 'utf8',
+        });
+        return { parentCommits, parentHead, squashSha };
+    }
+
+    it('publishes a stack child of a merged parent whose retained commits only the parent-head exclusion clears', () => {
+        const f = authorshipFixture();
+        try {
+            const landed = mergedParentFixture(f);
+            const mainSha = fixtureGit(f.primary, ['rev-parse', 'main']);
+            const head = commitInLane(f.lane, 'child.txt', 'feat(gate): child bot commit', 'bot');
+            f.port.stackBase = () => ({
+                branch: 'main',
+                head: mainSha,
+                parentNumber: 11,
+                parentState: 'MERGED',
+                parentHead: landed.parentHead,
+            });
+            f.port.pinStackParent = () => undefined;
+            let created = false;
+            f.port.createPullRequest = () => {
+                created = true;
+                return 88;
+            };
+            f.port.existingOpenPullRequest = () =>
+                created
+                    ? {
+                          number: 88,
+                          title: 'feat(gate): child bot commit',
+                          body: '',
+                          baseRefName: 'main',
+                          headRefOid: head,
+                      }
+                    : undefined;
+            // Squash semantics guarantee `main` never reaches the parent's original commits, so the
+            // raw comparison range still carries the human parent email; with the comparison head
+            // resolved to main, only adding the parent-head exclusion clears what the child retained.
+            expect(fixtureGit(f.lane, ['log', '--format=%ae', `${mainSha}..${head}`])).toContain(HUMAN_EMAIL);
+            const emails = (excluded: string[]) =>
+                f.port.commitAuthorEmails(f.lane, mainSha, excluded, head).map((commit) => commit.email);
+            expect(emails([mainSha])).toContain(HUMAN_EMAIL);
+            expect(emails([mainSha, landed.parentHead])).not.toContain(HUMAN_EMAIL);
+
+            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+            expect(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toBe(head);
+        } finally {
+            dispose(f);
+        }
+    });
+
+    it('refuses a merged-parent stack child naming only the human lane commit with no rebase to offer', () => {
+        const f = authorshipFixture();
+        try {
+            const landed = mergedParentFixture(f);
+            const mainSha = fixtureGit(f.primary, ['rev-parse', 'main']);
+            commitInLane(f.lane, 'child.txt', 'feat(gate): child bot commit', 'bot');
+            const head = commitInLane(f.lane, 'human-lane.txt', 'feat(gate): human lane commit', 'human');
+            f.port.stackBase = () => ({
+                branch: 'main',
+                head: mainSha,
+                parentNumber: 11,
+                parentState: 'MERGED',
+                parentHead: landed.parentHead,
+            });
+            f.port.pinStackParent = () => undefined;
+            f.port.createPullRequest = () => 88;
+            const humanShortSha = fixtureGit(f.lane, ['rev-parse', '--short', head]);
+            const parentShortShas = landed.parentCommits.map((sha) =>
+                fixtureGit(f.lane, ['rev-parse', '--short', sha])
+            );
+
+            const message = refusalMessage(() =>
+                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
+            );
+
+            // The retained parent commits are foreign to main but excluded as base-side, so the
+            // refusal names only the lane's own human commit. A rebase onto main would replay the
+            // parent's pre-squash commits re-authored as the App, so re-creation is the only
+            // remedy offered.
+            expect(message).toContain(`${humanShortSha} ${HUMAN_EMAIL}`);
+            for (const sha of parentShortShas) {
+                expect(message).not.toContain(sha);
+            }
+            expect(message).toContain('re-create the listed offending commits');
+            expect(message).not.toContain('git rebase');
+            expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
+        } finally {
+            dispose(f);
+        }
+    });
+
     it('refuses a commit whose author email is empty instead of pushing it silently', () => {
         const f = authorshipFixture();
         try {
