@@ -86,8 +86,8 @@ The caller writes it, no script generates it, and the orchestrator confirms its 
 substance before acceptance. `pnpm stances:check <bundle>` tests each admission line with a typed
 judgment and fails lines that name touched paths instead of failure modes. Run it before dispatch
 when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
-its inability to run — a missing key or an unavailable service — is a disclosed limitation, never a
-stop, and the orchestrator's substance duty stands either way.
+its inability to run — a missing key, an unavailable or degraded service, or a malformed response —
+is a disclosed limitation, never a stop, and the orchestrator's substance duty stands either way.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,

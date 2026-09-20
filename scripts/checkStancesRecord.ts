@@ -14,9 +14,11 @@
  * Boundaries. This is an orchestrator-side advisory probe, not a trusted delivery script: it
  * writes nothing, reads only the bundle it is given, and its verdict only names lines for repair —
  * the acceptance duty itself stays with the orchestrator. The API key is read from the environment
- * only and is never printed or written. A missing key, an out-of-range threshold, a service
- * failure, or a malformed response is a stop with exit 1 — never a pass: an unjudged admission is
- * not a clean one.
+ * only and is never printed or written. The stop causes form one regime with the contract: the
+ * third-party classes — a missing key, an unavailable or degraded service, or a malformed response
+ * — exit 1 without a verdict and are a disclosed limitation for delivery, never a pass: an
+ * unjudged admission is not a clean one. The caller-side classes remain stops: an out-of-range
+ * threshold or a malformed record exits 1.
  *
  * How it can fail:
  *
