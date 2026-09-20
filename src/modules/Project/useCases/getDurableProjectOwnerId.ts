@@ -1,10 +1,14 @@
+import { isCanonicalProjectId } from '../models/ProjectData';
 import { projectStore } from '../stores/projectStore';
-
-import { isSemanticProjectIdentityReady } from './semanticProjectIndex';
 
 export function getDurableProjectOwnerId(): string | undefined {
     const project = projectStore.value;
-    if (!project?.initialized || project.identityPersistencePending || !isSemanticProjectIdentityReady(project)) {
+    if (
+        !project?.initialized ||
+        project.identityPersistencePending ||
+        project.identityMigrationPending ||
+        !isCanonicalProjectId(project.projectId)
+    ) {
         return undefined;
     }
 

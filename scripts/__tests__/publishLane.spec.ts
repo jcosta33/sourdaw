@@ -72,6 +72,7 @@ import {
     type OpenPullRequestRow,
     type PublishLanePort,
     type PublishWorktree,
+    type RemoteBranchRead,
 } from '../publishLane.ts';
 
 const PRIMARY_ROOT = '/repo';
@@ -166,7 +167,8 @@ type FakeInput = {
     subject?: string | null;
     headSha?: string;
     baseSha?: string;
-    remoteSha?: string;
+    /** The remote-tip read the port answers; defaults to `{ kind: 'present' }` (the branch exists). */
+    remoteRead?: RemoteBranchRead;
     ancestor?: boolean;
     existing?: number;
     /** Per-lookup answers, so a pull request can close between the authorizing query and the push. */
@@ -219,7 +221,7 @@ function fakePort(input: FakeInput = {}) {
         dirty: () => dirty,
         laneSubject: () => subject,
         headSha: () => input.headSha ?? 'abc',
-        remoteBranchSha: () => input.remoteSha,
+        remoteBranchSha: () => input.remoteRead ?? { kind: 'present', sha: 'abc' },
         isAncestor: () => input.ancestor ?? true,
         push: (_lane, branch, headSha) => {
             calls.push(`push:${branch}`);
@@ -499,7 +501,11 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
         { subject: null },
         /agent\/12\/work carries no non-merge commit above origin\/main/,
     ],
-    ['diverged remote', { remoteSha: 'other', ancestor: false }, /refusing non-fast-forward push of agent\/12\/work/],
+    [
+        'diverged remote',
+        { remoteRead: { kind: 'present', sha: 'other' }, ancestor: false },
+        /refusing non-fast-forward push of agent\/12\/work/,
+    ],
 ];
 
 describe('lane publish', () => {
@@ -610,7 +616,7 @@ describe('lane publish', () => {
                     "const readsBase = args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === 'refs/remotes/origin/main^{commit}';\n" +
                     "if (readsBase && process.env.TEST_BASE_SHA_SEQUENCE) { const sequence = JSON.parse(process.env.TEST_BASE_SHA_SEQUENCE); const counter = process.env.TEST_BASE_SHA_COUNTER; const index = existsSync(counter) ? Number(readFileSync(counter, 'utf8')) : 0; writeFileSync(counter, String(index + 1)); console.log(sequence[Math.min(index, sequence.length - 1)]); process.exit(0); }\n" +
                     "if (args.includes('fetch')) { appendFileSync(process.env.TEST_EVENT_LOG, 'fetch\\n'); process.exit(0); }\n" +
-                    "if (args.includes('ls-remote')) process.exit(0);\n" +
+                    "if (args.includes('ls-remote')) { console.log('f'.repeat(40) + '\\trefs/heads/main'); process.exit(0); }\n" +
                     "if (args.includes('push')) { appendFileSync(process.env.TEST_EVENT_LOG, 'push\\n'); appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
                     `const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: 'inherit', env: process.env });\n` +
                     'if (result.error) throw result.error; process.exit(result.status ?? 1);\n'
@@ -1573,6 +1579,43 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
+    it('refuses to publish when the remote listing is unreadable, instead of skipping the fast-forward check', () => {
+        // The defect this pins: an empty ls-remote answer was read as "branch absent", so a
+        // branch that actually exists slipped the non-fast-forward gate and the push proceeded
+        // from a stale base. An unreadable remote must refuse, never widen the gate.
+        const { port, calls } = fakePort({ remoteRead: { kind: 'unreadable' } });
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /cannot read the remote heads for agent\/12\/work: the remote listing was unreadable/
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
+    it('publishes a branch absent from a non-empty listing when no open pull request expects it', () => {
+        // A non-empty remote listing that lacks the target branch reads `absent`. With no open pull
+        // request whose head is that branch, absent is a legitimate first publication: the
+        // fast-forward check is skipped and the first publish proceeds.
+        const { port, calls } = fakePort({ remoteRead: { kind: 'absent' } });
+
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('refuses publication when an absent branch already has an open pull request heading it', () => {
+        // The regression this lane closes: a reachable remote still lists `main`, so a branch the
+        // transport fails to show arrives as a non-empty listing that omits it — classified `absent`
+        // even though an open pull request for it proves it was published. That must refuse, not
+        // widen the non-fast-forward check from remote-tip..head to base..head.
+        const { port, calls } = fakePort({ remoteRead: { kind: 'absent' }, existing: 41 });
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /refusing publication of agent\/12\/work: the remote heads listing did not carry the branch although an open pull request for it exists/
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
@@ -2098,6 +2141,54 @@ describe('lane publish', () => {
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
+    });
+
+    /**
+     * The read itself must not conflate "no ref for the branch" with "could not read the remote":
+     * a fake port can only hand `publishLane` a pre-classified answer, so the classification of the
+     * raw `ls-remote --heads` output is pinned here against the real port, with a git shim answering
+     * the listing. The empty case is the guard the regression mutates.
+     */
+    describe('remote-tip read', () => {
+        const REMOTE_HEAD_CASES: Array<[string, string, RemoteBranchRead]> = [
+            ['an entirely empty listing', '', { kind: 'unreadable' }],
+            ['a listing that lacks the branch', `${'f'.repeat(40)}\trefs/heads/main\n`, { kind: 'absent' }],
+            [
+                'a listing that names the branch',
+                `${'a'.repeat(40)}\trefs/heads/agent/12/work\n`,
+                { kind: 'present', sha: 'a'.repeat(40) },
+            ],
+        ];
+
+        function remoteReadPort(output: string): { port: PublishLanePort; root: string } {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lsremote-'));
+            const configDir = join(root, 'config');
+            mkdirSync(configDir, { recursive: true });
+            const gitShim = join(root, 'git');
+            writeFileSync(
+                gitShim,
+                '#!/usr/bin/env node\n' +
+                    'const args = process.argv.slice(2);\n' +
+                    "if (args.includes('ls-remote')) { process.stdout.write(process.env.TEST_LS_REMOTE_OUTPUT ?? ''); process.exit(0); }\n" +
+                    "console.error('unexpected git ' + args.join(' ')); process.exit(1);\n"
+            );
+            chmodSync(gitShim, 0o700);
+            const session: GhSession = {
+                configDir,
+                env: { PATH: process.env.PATH, GH_TOKEN: 'ghs_fixture', TEST_LS_REMOTE_OUTPUT: output },
+                dispose: () => {},
+            };
+            return { port: shellPort(session, root, root, { git: gitShim, gh: 'gh' }), root };
+        }
+
+        it.each(REMOTE_HEAD_CASES)('reads %s', (_case, output, expected) => {
+            const { port, root } = remoteReadPort(output);
+            try {
+                expect(port.remoteBranchSha('agent/12/work')).toEqual(expected);
+            } finally {
+                rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            }
+        });
     });
 
     it('requests headRefName, isCrossRepository, the title, and the body the update path must preserve', () => {

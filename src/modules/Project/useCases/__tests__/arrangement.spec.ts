@@ -161,6 +161,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         isDeviceParameterAutomatable: vi.fn(),
         projectTrackToLiveStrip: vi.fn(),
         quantiseDeviceParameterValue: vi.fn(),
+        rearmInputMonitoring: actual.rearmInputMonitoring,
         resolveClipsWithComping: vi.fn(),
         restoreArrangementMetadataSnapshot: actual.restoreArrangementMetadataSnapshot,
         restoreTrackSnapshot: actual.restoreTrackSnapshot,

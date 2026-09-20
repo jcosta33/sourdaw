@@ -3,6 +3,7 @@ import { getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { DEFAULT_TEMPO_BPM, tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
@@ -16,6 +17,7 @@ import {
 import { createBoundedRevisionToken } from '../services/createBoundedRevisionToken';
 import { type ProjectStoreState, projectStore } from '../stores/projectStore';
 
+import { getCanonicalTrackRole } from './getCanonicalTrackRole';
 import { semanticRangeOverlaps } from './semanticRangeOverlap';
 
 type PartitionName = keyof SemanticIndexDiagnostics;
@@ -141,8 +143,8 @@ function parseRevision(value: string): SemanticProjectRevision {
     return { documentIdentityEpoch, mutationEpoch, documents };
 }
 
-function buildTrackEntities(): SemanticIndexEntity[] {
-    return (trackStore.value?.tracks ?? []).flatMap((track) => {
+function buildTrackEntities(tracks: NonNullable<typeof trackStore.value>['tracks']): SemanticIndexEntity[] {
+    return tracks.flatMap((track) => {
         const deviceTypes = track.devices.map((device) => device.type);
         const deviceCategories = [
             ...new Set(track.devices.map((device) => getPluginById(device.type)?.category ?? 'external')),
@@ -430,7 +432,9 @@ function isScopeForEntity(scope: unknown, entity: SemanticIndexEntity): boolean 
 function decorateEntities(
     entities: readonly SemanticIndexEntity[],
     automation: readonly SemanticIndexEntity[],
-    routing: readonly SemanticIndexEntity[]
+    routing: readonly SemanticIndexEntity[],
+    canonicalRoles: ReadonlyMap<string, ReturnType<typeof getCanonicalTrackRole>>,
+    brief: ProjectStoreState['productionBrief'] | undefined
 ): SemanticIndexEntity[] {
     const selection = clipSelectionStore.value;
     const selectedTrackId = trackStore.value?.selectedTrackId;
@@ -439,7 +443,6 @@ function decorateEntities(
         ...(selection?.selectedClipIds ?? []),
         ...(selection?.selectedClipId ? [selection.selectedClipId] : []),
     ]);
-    const brief = projectStore.value?.productionBrief;
     const rolesByTrack = new Map<string, string[]>();
     for (const role of brief?.trackRoles ?? []) {
         rolesByTrack.set(role.trackId, [...(rolesByTrack.get(role.trackId) ?? []), role.role]);
@@ -468,6 +471,7 @@ function decorateEntities(
         const decorated: SemanticIndexEntity = {
             ...entity,
             roles,
+            ...(entity.kind === 'track' ? { canonicalRole: canonicalRoles.get(entity.id) } : {}),
             tags: [...new Set([...entity.tags, ...roles])],
             selected: selectedIds.has(entity.id),
             locked: entity.locked || protectedScopes.some((scope) => isScopeForEntity(scope, entity)),
@@ -490,11 +494,20 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
     const historyState = actionHistoryStore.value;
     const projectState = projectStore.value;
     const selectionState = clipSelectionStore.value;
+    const notesByClipId = midiStore.value?.notesByClipId;
+    const canonicalRoles = new Map(
+        (trackState?.tracks ?? []).map((track) => [
+            track.id,
+            getCanonicalTrackRole({ track, trackRoles: projectState?.productionBrief.trackRoles, notesByClipId }),
+        ])
+    );
     const routingTrackProjection = JSON.stringify(
         trackState?.tracks.map((track) => ({ id: track.id, outputId: track.outputId, sends: track.sends })) ?? []
     );
 
-    const rawTracks = refreshPartition('tracks', [trackState?.tracks], buildTrackEntities);
+    const rawTracks = refreshPartition('tracks', [trackState?.tracks], () =>
+        buildTrackEntities(trackState?.tracks ?? [])
+    );
     const sections = refreshPartition('sections', [markerState], buildSectionEntities);
     const automation = refreshPartition('automation', [automationState], buildAutomationEntities);
     const routing = refreshPartition('routing', [routingTrackProjection, sidechainState], buildRoutingEntities);
@@ -529,10 +542,22 @@ function readIndexOnce(projectRevisionToken: string): SemanticProjectIndexSnapsh
         buildSelectionEntities
     );
 
-    const tracks = decorateEntities(rawTracks, automation, routing);
-    const decoratedSections = decorateEntities(sections, automation, routing);
-    const decoratedAutomation = decorateEntities(automation, automation, routing);
-    const decoratedBrief = decorateEntities(brief, automation, routing);
+    const tracks = decorateEntities(rawTracks, automation, routing, canonicalRoles, projectState?.productionBrief);
+    const decoratedSections = decorateEntities(
+        sections,
+        automation,
+        routing,
+        canonicalRoles,
+        projectState?.productionBrief
+    );
+    const decoratedAutomation = decorateEntities(
+        automation,
+        automation,
+        routing,
+        canonicalRoles,
+        projectState?.productionBrief
+    );
+    const decoratedBrief = decorateEntities(brief, automation, routing, canonicalRoles, projectState?.productionBrief);
     const revision = parseRevision(projectRevisionToken);
     const revisionToken = createBoundedRevisionToken(
         projectRevisionToken,

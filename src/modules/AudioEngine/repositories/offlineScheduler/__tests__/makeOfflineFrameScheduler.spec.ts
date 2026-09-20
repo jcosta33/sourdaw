@@ -197,7 +197,7 @@ describe('makeOfflineFrameScheduler — one suspend per quantised frame', () => 
         expect(drifted).toHaveBeenCalledTimes(1);
     });
 
-    it('registers the suspend at frame / sampleRate for the quantised frame', () => {
+    it('passes the caller raw frame to suspend, which the context rounds up itself', () => {
         const { ctx, suspends } = makeContextDouble({ sampleRate: SAMPLE_RATE });
         const schedule = makeOfflineFrameScheduler(ctx);
         const drifted = 0.3 + SUB_FRAME_DRIFT;
@@ -207,8 +207,10 @@ describe('makeOfflineFrameScheduler — one suspend per quantised frame', () => 
         const frame = Math.round(drifted * SAMPLE_RATE);
         expect(frame).toBe(14_400);
         expect(suspends).toHaveLength(1);
+        // The time passed is the caller's raw frame (14400/48000), not the
+        // quantised 14464/48000; the context rounds that time up to the render
+        // quantum itself.
         expect(suspends[0]!.time).toBe(frame / SAMPLE_RATE);
-        // The requested time is quantised down onto its frame's exact time.
         expect(suspends[0]!.time).not.toBe(drifted);
     });
 });

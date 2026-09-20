@@ -1,5 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { rearmInputMonitoring } from '#/modules/Arrangement/useCases';
 import { forgetProjectLatchedPedals, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
@@ -32,10 +34,17 @@ function restoreAudioGraph(templateId: string): void {
     } catch (error) {
         logger.warn(`[createFromTemplate] Failed to reset graph while recovering "${templateId}":`, error);
     }
+    let stripsRestored = false;
     try {
-        ensureTrackStrips();
+        stripsRestored = ensureTrackStrips().status === 'ready';
     } catch (error) {
         logger.warn(`[createFromTemplate] Failed to rebuild graph while recovering "${templateId}":`, error);
+    }
+    if (stripsRestored) {
+        // The reset above released every monitor capture, so the previous
+        // project's 'on' tracks must re-arm against the strips just rebuilt.
+        // The law settles every start, so a refusal cannot fail this restore.
+        void rearmInputMonitoring(trackStore.value?.tracks ?? []);
     }
 }
 

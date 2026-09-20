@@ -105,6 +105,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        characterTags: ['tape'],
         tail: {
             kind: 'feedbackLoop',
             feedbackParameterId: 'feedback',
@@ -145,6 +146,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        characterTags: ['spring'],
         tail: { kind: 'decaySeconds', parameterId: 'decay', defaultSeconds: 2 },
         parameters: [
             // 8 s, not 10: the DSP's own `decay` slider stops at 8, so a stored

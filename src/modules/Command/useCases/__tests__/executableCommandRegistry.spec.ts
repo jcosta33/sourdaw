@@ -1054,11 +1054,18 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setDeviceParameter',
-        'Adjust a parameter on an existing device.',
+        'Adjust one existing device parameter using its exact context device ID, parameter ID, native unit, and range (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold).',
         {
             deviceId: { type: 'string' },
-            paramId: { type: 'string', description: 'Parameter name (e.g. "frequency", "ratio", "mix", "threshold")' },
-            value: { type: 'number', description: 'Parameter value (range depends on the parameter)' },
+            paramId: {
+                type: 'string',
+                description:
+                    'Exact parameter ID from context (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold)',
+            },
+            value: {
+                type: 'number',
+                description: 'Value in the exact native unit and range declared for that context parameter',
+            },
         },
         ['deviceId', 'paramId', 'value'],
         'bounded-reversible',
@@ -2483,7 +2490,14 @@ const EXPECTED_GROUNDING = [
             { argument: 'deviceId', capability: 'device' },
             { argument: 'paramId', capability: 'device-parameter', dependsOn: 'deviceId' },
         ],
-        valueRules: [{ argument: 'value', kind: 'number-if-present', qualitativeDirection: 'device-parameter' }],
+        valueRules: [
+            {
+                argument: 'value',
+                kind: 'number-if-present',
+                qualitativeDirection: 'device-parameter',
+                descriptorUnitSource: { deviceIdArgument: 'deviceId', paramIdArgument: 'paramId' },
+            },
+        ],
     },
     {
         actionType: 'bypassDevice',

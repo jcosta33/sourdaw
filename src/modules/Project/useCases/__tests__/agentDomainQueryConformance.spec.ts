@@ -10,9 +10,12 @@ import {
     createTrack,
     deleteUserPreset,
     getAgentBuiltinDeviceFactoryManifest,
+    getAgentPresetDiscoveryManifest,
     getArrangementHandlers,
+    getPluginById,
     getFactoryPresets,
     getUserPresets,
+    getDeviceContractVersionForCommand,
     saveCurrentAsPreset,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
@@ -95,6 +98,17 @@ const SCANNED_PLUGINS: ScannedPluginRecord[] = [
     buildScannedPlugin({ id: 'plugin-shaper', name: 'Shaper', descriptorId: 'com.discovery.shaper' }),
     buildScannedPlugin({ id: 'plugin-widener', name: 'Widener', descriptorId: 'com.discovery.widener' }),
 ];
+
+const presetDiscoveryManifestOverride = vi.hoisted(() => ({ value: null as unknown }));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        getAgentPresetDiscoveryManifest: () =>
+            presetDiscoveryManifestOverride.value ?? actual.getAgentPresetDiscoveryManifest(),
+    };
+});
 
 function seedProject(): void {
     const drums = createTrack({ id: 'track-drums', name: 'Drums', kind: 'audio' });
@@ -325,6 +339,7 @@ describe('agent domain query conformance', () => {
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
     beforeEach(async () => {
+        presetDiscoveryManifestOverride.value = null;
         // jsdom ships no Web Locks API, and the durable reset the project
         // bootstrap performs sequences on it.
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
@@ -602,6 +617,75 @@ describe('agent domain query conformance', () => {
         expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
     });
 
+    it('matches owner-published character tags when the display name does not contain the character', () => {
+        const preset = expectReceipt(queryAgentDiscovery({ domain: 'preset', filters: { text: 'tube' } }));
+        const device = expectReceipt(queryAgentDiscovery({ domain: 'device', filters: { text: 'tape' } }));
+
+        expect(preset.items.find((item) => item.id === 'fx-dist-warm-overdrive')).toMatchObject({
+            name: 'Warm Overdrive',
+            evidence: {
+                tags: expect.arrayContaining(['tube']),
+                deviceTypes: ['builtin-distortion'],
+            },
+        });
+        expect(device.items.find((item) => item.id === 'faust-tape-delay')).toMatchObject({
+            evidence: { characterTags: ['tape'] },
+        });
+    });
+
+    it.each([
+        { label: 'metadata-only', version: 'preset-v1:metadata-only-change' },
+        { label: 'parameter-only', version: 'preset-v1:parameter-only-change' },
+    ])('rejects an older preset cursor after a $label owner reversion', ({ version }) => {
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'preset', page: { limit: 1 } }));
+        const manifest = getAgentPresetDiscoveryManifest();
+        const target = manifest.find((preset) => preset.id === 'fx-rev-plate');
+        if (!target || first.nextCursor === null) {
+            throw new Error('Expected a page cursor and the authored plate preset.');
+        }
+        presetDiscoveryManifestOverride.value = manifest.map((preset) => {
+            if (preset.id !== target.id) {
+                return preset;
+            }
+            const tags = [...preset.tags];
+            if (version.includes('metadata')) {
+                tags.push('metadata-probe');
+            }
+            return { ...preset, tags, version };
+        });
+
+        expect(() => queryAgentDiscovery({ domain: 'preset', page: { limit: 1, cursor: first.nextCursor! } })).toThrow(
+            'Invalid or stale semantic query cursor'
+        );
+    });
+
+    it('rejects an older device cursor when only owner-authored character tags change', () => {
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'device', page: { limit: 1 } }));
+        const descriptor = getPluginById('builtin-distortion');
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find(
+            (device) => device.type === 'builtin-distortion'
+        );
+        if (!descriptor || !beforeFactory || first.nextCursor === null) {
+            throw new Error('Expected a page cursor and the built-in distortion descriptor.');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const commandVersion = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const changed = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+            expect(changed?.descriptorVersion).toBe(commandVersion);
+            expect(changed?.descriptorVersion).toBe(beforeFactory.descriptorVersion);
+            expect(changed?.characterVersion).not.toBe(beforeFactory.characterVersion);
+            expect(() =>
+                queryAgentDiscovery({ domain: 'device', page: { limit: 1, cursor: first.nextCursor! } })
+            ).toThrow('Invalid or stale semantic query cursor');
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
+    });
+
     it('marks a built-in device unavailable when no runtime factory claims its type', () => {
         vi.mocked(getAgentBuiltinDeviceRuntimeManifest).mockReturnValueOnce([]);
 
@@ -648,6 +732,7 @@ describe('agent domain query conformance', () => {
 
         expect(contracts.discovery.operations.map((operation) => operation.name)).toEqual([...AGENT_DISCOVERY_DOMAINS]);
         expect(contracts.discovery.capabilities).toContain('owner-catalog-discovery');
+        expect(contracts.discovery.capabilities).toContain('character-tag-filtering');
         expect(contracts.query.operations.map((operation) => operation.name)).toEqual([
             ...SEMANTIC_PROJECT_QUERY_TYPES,
         ]);

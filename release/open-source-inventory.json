@@ -166,7 +166,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:df7f22dfb518328a0665e7ab55a3b6b1bda29fca0fa62c53c737d81fccd35eed:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:90750868e0881f83b5b7923ff8576a43c23e26f3eb313e140e248292df188f13:release/dependency-license-proofs.json"
+                "sha256:731ad44a5be8fc9943650b46e18332c2446e4d7730f5f9d38f9592358480d858:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1201,8 +1201,8 @@
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
                 "tracked-set-sha256:8fe1e80d6328473eff08f2071db77a67845c9a803181b67d248b0d0237246376:grand-boule-live-runtime",
-                "tracked-set-sha256:bd468599f5447e3d300bd6cb98f7a7be90a7c0cb32c12892156973e932853c58:grand-boule-project-state",
-                "tracked-set-sha256:d57e235550ad746a11808650e7b7bca8b3984f9217bb8d41de243a4e12030d41:grand-boule-offline-composition",
+                "tracked-set-sha256:784683fbe620b112509cd3a572c197b0706564f12ddea0e9d89327c7988f7723:grand-boule-project-state",
+                "tracked-set-sha256:de59599abe0b2cf1a22ab60de69f3ca9fcd0b589a8f791f4346fc1540d19e04b:grand-boule-offline-composition",
                 "tracked-set-sha256:e65cf347580b7d21da3bfd479b45dc7eead1647435c8c0e24fedcd782ec2f4d9:grand-boule-release-proof"
             ],
             "licenses": [
@@ -1694,7 +1694,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "58cd16baf93def73f583440649180064c1701e78dfe9764aedceda0076e88497"
+            "sha256": "e795d5716934e06814ee4fcfa0c19a605a44dc67306ee918a854a86bec33a4e3"
         },
         {
             "path": "server/package.json",
@@ -1727,20 +1727,89 @@
     ],
     "externalReferences": [
         {
-            "surface": "project-license-distribution",
-            "file": "scripts/dependencyLicenseReport.ts",
-            "value": "https://github.com/rust-lang/crates.io-index"
+            "surface": "cloud-ai-providers",
+            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
+            "value": "https://api.anthropic.com"
         },
         {
-            "surface": "project-license-distribution",
-            "file": "scripts/dependencyLicenseReport.ts",
-            "value": "https://index.crates.io/"
+            "surface": "cloud-ai-providers",
+            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
+            "value": "https://api.openai.com"
         },
         {
-            "surface": "project-license-distribution",
-            "file": "scripts/dependencyLicenseReport.ts",
-            "value": "https://registry.npmjs.org/${slot}/-/${slot}-${slot}.tgz",
-            "templateSha256": "7e8d6289056275cf7b0f11ed3e5143bbf19fa89cbbe4de4ab4dea3624bc4dd30"
+            "surface": "cloud-ai-providers",
+            "file": "src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts",
+            "value": "https://api.anthropic.com"
+        },
+        {
+            "surface": "cloud-ai-providers",
+            "file": "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
+            "value": "https://api.openai.com/v1"
+        },
+        {
+            "surface": "collaboration-server",
+            "file": "server/collab-server.ts",
+            "value": "runtime:WebSocketServer"
+        },
+        {
+            "surface": "collaboration-stun",
+            "file": "src/modules/Collaboration/repositories/peerConnection.ts",
+            "value": "stun:stun.l.google.com:19302"
+        },
+        {
+            "surface": "collaboration-stun",
+            "file": "src/modules/Collaboration/repositories/peerConnection.ts",
+            "value": "stun:stun1.l.google.com:19302"
+        },
+        {
+            "surface": "community-links",
+            "file": "crates/daw-plugin-host/src/clap_host.rs",
+            "value": "https://sourdaw.app"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw/discussions"
+        },
+        {
+            "surface": "community-links",
+            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
+            "value": "https://github.com/jcosta33/sourdaw/issues"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "electron/protocol.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/"
+        },
+        {
+            "surface": "ddsp-models",
+            "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://*.hf.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://*.huggingface.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "desktop-shell",
+            "file": "electron/protocol.ts",
+            "value": "https://raw.githubusercontent.com"
         },
         {
             "surface": "desktop-shell",
@@ -1771,14 +1840,14 @@
         {
             "surface": "desktop-shell",
             "file": "scripts/checkElectronRuntimeProvenance.ts",
-            "value": "https://chromium.googlesource.com/chromium/src/+/refs/tags/${slot}?format=JSON",
-            "templateSha256": "254cb082f18652a0938eb20052c5a83f8407af4c53db8f7eb887876f663bdfea"
+            "value": "https://chromium.googlesource.com/chromium/src/+/${slot}/DEPS?format=TEXT",
+            "templateSha256": "3017f6722da4b287495058fc18ef2372a13d809b358c3ed483a2734cf8da6742"
         },
         {
             "surface": "desktop-shell",
             "file": "scripts/checkElectronRuntimeProvenance.ts",
-            "value": "https://chromium.googlesource.com/chromium/src/+/${slot}/DEPS?format=TEXT",
-            "templateSha256": "3017f6722da4b287495058fc18ef2372a13d809b358c3ed483a2734cf8da6742"
+            "value": "https://chromium.googlesource.com/chromium/src/+/refs/tags/${slot}?format=JSON",
+            "templateSha256": "254cb082f18652a0938eb20052c5a83f8407af4c53db8f7eb887876f663bdfea"
         },
         {
             "surface": "desktop-shell",
@@ -1825,45 +1894,9 @@
             "value": "https://github.com/nodejs/node"
         },
         {
-            "surface": "project-source",
-            "file": "scripts/assert-deployment-isolation.sh",
-            "value": "https://$alias/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/assert-deployment-isolation.sh",
-            "value": "https://vercel.com/sso-api"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkLgplRuntimeProvenance.ts",
-            "value": "https://github.com/gideonstele/lamejs"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkLgplRuntimeProvenance.ts",
-            "value": "https://github.com/grame-cncm/faust"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkLgplRuntimeProvenance.ts",
-            "value": "https://github.com/grame-cncm/faustwasm"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkLgplRuntimeProvenance.ts",
-            "value": "https://registry.npmjs.org/${slot}/${slot}",
-            "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
-        },
-        {
-            "surface": "mp3-encoder",
-            "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/gideonstele/lamejs"
-        },
-        {
-            "surface": "mp3-encoder",
-            "file": "public/legal/SOURCES.json",
-            "value": "https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz"
+            "surface": "faust-runtime",
+            "file": "public/faust/libfaust-wasm.js",
+            "value": "runtime:WebSocketServer"
         },
         {
             "surface": "faust-runtime",
@@ -1886,19 +1919,10 @@
             "value": "https://github.com/grame-cncm/faustwasm/archive/a1ae243d885d6494409a2a4a227cbdd2a6833edf.tar.gz"
         },
         {
-            "surface": "community-links",
-            "file": "crates/daw-plugin-host/src/clap_host.rs",
-            "value": "https://sourdaw.app"
-        },
-        {
-            "surface": "faust-runtime",
-            "file": "public/faust/libfaust-wasm.js",
-            "value": "runtime:WebSocketServer"
-        },
-        {
-            "surface": "collaboration-server",
-            "file": "server/collab-server.ts",
-            "value": "runtime:WebSocketServer"
+            "surface": "kokoro-model",
+            "file": "src/modules/BrowserAi/models/KokoroArtifactManifest.ts",
+            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/${slot}",
+            "templateSha256": "439de0d3111c11751a7cdb270a5ed577de628e32c85049c906d5619db6199da7"
         },
         {
             "surface": "levain-sample-bank",
@@ -1930,229 +1954,14 @@
             "value": "https://github.com/sgossner/VSCO-2-CE"
         },
         {
-            "surface": "cloud-ai-providers",
-            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
-            "value": "https://api.anthropic.com"
+            "surface": "mp3-encoder",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/gideonstele/lamejs"
         },
         {
-            "surface": "cloud-ai-providers",
-            "file": "crates/sourdaw-native/src/commands/provider_gateway.rs",
-            "value": "https://api.openai.com"
-        },
-        {
-            "surface": "cloud-ai-providers",
-            "file": "src/modules/AiRuntime/repositories/cloudLlm/setCloudProviderConfig.ts",
-            "value": "https://api.anthropic.com"
-        },
-        {
-            "surface": "webllm-qwen-artifacts",
-            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
-            "value": "https://huggingface.co"
-        },
-        {
-            "surface": "webllm-qwen-artifacts",
-            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
-            "value": "https://raw.githubusercontent.com"
-        },
-        {
-            "surface": "webllm-qwen-artifacts",
-            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
-            "value": "https://huggingface.co"
-        },
-        {
-            "surface": "webllm-qwen-artifacts",
-            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
-            "value": "https://raw.githubusercontent.com"
-        },
-        {
-            "surface": "webllm-qwen-artifacts",
-            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
-            "value": "https://huggingface.co"
-        },
-        {
-            "surface": "webllm-qwen-artifacts",
-            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
-            "value": "https://raw.githubusercontent.com"
-        },
-        {
-            "surface": "desktop-shell",
-            "file": "electron/protocol.ts",
-            "value": "https://huggingface.co"
-        },
-        {
-            "surface": "desktop-shell",
-            "file": "electron/protocol.ts",
-            "value": "https://*.huggingface.co"
-        },
-        {
-            "surface": "desktop-shell",
-            "file": "electron/protocol.ts",
-            "value": "https://*.hf.co"
-        },
-        {
-            "surface": "desktop-shell",
-            "file": "electron/protocol.ts",
-            "value": "https://raw.githubusercontent.com"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/githubAppIdentity.ts",
-            "value": "https://api.github.com/app"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/githubAppIdentity.ts",
-            "value": "https://api.github.com/app/installations/${slot}/access_tokens",
-            "templateSha256": "76200d27ac9ab019dcfb19f05709725ad0be2d0093145bbb300ced8d3b1306ab"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/githubAppIdentity.ts",
-            "value": "https://api.github.com/users/${slot}",
-            "templateSha256": "1f9fa25ac79d9ca6896d7b374ba392cc4aeabc57e1463a488bdf0c3100ca8dac"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/githubAppIdentity.ts",
-            "value": "https://github.com/${slot}.git",
-            "templateSha256": "23b8ac49f564e78e90b87a229539dc6e2563b9a6f1a1b5d4f098b277a7240b8e"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/githubAppIdentity.ts",
-            "value": "https://x-access-token:${slot}@github.com/${slot}.git",
-            "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/run-gitleaks-history-scan.sh",
-            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
-            "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
-            "templateSha256": "4639ee5ab8e36f77880dd75717d49cccac4c92c4b919c570f5449d6ea2aec7a8"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
-            "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://app.sourdaw.studio/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://moved.sourdaw.studio/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://no-coep.sourdaw.studio/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://popups.sourdaw.studio/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://restricted.vercel.app/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Falso-restricted.vercel.app%2F"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://vercel.com/login"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/resolveVercelProductionDeployment.ts",
-            "value": "https://api.vercel.com/v7/deployments"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/resolveVercelProductionDeployment.ts",
-            "value": "https://api.github.com/repos/${slot}/compare/${slot}...${slot}",
-            "templateSha256": "7470486018f472ccc4df09937895331e18f6047d895ad2a177b2329ed026c6d5"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/resolveVercelDeploymentAliases.ts",
-            "value": "https://api.vercel.com/v13/deployments"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/linkVercelCliProject.ts",
-            "value": "https://api.vercel.com/v9/projects"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/reconcileTrackerIssue.ts",
-            "value": "https://api.github.com/repos/${slot}",
-            "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
-        },
-        {
-            "surface": "cloud-ai-providers",
-            "file": "src/modules/AiRuntime/useCases/cloudApiManagement/configureCloudProvider.ts",
-            "value": "https://api.openai.com/v1"
-        },
-        {
-            "surface": "kokoro-model",
-            "file": "src/modules/BrowserAi/models/KokoroArtifactManifest.ts",
-            "value": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/${slot}",
-            "templateSha256": "439de0d3111c11751a7cdb270a5ed577de628e32c85049c906d5619db6199da7"
-        },
-        {
-            "surface": "ddsp-models",
-            "file": "src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
-        },
-        {
-            "surface": "ddsp-models",
-            "file": "electron/protocol.ts",
-            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkReleaseInventory.ts",
-            "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkReleaseInventory.ts",
-            "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/checkReleaseInventory.ts",
-            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
-        },
-        {
-            "surface": "collaboration-stun",
-            "file": "src/modules/Collaboration/repositories/peerConnection.ts",
-            "value": "stun:stun.l.google.com:19302"
-        },
-        {
-            "surface": "collaboration-stun",
-            "file": "src/modules/Collaboration/repositories/peerConnection.ts",
-            "value": "stun:stun1.l.google.com:19302"
+            "surface": "mp3-encoder",
+            "file": "public/legal/SOURCES.json",
+            "value": "https://github.com/gideonstele/lamejs/archive/1fb0ef5fa177413107e2e107d054a9b994e3f79c.tar.gz"
         },
         {
             "surface": "online-sample-sources",
@@ -2230,39 +2039,9 @@
             "value": "https://theremin.music.uiowa.edu/MIS.html"
         },
         {
-            "surface": "community-links",
-            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "community-links",
-            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
-            "value": "https://github.com/jcosta33/sourdaw/discussions"
-        },
-        {
-            "surface": "community-links",
-            "file": "src/modules/WorkspaceShell/presentations/projectLinks.ts",
-            "value": "https://github.com/jcosta33/sourdaw/issues"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/daw-dsp/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/daw-wasm-decoder/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/proof-chamber/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
-        },
-        {
-            "surface": "project-wasm",
-            "file": "public/wasm/scoring/package.json",
-            "value": "https://github.com/jcosta33/sourdaw"
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://github.com/rust-lang/crates.io-index"
         },
         {
             "surface": "project-license-distribution",
@@ -2290,10 +2069,236 @@
             "value": "https://github.com/spdx/license-list-data/blob/v3.28.0/text/Unlicense.txt"
         },
         {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://index.crates.io/"
+        },
+        {
+            "surface": "project-license-distribution",
+            "file": "scripts/dependencyLicenseReport.ts",
+            "value": "https://registry.npmjs.org/${slot}/-/${slot}-${slot}.tgz",
+            "templateSha256": "7e8d6289056275cf7b0f11ed3e5143bbf19fa89cbbe4de4ab4dea3624bc4dd30"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://$alias/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://vercel.com/sso-api"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/gideonstele/lamejs"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faust"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://github.com/grame-cncm/faustwasm"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkLgplRuntimeProvenance.ts",
+            "value": "https://registry.npmjs.org/${slot}/${slot}",
+            "templateSha256": "02a95343498392e262fd383338c97f045485a631775cadc86192aadc4cdbd478"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/checkpoints/README.md"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://raw.githubusercontent.com/magenta/magenta-js/0692eb2b79681f062c6b6dd53a0361967f298caa/music/src/ddsp/model.ts"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkReleaseInventory.ts",
+            "value": "https://storage.googleapis.com/magentadata/js/checkpoints/ddsp"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/checkStancesRecord.ts",
+            "value": "https://api.typesafe.ai/v1/systemone"
+        },
+        {
             "surface": "project-source",
             "file": "scripts/dependencyLicenseReport.ts",
             "value": "https://crates.io/api/v1/crates/${slot}/${slot}/download",
             "templateSha256": "76033b3c969dd78f5a5033be69b396efae1e6de3ab36abb07552ce9c721667ae"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/app"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/app/installations/${slot}/access_tokens",
+            "templateSha256": "76200d27ac9ab019dcfb19f05709725ad0be2d0093145bbb300ced8d3b1306ab"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://api.github.com/users/${slot}",
+            "templateSha256": "1f9fa25ac79d9ca6896d7b374ba392cc4aeabc57e1463a488bdf0c3100ca8dac"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://github.com/${slot}.git",
+            "templateSha256": "23b8ac49f564e78e90b87a229539dc6e2563b9a6f1a1b5d4f098b277a7240b8e"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/githubAppIdentity.ts",
+            "value": "https://x-access-token:${slot}@github.com/${slot}.git",
+            "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/linkVercelCliProject.ts",
+            "value": "https://api.vercel.com/v9/projects"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/reconcileTrackerIssue.ts",
+            "value": "https://api.github.com/repos/${slot}",
+            "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelDeploymentAliases.ts",
+            "value": "https://api.vercel.com/v13/deployments"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelProductionDeployment.ts",
+            "value": "https://api.github.com/repos/${slot}/compare/${slot}...${slot}",
+            "templateSha256": "7470486018f472ccc4df09937895331e18f6047d895ad2a177b2329ed026c6d5"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelProductionDeployment.ts",
+            "value": "https://api.vercel.com/v7/deployments"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/run-gitleaks-history-scan.sh",
+            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
+            "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://app.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
+            "templateSha256": "4639ee5ab8e36f77880dd75717d49cccac4c92c4b919c570f5449d6ea2aec7a8"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
+            "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://moved.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://no-coep.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://popups.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://restricted.vercel.app/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/login"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Falso-restricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/daw-dsp/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/daw-wasm-decoder/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/proof-chamber/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "project-wasm",
+            "file": "public/wasm/scoring/package.json",
+            "value": "https://github.com/jcosta33/sourdaw"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactAdmission.ts",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
+            "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "webllm-qwen-artifacts",
+            "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
+            "value": "https://raw.githubusercontent.com"
         }
     ],
     "marks": [

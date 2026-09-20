@@ -240,10 +240,6 @@ function boundedValues<TValue>(values: readonly TValue[], label: string, warning
 function createProjectSummary(snapshot: SemanticProjectIndexSnapshot, warnings: string[]): SemanticQueryItem {
     const project = projectStore.value;
     const transport = snapshot.tempo.find((item) => item.id === 'tempo-base');
-    const rolesByTrack = new Map<string, string[]>();
-    for (const role of project?.productionBrief.trackRoles ?? []) {
-        rolesByTrack.set(role.trackId, [...(rolesByTrack.get(role.trackId) ?? []), role.role]);
-    }
     const tracks = boundedValues(
         snapshot.tracks
             .filter((entity) => entity.kind === 'track')
@@ -251,7 +247,8 @@ function createProjectSummary(snapshot: SemanticProjectIndexSnapshot, warnings: 
                 id: entity.id,
                 name: entity.name,
                 kind: entity.trackKind,
-                roles: rolesByTrack.get(entity.id) ?? [],
+                roles: entity.roles,
+                canonicalRole: entity.canonicalRole,
                 deviceTypes: entity.deviceTypes,
                 outputId: entity.outputId,
                 sendBusIds: entity.sendBusIds,

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { projectStore, type ProjectStoreState } from '../../../../stores/projectStore';
 import { createFromTemplate } from '../createFromTemplate';
 
+type MonitoredTrack = { id: string; inputMonitoring: 'on' | 'off' | 'auto'; inputId: string | null };
+
 const mocks = vi.hoisted(() => ({
     acquireRuntimeTransition: vi.fn(),
     clearUndoHistory: vi.fn(),
@@ -17,11 +19,13 @@ const mocks = vi.hoisted(() => ({
     unloadPlugin: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
+    rearmInputMonitoring: vi.fn(),
     resetAudioGraph: vi.fn(),
     resetCrdtProject: vi.fn(),
     finalize: vi.fn(),
     /** The last value written through the project store double. */
     projectState: { value: null as Partial<ProjectStoreState> | null },
+    trackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
     resetModuleStoresToDefault: vi.fn(),
     setAutoSaveHandle: vi.fn(),
     startCrdtAutoSave: vi.fn(),
@@ -49,6 +53,18 @@ vi.mock('../helpers', () => ({
             create: mocks.createPopSongTemplate,
         },
     ],
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    rearmInputMonitoring: mocks.rearmInputMonitoring,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -180,6 +196,9 @@ describe('createFromTemplate', () => {
             isCurrent: mocks.transactionIsCurrent,
             canActivate: mocks.transactionCanActivate,
         });
+        mocks.ensureTrackStrips.mockReturnValue({ status: 'ready', externalPluginActivations: [] });
+        mocks.rearmInputMonitoring.mockResolvedValue(undefined);
+        mocks.trackStoreValue.value = null;
     });
 
     it('rejects an unknown template before dispatch', async () => {
@@ -346,6 +365,44 @@ describe('createFromTemplate', () => {
         expect(mocks.compactProject).not.toHaveBeenCalled();
         expect(mocks.finalize).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('re-arms input monitoring for an on track after restoring the previous graph', async () => {
+        mocks.resetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'reset-active' });
+        mocks.trackStoreValue.value = {
+            tracks: [
+                { id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' },
+                { id: 'off-1', inputMonitoring: 'off', inputId: 'in-2' },
+            ],
+            selectedTrackId: null,
+        };
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        // The reset released the capture and the abort rebuilt the previous
+        // project's strips, so the restore hands the previous project's tracks
+        // to the shared re-arm law — the single predicate that arms the 'on'
+        // track and leaves the 'off' track alone.
+        expect(mocks.rearmInputMonitoring).toHaveBeenCalledOnce();
+        expect(mocks.rearmInputMonitoring).toHaveBeenCalledWith([
+            { id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' },
+            { id: 'off-1', inputMonitoring: 'off', inputId: 'in-2' },
+        ]);
+    });
+
+    it('does not re-arm when the previous graph rebuild fails', async () => {
+        mocks.resetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'reset-active' });
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' }],
+            selectedTrackId: null,
+        };
+        mocks.ensureTrackStrips.mockImplementationOnce(() => {
+            throw new Error('strip rebuild failed');
+        });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.rearmInputMonitoring).not.toHaveBeenCalled();
     });
 
     // C2 — nothing of the template reached storage, so the reset cannot

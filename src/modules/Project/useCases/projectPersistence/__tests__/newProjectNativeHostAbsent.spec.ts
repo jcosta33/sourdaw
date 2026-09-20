@@ -95,6 +95,7 @@ vi.mock('../helpers/runProjectLoadTransaction', async () => {
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
     getPluginById: vi.fn(),
+    rearmInputMonitoring: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
