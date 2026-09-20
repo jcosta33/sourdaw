@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_ed5aa36a3ba357::t_49ba35b202f11b 3-4,537-540,546,549-550,553-572
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineContextPreparation.spec.ts
+  s_ed5aa36a3ba357::t_49ba35b202f11b 17-20,22-27,34-35,61-62,73-78,80-111,127-128,134-135,137,151-155
+  s_ed5aa36a3ba357::t_1f93cf1d28619b 72,114-122
+  s_ed5aa36a3ba357::t_b7e622c0552a9c 79,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b884d3a19df5b98b568945aa1f5f37c08da94b2b",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
