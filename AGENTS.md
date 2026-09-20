@@ -83,7 +83,9 @@ set in the bundle's `stances.json` before dispatch, one line per stance naming t
 that admits it — the input or state that breaks — never the path the diff touches; as each draw
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
-substance before acceptance.
+substance before acceptance. `pnpm stances:check <bundle>` tests each admission line with a typed
+judgment and fails lines that name touched paths instead of failure modes; run it before dispatch
+and repair what it fails.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,
