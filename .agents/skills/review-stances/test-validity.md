@@ -333,3 +333,11 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.
+
+### 2026-09-20 — compatible choice-count rejection lost billed usage (introduced by PR #4407)
+
+PR #4407 kept an OpenAI-compatible response with zero or multiple choices as a typed, retryable protocol failure, but its fixture stopped at adapter rejection and never proved the already-read usage reached run billing.
+
+Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/cost fixture, so it could preserve rejection identity while dropping the paid result.
+
+Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
