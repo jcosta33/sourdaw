@@ -194,9 +194,14 @@ describe('renderOffline — cancelling during offline instrument setup (#4440)',
         expect(setupSignal?.aborted).toBe(false);
 
         const { cancelExport } = await import('../offlineRender/exportCancellation');
+        // The bound is the discriminator: without the threading, the same
+        // assertions would all pass at the 30-second deadline instead of at
+        // Cancel, and the render would unwind only after that wait.
+        const cancelledAt = Date.now();
         cancelExport();
 
         await expect(rendering).rejects.toThrow('Export cancelled');
+        expect(Date.now() - cancelledAt).toBeLessThan(5_000);
         // The fetch-side signal aborted at the moment of cancellation — the
         // 30-second deadline was nowhere near firing.
         expect(setupSignal?.aborted).toBe(true);

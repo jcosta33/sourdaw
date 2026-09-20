@@ -416,7 +416,7 @@ export const buildDeviceChain = inject({ logger })(
             let prev: AudioNode = inputNode;
 
             for (const device of activeDevices) {
-                let strategy: AudioDeviceStrategy;
+                let strategy: AudioDeviceStrategy | undefined;
                 let releaseWithheld = false;
                 // Asked before construction, and deliberately not folded into
                 // the catch below. `findReleasedNativeDspDeviceFactory` returns
@@ -477,7 +477,22 @@ export const buildDeviceChain = inject({ logger })(
                         // render that threaded one can take this exit, so the
                         // freeze path's degrade contract is untouched.
                         if (context.cancellationSignal?.aborted) {
+                            // The interrupted device's own strategy is destroyed here
+                            // too: it was built (createDevice resolved) but never
+                            // reached `entries`, and no caller-side teardown ever
+                            // sees it — the backend registers a strip's entries only
+                            // after this whole build resolves. Metered native nodes
+                            // hold one of the 64 telemetry slots from construction
+                            // until destroy, so skipping this leaks a slot per
+                            // cancelled export (#4483 review).
                             releaseBuiltStrategies(entries, logger);
+                            try {
+                                strategy?.destroy?.();
+                            } catch {
+                                // A cancelled render must still unwind; a device that
+                                // throws on teardown cannot be allowed to mask the
+                                // cancellation with its own failure.
+                            }
                             throw exportCancelled();
                         }
                         // Refuse only for a device the session is actually

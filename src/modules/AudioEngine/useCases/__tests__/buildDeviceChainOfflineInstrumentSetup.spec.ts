@@ -336,9 +336,15 @@ describe('buildDeviceChain offline instrument setup — cancellation (#4440)', (
 
         // Cancel while the setup is still pending: the fetch-side signal the
         // sink received must fire at the moment of cancellation, not at the
-        // 30-second deadline and not at the next between-track checkpoint.
+        // 30-second deadline and not at the next between-track checkpoint. The
+        // wall-clock bound is the discriminator: `setupSignal.aborted` alone is
+        // deadline-satisfiable (30 s of waiting produces the same abort), so a
+        // broken caller-to-setup bridge that unwinds only via the deadline fails
+        // the two-second bound here while still passing every state assertion.
+        const cancelledAt = Date.now();
         controller.abort();
         await expect(pending).rejects.toThrow('Export cancelled');
+        expect(Date.now() - cancelledAt).toBeLessThan(2_000);
         expect(setupSignal?.aborted).toBe(true);
         // The catch that degrades a failed setup to silence must not have run:
         // a cancelled render may not report success over a missing device.
@@ -403,6 +409,47 @@ describe('buildDeviceChain offline instrument setup — cancellation (#4440)', (
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('destroys the interrupted device own strategy on the cancellation unwind (#4483)', async () => {
+        // Cancel lands after createDevice resolved but before the entry reached
+        // `entries`, so no caller-side teardown can see that strategy — the
+        // unwind itself must destroy it or a metered device leaks one of the 64
+        // telemetry slots for the page session.
+        const destroy = vi.fn();
+        creators.createLevainNode.mockResolvedValueOnce({
+            workletNode,
+            ready: Promise.resolve({}),
+            noteOn: vi.fn(),
+            noteOff: vi.fn(),
+            destroy,
+        });
+        let setupStarted: ((value: void) => void) | undefined;
+        setAudioDeviceRuntimeSink({
+            prepareOfflineInstrument: () =>
+                new Promise<void>((resolve) => {
+                    setupStarted = resolve;
+                }),
+        });
+        const { input, output } = makeChainEnds();
+        const controller = new AbortController();
+
+        const pending = buildDeviceChain({} as BaseAudioContext, [makeDevice('levain-1', 'levain')], input, output, {
+            cancellationSignal: controller.signal,
+        });
+
+        for (let attempt = 0; attempt < 100 && setupStarted === undefined; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        expect(setupStarted).toBeDefined();
+
+        controller.abort();
+        // The setup settles only after Cancel — either shape (reject on abort or
+        // a late resolve) unwinds through the discard path; either way the
+        // strategy must be destroyed.
+        setupStarted?.();
+        await expect(pending).rejects.toThrow('Export cancelled');
+        expect(destroy).toHaveBeenCalledTimes(1);
     });
 
     it('keeps degrading a genuinely failed setup when no cancellation signal is threaded', async () => {

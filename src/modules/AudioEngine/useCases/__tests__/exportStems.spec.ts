@@ -592,6 +592,15 @@ describe('exportStems', () => {
             // 'kick' is scheduled twice: once as its own stem, once as the key
             // driving the compressor in the 'bass' stem's context.
             expect(scheduleCountFor('kick')).toBe(2);
+            // The key-source strip carries the stem set's cancellation scope
+            // (#4440): it is a second production strip call, not an afterthought,
+            // and dropping the signal there would strand its instrument setups on
+            // the 30-second deadline.
+            expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ id: 'kick' }),
+                expect.objectContaining({ cancellationSignal: expect.any(AbortSignal) })
+            );
         });
 
         it('keeps the key source out of the stem’s audio, so only the keyed track is heard', async () => {
