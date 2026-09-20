@@ -10,6 +10,19 @@ export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
 export const ORCHESTRATOR_USER_NODE_ID = 'MDQ6VXNlcjg5NzgyNzA=';
 
+/**
+ * The author bot's git commit identity, as `lane:open` stamps it into lane worktrees. GitHub
+ * attributes `users.noreply.github.com` commits by the numeric database id before the `+`, so a
+ * login rename keeps every commit attributed to this App while only the display name drifts until
+ * this constant is updated — verified against squash commits on `origin/main` authored by both the
+ * current slug and the pre-rename slug `jcosta33-author[bot]`, which share database id 318698904.
+ * `lane:open` runs offline by design, so the login here is a constant, not an API read.
+ */
+export const AUTHOR_BOT_DATABASE_ID = 318698904;
+export const AUTHOR_BOT_COMMIT_LOGIN = 'hplovecraft208';
+export const AUTHOR_BOT_COMMIT_NAME = `${AUTHOR_BOT_COMMIT_LOGIN}[bot]`;
+export const AUTHOR_BOT_COMMIT_EMAIL = `${AUTHOR_BOT_DATABASE_ID}+${AUTHOR_BOT_COMMIT_NAME}@users.noreply.github.com`;
+
 export function isOrchestratorUserNodeId(nodeId: string | undefined | null): boolean {
     return nodeId === ORCHESTRATOR_USER_NODE_ID;
 }

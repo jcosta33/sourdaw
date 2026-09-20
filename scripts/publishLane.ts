@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    AUTHOR_BOT_COMMIT_EMAIL,
+    AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
@@ -524,6 +526,26 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
     ];
 }
 
+/** One commit the authorship gate read named: its short sha and the email it is authored as. */
+export type CommitAuthorEmail = {
+    sha: string;
+    email: string;
+};
+
+/**
+ * Object-store rewrites that split what a traversal sees from what a push sends: `git log` follows
+ * the common dir's `info/grafts` file even under `--no-replace-objects`, and the replace-refs
+ * disable applies only to the gate's own read, so every other view — the remote's included — still
+ * honors them. Any lane shell sharing the common dir can write both, so their presence refuses
+ * publication instead of trusting a read the store can contradict.
+ */
+export type ObjectStoreRewrites = {
+    /** Absolute path of the common dir's `info/grafts`, set only while that file exists. */
+    graftsFile: string | undefined;
+    /** How many `refs/replace/*` refs the repository carries. */
+    replaceRefs: number;
+};
+
 /**
  * The three states a remote-tip read can report. `unreadable` is distinct from `absent`: an
  * entirely empty `ls-remote --heads` answer means the remote could not be read (a reachable remote
@@ -541,6 +563,23 @@ export type PublishLanePort = {
     aheadBehind: (lane: string, baseSha: string, headSha: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
+    /**
+     * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
+     * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
+     * the gate sees exactly the objects a push would send.
+     */
+    commitAuthorEmails: (
+        lane: string,
+        deltaBaseSha: string,
+        excludedBaseShas: string[],
+        headSha: string
+    ) => CommitAuthorEmail[];
+    /**
+     * The lane repository's object-store rewrites, resolved in the lane itself before any remote
+     * write: a graft file or replace ref lets the object store show one history to a traversal and
+     * send another to a push, so their presence refuses publication outright.
+     */
+    objectStoreRewrites: (lane: string) => ObjectStoreRewrites;
     headSha: (lane: string) => string;
     remoteBranchSha: (branch: string) => RemoteBranchRead;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
@@ -930,6 +969,122 @@ export const NO_LANE_SUBJECT_FAILURE =
     'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
 
 /**
+ * Gate exactly the commits this publication adds to the remote: `remoteTip..head` when the branch
+ * already exists remotely at an ancestor of head, else the same resolved base the lane subject
+ * derives from, so a stack child gates its own delta rather than its parent's — always excluding
+ * everything the resolved bases (origin/main and any stack parent head) reach, because base-side
+ * commits a lane merged are not the lane's to author; the bases' own publications gate them. Every
+ * remaining commit, merges included, must carry the author App's commit email — the identity lane
+ * worktrees are stamped with at open — and the refusal names each offending commit. Its remedy
+ * cannot rewrite base-side history: the offered rebase is gated on its root dominating every
+ * excluded base, and when no such rewrite exists — as under an open parent head that does not
+ * contain the main commits the lane merged, or a merged parent's pre-squash head that squash
+ * semantics keep off main forever — the refusal prescribes re-creating the named commits.
+ */
+function assertBotAuthoredDelta(
+    lane: ResolvedLane,
+    remoteRead: RemoteBranchRead,
+    comparisonHead: string,
+    baseSha: string,
+    stackParentHead: string | undefined,
+    headSha: string,
+    port: PublishLanePort
+): void {
+    // The publication read the remote before this gate and already refused an unreadable listing,
+    // so the read here is `present` or `absent`: a present remote tip is the delta base exactly as
+    // the undefined-vs-remote-tip split always worked, and an absent branch is a first publication
+    // whose delta base is the comparison head.
+    const deltaBase = remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead;
+    const excludedBaseShas = Array.from(
+        new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
+    );
+    const offending = port
+        .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
+        .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
+    if (offending.length === 0) {
+        return;
+    }
+    // The rebase remedy is safe only when its root already contains every excluded base: then the
+    // rewritten `comparisonHead..head` range holds no base-side commit at all (true for ordinary
+    // lanes, where the root is origin/main itself, and for a parent head that already contains
+    // current main). A stack child under an open parent can merge newer main commits its parent
+    // head does not dominate, and a child of a merged parent retains the parent's pre-squash
+    // commits that main can never reach — rebasing onto the root would re-author those base-side
+    // commits as the App — so the refusal falls back to re-creating the listed commits with the
+    // stamped identity.
+    const offersRebase =
+        remoteRead.kind === 'absent' &&
+        excludedBaseShas
+            .filter((sha) => sha !== comparisonHead)
+            .every((sha) => port.isAncestor(sha, comparisonHead, lane.path));
+    fail(authorshipRefusal(lane.branch, deltaBase, comparisonHead, offending, offersRebase));
+}
+
+/** At most this many offending commits are named one by one before the refusal counts the rest. */
+const MAX_NAMED_OFFENDING_COMMITS = 8;
+
+/**
+ * The refusal names each offending commit and each distinct offending email, states the base-side
+ * exclusion, and prescribes only remedies that cannot replace history the lane does not own: the
+ * rebase is rooted at the comparison base and offered exactly when the remote branch holds none of
+ * the lane's commits and that base dominates every excluded one, so the rewritten range carries no
+ * base-side commit; otherwise, and with a pushed lane history, the named commits must be re-created.
+ * A rewrite rooted at the remote tip would replay base-side commits the lane merged and re-author
+ * them as the App, so the remote tip never roots one.
+ */
+function authorshipRefusal(
+    branch: string,
+    deltaBase: string,
+    comparisonHead: string,
+    offending: CommitAuthorEmail[],
+    offersRebase: boolean
+): string {
+    const distinctEmails = Array.from(new Set(offending.map((commit) => commit.email)))
+        .map(displayCommitAuthorEmail)
+        .join(', ');
+    const namedCommits = offending
+        .slice(0, MAX_NAMED_OFFENDING_COMMITS)
+        .map((commit) => `${commit.sha} ${displayCommitAuthorEmail(commit.email)}`);
+    const more = offending.length - namedCommits.length;
+    if (more > 0) {
+        namedCommits.push(`+${more} more`);
+    }
+    const remedy = offersRebase
+        ? `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' ${comparisonHead}`
+        : 're-create the listed offending commits with the stamped identity';
+    return (
+        `${branch} carries commits above ${deltaBase} authored as ${distinctEmails}; offending commits: ` +
+        `${namedCommits.join(', ')}. Lane commits must be authored as ${AUTHOR_BOT_COMMIT_NAME} ` +
+        `<${AUTHOR_BOT_COMMIT_EMAIL}> through the lane worktree's stamped identity. Commits the resolved ` +
+        "bases (origin/main and any stack parent head) already reach are not the lane's to author and are " +
+        `excluded here. Restamp the lane with pnpm lane:identity, then ${remedy}`
+    );
+}
+
+/**
+ * A graft file or replace ref lets the object store show the gate one history and the push deliver
+ * another: `git log` follows the graft file even under `--no-replace-objects`, and replace refs are
+ * disabled for the gate's read alone, so their presence still splits every other view. Publication
+ * stays refused while either exists; no read the store can contradict decides a push.
+ */
+function objectStoreRewritesRefusal(branch: string, rewrites: ObjectStoreRewrites): string {
+    const grafts = rewrites.graftsFile ?? 'none';
+    return (
+        `refusing publish: ${branch}'s repository carries object-store rewrites that split what a ` +
+        `traversal reads from what a push delivers — info/grafts: ${grafts}, refs/replace/* refs: ` +
+        `${rewrites.replaceRefs}. The authorship gate's read cannot trust an object store that carries ` +
+        'them: git log follows the graft file even with --no-replace-objects, and the replace-refs ' +
+        "disable applies to that read alone, so every other view — the remote's included — still honors " +
+        'them. Delete the graft file or drop the replace refs (git replace -d <sha>), then publish again'
+    );
+}
+
+/** An empty author email renders readably; a bare comma in the refusal would name nothing. */
+function displayCommitAuthorEmail(email: string): string {
+    return email === '' ? '(empty author email)' : email;
+}
+
+/**
  * `git merge-tree --write-tree --name-only` writes the merged tree's object id, then one line per
  * conflicted path, then a blank line before its human-readable conflict commentary. Only the path
  * block names conflicts; the commentary repeats them with explanations, so the parse stops at the
@@ -1129,6 +1284,16 @@ export function publishLane(
             `refusing publication of ${lane.branch}: the remote heads listing did not carry the branch although an open pull request for it exists`
         );
     }
+    // The refusal above proved a present remote tip an ancestor of head, so the delta is exactly
+    // the remote tip..head when the branch exists remotely, and the lane-subject range otherwise.
+    // These run before every remote write, with the rest of the pre-push refusal set: first the
+    // object store must carry no rewrite that could split the gate's read from the push, and only
+    // then can a read over that store decide the authorship gate.
+    const rewrites = port.objectStoreRewrites(lane.path);
+    if (rewrites.graftsFile !== undefined || rewrites.replaceRefs > 0) {
+        fail(objectStoreRewritesRefusal(lane.branch, rewrites));
+    }
+    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, baseSha, stack?.parentHead, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1557,6 +1722,79 @@ function laneSubjectArgs(baseSha: string, headSha: string): string[] {
 }
 
 /**
+ * The authorship gate's read: every commit, merges included, between the delta base and the head,
+ * excluding everything the resolved bases reach — base-side commits are not the lane's to author,
+ * and the bases' own publications gate them. `--no-replace-objects` leads the argv because `git
+ * log` honors `refs/replace/*` while `git push` packs the original objects, so a read that honors
+ * replacements could pass a bot-authored clone while the remote receives the human original.
+ */
+function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
+    return [
+        '--no-replace-objects',
+        'log',
+        '--format=%h %ae',
+        `${deltaBaseSha}..${headSha}`,
+        ...excludedBaseShas.map((sha) => `^${sha}`),
+    ];
+}
+
+function readCommitAuthorEmails(
+    lane: string,
+    deltaBaseSha: string,
+    excludedBaseShas: string[],
+    headSha: string,
+    capture: (args: string[], cwd: string) => string
+): CommitAuthorEmail[] {
+    const lines = capture(commitAuthorEmailArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
+    // The capture ends in exactly one blank line; strip only that one, so a commit whose author
+    // email is genuinely empty survives as an offending value instead of vanishing with a filter.
+    if (lines[lines.length - 1] === '') {
+        lines.pop();
+    }
+    return lines.map(parseCommitAuthorEmail);
+}
+
+/** `%h %ae` splits on the first space; a genuinely empty email leaves the email part empty. */
+function parseCommitAuthorEmail(line: string): CommitAuthorEmail {
+    const separator = line.indexOf(' ');
+    return separator === -1
+        ? { sha: line, email: '' }
+        : { sha: line.slice(0, separator), email: line.slice(separator + 1) };
+}
+
+/**
+ * Resolved from inside the lane, not the invoking checkout: a linked worktree's git dir is
+ * per-worktree, while the grafts file and replace refs live in the shared common dir.
+ */
+function gitCommonDirArgs(): string[] {
+    return ['rev-parse', '--git-common-dir'];
+}
+
+/** `for-each-ref` lists the replace refs that only the gate's own read disables. */
+function replaceRefsArgs(): string[] {
+    return ['for-each-ref', '--format=%(refname)', 'refs/replace/'];
+}
+
+/** An empty capture names zero refs; every remaining line is one `refs/replace/*` ref. */
+function countReplaceRefs(rows: string): number {
+    return rows === '' ? 0 : rows.split('\n').length;
+}
+
+/**
+ * Reads the lane's object-store rewrites: the common dir's grafts file, present or not, and the
+ * replace-ref count. A relative common-dir answer is resolved against the lane, the one directory
+ * the answer is relative to.
+ */
+function readObjectStoreRewrites(lane: string, capture: (args: string[], cwd: string) => string): ObjectStoreRewrites {
+    const commonDir = capture(gitCommonDirArgs(), lane);
+    const graftsPath = join(isAbsolute(commonDir) ? commonDir : resolve(lane, commonDir), 'info', 'grafts');
+    return {
+        graftsFile: existsSync(graftsPath) ? graftsPath : undefined,
+        replaceRefs: countReplaceRefs(capture(replaceRefsArgs(), lane)),
+    };
+}
+
+/**
  * The verified operator credential, opened on its first project read and reused for the rest of the
  * publish. Opening it lazily keeps every publish that touches no board — a legacy lane, an
  * issueless lane whose subject derives none — working on a machine that holds no operator
@@ -1680,6 +1918,16 @@ export function shellPort(
         laneSubject: (lane, baseSha, headSha) =>
             spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
             undefined,
+        commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
+            readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
+                // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
+                // empty author email line survives the read instead of vanishing into the trim.
+                spawnCapture(executables.git, args, { cwd, env: session.env, trim: false })
+            ),
+        objectStoreRewrites: (lane) =>
+            readObjectStoreRewrites(lane, (args, cwd) =>
+                spawnCapture(executables.git, args, { cwd, env: session.env })
+            ),
         headSha: (lane) => spawnCapture(executables.git, ['rev-parse', 'HEAD'], { cwd: lane, env: session.env }),
         remoteBranchSha: (branch) => {
             const output = git(['ls-remote', '--heads', GITHUB_HTTPS_REMOTE], primaryRoot);
