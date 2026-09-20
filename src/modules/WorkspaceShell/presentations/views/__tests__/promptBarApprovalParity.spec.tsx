@@ -1,40 +1,43 @@
 import { useState } from 'react';
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { agentRunStore, pendingActionConfirmationStore } from '#/modules/AiRuntime/stores';
 import { submitAdmittedPromptRequest, getAgentApprovalView } from '#/modules/AiRuntime/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import {
+    addTrack,
+    getArrangementHandlers,
+    resetArrangementStoresForProject,
+    setArrangementEventBus,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { commandBatchPreflightPort, commandProjectRevisionPort } from '#/modules/Command/useCases';
-import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    commandBatchPreflightPort,
+    commandProjectRevisionPort,
+    configureCommandBatchIdempotency,
+    resetActionReplayAuthority,
+    resetCommandBatchIdempotency,
+} from '#/modules/Command/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectRevision,
+    createCrdtDoc,
+    removeCrdtDoc,
+    registerCrdtStorageRuntime,
+    resetCrdtProjectAuthority,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+} from '#/modules/CrdtDocument/useCases';
 
 import { AgentWorkspace } from '../AgentWorkspace';
 import { PromptBar } from '../PromptBar';
 
-const execute = vi.hoisted(() => vi.fn(() => ({ status: 'executed' as const })));
-vi.mock('#/modules/AiRuntime/useCases/planPromptActions', () => ({
-    planPromptActions: vi.fn(async () => {
-        const { getProjectContext } = await import('#/modules/AiRuntime/useCases');
-        const { captureProjectRevision } = await import('#/modules/CrdtDocument/useCases');
-        return {
-            context: getProjectContext(),
-            result: {
-                actions: [{ type: 'setPlayback', payload: { playing: true } }],
-                rawText: 'Start playback after review',
-                requiresConfirmation: true,
-            },
-            projectRevision: captureProjectRevision(),
-        };
-    }),
-}));
-vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AiRuntime/useCases')>()),
-    getAvailablePresets: () => [
-        { id: 'review-playback', label: 'Start playback after review', category: 'Transport', isDestructive: true },
-    ],
-    resolvePresetActions: () => [{ type: 'setPlayback', payload: { playing: true } }],
-}));
+const execute = vi.fn<ReturnType<typeof getArrangementHandlers>['removeTrack']['execute']>();
 
 function Surface({ showPrompt = true }: { showPrompt?: boolean }) {
     const [request, setRequest] = useState<{ runId: string } | null>(null);
@@ -50,9 +53,10 @@ function submit(route: 'text' | 'preset') {
     const input = screen.getByRole('textbox', { name: 'Prompt command input' });
     if (route === 'preset') {
         fireEvent.focus(input);
-        fireEvent.mouseDown(screen.getByRole('option', { name: /Start playback after review/ }));
+        fireEvent.change(input, { target: { value: 'Delete Track' } });
+        fireEvent.mouseDown(screen.getByRole('option', { name: /Delete Track/ }));
     } else {
-        fireEvent.change(input, { target: { value: 'Start playback after review' } });
+        fireEvent.change(input, { target: { value: 'Delete Track' } });
         fireEvent.submit(input.closest('form')!);
     }
 }
@@ -60,22 +64,36 @@ function submit(route: 'text' | 'preset') {
 describe('Prompt Bar canonical approval parity', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: { request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()) },
+        });
         agentRunStore.set({ schemaVersion: 1, runs: [] });
         pendingActionConfirmationStore.set({ confirmations: [] });
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('Prompt Bar approval parity');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        resetArrangementStoresForProject();
+        setArrangementEventBus({ emit: async () => undefined });
+        expect(
+            addTrack({ id: 'review-track', name: 'Review track', kind: 'audio', suppressAddedEvent: true })
+        ).not.toBeNull();
+        flushAutomergeStorageWrites();
+        resetActionReplayAuthority();
+        configureCommandBatchIdempotency({ canExecute: () => true });
         clearHandlerRegistry();
-        registerHandlerMap({
-            setPlayback: {
-                executionKind: 'runtime',
-                undoable: false,
-                validate: () => true,
-                describe: () => ({ label: 'Start playback', inverseAction: null }),
-                execute,
-            },
-        });
+        const handlers = getArrangementHandlers();
+        execute.mockImplementation(handlers.removeTrack.execute);
+        registerHandlerMap({ ...handlers, removeTrack: { ...handlers.removeTrack, execute } });
         commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
+            projectRevisionMatchesLiveIgnoringCommandCheckpoint
+        );
         commandBatchPreflightPort.setProvider(() => ({
             projectId: captureProjectIdentity(),
-            targetFingerprints: {},
+            targetFingerprints: { 'review-track': 'review-track' },
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
@@ -85,9 +103,16 @@ describe('Prompt Bar canonical approval parity', () => {
         await submitAdmittedPromptRequest({ prompt: 'Previous selected run', source: 'preset', actions: [] });
     });
     afterEach(() => {
+        cleanup();
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
+        resetCommandBatchIdempotency();
+        vi.unstubAllGlobals();
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+        resetArrangementStoresForProject();
     });
 
     it.each(['text', 'preset'] as const)(
@@ -113,13 +138,14 @@ describe('Prompt Bar canonical approval parity', () => {
                 freshness: { status: 'current' },
             });
             expect(captureProjectRevision()).toBe(before);
+            expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['review-track']);
             expect(execute).not.toHaveBeenCalled();
             expect(
                 within(screen.getByRole('region', { name: 'Run summary' })).getByText('Previous selected run')
             ).toBeInTheDocument();
             fireEvent.click(review);
             const summary = screen.getByRole('region', { name: 'Run summary' });
-            expect(within(summary).getByText('Start playback after review')).toBeInTheDocument();
+            expect(within(summary).getByText('Delete Track')).toBeInTheDocument();
             await waitFor(() => expect(screen.getByRole('heading', { name: 'Run summary' })).toHaveFocus());
             fireEvent.click(screen.getByRole('button', { name: 'Cancel agent actions' }));
             await waitFor(() =>
@@ -135,8 +161,18 @@ describe('Prompt Bar canonical approval parity', () => {
         submit('text');
         fireEvent.click(await screen.findByRole('button', { name: 'Review in Agent' }));
         fireEvent.click(screen.getByRole('button', { name: 'Confirm agent actions' }));
-        await waitFor(() => expect(pendingActionConfirmationStore.value?.confirmations[0]?.status).toBe('executed'));
+        await waitFor(() =>
+            expect(['proposed', 'accepted']).not.toContain(
+                pendingActionConfirmationStore.value?.confirmations[0]?.status
+            )
+        );
+        const confirmation = pendingActionConfirmationStore.value?.confirmations[0];
+        expect({ status: confirmation?.status, error: confirmation?.error }).toEqual({
+            status: 'executed',
+            error: null,
+        });
         expect(execute).toHaveBeenCalledOnce();
+        expect(trackStore.value?.tracks).toEqual([]);
         expect(screen.queryByRole('button', { name: 'Review in Agent' })).not.toBeInTheDocument();
     });
 

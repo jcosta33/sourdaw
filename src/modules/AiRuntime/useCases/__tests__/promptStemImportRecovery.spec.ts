@@ -8,11 +8,13 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
+    commandProjectRevisionPort,
     configureCommandBatchIdempotency,
     resetActionReplayAuthority,
 } from '#/modules/Command/useCases';
 import {
     captureProjectIdentity,
+    captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -22,13 +24,21 @@ import {
 import { type AppAction } from '#/utils/handlerContract';
 
 import { persistAgentRunState, readAgentRunState } from '../../stores/agentRunStore';
+import {
+    clearPendingActionConfirmations,
+    getPendingActionConfirmation,
+} from '../../stores/pendingActionConfirmationStore';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
     executionOverride: 'none' as 'ambiguous-before-commit' | 'none',
-    obscureCommittedResult: 'none' as 'ambiguous' | 'mismatched' | 'missing' | 'none',
+    obscureCommittedResult: false,
+    promotionState: new Map<string, 'prepared' | 'committed' | 'completed'>(),
     observedCommandResult: { value: null as null | { status: string; reason?: string } },
     describePlannedAction: vi.fn(() => 'Prompt action'),
     getProjectContext: vi.fn(() => ({ tracks: [] })),
@@ -38,6 +48,7 @@ const mocks = vi.hoisted(() => ({
     completeDurablePromotionRecovery: vi.fn(),
     transitionDurablePromotionRecoveryToCleanup: vi.fn(),
     completeDurableCleanupRecovery: vi.fn(),
+    prepareDurableCleanupRecovery: vi.fn(),
     promoteStagedAsset: vi.fn(),
     replayOverride: 'real' as 'failed' | 'missing' | 'real',
     releasePreviewAudioBuffer: vi.fn(),
@@ -47,38 +58,42 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectContext }));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 vi.mock('../describePlannedAction', () => ({ describePlannedAction: mocks.describePlannedAction }));
-// This spec imports captureProjectRevision, createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc, and resetCrdtProjectAuthority; submitAdmittedPromptRequest imports settlePendingProjectWritesAndCaptureRevision; compilePlannedActionCommandBatch imports captureProjectIdentity.
-vi.mock('#/modules/CrdtDocument/useCases', async () => {
-    const original = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
-        '#/modules/CrdtDocument/useCases'
-    );
-    return {
-        captureProjectIdentity: original.captureProjectIdentity,
-        captureProjectRevision: original.captureProjectRevision,
-        createCrdtDoc: original.createCrdtDoc,
-        getCrdtDoc: original.getCrdtDoc,
-        registerCrdtStorageRuntime: original.registerCrdtStorageRuntime,
-        removeCrdtDoc: original.removeCrdtDoc,
-        resetCrdtProjectAuthority: original.resetCrdtProjectAuthority,
-        settlePendingProjectWritesAndCaptureRevision: original.settlePendingProjectWritesAndCaptureRevision,
-    };
-});
-// submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; compilePlannedActionCommandBatch imports compileVersionedCommandBatchEnvelope and parseVersionedCommandEnvelope; compilePendingActionCommandEnvelopes imports migrateLegacyAppActionToVersionedCommandEnvelope and serializeVersionedCommandEnvelope; compileAgentRiskApproval imports commandBatchPreflightPort, getAgentActionRiskPolicy, getVersionedCommandBatchDivergenceTargetIds, and parseVersionedCommandBatchEnvelope, and reaches getExecutableAppActionEffect through resolveAgentPreviewDomains; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; executePromptActionGroup imports generateGroupId, isExecutableAppActionType, and parseVersionedCommandBatchEnvelope; createStemImportConfirmationResourceLease imports getVersionedCommandBatchCommitProof; issueAgentCommandApprovalBinding imports issueCommandApprovalBinding; completeMidiLearn imports executeUserAppAction when the CrdtDocument useCases barrel loads at runtime.
 vi.mock('#/modules/Command/useCases', async () => {
     const original = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+    async function observeUncommittedBatch<TStatus extends 'ambiguous' | 'failed'>(
+        input: Parameters<typeof original.getVersionedCommandBatchCommitProof>[0],
+        status: TStatus,
+        reason: string
+    ) {
+        const parsed = original.parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        const proof = await original.getVersionedCommandBatchCommitProof(input);
+        const result = { status, reason, actions: [] as [] };
+        return {
+            ...result,
+            receipt: original.createVerifiedBatchReceipt({
+                contentHash: proof.contentHash,
+                envelope: parsed.envelope,
+                observedBaseRevision: parsed.envelope.baseRevision,
+                resultingRevision: null,
+                result,
+            }),
+        };
+    }
     return {
-        commandBatchPreflightPort: original.commandBatchPreflightPort,
-        compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
-        configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
-        getAppActionPreviewExecution: original.getAppActionPreviewExecution,
-        executeAppAction: original.executeAppAction,
-        pushUndoEntry: original.pushUndoEntry,
+        ...original,
         executeUserAppAction: vi.fn(),
         executeVersionedCommandBatchEnvelope: async (
             ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>
-        ) => {
+        ): ReturnType<typeof original.executeVersionedCommandBatchEnvelope> => {
             if (mocks.executionOverride === 'ambiguous-before-commit') {
-                const result = { status: 'ambiguous' as const, reason: 'Commit truth is not available yet.' };
+                const result = await observeUncommittedBatch(
+                    args[0],
+                    'ambiguous',
+                    'Commit truth is not available yet.'
+                );
                 mocks.observedCommandResult.value = result;
                 return result;
             }
@@ -88,61 +103,25 @@ vi.mock('#/modules/Command/useCases', async () => {
                 ...('reason' in result ? { reason: result.reason } : {}),
             };
             if (
-                mocks.obscureCommittedResult === 'ambiguous' &&
+                mocks.obscureCommittedResult &&
                 (result.status === 'committed' || result.status === 'committed-with-warning')
             ) {
-                return { status: 'ambiguous' as const, reason: 'The committed receipt channel was interrupted.' };
+                return observeUncommittedBatch(args[0], 'ambiguous', 'The committed receipt channel was interrupted.');
             }
-            if (
-                mocks.obscureCommittedResult === 'missing' &&
-                (result.status === 'committed' || result.status === 'committed-with-warning')
-            ) {
-                return { ...result, receipt: undefined };
-            }
-            if (
-                mocks.obscureCommittedResult === 'mismatched' &&
-                (result.status === 'committed' || result.status === 'committed-with-warning')
-            ) {
-                return { ...result, receipt: { ...result.receipt, runId: 'different-run' } };
-            }
+
             return result;
         },
-        generateGroupId: original.generateGroupId,
-        getAgentActionRiskPolicy: original.getAgentActionRiskPolicy,
-        getExecutableAppActionEffect: original.getExecutableAppActionEffect,
-        getVersionedCommandBatchCommitProof: original.getVersionedCommandBatchCommitProof,
-        getVersionedCommandBatchDivergenceTargetIds: original.getVersionedCommandBatchDivergenceTargetIds,
         getVersionedCommandBatchIdempotentReplay: async (
             input: Parameters<typeof original.getVersionedCommandBatchIdempotentReplay>[0]
-        ) => {
+        ): ReturnType<typeof original.getVersionedCommandBatchIdempotentReplay> => {
             if (mocks.replayOverride === 'missing') {
                 return null;
             }
             if (mocks.replayOverride === 'failed') {
-                const parsed = original.parseVersionedCommandBatchEnvelope(input.serialized, input.authority);
-                if (parsed.status === 'invalid') {
-                    return null;
-                }
-                return {
-                    schemaVersion: 1 as const,
-                    runId: parsed.envelope.runId,
-                    batchId: parsed.envelope.batchId,
-                    outcome: 'failed' as const,
-                    links: { render: [], analysis: [] },
-                    warnings: [],
-                    errors: ['The batch was proven not to have committed.'],
-                    modelSummary: 'The batch did not commit.',
-                };
+                return (await observeUncommittedBatch(input, 'failed', 'The retained batch did not commit.')).receipt;
             }
             return original.getVersionedCommandBatchIdempotentReplay(input);
         },
-        isExecutableAppActionType: original.isExecutableAppActionType,
-        issueCommandApprovalBinding: original.issueCommandApprovalBinding,
-        migrateLegacyAppActionToVersionedCommandEnvelope: original.migrateLegacyAppActionToVersionedCommandEnvelope,
-        parseVersionedCommandBatchEnvelope: original.parseVersionedCommandBatchEnvelope,
-        parseVersionedCommandEnvelope: original.parseVersionedCommandEnvelope,
-        resetActionReplayAuthority: original.resetActionReplayAuthority,
-        serializeVersionedCommandEnvelope: original.serializeVersionedCommandEnvelope,
     };
 });
 // discardPreparedStemImportResources imports releasePreviewAudioBuffer.
@@ -177,6 +156,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
         completeDurablePromotionRecovery: mocks.completeDurablePromotionRecovery,
         transitionDurablePromotionRecoveryToCleanup: mocks.transitionDurablePromotionRecoveryToCleanup,
         completeDurableCleanupRecovery: mocks.completeDurableCleanupRecovery,
+        prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
         promoteStagedAsset: mocks.promoteStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
     }),
@@ -208,17 +188,8 @@ const stemAction = {
         stems: [{ ...preparedStem, assetHash: 'hash-prompt-recovery', assetLeaseId: 'lease-prompt-recovery' }],
     },
 } satisfies AppAction;
-// `executePromptActionGroup` takes the durable promotion route only when
-// EVERY imported stem carries both an asset hash and a staging lease
-// (`importedStemsHaveDurableBindings`); a stem carrying neither is not a
-// mismatch (`importedStemsHavePartialDurableBindings` stays false — it only
-// flags a stem with exactly one of the two). Pairing one fully bound stem
-// with one wholly unbound stem therefore still routes through
-// `retainForRecovery` onto the agent-run recovery ledger, and the resulting
-// capsule carries the bound stem's real `assetLeaseId` alongside the
-// unbound stem's `null` — the shape a pre-#2719 build actually persisted,
-// rather than a stem with a hash but no lease, which no success or failure
-// path of `prepareStemImport` can produce.
+// Older runs persisted a mixed bound/unbound capsule. New approval rejects that
+// incomplete identity, but reload must still retain and reconcile historic media.
 const legacyBoundStem = {
     ...preparedStem,
     stemId: 'stem-prompt-recovery-bound',
@@ -248,18 +219,57 @@ const discardStemAction = {
     },
 } satisfies AppAction;
 
+function retainLegacyStemRecovery() {
+    const runId = `legacy-stem-run-${crypto.randomUUID()}`;
+    const batchId = 'legacy-stem-batch';
+    const projectRevision = captureProjectRevision();
+    agentRunLifecycle.create({ runId, request: 'Import legacy stems', mode: 'plan', createdRevision: projectRevision });
+    const { commandBatch } = compilePlannedActionCommandBatch({
+        actions: [legacyStemAction],
+        actionLabels: ['Import legacy stems'],
+        autoCommit: false,
+        group: { groupId: batchId, groupLabel: 'Import legacy stems' },
+        intent: 'Import legacy stems',
+        projectRevision,
+        runId,
+        context: getProjectContext(),
+    });
+    preparedStemImportResources.register({ runId, stems: legacyStemAction.payload.stems });
+    preparedStemImportResources.retainForRecovery({
+        runId,
+        stems: legacyStemAction.payload.stems,
+        recovery: { batchId, commandBatch },
+    });
+    return { runId, batchId };
+}
+
 describe('prompt stem import recovery', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.executionOverride = 'none';
-        mocks.obscureCommittedResult = 'none';
+        mocks.obscureCommittedResult = false;
+        mocks.promotionState.clear();
         mocks.observedCommandResult.value = null;
         mocks.replayOverride = 'real';
-        mocks.prepareDurablePromotionRecovery.mockResolvedValue({ status: 'prepared' });
-        mocks.commitDurablePromotionRecovery.mockResolvedValue({ status: 'committed' });
-        mocks.completeDurablePromotionRecovery.mockResolvedValue({ status: 'completed' });
+        mocks.prepareDurablePromotionRecovery.mockImplementation(async (id: string) => {
+            mocks.promotionState.set(id, 'prepared');
+            return { status: 'prepared' };
+        });
+        mocks.commitDurablePromotionRecovery.mockImplementation(async (id: string) => {
+            mocks.promotionState.set(id, 'committed');
+            return { status: 'committed' };
+        });
+        // Match the durable repository: a prepared claim cannot complete before commit.
+        mocks.completeDurablePromotionRecovery.mockImplementation(async (id: string) => {
+            if (mocks.promotionState.get(id) !== 'committed') {
+                return { status: 'failed', reason: 'lease-terminal-conflict' };
+            }
+            mocks.promotionState.set(id, 'completed');
+            return { status: 'completed' };
+        });
         mocks.transitionDurablePromotionRecoveryToCleanup.mockResolvedValue({ status: 'prepared' });
         mocks.completeDurableCleanupRecovery.mockResolvedValue({ status: 'completed' });
+        mocks.prepareDurableCleanupRecovery.mockResolvedValue({ status: 'prepared' });
         vi.stubGlobal('navigator', {
             ...navigator,
             locks: {
@@ -268,6 +278,7 @@ describe('prompt stem import recovery', () => {
         });
         window.localStorage.clear();
         agentRunLifecycle.clear();
+        clearPendingActionConfirmations();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('prompt stem recovery test');
         removeCrdtDoc('root');
@@ -297,6 +308,7 @@ describe('prompt stem import recovery', () => {
                 undoable: true,
             },
         });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         resetActionReplayAuthority();
         configureCommandBatchIdempotency({ canExecute: () => true });
         commandBatchPreflightPort.setProvider(({ assetReferences, targetIds }) => ({
@@ -319,6 +331,7 @@ describe('prompt stem import recovery', () => {
 
     afterEach(() => {
         commandBatchPreflightPort.setProvider(null);
+        commandProjectRevisionPort.setProvider(null);
         clearHandlerRegistry();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
@@ -328,52 +341,82 @@ describe('prompt stem import recovery', () => {
         vi.unstubAllGlobals();
     });
 
-    it.each(['ambiguous', 'missing', 'mismatched'] as const)(
-        'keeps exact durable stem promotion recovery pending after the approval preview is gone and the %s result loses receipt truth',
-        async (observedResult) => {
-            const submission = await submitAdmittedPromptRequest({
-                prompt: 'Import the selected stems',
-                source: 'prompt-bar',
-                actions: [stemAction],
-                requiresConfirmation: true,
-            });
-            if (submission.status !== 'awaiting-approval') {
-                throw new TypeError(`Expected approval preview, received ${submission.status}`);
-            }
-            const runId = submission.runId;
-            const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
-            if (!batchId) {
-                throw new TypeError('Expected the admitted command batch');
-            }
-            preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
-            let promptPreview: typeof submission.preview | null = submission.preview;
-            const confirm = promptPreview.confirm;
-            promptPreview = null;
-            mocks.obscureCommittedResult = observedResult;
-
-            const confirmationResult = await confirm();
-            expect({ confirmationResult, commandResult: mocks.observedCommandResult.value }).toEqual({
-                confirmationResult: { status: 'ambiguous' },
-                commandResult: { status: 'committed' },
-            });
-
-            expect(promptPreview).toBeNull();
-            expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
-            expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
-            expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
-            expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
-                `stem-promotion:${runId}:${batchId}`,
-                [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
-                expect.objectContaining({ runId, batchId })
-            );
-            expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
-            expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
-            expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
-            expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
-            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
-            expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    it('keeps exact durable stem promotion recovery pending when shared approval loses command commit truth', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new TypeError(`Expected approval preview, received ${submission.status}`);
         }
-    );
+        const runId = submission.runId;
+        const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
+        if (!batchId) {
+            throw new TypeError('Expected the admitted command batch');
+        }
+        const confirmationId = submission.confirmationId;
+        expect(getPendingActionConfirmation(confirmationId)?.runId).toBe(runId);
+        mocks.obscureCommittedResult = true;
+
+        const confirmationResult = await confirmPendingChatActions({ confirmationId });
+        expect({ confirmationResult, commandResult: mocks.observedCommandResult.value }).toEqual({
+            confirmationResult: { status: 'failed', reason: 'The committed receipt channel was interrupted.' },
+            commandResult: { status: 'committed' },
+        });
+
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('failed');
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
+        expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${submission.confirmationId}`,
+            [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+            expect.objectContaining({ runId, batchId })
+        );
+        expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${submission.confirmationId}`
+        );
+        expect(mocks.promotionState.get(`stem-promotion:${submission.confirmationId}`)).toBe('prepared');
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('commits the document and durable promotion through shared approval exactly once', async () => {
+        const submission = await submitAdmittedPromptRequest({
+            prompt: 'Import the selected stems',
+            source: 'prompt-bar',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (submission.status !== 'awaiting-approval') {
+            throw new Error(`Expected approval: ${submission.status}`);
+        }
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        await expect(confirmPendingChatActions({ confirmationId: submission.confirmationId })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
+        expect(getPendingActionConfirmation(submission.confirmationId)?.status).toBe('executed');
+        expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${submission.confirmationId}`
+        );
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${submission.confirmationId}`
+        );
+        expect(mocks.promotionState.get(`stem-promotion:${submission.confirmationId}`)).toBe('completed');
+        await expect(confirmPendingChatActions({ confirmationId: submission.confirmationId })).resolves.toEqual({
+            status: 'not_pending',
+            currentStatus: 'executed',
+        });
+        expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledTimes(1);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
 
     it('keeps durable stem promotion recovery pending when command commit truth is unavailable before reload', async () => {
         const submission = await submitAdmittedPromptRequest({
@@ -390,20 +433,25 @@ describe('prompt stem import recovery', () => {
         if (!batchId) {
             throw new TypeError('Expected the admitted command batch');
         }
-        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
         mocks.executionOverride = 'ambiguous-before-commit';
         mocks.replayOverride = 'missing';
 
-        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        await expect(confirmPendingChatActions({ confirmationId: submission.confirmationId })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Commit truth is not available yet.',
+        });
         expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
         expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
         expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
-            `stem-promotion:${runId}:${batchId}`,
+            `stem-promotion:${submission.confirmationId}`,
             [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
             expect.objectContaining({ runId, batchId })
         );
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
-        expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${submission.confirmationId}`
+        );
+        expect(mocks.promotionState.get(`stem-promotion:${submission.confirmationId}`)).toBe('prepared');
         expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
         expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
@@ -425,11 +473,13 @@ describe('prompt stem import recovery', () => {
         if (!batchId) {
             throw new TypeError('Expected the admitted command batch');
         }
-        preparedStemImportResources.register({ runId, stems: stemAction.payload.stems });
         mocks.executionOverride = 'ambiguous-before-commit';
         mocks.replayOverride = 'missing';
 
-        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        await expect(confirmPendingChatActions({ confirmationId: submission.confirmationId })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Commit truth is not available yet.',
+        });
         for (let index = 0; index < 50; index += 1) {
             agentRunLifecycle.create({
                 runId: `later-stem-run-${String(index)}`,
@@ -444,42 +494,66 @@ describe('prompt stem import recovery', () => {
         // journal, so run-history eviction has nothing of theirs to drop.
         expect(readAgentRunState()).not.toHaveProperty('preparedStemImportRecoveryLedger');
         expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
-            `stem-promotion:${runId}:${batchId}`,
+            `stem-promotion:${submission.confirmationId}`,
             [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
             expect.objectContaining({ runId, batchId })
         );
-        // Run-history eviction has nothing of this stem's to drop: the durable
-        // promotion claim lives in the asset-transfer journal, not on the
-        // evicted run or on `preparedStemImportRecoveryLedger`, so eviction
-        // must not touch any of the promotion or cleanup lifecycle calls.
+        // Shared settlement tried to complete the still-prepared journal; the
+        // durable owner refused it. Eviction must neither commit nor clean it.
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
-        expect(mocks.completeDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${submission.confirmationId}`
+        );
+        expect(mocks.promotionState.get(`stem-promotion:${submission.confirmationId}`)).toBe('prepared');
         expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
         expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
-    it('reconstructs an evicted prepared-stem capsule after reload and discards it on proven noncommit', async () => {
-        const submission = await submitAdmittedPromptRequest({
-            prompt: 'Import the selected stems',
-            source: 'prompt-bar',
-            actions: [legacyStemAction],
-            requiresConfirmation: true,
-        });
-        if (submission.status !== 'awaiting-approval') {
-            throw new TypeError(`Expected approval preview, received ${submission.status}`);
-        }
-        const runId = submission.runId;
-        preparedStemImportResources.register({ runId, stems: legacyStemAction.payload.stems });
-        mocks.executionOverride = 'ambiguous-before-commit';
-        mocks.replayOverride = 'missing';
+    it('refuses new canonical approval with incomplete durable stem identities', async () => {
+        mocks.planPromptActions.mockImplementationOnce(
+            (input: Parameters<typeof import('../planPromptActions').planPromptActions>[0]) => {
+                if (!input.streamIdentity) {
+                    throw new Error('Expected admitted planning identity');
+                }
+                preparedStemImportResources.register({
+                    runId: input.streamIdentity.runId,
+                    stems: legacyStemAction.payload.stems,
+                });
+                return Promise.resolve({
+                    context: getProjectContext(),
+                    projectRevision: captureProjectRevision(),
+                    result: {
+                        actions: [legacyStemAction],
+                        rawText: input.prompt,
+                        requiresConfirmation: true,
+                        planningOutcome: { kind: 'proposal' },
+                    },
+                });
+            }
+        );
+        await expect(
+            submitAdmittedPromptRequest({
+                prompt: 'Import incomplete stems',
+                source: 'prompt-bar',
+            })
+        ).rejects.toThrow('Prepared stem durable asset binding is incomplete');
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(mocks.prepareDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.prepareDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+            'stem-cleanup:["lease-prompt-recovery-bound"]',
+            [{ leaseId: 'lease-prompt-recovery-bound', expectedHash: 'hash-prompt-recovery-bound' }]
+        );
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+            'stem-cleanup:["lease-prompt-recovery-bound"]'
+        );
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
 
-        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
-        const batchId = agentRunLifecycle.get(runId)?.preparedStemImports[0]?.batchId;
-        if (!batchId) {
-            throw new TypeError('Expected the exact prepared-stem recovery batch');
-        }
+    it('reconstructs an evicted prepared-stem capsule after reload and discards it on proven noncommit', async () => {
+        const { runId, batchId } = retainLegacyStemRecovery();
         for (let index = 0; index < 50; index += 1) {
             agentRunLifecycle.create({
                 runId: `later-stem-run-${String(index)}`,
@@ -526,21 +600,7 @@ describe('prompt stem import recovery', () => {
     });
 
     it('surfaces manual repair without deleting retained media when an evicted capsule is invalid', async () => {
-        const submission = await submitAdmittedPromptRequest({
-            prompt: 'Import the selected stems',
-            source: 'prompt-bar',
-            actions: [legacyStemAction],
-            requiresConfirmation: true,
-        });
-        if (submission.status !== 'awaiting-approval') {
-            throw new TypeError(`Expected approval preview, received ${submission.status}`);
-        }
-        const runId = submission.runId;
-        preparedStemImportResources.register({ runId, stems: legacyStemAction.payload.stems });
-        mocks.executionOverride = 'ambiguous-before-commit';
-        mocks.replayOverride = 'missing';
-
-        await expect(submission.preview.confirm()).resolves.toEqual({ status: 'ambiguous' });
+        const { runId } = retainLegacyStemRecovery();
         for (let index = 0; index < 50; index += 1) {
             agentRunLifecycle.create({
                 runId: `later-manual-run-${String(index)}`,
