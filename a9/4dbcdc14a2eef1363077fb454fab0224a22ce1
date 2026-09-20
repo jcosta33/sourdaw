@@ -1,22 +1,15 @@
-release/open-source-inventory.json
-  h_1228e573df1f42 1203
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.7.4",
-  "base_commit_sha": "aa8a7ace35b3ee5f60d65031f3c20d8ec6317111",
+  "base_commit_sha": "a94dbcdc14a2eef1363077fb454fab0224a22ce1",
   "prompts": {},
-  "humans": {
-    "h_1228e573df1f42": {
-      "author": "José Costa <j.costa.3394@gmail.com>"
-    }
-  },
   "sessions": {
     "s_ed5aa36a3ba357": {
       "agent_id": {
         "tool": "codex",
         "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
-        "model": "gpt-6-astra"
+        "model": "gpt-5.6-sol"
       },
       "human_author": "José Costa <j.costa.3394@gmail.com>"
     }

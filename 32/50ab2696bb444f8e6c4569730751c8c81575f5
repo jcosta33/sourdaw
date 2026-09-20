@@ -6,6 +6,8 @@ src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.monitorT
   s_ed5aa36a3ba357::t_5af0c91b429160 1-120
 release/open-source-inventory.json
   h_1228e573df1f42 1203
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_ed5aa36a3ba357::t_824318a1c767cf 41,57-60
 ---
 {
   "schema_version": "authorship/3.0.0",
