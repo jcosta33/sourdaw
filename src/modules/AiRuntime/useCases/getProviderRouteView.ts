@@ -24,8 +24,8 @@ export type ProviderRouteView = {
     dataDisclosure: { categories: readonly AgentDataCategory[]; retention: AgentDataRetention } | null;
     usage: {
         provenance: 'provider-reported' | 'versioned-estimate' | 'unavailable';
-        inputTokens: number;
-        outputTokens: number;
+        inputTokens: number | null;
+        outputTokens: number | null;
         cachedInputTokens: number;
         attempts: number;
     };
@@ -196,17 +196,20 @@ function getUsageProjection(providerUsage: readonly AgentRunProviderUsage[]): Pr
     if (counted.length === 0) {
         return { provenance: 'unavailable', inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, attempts: 0 };
     }
-    let inputTokens = 0;
-    let outputTokens = 0;
+    let inputTokens: number | null = 0;
+    let outputTokens: number | null = 0;
     let cachedInputTokens = 0;
     let provenance = counted[0]!.provenance;
     for (const usage of counted) {
-        inputTokens += usage.inputTokens ?? 0;
-        outputTokens += usage.outputTokens ?? 0;
+        inputTokens = inputTokens === null || usage.inputTokens === null ? null : inputTokens + usage.inputTokens;
+        outputTokens = outputTokens === null || usage.outputTokens === null ? null : outputTokens + usage.outputTokens;
         cachedInputTokens += usage.cachedInputTokens ?? 0;
         if (PROVENANCE_RANK[usage.provenance] < PROVENANCE_RANK[provenance]) {
             provenance = usage.provenance;
         }
+    }
+    if (inputTokens === null || outputTokens === null) {
+        provenance = 'unavailable';
     }
     return { provenance, inputTokens, outputTokens, cachedInputTokens, attempts: counted.length };
 }

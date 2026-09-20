@@ -198,6 +198,59 @@ describe('provider route view', () => {
         expect(view?.usage).toMatchObject({ provenance: 'versioned-estimate', attempts: 2 });
     });
 
+    it('keeps required usage totals unknown when any counted provider attempt omits them', () => {
+        agentRunLifecycle.create({
+            runId: 'route-incomplete-usage',
+            request: 'Render the chorus using the configured provider.',
+            mode: 'plan',
+            createdRevision: 'revision-a',
+            requestedRoute: 'cloud',
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-incomplete-usage',
+            usage: {
+                provider: 'anthropic',
+                model: 'fixture-model',
+                inputTokens: null,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                provenance: 'provider-reported',
+                correlationId: 'corr-incomplete',
+                status: 'complete',
+                executor: 'cloud',
+                routeId: 'cloud',
+            },
+        });
+        agentRunLifecycle.recordProviderUsage({
+            runId: 'route-incomplete-usage',
+            usage: {
+                provider: 'anthropic',
+                model: 'fixture-model',
+                inputTokens: 10,
+                outputTokens: 3,
+                cachedInputTokens: 2,
+                provenance: 'provider-reported',
+                correlationId: 'corr-complete',
+                status: 'complete',
+                executor: 'cloud',
+                routeId: 'cloud',
+            },
+        });
+
+        const view = getProviderRouteView({
+            runId: 'route-incomplete-usage',
+            candidates: [WEBLLM_CANDIDATE, CLOUD_CANDIDATE],
+        });
+
+        expect(view?.usage).toEqual({
+            provenance: 'unavailable',
+            inputTokens: null,
+            outputTokens: 12,
+            cachedInputTokens: 7,
+            attempts: 2,
+        });
+    });
+
     it('excludes an unavailable-status usage entry from the actual route and usage totals', () => {
         agentRunLifecycle.create({
             runId: 'route-unavailable',
