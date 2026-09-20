@@ -1,0 +1,65 @@
+.agents/decisions/open-decision-docket.md
+  s_ed5aa36a3ba357::t_fdc4eaa8b49456 1173-1178
+  s_ed5aa36a3ba357::t_db71153aa95b06 1171-1172,1179
+AGENTS.md
+  s_ed5aa36a3ba357::t_e9a6aa92d43dc7 148-155,447-452
+  s_ed5aa36a3ba357::t_22642096b947aa 139-147
+.agents/decisions/README.md
+  s_ed5aa36a3ba357::t_8dfd2c5d6329be 63
+  s_ed5aa36a3ba357::t_23969a35f9a5e3 62
+.agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
+  s_ed5aa36a3ba357::t_cca3dbf7d99b41 5-26
+  s_ed5aa36a3ba357::t_5589bcf1a73663 1-4,27-221
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ed5aa36a3ba357::t_c4b261d5c4c59b 7,2243-2335
+.gitignore
+  s_ed5aa36a3ba357::t_cb0079a8e7fae1 30-34
+package.json
+  s_ed5aa36a3ba357::t_9b95d69f5c6391 54,154
+public/legal/DEPENDENCY-LICENSES.txt
+  s_ed5aa36a3ba357::t_12e3e1056e4da7 10
+release/dependency-license-proofs.json
+  s_ed5aa36a3ba357::t_1e0ee6dd43878b 64
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_8b26593a1c2303 168-169,279,1692-1727,1733,1745,1766-1768,1771-1773,1776-1808,1830-1889,1899-1900,1905-1906,1954-1956,1959-1961,1964-1966,1969-1972,1975-1977,1980-1982,1985-1987,1990-1992,1995-2013,2041-2042,2046-2047,2051-2052,2056-2057,2088-2119,2126-2130,2134,2140,2145-2146,2171,2176,2184-2186,2189-2191,2194-2196,2199-2201,2204-2206,2209-2211,2214-2216,2219-2221,2224-2226,2229-2231,2234-2237
+scripts/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_99f63984b3231f 1-91
+scripts/reviewDossier.ts
+  s_ed5aa36a3ba357::t_c3be74359b5c7a 540-544,565-567
+scripts/semanticReview.ts
+  s_ed5aa36a3ba357::t_fa445acabcc81f 1-638
+scripts/semanticReview/contracts.ts
+  s_ed5aa36a3ba357::t_83b8d496c20f3c 1-295
+scripts/semanticReview/fit.ts
+  s_ed5aa36a3ba357::t_5eafcdacf7ddaf 1-175
+scripts/semanticReview/gitSource.ts
+  s_ed5aa36a3ba357::t_c0b8c22e9979e8 1-312
+scripts/semanticReview/interpret.ts
+  s_ed5aa36a3ba357::t_f368e3ba7aec61 1-331
+scripts/semanticReview/provider.ts
+  s_ed5aa36a3ba357::t_11e7c28513c955 1-626
+scripts/semanticReview/report.ts
+  s_ed5aa36a3ba357::t_e01790549af350 1-633
+scripts/semanticReview/rules.ts
+  s_ed5aa36a3ba357::t_08379fabb1430b 1-383
+scripts/semanticReview/run.ts
+  s_ed5aa36a3ba357::t_944062b3676f98 1-654
+scripts/semanticReview/verify.ts
+  s_ed5aa36a3ba357::t_9550bcfd64d6ff 1-608
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7cba7931e17c7b6b5ea23fae312e5209ceceae6f",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
