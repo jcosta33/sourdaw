@@ -7,7 +7,7 @@ type SoundPresetRecord = ReturnType<typeof getAgentPresetDiscoveryManifest>[numb
 function toPresetCandidate(preset: SoundPresetRecord): DiscoveryCandidate {
     return {
         kind: preset.category,
-        searchTerms: preset.tags,
+        searchTerms: preset.searchTerms,
         entry: {
             id: preset.id,
             name: preset.name,

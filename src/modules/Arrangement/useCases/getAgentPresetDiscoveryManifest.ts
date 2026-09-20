@@ -4,6 +4,12 @@ import { type SoundPreset } from '../models/SoundPreset';
 import { getUserPresets } from './preset/presetStorage/getUserPresets';
 import { getFactoryPresets } from './soundPresetLibrary';
 
+const MAX_DISCOVERY_NAME_LENGTH = 128;
+const MAX_DISCOVERY_SUBCATEGORY_LENGTH = 128;
+const MAX_DISCOVERY_DESCRIPTION_LENGTH = 1_024;
+const MAX_DISCOVERY_LIST_ITEMS = 8;
+const MAX_DISCOVERY_LIST_TEXT_LENGTH = 128;
+
 type AgentPresetDiscoveryEntry = {
     id: string;
     name: string;
@@ -14,21 +20,47 @@ type AgentPresetDiscoveryEntry = {
     isFactory: boolean;
     tags: readonly string[];
     deviceTypes: readonly string[];
+    /** Full owner terms stay private to the candidate matcher rather than inflating receipt evidence. */
+    searchTerms: readonly string[];
     version: string;
     metadata: { source: 'Arrangement SoundPreset'; confidence: 'declared' | 'user-supplied' };
 };
 
+function boundedDiscoveryText(value: string, maximumLength: number): string {
+    return Array.from(value.normalize('NFC'))
+        .filter((character) => {
+            const codePoint = character.codePointAt(0)!;
+            return codePoint > 0x1f && codePoint !== 0x7f;
+        })
+        .slice(0, maximumLength)
+        .join('');
+}
+
+function boundedDiscoveryTextList(values: readonly string[]): string[] {
+    return values
+        .slice(0, MAX_DISCOVERY_LIST_ITEMS)
+        .map((value) => boundedDiscoveryText(value, MAX_DISCOVERY_LIST_TEXT_LENGTH));
+}
+
+function boundedDiscoverySubcategory(value: string | undefined): string | null {
+    if (value === undefined) {
+        return null;
+    }
+    return boundedDiscoveryText(value, MAX_DISCOVERY_SUBCATEGORY_LENGTH);
+}
+
 function toDiscoveryEntry(preset: SoundPreset): AgentPresetDiscoveryEntry {
     return {
         id: preset.id,
-        name: preset.name,
+        name: boundedDiscoveryText(preset.name, MAX_DISCOVERY_NAME_LENGTH),
         category: preset.category,
-        subcategory: preset.subcategory ?? null,
-        description: preset.description,
+        subcategory: boundedDiscoverySubcategory(preset.subcategory),
+        description: boundedDiscoveryText(preset.description, MAX_DISCOVERY_DESCRIPTION_LENGTH),
         trackKind: preset.trackKind,
         isFactory: preset.isFactory,
-        tags: preset.tags,
-        deviceTypes: preset.devices.map((device) => device.type),
+        tags: boundedDiscoveryTextList(preset.tags),
+        deviceTypes: boundedDiscoveryTextList(preset.devices.map((device) => device.type)),
+        searchTerms: [preset.name, ...preset.tags],
         version: `preset-v1:${getStableContractFingerprint(preset)}`,
         metadata: {
             source: 'Arrangement SoundPreset',
