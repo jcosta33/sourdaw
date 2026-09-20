@@ -10,15 +10,26 @@ import { getBuiltinPlugins } from '../getBuiltinPlugins';
 import { getDeviceContractVersionForCommand } from '../getDeviceContractVersionForCommand';
 import { getDeviceTypesForCommandDeviceIds } from '../getDeviceTypesForCommandDeviceIds';
 
-// The descriptor ids the faust instrument additions append to the registry;
-// every other id pre-exists them and is version-pinned below.
+// The descriptor ids the Faust instrument additions append to the registry;
+// the registry census below pins every non-Faust descriptor by name.
 const FAUST_INSTRUMENT_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
     'faust-rhodes',
     'faust-fm-synth',
     'faust-supersaw-unison',
 ]);
 
-const PRE_EXISTING_VERSION_PINS: Readonly<Record<string, string>> = {
+// PR #4476 adds owner guidance to these existing synth-family descriptors. Guidance is
+// intentionally part of the command contract fingerprint so stale approvals refresh
+// instead of replaying against older planner-facing semantics.
+const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, { beforeGuidance: string; current: string }>> = {
+    'builtin-synth': { beforeGuidance: 'descriptor-v1:614f201f', current: 'descriptor-v1:0bba2631' },
+    'builtin-synth-mellotron': { beforeGuidance: 'descriptor-v1:71cf9d31', current: 'descriptor-v1:452e20ab' },
+    'builtin-synth-strings': { beforeGuidance: 'descriptor-v1:11f074db', current: 'descriptor-v1:877b7941' },
+    'builtin-synth-808bass': { beforeGuidance: 'descriptor-v1:274a35d6', current: 'descriptor-v1:13061900' },
+    'builtin-synth-brass': { beforeGuidance: 'descriptor-v1:5dbc0228', current: 'descriptor-v1:4f92a842' },
+};
+
+const UNCHANGED_PRE_GUIDANCE_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-eq': 'descriptor-v1:63102173',
     'builtin-compressor': 'descriptor-v1:432b6464',
     'builtin-reverb': 'descriptor-v1:17ea53ba',
@@ -38,7 +49,6 @@ const PRE_EXISTING_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-stereo-widener': 'descriptor-v1:af373b3b',
     'builtin-deesser': 'descriptor-v1:07639674',
     'builtin-lufs-meter': 'descriptor-v1:76e76f72',
-    'builtin-synth': 'descriptor-v1:614f201f',
     'builtin-drum-kit': 'descriptor-v1:15e97237',
     'dutch-oven': 'descriptor-v1:697d31a3',
     'native-scoring': 'descriptor-v1:6236c1eb',
@@ -54,10 +64,6 @@ const PRE_EXISTING_VERSION_PINS: Readonly<Record<string, string>> = {
     'faust-lufs-meter': 'descriptor-v1:ba1eba2e',
     'faust-stereo-widener': 'descriptor-v1:369c6f01',
     'faust-de-esser': 'descriptor-v1:01925fec',
-    'builtin-synth-mellotron': 'descriptor-v1:71cf9d31',
-    'builtin-synth-strings': 'descriptor-v1:11f074db',
-    'builtin-synth-808bass': 'descriptor-v1:274a35d6',
-    'builtin-synth-brass': 'descriptor-v1:5dbc0228',
     'builtin-drum-machine-808': 'descriptor-v1:3157334a',
     'builtin-drum-machine-analog': 'descriptor-v1:b497a2ee',
     'builtin-drum-machine-electronic': 'descriptor-v1:c681efac',
@@ -138,25 +144,43 @@ describe('getDeviceContractVersionForCommand', () => {
         }
     });
 
-    it('leaves every pre-existing descriptor version unchanged by the faust instrument additions', () => {
-        // Pinned against the registry before the faust instrument descriptors
-        // were added: every descriptor id the registry already held, not a
-        // three-device sample of it. The fingerprint covers the whole
-        // descriptor, so a shifted pin means an existing entry was mutated,
-        // not merely appended beside. The key set is checked against the live
-        // registry too, so a wrong pin, a dropped pin, or a device added
-        // later without pinning its version all fail here by name.
-        const preExistingIds = [
+    it('leaves every descriptor unrelated to synth-family guidance unchanged', () => {
+        // Pinned against the registry before the Faust instrument descriptors
+        // and synth-family guidance were added: every non-Faust descriptor id,
+        // not a sample. The fingerprint covers the whole descriptor, so a
+        // shifted unrelated pin means an existing entry was mutated. The key
+        // set is checked against the live registry so a wrong pin, dropped pin,
+        // or later added non-Faust device without a pin fails here by name.
+        const nonFaustDescriptorIds = [
             ...new Set(
                 getBuiltinPlugins()
                     .map((plugin) => plugin.id)
                     .filter((id) => !FAUST_INSTRUMENT_DESCRIPTOR_IDS.has(id))
             ),
         ].sort();
-        expect(Object.keys(PRE_EXISTING_VERSION_PINS).sort()).toEqual(preExistingIds);
+        expect(
+            [
+                ...Object.keys(UNCHANGED_PRE_GUIDANCE_VERSION_PINS),
+                ...Object.keys(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS),
+            ].sort()
+        ).toEqual(nonFaustDescriptorIds);
 
-        for (const [deviceType, pinnedVersion] of Object.entries(PRE_EXISTING_VERSION_PINS)) {
+        for (const [deviceType, pinnedVersion] of Object.entries(UNCHANGED_PRE_GUIDANCE_VERSION_PINS)) {
             expect(getDeviceContractVersionForCommand(deviceType), deviceType).toBe(pinnedVersion);
+        }
+    });
+
+    it('records synth-family guidance as the intentional descriptor-version bump', () => {
+        for (const [deviceType, { beforeGuidance, current }] of Object.entries(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS)) {
+            const descriptor = getPluginById(deviceType);
+            if (!descriptor?.guidance) {
+                throw new Error(`Expected synth-family guidance in the authoritative descriptor for ${deviceType}`);
+            }
+
+            expect(beforeGuidance, deviceType).toMatch(/^descriptor-v1:[0-9a-f]{8}$/);
+            expect(current, deviceType).toBe(`descriptor-v1:${getStableContractFingerprint(descriptor)}`);
+            expect(getDeviceContractVersionForCommand(deviceType), deviceType).toBe(current);
+            expect(current, deviceType).not.toBe(beforeGuidance);
         }
     });
 
