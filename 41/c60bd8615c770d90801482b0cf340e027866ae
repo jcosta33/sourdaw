@@ -1,0 +1,25 @@
+src/utils/__tests__/deviceParameterValueUnit.spec.ts
+  s_ed5aa36a3ba357::t_0958e05e5db6bb 26-31
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_4a1961b1eb372c 1934,1943-1950,2576,2580
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_0958e05e5db6bb 6231
+  s_ed5aa36a3ba357::t_e7e54acf978e7e 6247,6250,6257-6303
+  s_ed5aa36a3ba357::t_5f4a788e60321e 6304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "41c60bd8615c770d90801482b0cf340e027866ae",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
