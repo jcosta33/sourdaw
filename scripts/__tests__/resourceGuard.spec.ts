@@ -1656,6 +1656,10 @@ describe('guard failure stop enforcement', () => {
             };
             mkdirSync(join(worktreePath, 'src', 'models'), { recursive: true });
             mkdirSync(join(worktreePath, 'src', 'useCases'), { recursive: true });
+            writeFileSync(
+                join(worktreePath, 'package.json'),
+                JSON.stringify({ name: `guard-${label}`, private: true })
+            );
             const receipt: GuardFailureReceipt = {
                 version: 1,
                 lane: laneName,
@@ -1675,6 +1679,130 @@ describe('guard failure stop enforcement', () => {
             writeFileSync(join(worktreePath, retainedTarget), 'export {}');
             return { repoRoot, worktreePath, lane, receipt, oldTarget, newTarget, retainedTarget };
         }
+
+        function writeLintProbePackage(packageDirectory: string, name: string): void {
+            writeFileSync(
+                join(packageDirectory, 'package.json'),
+                JSON.stringify({ name, private: true, scripts: { lint: 'node lint-probe.cjs' } })
+            );
+            writeFileSync(
+                join(packageDirectory, 'lint-probe.cjs'),
+                [
+                    "const { existsSync, writeFileSync } = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    'const allTargetsExist = args.every((target) => existsSync(target));',
+                    "writeFileSync('observed.json', JSON.stringify({ cwd: process.cwd(), args, allTargetsExist }));",
+                    'if (!allTargetsExist) process.exitCode = 2;',
+                ].join('\n')
+            );
+        }
+
+        it('refuses a mapping that leaves the package-root lint target present', async () => {
+            const fixture = createLintRecoveryFixture('package-root-target-present');
+            const nestedCwd = join(fixture.worktreePath, 'nested');
+            mkdirSync(join(nestedCwd, 'src', 'useCases'), { recursive: true });
+            writeFileSync(join(nestedCwd, fixture.newTarget), 'export {}');
+            writeFileSync(join(nestedCwd, fixture.retainedTarget), 'export {}');
+            writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
+            writeLintProbePackage(fixture.worktreePath, 'guard-package-root-target-probe');
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(nestedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: nestedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(existsSync(join(fixture.worktreePath, 'observed.json'))).toBe(false);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each([
+            { label: 'lane-root package', packageDirectory: 'root' },
+            { label: 'nested workspace package', packageDirectory: 'nested' },
+        ] as const)('runs remapped lint targets from the $label owner', async ({ label, packageDirectory }) => {
+            const fixture = createLintRecoveryFixture(`package-owner-${packageDirectory}`);
+            const packageRoot =
+                packageDirectory === 'root' ? fixture.worktreePath : join(fixture.worktreePath, 'packages', 'child');
+            const recordedCwd = join(packageRoot, 'nested');
+            mkdirSync(join(recordedCwd, 'src'), { recursive: true });
+            if (packageDirectory === 'nested') {
+                writeFileSync(join(fixture.worktreePath, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n");
+                mkdirSync(join(packageRoot, 'src', 'useCases'), { recursive: true });
+                writeFileSync(join(packageRoot, fixture.newTarget), 'export {}');
+                writeFileSync(join(packageRoot, fixture.retainedTarget), 'export {}');
+                writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
+            }
+            writeLintProbePackage(packageRoot, `guard-package-owner-${packageDirectory}`);
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(recordedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: recordedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code, label).toBe(0);
+                expect(JSON.parse(readFileSync(join(packageRoot, 'observed.json'), 'utf8'))).toEqual({
+                    cwd: realpathSync(packageRoot),
+                    args: [fixture.newTarget, fixture.retainedTarget],
+                    allTargetsExist: true,
+                });
+                expect(existsSync(receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses a lint-target replacement when the recorded cwd has no package owner', async () => {
+            const fixture = createLintRecoveryFixture('missing-package-owner');
+            rmSync(join(fixture.worktreePath, 'package.json'));
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            let commandRan = false;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('cannot resolve the pnpm package directory');
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
 
         it('refuses --recover outside an author worktree', async () => {
             const errors: string[] = [];
@@ -1756,6 +1884,10 @@ describe('guard failure stop enforcement', () => {
                 const retainedTarget = original === 'root' ? 'src/useCases/retainedInput.ts' : 'retainedInput.ts';
                 mkdirSync(join(worktreePath, 'src', 'models'), { recursive: true });
                 mkdirSync(join(worktreePath, 'src', 'useCases'), { recursive: true });
+                writeFileSync(
+                    join(originalCwd, 'package.json'),
+                    JSON.stringify({ name: `guard-${label}`, private: true })
+                );
                 writeFileSync(join(originalCwd, oldTarget), 'export {}');
                 writeFileSync(join(originalCwd, retainedTarget), 'export {}');
                 let headSha = '1111111111111111111111111111111111111111';
@@ -2004,6 +2136,10 @@ describe('guard failure stop enforcement', () => {
             };
             mkdirSync(join(worktreePath, 'src', 'useCases'), { recursive: true });
             mkdirSync(join(worktreePath, 'scripts'), { recursive: true });
+            writeFileSync(
+                join(worktreePath, 'package.json'),
+                JSON.stringify({ name: 'guard-recover-renamed-lint-target', private: true })
+            );
             const receipt: GuardFailureReceipt = {
                 version: 1,
                 lane: laneName,
@@ -2065,6 +2201,14 @@ describe('guard failure stop enforcement', () => {
                 label: 'still-existing-old',
                 arrange: (fixture) => {
                     writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'package-manifest-directory',
+                arrange: (fixture) => {
+                    rmSync(join(fixture.worktreePath, 'package.json'));
+                    mkdirSync(join(fixture.worktreePath, 'package.json'));
                     return [`${fixture.oldTarget}=${fixture.newTarget}`];
                 },
             },

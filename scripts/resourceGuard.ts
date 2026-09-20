@@ -1466,6 +1466,27 @@ function resolveRecoveryCwd(input: {
     return recordedCwd;
 }
 
+function resolvePnpmPackageDirectory(cwd: string, laneRoot: string): string {
+    const canonicalLaneRoot = realpathSync(laneRoot);
+    let currentDirectory = realpathSync(cwd);
+
+    while (containsPath(canonicalLaneRoot, currentDirectory)) {
+        const packageManifest = join(currentDirectory, 'package.json');
+        if (existsSync(packageManifest)) {
+            if (!statSync(packageManifest).isFile()) {
+                throw new Error('--replace-lint-target found a pnpm package manifest that is not a regular file');
+            }
+            return currentDirectory;
+        }
+        if (currentDirectory === canonicalLaneRoot) {
+            break;
+        }
+        currentDirectory = dirname(currentDirectory);
+    }
+
+    throw new Error('--replace-lint-target cannot resolve the pnpm package directory from the recorded cwd');
+}
+
 function resolveRecoveryLintArgs(input: {
     receipt: GuardFailureReceipt;
     replacements: LintTargetReplacement[];
@@ -1480,7 +1501,7 @@ function resolveRecoveryLintArgs(input: {
     }
 
     const laneRoot = realpathSync(input.laneRoot);
-    const cwd = realpathSync(input.cwd);
+    const targetDirectory = resolvePnpmPackageDirectory(input.cwd, laneRoot);
     const fileTargetIndexes = input.receipt.args
         .map((argument, index) => ({ argument, index }))
         .filter(({ argument, index }) => index > 0 && argument !== '--' && !argument.startsWith('-'));
@@ -1491,7 +1512,7 @@ function resolveRecoveryLintArgs(input: {
     for (const replacement of input.replacements) {
         assertRecoveryTargetShape(replacement.oldTarget, 'OLD');
         assertRecoveryTargetShape(replacement.newTarget, 'NEW');
-        const oldPath = resolve(cwd, replacement.oldTarget);
+        const oldPath = resolve(targetDirectory, replacement.oldTarget);
         if (!containsPath(laneRoot, oldPath)) {
             throw new Error(`--replace-lint-target OLD is outside the author lane: ${replacement.oldTarget}`);
         }
@@ -1518,7 +1539,7 @@ function resolveRecoveryLintArgs(input: {
             );
         }
 
-        const newPath = resolve(cwd, replacement.newTarget);
+        const newPath = resolve(targetDirectory, replacement.newTarget);
         let canonicalNewPath: string;
         try {
             canonicalNewPath = realpathSync(newPath);
@@ -1546,7 +1567,7 @@ function resolveRecoveryLintArgs(input: {
         if (replacementsByIndex.has(index)) {
             continue;
         }
-        const retainedPath = canonicalPath(resolve(cwd, argument), realpathSync);
+        const retainedPath = canonicalPath(resolve(targetDirectory, argument), realpathSync);
         if (seenNewTargets.has(retainedPath)) {
             throw new Error(`--replace-lint-target NEW aliases retained lint target: ${argument}`);
         }
