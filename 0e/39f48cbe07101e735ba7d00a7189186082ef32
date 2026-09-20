@@ -1,0 +1,14 @@
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  h_1228e573df1f42 626-627,661
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0e39f48cbe07101e735ba7d00a7189186082ef32",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
