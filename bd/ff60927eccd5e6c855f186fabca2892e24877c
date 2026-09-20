@@ -1,0 +1,14 @@
+evidence/agent-campaign/manifest.json
+  h_1228e573df1f42 15-21,25-32,36-42,62-70,104-111,115-119,123-127,131-134,967,987-991,995-998,1002-1005,1009-1012
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bdff60927eccd5e6c855f186fabca2892e24877c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
