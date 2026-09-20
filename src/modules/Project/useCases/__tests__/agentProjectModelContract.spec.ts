@@ -327,6 +327,31 @@ describe('agent project model contract', () => {
             source: 'clip-content',
             evidence: 'stored-drum-voices',
         });
+        expect(contract?.tracks[0]?.clips[0]?.midi?.notes.map((note) => note.pitch)).toEqual([38]);
+    });
+
+    it('keeps an authoritative hydrated MIDI empty entry empty in the detailed contract', async () => {
+        const supplied = projectData();
+        const track = supplied.arrangement.tracks[0]!;
+        track.name = 'Track 1';
+        track.kind = 'midi';
+        track.clips = track.clips.filter((clip) => clip.type === 'midi');
+        track.devices = [
+            { id: 'kit', name: 'Kit', type: 'builtin-drum-kit', bypassed: false, parameterValues: { kit: 0 } },
+        ];
+        track.clips[0]!.notes = [{ id: 'inline-kick', pitch: 36, startBeat: 0, duration: 1, velocity: 1 }];
+        supplied.midi.notesByClipId['clip-midi'] = [];
+        supplied.meta.productionBrief!.trackRoles = [];
+
+        expect(isHydratableProjectData(supplied)).toBe(true);
+        const contract = await getAgentProjectModelContract({ projectData: supplied });
+
+        expect(contract?.tracks[0]?.canonicalRole).toMatchObject({
+            role: 'unknown',
+            source: 'unknown',
+            evidence: 'empty-content',
+        });
+        expect(contract?.tracks[0]?.clips[0]?.midi?.notes).toEqual([]);
     });
 
     it('builds the no-input contract through project persistence without exposing media bytes', async () => {
