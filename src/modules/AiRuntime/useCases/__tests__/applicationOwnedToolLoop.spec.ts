@@ -1295,7 +1295,7 @@ describe('project discovery tool', () => {
             description: 'x'.repeat(17_000),
             trackKind: 'audio',
             devices: [{ type: 'builtin-distortion', name: 'Distortion', parameterValues: {} }],
-            tags: ['tube'],
+            tags: [...Array.from({ length: 8 }, (_, index) => `ordinary-tag-${String(index)}`), 'tube'],
         });
         const requestTurn = vi
             .fn()
@@ -1331,7 +1331,10 @@ describe('project discovery tool', () => {
                     items: [
                         {
                             id: preset.id,
-                            evidence: { tags: ['tube'], deviceTypes: ['builtin-distortion'] },
+                            evidence: {
+                                tags: expect.arrayContaining(['tube']),
+                                deviceTypes: ['builtin-distortion'],
+                            },
                         },
                     ],
                 },

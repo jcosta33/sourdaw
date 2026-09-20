@@ -29,7 +29,12 @@ describe('getAgentPresetDiscoveryManifest', () => {
                     parameterValues: {},
                 })),
             ],
-            tags: ['tube', ...Array.from({ length: 9 }, (_, index) => `tag-${String(index)}-${'t'.repeat(600)}`)],
+            tags: [
+                ...Array.from({ length: 8 }, (_, index) => `ordinary-tag-${String(index)}`),
+                'warm',
+                'tube',
+                ...Array.from({ length: 9 }, (_, index) => `tag-${String(index)}-${'t'.repeat(600)}`),
+            ],
         });
         const before = getAgentPresetDiscoveryManifest().find((entry) => entry.id === preset.id);
         const changed = { ...preset, description: `${'x'.repeat(16_999)}y` };
@@ -42,7 +47,7 @@ describe('getAgentPresetDiscoveryManifest', () => {
             id: preset.id,
             name: 'n'.repeat(128),
             description: 'x'.repeat(1_024),
-            tags: ['tube', ...Array.from({ length: 7 }, (_, index) => `tag-${String(index)}-${'t'.repeat(122)}`)],
+            tags: [...Array.from({ length: 8 }, (_, index) => `ordinary-tag-${String(index)}`), 'tube'],
             deviceTypes: [
                 'builtin-distortion',
                 ...Array.from({ length: 7 }, (_, index) => `device-${String(index)}-${'d'.repeat(119)}`),
@@ -50,6 +55,8 @@ describe('getAgentPresetDiscoveryManifest', () => {
             searchTerms: [preset.name, ...preset.tags],
             version: `preset-v1:${getStableContractFingerprint(preset)}`,
         });
+        expect(before?.tags).not.toContain('warm');
+        expect(before).not.toHaveProperty('characterTags');
         expect(after?.description).toBe(before?.description);
         expect(after?.version).toBe(`preset-v1:${getStableContractFingerprint(changed)}`);
         expect(after?.version).not.toBe(before?.version);

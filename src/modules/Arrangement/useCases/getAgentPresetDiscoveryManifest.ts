@@ -1,3 +1,4 @@
+import { DEVICE_CHARACTER_TAGS } from '../models/DeviceParameterTypes';
 import { getStableContractFingerprint } from '../models/GetStableContractFingerprint';
 import { type SoundPreset } from '../models/SoundPreset';
 
@@ -42,6 +43,14 @@ function boundedDiscoveryTextList(values: readonly string[]): string[] {
         .map((value) => boundedDiscoveryText(value, MAX_DISCOVERY_LIST_TEXT_LENGTH));
 }
 
+function boundedDiscoveryTags(tags: readonly string[]): string[] {
+    const boundedTags = boundedDiscoveryTextList(tags);
+    const omittedCharacterTags = DEVICE_CHARACTER_TAGS.filter(
+        (tag) => tags.includes(tag) && !boundedTags.includes(tag)
+    );
+    return [...boundedTags, ...omittedCharacterTags];
+}
+
 function boundedDiscoverySubcategory(value: string | undefined): string | null {
     if (value === undefined) {
         return null;
@@ -58,7 +67,7 @@ function toDiscoveryEntry(preset: SoundPreset): AgentPresetDiscoveryEntry {
         description: boundedDiscoveryText(preset.description, MAX_DISCOVERY_DESCRIPTION_LENGTH),
         trackKind: preset.trackKind,
         isFactory: preset.isFactory,
-        tags: boundedDiscoveryTextList(preset.tags),
+        tags: boundedDiscoveryTags(preset.tags),
         deviceTypes: boundedDiscoveryTextList(preset.devices.map((device) => device.type)),
         searchTerms: [preset.name, ...preset.tags],
         version: `preset-v1:${getStableContractFingerprint(preset)}`,
