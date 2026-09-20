@@ -1,6 +1,6 @@
+import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
 import { beatToSeconds } from '../../services/beatConversion';
 
-import { MAX_OFFLINE_FRAMES } from './constants';
 import { resolveRenderContext, type ResolveRenderContextInput } from './resolveRenderContext';
 
 type HistoryAwareRenderContext = {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../../models/HostedAnthropicModels';
+import { streamHostedModelText } from '../../../../useCases/streamHostedModelText';
 import { type HostedOpenAiStreamResult } from '../openAiStreamResult';
 import { type CloudChatCompletionOutcome, streamCloudChatCompletion } from '../streamCloudChatCompletion';
 
@@ -21,10 +22,11 @@ type CloudStreamEvent =
           type: 'message_start';
           message: {
               usage: {
-                  input_tokens: number;
+                  input_tokens?: number;
                   output_tokens: number;
                   cache_creation_input_tokens?: number;
                   cache_read_input_tokens?: number;
+                  output_tokens_details?: unknown;
               };
           };
       }
@@ -35,7 +37,13 @@ type CloudStreamEvent =
     | {
           type: 'message_delta';
           delta: { stop_reason: string | null; stop_sequence: null };
-          usage?: { output_tokens: number; output_tokens_details?: { thinking_tokens: number } };
+          usage?: {
+              input_tokens?: number;
+              output_tokens: number;
+              cache_creation_input_tokens?: number;
+              cache_read_input_tokens?: number;
+              output_tokens_details?: unknown;
+          };
       }
     | { type: 'message_stop' }
     | { type: 'other_event' };
@@ -56,6 +64,7 @@ type HostedOpenAiStreamInput = {
 };
 
 const mocks = vi.hoisted(() => ({
+    getCloudProviderInfo: vi.fn(),
     getCloudProviderRuntime: vi.fn(),
     stream: vi.fn<(input: CloudStreamInput) => Promise<void>>(),
     streamOpenAiCompatibleChatCompletion:
@@ -64,6 +73,10 @@ const mocks = vi.hoisted(() => ({
     registerCloudStreamController: vi.fn((controller: AbortController) => controller),
     unregisterCloudStreamController: vi.fn(),
     warn: vi.fn(),
+}));
+
+vi.mock('../../getCloudProviderInfo', () => ({
+    getCloudProviderInfo: mocks.getCloudProviderInfo,
 }));
 
 vi.mock('../../getCloudProviderRuntime', () => ({
@@ -118,6 +131,14 @@ describe('streamCloudChatCompletion', () => {
             authentication: 'api-key',
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'test-model',
+        });
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            authentication: 'api-key',
+            baseUrl: null,
+            model: 'test-model',
+            reasoningEffort: null,
+            thinking: null,
         });
         mocks.streamOpenAiCompatibleChatCompletion.mockResolvedValue({
             finishReason: 'stop',
@@ -237,14 +258,266 @@ describe('streamCloudChatCompletion', () => {
         expect(onUsage).toHaveBeenNthCalledWith(1, {
             type: 'usage',
             mode: 'cumulative-snapshot',
-            usage: { inputTokens: 17, outputTokens: 0, cachedInputTokens: 5, reasoningTokens: null },
+            usage: {
+                inputTokens: 17,
+                outputTokens: 0,
+                cachedInputTokens: 2,
+                cacheWriteInputTokens: 3,
+                reasoningTokens: null,
+            },
             provenance: 'provider-reported',
         });
         expect(onUsage).toHaveBeenNthCalledWith(2, {
             type: 'usage',
             mode: 'final',
-            usage: { inputTokens: null, outputTokens: 4, cachedInputTokens: null, reasoningTokens: null },
+            usage: {
+                inputTokens: 17,
+                outputTokens: 4,
+                cachedInputTokens: 2,
+                cacheWriteInputTokens: 3,
+                reasoningTokens: null,
+            },
             provenance: 'provider-reported',
+        });
+    });
+
+    it.each([
+        {
+            name: 'retains totals on an output-only final event',
+            finalUsage: { output_tokens: 4 },
+            expected: { inputTokens: 17, outputTokens: 4, cachedInputTokens: 2, cacheWriteInputTokens: 3 },
+        },
+        {
+            name: 'retains sparse cache-write totals',
+            finalUsage: { output_tokens: 4, cache_creation_input_tokens: 3 },
+            expected: { inputTokens: 17, outputTokens: 4, cachedInputTokens: 2, cacheWriteInputTokens: 3 },
+        },
+        {
+            name: 'honors an explicit cache-write zero while retaining omitted components',
+            finalUsage: { output_tokens: 4, cache_creation_input_tokens: 0 },
+            expected: { inputTokens: 14, outputTokens: 4, cachedInputTokens: 2, cacheWriteInputTokens: 0 },
+        },
+        {
+            name: 'invalidates an overflowing final input total',
+            finalUsage: {
+                input_tokens: 12,
+                output_tokens: 4,
+                cache_read_input_tokens: 2,
+                cache_creation_input_tokens: Number.MAX_SAFE_INTEGER,
+            },
+            expected: {
+                inputTokens: null,
+                outputTokens: 4,
+                cachedInputTokens: 2,
+                cacheWriteInputTokens: Number.MAX_SAFE_INTEGER,
+            },
+        },
+    ])('$name through the hosted provider result', async ({ finalUsage, expected }) => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: 12,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 3,
+                        cache_read_input_tokens: 2,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: finalUsage,
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-cache-usage',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            ...expected,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('keeps a never-reported raw input total unknown through cache-only sparse snapshots', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 8,
+                        cache_read_input_tokens: 5,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: 1, cache_read_input_tokens: 5 },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-cache-only-usage',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: null,
+            outputTokens: 1,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('recovers a cache-only input total when a later snapshot reports explicit raw zero', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 8,
+                        cache_read_input_tokens: 5,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: null, stop_sequence: null },
+                usage: { output_tokens: 0, cache_creation_input_tokens: 8 },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { input_tokens: 0, output_tokens: 1 },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-cache-only-recovery',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: 13,
+            outputTokens: 1,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('recovers a malformed raw input count from a later authoritative snapshot', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: 10,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 8,
+                        cache_read_input_tokens: 5,
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: null, stop_sequence: null },
+                usage: { input_tokens: -1, output_tokens: 0 },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { input_tokens: 20, output_tokens: 1 },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-malformed-input-recovery',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: 33,
+            outputTokens: 1,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it('isolates cumulative Anthropic input state between concurrent hosted requests', async () => {
+        mocks.stream.mockImplementation(async ({ messages, onEvent }) => {
+            const isFirstRequest = messages[0]?.content === 'First request';
+            onEvent({
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: isFirstRequest ? 10 : 20,
+                        output_tokens: 0,
+                        cache_read_input_tokens: isFirstRequest ? 2 : 4,
+                        cache_creation_input_tokens: isFirstRequest ? 3 : 5,
+                    },
+                },
+            });
+            await Promise.resolve();
+            onEvent({
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: isFirstRequest ? 1 : 2 },
+            });
+            onEvent({ type: 'message_stop' });
+        });
+
+        const [first, second] = await Promise.all([
+            streamHostedModelText({
+                correlationId: 'anthropic-cache-first',
+                messages: [{ role: 'user', content: 'First request' }],
+                maxOutputTokens: 1_000,
+                onToken: vi.fn(),
+            }),
+            streamHostedModelText({
+                correlationId: 'anthropic-cache-second',
+                messages: [{ role: 'user', content: 'Second request' }],
+                maxOutputTokens: 1_000,
+                onToken: vi.fn(),
+            }),
+        ]);
+
+        expect(first.usage).toMatchObject({
+            inputTokens: 15,
+            outputTokens: 1,
+            cachedInputTokens: 2,
+            cacheWriteInputTokens: 3,
+        });
+        expect(second.usage).toMatchObject({
+            inputTokens: 29,
+            outputTokens: 2,
+            cachedInputTokens: 4,
+            cacheWriteInputTokens: 5,
         });
     });
 
@@ -289,6 +562,95 @@ describe('streamCloudChatCompletion', () => {
             type: 'usage',
             mode: 'final',
             usage: { inputTokens: null, outputTokens: 40, cachedInputTokens: null, reasoningTokens: 12 },
+            provenance: 'provider-reported',
+        });
+    });
+
+    it.each([
+        { name: 'omitted', outputTokensDetails: undefined, expectedReasoningTokens: 5 },
+        { name: 'null', outputTokensDetails: null, expectedReasoningTokens: null },
+        { name: 'a scalar', outputTokensDetails: 'invalid', expectedReasoningTokens: null },
+        { name: 'an array', outputTokensDetails: [], expectedReasoningTokens: null },
+    ])(
+        '$name final reasoning details preserve only an omitted prior count through the hosted result',
+        async ({ outputTokensDetails, expectedReasoningTokens }) => {
+            const finalUsage: { output_tokens: number; output_tokens_details?: unknown } = { output_tokens: 4 };
+            if (outputTokensDetails !== undefined) {
+                finalUsage.output_tokens_details = outputTokensDetails;
+            }
+            installAnthropicEvents([
+                {
+                    type: 'message_start',
+                    message: {
+                        usage: {
+                            input_tokens: 12,
+                            output_tokens: 0,
+                            output_tokens_details: { thinking_tokens: 5 },
+                        },
+                    },
+                },
+                {
+                    type: 'message_delta',
+                    delta: { stop_reason: 'end_turn', stop_sequence: null },
+                    usage: finalUsage,
+                },
+                { type: 'message_stop' },
+            ]);
+
+            const result = await streamHostedModelText({
+                correlationId: `anthropic-reasoning-${String(outputTokensDetails)}`,
+                messages: [{ role: 'user', content: 'Analyze the mix.' }],
+                maxOutputTokens: 1_000,
+                onToken: vi.fn(),
+            });
+
+            expect(result.usage).toEqual({
+                inputTokens: 12,
+                outputTokens: 4,
+                cachedInputTokens: null,
+                reasoningTokens: expectedReasoningTokens,
+                provenance: 'provider-reported',
+            });
+        }
+    );
+
+    it('recovers an unavailable reasoning count from a later valid hosted snapshot', async () => {
+        installAnthropicEvents([
+            {
+                type: 'message_start',
+                message: {
+                    usage: {
+                        input_tokens: 12,
+                        output_tokens: 0,
+                        output_tokens_details: { thinking_tokens: 5 },
+                    },
+                },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: null, stop_sequence: null },
+                usage: { output_tokens: 2, output_tokens_details: null },
+            },
+            {
+                type: 'message_delta',
+                delta: { stop_reason: 'end_turn', stop_sequence: null },
+                usage: { output_tokens: 4, output_tokens_details: { thinking_tokens: 7 } },
+            },
+            { type: 'message_stop' },
+        ]);
+
+        const result = await streamHostedModelText({
+            correlationId: 'anthropic-reasoning-recovery',
+            messages: [{ role: 'user', content: 'Analyze the mix.' }],
+            maxOutputTokens: 1_000,
+            onToken: vi.fn(),
+        });
+
+        expect(result.usage).toEqual({
+            inputTokens: 12,
+            outputTokens: 4,
+            cachedInputTokens: null,
+            reasoningTokens: 7,
             provenance: 'provider-reported',
         });
     });

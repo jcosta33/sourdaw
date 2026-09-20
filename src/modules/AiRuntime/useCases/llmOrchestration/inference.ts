@@ -5,6 +5,7 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
+import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
@@ -640,6 +641,20 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
 
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
+                    if (cloudToolPlan?.usage) {
+                        providerSource.push({
+                            type: 'usage',
+                            mode: 'final',
+                            usage: {
+                                inputTokens: cloudToolPlan.usage.inputTokens,
+                                outputTokens: cloudToolPlan.usage.outputTokens,
+                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
+                                cacheWriteInputTokens: cloudToolPlan.usage.cacheWriteInputTokens,
+                                reasoningTokens: cloudToolPlan.usage.reasoningTokens,
+                            },
+                            provenance: 'provider-reported',
+                        });
+                    }
                     for (const [index, call] of outcome.toolCalls.entries()) {
                         const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
                         providerSource.push({
@@ -649,19 +664,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 name: call.name,
                                 arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
                             },
-                        });
-                    }
-                    if (cloudToolPlan?.usage) {
-                        providerSource.push({
-                            type: 'usage',
-                            mode: 'final',
-                            usage: {
-                                inputTokens: cloudToolPlan.usage.inputTokens,
-                                outputTokens: cloudToolPlan.usage.outputTokens,
-                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
-                                reasoningTokens: cloudToolPlan.usage.reasoningTokens,
-                            },
-                            provenance: 'provider-reported',
                         });
                     }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });
@@ -726,6 +728,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
                 const isAdmissionRejection = isProviderAttemptAdmissionError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                const protocolUsage = isHostedToolCallingProtocolError(error) ? error.usage : null;
                 const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
                 let normalizedAttemptError: Error | null = null;
                 if (providerSession !== null && providerSource !== null && !providerSessionSettled) {
@@ -744,7 +747,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                     inputTokens: error.usage.inputTokens,
                                     outputTokens: error.usage.outputTokens,
                                     cachedInputTokens: error.usage.cacheReadInputTokens,
-                                    reasoningTokens: null,
+                                    cacheWriteInputTokens: error.usage.cacheWriteInputTokens,
+                                    reasoningTokens: error.usage.reasoningTokens,
                                 },
                                 provenance: 'provider-reported',
                             });
@@ -757,31 +761,47 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 safeMessage: 'The model provider rejected tool planning.',
                             },
                         });
-                    } else if (normalizedProviderFailure !== null) {
-                        failedResult = providerSource.finish({
-                            reason: 'error',
-                            failure: {
-                                code: normalizedProviderFailure.code,
-                                retryable: normalizedProviderFailure.retryable,
-                                safeMessage: normalizedProviderFailure.message,
-                            },
-                        });
                     } else {
-                        const httpStatus = snapshotHostedAiHttpStatus(error);
-                        if (httpStatus !== null) {
-                            failedResult = providerSource.finish({
-                                reason: 'error',
-                                failure: hostedAiHttpFailure(httpStatus),
+                        if (protocolUsage !== null) {
+                            providerSource.push({
+                                type: 'usage',
+                                mode: 'final',
+                                usage: {
+                                    inputTokens: protocolUsage.inputTokens,
+                                    outputTokens: protocolUsage.outputTokens,
+                                    cachedInputTokens: protocolUsage.cacheReadInputTokens,
+                                    cacheWriteInputTokens: protocolUsage.cacheWriteInputTokens,
+                                    reasoningTokens: protocolUsage.reasoningTokens,
+                                },
+                                provenance: 'provider-reported',
                             });
-                        } else {
+                        }
+                        if (normalizedProviderFailure !== null) {
                             failedResult = providerSource.finish({
                                 reason: 'error',
                                 failure: {
-                                    code: 'provider-attempt-failed',
-                                    retryable: true,
-                                    safeMessage: 'The model provider request failed.',
+                                    code: normalizedProviderFailure.code,
+                                    retryable: normalizedProviderFailure.retryable,
+                                    safeMessage: normalizedProviderFailure.message,
                                 },
                             });
+                        } else {
+                            const httpStatus = snapshotHostedAiHttpStatus(error);
+                            if (httpStatus !== null) {
+                                failedResult = providerSource.finish({
+                                    reason: 'error',
+                                    failure: hostedAiHttpFailure(httpStatus),
+                                });
+                            } else {
+                                failedResult = providerSource.finish({
+                                    reason: 'error',
+                                    failure: {
+                                        code: 'provider-attempt-failed',
+                                        retryable: true,
+                                        safeMessage: 'The model provider request failed.',
+                                    },
+                                });
+                            }
                         }
                     }
                     reportProviderResult(failedResult);

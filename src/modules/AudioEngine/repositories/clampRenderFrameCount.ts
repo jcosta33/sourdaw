@@ -1,4 +1,8 @@
-import { MAX_OFFLINE_FRAMES } from './constants';
+/**
+ * Maximum OfflineAudioContext frame length. Chrome enforces 2^30; Firefox is
+ * higher but we cap conservatively to avoid OOM on both.
+ */
+export const MAX_OFFLINE_FRAMES = 2 ** 30;
 
 type ClampRenderFrameCountInput = {
     durationSeconds: number;
@@ -15,6 +19,10 @@ type ClampRenderFrameCountInput = {
  * an over-long export produced a short file that looked like a success. Both the
  * mixdown and the stem path resolve their frame count here so the truncation is
  * always reported the same way.
+ *
+ * Lives at the renderer's IO edge, beside the context it sizes, so every reader
+ * of the render's frame count — the context builder and the scheduler that must
+ * not schedule past it — resolves the same ceil and the same cap.
  */
 export function clampRenderFrameCount({ durationSeconds, sampleRate, onWarning }: ClampRenderFrameCountInput): number {
     const requestedFrames = Math.ceil(durationSeconds * sampleRate);

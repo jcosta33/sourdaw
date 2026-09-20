@@ -2,6 +2,7 @@ import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { FLANGER_MIN_DELAY_SECONDS } from '../models/DeviceParamLaws';
 import { getDrumKitByIndex } from '../models/FactoryDrumKits';
+import { type OfflineCurveWriteTargets } from '../models/OfflineCurveWriteTargets';
 import { type OfflineDeviceNode } from '../models/OfflineDeviceNode';
 import { type DrumKit } from '../models/SynthModels';
 
@@ -121,10 +122,10 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain', convert: dbToGain }],
     'builtin-limiter:lim-threshold': [{ nodeName: 'comp', property: 'threshold' }],
     'builtin-limiter:lim-release': [{ nodeName: 'comp', property: 'release', scale: 1 / 1000 }],
-    // lim-ceiling binds nothing: the advertised cap lives in the clipper's
-    // WaveShaper curve, which only static writes rebuild — automating the
-    // ceiling gain alone left the factory curve in place and rendered peaks
-    // past the knob's ceiling. The census carries the reasoned exemption.
+    // lim-ceiling is deliberately absent: the advertised cap lives in the
+    // clipper's WaveShaper curve, so it has no AudioParam. It resolves through
+    // `resolveDeviceCurveWriteTargets` below instead, which rebuilds that curve
+    // at every automation frame (#4437).
     'builtin-filter:filter-cutoff': [{ nodeName: 'filter', property: 'frequency' }],
     'builtin-filter:filter-resonance': [{ nodeName: 'filter', property: 'Q' }],
     // dist-drive regenerates the WaveShaper curve (no AudioParam).
@@ -257,4 +258,29 @@ export function resolveDeviceParamTargets(
 
 export function resolveDeviceParamScale(deviceType: string, parameterId: string): number {
     return paramTargetMap[`${deviceType}:${parameterId}`]?.[0]?.scale ?? 1;
+}
+
+/**
+ * The two nodes a frame-addressed device parameter writes together, or `null`
+ * when the pair has no such write.
+ *
+ * `builtin-limiter:lim-ceiling` is the only one today: its advertised cap IS the
+ * clipper's `WaveShaper` curve, so there is no `AudioParam` to schedule and the
+ * render writes the pair at each automation frame. Resolved exactly as
+ * `applyLimiterParams` resolves them for a static ceiling, so the automated and
+ * static writes reach the same nodes.
+ */
+export function resolveDeviceCurveWriteTargets(
+    deviceType: string,
+    parameterId: string,
+    node: OfflineDeviceNode
+): OfflineCurveWriteTargets | null {
+    if (deviceType !== 'builtin-limiter' || parameterId !== 'lim-ceiling') {
+        return null;
+    }
+    const named = node.namedNodes;
+    return {
+        ceiling: (named?.ceiling ?? node.nodes[1]) as GainNode,
+        clipper: (named?.clipper ?? node.nodes[2]) as WaveShaperNode,
+    };
 }

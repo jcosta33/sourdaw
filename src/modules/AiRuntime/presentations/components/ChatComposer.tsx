@@ -15,7 +15,6 @@ type ChatComposerProps = {
     enableReasoning: boolean;
     isGenerating: boolean;
     inputValue: string;
-    isLlmAvailable: boolean;
     textareaRef: RefObject<HTMLTextAreaElement | null>;
     onChange: (value: string) => void;
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -31,7 +30,6 @@ export const ChatComposer = ({
     enableReasoning,
     isGenerating,
     inputValue,
-    isLlmAvailable,
     textareaRef,
     onChange,
     onKeyDown,
@@ -116,13 +114,13 @@ export const ChatComposer = ({
                     aria-label="Chat message input"
                     data-testid="chat-composer-input"
                     className="max-h-32 min-h-[44px] w-full flex-1 resize-none bg-transparent p-3 text-xs text-foreground placeholder:text-muted-foreground scrollbar-thin scrollbar-thumb-white/10 outline-none focus-visible:outline-none"
-                    disabled={isGenerating || !isLlmAvailable}
+                    disabled={isGenerating}
                     rows={1}
                 />
                 <Row align="start" justify="end" shrink={false} className="p-2 pb-0">
                     <Button
                         size="icon-sm"
-                        disabled={!isGenerating && (!inputValue.trim() || !isLlmAvailable)}
+                        disabled={!isGenerating && !inputValue.trim()}
                         onClick={isGenerating ? onStop : onSend}
                         className={cn('h-7 w-7 rounded-[6px] transition-all', buttonClassName)}
                         title={isGenerating ? 'Stop Generation' : undefined}

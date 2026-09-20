@@ -5,12 +5,13 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createExportError } from '../errors/ExportError';
 import { type AudioGraphApplyResult, type AudioGraphCommand } from '../models/AudioGraphBackend';
+import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
-import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './offlineRender/collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -296,6 +297,11 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+        // The frame scheduler for this context, threaded into every track's
+        // scheduling. `makeOfflineFrameScheduler` returns one instance per
+        // `OfflineAudioContext`, so the Faust devices created inside the render
+        // share this one instead of racing a second suspend for the same frame.
+        const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
         const masterGain = offlineCtx.createGain();
         masterGain.gain.value = masterGainValue;
         masterGain.connect(offlineCtx.destination);
@@ -456,6 +462,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: 0,
+                scheduleFrame,
                 // Same multiplier the strip was seeded with, so a gain lane on a
                 // VCA-member track rides its group instead of nullifying it.
                 vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,

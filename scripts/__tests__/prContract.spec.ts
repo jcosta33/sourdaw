@@ -760,6 +760,21 @@ describe('guard failure receipt contract', () => {
         expect(parsed).toEqual(validReceipt);
     });
 
+    it('parses a receipt with an absolute original cwd and rejects malformed cwd fields', () => {
+        const receiptWithCwd = { ...validReceipt, cwd: '/repo/.agents/worktrees/agent-3161-test' };
+
+        expect(parseGuardFailureReceipt(JSON.stringify(receiptWithCwd))).toEqual(receiptWithCwd);
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, cwd: '' }))).toThrow(
+            /cwd must be an absolute path/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, cwd: 'src' }))).toThrow(
+            /cwd must be an absolute path/
+        );
+        expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, cwd: 42 }))).toThrow(
+            /cwd must be an absolute path/
+        );
+    });
+
     it('rejects invalid JSON', () => {
         expect(() => parseGuardFailureReceipt('not-json')).toThrow(/not valid JSON/);
     });
