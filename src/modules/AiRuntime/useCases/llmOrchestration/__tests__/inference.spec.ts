@@ -14,10 +14,12 @@ import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import {
     AUTO_TOOL_CHOICE,
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
@@ -125,6 +127,15 @@ const toolSchemas: ToolSchema[] = [
     },
 ];
 
+const compatibleRuntime: OpenAiCompatibleCloudRuntime = {
+    provider: 'openai-compatible',
+    authentication: 'none',
+    session_id: null,
+    model: 'compatible-model',
+    base_url: 'http://localhost:1234/v1',
+    strict_tool_schemas: false,
+};
+
 /** A published catalog in the shape production hands the schema builder. */
 const creativeCatalog: CreativeInterpretationCatalog = {
     schemaVersion: 1,
@@ -170,6 +181,7 @@ describe('generateToolPlanningOutcome', () => {
     afterEach(() => {
         agentRunLifecycle.clear();
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+        vi.unstubAllGlobals();
     });
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
@@ -506,6 +518,127 @@ describe('generateToolPlanningOutcome', () => {
                 category: 'remoteTokens',
                 reserved: 128,
                 actual: 128,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
+    });
+
+    it('records compatible protocol-rejection usage from the real adapter without compiling a choice', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai-compatible',
+            model: 'compatible-model',
+            baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
+        });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn<typeof fetch>().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        id: 'compatible-request-1',
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        {
+                                            function: {
+                                                name: 'muteTrack',
+                                                arguments: '{"trackId":"track-1","muted":true}',
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        {
+                                            function: {
+                                                name: 'muteTrack',
+                                                arguments: '{"trackId":"track-2","muted":false}',
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                        usage: { prompt_tokens: 63, completion_tokens: 9, prompt_tokens_details: { cached_tokens: 5 } },
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                )
+            )
+        );
+        mocks.generateCloudToolCalls.mockImplementation(
+            (
+                systemPrompt: string,
+                userMessage: string,
+                schemas: readonly ToolSchema[],
+                maxOutputTokens: number,
+                directive: HostedToolChoiceDirective,
+                signal?: AbortSignal
+            ) =>
+                generateOpenAiCompatibleToolCalls({
+                    runtime: compatibleRuntime,
+                    systemPrompt,
+                    userMessage,
+                    toolSchemas: schemas,
+                    maxOutputTokens,
+                    directive,
+                    signal,
+                })
+        );
+        agentRunLifecycle.create({
+            runId: 'run-compatible-protocol-usage',
+            request: 'mute the first track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-compatible-protocol-usage', result, 'attempt-compatible-protocol-usage');
+        });
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).rejects.toMatchObject({ code: 'provider-attempt-failed', retryable: true });
+
+        expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce();
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            provider: 'openai-compatible',
+            model: 'compatible-model',
+            status: 'failed',
+            failure: { code: 'provider-attempt-failed', retryable: true },
+            output: { toolCalls: [] },
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                cacheWriteInputTokens: null,
+                provenance: 'provider-reported',
+            },
+        });
+        expect(agentRunLifecycle.get('run-compatible-protocol-usage')?.providerUsage).toHaveLength(1);
+        expect(getProviderRouteView({ runId: 'run-compatible-protocol-usage', candidates: [] })?.actual).toMatchObject({
+            provider: 'openai-compatible',
+            model: 'compatible-model',
+        });
+        expect(getProviderRouteView({ runId: 'run-compatible-protocol-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 72,
+                actual: 72,
                 provenance: 'provider-reported',
                 final: true,
             },

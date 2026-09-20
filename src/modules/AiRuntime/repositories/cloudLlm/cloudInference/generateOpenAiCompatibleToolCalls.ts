@@ -1,5 +1,8 @@
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
-import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
+import {
+    HostedToolCallingProtocolError,
+    isHostedToolCallingProtocolError,
+} from '../../../errors/HostedToolCallingProtocolError';
 import { isToolPlanningRejectedError, ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
@@ -255,7 +258,13 @@ export async function generateOpenAiCompatibleToolCalls({
     try {
         calls = parseToolCalls(payload, codec.decode);
     } catch (error) {
-        throw isToolPlanningRejectedError(error) ? new ToolPlanningRejectedError(error.message, usage) : error;
+        if (isToolPlanningRejectedError(error)) {
+            throw new ToolPlanningRejectedError(error.message, usage);
+        }
+        if (isHostedToolCallingProtocolError(error)) {
+            throw new HostedToolCallingProtocolError(error.message, usage);
+        }
+        throw error;
     }
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
