@@ -11,10 +11,17 @@ import { type AgentDiscoveryEntry, type AgentDiscoveryFilters } from '../../mode
 export type DiscoveryCandidate = {
     entry: AgentDiscoveryEntry;
     kind: string | null;
+    /** Owner-published text associations, kept outside opaque entry evidence for filtering. */
+    searchTerms?: readonly string[];
 };
 
-function matchesText(name: string, text: string): boolean {
-    return name.toLocaleLowerCase().includes(text.toLocaleLowerCase());
+function matchesText(candidate: DiscoveryCandidate, text: string): boolean {
+    const normalizedText = text.toLocaleLowerCase();
+    const searchableText = [candidate.entry.name];
+    if (candidate.searchTerms) {
+        searchableText.push(...candidate.searchTerms);
+    }
+    return searchableText.some((value) => value.toLocaleLowerCase().includes(normalizedText));
 }
 
 /** Filters a caller may apply to any answered domain, applied to one candidate. */
@@ -28,7 +35,7 @@ export function matchesDiscoveryFilters(
     if (filters.stableId !== undefined && candidate.entry.id !== filters.stableId) {
         return false;
     }
-    if (filters.text !== undefined && !matchesText(candidate.entry.name, filters.text)) {
+    if (filters.text !== undefined && !matchesText(candidate, filters.text)) {
         return false;
     }
     if (filters.kind !== undefined && candidate.kind !== filters.kind) {

@@ -25,7 +25,12 @@ export function getProjectProtocolContracts() {
             id: 'discovery' as const,
             owner: 'Project' as const,
             schemaVersion: AGENT_DISCOVERY_SCHEMA_VERSION,
-            capabilities: ['owner-catalog-discovery', 'revision-bound-read', 'pagination'] as const,
+            capabilities: [
+                'owner-catalog-discovery',
+                'character-tag-filtering',
+                'revision-bound-read',
+                'pagination',
+            ] as const,
             operations: AGENT_DISCOVERY_DOMAINS.map((domain) => ({
                 name: domain,
                 version: String(AGENT_DISCOVERY_SCHEMA_VERSION),

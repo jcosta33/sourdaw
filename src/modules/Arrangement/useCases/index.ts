@@ -186,8 +186,10 @@ export { renameMixerSnapshot } from './mixerSnapshot/operations/renameMixerSnaps
 
 export { compileLoadPresetActions } from './preset/compileLoadPresetActions';
 export { getUserPresets } from './preset/presetStorage/getUserPresets';
+export { getAgentPresetDiscoveryManifest } from './getAgentPresetDiscoveryManifest';
 export { saveCurrentAsPreset } from './preset/presetStorage/saveCurrentAsPreset';
 export { deleteUserPreset } from './preset/presetStorage/deleteUserPreset';
+export { saveUserPreset } from './preset/presetStorage/saveUserPreset';
 
 export { armTrack } from './recording/armTrack';
 export { startRecording } from './recording/startRecording';

@@ -632,7 +632,7 @@ export const EXPANDED_FX_PRESETS: SoundPreset[] = [
             bitcrusher('Vinyl Crunch', { 'crush-bits': 12, 'crush-rate': 0.8, 'crush-mix': 0.25 }),
             eq('Vinyl EQ', { 'eq-low-gain': -2, 'eq-high-gain': -5, 'eq-high-freq': 8000 }),
         ],
-        tags: ['lo-fi', 'vinyl', 'retro', 'chill'],
+        tags: ['lo-fi', 'vinyl', 'retro', 'chill', 'bitcrush'],
         author: AUTHOR,
         isFactory: true,
     },
