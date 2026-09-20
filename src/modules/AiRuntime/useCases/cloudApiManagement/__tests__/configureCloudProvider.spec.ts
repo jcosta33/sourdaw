@@ -96,6 +96,64 @@ describe('configureCloudProvider', () => {
         expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
     });
 
+    it('refuses extended thinking on a non-Anthropic provider', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'openai',
+                model: 'gpt-test',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+                thinking: { type: 'adaptive' },
+            })
+        ).rejects.toThrow('Extended thinking can only be configured for the Anthropic provider');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
+    it('refuses a fixed thinking budget below the documented minimum', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'anthropic',
+                model: 'claude-test',
+                authentication: 'api-key',
+                apiKey: 'sk-anthropic-test',
+                thinking: { type: 'enabled', budgetTokens: 1023 },
+            })
+        ).rejects.toThrow('Thinking budget must be an integer of at least 1024 tokens');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
+    it('refuses a fractional thinking budget', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'anthropic',
+                model: 'claude-test',
+                authentication: 'api-key',
+                apiKey: 'sk-anthropic-test',
+                thinking: { type: 'enabled', budgetTokens: 2048.5 },
+            })
+        ).rejects.toThrow('Thinking budget must be an integer of at least 1024 tokens');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
+    it('forwards adaptive extended thinking for the Anthropic provider', async () => {
+        await configureCloudProvider({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            apiKey: 'sk-anthropic-test',
+            thinking: { type: 'adaptive' },
+        });
+
+        expect(mocks.setCloudProviderConfig).toHaveBeenCalledWith({
+            provider: 'anthropic',
+            model: 'claude-test',
+            baseUrl: undefined,
+            authentication: 'api-key',
+            apiKey: 'sk-anthropic-test',
+            thinking: { type: 'adaptive' },
+        });
+    });
+
     it('accepts an unauthenticated loopback compatible endpoint', async () => {
         await configureCloudProvider({
             provider: 'openai-compatible',

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
-import { type ModelProviderName } from '../../models/ModelProviderProtocol';
+import { type ModelProviderName, type ModelProviderResult } from '../../models/ModelProviderProtocol';
 import {
     type HostedToolPlan,
     type HostedToolPlanUsage,
@@ -31,7 +31,7 @@ function buildRemoteDisclosure() {
  * reported result. This mirrors that exact sequence against the real protocol session and
  * the real `agentRunLifecycle` store, rather than assuming the wiring works.
  */
-function reportHostedToolPlan(plan: HostedToolPlan): void {
+function reportHostedToolPlan(plan: HostedToolPlan): ModelProviderResult {
     const { protocol, request } = readyRequest({
         provider: 'anthropic',
         operation: 'tools',
@@ -58,7 +58,7 @@ function reportHostedToolPlan(plan: HostedToolPlan): void {
                 inputTokens: plan.usage.inputTokens,
                 outputTokens: plan.usage.outputTokens,
                 cachedInputTokens: plan.usage.cacheReadInputTokens,
-                reasoningTokens: null,
+                reasoningTokens: plan.usage.reasoningTokens,
             },
             provenance: 'provider-reported',
         });
@@ -71,6 +71,7 @@ function reportHostedToolPlan(plan: HostedToolPlan): void {
     };
 
     recordAgentProviderUsage(RUN_ID, reportedResult, BUDGET_ATTEMPT_ID);
+    return reportedResult;
 }
 
 /**
@@ -106,7 +107,7 @@ function reportRejectedToolPlan(provider: ModelProviderName, usage: HostedToolPl
                 inputTokens: usage.inputTokens,
                 outputTokens: usage.outputTokens,
                 cachedInputTokens: usage.cacheReadInputTokens,
-                reasoningTokens: null,
+                reasoningTokens: usage.reasoningTokens,
             },
             provenance: 'provider-reported',
         });
@@ -142,7 +143,13 @@ describe('hosted tool-planning usage attribution', () => {
             calls: [],
             assistantItems: [],
             strictToolSchemas: true,
-            usage: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 40, cacheWriteInputTokens: 8 },
+            usage: {
+                inputTokens: 120,
+                outputTokens: 30,
+                cacheReadInputTokens: 40,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: null,
+            },
         });
 
         const run = agentRunLifecycle.get(RUN_ID);
@@ -167,6 +174,32 @@ describe('hosted tool-planning usage attribution', () => {
             actual: 150,
             final: true,
         });
+    });
+
+    it('forwards a plan-reported thinking figure as the reported usage reasoning tokens', () => {
+        agentRunLifecycle.create({
+            runId: RUN_ID,
+            request: 'set the tempo',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+
+        const reported = reportHostedToolPlan({
+            providerRequestId: 'msg_1',
+            calls: [],
+            assistantItems: [],
+            strictToolSchemas: true,
+            usage: {
+                inputTokens: 120,
+                outputTokens: 30,
+                cacheReadInputTokens: 40,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+            },
+        });
+
+        expect(reported.usage).toMatchObject({ reasoningTokens: 5, provenance: 'provider-reported' });
     });
 
     it('reports no cache-write figure and a false strictToolSchemas for a non-strict plan with no usage event', () => {
@@ -198,11 +231,35 @@ describe('hosted tool-planning usage attribution', () => {
     });
 
     it.each<[ModelProviderName, HostedToolPlanUsage]>([
-        ['anthropic', { inputTokens: 30, outputTokens: 12, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 }],
-        ['openai', { inputTokens: 40, outputTokens: 7, cacheReadInputTokens: 12, cacheWriteInputTokens: null }],
+        [
+            'anthropic',
+            {
+                inputTokens: 30,
+                outputTokens: 12,
+                cacheReadInputTokens: 0,
+                cacheWriteInputTokens: 0,
+                reasoningTokens: 21,
+            },
+        ],
+        [
+            'openai',
+            {
+                inputTokens: 40,
+                outputTokens: 7,
+                cacheReadInputTokens: 12,
+                cacheWriteInputTokens: null,
+                reasoningTokens: null,
+            },
+        ],
         [
             'openai-compatible',
-            { inputTokens: 18, outputTokens: 5, cacheReadInputTokens: 0, cacheWriteInputTokens: null },
+            {
+                inputTokens: 18,
+                outputTokens: 5,
+                cacheReadInputTokens: 0,
+                cacheWriteInputTokens: null,
+                reasoningTokens: null,
+            },
         ],
     ])(
         'attributes %s usage from a refused turn to the run even though the outcome is a rejection',

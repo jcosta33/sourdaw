@@ -17,10 +17,12 @@ const mocks = vi.hoisted(() => ({
     })),
     cancel: vi.fn(),
     captureProjectRevision: vi.fn(() => 'revision-fixture'),
-    compileRequest: vi.fn((_input: ModelProviderRequestInput) => ({
-        status: 'unavailable' as const,
-        failure: { safeMessage: 'The fixture protocol admits no request.' },
-    })),
+    compileRequest: vi.fn(
+        (_input: ModelProviderRequestInput): { status: string; failure?: unknown; request?: unknown } => ({
+            status: 'unavailable',
+            failure: { safeMessage: 'The fixture protocol admits no request.' },
+        })
+    ),
     get: vi.fn(() => ({
         grants: {},
         budgets: { limits: {}, consumed: {} },
@@ -38,6 +40,13 @@ const mocks = vi.hoisted(() => ({
     setChatGenerating: vi.fn(),
     settleSafely: vi.fn(() => ({ accepted: false, warning: null })),
     updateChatMessage: vi.fn(),
+    getCloudProviderInfo: vi.fn(() => null as { provider: string; model: string } | null),
+    prepareDisclosure: vi.fn(() => ({})),
+    publishDisclosure: vi.fn(() => true),
+    reserveBudget: vi.fn(),
+    streamCloudChatCompletion: vi.fn(),
+    streamWriterFinish: vi.fn(() => ({ status: 'complete', failure: null })),
+    streamWriterPush: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
@@ -45,10 +54,16 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: mocks.captureProjectRevision }));
 
 vi.mock('../../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
-    streamCloudChatCompletion: vi.fn(),
+    streamCloudChatCompletion: mocks.streamCloudChatCompletion,
 }));
 
-vi.mock('../../../repositories/cloudLlm/getCloudProviderInfo', () => ({ getCloudProviderInfo: vi.fn(() => null) }));
+vi.mock('../../../repositories/cloudLlm/getCloudProviderInfo', () => ({
+    getCloudProviderInfo: mocks.getCloudProviderInfo,
+}));
+
+vi.mock('../../createModelProviderStreamWriter', () => ({
+    createModelProviderStreamWriter: () => ({ push: mocks.streamWriterPush, finish: mocks.streamWriterFinish }),
+}));
 
 vi.mock('../../../repositories/cloudLlm/isCloudAvailable', () => ({ isCloudAvailable: vi.fn(() => false) }));
 
@@ -71,7 +86,7 @@ vi.mock('../../agentRunLifecycle', () => ({
         get: mocks.get,
         recordContextEvidence: mocks.recordContextEvidence,
         recordError: mocks.recordError,
-        reserveBudget: vi.fn(),
+        reserveBudget: mocks.reserveBudget,
         transitionPhase: vi.fn(),
     },
 }));
@@ -79,6 +94,10 @@ vi.mock('../../agentRunLifecycle', () => ({
 vi.mock('../../agentRunWorkLease', () => ({ agentRunWorkLease: { settle: vi.fn() } }));
 
 vi.mock('../../buildAgentContext', () => ({ buildAgentContext: mocks.buildAgentContext }));
+
+vi.mock('../../discloseRemoteTransmission', () => ({
+    remoteTransmissionDisclosure: { prepare: mocks.prepareDisclosure, publish: mocks.publishDisclosure },
+}));
 
 vi.mock('../../cancelAgentRun', () => ({
     agentRunCancellation: { bindAbortController: mocks.bindAbortController, cancel: mocks.cancel },
@@ -130,6 +149,66 @@ async function compileExplainRequest(): Promise<{ maxOutputTokens: number; maxTo
     }
     return { maxOutputTokens: compiled.limits.maxOutputTokens, maxTotalTokens: compiled.budget.maxTotalTokens };
 }
+
+type CloudStreamOptions = {
+    onReasoning?: (text: string) => void;
+    onUsage?: (event: unknown) => void;
+    onUnknownEvent?: (providerEventType: string) => void;
+};
+
+type ChatMessagePatch = { content?: string; reasoning?: string; isStreaming?: boolean };
+
+function readLastChatPatch(): ChatMessagePatch {
+    const calls = mocks.updateChatMessage.mock.calls;
+    const last = calls[calls.length - 1];
+    if (last === undefined) {
+        throw new Error('the explain route wrote no chat message');
+    }
+    return last[1] as ChatMessagePatch;
+}
+
+describe('streamExplainChatResponse hosted reasoning', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.bindAbortController.mockReturnValue(() => undefined);
+        mocks.getCloudProviderInfo.mockReturnValue({ provider: 'anthropic', model: 'claude-test' });
+        mocks.prepareDisclosure.mockReturnValue({});
+        mocks.publishDisclosure.mockReturnValue(true);
+        mocks.reserveBudget.mockReturnValue({ status: 'reserved' });
+        mocks.settleSafely.mockReturnValue({ accepted: true, warning: null });
+        mocks.streamWriterFinish.mockReturnValue({ status: 'complete', failure: null });
+        mocks.compileRequest.mockImplementation((input: ModelProviderRequestInput) => ({
+            status: 'ready' as const,
+            request: {
+                correlationId: input.correlationId,
+                messages: input.messages,
+                limits: input.limits,
+            },
+        }));
+    });
+
+    it('renders streamed thinking as the assistant message reasoning beside its answer', async () => {
+        mocks.streamCloudChatCompletion.mockImplementation(
+            async (_messages: unknown, onToken: (text: string) => void, options: CloudStreamOptions) => {
+                options.onReasoning?.('plan');
+                onToken('ok');
+                return { status: 'complete', finishReason: 'stop', providerRequestId: null };
+            }
+        );
+
+        await streamExplainChatResponse({
+            userText: 'Why is the low end muddy?',
+            runId: 'run-1',
+            backend: 'cloud',
+            providerLease: lease,
+            providerReceiptIdentity: 'receipt-1',
+            providerWorkId: 'work-1',
+        });
+
+        expect(mocks.streamCloudChatCompletion).toHaveBeenCalledOnce();
+        expect(readLastChatPatch()).toMatchObject({ content: 'ok', reasoning: 'plan', isStreaming: false });
+    });
+});
 
 describe('streamExplainChatResponse output ceiling', () => {
     beforeEach(() => {

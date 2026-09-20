@@ -23,6 +23,7 @@ function toasterEntry(connectPadOutput: ConnectPadOutput, setPadDryRouted: SetPa
     return {
         deviceId: 'toaster-device',
         deviceType: 'toaster',
+        contributesAudio: true,
         node,
         strategy: {
             node,

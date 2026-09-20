@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
     AUTHOR_BOT_NODE_ID,
+    CONFIRM_REVIEWER_MINT_PERMISSIONS,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
     authenticateRole,
@@ -29,7 +30,9 @@ import {
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
+    type FileReader,
     type GhSession,
+    type GitHubJsonClient,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
@@ -38,6 +41,7 @@ import {
     parseReviewRepairReply,
     readCommentDatabaseId,
     readFindingLine,
+    readFindingReviewedHead,
     renderReviewRepairReply,
     selectEligibleRepairs,
     type ReviewRepairRecord,
@@ -321,6 +325,7 @@ function readThread(node: unknown, label: string): ListedThread {
             rootPath: readPath(root.path, `${label} root comment path`),
             rootLine: readFindingLine(root.line, root.originalLine, `${label} root comment line`),
             rootSide: readSide(node.diffSide, `${label} diff side`),
+            rootReviewedHead: readFindingReviewedHead(root.pullRequestReview, `${label} root comment`),
             replies: [root, ...rest].map((comment) => readReply(comment, label)),
         },
         commentCursor: readCommentCursor(comments, label),
@@ -585,10 +590,31 @@ export function shellPort(
     };
 }
 
+/**
+ * Confirm's reviewer identity. Resolving a thread is a repository write on GitHub's side, so this
+ * mint carries contents write, which the plain reviewer mint (publication only) deliberately omits.
+ */
+export async function authenticateConfirmReviewer(
+    primaryRoot: string,
+    readFile?: FileReader,
+    request?: GitHubJsonClient,
+    env?: NodeJS.ProcessEnv
+): Promise<ConfirmReviewRepairsAuthentication> {
+    const auth = await authenticateRole({
+        primaryRoot,
+        role: 'reviewer',
+        permissions: CONFIRM_REVIEWER_MINT_PERMISSIONS,
+        readFile,
+        request,
+        env,
+    });
+    return { minted: auth.minted, session: auth.session };
+}
+
 export function defaultConfirmReviewRepairsCoordinatorDependencies(): ConfirmReviewRepairsCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
-        authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
+        authenticateReviewer: authenticateConfirmReviewer,
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
                 env: session.env,

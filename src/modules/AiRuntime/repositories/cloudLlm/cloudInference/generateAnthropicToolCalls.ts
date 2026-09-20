@@ -5,6 +5,8 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
+import { anthropicModelRejectsForcedToolChoice } from './anthropicModelFamilies';
+import { buildAnthropicThinkingBudget } from './buildAnthropicThinkingBudget';
 import { buildWireToolNameCodec } from './buildWireToolNameCodec';
 import {
     type HostedToolChoiceDirective,
@@ -25,6 +27,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The thinking tokens a reply bills, which only a response carrying the detail object reports. */
+function readThinkingTokens(usage: Record<string, unknown>): number | null {
+    if (!isRecord(usage.output_tokens_details)) {
+        return null;
+    }
+    return readHostedTokenCount(usage.output_tokens_details.thinking_tokens);
+}
+
 function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {
     if (!isRecord(payload.usage)) {
         return null;
@@ -34,18 +44,32 @@ function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null
         outputTokens: readHostedTokenCount(payload.usage.output_tokens),
         cacheReadInputTokens: readHostedTokenCount(payload.usage.cache_read_input_tokens),
         cacheWriteInputTokens: readHostedTokenCount(payload.usage.cache_creation_input_tokens),
+        reasoningTokens: readThinkingTokens(payload.usage),
     };
 }
 
-function buildToolChoiceExtension(directive: HostedToolChoiceDirective): Record<string, unknown> {
-    if (directive.mode === 'required') {
-        // No `disable_parallel_tool_use`: the workflow terminal shape is two calls in one
-        // turn (`selectWorkflowCapability` beside `command.batch.propose`), so capping the
-        // forced turn at one call would strand the batch call out of its workflow scope.
-        // `maxCallsPerTurn` already bounds how many calls one turn may contain.
-        return { tool_choice: { type: 'any' } };
+/**
+ * The forced tool choice a `required` directive asks for, where the model accepts one.
+ * Extended thinking and the fable/mythos families both refuse a forced choice, and a
+ * refused request returns no plan at all; the narrowed tool set carries the directive
+ * for them instead.
+ */
+function buildToolChoiceExtension(input: {
+    directive: HostedToolChoiceDirective;
+    model: string;
+    thinking: AnthropicCloudRuntime['thinking'];
+}): Record<string, unknown> {
+    if (input.directive.mode !== 'required') {
+        return {};
     }
-    return {};
+    if (input.thinking?.type === 'enabled' || anthropicModelRejectsForcedToolChoice(input.model)) {
+        return {};
+    }
+    // No `disable_parallel_tool_use`: the workflow terminal shape is two calls in one
+    // turn (`selectWorkflowCapability` beside `command.batch.propose`), so capping the
+    // forced turn at one call would strand the batch call out of its workflow scope.
+    // `maxCallsPerTurn` already bounds how many calls one turn may contain.
+    return { tool_choice: { type: 'any' } };
 }
 
 /**
@@ -114,9 +138,16 @@ export async function generateAnthropicToolCalls(input: {
     const codec = buildWireToolNameCodec(input.toolSchemas);
     const wireToolSchemas = narrowToolSchemasForDirective(input.toolSchemas, input.directive);
     const lastToolIndex = wireToolSchemas.length - 1;
-    const body = JSON.stringify({
+    // A tool-planning turn reads none of the thinking it asks for: the plan is the tool
+    // calls, and any thinking block the response carries is skipped by the parser below.
+    const outputBudget = buildAnthropicThinkingBudget({
+        thinking: input.runtime.thinking,
+        display: 'omitted',
+        maxOutputTokens: input.maxOutputTokens,
+    });
+    const requestPayload: Record<string, unknown> = {
         model: input.runtime.model,
-        max_tokens: input.maxOutputTokens,
+        max_tokens: outputBudget.maxTokens,
         system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
         tools: wireToolSchemas.map((schema, index) => {
             const strictSchema = projectAnthropicStrictToolSchema(schema);
@@ -134,8 +165,16 @@ export async function generateAnthropicToolCalls(input: {
             budgetNote: input.budgetNote ?? '',
             encodeToolName: codec.encode,
         }),
-        ...buildToolChoiceExtension(input.directive),
-    });
+        ...buildToolChoiceExtension({
+            directive: input.directive,
+            model: input.runtime.model,
+            thinking: input.runtime.thinking,
+        }),
+    };
+    if (outputBudget.thinking !== null) {
+        requestPayload.thinking = outputBudget.thinking;
+    }
+    const body = JSON.stringify(requestPayload);
     const response = await requestAnthropicProvider({
         sessionId: input.runtime.session_id,
         body,
@@ -181,6 +220,12 @@ export async function generateAnthropicToolCalls(input: {
     for (const block of payload.content) {
         if (!isRecord(block)) {
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response', usage);
+        }
+        if (block.type === 'thinking' || block.type === 'redacted_thinking') {
+            // Extended thinking precedes the calls it produced. It is not an answer in
+            // prose, so it never counts as non-tool text; `assistantItems` carries it back
+            // unmodified on the next turn, which the provider requires.
+            continue;
         }
         if (block.type === 'text') {
             if (typeof block.text !== 'string') {

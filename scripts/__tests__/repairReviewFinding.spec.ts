@@ -35,7 +35,9 @@ const HEAD = 'a'.repeat(40);
 const BASE = 'f'.repeat(40);
 const MOVED_HEAD = 'c'.repeat(40);
 const COMMIT = 'b'.repeat(40);
+const REVIEWED_HEAD = 'e'.repeat(40);
 const OTHER_COMMIT = 'd'.repeat(40);
+const PREDECESSOR = '9'.repeat(40);
 const ROOT_COMMENT_ID = 5_001;
 const ROOT_COMMENT_NODE_ID = 'PRRC_kwDOrepairRoot';
 const FINDING_PATH = 'scripts/repairReviewFinding.ts';
@@ -70,7 +72,13 @@ function threadState(overrides: Partial<RepairReviewFindingThread> = {}): Repair
         pullRequestNumber: PR,
         head: HEAD,
         base: BASE,
-        rootComment: { id: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
+        rootComment: {
+            id: ROOT_COMMENT_ID,
+            path: FINDING_PATH,
+            line: FINDING_LINE,
+            side: 'RIGHT',
+            reviewedHead: REVIEWED_HEAD,
+        },
         replies: [repairReply(ROOT_COMMENT_ID, 'Defect. Consequence. Fix.')],
         ...overrides,
     };
@@ -126,7 +134,11 @@ function fakePort(
             calls.push(`isAncestor:${commit}:${head}`);
             // The reviewed range: the head reaches the base through its own commits, and the base is
             // not inside its own review range.
-            return head === current.head;
+            return (
+                head === current.head ||
+                (commit === REVIEWED_HEAD && head === COMMIT) ||
+                (commit === PREDECESSOR && head === REVIEWED_HEAD)
+            );
         },
         log: (message) => {
             logs.push(message);
@@ -339,6 +351,7 @@ describe('repairReviewFinding', () => {
             `read:${THREAD}`,
             `isAncestor:${COMMIT}:${HEAD}`,
             `isAncestor:${COMMIT}:${BASE}`,
+            `isAncestor:${REVIEWED_HEAD}:${COMMIT}`,
             `postReply:${THREAD}:${recordClientMutationId(PR, THREAD, HEAD, COMMIT)}`,
         ]);
         expect(postedRecords(posted)).toEqual([recordFor()]);
@@ -480,14 +493,37 @@ describe('repairReviewFinding', () => {
         expect(posted).toEqual([]);
     });
 
-    it('should refuse a commit that is the head itself', () => {
-        const { port, calls, posted } = fakePort();
-        expect(() => repairReviewFinding(PR, repairInput({ commit: HEAD }), port)).toThrow(
-            `commit ${HEAD} is not a distinct commit from head ${HEAD}`
-        );
-        expect(calls).toEqual([`read:${THREAD}`]);
-        expect(posted).toEqual([]);
+    it('should record a post-finding repair at the current head exactly once', () => {
+        const { port, posted } = fakePort();
+        repairReviewFinding(PR, repairInput({ commit: HEAD }), port);
+        expect(postedRecords(posted)).toEqual([recordFor({ commit: HEAD })]);
+        expect(posted[0]?.clientMutationId).toBe(recordClientMutationId(PR, THREAD, HEAD, HEAD));
+        repairReviewFinding(PR, repairInput({ commit: HEAD }), port);
+        expect(posted).toHaveLength(1);
     });
+
+    it.each([REVIEWED_HEAD, PREDECESSOR, OTHER_COMMIT])(
+        'should refuse a commit that does not strictly descend the reviewed head: %s',
+        (commit) => {
+            const { port, posted } = fakePort();
+            expect(() => repairReviewFinding(PR, repairInput({ commit }), port)).toThrow(
+                'must strictly descend the finding reviewed head'
+            );
+            expect(posted).toEqual([]);
+        }
+    );
+
+    it.each(['', 'abc123', 'E'.repeat(40)])(
+        'should refuse malformed reviewed-head state before recording: %s',
+        (reviewedHead) => {
+            const state = threadState();
+            const { port, posted } = fakePort({ ...state, rootComment: { ...state.rootComment, reviewedHead } });
+            expect(() => repairReviewFinding(PR, repairInput(), port)).toThrow(
+                'finding reviewed head must be forty lowercase hex characters'
+            );
+            expect(posted).toEqual([]);
+        }
+    );
 
     it('should refuse a blank summary', () => {
         const { port, posted } = fakePort();
@@ -621,6 +657,7 @@ function threadNode(overrides: Record<string, unknown> = {}): ThreadNodeFixture 
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                         },
                     ],
@@ -653,6 +690,41 @@ describe('readRepairReviewThread', () => {
         return { gh, calls };
     }
 
+    it.each([
+        undefined,
+        null,
+        {},
+        { commit: null },
+        { commit: {} },
+        { commit: { oid: 'abc123' } },
+        { commit: { oid: 42 } },
+        { commit: { oid: 'E'.repeat(40) } },
+    ])('should refuse unavailable or malformed root review provenance: %j', (pullRequestReview) => {
+        const { gh } = recordingGh(() =>
+            threadNode({
+                comments: {
+                    nodes: [
+                        {
+                            id: ROOT_COMMENT_NODE_ID,
+                            databaseId: ROOT_COMMENT_ID,
+                            body: 'Defect.',
+                            path: FINDING_PATH,
+                            line: FINDING_LINE,
+                            author: null,
+                            pullRequestReview,
+                        },
+                    ],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                },
+            })
+        );
+        const { port, posted } = fakePort();
+        expect(() =>
+            repairReviewFinding(PR, repairInput(), { ...port, readThread: () => readRepairReviewThread(THREAD, gh) })
+        ).toThrow('root comment reviewed head must be forty lowercase hex characters');
+        expect(posted).toEqual([]);
+    });
+
     it('should read the thread, its root comment position and its replies in one query', () => {
         const { gh, calls } = recordingGh(() => threadNode());
         expect(readRepairReviewThread(THREAD, gh)).toEqual({
@@ -661,7 +733,13 @@ describe('readRepairReviewThread', () => {
             pullRequestNumber: PR,
             head: HEAD,
             base: BASE,
-            rootComment: { id: ROOT_COMMENT_ID, path: FINDING_PATH, line: FINDING_LINE, side: 'RIGHT' },
+            rootComment: {
+                id: ROOT_COMMENT_ID,
+                path: FINDING_PATH,
+                line: FINDING_LINE,
+                side: 'RIGHT',
+                reviewedHead: REVIEWED_HEAD,
+            },
             replies: [
                 {
                     id: ROOT_COMMENT_ID,
@@ -692,6 +770,7 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: null,
                         },
                     ],
@@ -711,6 +790,8 @@ describe('readRepairReviewThread', () => {
                             // from the later page, the binding below would observe it.
                             path: LATER_PAGE_PATH,
                             line: LATER_PAGE_LINE,
+                            commit: { oid: HEAD },
+                            pullRequestReview: { commit: { oid: HEAD } },
                             author: null,
                         },
                     ],
@@ -732,6 +813,7 @@ describe('readRepairReviewThread', () => {
             path: FINDING_PATH,
             line: FINDING_LINE,
             side: 'LEFT',
+            reviewedHead: REVIEWED_HEAD,
         });
         expect(calls[1]?.fields.cursor).toBe('CURSOR');
     });
@@ -755,6 +837,7 @@ describe('readRepairReviewThread', () => {
                             path: FINDING_PATH,
                             line: MOVED_LINE,
                             originalLine: ORIGINAL_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                         },
                     ],
@@ -784,6 +867,7 @@ describe('readRepairReviewThread', () => {
                             // GitHub nulls the live line once the diff moves under the comment.
                             line: null,
                             originalLine: OUTDATED_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                         },
                     ],
@@ -798,6 +882,7 @@ describe('readRepairReviewThread', () => {
             path: FINDING_PATH,
             line: OUTDATED_LINE,
             side: 'RIGHT',
+            reviewedHead: REVIEWED_HEAD,
         });
         expect(calls[0]?.query).toContain('originalLine');
 
@@ -823,6 +908,7 @@ describe('readRepairReviewThread', () => {
                                 path: FINDING_PATH,
                                 line,
                                 originalLine,
+                                pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                 author: null,
                             },
                         ],
@@ -848,6 +934,7 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: null,
                         },
                     ],
@@ -898,6 +985,7 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: null,
                         },
                     ],
@@ -922,6 +1010,7 @@ describe('readRepairReviewThread', () => {
                                 body: 'Defect.',
                                 path: FINDING_PATH,
                                 line: FINDING_LINE,
+                                pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                 author: null,
                             },
                         ],
@@ -947,6 +1036,7 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: null,
                         },
                         { id: 'PRRC_kwDOrepairReply', body: 'reply', author: null },
@@ -973,6 +1063,7 @@ describe('readRepairReviewThread', () => {
                                 body: 'Defect.',
                                 path: FINDING_PATH,
                                 line: FINDING_LINE,
+                                pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                 author: null,
                             },
                         ],
@@ -1006,6 +1097,7 @@ describe('readRepairReviewThread', () => {
                             body: 'Defect.',
                             path: FINDING_PATH,
                             line: FINDING_LINE,
+                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                             author: null,
                         },
                     ],

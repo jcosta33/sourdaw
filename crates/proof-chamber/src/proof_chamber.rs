@@ -979,9 +979,15 @@ impl ProofChamber {
             "mod_rate" => self.mod_rate = value.clamp(0.1, 5.0),
             "mod_depth" => self.mod_depth = value.clamp(0.0, 1.0),
             "diffusion" => {
-                self.diffusion = value.clamp(0.0, 1.0);
-                let d1 = 0.750 * value;
-                let d2 = 0.625 * value;
+                // The clamped value, not the raw one. Out-of-range writes used to
+                // derive the diffuser gains from the raw argument while the stored
+                // field claimed the clamp held, pushing the allpass gains past the
+                // declared 0..1 range, the same defect class the output stage's
+                // cutoffs already fixed.
+                let clamped = value.clamp(0.0, 1.0);
+                self.diffusion = clamped;
+                let d1 = 0.750 * clamped;
+                let d2 = 0.625 * clamped;
                 self.input_diffusers[0].gain = d1;
                 self.input_diffusers[1].gain = d1;
                 self.input_diffusers[2].gain = d2;

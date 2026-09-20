@@ -1,3 +1,4 @@
+import { type AnthropicThinkingWire } from './buildAnthropicThinkingBudget';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
 
 const MAX_ANTHROPIC_EVENT_BYTES = 64 * 1024;
@@ -10,6 +11,8 @@ type RequestAnthropicStreamInput = {
     system: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string }>;
     maxTokens: number;
+    /** The caller already sized `maxTokens` for this object; `null` means no extended thinking. */
+    thinking: AnthropicThinkingWire | null;
     signal: AbortSignal;
     onEvent: (event: unknown) => void;
 };
@@ -18,27 +21,38 @@ function encodedBytes(value: string): number {
     return new TextEncoder().encode(value).byteLength;
 }
 
+// Every caller of this streaming path rebuilds `system` per turn (chat context, MIDI
+// prompts), so it is never byte-identical across requests — a cache breakpoint here
+// would pay a write and never earn a read. The tool-plan request
+// (generateAnthropicToolCalls.ts) has a static system prompt and large tool schemas
+// and carries its own breakpoint instead.
+function buildRequestBody(
+    input: Pick<RequestAnthropicStreamInput, 'model' | 'system' | 'messages' | 'maxTokens' | 'thinking'>
+): string {
+    const payload: Record<string, unknown> = {
+        model: input.model,
+        max_tokens: input.maxTokens,
+        system: [{ type: 'text', text: input.system }],
+        messages: input.messages,
+        stream: true,
+    };
+    if (input.thinking !== null) {
+        payload.thinking = input.thinking;
+    }
+    return JSON.stringify(payload);
+}
+
 export async function requestAnthropicStream({
     sessionId,
     model,
     system,
     messages,
     maxTokens,
+    thinking,
     signal,
     onEvent,
 }: RequestAnthropicStreamInput): Promise<void> {
-    // Every caller of this streaming path rebuilds `system` per turn (chat context, MIDI
-    // prompts), so it is never byte-identical across requests — a cache breakpoint here
-    // would pay a write and never earn a read. The tool-plan request
-    // (generateAnthropicToolCalls.ts) has a static system prompt and large tool schemas
-    // and carries its own breakpoint instead.
-    const body = JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system: [{ type: 'text', text: system }],
-        messages,
-        stream: true,
-    });
+    const body = buildRequestBody({ model, system, messages, maxTokens, thinking });
     const decoder = new TextDecoder();
     let rawBytes = 0;
     let lineBuffer = '';

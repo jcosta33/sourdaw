@@ -1,4 +1,4 @@
-# Review stance: project integrity
+# Lesson library: project integrity
 
 Attack every claim that a project is saved, reopenable, recoverable, or safe to leave. Trace each
 referenced asset from the exact serialized snapshot to the durable bytes and ownership record that

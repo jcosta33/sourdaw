@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
     CONFIRM_USAGE,
+    authenticateConfirmReviewer,
     confirmReplyClientMutationId,
     confirmResolveClientMutationId,
     confirmReviewRepairs,
@@ -44,7 +45,9 @@ const HEAD = 'a'.repeat(40);
 const BASE = 'f'.repeat(40);
 const MOVED_HEAD = 'c'.repeat(40);
 const COMMIT = 'b'.repeat(40);
+const REVIEWED_HEAD = 'e'.repeat(40);
 const OTHER_COMMIT = 'd'.repeat(40);
+const PREDECESSOR = '9'.repeat(40);
 const ROOT_COMMENT_ID = 5_001;
 const SECOND_ROOT_COMMENT_ID = 5_002;
 const THIRD_ROOT_COMMENT_ID = 5_003;
@@ -90,6 +93,7 @@ function subjectThread(overrides: Partial<ReviewRepairThreadState> = {}): Review
         rootPath: FINDING_PATH,
         rootLine: FINDING_LINE,
         rootSide: 'RIGHT',
+        rootReviewedHead: REVIEWED_HEAD,
         replies: [
             { id: ROOT_COMMENT_ID, body: 'Defect. Consequence. Fix.', authorNodeId: REVIEWER_BOT_NODE_ID },
             { id: 9_001, body: authorRecordReply(), authorNodeId: AUTHOR_BOT_NODE_ID },
@@ -141,7 +145,10 @@ type Mutation = { kind: 'post' | 'resolve'; thread: string; clientMutationId: st
 function fakePort(
     initialHead: string = HEAD,
     initialThreads: ReviewRepairThreadState[] = cleanThreads(),
-    isAncestor: (commit: string, head: string) => boolean = (_commit, target) => target === HEAD
+    isAncestor: (commit: string, head: string) => boolean = (commit, target) =>
+        target === HEAD ||
+        (commit === REVIEWED_HEAD && target === COMMIT) ||
+        (commit === PREDECESSOR && target === REVIEWED_HEAD)
 ) {
     const calls: string[] = [];
     const logs: string[] = [];
@@ -269,6 +276,39 @@ describe('renderConfirmationReply', () => {
 });
 
 describe('confirmReviewRepairs', () => {
+    it('should confirm and resolve a tip repair exactly once', () => {
+        const record = recordFor({ commit: HEAD });
+        const thread = subjectThread({
+            replies: [{ id: 9001, body: authorRecordReply(record), authorNodeId: AUTHOR_BOT_NODE_ID }],
+        });
+        const { port, mutations } = fakePort(HEAD, [thread]);
+        confirmReviewRepairs(PR, HEAD, port);
+        expect(mutations).toEqual([
+            {
+                kind: 'post',
+                thread: THREAD,
+                body: renderConfirmationReply(record),
+                clientMutationId: confirmReplyClientMutationId(PR, THREAD, HEAD),
+            },
+            { kind: 'resolve', thread: THREAD, clientMutationId: confirmResolveClientMutationId(PR, THREAD, HEAD) },
+        ]);
+        confirmReviewRepairs(PR, HEAD, port);
+        expect(mutations).toHaveLength(2);
+    });
+
+    it.each([REVIEWED_HEAD, PREDECESSOR, OTHER_COMMIT])(
+        'should refuse a pre-finding or non-descendant commit without any batch mutation: %s',
+        (commit) => {
+            const record = recordFor({ commit });
+            const thread = subjectThread({
+                replies: [{ id: 9001, body: authorRecordReply(record), authorNodeId: AUTHOR_BOT_NODE_ID }],
+            });
+            const { port, mutations } = fakePort(HEAD, [cleanThreads()[1]!, thread]);
+            expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
+            expect(mutations).toEqual([]);
+        }
+    );
+
     it('should resolve every eligible thread in one pass with both mutations in order', () => {
         const { port, calls, logs, mutations } = fakePort();
         expect(confirmReviewRepairs(PR, HEAD, port)).toEqual({ resolved: [THREAD, SECOND_THREAD] });
@@ -278,8 +318,10 @@ describe('confirmReviewRepairs', () => {
             `threads:${PR}`,
             `isAncestor:${COMMIT}:${HEAD}`,
             `isAncestor:${COMMIT}:${BASE}`,
+            `isAncestor:${REVIEWED_HEAD}:${COMMIT}`,
             `isAncestor:${COMMIT}:${HEAD}`,
             `isAncestor:${COMMIT}:${BASE}`,
+            `isAncestor:${REVIEWED_HEAD}:${COMMIT}`,
             `post:${THREAD}`,
             `resolve:${THREAD}`,
             `post:${SECOND_THREAD}`,
@@ -480,7 +522,8 @@ describe('confirmReviewRepairs', () => {
                 ],
             },
         ];
-        const isAncestor = (commit: string, head: string) => commit === COMMIT && head === HEAD;
+        const isAncestor = (commit: string, head: string) =>
+            (commit === COMMIT && head === HEAD) || (commit === REVIEWED_HEAD && head === COMMIT);
         const selection = selectEligibleRepairs({
             threads: batch,
             pr: PR,
@@ -526,7 +569,9 @@ describe('confirmReviewRepairs', () => {
             },
         ];
         const isAncestor = (commit: string, target: string) =>
-            commit === BASE || (target === HEAD && commit === COMMIT);
+            commit === BASE ||
+            (target === HEAD && commit === COMMIT) ||
+            (commit === REVIEWED_HEAD && target === COMMIT);
         const selection = selectEligibleRepairs({
             threads: batch,
             pr: PR,
@@ -582,7 +627,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
-            isAncestor: (_commit, target) => target === HEAD,
+            isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.refused).toEqual([
             { thread: THREAD, reason: 'thread already carries a confirmation for a different record' },
@@ -606,7 +651,7 @@ describe('confirmReviewRepairs', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
-            isAncestor: (_commit, target) => target === HEAD,
+            isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.refused).toEqual([
             { thread: THREAD, reason: 'thread already carries 2 identical confirmations' },
@@ -715,6 +760,7 @@ describe('readReviewThreads', () => {
                         body: 'Defect.',
                         path: FINDING_PATH,
                         line: FINDING_LINE,
+                        pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                         author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                     },
                     {
@@ -723,6 +769,7 @@ describe('readReviewThreads', () => {
                         body: 'record',
                         path: null,
                         line: null,
+                        pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                         author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                     },
                 ],
@@ -765,6 +812,46 @@ describe('readReviewThreads', () => {
         expect(args[args.length - 2]).toBe('-F');
     });
 
+    it.each([
+        undefined,
+        null,
+        {},
+        { commit: null },
+        { commit: {} },
+        { commit: { oid: 'abc123' } },
+        { commit: { oid: 42 } },
+        { commit: { oid: 'E'.repeat(40) } },
+    ])('should refuse unavailable or malformed root review provenance before any mutation: %j', (pullRequestReview) => {
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_root',
+                                    databaseId: ROOT_COMMENT_ID,
+                                    body: 'Defect.',
+                                    path: FINDING_PATH,
+                                    line: FINDING_LINE,
+                                    author: null,
+                                    pullRequestReview,
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+        const { port, mutations } = fakePort();
+        expect(() =>
+            confirmReviewRepairs(PR, HEAD, { ...port, readThreads: () => readReviewThreads(PR, gh, []) })
+        ).toThrow('root comment reviewed head must be forty lowercase hex characters');
+        expect(mutations).toEqual([]);
+    });
+
     it('should read the thread root comment and every reply in one query', () => {
         const { gh, calls } = recordingGh(() => page([threadNode()], { hasNextPage: false, endCursor: null }));
         expect(readReviewThreads(PR, gh, [])).toEqual([
@@ -775,6 +862,7 @@ describe('readReviewThreads', () => {
                 rootPath: FINDING_PATH,
                 rootLine: FINDING_LINE,
                 rootSide: 'RIGHT',
+                rootReviewedHead: REVIEWED_HEAD,
                 replies: [
                     { id: ROOT_COMMENT_ID, body: 'Defect.', authorNodeId: REVIEWER_BOT_NODE_ID },
                     { id: 9_001, body: 'record', authorNodeId: AUTHOR_BOT_NODE_ID },
@@ -825,6 +913,7 @@ describe('readReviewThreads', () => {
                                     body: 'root',
                                     path: FINDING_PATH,
                                     line: 1,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'a' },
                                 },
                             ],
@@ -850,6 +939,7 @@ describe('readReviewThreads', () => {
                                     body: 'root',
                                     path: FINDING_PATH,
                                     line: 1,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -877,6 +967,7 @@ describe('readReviewThreads', () => {
                                         body: 'root',
                                         path: FINDING_PATH,
                                         line: 1,
+                                        pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                         author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                     },
                                 ],
@@ -915,6 +1006,7 @@ describe('readReviewThreads', () => {
                                     body: 'root',
                                     path: FINDING_PATH,
                                     line: 1,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -954,6 +1046,7 @@ describe('readReviewThreads', () => {
                                     path: FINDING_PATH,
                                     line: MOVED_LINE,
                                     originalLine: ORIGINAL_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
@@ -963,6 +1056,7 @@ describe('readReviewThreads', () => {
                                     path: null,
                                     line: null,
                                     originalLine: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                 },
                             ],
@@ -997,6 +1091,7 @@ describe('readReviewThreads', () => {
                                     // GitHub nulls the live line once the diff moves under the comment.
                                     line: null,
                                     originalLine: OUTDATED_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
@@ -1006,6 +1101,7 @@ describe('readReviewThreads', () => {
                                     path: null,
                                     line: null,
                                     originalLine: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                 },
                             ],
@@ -1042,6 +1138,7 @@ describe('readReviewThreads', () => {
                                         path: FINDING_PATH,
                                         line,
                                         originalLine,
+                                        pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                         author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                     },
                                 ],
@@ -1073,6 +1170,7 @@ describe('readReviewThreads', () => {
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
@@ -1085,6 +1183,7 @@ describe('readReviewThreads', () => {
                                     ),
                                     path: null,
                                     line: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'User', login: 'jcosta33' },
                                 },
                                 {
@@ -1093,6 +1192,7 @@ describe('readReviewThreads', () => {
                                     body: authorRecordReply(record),
                                     path: null,
                                     line: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                 },
                             ],
@@ -1117,7 +1217,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
-            isAncestor: (_commit, target) => target === HEAD,
+            isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
         expect(selection.refused).toEqual([]);
@@ -1137,6 +1237,7 @@ describe('readReviewThreads', () => {
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                                 {
@@ -1152,6 +1253,7 @@ describe('readReviewThreads', () => {
                                     ),
                                     path: null,
                                     line: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: null,
                                 },
                                 {
@@ -1160,6 +1262,7 @@ describe('readReviewThreads', () => {
                                     body: authorRecordReply(record),
                                     path: null,
                                     line: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                 },
                             ],
@@ -1184,7 +1287,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
-            isAncestor: (_commit, target) => target === HEAD,
+            isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
         expect(selection.refused).toEqual([]);
@@ -1221,6 +1324,7 @@ describe('readReviewThreads', () => {
                                     body: 'Defect.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -1252,6 +1356,7 @@ describe('readReviewThreads', () => {
                                         body: authorRecordReply(record),
                                         path: null,
                                         line: null,
+                                        pullRequestReview: { commit: { oid: HEAD } },
                                         author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
                                     },
                                 ],
@@ -1272,6 +1377,7 @@ describe('readReviewThreads', () => {
                                     body: 'Defect. Consequence. Fix.',
                                     path: FINDING_PATH,
                                     line: FINDING_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                     author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
                                 },
                             ],
@@ -1284,6 +1390,7 @@ describe('readReviewThreads', () => {
         });
 
         const threads = readReviewThreads(PR, gh, []);
+        expect(threads[0]?.rootReviewedHead).toBe(REVIEWED_HEAD);
         expect(calls).toHaveLength(2);
         expect(calls[1]?.fields.threadId).toBe(THREAD);
         expect(calls[1]?.fields.cursor).toBe('COMMENT_CURSOR');
@@ -1294,7 +1401,7 @@ describe('readReviewThreads', () => {
             base: BASE,
             authorNodeId: AUTHOR_BOT_NODE_ID,
             reviewerNodeId: REVIEWER_BOT_NODE_ID,
-            isAncestor: (_commit, target) => target === HEAD,
+            isAncestor: (commit, target) => target === HEAD || (commit === REVIEWED_HEAD && target === COMMIT),
         });
         expect(selection.eligible.map((entry) => entry.thread)).toEqual([THREAD]);
         expect(selection.ignored).toEqual([]);
@@ -1444,6 +1551,7 @@ describe('shellPort', () => {
                                                             body: 'Defect.',
                                                             path: FINDING_PATH,
                                                             line: FINDING_LINE,
+                                                            pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
                                                             author: {
                                                                 __typename: 'Bot',
                                                                 login: 'r',
@@ -1575,5 +1683,10 @@ describe('defaultConfirmReviewRepairsCoordinatorDependencies', () => {
     it('should bind the reviewer role and the module confirm function', () => {
         const dependencies = defaultConfirmReviewRepairsCoordinatorDependencies();
         expect(dependencies.confirm).toBe(confirmReviewRepairs);
+    });
+
+    it('should bind reviewer authentication to the confirm adapter, whose mint is the confirm set', () => {
+        const dependencies = defaultConfirmReviewRepairsCoordinatorDependencies();
+        expect(dependencies.authenticateReviewer).toBe(authenticateConfirmReviewer);
     });
 });

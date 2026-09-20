@@ -1,23 +1,18 @@
 import { inputMonitoringSession } from './inputMonitoringSession';
-import { releaseMonitorCapture } from './releaseMonitorCapture';
+import { releaseTrackMonitorEdge } from './releaseTrackMonitorEdge';
 
 /**
  * Removes one track's listening edge.
  *
- * Changing one track's monitoring mode must route here: the shared capture
- * stays live while any other track still owns an edge, and only the last
- * owner releases the stream. A still-pending acquisition merely loses this
- * track as an interested owner, so a late grant is never connected for it.
+ * Changing one track's monitoring mode must route here: the capture of the key
+ * that track monitors stays live while any other track still owns an edge on
+ * it, and only the last owner releases the stream.
  */
 export function stopTrackInputMonitoring(trackId: string): void {
-    inputMonitoringSession.pendingOwners.delete(trackId);
-    const destination = inputMonitoringSession.monitorEdges.get(trackId);
-    if (destination === undefined) {
+    const key = inputMonitoringSession.trackKeys.get(trackId);
+    if (key === undefined) {
         return;
     }
-    inputMonitoringSession.monitorEdges.delete(trackId);
-    inputMonitoringSession.monitorSource?.disconnect(destination);
-    if (inputMonitoringSession.monitorEdges.size === 0) {
-        releaseMonitorCapture();
-    }
+    inputMonitoringSession.trackKeys.delete(trackId);
+    releaseTrackMonitorEdge(trackId, key);
 }

@@ -429,6 +429,7 @@ describe('generateAnthropicToolCalls', () => {
             outputTokens: 9,
             cacheReadInputTokens: 5,
             cacheWriteInputTokens: 8,
+            reasoningTokens: null,
         });
     });
 

@@ -659,7 +659,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 inputTokens: cloudToolPlan.usage.inputTokens,
                                 outputTokens: cloudToolPlan.usage.outputTokens,
                                 cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
-                                reasoningTokens: null,
+                                reasoningTokens: cloudToolPlan.usage.reasoningTokens,
                             },
                             provenance: 'provider-reported',
                         });

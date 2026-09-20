@@ -37,7 +37,9 @@ export type TrustedGithubWriteCommand =
     | 'review:publish:recover'
     | 'review:repair'
     | 'review:confirm'
-    | 'review:resolve';
+    | 'review:resolve'
+    | 'review:shadow-status'
+    | 'ruleset:harden';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -203,6 +205,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
         'scripts/reviewDossier.ts',
+        'scripts/canonicalRecord.ts',
         'scripts/reviewDossierPublication.ts',
         'scripts/reviewerModelDiversity.ts',
         'scripts/reviewRiskPolicy.ts',
@@ -225,6 +228,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
         'scripts/reviewDossier.ts',
+        'scripts/canonicalRecord.ts',
         'scripts/reviewDossierPublication.ts',
         'scripts/reviewerModelDiversity.ts',
         'scripts/reviewRiskPolicy.ts',
@@ -248,6 +252,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
         'scripts/reviewDossier.ts',
+        'scripts/canonicalRecord.ts',
         'scripts/reviewDossierPublication.ts',
         'scripts/reviewerModelDiversity.ts',
         'scripts/reviewRiskPolicy.ts',
@@ -271,6 +276,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/repairReviewFinding.ts',
         'scripts/reviewRepair.ts',
         'scripts/reviewDossier.ts',
+        'scripts/canonicalRecord.ts',
         'scripts/reviewRiskPolicy.ts',
         'scripts/reviewDiffSummary.ts',
         'scripts/wasm-artifacts.ts',
@@ -284,6 +290,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/confirmReviewRepairs.ts',
         'scripts/reviewRepair.ts',
         'scripts/reviewDossier.ts',
+        'scripts/canonicalRecord.ts',
         'scripts/reviewRiskPolicy.ts',
         'scripts/reviewDiffSummary.ts',
         'scripts/wasm-artifacts.ts',
@@ -295,6 +302,19 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/resolveThread.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:shadow-status': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/reviewShadowStatus.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'ruleset:harden': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/rulesetHardening.ts',
+        'scripts/canonicalRecord.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -312,6 +332,8 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'review:repair': { path: 'scripts/repairReviewFinding.ts', runner: 'runRepairReviewFindingCli' },
     'review:confirm': { path: 'scripts/confirmReviewRepairs.ts', runner: 'runConfirmReviewRepairsCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
+    'review:shadow-status': { path: 'scripts/reviewShadowStatus.ts', runner: 'runReviewShadowStatusCli' },
+    'ruleset:harden': { path: 'scripts/rulesetHardening.ts', runner: 'runRulesetHardeningCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -1386,14 +1408,58 @@ function commandRequiresTrustedPowerShell(
     return platform === 'win32' && commandFencesItsLockOwner(command);
 }
 
-function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
+/**
+ * The launcher's snapshot is only as current as whatever process last fetched the primary's
+ * origin/main ref: run right after a lane merges, a launcher that resolves without fetching
+ * silently executes the pre-merge closure and reproduces failures the merge just fixed (#4436).
+ * Every resolution therefore fetches first, under the operator's ambient environment — the
+ * pre-trust window the delivery skill already treats as trusted — because the scrubbed
+ * read-only environment strips the credential helper a non-anonymous remote needs. A failed
+ * fetch never refuses the run: offline operation keeps working against the local ref, but
+ * never silently — the staleness risk and the fetch error are both reported.
+ */
+export type OriginFetchOutcome = { fresh: true } | { fresh: false; reason: string };
+
+export type OriginFetchSpawn = (
+    command: string,
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv }
+) => { status: number | null; stderr: string | undefined };
+
+export function fetchOriginMain(
+    input: { gitPath: string; primaryRoot: string },
+    spawn: OriginFetchSpawn = (command, args, options) => spawnSync(command, args, { ...options, encoding: 'utf8' })
+): OriginFetchOutcome {
+    const result = spawn(input.gitPath, ['fetch', 'origin', 'main'], {
+        cwd: input.primaryRoot,
+        env: process.env,
+    });
+    if (result.status === 0) {
+        return { fresh: true };
+    }
+    const detail = result.stderr?.trim();
+    if (detail !== undefined && detail !== '') {
+        return { fresh: false, reason: detail };
+    }
+    return { fresh: false, reason: `git fetch failed without diagnostics (exit ${result.status ?? 'signal'})` };
+}
+
+export function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
     return {
-        resolveOriginMain: () =>
-            captureGit(binding.primaryRoot, binding.gitPath, [
+        resolveOriginMain: () => {
+            const fetch = fetchOriginMain(binding);
+            if (!fetch.fresh) {
+                console.error(
+                    `cannot fetch origin/main (${fetch.reason}); the trusted snapshot may be stale — ` +
+                        'this run executes whatever refs/remotes/origin/main last fetched'
+                );
+            }
+            return captureGit(binding.primaryRoot, binding.gitPath, [
                 'rev-parse',
                 '--verify',
                 'refs/remotes/origin/main^{commit}',
-            ]).trim(),
+            ]).trim();
+        },
         readOriginSource: (commit, path) =>
             captureGit(binding.primaryRoot, binding.gitPath, ['show', `${commit}:${path}`]),
         executeSnapshot: (command, args, snapshot) =>
@@ -1413,12 +1479,14 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'review:publish:recover' ||
         value === 'review:repair' ||
         value === 'review:confirm' ||
-        value === 'review:resolve'
+        value === 'review:resolve' ||
+        value === 'review:shadow-status' ||
+        value === 'ruleset:harden'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden> [args...]'
     );
 }
 

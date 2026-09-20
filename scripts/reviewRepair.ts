@@ -14,6 +14,7 @@
  * publication-safety contract instead of restating its rules.
  */
 
+import { canonicalJson, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
 import { fail } from './prContract.ts';
 import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './reviewDossier.ts';
 
@@ -48,10 +49,12 @@ const DIFFERENT_RECORD_CONFIRMATION_REFUSAL = 'thread already carries a confirma
  * comment in diagnostics. The comment type carries no side: the side a finding sits on belongs to the
  * thread as `diffSide`, selected by each thread reader beside `isResolved`. GitHub nulls `line` once a
  * diff moves under a comment while `originalLine` keeps the position it was written against, so both
- * positions are read and `readFindingLine` decides which one a finding binds.
+ * positions are read and `readFindingLine` decides which one a finding binds. The root comment's
+ * associated review commit is the revision that received the finding; a comment's live commit may
+ * move with the diff, and a later reply belongs to a different review.
  */
 export const REVIEW_THREAD_COMMENT_FIELDS =
-    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+    'nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}';
 
 export type ReviewRepairFinding = { commentId: number; path: string; line: number; side: 'LEFT' | 'RIGHT' };
 
@@ -75,6 +78,7 @@ export type ReviewRepairThreadState = {
     rootPath: string;
     rootLine: number;
     rootSide: 'LEFT' | 'RIGHT';
+    rootReviewedHead: string;
     replies: { id: number; body: string; authorNodeId: string | null }[];
 };
 
@@ -83,8 +87,6 @@ export type ReviewRepairSelection = {
     refused: { thread: string; reason: string }[];
     ignored: { thread: string; reason: string }[];
 };
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 type RepairCandidate = { record: ReviewRepairRecord; replyId: number };
 
@@ -97,20 +99,6 @@ type RepairConfirmation = {
     base: string;
     isAncestor: (commit: string, head: string) => boolean;
 };
-
-/** Key-sorted, whitespace-free JSON, so identical records have identical bytes. */
-function canonicalJson(value: JsonValue): string {
-    if (Array.isArray(value)) {
-        return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`;
-    }
-    if (value !== null && typeof value === 'object') {
-        const members = Object.entries(value)
-            .sort(([left], [right]) => (left < right ? -1 : 1))
-            .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
-        return `{${members.join(',')}}`;
-    }
-    return JSON.stringify(value);
-}
 
 function serializeReviewRepairRecord(record: ReviewRepairRecord): string {
     return canonicalJson(record);
@@ -215,46 +203,13 @@ function readRecord(value: unknown): ReviewRepairRecord {
     };
 }
 
-function parseMarkerPayload(payload: string): unknown {
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(payload);
-    } catch {
-        return fail('review repair marker line is not valid JSON');
-    }
-    return parsed;
-}
-
-/**
- * A marker line starts with the marker token at the start of a trimmed line; a line that merely
- * mentions the token inside prose is not a marker, so such prose is ignored like any other.
- */
-function isMarkerLine(line: string): boolean {
-    if (!line.startsWith(REPAIR_MARKER)) {
-        return false;
-    }
-    const rest = line.slice(REPAIR_MARKER.length);
-    return rest === '' || /^\s/u.test(rest);
-}
-
-function lastMarkerLine(body: string): string | undefined {
-    let marker: string | undefined;
-    for (const line of body.split(/\r?\n/u)) {
-        const trimmed = line.trim();
-        if (isMarkerLine(trimmed)) {
-            marker = trimmed;
-        }
-    }
-    return marker;
-}
-
 export function renderReviewRepairReply(record: ReviewRepairRecord): string {
     const header = `${REPAIR_HEADER_PREFIX}${record.finding.path}:${record.finding.line} ${record.finding.side}`;
     return [header, record.summary, '', `${REPAIR_MARKER} ${serializeReviewRepairRecord(record)}`].join('\n');
 }
 
 export function parseReviewRepairReply(body: string): ReviewRepairRecord | undefined {
-    const marker = lastMarkerLine(body);
+    const marker = lastMarkerLine(body, REPAIR_MARKER);
     if (marker === undefined) {
         return undefined;
     }
@@ -262,7 +217,7 @@ export function parseReviewRepairReply(body: string): ReviewRepairRecord | undef
     if (payload === '') {
         fail('review repair marker line carries no record');
     }
-    return readRecord(parseMarkerPayload(payload));
+    return readRecord(parseMarkerPayload(payload, 'review repair'));
 }
 
 function assertPositiveInteger(label: string, value: number): void {
@@ -308,6 +263,40 @@ export function readFindingLine(line: unknown, originalLine: unknown, label: str
     return fail(
         `${label} must carry a positive line number, found ${describeValue(line)} and original line ${describeValue(originalLine)}`
     );
+}
+
+/** Read provenance from the root's live review association, never from a repair reply. */
+export function readFindingReviewedHead(review: unknown, label: string): string {
+    const commit = isRecord(review) ? review.commit : undefined;
+    const oid = isRecord(commit) ? commit.oid : undefined;
+    if (typeof oid !== 'string' || !FORTY_LOWER_HEX.test(oid)) {
+        fail(`${label} reviewed head must be forty lowercase hex characters, found ${describeValue(oid)}`);
+    }
+    return oid;
+}
+
+/** Both identities require a post-finding commit in base..head; the repair may be the tip itself. */
+export function reviewRepairCommitRefusal(input: {
+    commit: string;
+    head: string;
+    base: string;
+    reviewedHead: string;
+    isAncestor: (commit: string, head: string) => boolean;
+}): string | undefined {
+    const { commit, head, base, reviewedHead, isAncestor } = input;
+    if (typeof reviewedHead !== 'string' || !FORTY_LOWER_HEX.test(reviewedHead)) {
+        return 'finding reviewed head must be forty lowercase hex characters';
+    }
+    if (!isAncestor(commit, head)) {
+        return `commit ${commit} is not an ancestor of head ${head}`;
+    }
+    if (isAncestor(commit, base)) {
+        return `commit ${commit} is an ancestor of the pull request base ${base}`;
+    }
+    if (commit === reviewedHead || !isAncestor(reviewedHead, commit)) {
+        return `commit ${commit} must strictly descend the finding reviewed head ${reviewedHead}`;
+    }
+    return undefined;
 }
 
 export function assertReviewRepairRecord(record: ReviewRepairRecord): void {
@@ -426,16 +415,13 @@ function confirmationRefusal(
     if (finding !== undefined) {
         return finding;
     }
-    if (record.commit === record.head) {
-        return `commit ${record.commit} is not a distinct commit from head ${record.head}`;
-    }
-    if (!confirmation.isAncestor(record.commit, confirmation.head)) {
-        return `commit ${record.commit} is not an ancestor of head ${confirmation.head}`;
-    }
-    if (confirmation.isAncestor(record.commit, confirmation.base)) {
-        return `commit ${record.commit} is an ancestor of the pull request base ${confirmation.base}`;
-    }
-    return undefined;
+    return reviewRepairCommitRefusal({
+        commit: record.commit,
+        head: confirmation.head,
+        base: confirmation.base,
+        reviewedHead: thread.rootReviewedHead,
+        isAncestor: confirmation.isAncestor,
+    });
 }
 
 /**

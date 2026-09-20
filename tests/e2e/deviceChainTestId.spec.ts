@@ -37,6 +37,10 @@ test.describe('Device chain — test-id targeted', () => {
         await addMidiTrack(page);
     });
 
+    // This spec owns the device-chain admission obligation the lifecycle spec once claimed
+    // behind an isVisible guard (#4441): the add-device entry point is asserted unconditionally
+    // here, so an absent or renamed entry point fails rather than skipping silently. The
+    // lifecycle case was removed as the weaker duplicate, not merged in.
     test('add device button is present in the inspector via test ID', async ({ page }) => {
         const addDevice = inspector(page).getByRole('button', { name: 'Add device' });
         await expect(addDevice).toBeVisible();

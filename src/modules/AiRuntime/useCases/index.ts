@@ -15,6 +15,7 @@ export { recordAiActionGroup } from './recordAiActionGroup';
 
 export { WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
 export { HOSTED_REASONING_EFFORTS } from './aiRuntimeQueries/hostedReasoningEfforts';
+export { HOSTED_ANTHROPIC_THINKING_MIN_BUDGET_TOKENS } from './aiRuntimeQueries/hostedAnthropicThinking';
 export { listHostedAnthropicModels } from './aiRuntimeQueries/listHostedAnthropicModels';
 export { getDefaultHostedAnthropicModel } from './aiRuntimeQueries/getDefaultHostedAnthropicModel';
 export { isComplexPrompt } from './aiRuntimeQueries/isComplexPrompt';

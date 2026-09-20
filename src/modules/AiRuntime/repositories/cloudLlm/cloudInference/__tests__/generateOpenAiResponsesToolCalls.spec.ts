@@ -335,6 +335,7 @@ describe('generateOpenAiResponsesToolCalls', () => {
             outputTokens: 7,
             cacheReadInputTokens: 12,
             cacheWriteInputTokens: null,
+            reasoningTokens: null,
         });
     });
 

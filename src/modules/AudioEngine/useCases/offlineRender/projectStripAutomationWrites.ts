@@ -170,6 +170,11 @@ function recordingDeviceEntry(entry: StripAutomationDeviceEntry, recorded: Recor
     return {
         deviceId: entry.deviceId,
         deviceType: entry.deviceType,
+        // A caller that names devices names only the ones the engine will
+        // actually carry, so a named device's parameter lane is live. The
+        // export's own case names none, which is why the ceiling guard in
+        // `scheduleTrackAutomation` cannot fire on this projection today.
+        contributesAudio: true,
         strategy: {
             resolveOfflineAutomation: (parameterId: string) => ({
                 kind: 'segments' as const,
