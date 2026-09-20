@@ -1,0 +1,16 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_1228e573df1f42 1142-1168
+scripts/semanticReview/evidence.ts
+  h_1228e573df1f42 270-276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cb1ac1d2ca01df25fd1ac48823bbe98631df6878",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
