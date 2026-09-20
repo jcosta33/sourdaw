@@ -114,7 +114,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts",
-                    "digest": "1aec901f2d7af5bcccb1d05a8864ca91bf02c9ca465efdccc1da367107761715"
+                    "digest": "99f11a22437643680849929b5946568d18682dae4e93ede5d68d8898011cd3dd"
                 }
             ]
         },
