@@ -14,6 +14,7 @@ import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/make
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
+import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
 import { checkCancel } from './offlineRender/checkCancel';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -24,7 +25,6 @@ import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDe
 import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
-import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';

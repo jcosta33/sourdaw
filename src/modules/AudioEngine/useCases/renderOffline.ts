@@ -11,8 +11,8 @@ import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/make
 
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
-import { checkCancel } from './offlineRender/checkCancel';
 import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
+import { checkCancel } from './offlineRender/checkCancel';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './offlineRender/collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
