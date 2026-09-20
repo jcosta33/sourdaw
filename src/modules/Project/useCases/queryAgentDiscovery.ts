@@ -10,6 +10,7 @@ import {
 } from '../models/AgentDiscoveryQuery';
 import {
     createDiscoverySignature,
+    createSampleDiscoverySignature,
     matchesDiscoveryFilters,
     orderDiscoveryCandidates,
     type DiscoveryCandidate,
@@ -153,7 +154,12 @@ function createRevisionToken(
     if (domain === 'asset' && revision !== null) {
         return revision;
     }
-    return createBoundedRevisionToken(`discovery:${domain}:${revision ?? ''}`, createDiscoverySignature(candidates));
+    // A sample receipt pages by the catalog's relevance ranking, not by the
+    // canonical row, so its token is taken over the same ranked key the page
+    // order depends on and moves when a rename or re-score re-ranks it.
+    const signature =
+        domain === 'sample' ? createSampleDiscoverySignature(candidates) : createDiscoverySignature(candidates);
+    return createBoundedRevisionToken(`discovery:${domain}:${revision ?? ''}`, signature);
 }
 
 /**

@@ -668,6 +668,64 @@ describe('agent domain query conformance', () => {
         expect(walkIds()).toEqual(publishedWalk);
     });
 
+    it('refuses a retained sample cursor after a rename re-ranks its pages', () => {
+        const seeded = [
+            buildSample({ id: 'sample-kick-a', displayName: 'Kick A', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-b', displayName: 'Kick B', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-c', displayName: 'Kick C', status: 'indexed' }),
+        ];
+        seedLibrary(seeded);
+
+        const walkIds = (): string[] => {
+            const ids: string[] = [];
+            let cursor: string | null = null;
+            do {
+                const page = expectReceipt(
+                    queryAgentDiscovery({
+                        domain: 'sample',
+                        filters: { text: SAMPLE_TEXT },
+                        page: cursor === null ? { limit: 1 } : { limit: 1, cursor },
+                    })
+                );
+                ids.push(...page.items.map((item) => item.id));
+                cursor = page.nextCursor;
+            } while (cursor !== null);
+            return ids;
+        };
+
+        const first = expectReceipt(
+            queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT }, page: { limit: 1 } })
+        );
+        expect(first.items).toHaveLength(1);
+        expect(first.items[0]?.id).toBe('sample-kick-a');
+        expect(first.nextCursor).toEqual(expect.any(String));
+        const retainedCursor = first.nextCursor!;
+
+        const unchangedWalk = walkIds();
+        expect(unchangedWalk).toEqual(['sample-kick-a', 'sample-kick-b', 'sample-kick-c']);
+
+        // Rename kick-a to 'Kick Z' without changing its id. Its score is
+        // unchanged, but the display-name tiebreak now sorts it last, so the
+        // retained cursor's offset would name kick-c if the token let it.
+        seedLibrary([
+            buildSample({ id: 'sample-kick-a', displayName: 'Kick Z', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-b', displayName: 'Kick B', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-c', displayName: 'Kick C', status: 'indexed' }),
+        ]);
+
+        expect(() =>
+            queryAgentDiscovery({
+                domain: 'sample',
+                filters: { text: SAMPLE_TEXT },
+                page: { limit: 1, cursor: retainedCursor },
+            })
+        ).toThrow('Invalid or stale semantic query cursor');
+
+        // A second walk of the unchanged catalog pages identically.
+        seedLibrary(seeded);
+        expect(walkIds()).toEqual(unchangedWalk);
+    });
+
     it('matches owner-published character tags when the display name does not contain the character', () => {
         const preset = expectReceipt(queryAgentDiscovery({ domain: 'preset', filters: { text: 'tube' } }));
         const device = expectReceipt(queryAgentDiscovery({ domain: 'device', filters: { text: 'tape' } }));
