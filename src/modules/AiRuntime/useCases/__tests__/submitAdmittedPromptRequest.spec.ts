@@ -4,6 +4,12 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
+import { chatStore, clearChatMessages } from '../../stores/chatStore';
+import {
+    clearPendingActionConfirmations,
+    getPendingActionConfirmation,
+} from '../../stores/pendingActionConfirmationStore';
+import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import {
     AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
@@ -14,6 +20,7 @@ import {
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
+import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
@@ -53,6 +60,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
+    describeCommandBatchRecovery: vi.fn(() => ({ status: 'described', recoveryByCommandId: {} })),
+    buildSemanticProjectDiff: vi.fn(() => ({ intentGroups: [], destructiveChanges: [] })),
 }));
 vi.mock('../compileAgentActionExecution', () => ({
     compileAgentActionExecution: mocks.compileAgentActionExecution,
@@ -95,7 +104,12 @@ const authority = {
     },
 };
 const commandBatch = { serialized: 'serialized-batch-1', authority };
-const approval = { actorId: 'artist-1', fingerprint: 'approval-1' };
+const approval = {
+    policy: { risk: 'bounded-reversible', decision: 'confirm', reasons: [], requiredTrustMode: 'apply-reversible' },
+    consequences: {},
+    actorId: 'artist-1',
+    fingerprint: 'approval-1',
+};
 const compiled = {
     commandBatch,
     commandEnvelopes: ['command-1'],
@@ -131,6 +145,8 @@ describe('submitAdmittedPromptRequest', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        clearPendingActionConfirmations();
+        clearChatMessages();
         agentRunLifecycle.clear();
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
@@ -142,6 +158,7 @@ describe('submitAdmittedPromptRequest', () => {
                 runId: RUN_ID,
                 batchId: 'batch-1',
                 idempotencyKey: 'batch-key-1',
+                scope: authority.scope,
                 commands: [{ commandId: 'command-1' }],
             },
         });
@@ -604,6 +621,131 @@ describe('submitAdmittedPromptRequest', () => {
         expect(discard).toHaveBeenCalledExactlyOnceWith({ runId: RUN_ID, stems });
     });
 
+    it.each([64, 3 * 1024 * 1024 * 1024])(
+        'transfers stem cleanup exactly once for retained or refused admission (%s bytes)',
+        async (sourceBytes) => {
+            const stems = [
+                {
+                    audioBufferId: 'prepared-stem',
+                    assetLeaseId: 'asset-lease',
+                    assetHash: 'asset-hash',
+                    sourceBytes,
+                    decodedBytes: 0,
+                },
+            ];
+            const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+            const cleanup = vi.spyOn(preparedStemImportCleanup, 'discard').mockResolvedValue(undefined);
+            const oldDiscard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue(undefined);
+            const release = vi.spyOn(preparedStemImportResources, 'release');
+            const result = await submitAdmittedPromptRequest({
+                prompt: 'Import prepared stems',
+                source: 'preset',
+                actions: [stemAction],
+                requiresConfirmation: true,
+            });
+            expect(release).toHaveBeenCalledExactlyOnceWith({ runId: RUN_ID, stems });
+            if (sourceBytes === 64) {
+                expect(result.status).toBe('awaiting-approval');
+                if (result.status !== 'awaiting-approval') {
+                    throw new Error(result.status);
+                }
+                expect(cleanup).not.toHaveBeenCalled();
+                await cancelPendingChatActions({ confirmationId: result.confirmationId });
+            } else {
+                expect(result.status).toBe('rejected');
+            }
+            await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+            expect(oldDiscard).not.toHaveBeenCalled();
+        }
+    );
+
+    it('keeps the actual confirmation and lease retryable when retained-resource cleanup fails', async () => {
+        const stems = [
+            {
+                audioBufferId: 'retry-stem',
+                assetLeaseId: 'asset-lease',
+                assetHash: 'asset-hash',
+                sourceBytes: 64,
+                decodedBytes: 0,
+            },
+        ];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        const cleanup = vi
+            .spyOn(preparedStemImportCleanup, 'discard')
+            .mockRejectedValueOnce(new Error('Retained lease cleanup failed'))
+            .mockResolvedValueOnce(undefined);
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Import prepared stems',
+            source: 'preset',
+            actions: [stemAction],
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(result.status);
+        }
+        await expect(cancelPendingChatActions({ confirmationId: result.confirmationId })).rejects.toThrow(
+            'Retained lease cleanup failed'
+        );
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
+        expect(getPendingActionConfirmation(result.confirmationId)?.status).toBe('proposed');
+        expect(cleanup).toHaveBeenCalledOnce();
+        await expect(cancelPendingChatActions({ confirmationId: result.confirmationId })).resolves.toEqual({
+            status: 'cancelled',
+        });
+        expect(getPendingActionConfirmation(result.confirmationId)?.status).toBe('cancelled');
+        expect(cleanup).toHaveBeenCalledTimes(2);
+    });
+
+    it('cleans the canonical stem lease once when waiting-phase persistence fails after handoff', async () => {
+        const stems = [
+            {
+                audioBufferId: 'failed-phase-stem',
+                assetLeaseId: 'asset-lease',
+                assetHash: 'asset-hash',
+                sourceBytes: 64,
+                decodedBytes: 0,
+            },
+        ];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        const cleanup = vi.spyOn(preparedStemImportCleanup, 'discard').mockResolvedValue(undefined);
+        const oldDiscard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue(undefined);
+        const transition = agentRunLifecycle.transitionPhase;
+        vi.spyOn(agentRunLifecycle, 'transitionPhase').mockImplementation((input) => {
+            if (input.phase === 'waiting-for-approval') {
+                throw new Error('Waiting phase storage failed');
+            }
+            return transition(input);
+        });
+        await expect(
+            submitAdmittedPromptRequest({
+                prompt: 'Import prepared stems',
+                source: 'preset',
+                actions: [stemAction],
+                requiresConfirmation: true,
+            })
+        ).rejects.toThrow('Waiting phase storage failed');
+        await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+        expect(oldDiscard).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('prompt-confirmation-00000000-0000-0000-0000-000000000001')?.status).toBe(
+            'failed'
+        );
+    });
+
+    it('retains planner cleanup responsibility when stem lease construction throws before handoff', async () => {
+        const stems = [{ audioBufferId: 'prepared-stem', assetLeaseId: 'asset-lease' }];
+        const stemAction = { type: 'importStemSet', payload: { stems } } as AppAction;
+        const discard = vi.spyOn(preparedStemImportResources, 'discard').mockResolvedValue(undefined);
+        await expect(
+            submitAdmittedPromptRequest({
+                prompt: 'Import prepared stems',
+                source: 'preset',
+                actions: [stemAction],
+                requiresConfirmation: true,
+            })
+        ).rejects.toThrow('Prepared stem durable asset binding is incomplete');
+        expect(discard).toHaveBeenCalledExactlyOnceWith({ runId: RUN_ID, stems });
+    });
+
     it('deduplicates fulfilled preview cancellation', async () => {
         const result = await submitAdmittedPromptRequest({
             prompt: 'Play',
@@ -622,8 +764,8 @@ describe('submitAdmittedPromptRequest', () => {
             releasedAssetIds: [],
         });
 
-        await result.preview.cancel();
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
 
         expect(cancel).toHaveBeenCalledOnce();
     });
@@ -643,14 +785,16 @@ describe('submitAdmittedPromptRequest', () => {
             throw new Error('Cancellation storage unavailable');
         });
 
-        await expect(result.preview.cancel()).rejects.toThrow('Agent run state could not be persisted locally');
+        await expect(cancelPendingChatActions({ confirmationId: result.confirmationId })).rejects.toThrow(
+            'Agent run state could not be persisted locally'
+        );
         expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
 
         expect(setItem).toHaveBeenCalledTimes(2);
         expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
-        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         setItem.mockRestore();
     });
 
@@ -683,18 +827,20 @@ describe('submitAdmittedPromptRequest', () => {
             throw new Error('Cancellation storage unavailable');
         });
 
-        await expect(result.preview.cancel()).rejects.toThrow('Agent run state could not be persisted locally');
+        await expect(cancelPendingChatActions({ confirmationId: result.confirmationId })).rejects.toThrow(
+            'Agent run state could not be persisted locally'
+        );
         expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).toEqual([
             expect.objectContaining({ assetId: 'preview-cleanup-retry', status: 'cleanup-pending' }),
         ]);
 
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
 
         expect(cleanup).toHaveBeenCalledOnce();
         expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).not.toContainEqual(
             expect.objectContaining({ assetId: 'preview-cleanup-retry', status: 'cleanup-pending' })
         );
-        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING, []);
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         setItem.mockRestore();
     });
 
@@ -727,12 +873,12 @@ describe('submitAdmittedPromptRequest', () => {
             cleanup,
         });
 
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
         expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).toEqual([
             expect.objectContaining({ assetId: 'preview-sync-cleanup-retry', status: 'cleanup-pending' }),
         ]);
 
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
 
         expect(cleanup).toHaveBeenCalledTimes(2);
         expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).not.toContainEqual(
@@ -774,15 +920,18 @@ describe('submitAdmittedPromptRequest', () => {
             cleanup,
         });
 
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
         rejectCleanup(new Error('temporary cleanup rejected once'));
-        await Promise.resolve();
-        await Promise.resolve();
+        await vi.waitFor(() =>
+            expect(agentRunLifecycle.get(RUN_ID)?.errors).toContainEqual(
+                expect.objectContaining({ code: 'temporary-asset-cleanup-failed' })
+            )
+        );
         expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).toEqual([
             expect.objectContaining({ assetId: 'preview-async-cleanup-retry', status: 'cleanup-pending' }),
         ]);
 
-        await result.preview.cancel();
+        await cancelPendingChatActions({ confirmationId: result.confirmationId });
 
         expect(cleanup).toHaveBeenCalledTimes(2);
         expect(agentRunLifecycle.get(RUN_ID)?.temporaryAssets).not.toContainEqual(
@@ -824,26 +973,31 @@ describe('submitAdmittedPromptRequest', () => {
         );
     });
 
-    it('forwards the exact compiled approval and command batch from submit to confirmation', async () => {
+    it('retains exactly one canonical confirmation and actual assistant message without execution closures', async () => {
         const result = await submitAdmittedPromptRequest({
             prompt: 'Play',
             source: 'prompt-bar',
             actions: [action],
             requiresConfirmation: true,
         });
+        expect(result.status).toBe('awaiting-approval');
         if (result.status !== 'awaiting-approval') {
-            throw new Error(`Expected an approval preview, received ${result.status}`);
+            throw new Error(result.status);
         }
-
-        await result.preview.confirm();
-
-        expect(mocks.executePromptActionGroup).toHaveBeenCalledWith(
+        expect(result).not.toHaveProperty('preview');
+        const confirmation = getPendingActionConfirmation(result.confirmationId);
+        expect(confirmation).toMatchObject({
+            runId: RUN_ID,
+            status: 'proposed',
+            approvalSnapshot: { commandBatch, agentApproval: approval },
+        });
+        expect(chatStore.value?.messages).toContainEqual(
             expect.objectContaining({
-                runId: RUN_ID,
-                successVerb: 'Confirmed',
-                prepared: compiled,
+                id: confirmation?.assistantMessageId,
+                pendingActionConfirmationId: result.confirmationId,
             })
         );
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
             phase: 'waiting-for-approval',
             batches: [{ batchId: 'batch-1', status: 'waiting-for-approval' }],

@@ -15,8 +15,7 @@ const module_mocks = vi.hoisted(() => ({
         event.preventDefault();
     }),
     execute_preset: vi.fn(),
-    confirm_preview: vi.fn(),
-    cancel_preview: vi.fn(),
+    review_run: vi.fn(),
     cancel_processing: vi.fn(),
     handle_load_model: vi.fn(),
     dismiss_tag: vi.fn(),
@@ -43,7 +42,7 @@ const basePromptState: PromptExecutionState = {
     value: '',
     setValue: module_mocks.set_value,
     isProcessing: false,
-    preview: null,
+    approval: null,
     selectionTags: [],
     fuzzyResults: [],
     selectedIndex: -1,
@@ -56,8 +55,6 @@ const basePromptState: PromptExecutionState = {
     handleKeyDown: module_mocks.handle_key_down,
     handleSubmit: module_mocks.handle_submit,
     executePreset: module_mocks.execute_preset,
-    confirmPreview: module_mocks.confirm_preview,
-    cancelPreview: module_mocks.cancel_preview,
     cancelProcessing: module_mocks.cancel_processing,
     handleLoadModel: module_mocks.handle_load_model,
     dismissTag: module_mocks.dismiss_tag,
@@ -79,7 +76,7 @@ describe('PromptBar', () => {
 
     describe('idle input state', () => {
         it('shows the idle placeholder and lightning icon when the AI will not be used', () => {
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByPlaceholderText('Type a command... (⌘K for palette)')).toBeInTheDocument();
             expect(screen.queryByLabelText('Cancel AI processing')).not.toBeInTheDocument();
@@ -88,7 +85,7 @@ describe('PromptBar', () => {
         it('shows the brain icon and does not disable the input when the prompt will use the LLM', () => {
             setPromptState({ willUseLlm: true });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             const input = screen.getByLabelText('Prompt command input');
             expect(input).not.toBeDisabled();
@@ -99,7 +96,7 @@ describe('PromptBar', () => {
                 selectionTags: [{ id: 'track:1', label: 'Kick', kind: 'track', icon: 'track' }],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByPlaceholderText('What do you want to do with this?')).toBeInTheDocument();
         });
@@ -109,7 +106,7 @@ describe('PromptBar', () => {
         it('replaces the mode icon with a cancel-processing button and disables the input', () => {
             setPromptState({ isProcessing: true, llmStatus: { state: 'generating' } });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByLabelText('Cancel AI processing')).toBeInTheDocument();
             expect(screen.getByLabelText('Prompt command input')).toBeDisabled();
@@ -119,7 +116,7 @@ describe('PromptBar', () => {
         it('shows the generic processing placeholder when the LLM is not yet generating', () => {
             setPromptState({ isProcessing: true, llmStatus: { state: 'idle' } });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByPlaceholderText('Processing...')).toBeInTheDocument();
         });
@@ -127,87 +124,32 @@ describe('PromptBar', () => {
         it('calls cancelProcessing when the cancel-processing button is clicked', () => {
             setPromptState({ isProcessing: true });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
             fireEvent.click(screen.getByLabelText('Cancel AI processing'));
 
             expect(module_mocks.cancel_processing).toHaveBeenCalledTimes(1);
         });
     });
 
-    describe('preview mode', () => {
-        it('keeps the maximum preview batch in one constrained row', () => {
-            setPromptState({
-                preview: {
-                    actions: [],
-                    actionLabels: Array.from({ length: 16 }, (_, index) => `Action ${String(index + 1)}`),
-                    rawText: 'preview',
-                    requiresConfirmation: true,
-                    projectRevision: 'revision-1',
-                },
-            });
-
-            const { container } = render(<PromptBar />);
-            const preview = container.querySelector('.transport-bar__prompt-preview');
-            expect(preview).toHaveClass('max-w-full', 'overflow-hidden');
-            expect(preview?.querySelector('.flex-wrap')).toBeNull();
-        });
-
-        it('renders the action labels and hides the normal input form', () => {
-            setPromptState({
-                preview: {
-                    actions: [],
-                    actionLabels: ['Mute Track 1', 'Set BPM to 120'],
-                    rawText: 'mute track 1 and set bpm to 120',
-                    requiresConfirmation: true,
-                    projectRevision: 'revision-1',
-                },
-            });
-
-            render(<PromptBar />);
-
-            expect(screen.getByText('Mute Track 1')).toBeInTheDocument();
-            expect(screen.getByText('Set BPM to 120')).toBeInTheDocument();
-            expect(screen.queryByLabelText('Prompt command input')).not.toBeInTheDocument();
-        });
-
-        it('calls confirmPreview when the confirm button is clicked', () => {
-            setPromptState({
-                preview: {
-                    actions: [],
-                    actionLabels: ['Do thing'],
-                    rawText: 'do thing',
-                    requiresConfirmation: true,
-                    projectRevision: 'revision-1',
-                },
-            });
-
-            render(<PromptBar />);
-            fireEvent.click(screen.getByLabelText('Confirm actions'));
-
-            expect(module_mocks.confirm_preview).toHaveBeenCalledTimes(1);
-        });
-
-        it('calls cancelPreview when the cancel button is clicked', () => {
-            setPromptState({
-                preview: {
-                    actions: [],
-                    actionLabels: ['Do thing'],
-                    rawText: 'do thing',
-                    requiresConfirmation: true,
-                    projectRevision: 'revision-1',
-                },
-            });
-
-            render(<PromptBar />);
-            fireEvent.click(screen.getByLabelText('Cancel actions'));
-
-            expect(module_mocks.cancel_preview).toHaveBeenCalledTimes(1);
+    describe('canonical approval summary', () => {
+        it('shows one compact link and opens the exact canonical run', () => {
+            setPromptState({ approval: { runId: 'run-approval', confirmationId: 'confirmation-approval' } });
+            const { container } = render(<PromptBar onReviewRun={module_mocks.review_run} />);
+            expect(container.querySelector('.transport-bar__prompt-preview')).toHaveClass(
+                'max-w-full',
+                'overflow-hidden'
+            );
+            expect(screen.getByRole('status')).toHaveTextContent('Changes awaiting review');
+            expect(screen.queryByLabelText('Confirm actions')).not.toBeInTheDocument();
+            expect(screen.queryByLabelText('Cancel actions')).not.toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: 'Review in Agent' }));
+            expect(module_mocks.review_run).toHaveBeenCalledExactlyOnceWith('run-approval');
         });
     });
 
     describe('input wiring', () => {
         it('calls setValue as the user types', () => {
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             fireEvent.change(screen.getByLabelText('Prompt command input'), { target: { value: 'mute track' } });
 
@@ -215,7 +157,7 @@ describe('PromptBar', () => {
         });
 
         it('calls handleKeyDown on key presses', () => {
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             fireEvent.keyDown(screen.getByLabelText('Prompt command input'), { key: 'ArrowDown' });
 
@@ -223,7 +165,7 @@ describe('PromptBar', () => {
         });
 
         it('calls setIsFocused(true) synchronously on focus', () => {
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             fireEvent.focus(screen.getByLabelText('Prompt command input'));
 
@@ -232,7 +174,7 @@ describe('PromptBar', () => {
 
         it('debounces setIsFocused(false) by 200ms on blur', () => {
             vi.useFakeTimers();
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             fireEvent.blur(screen.getByLabelText('Prompt command input'));
             expect(module_mocks.set_is_focused).not.toHaveBeenCalled();
@@ -249,7 +191,7 @@ describe('PromptBar', () => {
         });
 
         it('calls handleSubmit when the form is submitted', () => {
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             fireEvent.submit(screen.getByLabelText('Prompt command input').closest('form') as HTMLFormElement);
 
@@ -266,7 +208,7 @@ describe('PromptBar', () => {
                 ],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByText('Kick')).toBeInTheDocument();
             expect(screen.getByText('3 clips')).toBeInTheDocument();
@@ -279,7 +221,7 @@ describe('PromptBar', () => {
 
     describe('fuzzy results dropdown', () => {
         it('renders nothing when there are no fuzzy results', () => {
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
         });
@@ -291,7 +233,7 @@ describe('PromptBar', () => {
                 ],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByText('Available commands')).toBeInTheDocument();
         });
@@ -304,7 +246,7 @@ describe('PromptBar', () => {
                 ],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.queryByText('Available commands')).not.toBeInTheDocument();
             expect(screen.getByRole('option', { name: /Play/ })).toBeInTheDocument();
@@ -318,7 +260,7 @@ describe('PromptBar', () => {
                 selectedIndex: 0,
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             const option = screen.getByRole('option', { name: /Play/ });
             expect(option).toHaveAttribute('aria-selected', 'true');
@@ -339,7 +281,7 @@ describe('PromptBar', () => {
                 ],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByLabelText('Destructive action')).toBeInTheDocument();
         });
@@ -351,7 +293,7 @@ describe('PromptBar', () => {
                 fuzzyResults: [],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.getByRole('listbox')).toBeInTheDocument();
             expect(screen.getByText('No matching commands — press Enter to try AI')).toBeInTheDocument();
@@ -365,7 +307,7 @@ describe('PromptBar', () => {
                 fuzzyResults: [],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
             expect(screen.getByLabelText('Prompt command input')).toHaveAttribute('aria-expanded', 'false');
@@ -378,7 +320,7 @@ describe('PromptBar', () => {
                 ],
             });
 
-            render(<PromptBar />);
+            render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
             const input = screen.getByLabelText('Prompt command input');
             expect(input).toHaveAttribute('aria-expanded', 'true');
@@ -391,7 +333,7 @@ describe('PromptBar', () => {
     });
 
     it('calls the AiRuntime use case when the history toggle is clicked', () => {
-        render(<PromptBar />);
+        render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Toggle AI action history' }));
 
@@ -402,7 +344,7 @@ describe('PromptBar', () => {
     it('passes the llm status through to LlmStatusBadge', () => {
         setPromptState({ llmStatus: { state: 'loading', progress: 42, text: 'Downloading...' } });
 
-        render(<PromptBar />);
+        render(<PromptBar onReviewRun={module_mocks.review_run} />);
 
         expect(screen.getByTestId('llm-status-badge')).toHaveAttribute('data-state', 'loading');
     });
