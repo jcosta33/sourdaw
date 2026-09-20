@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { getTrackLatency } from './getTrackLatency';
+import { type LatencyCompensationInput } from './LatencyCompensationInput';
 
 /**
  * How deep the native engine's own compensation already holds its mix, in
@@ -18,8 +19,11 @@ import { getTrackLatency } from './getTrackLatency';
  * Buses belong in that maximum, because a native track's bus twin is the
  * engine's too: a Bacteria on a bus deepens every route passing through it.
  */
-export function deepestHostedLatencyMs(engineHostedStripIds: ReadonlySet<string>): number {
-    const state = trackStore.value;
+export function deepestHostedLatencyMs(
+    engineHostedStripIds: ReadonlySet<string>,
+    input?: LatencyCompensationInput
+): number {
+    const state = input ? { tracks: input.tracks } : trackStore.value;
     if (!state) {
         return 0;
     }
@@ -29,8 +33,8 @@ export function deepestHostedLatencyMs(engineHostedStripIds: ReadonlySet<string>
         if (!engineHostedStripIds.has(track.id)) {
             continue;
         }
-        const counted = getTrackLatency(track.id).totalLatencyMs;
-        const excluded = getTrackLatency(track.id, new Set(), undefined, engineHostedStripIds).totalLatencyMs;
+        const counted = getTrackLatency(track.id, new Set(), undefined, undefined, input).totalLatencyMs;
+        const excluded = getTrackLatency(track.id, new Set(), undefined, engineHostedStripIds, input).totalLatencyMs;
         deepestMs = Math.max(deepestMs, counted - excluded);
     }
 

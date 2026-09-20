@@ -1,3 +1,4 @@
+import { grooveTemplateStore, type GrooveTemplateState } from '#/modules/MIDI/stores';
 import {
     adaptGrooveTemplateForConsumer,
     getGrooveTemplate,
@@ -35,14 +36,17 @@ function createGrooveRuntimeParams(params: Readonly<Record<string, number>>): Re
     return runtimeParams;
 }
 
-export function createYeastRuntimeProjection(processors: readonly YeastProcessorInfo[]): YeastProcessorProjection {
+export function createYeastRuntimeProjection(
+    processors: readonly YeastProcessorInfo[],
+    grooveState: GrooveTemplateState | null = grooveTemplateStore.value
+): YeastProcessorProjection {
     return createYeastProcessorProjection(processors).map((processor) => {
         if (processor.type !== 'groove') {
             return processor;
         }
 
-        const assignment = getYeastGrooveAssignment(processor.id);
-        const template = getGrooveTemplate(assignment?.templateId ?? getStraightGrooveTemplateId());
+        const assignment = getYeastGrooveAssignment(processor.id, grooveState);
+        const template = getGrooveTemplate(assignment?.templateId ?? getStraightGrooveTemplateId(), grooveState);
         if (!template) {
             return processor;
         }

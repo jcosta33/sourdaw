@@ -9,6 +9,7 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { setActiveYeastDevice, yeastStore } from '../../stores/yeastStore';
+import { captureOfflineYeastProjections } from '../captureOfflineYeastProjections';
 import { createOfflineYeastMidiProcessor } from '../createOfflineYeastMidiProcessor';
 
 const ppqOf = ({ samples, sampleRate }: { samples: number; sampleRate: number }) => samples / (sampleRate * 0.5);
@@ -54,6 +55,152 @@ describe('createOfflineYeastMidiProcessor', () => {
         yeastStore.set({ uiLevel: 1, processors: [] });
         setActiveYeastDevice(null);
         trackStore.set(defaultTrackState);
+    });
+
+    it('captures the track rack before the first processing call can observe a replacement', () => {
+        const process = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ppqOf,
+            resolveMusicalPosition: musicalPosition,
+        });
+        yeastStore.set({ uiLevel: 1, processors: [] });
+        const output = process({
+            trackId: 'track-a',
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 64,
+                    timePpq: 64 / 24_000,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+        });
+        expect(output.map((event) => event.kind)).toEqual([
+            { type: 'noteOn', channel: 0, note: 72, velocity: 100 },
+            { type: 'noteOff', channel: 0, note: 72 },
+        ]);
+    });
+
+    it('uses supplied per-track projections without borrowing live racks', () => {
+        const projectionsByTrack = {
+            'track-a': [{ id: 'down', type: 'transposer' as const, bypassed: false, params: { semitones: -12 } }],
+        };
+        const process = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ppqOf,
+            resolveMusicalPosition: musicalPosition,
+            projectionsByTrack,
+        });
+        projectionsByTrack['track-a'][0]!.params.semitones = 7;
+        const output = process({
+            trackId: 'track-a',
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 64,
+                    timePpq: 64 / 24_000,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+        });
+        expect(output.map((event) => event.kind)).toEqual([
+            { type: 'noteOn', channel: 0, note: 48, velocity: 100 },
+            { type: 'noteOff', channel: 0, note: 48 },
+        ]);
+    });
+
+    it('captures supplied track-device ownership and rack values without reading the live arrangement', () => {
+        const processorsByDevice = {
+            'alternate-device': [
+                { id: 'down', type: 'transposer' as const, name: 'Down', bypassed: false, params: { semitones: -7 } },
+            ],
+        };
+        const projectionsByTrack = captureOfflineYeastProjections({
+            tracks: [{ id: 'track-a', devices: [{ id: 'alternate-device', type: 'yeast' }] }],
+            processorsByDevice,
+            grooveState: null,
+        });
+        processorsByDevice['alternate-device'][0]!.params.semitones = 3;
+        expect(projectionsByTrack['track-a']).toEqual([
+            { id: 'down', type: 'transposer', bypassed: false, params: { semitones: -7 } },
+        ]);
+        expect(yeastStore.value?.processors[0]?.params?.semitones).toBe(12);
+    });
+
+    it('does not acquire a newly appearing rack for a track absent from the captured input', () => {
+        const process = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ppqOf,
+            resolveMusicalPosition: musicalPosition,
+            projectionsByTrack: {},
+        });
+        const output = process({
+            trackId: 'track-a',
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+        });
+        expect(output.map((event) => event.kind)).toEqual([{ type: 'noteOn', channel: 0, note: 60, velocity: 100 }]);
+    });
+
+    it('keeps the global processor override authoritative and detached for every track', () => {
+        const processors = [
+            { id: 'up', type: 'transposer' as const, name: 'Up', bypassed: false, params: { semitones: 5 } },
+        ];
+        const process = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ppqOf,
+            resolveMusicalPosition: musicalPosition,
+            processors,
+            projectionsByTrack: {},
+        });
+        processors[0]!.params.semitones = 9;
+        const output = process({
+            trackId: 'not-in-project',
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: 'not-in-project',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 64,
+                    timePpq: 64 / 24_000,
+                    trackId: 'not-in-project',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+        });
+        expect(output.map((event) => event.kind)).toEqual([
+            { type: 'noteOn', channel: 0, note: 65, velocity: 100 },
+            { type: 'noteOff', channel: 0, note: 65 },
+        ]);
     });
 
     it('resolves a track rack once per render and stays deterministic after live state changes', () => {

@@ -19,6 +19,17 @@ vi.mock('../../stores/transportStore', async (importOriginal) => ({
 }));
 
 describe('createSamplePositionProjector', () => {
+    it('uses a supplied detached tempo source without borrowing the live tempo map', () => {
+        const source = {
+            transport: { tempo: 180 },
+            tempoMap: { changes: [{ id: 'tempo', beat: 0, tempo: 180, curve: 'instant' as const }] },
+        };
+        const project = createSamplePositionProjector(source);
+        source.transport.tempo = 240;
+        source.tempoMap.changes[0]!.tempo = 240;
+        expect(project({ samples: 48_000, sampleRate: 48_000 })).toBeCloseTo(3, 10);
+    });
+
     it('captures the tempo map and inverts integrated samples across a change', () => {
         const resolvePpqPosition = createSamplePositionProjector();
 

@@ -81,6 +81,7 @@ import { projectDeviceForNativeBody } from '../livePlayback/projectDeviceForNati
 
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
 import { automationWriteCommand } from './automationWriteCommand';
+import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
@@ -89,6 +90,7 @@ import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
 
 export type NativeOfflineRenderInput = Readonly<{
+    captured?: ReturnType<typeof captureOfflineRenderInput>;
     transport: NativeGraphTransport;
     sampleRate: number;
     frameCount: number;
@@ -224,7 +226,11 @@ export async function renderOfflineWithNativeEngine(
             soloGated: soloGatedByTrackId.get(track.id) ?? false,
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
         };
-        const devices = track.devices.map(projectDeviceForNativeBody);
+        const devices = track.devices.map((device) =>
+            input.captured
+                ? (input.captured.nativeDevices.get(device.id) ?? device)
+                : projectDeviceForNativeBody(device)
+        );
         return track.kind === 'bus'
             ? {
                   kind: 'create-bus-strip',
@@ -263,7 +269,9 @@ export async function renderOfflineWithNativeEngine(
     // ── Programme: automation writes and clip playbacks per scheduled track ─
     function buildTrackProgramme(track: Track): ProgrammeConversion {
         const commands: AudioGraphCommand[] = [];
-        const compensationDelay = getCompensationDelay(track.id, undefined, engineHostedStripIds);
+        const compensationDelay = input.captured
+            ? getCompensationDelay(track.id, undefined, engineHostedStripIds, input.captured.scheduling.latency)
+            : getCompensationDelay(track.id, undefined, engineHostedStripIds);
         const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
 
         // The same lane set, gate and grain the web scheduler reads
@@ -274,7 +282,7 @@ export async function renderOfflineWithNativeEngine(
         const automation = projectStripAutomationWrites({
             track,
             admittedSendBusIds: sendCommands({ track, busStripIds: busIds }).map((command) => command.busId),
-            lanes: automationStore.value?.lanes ?? [],
+            lanes: input.captured?.scheduling.automationLanes ?? automationStore.value?.lanes ?? [],
             regionStartSeconds: regionStartSec,
             durationSeconds,
             defaultTempo,
@@ -284,7 +292,9 @@ export async function renderOfflineWithNativeEngine(
             compensationDelaySec: compensationDelay,
             vcaMultiplier,
             slewTickSeconds: automationSlewTickSecondsForGrain(
-                transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
+                input.captured?.scheduling.scheduleGrainMs ??
+                    transportStore.value?.scheduleGrainMs ??
+                    defaultTransportState.scheduleGrainMs
             ),
             // The native fold shares this scheduler with the Web Audio path,
             // so it takes the same lane law rather than a second copy.
@@ -302,7 +312,7 @@ export async function renderOfflineWithNativeEngine(
         // the two schedule the same expansion into the same ceiling.
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
-        for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
+        for (const clip of resolveTrackClipsWithComping(track.id, track.clips, input.captured?.scheduling.takeLanes)) {
             if (clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
@@ -316,7 +326,7 @@ export async function renderOfflineWithNativeEngine(
             if (!clip.audioBufferId) {
                 continue;
             }
-            const buffer = audioBufferCache.get(clip.audioBufferId);
+            const buffer = (input.captured?.scheduling.buffers ?? audioBufferCache).get(clip.audioBufferId);
             if (!buffer) {
                 warn(
                     `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
@@ -386,7 +396,8 @@ export async function renderOfflineWithNativeEngine(
         // The bounce stages the same banks the live session does, through the
         // same sink: an export of a carried Levain strip must sound the
         // instrument the musician heard, not a strip the mapper refused.
-        acquireNativeSampleBank: getAudioDeviceRuntimeSink().acquireNativeSampleBank,
+        acquireNativeSampleBank:
+            input.captured?.acquireNativeSampleBank ?? getAudioDeviceRuntimeSink().acquireNativeSampleBank,
     });
     try {
         const batches: { commands: readonly AudioGraphCommand[]; attempt: string }[] = [

@@ -624,7 +624,7 @@
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "3e2aac3f15fcfe44589c5e292bbfeb9ca286140506744f57974c77e910dfe080"
+                    "digest": "cd5677a24eb57cd17a8fbcda7e479df15dbc3fabf516a820d5f77c46da1888d8"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",

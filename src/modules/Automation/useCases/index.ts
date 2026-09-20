@@ -69,3 +69,5 @@ export { getAutomationValueAtBeat } from './automation/getAutomationValueAtBeat'
 export { getAutomationLaneCeiling } from './automation/getAutomationLaneCeiling';
 export { isLinearGainAutomationLane } from './automation/isLinearGainAutomationLane';
 export { isRecordingAutomation } from './automationRecording/isRecordingAutomation';
+
+export { createOfflineAutomationEvaluator } from './automation/createOfflineAutomationEvaluator';

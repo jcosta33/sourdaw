@@ -46,8 +46,11 @@ function withFragmentOffset(clip: Track['clips'][number], displacement: number):
  * same clip set — comped takes and gap fills included — for the two to be
  * interchangeable.
  */
-export function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
-    const laneState = takeLaneStore.value;
+export function resolveTrackClipsWithComping(
+    trackId: string,
+    clips: Track['clips'],
+    laneState = takeLaneStore.value
+): ResolvedClip[] {
     if (!laneState) {
         return clips.map((clip) => ({
             ...clip,

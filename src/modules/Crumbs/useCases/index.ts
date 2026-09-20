@@ -10,3 +10,4 @@ export { hydrateCrumbsStateFromProject } from './hydrateCrumbsStateFromProject';
 export { initCrumbsDeviceStatePersistence } from './initCrumbsDeviceStatePersistence';
 export { panicCrumbs } from './panicCrumbs';
 export { prepareCrumbsEngine } from './prepareCrumbsEngine';
+export { captureCrumbsEngine } from './captureCrumbsEngine';
