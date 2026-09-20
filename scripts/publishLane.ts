@@ -528,7 +528,8 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
  * The three states a remote-tip read can report. `unreadable` is distinct from `absent`: an
  * entirely empty `ls-remote --heads` answer means the remote could not be read (a reachable remote
  * always has at least one head in this repository), while a non-empty listing that lacks the target
- * branch proves the branch is genuinely absent — a legitimate first publish.
+ * branch is `absent`. Whether `absent` is a legitimate first publication or a transport flake is the
+ * caller's call: the caller fails closed when an open pull request already heads the branch.
  */
 export type RemoteBranchRead = { kind: 'present'; sha: string } | { kind: 'absent' } | { kind: 'unreadable' };
 
@@ -1116,6 +1117,17 @@ export function publishLane(
     }
     if (remoteRead.kind === 'present' && !port.isAncestor(remoteRead.sha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
+    }
+    // An open pull request whose head is this branch proves the branch was already published, so a
+    // reachable remote must list it. A non-empty listing that omits it is the transport flake this
+    // gate exists to refuse — never a first publication — so fail closed rather than read it as
+    // absent and silently widen the non-fast-forward check from remote-tip..head to base..head. A
+    // conforming lane read its pull request before the push; a legacy lane's open pull request is
+    // what authorized it.
+    if (remoteRead.kind === 'absent' && (lane.legacy || write?.existing !== undefined)) {
+        fail(
+            `refusing publication of ${lane.branch}: the remote heads listing did not carry the branch although an open pull request for it exists`
+        );
     }
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');

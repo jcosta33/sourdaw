@@ -167,7 +167,7 @@ type FakeInput = {
     subject?: string | null;
     headSha?: string;
     baseSha?: string;
-    /** The remote-tip read the port answers; defaults to `{ kind: 'absent' }` (a first publish). */
+    /** The remote-tip read the port answers; defaults to `{ kind: 'present' }` (the branch exists). */
     remoteRead?: RemoteBranchRead;
     ancestor?: boolean;
     existing?: number;
@@ -221,7 +221,7 @@ function fakePort(input: FakeInput = {}) {
         dirty: () => dirty,
         laneSubject: () => subject,
         headSha: () => input.headSha ?? 'abc',
-        remoteBranchSha: () => input.remoteRead ?? { kind: 'absent' },
+        remoteBranchSha: () => input.remoteRead ?? { kind: 'present', sha: 'abc' },
         isAncestor: () => input.ancestor ?? true,
         push: (_lane, branch, headSha) => {
             calls.push(`push:${branch}`);
@@ -1592,13 +1592,28 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
-    it('publishes a genuinely absent remote branch as a first publish', () => {
-        // A non-empty remote listing that lacks the target branch proves it is absent, so the
+    it('publishes a branch absent from a non-empty listing when no open pull request expects it', () => {
+        // A non-empty remote listing that lacks the target branch reads `absent`. With no open pull
+        // request whose head is that branch, absent is a legitimate first publication: the
         // fast-forward check is skipped and the first publish proceeds.
         const { port, calls } = fakePort({ remoteRead: { kind: 'absent' } });
 
         expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
         expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('refuses publication when an absent branch already has an open pull request heading it', () => {
+        // The regression this lane closes: a reachable remote still lists `main`, so a branch the
+        // transport fails to show arrives as a non-empty listing that omits it — classified `absent`
+        // even though an open pull request for it proves it was published. That must refuse, not
+        // widen the non-fast-forward check from remote-tip..head to base..head.
+        const { port, calls } = fakePort({ remoteRead: { kind: 'absent' }, existing: 41 });
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toThrow(
+            /refusing publication of agent\/12\/work: the remote heads listing did not carry the branch although an open pull request for it exists/
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
