@@ -70,7 +70,9 @@ export const BUILTIN_SYNTH_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePar
         200,
         8000,
         ['filterType defines which side of filterCutoff passes, while filterResonance emphasizes the corner.'],
-        ['Very low cutoff values can remove the body of highpass or bandpass notes before other expression is applied.']
+        [
+            "A highpass filter attenuates frequencies below the cutoff, so raising filterCutoff can remove low-frequency body; a bandpass filter attenuates frequencies outside the band around the cutoff, so moving filterCutoff away from a note's strongest partials can thin or silence it.",
+        ]
     ),
     filterResonance: synthParameterGuidance(
         'Biquad filter Q',

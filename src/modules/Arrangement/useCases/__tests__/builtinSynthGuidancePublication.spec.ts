@@ -134,4 +134,15 @@ describe('builtin synth guidance publication', () => {
             ).toEqual(owner.guidance.parameters);
         }
     });
+
+    it('publishes the highpass and bandpass cutoff risk with the correct frequency direction', () => {
+        const published = getAgentBuiltinDeviceFactoryManifest().find(
+            (descriptor) => descriptor.type === 'builtin-synth'
+        );
+        const cutoffGuidance = published?.parameters.find((parameter) => parameter.id === 'filterCutoff')?.guidance;
+
+        expect(cutoffGuidance?.risks).toContain(
+            "A highpass filter attenuates frequencies below the cutoff, so raising filterCutoff can remove low-frequency body; a bandpass filter attenuates frequencies outside the band around the cutoff, so moving filterCutoff away from a note's strongest partials can thin or silence it."
+        );
+    });
 });

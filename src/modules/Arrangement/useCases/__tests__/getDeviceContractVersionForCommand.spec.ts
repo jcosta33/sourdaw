@@ -10,26 +10,18 @@ import { getBuiltinPlugins } from '../getBuiltinPlugins';
 import { getDeviceContractVersionForCommand } from '../getDeviceContractVersionForCommand';
 import { getDeviceTypesForCommandDeviceIds } from '../getDeviceTypesForCommandDeviceIds';
 
-// The descriptor ids the Faust instrument additions append to the registry;
-// the registry census below pins every non-Faust descriptor by name.
-const FAUST_INSTRUMENT_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
-    'faust-rhodes',
-    'faust-fm-synth',
-    'faust-supersaw-unison',
-]);
-
 // PR #4476 adds owner guidance to these existing synth-family descriptors. Guidance is
 // intentionally part of the command contract fingerprint so stale approvals refresh
 // instead of replaying against older planner-facing semantics.
-const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, { beforeGuidance: string; current: string }>> = {
-    'builtin-synth': { beforeGuidance: 'descriptor-v1:614f201f', current: 'descriptor-v1:0bba2631' },
-    'builtin-synth-mellotron': { beforeGuidance: 'descriptor-v1:71cf9d31', current: 'descriptor-v1:452e20ab' },
-    'builtin-synth-strings': { beforeGuidance: 'descriptor-v1:11f074db', current: 'descriptor-v1:877b7941' },
-    'builtin-synth-808bass': { beforeGuidance: 'descriptor-v1:274a35d6', current: 'descriptor-v1:13061900' },
-    'builtin-synth-brass': { beforeGuidance: 'descriptor-v1:5dbc0228', current: 'descriptor-v1:4f92a842' },
+const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, string>> = {
+    'builtin-synth': 'descriptor-v1:4c767d78',
+    'builtin-synth-mellotron': 'descriptor-v1:4c32af06',
+    'builtin-synth-strings': 'descriptor-v1:9ff27cce',
+    'builtin-synth-808bass': 'descriptor-v1:e8aee043',
+    'builtin-synth-brass': 'descriptor-v1:61060347',
 };
 
-const UNCHANGED_PRE_GUIDANCE_VERSION_PINS: Readonly<Record<string, string>> = {
+const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-eq': 'descriptor-v1:63102173',
     'builtin-compressor': 'descriptor-v1:432b6464',
     'builtin-reverb': 'descriptor-v1:17ea53ba',
@@ -49,6 +41,7 @@ const UNCHANGED_PRE_GUIDANCE_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-stereo-widener': 'descriptor-v1:af373b3b',
     'builtin-deesser': 'descriptor-v1:07639674',
     'builtin-lufs-meter': 'descriptor-v1:76e76f72',
+    'builtin-synth': 'descriptor-v1:614f201f',
     'builtin-drum-kit': 'descriptor-v1:15e97237',
     'dutch-oven': 'descriptor-v1:697d31a3',
     'native-scoring': 'descriptor-v1:6236c1eb',
@@ -64,6 +57,13 @@ const UNCHANGED_PRE_GUIDANCE_VERSION_PINS: Readonly<Record<string, string>> = {
     'faust-lufs-meter': 'descriptor-v1:ba1eba2e',
     'faust-stereo-widener': 'descriptor-v1:369c6f01',
     'faust-de-esser': 'descriptor-v1:01925fec',
+    'faust-rhodes': 'descriptor-v1:8bdddff9',
+    'faust-fm-synth': 'descriptor-v1:884cb08a',
+    'faust-supersaw-unison': 'descriptor-v1:cb811bb7',
+    'builtin-synth-mellotron': 'descriptor-v1:71cf9d31',
+    'builtin-synth-strings': 'descriptor-v1:11f074db',
+    'builtin-synth-808bass': 'descriptor-v1:274a35d6',
+    'builtin-synth-brass': 'descriptor-v1:5dbc0228',
     'builtin-drum-machine-808': 'descriptor-v1:3157334a',
     'builtin-drum-machine-analog': 'descriptor-v1:b497a2ee',
     'builtin-drum-machine-electronic': 'descriptor-v1:c681efac',
@@ -144,39 +144,31 @@ describe('getDeviceContractVersionForCommand', () => {
         }
     });
 
-    it('leaves every descriptor unrelated to synth-family guidance unchanged', () => {
-        // Pinned against the registry before the Faust instrument descriptors
-        // and synth-family guidance were added: every non-Faust descriptor id,
-        // not a sample. The fingerprint covers the whole descriptor, so a
-        // shifted unrelated pin means an existing entry was mutated. The key
-        // set is checked against the live registry so a wrong pin, dropped pin,
-        // or later added non-Faust device without a pin fails here by name.
-        const nonFaustDescriptorIds = [
-            ...new Set(
-                getBuiltinPlugins()
-                    .map((plugin) => plugin.id)
-                    .filter((id) => !FAUST_INSTRUMENT_DESCRIPTOR_IDS.has(id))
-            ),
-        ].sort();
-        expect(
-            [
-                ...Object.keys(UNCHANGED_PRE_GUIDANCE_VERSION_PINS),
-                ...Object.keys(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS),
-            ].sort()
-        ).toEqual(nonFaustDescriptorIds);
+    it('pins the full descriptor registry and limits intentional version changes to synth-family guidance', () => {
+        const descriptorIds = [...new Set(getBuiltinPlugins().map((plugin) => plugin.id))].sort();
+        expect(Object.keys(BASELINE_DESCRIPTOR_VERSION_PINS).sort()).toEqual(descriptorIds);
 
-        for (const [deviceType, pinnedVersion] of Object.entries(UNCHANGED_PRE_GUIDANCE_VERSION_PINS)) {
-            expect(getDeviceContractVersionForCommand(deviceType), deviceType).toBe(pinnedVersion);
+        const changedFromBaseline = descriptorIds.filter(
+            (deviceType) =>
+                getDeviceContractVersionForCommand(deviceType) !== BASELINE_DESCRIPTOR_VERSION_PINS[deviceType]
+        );
+        expect(changedFromBaseline).toEqual(Object.keys(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS).sort());
+
+        for (const deviceType of descriptorIds) {
+            const expectedVersion =
+                SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS[deviceType] ?? BASELINE_DESCRIPTOR_VERSION_PINS[deviceType];
+            expect(getDeviceContractVersionForCommand(deviceType), deviceType).toBe(expectedVersion);
         }
     });
 
     it('records synth-family guidance as the intentional descriptor-version bump', () => {
-        for (const [deviceType, { beforeGuidance, current }] of Object.entries(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS)) {
+        for (const [deviceType, current] of Object.entries(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS)) {
             const descriptor = getPluginById(deviceType);
             if (!descriptor?.guidance) {
                 throw new Error(`Expected synth-family guidance in the authoritative descriptor for ${deviceType}`);
             }
 
+            const beforeGuidance = BASELINE_DESCRIPTOR_VERSION_PINS[deviceType];
             expect(beforeGuidance, deviceType).toMatch(/^descriptor-v1:[0-9a-f]{8}$/);
             expect(current, deviceType).toBe(`descriptor-v1:${getStableContractFingerprint(descriptor)}`);
             expect(getDeviceContractVersionForCommand(deviceType), deviceType).toBe(current);
