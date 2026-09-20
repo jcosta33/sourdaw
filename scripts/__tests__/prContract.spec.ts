@@ -1164,6 +1164,8 @@ describe('product-scope test instructions', () => {
     it.each([
         ['a MIDI step', 'Make a MIDI track'],
         ['a rename step', 'Format the clip name'],
+        ['a shell-named sorting step', 'sort the clips by name'],
+        ['a shell-named printing step', 'echo the level'],
     ])('passes a manual %s whose head-verb opens onto an article', (_label, step) => {
         // The article directly behind the peeled head keeps the argument run closed — the head is
         // the step's own verb naming its object — so the UI nouns reach the rescue check instead
