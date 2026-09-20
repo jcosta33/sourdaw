@@ -532,7 +532,7 @@ const REFUSED_PUBLISH_CASES: Array<[string, FakeInput, RegExp]> = [
     ],
     [
         'a human-authored push delta',
-        { commitEmails: ['fixture-author@example.com'] },
+        { commitEmails: ['fixture-author@example.com'], remoteRead: { kind: 'absent' } },
         /carries commits above base authored as fixture-author@example\.com/,
     ],
     [
