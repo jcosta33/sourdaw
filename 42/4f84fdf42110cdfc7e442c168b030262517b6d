@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_ed5aa36a3ba357::t_39f8e7aaa93fe0 8,731,765-776,778-779,783-785,788-804
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_ed5aa36a3ba357::t_6f8ec939c8b992 130-138,184,526-642,644
+  s_ed5aa36a3ba357::t_6394da92538536 22
+  s_ed5aa36a3ba357::t_333ad888cc31a0 17
+  s_ed5aa36a3ba357::t_d3fc19849fd5df 643
+  s_ed5aa36a3ba357::t_32057ab52ab550 645-646
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_bf1a1fccbef2de 4,396-400,402-414,418-431,437-446,507,729
+  s_ed5aa36a3ba357::t_70796db00e7063 432-436
+src/modules/AiRuntime/errors/HostedToolCallingProtocolError.ts
+  s_ed5aa36a3ba357::t_40628108014c4a 1-2,5-14
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_ed5aa36a3ba357::t_40628108014c4a 2-5,261-267
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_1396edfc81582c 336-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "424f84fdf42110cdfc7e442c168b030262517b6d",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
