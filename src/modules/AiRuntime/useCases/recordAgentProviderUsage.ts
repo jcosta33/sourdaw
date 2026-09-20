@@ -23,6 +23,36 @@ function optionalHostedUsageFields(
     return fields;
 }
 
+function prepareProviderUsageBudget(input: {
+    runId: string;
+    budgetAttemptId: string;
+    executor: RunnableAiBackend;
+    usage: ModelProviderResult['usage'];
+}): { consumed: number; mode: 'cumulative' | 'final'; provenance: ModelProviderResult['usage']['provenance'] } | null {
+    const existingAttempt = agentRunLifecycle
+        .get(input.runId)
+        ?.budgetAttempts.find((attempt) => attempt.attemptId === input.budgetAttemptId);
+    if (existingAttempt?.final) {
+        return null;
+    }
+    const completeRequiredUsage = input.usage.inputTokens !== null && input.usage.outputTokens !== null;
+    const knownUsage = (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0);
+    if (!existingAttempt) {
+        agentRunLifecycle.reserveBudget({
+            runId: input.runId,
+            attemptId: input.budgetAttemptId,
+            category: input.executor === 'cloud' ? 'remoteTokens' : 'localAnalysis',
+            estimate: knownUsage,
+            provenance: completeRequiredUsage ? input.usage.provenance : 'unavailable',
+        });
+    }
+    return {
+        consumed: knownUsage,
+        mode: completeRequiredUsage ? 'final' : 'cumulative',
+        provenance: completeRequiredUsage ? input.usage.provenance : (existingAttempt?.provenance ?? 'unavailable'),
+    };
+}
+
 export function recordAgentProviderUsage(
     runId: string,
     result: ModelProviderResult,
@@ -31,17 +61,9 @@ export function recordAgentProviderUsage(
 ): void {
     const executor: RunnableAiBackend = result.provider === 'webllm' ? 'webllm' : 'cloud';
     const routeId = `${executor}:${result.provider}:${result.model ?? 'unknown'}`;
-    const existingAttempt = agentRunLifecycle
-        .get(runId)
-        ?.budgetAttempts.some((attempt) => attempt.attemptId === budgetAttemptId);
-    if (!existingAttempt) {
-        agentRunLifecycle.reserveBudget({
-            runId,
-            attemptId: budgetAttemptId,
-            category: executor === 'cloud' ? 'remoteTokens' : 'localAnalysis',
-            estimate: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
-            provenance: result.usage.provenance,
-        });
+    const budget = prepareProviderUsageBudget({ runId, budgetAttemptId, executor, usage: result.usage });
+    if (budget === null) {
+        return;
     }
     agentRunLifecycle.recordProviderUsage({
         runId,
@@ -67,8 +89,6 @@ export function recordAgentProviderUsage(
     agentRunLifecycle.reconcileBudgetAttempt({
         runId,
         attemptId: budgetAttemptId,
-        consumed: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
-        mode: 'final',
-        provenance: result.usage.provenance,
+        ...budget,
     });
 }

@@ -597,6 +597,29 @@ describe('AgentWorkspace', () => {
         expect(screen.getByText('Route not resolved')).toBeInTheDocument();
     });
 
+    it('renders incomplete provider cost as a reserved estimate in both route and approval views', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        const incompleteCost = {
+            category: 'remoteTokens',
+            reserved: 100,
+            actual: 9,
+            provenance: 'versioned-estimate',
+            final: false,
+        };
+        getProviderRouteViewMock.mockReturnValue({ ...routeView(), cost: [incompleteCost] });
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(approvalView({ cost: [incompleteCost] }));
+
+        render(<AgentWorkspace />);
+
+        expect(screen.getByText('remoteTokens 100 reserved versioned-estimate; known minimum 9')).toBeInTheDocument();
+        expect(
+            screen.getByText('Cost: remoteTokens 100 reserved versioned-estimate; known minimum 9')
+        ).toBeInTheDocument();
+    });
+
     it('lists every route option with its admission verdict and the run fallback policy', () => {
         agentRunControlsMock.list.mockReturnValue([projection()]);
         agentRunControlsMock.get.mockReturnValue(projection());

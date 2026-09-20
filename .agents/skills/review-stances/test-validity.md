@@ -333,3 +333,13 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.
+
+### 2026-09-20 — incomplete hosted usage released the admitted estimate (escaped via PR #2648)
+
+PR #2648 converted null input or output counters to zero and finalized the budget attempt, so a partial provider report
+could lower the charged ceiling and appear as a complete provider total in route and approval views.
+
+Probe that would have caught it: reserve a real hosted attempt, report each required counter as null independently, and
+inspect the lifecycle budget plus the real route and approval projections. The reservation must remain non-final until both
+required counters are known; then repeat the complete report and follow it with a partial one. The charge must settle once,
+and both rendered cost surfaces must distinguish the pending reservation from a final provider-reported total.
