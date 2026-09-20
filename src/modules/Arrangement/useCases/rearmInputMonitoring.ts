@@ -3,6 +3,14 @@ import { startInputMonitoring } from '#/modules/AudioEngine/useCases';
 import type { Track } from '../models/Track';
 
 /**
+ * The slice of a track this law actually reads. Re-arming needs only the track's
+ * identity and its persisted monitoring intent; it never inspects name, kind,
+ * clips, or any other field, so callers pass real tracks while minimal fixtures
+ * stay legal.
+ */
+type MonitorTrack = Pick<Track, 'id' | 'inputMonitoring' | 'inputId'>;
+
+/**
  * Re-arms hardware input monitoring for the tracks whose persisted intent is
  * `'on'`, against the strips a rebuild has just produced.
  *
@@ -14,7 +22,7 @@ import type { Track } from '../models/Track';
  * denied device — is ignored: a re-arm must never turn a successful rebuild or
  * restore into a failure.
  */
-export async function rearmInputMonitoring(tracks: readonly Track[]): Promise<void> {
+export async function rearmInputMonitoring(tracks: readonly MonitorTrack[]): Promise<void> {
     const monitoredTracks = tracks.filter((track) => track.inputMonitoring === 'on');
     await Promise.allSettled(monitoredTracks.map((track) => startInputMonitoring(track.id, track.inputId)));
 }
