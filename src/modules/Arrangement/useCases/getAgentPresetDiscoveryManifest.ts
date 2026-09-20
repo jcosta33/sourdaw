@@ -28,7 +28,7 @@ type AgentPresetDiscoveryEntry = {
 };
 
 function boundedDiscoveryText(value: string, maximumLength: number): string {
-    return Array.from(value.normalize('NFC'))
+    return Array.from(value.toWellFormed().normalize('NFC'))
         .filter((character) => {
             const codePoint = character.codePointAt(0)!;
             return codePoint > 0x1f && codePoint !== 0x7f;
@@ -58,7 +58,7 @@ function boundedDiscoverySubcategory(value: string | undefined): string | null {
     return boundedDiscoveryText(value, MAX_DISCOVERY_SUBCATEGORY_LENGTH);
 }
 
-function toDiscoveryEntry(preset: SoundPreset): AgentPresetDiscoveryEntry {
+function toDiscoveryEntry(preset: SoundPreset, isFactory: boolean): AgentPresetDiscoveryEntry {
     return {
         id: preset.id,
         name: boundedDiscoveryText(preset.name, MAX_DISCOVERY_NAME_LENGTH),
@@ -66,19 +66,22 @@ function toDiscoveryEntry(preset: SoundPreset): AgentPresetDiscoveryEntry {
         subcategory: boundedDiscoverySubcategory(preset.subcategory),
         description: boundedDiscoveryText(preset.description, MAX_DISCOVERY_DESCRIPTION_LENGTH),
         trackKind: preset.trackKind,
-        isFactory: preset.isFactory,
+        isFactory,
         tags: boundedDiscoveryTags(preset.tags),
         deviceTypes: boundedDiscoveryTextList(preset.devices.map((device) => device.type)),
         searchTerms: [preset.name, ...preset.tags],
         version: `preset-v1:${getStableContractFingerprint(preset)}`,
         metadata: {
             source: 'Arrangement SoundPreset',
-            confidence: preset.isFactory ? 'declared' : 'user-supplied',
+            confidence: isFactory ? 'declared' : 'user-supplied',
         },
     };
 }
 
 /** Arrangement publishes bounded preset discovery evidence without exposing device parameter values. */
 export function getAgentPresetDiscoveryManifest(): readonly AgentPresetDiscoveryEntry[] {
-    return [...getFactoryPresets(), ...getUserPresets()].map(toDiscoveryEntry);
+    return [
+        ...getFactoryPresets().map((preset) => toDiscoveryEntry(preset, preset.isFactory)),
+        ...getUserPresets().map((preset) => toDiscoveryEntry(preset, false)),
+    ];
 }

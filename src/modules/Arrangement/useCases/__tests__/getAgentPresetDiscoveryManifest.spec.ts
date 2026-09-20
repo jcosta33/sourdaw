@@ -61,4 +61,38 @@ describe('getAgentPresetDiscoveryManifest', () => {
         expect(after?.version).toBe(`preset-v1:${getStableContractFingerprint(changed)}`);
         expect(after?.version).not.toBe(before?.version);
     });
+
+    it('derives user-preset provenance from storage ownership and publishes well-formed receipt text', () => {
+        const malformedPreset = {
+            id: 'user-stored-preset',
+            name: '\uD800'.repeat(128),
+            category: 'fx' as const,
+            subcategory: '\uD800'.repeat(128),
+            description: '\uD800'.repeat(1_024),
+            trackKind: 'audio' as const,
+            devices: Array.from({ length: 8 }, () => ({
+                type: '\uDC00'.repeat(128),
+                name: 'Device',
+                parameterValues: {},
+            })),
+            tags: [...Array.from({ length: 8 }, () => '\uD800'.repeat(128)), 'tube'],
+            author: 'User',
+            isFactory: true,
+        };
+        userPresetStorage.set([malformedPreset]);
+
+        const entry = getAgentPresetDiscoveryManifest().find((candidate) => candidate.id === malformedPreset.id);
+
+        expect(entry).toMatchObject({
+            id: malformedPreset.id,
+            isFactory: false,
+            tags: expect.arrayContaining(['tube']),
+            metadata: { confidence: 'user-supplied' },
+        });
+        expect(entry?.name.isWellFormed()).toBe(true);
+        expect(entry?.subcategory?.isWellFormed()).toBe(true);
+        expect(entry?.description.isWellFormed()).toBe(true);
+        expect(entry?.tags.every((tag) => tag.isWellFormed())).toBe(true);
+        expect(entry?.deviceTypes.every((deviceType) => deviceType.isWellFormed())).toBe(true);
+    });
 });
