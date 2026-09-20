@@ -4,7 +4,12 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { useStore } from '#/infra/store/useStore';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import {
+    defaultProjectStoreState,
+    projectStore,
+    readSettledProjectIdentity,
+    type ProjectStoreState,
+} from '#/modules/Project/stores';
 import { getCanonicalTrackRole, getCanonicalTrackRoleOptions, setTrackCanonicalRole } from '#/modules/Project/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -17,15 +22,19 @@ const SOURCE_LABELS = {
     unknown: 'No role evidence',
 };
 
-export const TrackRoleSection = ({ track }: { track: Track }): ReactElement => {
-    const project = useStore(projectStore, defaultProjectStoreState);
-    const midi = useStore(midiStore, defaultMidiStoreState);
+type TrackRoleControlProps = {
+    track: Track;
+    project: ProjectStoreState;
+    notesByClipId: typeof defaultMidiStoreState.notesByClipId;
+};
+
+const TrackRoleControl = ({ track, project, notesByClipId }: TrackRoleControlProps): ReactElement => {
     const [pending, setPending] = useState(false);
     const [errorMessage, setError] = useState<string | null>(null);
     const role = getCanonicalTrackRole({
         track,
         trackRoles: project.productionBrief.trackRoles,
-        notesByClipId: midi.notesByClipId,
+        notesByClipId,
     });
     const authored = role.source === 'authored';
     let value = '';
@@ -81,5 +90,20 @@ export const TrackRoleSection = ({ track }: { track: Track }): ReactElement => {
                 ) : null}
             </SurfaceCard>
         </div>
+    );
+};
+
+export const TrackRoleSection = ({ track }: { track: Track }): ReactElement => {
+    const project = useStore(projectStore, defaultProjectStoreState);
+    const midi = useStore(midiStore, defaultMidiStoreState);
+    const projectIdentity = readSettledProjectIdentity(project);
+
+    return (
+        <TrackRoleControl
+            key={projectIdentity?.projectId}
+            track={track}
+            project={project}
+            notesByClipId={midi.notesByClipId}
+        />
     );
 };

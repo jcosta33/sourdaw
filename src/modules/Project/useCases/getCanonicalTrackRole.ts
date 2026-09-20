@@ -94,10 +94,17 @@ function storedVoices(device: Device): Array<{ pitch: number; family: CanonicalT
     );
 }
 
+function storedNotes(input: RoleInput, clip: Clip): readonly Note[] {
+    if (input.notesByClipId && Object.hasOwn(input.notesByClipId, clip.id)) {
+        return input.notesByClipId[clip.id] ?? [];
+    }
+    return clip.notes ?? [];
+}
+
 function contentRole(input: RoleInput): CanonicalTrackRoleProjection {
     const clips = input.track.clips.map((clip) => ({
         type: clip.type,
-        notes: clip.notes ?? input.notesByClipId?.[clip.id] ?? [],
+        notes: storedNotes(input, clip),
     }));
     const contentRevision = createBoundedRevisionToken(
         'stored-role-content',

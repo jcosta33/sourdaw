@@ -1,9 +1,17 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { defaultProjectStoreState, projectStore as actualProjectStore } from '#/modules/Project/stores';
+import { setTrackCanonicalRole } from '#/modules/Project/useCases';
 
 import { TrackInspector } from '../TrackInspector';
 
 import type { Track } from '../../../../models/TrackViewTypes';
+
+vi.mock('#/modules/Project/useCases', async (original) => ({
+    ...(await original<typeof import('#/modules/Project/useCases')>()),
+    setTrackCanonicalRole: vi.fn(),
+}));
 
 // Mock all child components
 vi.mock('../TrackHeaderSection', () => ({
@@ -137,6 +145,15 @@ describe('TrackInspector', () => {
 
     const mockAllTracks: Track[] = [mockTrack];
 
+    beforeEach(() => {
+        vi.clearAllMocks();
+        actualProjectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+            initialized: true,
+        });
+    });
+
     it('should render without crashing', () => {
         render(
             <TrackInspector
@@ -224,5 +241,55 @@ describe('TrackInspector', () => {
             />
         );
         expect(screen.queryByTestId('master-visualizations-section')).not.toBeInTheDocument();
+    });
+
+    it('isolates role request state when a replacement project reuses the selected track id', async () => {
+        let rejectFirst!: (error: Error) => void;
+        let resolveSecond!: () => void;
+        vi.mocked(setTrackCanonicalRole)
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((_resolve, reject) => {
+                        rejectFirst = reject;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveSecond = resolve;
+                    })
+            );
+        render(
+            <TrackInspector
+                track={mockTrack}
+                allTracks={mockAllTracks}
+                onSelectClip={mockOnSelectClip}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+        const firstControl = screen.getByRole('combobox', { name: 'Track role' });
+        fireEvent.change(firstControl, { target: { value: 'kick' } });
+        await waitFor(() => expect(firstControl).toBeDisabled());
+
+        await act(async () =>
+            actualProjectStore.set({
+                ...structuredClone(defaultProjectStoreState),
+                projectId: '405e744b-dead-843a-9395-86fdcd66368d',
+                initialized: true,
+            })
+        );
+        const replacementControl = screen.getByRole('combobox', { name: 'Track role' });
+        await waitFor(() => expect(replacementControl).toBeEnabled());
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+        fireEvent.change(replacementControl, { target: { value: 'snare' } });
+        await waitFor(() => expect(replacementControl).toBeDisabled());
+        await act(async () => rejectFirst(new Error('The project changed; select the track again.')));
+        expect(setTrackCanonicalRole).toHaveBeenCalledTimes(2);
+        expect(replacementControl).toBeDisabled();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+        await act(async () => resolveSecond());
+        await waitFor(() => expect(replacementControl).toBeEnabled());
     });
 });

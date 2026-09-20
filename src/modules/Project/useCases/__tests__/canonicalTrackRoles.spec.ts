@@ -202,4 +202,17 @@ describe('canonical track roles', () => {
         source.notesByClipId = {};
         expect(getCanonicalTrackRole(source).role).toBe('unknown');
     });
+    it.each([
+        { hydrated: [38], role: 'snare', evidence: 'stored-drum-voices' },
+        { hydrated: [99], role: 'unknown', evidence: 'unmapped-drum-voice' },
+        { hydrated: [], role: 'unknown', evidence: 'empty-content' },
+    ])(
+        'uses an authoritative hydrated note entry $hydrated before conflicting inline notes',
+        ({ hydrated, role, evidence }) => {
+            const source = content([36]);
+            source.notesByClipId = { c: hydrated.map((pitch) => ({ pitch })) };
+
+            expect(getCanonicalTrackRole(source)).toMatchObject({ role, evidence });
+        }
+    );
 });
