@@ -8,6 +8,7 @@ import { slewStep } from '#/utils/automationSlew';
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
+import { MAX_OFFLINE_FRAMES } from '../../clampRenderFrameCount';
 import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
 import { makeCeilingClipCurve } from '../../devices/dynamics/makeCeilingClipCurve';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
@@ -1360,6 +1361,80 @@ describe('scheduleTrackAutomation — a frame-addressed ceiling lane (#4437)', (
             call.run();
         }
         expect(ceiling.gain.value).toBeCloseTo(dbToGain(-1), 12);
+    });
+
+    it('schedules the region-end write when the render is not a whole number of frames long', () => {
+        const node = makeLimiterNode();
+        const { calls, scheduleFrame } = makeFrameScheduler();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:lim-ceiling',
+                    minValue: -3,
+                    maxValue: 0,
+                    points: [
+                        { beat: 0, value: -1, curve: 'linear', tension: 0 },
+                        { beat: 8, value: -3, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', node)],
+            deviceParameterLaw: limiterCeilingLaw,
+            // 240 bpm puts the lane's last point on the 2 s region end; the
+            // render lasts 2.0004 s, which is 2001 frames at 1 kHz — the
+            // context's ceil, not its floor.
+            durationSeconds: 2.0004,
+            defaultTempo: 240,
+            changes: [],
+            sampleRate: 1_000,
+            scheduleFrame,
+        });
+
+        const times = calls.map((call) => call.time) as number[];
+        // The region-end write quantises to frame 2000, the render's last valid
+        // frame, so its suspend is accepted. A bound of `floor(2.0004 * 1000)`
+        // = 2000 drops it and the tail holds the previous ceiling.
+        expect(times).toContain(2);
+        expect(times.at(-1)).toBeCloseTo(2.0004, 9);
+    });
+
+    it('still drops a write past the clamped context when the requested duration exceeds the frame cap', () => {
+        const node = makeLimiterNode();
+        const { calls, scheduleFrame } = makeFrameScheduler();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:lim-ceiling',
+                    minValue: -3,
+                    maxValue: 0,
+                    points: [{ beat: 0, value: -1, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-limiter', node)],
+            deviceParameterLaw: limiterCeilingLaw,
+            // Twice the renderer's frame cap: the context it builds holds
+            // MAX_OFFLINE_FRAMES, not `floor(durationSeconds * sampleRate)`.
+            durationSeconds: (MAX_OFFLINE_FRAMES * 2) / 1_000,
+            defaultTempo: 120,
+            changes: [],
+            sampleRate: 1_000,
+            // One frame past the clamped count. Its suspend would be rejected,
+            // and the frame scheduler's rejection fallback would fire it at
+            // once — an end-of-render ceiling applied from frame 0.
+            compensationDelaySec: MAX_OFFLINE_FRAMES / 1_000 + 1,
+            scheduleFrame,
+        });
+
+        // Only the region-start seed (which the shift re-anchors at 0) lands.
+        expect(calls.map((call) => call.time)).toEqual([0]);
     });
 
     it('fails closed when the render provides no frame scheduler instead of dropping the lane', () => {

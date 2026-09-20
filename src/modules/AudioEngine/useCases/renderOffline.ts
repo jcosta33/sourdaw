@@ -5,13 +5,13 @@ import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { createExportError } from '../errors/ExportError';
 import { type AudioGraphApplyResult, type AudioGraphCommand } from '../models/AudioGraphBackend';
+import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
-import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './offlineRender/collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';

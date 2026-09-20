@@ -8,6 +8,7 @@ import { createExportError } from '../../errors/ExportError';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type OfflineCurveWriteTargets } from '../../models/OfflineCurveWriteTargets';
 import { beatToSeconds } from '../../services/beatConversion';
+import { clampRenderFrameCount } from '../clampRenderFrameCount';
 import { applyLimiterCeilingWrite } from '../devices/dynamics/applyLimiterCeilingWrite';
 import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
@@ -513,8 +514,19 @@ export function scheduleTrackAutomation({
                 // rejects a time at or past the render's last frame, and the
                 // frame scheduler's rejection fallback fires the callback at
                 // once — an end-of-render ceiling applied from frame 0 for the
-                // whole buffer. Such a write could not reach the buffer anyway.
-                const renderFrames = Math.floor(durationSeconds * sampleRate);
+                // whole buffer. Such a write could not reach the buffer anyway,
+                // while a write inside the render is scheduled as it always was.
+                //
+                // The bound is the context's frame count, resolved by the same
+                // `clampRenderFrameCount` the render root builds the context
+                // with. Re-deriving it here as `floor(durationSeconds *
+                // sampleRate)` was a frame short of the `ceil` the buffer holds
+                // — durations are beat-derived, so the product is rarely whole —
+                // and it dropped the write quantising to the render's last valid
+                // frame, leaving the tail on the previous ceiling. It also
+                // ignored the `MAX_OFFLINE_FRAMES` clamp a truncated render's
+                // context actually got.
+                const renderFrames = clampRenderFrameCount({ durationSeconds, sampleRate });
                 const scheduleWithinRender: ScheduleCall = (time, call) => {
                     if (sampleRate > 0 && time !== undefined && Math.round(time * sampleRate) >= renderFrames) {
                         return;

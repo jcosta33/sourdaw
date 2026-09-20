@@ -1,13 +1,13 @@
 import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
+import { clampRenderFrameCount } from '../../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
-import { clampRenderFrameCount } from './clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
