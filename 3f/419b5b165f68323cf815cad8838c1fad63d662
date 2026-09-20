@@ -1,0 +1,61 @@
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_d98d6cfe52b6a5 122-129
+.agents/skills/review-stances/session-lifecycle.md
+  s_ed5aa36a3ba357::t_07c3a002cd2953 132-141
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e99b1fa0ed37d9 354-361
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_082c38cfd6d9ac 748
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_ed5aa36a3ba357::t_c7b7ee85e297e9 1,17,25,31-88,146-166
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_ed5aa36a3ba357::t_0221cf111d7925 7-12,23,63-64,107-112,148-149,161,624-748,767-768,788-790,793,797,830-832,837,843,876,881,923,925-929,934,976,983,985,987-994,996-997,1000
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_ed5aa36a3ba357::t_db18d836b825c2 19-21,42-44,186,197-253
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_ed5aa36a3ba357::t_446314e4ee43d5 5-10,41,56-66,68-87,89-120,123-125,127-144
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_ed5aa36a3ba357::t_6d7f79632c7242 5,9,19-20,33-39,43-55,59
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_ed5aa36a3ba357::t_ed1700ee73e493 9,13,45,60-61,95,342-348,350,352-367,369-372
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_ed5aa36a3ba357::t_87a2a9ca2865cd 6,8,48-51,114,122-124,145,233-237,240,263,342,348,351-352,520,601-614,670,714-715,717-719,721-722
+src/modules/WorkspaceShell/presentations/hooks/useAgentWorkspaceRunSelection.ts
+  s_ed5aa36a3ba357::t_b1408de606d9c7 30,37,39-45
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_ed5aa36a3ba357::t_9d7b829780bd23 5,59-60,68,96,104,115-126,185,198,217,221,244,257,266,282,355
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_ed5aa36a3ba357::t_9cd73c5834c606 11,27-35,41,60,105
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_ed5aa36a3ba357::t_803e29ce26b48c 259-264,640,664
+src/modules/WorkspaceShell/presentations/views/PromptBar.tsx
+  s_ed5aa36a3ba357::t_de17f90c275d8f 127,130-131,135-139
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ed5aa36a3ba357::t_7255dd9be148a0 57,250
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_ed5aa36a3ba357::t_43fe397873c29a 31,44,355-376
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_ed5aa36a3ba357::t_5345a7403f6b70 66-76,572-582
+src/modules/WorkspaceShell/presentations/views/__tests__/PromptBar.spec.tsx
+  s_ed5aa36a3ba357::t_8d721d615f4913 18,45,79,88,99,109,119,127,134-146,152,160,168,177,194,211,224,236,249,263,284,296,310,323,336,347
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ed5aa36a3ba357::t_46cff6448ca471 231,236,326,331
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_ed5aa36a3ba357::t_f63c95312e12ee 1-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3f419b5b165f68323cf815cad8838c1fad63d662",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
