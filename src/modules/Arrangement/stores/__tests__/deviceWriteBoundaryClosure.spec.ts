@@ -1015,6 +1015,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
+        // Count provenance: measured 2 — `Device.parameterValues` and
+        // `RoleInput.track.devices` are type-only declarations. The classifier
+        // reads its supplied capture and reaches no store, Automerge, or action.
+        'src/modules/Project/useCases/getCanonicalTrackRole.ts': 2,
         'src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts': 3,
         'src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts': 3,
         'src/modules/Project/useCases/projectTemplates/templateFiles/edm.ts': 4,
