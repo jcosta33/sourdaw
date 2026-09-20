@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ed5aa36a3ba357::t_8bc9447ce92bf1 596-601,603-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b22b69498b75b806e6c3bf743235af918125237e",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
