@@ -1,4 +1,4 @@
-import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, type LevelArgument, TRACK_FADER_LAW, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -6,8 +6,19 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
-import { hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
+import { hasExactKeys, isFiniteNumber, readResolvedLevelArgument, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
+
+/** The master level in the form the request stated, for the handler to resolve. */
+function toMasterGainPayload(argument: LevelArgument) {
+    if ('linear' in argument) {
+        return { gain: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return { gainDb: argument.absoluteDb };
+    }
+    return { deltaDb: argument.deltaDb };
+}
 
 export const masterVcaActionNames = [
     'setMasterGain',
@@ -90,20 +101,19 @@ const masterVcaStrategyDefinitions = [
         name: 'setMasterGain',
         transform: ({ call, context, index }) => {
             const args = call.arguments;
-            if (
-                !hasExactKeys(args, ['gain']) ||
-                !isFiniteNumber(args.gain) ||
-                args.gain < 0 ||
-                args.gain > FADER_MAX_GAIN ||
-                args.gain === context.masterGain
-            ) {
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'gain', absolute: 'gainDb', relative: 'deltaDb' },
+                { current: context.masterGain, law: TRACK_FADER_LAW, linearBounds: { min: 0, max: FADER_MAX_GAIN } }
+            );
+            if (level === null || !hasExactKeys(args, [level.statedKey]) || level.linear === context.masterGain) {
                 return rejection(
                     index,
                     call.name,
                     `Expected only a changed finite master gain from 0 through ${FADER_MAX_GAIN}`
                 );
             }
-            return { type: 'setMasterGain', payload: { gain: args.gain } };
+            return { type: 'setMasterGain', payload: toMasterGainPayload(level.argument) };
         },
     },
     {
