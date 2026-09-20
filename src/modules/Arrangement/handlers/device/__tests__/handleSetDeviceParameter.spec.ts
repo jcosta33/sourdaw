@@ -558,7 +558,7 @@ describe('handleSetDeviceParameter', () => {
         };
         const unrelatedAction: Extract<AppAction, { type: 'setTrackGain' }> = {
             type: 'setTrackGain',
-            payload: { trackId: 't1', gain: 0.5 },
+            payload: { trackId: 't1', gain: 0.5, expectedGain: 0.8 },
         };
 
         expect(
