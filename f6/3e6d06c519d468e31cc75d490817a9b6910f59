@@ -1,0 +1,23 @@
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_ed5aa36a3ba357::t_96195a0ef08119 133
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_c6dd07bfa9432a 6200,6238
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_96195a0ef08119 1939-1940
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f63e6d06c519d468e31cc75d490817a9b6910f59",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
