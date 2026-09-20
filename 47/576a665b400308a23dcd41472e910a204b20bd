@@ -1,0 +1,28 @@
+.agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
+  h_1228e573df1f42 92-116
+scripts/semanticReview.ts
+  h_1228e573df1f42 38,230-234,274,296-297,299-300,357,365-366
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_1228e573df1f42 22,234-369,700-738
+scripts/semanticReview/fit.ts
+  h_1228e573df1f42 1-164
+scripts/semanticReview/interpret.ts
+  h_1228e573df1f42 36-58,108
+scripts/semanticReview/provider.ts
+  h_1228e573df1f42 14-16,322-347
+scripts/semanticReview/rules.ts
+  h_1228e573df1f42 83,201-202,205
+scripts/semanticReview/run.ts
+  h_1228e573df1f42 34,104-126,148-149,173-187,190-197,204-205,207-208,220-224,242-245,348,360,398,447-451,482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "47576a665b400308a23dcd41472e910a204b20bd",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
