@@ -1,0 +1,14 @@
+scripts/semanticReview/sensitive.ts
+  h_1228e573df1f42 8-17,22,31-47,51-54,77-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "06e66f85e774645ee574e340a2abeff8879ff009",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
