@@ -1,5 +1,5 @@
 import { stringify } from 'superjson';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const storageKey = 'sourdaw-user-presets';
 
@@ -20,23 +20,20 @@ const malformedPreset = {
     isFactory: true,
 };
 
-describe('application-owned tool loop persisted preset discovery', () => {
-    beforeEach(() => {
-        vi.resetModules();
-        window.localStorage.clear();
-    });
+// The storage adapter decodes SuperJSON into a module-closure cache on its first read.
+// Seed before importing the loop so Arrangement owns that cold read of persisted data.
+vi.resetModules();
+window.localStorage.clear();
+window.localStorage.setItem(storageKey, stringify([malformedPreset]));
+const { runApplicationOwnedToolLoop } = await import('../applicationOwnedToolLoop');
 
+describe('application-owned tool loop persisted preset discovery', () => {
     afterEach(() => {
         window.localStorage.clear();
         vi.resetModules();
     });
 
     it('discovers a malformed maximal persisted user preset through the owner and bounded tool receipt', async () => {
-        // The storage adapter decodes SuperJSON into a module-closure cache on its first read.
-        // Seed before importing the loop so Arrangement owns that cold read of persisted data.
-        window.localStorage.setItem(storageKey, stringify([malformedPreset]));
-
-        const { runApplicationOwnedToolLoop } = await import('../applicationOwnedToolLoop');
         const requestTurn = vi
             .fn()
             .mockResolvedValueOnce({
@@ -83,5 +80,5 @@ describe('application-owned tool loop persisted preset discovery', () => {
         expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain(malformedPreset.id);
         expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('tube');
         expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('"isFactory":false');
-    }, 15_000);
+    });
 });
