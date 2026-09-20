@@ -524,6 +524,15 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
     ];
 }
 
+/**
+ * The three states a remote-tip read can report. `unreadable` is distinct from `absent`: an
+ * entirely empty `ls-remote --heads` answer means the remote could not be read (a reachable remote
+ * always has at least one head in this repository), while a non-empty listing that lacks the target
+ * branch is `absent`. Whether `absent` is a legitimate first publication or a transport flake is the
+ * caller's call: the caller fails closed when an open pull request already heads the branch.
+ */
+export type RemoteBranchRead = { kind: 'present'; sha: string } | { kind: 'absent' } | { kind: 'unreadable' };
+
 export type PublishLanePort = {
     baseSha: () => string;
     worktrees: () => PublishWorktree[];
@@ -533,7 +542,7 @@ export type PublishLanePort = {
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
     headSha: (lane: string) => string;
-    remoteBranchSha: (branch: string) => string | undefined;
+    remoteBranchSha: (branch: string) => RemoteBranchRead;
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
     push: (lane: string, branch: string, headSha: string) => void;
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
@@ -938,6 +947,22 @@ export function conflictingPathsFromMergeTree(output: string): string[] {
 }
 
 /**
+ * Finds one branch's tip in a `git ls-remote --heads` listing (`<sha>\t<refname>` per line), or
+ * `undefined` when the listing carries no entry for it. An entirely empty listing is not this
+ * function's concern: the caller treats that separately as an unreadable remote.
+ */
+function lsRemoteHeadSha(listing: string, branch: string): string | undefined {
+    const ref = `refs/heads/${branch}`;
+    for (const line of listing.split('\n')) {
+        const [sha, name] = line.split(/\s+/);
+        if (name === ref && sha !== undefined && sha !== '') {
+            return sha;
+        }
+    }
+    return undefined;
+}
+
+/**
  * A pull request whose head conflicts with its base gets no GitHub merge ref, so no `pull_request`
  * workflow run is created for that head and the required `Gate` check can never appear — waiting on
  * it waits forever. The push and the pull-request write have already succeeded by the time this
@@ -1086,9 +1111,23 @@ export function publishLane(
             fail('stack child changed during publication');
         }
     };
-    const remoteSha = port.remoteBranchSha(lane.branch);
-    if (remoteSha !== undefined && !port.isAncestor(remoteSha, headSha, lane.path)) {
+    const remoteRead = port.remoteBranchSha(lane.branch);
+    if (remoteRead.kind === 'unreadable') {
+        fail(`cannot read the remote heads for ${lane.branch}: the remote listing was unreadable`);
+    }
+    if (remoteRead.kind === 'present' && !port.isAncestor(remoteRead.sha, headSha, lane.path)) {
         fail(`refusing non-fast-forward push of ${lane.branch}`);
+    }
+    // An open pull request whose head is this branch proves the branch was already published, so a
+    // reachable remote must list it. A non-empty listing that omits it is the transport flake this
+    // gate exists to refuse — never a first publication — so fail closed rather than read it as
+    // absent and silently widen the non-fast-forward check from remote-tip..head to base..head. A
+    // conforming lane read its pull request before the push; a legacy lane's open pull request is
+    // what authorized it.
+    if (remoteRead.kind === 'absent' && (lane.legacy || write?.existing !== undefined)) {
+        fail(
+            `refusing publication of ${lane.branch}: the remote heads listing did not carry the branch although an open pull request for it exists`
+        );
     }
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
@@ -1643,12 +1682,12 @@ export function shellPort(
             undefined,
         headSha: (lane) => spawnCapture(executables.git, ['rev-parse', 'HEAD'], { cwd: lane, env: session.env }),
         remoteBranchSha: (branch) => {
-            const output = git(['ls-remote', GITHUB_HTTPS_REMOTE, `refs/heads/${branch}`], primaryRoot);
+            const output = git(['ls-remote', '--heads', GITHUB_HTTPS_REMOTE], primaryRoot);
             if (output === '') {
-                return undefined;
+                return { kind: 'unreadable' };
             }
-            const sha = output.split(/\s+/)[0];
-            return sha === undefined || sha === '' ? undefined : sha;
+            const sha = lsRemoteHeadSha(output, branch);
+            return sha === undefined ? { kind: 'absent' } : { kind: 'present', sha };
         },
         isAncestor: (ancestorSha, descendantSha, lane) =>
             isAncestorCommit(lane, ancestorSha, descendantSha, session.env, executables.git),
