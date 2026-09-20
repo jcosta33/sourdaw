@@ -1,0 +1,35 @@
+.agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
+  s_29e0be2d28ede0::t_89d16ac83577af 173-190
+scripts/semanticReview.ts
+  s_ed5aa36a3ba357::t_2a5b28d73d1d11 417-419,486
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_c1db48ca1b5633 985-1010
+scripts/semanticReview/run.ts
+  s_ed5aa36a3ba357::t_00abd04d1c40be 160,164-166,174-179,212,218,246,537,544-550
+scripts/semanticReview/verify.ts
+  s_ed5aa36a3ba357::t_7375357398af55 221-229,331-333,350,371,547-548,575
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "29bc5c74bfd3b2b6462f50b12ababdb80a024b8f",
+  "prompts": {},
+  "sessions": {
+    "s_29e0be2d28ede0": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "127833c0-d49c-4878-87a0-7c3a1486f0cc",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
