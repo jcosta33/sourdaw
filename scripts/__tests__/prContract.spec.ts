@@ -789,6 +789,7 @@ describe('product-scope test instructions', () => {
         'vite',
         'vitest',
         'wasm:all',
+        'wasm-bindgen',
         'wasm-pack',
         'wasm:verify',
         'wc',
@@ -1030,6 +1031,9 @@ describe('product-scope test instructions', () => {
         ['a staging launch', 'git add .'],
         ['a branch switch', 'git switch main'],
         ['a report launch', 'pnpm exec playwright show-report'],
+        // This repository's own wasm toolchain narrates bare: a build line with status
+        // annotation must refuse like its pnpm-prefixed spelling.
+        ['a bare wasm-bindgen build', 'wasm-bindgen build --target web (ok)'],
         ['a conjunction pair with an annotation tail', 'pnpm typecheck and pnpm lint, both green'],
         // A run-ending word with nothing material behind it is the command's trailing argument,
         // not an observation: 'play' and 'drag' are cue stems the trailing rule drops, while

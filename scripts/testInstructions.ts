@@ -123,6 +123,7 @@ export const COMMAND_HEADS = new Set([
     'vite',
     'vitest',
     'wasm:all',
+    'wasm-bindgen',
     'wasm-pack',
     'wasm:verify',
     'wc',
