@@ -1,5 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { rearmInputMonitoring } from '#/modules/Arrangement/useCases';
 import {
     clearRuntimeCachedAudioBuffers,
     forgetProjectLatchedPedals,
@@ -67,10 +69,17 @@ function logPreparationFailure(context: ReplaceProjectDataInput['context'], erro
 }
 
 function restorePreviousAudioGraph(context: ReplaceProjectDataInput['context']): void {
+    let stripsRestored = false;
     try {
-        ensureTrackStrips();
+        stripsRestored = ensureTrackStrips().status === 'ready';
     } catch (error) {
         logger.error(new Error(`[${context}] Previous audio graph restoration failed`, { cause: error }));
+    }
+    if (stripsRestored) {
+        // The reset above released every monitor capture, so the previous
+        // project's 'on' tracks must re-arm against the strips just rebuilt.
+        // The law settles every start, so a refusal cannot fail this restore.
+        void rearmInputMonitoring(trackStore.value?.tracks ?? []);
     }
 }
 

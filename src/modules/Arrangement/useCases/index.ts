@@ -42,6 +42,7 @@ export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFile
 export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
 export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { setTrackInput } from './setTrackInput';
+export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
