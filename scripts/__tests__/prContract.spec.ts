@@ -879,9 +879,9 @@ describe('product-scope test instructions', () => {
         ['a commit message quoted in single quotes', "git commit -m 'add the drag handle'"],
         ['a commit message quoted in double quotes', 'git commit -m "add the drag handle"'],
     ])('refuses %s', (_label, instructions) => {
-        // A non-colon head reopens the argument run instead of closing it, and prose quoted inside
-        // the run drops with the run in every shell quote kind — neither can rescue the launch it
-        // belongs to.
+        // A head inside the argument run is command material the run continues through, and prose
+        // quoted inside the run drops with the run in every shell quote kind — neither can rescue
+        // the launch it belongs to.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
@@ -967,7 +967,17 @@ describe('product-scope test instructions', () => {
     it.each([
         ['a status copula after the launch', '`pnpm typecheck` is clean'],
         ['a copula pair joined by a semicolon', '`pnpm lint` is green; `pnpm typecheck` is green'],
+        ['an exec flow into a suite that passes', 'cargo test -p audio-engine and the suite passes'],
+        [
+            'a guard invocation with an all-annotation tail',
+            'pnpm guard --profile focused -- pnpm test:run x.spec.ts, all green, as expected',
+        ],
+        ['a suite narration closed with a pronoun status clause', 'run the suite `pnpm lint` and it is clean'],
     ])('refuses %s', (_label, instructions) => {
+        // Status companions like 'passes' and 'as expected' are vocabulary the run's trailing
+        // rule treats as annotation, and a pronoun clause like 'it is clean' is annotation behind
+        // a launch the run never opened — either way the segment keeps narrating instead of
+        // ending in a rescuing word.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
@@ -991,8 +1001,9 @@ describe('product-scope test instructions', () => {
     });
 
     it('passes an exec chain flowing into a step with in-run cue words', () => {
-        // 'exec' is the subcommand slot; 'playwright' reopens the run; 'open' is a cue inside the
-        // run that ends it and is kept, so the rest of the step rescues the segment.
+        // 'exec' is the subcommand slot and 'playwright' a head inside the run — both command
+        // material the run continues through; 'open' is the cue word that ends the run and is
+        // kept, so the rest of the step rescues the segment.
         const step = 'pnpm exec playwright open the app and see the mixer render';
 
         expect(commandOnlyTestInstructions(step)).toBe(false);
@@ -1020,8 +1031,10 @@ describe('product-scope test instructions', () => {
         ['a branch switch', 'git switch main'],
         ['a report launch', 'pnpm exec playwright show-report'],
         ['a conjunction pair with an annotation tail', 'pnpm typecheck and pnpm lint, both green'],
-        // A cue verb ending a launch line with no expected result behind it is the command's
-        // trailing argument, not an observation — these shapes border the trailing-cue rule and
+        // A run-ending word with nothing material behind it is the command's trailing argument,
+        // not an observation: 'play' and 'drag' are cue stems the trailing rule drops, while
+        // 'see' never reaches the cue test — it rides the annotation vocabulary, and the
+        // argument-run scan drops it the same way. These shapes border the trailing-cue rule and
         // were cross-checked against an external semantic judgment before pinning.
         ['a bare cue after the launch', 'pnpm dev and play'],
         ['a comma cue with nothing behind it', 'pnpm dev, drag'],
@@ -1110,13 +1123,24 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(doubleQuotedLead))).toBe(REFUSAL);
     });
 
-    it('passes a reopened argument run that ends at an observation cue', () => {
-        // The reopen rule keeps quoting through a chained head; the run still ends at the first
-        // cue word, so a chained launch teaching a real observation passes.
-        const step = 'pnpm exec playwright open the app and see the mixer render';
-
-        expect(commandOnlyTestInstructions(step)).toBe(false);
-        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    it.each([
+        ['a backticked launch annotated with a bare result', '1. `pnpm typecheck` (no errors)'],
+        ['a backticked launch annotated with an expectation', '1. `pnpm typecheck` (should be green)'],
+        ['a backticked launch annotated with a status', '1. `pnpm lint` (still green)'],
+        ['a backticked launch followed by its passing count', '1. `pnpm test:run x` — 140 passing'],
+        ['a double-quoted exec chain seeding a build', '"pnpm exec" cargo build'],
+        [
+            'a three-line inventory of annotated launches',
+            '1. `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)\n2. `pnpm typecheck` — it is clean\n3. `pnpm lint` (still green)',
+        ],
+    ])('refuses %s', (_label, instructions) => {
+        // The launch shell never rescues its own annotations: result companions ('no errors',
+        // 'should be green', 'still green', '140 passing', 'it is clean') are vocabulary the
+        // remainder drops, and a quoted lead opens the argument run exactly like the bare
+        // spelling — its content is the launch whose subcommand slot and arguments keep
+        // narrating behind it.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
 
     it('refuses a filler word joining two commands mid-segment', () => {

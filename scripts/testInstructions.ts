@@ -143,6 +143,8 @@ const FILE_EXTENSION_SUFFIX = /\.[A-Za-z0-9]+$/;
 const REMAINDER_VOCABULARY = new Set([
     ...FILLER_WORDS,
     'passed',
+    'passes',
+    'passing',
     'failed',
     'failing',
     'green',
@@ -159,6 +161,16 @@ const REMAINDER_VOCABULARY = new Set([
     'reddens',
     'errors',
     'is',
+    'it',
+    'they',
+    'be',
+    'are',
+    'was',
+    'should',
+    'still',
+    'stays',
+    'as',
+    'no',
     'see',
     'ci',
     'expected',
@@ -204,9 +216,10 @@ const REMAINDER_VOCABULARY = new Set([
 /**
  * Words that make a segment teach an observation rather than recite a launch: inflected stems,
  * matched at word start so `confirm` reaches `confirms`/`confirmed` and `play` reaches `plays`,
- * `played`, and `playback`. Tested against the prose remainder only, never against command text:
- * `wasm:verify` and `checkModelCached.spec.ts` carry their stems inside tokens the remainder has
- * already dropped.
+ * `played`, and `playback`. Tested in two places: the prose remainder's words, and — through the
+ * material-behind check — the raw tokens a run is split into, where a cue stem stays
+ * non-material. Command text is still safe: `wasm:verify` and `checkModelCached.spec.ts` carry
+ * their stems inside command tokens the remainder drops before the cue test sees them.
  */
 const OBSERVATION_CUE =
     /\b(?:confirm|verif|observ|check|watch|listen|hear|notice|open|click|appear|render|show|display|audible|drag|play|press|select|type|toggle|choose|create|remove|delete|move|resize|scroll|hover|arm|record|restart|start|stop|save|undo|redo|zoom|nudge|cut|copy|paste|split|duplicate|rename|edit|adjust|switch|connect|disconnect|enable|disable|import|export|load|reload|clear|reset|apply|add|set)\w*/i;
@@ -220,8 +233,8 @@ function stripRepeated(value: string, pattern: RegExp): string {
 }
 
 /**
- * The content of a leading terminated quoted span (backtick or single-quote), or the value
- * unchanged when it has none.
+ * The content of a leading terminated quoted span (backtick, single quote, or double quote), or
+ * the value unchanged when it has none.
  */
 function leadingQuotedSpanContent(value: string): string {
     const quote = value[0];
@@ -295,9 +308,11 @@ function isAnnotationParenthetical(parenthetical: string): boolean {
 }
 
 /**
- * Whether a token behind a run-ending word is material: command material or a bare prose word.
- * Annotation vocabulary and cue words are the words the narration itself is made of, so only one
- * of them behind the run-ending word leaves it the command's trailing argument.
+ * Whether a raw token behind a run-ending word is material: command material or a bare prose
+ * word. The cue test here reads raw tokens, so a cue-stemmed argument like `watch` in
+ * `gh run watch` stays non-material; annotation vocabulary and cue words are the words the
+ * narration itself is made of, so only one of them behind the run-ending word leaves it the
+ * command's trailing argument.
  */
 function isMaterialBehindRun(token: string): boolean {
     return token !== '' && !REMAINDER_VOCABULARY.has(token) && !OBSERVATION_CUE.test(token);
@@ -309,16 +324,17 @@ function isMaterialBehindRun(token: string): boolean {
  * parenthetical strips only when every word of its content is annotation vocabulary or a
  * number/punctuation token (`(clean)`, `(140 passed)`), while a clause naming UI state keeps its
  * content and can rescue the segment (`(the clip lands quantized to the grid)`). Then the tokens
- * drop: command heads, their subcommand slot, and their argument run — after a leading head the
- * token behind it is command material whatever it is (`pnpm run build`, `npm start`), and the
- * argument run opens behind that slot: bare arguments drop until a word a reader would actually
- * read (vocabulary or cue) ends the run and is kept — kept only when material follows it, because
- * as the segment's last token that word is the command's trailing argument and drops
- * (`gh run watch`), as does a word followed by nothing but annotation (`gh pr checks watch`) —
- * while a non-colon command head REOPENS the run and drops with it (`pnpm exec cargo build` is
- * launch, subcommand, argument) — a colon-bearing head is the same launch's script name, so the
- * run continues through it — making quoting the launch verdict-neutral and `git fetch origin`
- * narration all the way through.
+ * drop: command heads, their subcommand slot, and their argument run — the run seeds from the
+ * launch the peel exposes (a leading span's content included), not from the remainder's first
+ * slot, which a leading span leaves empty, and after that leading head the token behind it is
+ * command material whatever it is (`pnpm run build`, `npm start`): bare arguments drop until a
+ * word a reader would actually read (vocabulary or cue) ends the run and is kept — kept only
+ * when material follows it, because as the segment's last token that word is the command's
+ * trailing argument and drops (`gh run watch`), as does a word followed by nothing but
+ * annotation (`gh pr checks watch`) — while a head inside the run, colon-bearing or not, is
+ * command material the run continues through (`pnpm exec cargo build` is launch, subcommand,
+ * argument) — making quoting the launch verdict-neutral and `git fetch origin` narration all the
+ * way through.
  */
 function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
@@ -326,7 +342,11 @@ function proseRemainderWords(segment: string): string[] {
         .replace(PARENTHETICAL, (parenthetical) => (isAnnotationParenthetical(parenthetical) ? ' ' : parenthetical));
     const tokens = remainder.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
     const words: string[] = [];
-    let insideArgumentRun = tokens[0] !== undefined && COMMAND_HEADS.has(tokens[0]);
+    // Seeded from the launch the peel exposes — a leading span's content included — not from
+    // tokens[0], which a leading quoted span leaves empty.
+    let insideArgumentRun = COMMAND_HEADS.has(
+        leadingTokenAfterPeeling(segment).replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase()
+    );
     for (const [index, word] of tokens.entries()) {
         if (word === '') {
             continue;
