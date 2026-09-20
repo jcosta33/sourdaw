@@ -617,6 +617,57 @@ describe('agent domain query conformance', () => {
         expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
     });
 
+    it('pages a reordered owner catalog identically and keeps a retained cursor valid', () => {
+        const manifest = getAgentPresetDiscoveryManifest();
+        if (manifest.length < 2) {
+            throw new Error('Expected at least two presets to reorder.');
+        }
+
+        const walkIds = (): string[] => {
+            const ids: string[] = [];
+            let cursor: string | null = null;
+            do {
+                const page = expectReceipt(
+                    queryAgentDiscovery({
+                        domain: 'preset',
+                        page: cursor === null ? { limit: 1 } : { limit: 1, cursor },
+                    })
+                );
+                ids.push(...page.items.map((item) => item.id));
+                cursor = page.nextCursor;
+            } while (cursor !== null);
+            return ids;
+        };
+
+        // Page one yields one record and a cursor.
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'preset', page: { limit: 1 } }));
+        expect(first.items).toHaveLength(1);
+        expect(first.nextCursor).toEqual(expect.any(String));
+        const pageOneId = first.items[0]?.id;
+        const retainedCursor = first.nextCursor!;
+
+        const publishedWalk = walkIds();
+
+        // Swap the first two records without changing any content, so the
+        // revision signature the cursor is bound to stays byte-for-byte the same.
+        const reordered = [...manifest];
+        [reordered[0], reordered[1]] = [reordered[1], reordered[0]];
+        presetDiscoveryManifestOverride.value = reordered;
+
+        // Page two with the retained cursor reads the next record, not page one
+        // again, and omits nothing page one implied came next.
+        const second = expectReceipt(
+            queryAgentDiscovery({ domain: 'preset', page: { limit: 1, cursor: retainedCursor } })
+        );
+        expect(second.items).toHaveLength(1);
+        expect(second.items[0]?.id).not.toBe(pageOneId);
+        expect(second.items[0]?.id).toBe(publishedWalk[1]);
+
+        // A second, independent walk of the same catalog in a different order
+        // yields the same pages.
+        expect(walkIds()).toEqual(publishedWalk);
+    });
+
     it('matches owner-published character tags when the display name does not contain the character', () => {
         const preset = expectReceipt(queryAgentDiscovery({ domain: 'preset', filters: { text: 'tube' } }));
         const device = expectReceipt(queryAgentDiscovery({ domain: 'device', filters: { text: 'tape' } }));

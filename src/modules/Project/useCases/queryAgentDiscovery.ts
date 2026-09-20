@@ -11,6 +11,7 @@ import {
 import {
     createDiscoverySignature,
     matchesDiscoveryFilters,
+    orderDiscoveryCandidates,
     type DiscoveryCandidate,
 } from '../services/agentDiscovery/discoveryCandidates';
 import { mintDiscoveryCursor, readDiscoveryPage } from '../services/agentDiscovery/discoveryPaging';
@@ -187,6 +188,12 @@ export function queryAgentDiscovery(input: AgentDiscoveryInput): AgentDiscoveryR
     const matched = collected.candidates.filter((candidate) =>
         matchesDiscoveryFilters(candidate, residualFilters(domain, input.filters))
     );
+    // Page in a canonical, content-derived order so a content-free reorder of
+    // the producer cannot shift which record a cursor names. The sample catalog
+    // already answers in its own ranked, content-derived order, and an asset
+    // receipt pages in the project's own order whose revision is order-sensitive;
+    // both keep their producer order.
+    const ordered = domain === 'sample' || domain === 'asset' ? matched : orderDiscoveryCandidates(matched);
     const fingerprint = createBoundedRevisionToken(
         revisionToken,
         `${domain}:${canonicalFilterSignature(input.filters)}`
@@ -201,9 +208,9 @@ export function queryAgentDiscovery(input: AgentDiscoveryInput): AgentDiscoveryR
             schemaVersion: AGENT_DISCOVERY_SCHEMA_VERSION,
             domain,
             revisionToken,
-            page: { offset: page.offset, limit: page.limit, total: matched.length },
-            items: matched.slice(page.offset, nextOffset).map((candidate) => candidate.entry),
-            nextCursor: nextOffset < matched.length ? mintDiscoveryCursor(fingerprint, nextOffset) : null,
+            page: { offset: page.offset, limit: page.limit, total: ordered.length },
+            items: ordered.slice(page.offset, nextOffset).map((candidate) => candidate.entry),
+            nextCursor: nextOffset < ordered.length ? mintDiscoveryCursor(fingerprint, nextOffset) : null,
             warnings: collected.warnings,
         },
     };
