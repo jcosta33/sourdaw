@@ -1,18 +1,21 @@
 /**
  * Repository: offline render frame scheduler.
  *
- * Irreducible reason for batching: registering `suspend(time)` for a frame that
- * already has one scheduled throws, so every call due on one quantised sample
- * frame must ride a single suspend.
+ * Irreducible reason for batching: registering `suspend(time)` for a
+ * render-quantum frame that already has one scheduled is rejected with
+ * InvalidStateError, so every call due inside one quantum must ride a single
+ * suspend.
  *
- * Irreducible reason for one scheduler per context: the same throw makes a
+ * Irreducible reason for one scheduler per context: the same rejection makes a
  * second scheduler over one `OfflineAudioContext` fatal, not merely redundant.
- * Each scheduler answers the throw with its own fallback, which fires that
+ * Each scheduler answers the rejection with its own fallback, which fires that
  * frame's calls immediately, so a Faust note due at 1.0 s would sound at frame
  * 0. That is why the sharing is guaranteed here, at the factory, instead of
  * being a rule every caller has to remember: no caller can obtain a second
  * scheduler for a context, however many times it asks or from where.
  */
+
+import { quantiseSuspendFrame } from './quantiseSuspendFrame';
 
 export type ScheduleCall = (time: number | undefined, call: () => void) => void;
 
@@ -21,22 +24,25 @@ export type ScheduleCall = (time: number | undefined, call: () => void) => void;
  * lifetime. Weak so a finished render's context is collectable.
  *
  * Deliberately unreachable except through the factory below: that is what makes
- * the one-suspend-per-frame rule structural rather than conventional.
+ * the one-suspend-per-quantum rule structural rather than conventional.
  */
 const schedulersByContext = new WeakMap<OfflineAudioContext, ScheduleCall>();
 
 /**
- * Offline scheduler: batch all note events sharing a sample frame behind a
+ * Offline scheduler: batch all note events sharing a render quantum behind a
  * single `ctx.suspend(time)` instead of registering O(N) suspend→resume
- * transitions (one per note). Two notes that land on the same frame previously
- * threw "cannot schedule a suspend at frame X" on the second `suspend()` call,
- * which was caught and fired the note immediately at the wrong time. Quantising
- * `time` to the context sample frame collapses near-duplicates so each distinct
- * frame gets exactly one suspend whose handler runs every queued call in order.
+ * transitions (one per note). The context rounds `suspend(time)` up to the
+ * render quantum, so two notes a few sample frames apart previously registered
+ * two suspends for one quantum; the second was rejected with InvalidStateError
+ * and its fallback fired the note immediately at the wrong time. Keying the
+ * batch on the quantised frame collapses them so each distinct quantum gets
+ * exactly one suspend whose handler runs every queued call in order, while the
+ * suspend itself is still registered at the caller's raw time so a write
+ * inside the render is not rejected as past its end.
  *
  * Returns the context's existing scheduler when it already has one, so a Faust
  * device's note calls and a frame-addressed automation write share one batch
- * per frame instead of racing two suspends for it.
+ * per quantum instead of racing two suspends for it.
  */
 export function makeOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
     const existing = schedulersByContext.get(ctx);
@@ -51,8 +57,9 @@ export function makeOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCal
 
 function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
     const { sampleRate } = ctx;
-    // Keyed by quantised sample frame. Each entry holds every call due at that
-    // frame; the first call to a frame registers a single suspend for it.
+    // The batch key is the render-quantum frame the context rounds its suspend
+    // up to, so every call due inside one quantum shares one suspend and the
+    // context never sees a duplicate (which it rejects with InvalidStateError).
     const callsByFrame = new Map<number, (() => void)[]>();
 
     return (time, call) => {
@@ -61,20 +68,34 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
             return;
         }
 
-        // Quantise to the nearest sample frame so float drift between notes that
-        // are meant to share a frame does not split into two suspends.
-        const frame = Math.max(0, Math.round(time * sampleRate));
-        const quantTime = frame / sampleRate;
+        // The integer frame is NOT the frame the context uses: Blink recomputes
+        // it from the exact time it is handed (`size_t frame = when *
+        // sampleRate()`, a truncating cast in floating point), so the
+        // `round(time * sampleRate)` round-trip is lossy near a quantum edge.
+        // Measure the batch key the same way the context will: snap to a sample
+        // frame, rebuild the double handed to suspend(), truncate that back to
+        // the context's frame, then quantise it up to the render quantum.
+        const requestFrame = Math.max(0, Math.round(time * sampleRate));
+        // The key and the time are two separate things:
+        //   - the key is the quantised frame, so one quantum carries one suspend
+        //     and the context never sees a duplicate;
+        //   - the time passed to suspend() is this same rebuilt sample-frame
+        //     double (never `contextFrame / sampleRate`, whose own float
+        //     round-trip drifts a quantum up), so a write inside the render is
+        //     not pushed past the render end by quantisation.
+        const suspendTime = requestFrame / sampleRate;
+        const contextFrame = Math.trunc(suspendTime * sampleRate);
+        const suspendFrame = quantiseSuspendFrame(contextFrame);
 
-        const existing = callsByFrame.get(frame);
+        const existing = callsByFrame.get(suspendFrame);
         if (existing) {
-            // A suspend for this frame is already registered — just append.
+            // A suspend for this quantum is already registered — just append.
             existing.push(call);
             return;
         }
 
         const calls: (() => void)[] = [call];
-        callsByFrame.set(frame, calls);
+        callsByFrame.set(suspendFrame, calls);
 
         // Exactly-once settlement. The frame's calls run once, on the first
         // settlement that reaches them — a resolved suspend, a rejected suspend
@@ -93,7 +114,7 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
             ran = true;
             // Drop the frame before its calls run: one queued from inside a
             // callback is a new batch, not a late append to a settled one.
-            callsByFrame.delete(frame);
+            callsByFrame.delete(suspendFrame);
             try {
                 runCalls(calls);
             } catch {
@@ -107,7 +128,8 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
         }
 
         try {
-            void ctx.suspend(quantTime).then(
+            // Raw frame, not the quantised key: the context rounds it up itself.
+            void ctx.suspend(suspendTime).then(
                 () => {
                     fire();
                 },
