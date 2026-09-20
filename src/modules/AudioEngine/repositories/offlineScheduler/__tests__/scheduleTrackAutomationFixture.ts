@@ -71,10 +71,10 @@ function legacyFixtureDeviceLaw(deviceEntries: ReadonlyArray<FixtureDeviceEntry>
  * carry has no descriptor fact this fixture states, so it is not admitted.
  *
  * Admission is the descriptor question alone. Whether the render can carry the
- * lane is the scheduler's separate second question (`resolveOfflineAutomation`),
- * and the pair is exactly what #4424 is about: the limiter ceiling's descriptor
- * declares it automatable while the device answers `null` for it, so the lane
- * passes admission and is then refused instead of silently dropped.
+ * lane is the scheduler's separate second question (`resolveOfflineAutomation`):
+ * the limiter ceiling's descriptor declares it automatable while its binding is
+ * the frame-addressed `curveWrite` pair rather than a param, so a case about the
+ * ceiling's write states this law to reach the binding the way live does.
  */
 const DECLARED_FIXTURE_DEVICE_PARAMETERS: Readonly<
     Record<string, { readonly automatable: boolean; readonly minValue: number; readonly maxValue: number }>
@@ -89,11 +89,11 @@ const DECLARED_FIXTURE_DEVICE_PARAMETERS: Readonly<
  *
  * Live admits a lane on the descriptor's `automatable` flag and asks whether
  * this render can carry it as a separate, second question; the fixture law
- * above instead admits only what already resolves an offline binding. That
- * difference is invisible for every parameter but one, and the one is #4424's
- * subject: the limiter ceiling is declared automatable yet resolves no binding,
- * so under the fixture law it is rejected at admission and the refusal under
- * test never runs. A case about that refusal states this law instead.
+ * above instead admits only what already resolves an offline binding — which,
+ * since #4437, includes the limiter ceiling's `curveWrite` pair. This law is for
+ * the cases that need the descriptor's own range clamp and admission, not the
+ * binding-only predicate: for the ceiling, the two now agree on admission and
+ * differ on the clamp (`-3..0` here versus the lane's own range).
  *
  * Not the default for the older fixtures on purpose — see the fixture law's
  * comment: a real descriptor law admits every parameter a device declares, and
