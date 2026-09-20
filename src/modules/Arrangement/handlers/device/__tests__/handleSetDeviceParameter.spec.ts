@@ -546,6 +546,43 @@ describe('handleSetDeviceParameter', () => {
         }
     );
 
+    it.each([
+        { replayLeg: 'inverseAction', valueUnit: undefined },
+        { replayLeg: 'redoAction', valueUnit: undefined },
+        { replayLeg: 'inverseAction', valueUnit: 'Hz' },
+        { replayLeg: 'redoAction', valueUnit: 'Hz' },
+    ] as const)('rejects a different operation in $replayLeg even with unit $valueUnit', ({ replayLeg, valueUnit }) => {
+        const action: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit },
+        };
+        const unrelatedAction: Extract<AppAction, { type: 'setTrackGain' }> = {
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0.5 },
+        };
+
+        expect(
+            handleSetDeviceParameter.validateSessionEntry?.({
+                action,
+                inverseAction: replayLeg === 'inverseAction' ? unrelatedAction : action,
+                redoAction: replayLeg === 'redoAction' ? unrelatedAction : action,
+            })
+        ).toBe(false);
+        expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, 'Hz'] as const)('accepts null inverse and absent redo with unit %s', (valueUnit) => {
+        expect(
+            handleSetDeviceParameter.validateSessionEntry?.({
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit },
+                },
+                inverseAction: null,
+            })
+        ).toBe(true);
+    });
+
     it('leaves the automation-recording maps alone when aborting a suppressed edit', () => {
         // `vi.clearAllMocks` drops recorded calls but keeps implementations, so a
         // throwing runtime writer set by an earlier case would still be in place.

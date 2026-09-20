@@ -119,3 +119,18 @@ selected take at each beat: retain both complement fragments, and require guarde
 redo to apply interval surgery to current state while preserving unrelated lane metadata and
 same-lane selections outside the footprint. A source-count assertion does not prove that the
 resolved playback retains the selected source phase; verify source timing separately.
+
+## Lesson from the parameter replay-operation escape
+
+Commit `4f410257b212bbbd2210fa6553f7aaa3394f69bc` introduced session undo hydration without
+binding a parameter edit to its replay operations; GitHub associates no pull request with that commit.
+PR #3328 later validated each action against its own contract, and PR #4108 added policy agreement,
+but neither established the owner's relationship between the forward action and its replay legs.
+A saved `setDeviceParameter` could therefore carry an executable `setTrackGain` inverse or redo.
+
+The missed integrity probe in #4108 checked policy preservation through hydration and replay, not
+operation identity. Register both real operation contracts and substitute an unrelated, individually
+valid operation into inverse and redo independently. Require hydration to reject both stacks, with
+and without optional metadata, while admitting the owner's canonical and legacy same-operation
+entries and legitimate missing replay legs. Enforce this relationship in the owner: some other
+commands legitimately have different inverse types, so global type equality is not the contract.

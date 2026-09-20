@@ -318,3 +318,17 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.
+
+### Parameter replay-operation escape — unregistered alternatives hide owner-validation gaps
+
+Session hydration introduced in `4f410257b212bbbd2210fa6553f7aaa3394f69bc` (no associated PR)
+accepted unrelated replay types. PR #3328's per-action schema checks and PR #4108's policy-agreement
+validator preserved that gap. The #4108 test-validity review mutated policy propagation and agreement,
+but never substituted a valid different operation with the same absent policy.
+
+Register both the intended and substituted operation contracts in the real hydration fixture, then
+replace inverse and redo independently. An unregistered alternative fails generic admission before
+the owner sees it and cannot prove owner validation. Include absent optional metadata, canonical
+same-operation entries, and legacy same-operation entries. Revert only the owner's operation-type
+check: the unrelated-operation cases must fail because history is admitted, while the positive
+controls remain accepted.

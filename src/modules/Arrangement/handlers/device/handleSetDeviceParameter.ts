@@ -94,8 +94,7 @@ function sessionEntryAgreesOnValueUnit(entry: HandlerSessionActionEntry): boolea
         if (replay === null || replay === undefined) {
             return true;
         }
-        const replayUnit = replay.type === 'setDeviceParameter' ? replay.payload.valueUnit : undefined;
-        return replayUnit === forwardUnit;
+        return replay.type === 'setDeviceParameter' && replay.payload.valueUnit === forwardUnit;
     });
 }
 
