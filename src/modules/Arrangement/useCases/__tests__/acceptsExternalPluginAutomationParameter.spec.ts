@@ -31,6 +31,14 @@ describe('acceptsExternalPluginAutomationParameter', () => {
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
     });
 
+    it('uses captured instance metadata after the live instance detaches', () => {
+        publishSnapshot('inst-1', true, [externalParameter()]);
+        const source = structuredClone(externalPluginParameterStore.value);
+        publishSnapshot('inst-1', false, []);
+        expect(acceptsExternalPluginAutomationParameter('inst-1', '3', source)).toBe(true);
+        expect(acceptsExternalPluginAutomationParameter('inst-1', '3', null)).toBe(false);
+    });
+
     it('accepts a parameter the instance declares automatable', () => {
         publishSnapshot('inst-1', true, [externalParameter({ id: 3 })]);
 

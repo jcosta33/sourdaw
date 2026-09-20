@@ -168,6 +168,44 @@ describe('scheduleBuiltinSynthNote pitch-bend depth', () => {
     });
 });
 
+describe('scheduleBuiltinSynthNote delayed vibrato timing', () => {
+    it.each([
+        { velocity: 127, zeroUntil: 1.8, fullDepthAt: 1.9 },
+        { velocity: 32, zeroUntil: 3.296062992125984, fullDepthAt: 3.396062992125984 },
+    ])(
+        'uses the velocity-scaled amplitude attack before vibratoDelay at velocity $velocity',
+        ({ velocity, zeroUntil, fullDepthAt }) => {
+            const { ctx, events } = makeFakeContext();
+
+            scheduleBuiltinSynthNote({
+                ctx,
+                destination,
+                pitch: 69,
+                startTime: 0,
+                duration: 5,
+                velocity,
+                params: {
+                    ...baseBuiltinSynthParams,
+                    attack: 2,
+                    vibratoRate: 5,
+                    vibratoDepth: 25,
+                    vibratoDelay: 0.8,
+                },
+                clipGain: 1,
+            });
+
+            const gainRamps = events.filter(
+                (event) => event.param === 'gain' && event.method === 'linearRampToValueAtTime'
+            );
+            const zeroHold = gainRamps.find((event) => event.value === 0 && event.time < 5);
+            const fullDepth = gainRamps.find((event) => event.value === 25);
+
+            expect(zeroHold?.time).toBeCloseTo(zeroUntil, 12);
+            expect(fullDepth?.time).toBeCloseTo(fullDepthAt, 12);
+        }
+    );
+});
+
 describe('scheduleBuiltinSynthNote filter velocity sensitivity', () => {
     function getFilterCutoff(events: ParamEvent[]): number {
         const event = events.find(

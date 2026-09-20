@@ -6,9 +6,11 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
+import { appendChatMessage } from '../stores/chatStore';
 import { describePlanningOutcome } from '../transformers/describePlanningOutcome';
 
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
+import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
 import {
     AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
     AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
@@ -35,20 +37,12 @@ type SubmitAdmittedPromptRequestInput = {
     signal?: AbortSignal;
 };
 
-type AdmittedPromptPreview = {
-    actions: readonly AppAction[];
-    actionLabels: readonly string[];
-    projectRevision: string;
-    confirm: (signal?: AbortSignal) => ReturnType<typeof executePromptActionGroup>;
-    cancel: () => Promise<void>;
-};
-
 export type SubmitAdmittedPromptRequestResult =
     | {
           status: Awaited<ReturnType<typeof executePromptActionGroup>>['status'] | 'rejected';
           runId: string;
       }
-    | { status: 'awaiting-approval'; runId: string; preview: AdmittedPromptPreview };
+    | { status: 'awaiting-approval'; runId: string; confirmationId: string };
 
 function getPromptRunMode(_source: PromptRequestSource): AgentExecutionMode {
     return 'apply';
@@ -63,8 +57,8 @@ function transitionTerminalRun(runId: string, phase: 'completed' | 'failed' | 'c
 
 /**
  * Admits submitting prompt surfaces into one persistent run before either local
- * planning or provider work starts. Presentation receives only run-safe preview
- * controls; command approval and execution remain application-owned.
+ * planning or provider work starts. Presentation receives canonical confirmation
+ * identifiers; command approval and execution remain application-owned.
  */
 export async function submitAdmittedPromptRequest(
     input: SubmitAdmittedPromptRequestInput
@@ -85,11 +79,8 @@ export async function submitAdmittedPromptRequest(
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
 
     let cancellationAttempt: Promise<void> | null = null;
-    let cancellationCleanupPending = false;
-    let cancellationPersistenceFailed = false;
     let cancellationWarningReported = false;
     const reportCancellationPersistenceFailure = (error: unknown): never => {
-        cancellationPersistenceFailed = true;
         logger.error(new Error('Prompt request cancellation persistence failed', { cause: error }));
         if (!cancellationWarningReported) {
             cancellationWarningReported = true;
@@ -101,45 +92,9 @@ export async function submitAdmittedPromptRequest(
         if (!cancellationAttempt) {
             cancellationAttempt = agentRunCancellation
                 .cancel({ runId, reason: 'Prompt request cancelled by the user.' })
-                .then((result) => {
-                    cancellationPersistenceFailed = false;
-                    cancellationCleanupPending =
-                        result.status === 'cancelled' && result.cleanupPendingAssetIds.length > 0;
-                })
+                .then(() => undefined)
                 .catch(reportCancellationPersistenceFailure);
         }
-        return cancellationAttempt;
-    };
-    const cancel = (): Promise<void> => {
-        if (!cancellationPersistenceFailed && !cancellationCleanupPending) {
-            return startCancellation();
-        }
-        const run = agentRunLifecycle.get(runId);
-        if (!run || (run.phase !== 'cancelled' && run.phase !== 'partially-completed')) {
-            cancellationAttempt = null;
-            cancellationCleanupPending = false;
-            cancellationPersistenceFailed = false;
-            return startCancellation();
-        }
-        cancellationAttempt = Promise.resolve()
-            .then(() => {
-                if (cancellationPersistenceFailed && !agentRunLifecycle.retryPersistence(runId)) {
-                    throw new Error(`Agent run disappeared before cancellation persistence retry: ${runId}`);
-                }
-                // A terminal cancellation can leave registered temporary
-                // assets cleanup-pending after its terminal state reached the
-                // live store. Re-enter cancellation only for that established
-                // terminal run so it resumes cleanup without revoking again.
-                return agentRunCancellation.cancel({
-                    runId,
-                    reason: 'Prompt request cancelled by the user.',
-                });
-            })
-            .then((result) => {
-                cancellationPersistenceFailed = false;
-                cancellationCleanupPending = result.status === 'cancelled' && result.cleanupPendingAssetIds.length > 0;
-            })
-            .catch(reportCancellationPersistenceFailure);
         return cancellationAttempt;
     };
     const cancelAfterAbort = async (): Promise<void> => {
@@ -384,23 +339,37 @@ export async function submitAdmittedPromptRequest(
             });
 
         if (compiled.requiresConfirmation) {
-            agentRunLifecycle.transitionPhase({
-                runId,
-                phase: 'waiting-for-approval',
-                revision: planned.projectRevision,
+            const assistantMessageId = `prompt-message-${crypto.randomUUID()}`;
+            appendChatMessage({
+                id: assistantMessageId,
+                role: 'assistant',
+                content: prompt,
+                timestamp: Date.now(),
+                isCommandAction: true,
             });
-            planResourcesTransferred = true;
-            return {
-                status: 'awaiting-approval',
+            const confirmationId = persistPromptActionConfirmation({
                 runId,
-                preview: {
-                    actions: planned.result.actions,
-                    actionLabels,
-                    projectRevision: planned.projectRevision,
-                    confirm: (signal) => execute('Confirmed', signal),
-                    cancel,
+                prompt,
+                assistantMessageId,
+                actions: planned.result.actions,
+                actionLabels,
+                commandEnvelopes: compiled.commandEnvelopes,
+                commandBatch: compiled.commandBatch,
+                agentApproval: compiled.agentApproval,
+                affectedIds: [...authority.scope.targetIds],
+                protectedUnchanged: authority.scope.protectedTargetIds.map((id) => ({ id, name: id })),
+                executionMode: planned.result.executionMode,
+                group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },
+                projectRevision: planned.projectRevision,
+                parsedCommandBatch: parsed,
+                content: prompt,
+                onResourceOwnershipAcquired: () => {
+                    planResourcesTransferred = true;
                 },
-            };
+            });
+            return confirmationId === null
+                ? { status: 'rejected', runId }
+                : { status: 'awaiting-approval', runId, confirmationId };
         }
 
         const execution = await execute(undefined, input.signal, () => {

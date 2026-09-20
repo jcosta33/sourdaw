@@ -131,6 +131,44 @@ describe('buildDeviceChain offline instrument setup', () => {
         setAudioDeviceRuntimeSink({});
     });
 
+    it('uses the captured owner preparation after asynchronous node construction', async () => {
+        const ready = Promise.withResolvers<Awaited<ReturnType<typeof creators.createLevainNode>>>();
+        const entered = Promise.withResolvers<void>();
+        const constructed = await creators.createLevainNode();
+        creators.createLevainNode.mockImplementation(() => {
+            entered.resolve();
+            return ready.promise;
+        });
+        const liveSetup = vi.fn(async () => {});
+        setAudioDeviceRuntimeSink({ prepareOfflineInstrument: liveSetup });
+        const { input, output } = makeChainEnds();
+        const instruments = new Map([
+            [
+                'levain-1',
+                async ({ port }: { port: MessagePort }) => {
+                    port.postMessage({ type: 'param', name: 'captured-value', value: 0.25 });
+                },
+            ],
+        ]);
+        const building = buildDeviceChain({} as BaseAudioContext, [makeDevice('levain-1', 'levain')], input, output, {
+            instruments,
+        });
+        await entered.promise;
+        setAudioDeviceRuntimeSink({
+            prepareOfflineInstrument: async ({ port }) => {
+                port.postMessage({ type: 'param', name: 'wrong-live-value', value: 0.9 });
+            },
+        });
+        ready.resolve(constructed);
+        await building;
+        expect(workletNode.port.postMessage).toHaveBeenCalledWith({
+            type: 'param',
+            name: 'captured-value',
+            value: 0.25,
+        });
+        expect(liveSetup).not.toHaveBeenCalled();
+    });
+
     it('asks the owning module to prepare a levain device, handing it that device port', async () => {
         const received: PrepareInput[] = [];
         setAudioDeviceRuntimeSink({

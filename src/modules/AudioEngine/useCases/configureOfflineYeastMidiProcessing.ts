@@ -1,11 +1,14 @@
 import { setOfflineYeastMidiProcessor } from '../repositories/offlineScheduler/setOfflineYeastMidiProcessor';
 
+import { offlineRenderCapturePorts } from './offlineRender/offlineRenderCapturePorts';
+
 type ConfigureOfflineYeastMidiProcessingInput = {
-    createProcessor: Parameters<typeof setOfflineYeastMidiProcessor>[0];
+    createProcessor: NonNullable<typeof offlineRenderCapturePorts.createYeastProcessor>;
 };
 
 export function configureOfflineYeastMidiProcessing({
     createProcessor,
 }: ConfigureOfflineYeastMidiProcessingInput): void {
+    offlineRenderCapturePorts.createYeastProcessor = createProcessor;
     setOfflineYeastMidiProcessor(createProcessor);
 }

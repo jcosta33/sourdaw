@@ -228,12 +228,12 @@ describe('TransportBar', () => {
     const renderTransportBar = () =>
         render(
             <TooltipProvider delayDuration={0}>
-                <TransportBar />
+                <TransportBar onReviewRun={() => undefined} />
             </TooltipProvider>
         );
 
     it('should render correctly', () => {
-        const { container } = render(<TransportBar />);
+        const { container } = render(<TransportBar onReviewRun={() => undefined} />);
         expect(container.firstChild).toBeTruthy();
     });
 
@@ -323,12 +323,12 @@ describe('TransportBar', () => {
     });
 
     it('should show play button', () => {
-        render(<TransportBar />);
+        render(<TransportBar onReviewRun={() => undefined} />);
         expect(screen.getByRole('button', { name: /Play/i })).toBeInTheDocument();
     });
 
     it('should call togglePlay when play button is clicked', () => {
-        render(<TransportBar />);
+        render(<TransportBar onReviewRun={() => undefined} />);
         const playButton = screen.getByRole('button', { name: /Play/i });
         fireEvent.click(playButton);
         expect(togglePlayback).toHaveBeenCalled();

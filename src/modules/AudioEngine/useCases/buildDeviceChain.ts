@@ -8,7 +8,7 @@ import {
     isFaustModule,
 } from '#/modules/PluginHost/useCases';
 
-import { getAudioDeviceRuntimeSink } from '../engine/audioDeviceRuntimeSink';
+import { getAudioDeviceRuntimeSink, type CapturedOfflineInstrument } from '../engine/audioDeviceRuntimeSink';
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { createExportError } from '../errors/ExportError';
 import { type Device } from '../models/TrackViewTypes';
@@ -84,6 +84,7 @@ const deviceRegistry = createDeviceRegistry({
 const OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS = 30_000;
 
 type RunOfflineInstrumentSetupInput = {
+    prepare?: CapturedOfflineInstrument;
     device: Device;
     port: MessagePort;
     /** The chain's injected logger, so a swallowed failure is still reported. */
@@ -163,6 +164,7 @@ async function runOfflineInstrumentSetup({
     device,
     port,
     logger,
+    prepare,
     signal,
 }: RunOfflineInstrumentSetupInput): Promise<void> {
     // An already-cancelled render starts no new work — not even a setup that
@@ -182,13 +184,17 @@ async function runOfflineInstrumentSetup({
     };
     signal?.addEventListener('abort', callerAborts);
     try {
-        await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
-            deviceId: device.id,
-            deviceType: device.type,
-            deviceState: device.deviceState,
-            port,
-            signal: controller.signal,
-        });
+        if (prepare) {
+            await prepare({ port, signal: controller.signal });
+        } else {
+            await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
+                deviceId: device.id,
+                deviceType: device.type,
+                deviceState: device.deviceState,
+                port,
+                signal: controller.signal,
+            });
+        }
         // A setup that raced the cancellation button across its last await
         // must not count: its result belongs to a render that no longer wants
         // one, and letting it through would schedule and render a stem the
@@ -215,6 +221,8 @@ async function runOfflineInstrumentSetup({
 }
 
 export type BuildDeviceChainContext = {
+    instruments?: ReadonlyMap<string, CapturedOfflineInstrument>;
+    loadedExternalInstanceIds?: ReadonlySet<string>;
     /** Track name, used only to make a failure message locatable by the user. */
     trackName?: string;
     /** The export's user-visible warning channel, for degraded devices. */
@@ -406,7 +414,7 @@ export const buildDeviceChain = inject({ logger })(
             // device: the set is rebuilt from the store on each read, and a
             // rack that straddled two reads could refuse over one device and
             // degrade over another for reasons the user cannot see.
-            const loadedInstanceIds = readLoadedExternalInstanceIds();
+            const loadedInstanceIds = context.loadedExternalInstanceIds ?? readLoadedExternalInstanceIds();
             // Static for the whole chain build too — the browser build's
             // `loadPlugin` stub writes a snapshot that never sounds, so a
             // loaded instance only means something live on the desktop runtime.
@@ -465,6 +473,14 @@ export const buildDeviceChain = inject({ logger })(
                                 device,
                                 port: workletPort,
                                 logger,
+                                prepare:
+                                    context.instruments === undefined
+                                        ? undefined
+                                        : (context.instruments.get(device.id) ??
+                                          (() =>
+                                              Promise.reject(
+                                                  new Error(`Missing captured offline setup for ${device.id}`)
+                                              ))),
                                 signal: context.cancellationSignal,
                             });
                         }

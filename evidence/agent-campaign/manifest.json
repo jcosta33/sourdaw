@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "a36e2b562ae306965c911a4e8182b7ec3daf4644c4efba265c0b06bf2d2ea012"
+        "digest": "15ddcd0cb8a29106c8d40e3e2f0135c2ccd2ad31dd572882eb1d8688e98442e9"
     },
     "census": {
         "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"
@@ -624,7 +624,7 @@
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "3e2aac3f15fcfe44589c5e292bbfeb9ca286140506744f57974c77e910dfe080"
+                    "digest": "cd5677a24eb57cd17a8fbcda7e479df15dbc3fabf516a820d5f77c46da1888d8"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "4dfb3e38dbf83225cd2f6b8305c204704710314921f88c4fe421cda429b59785"
+                    "digest": "53ec2730b3336a02e646d51d18f1ac1098f0fe5f2060c5a43999d46bd6bc1e93"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",

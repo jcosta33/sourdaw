@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { type Track } from '#/modules/Arrangement/stores';
+
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import {
     createAudioEngineTopologyTestHarness,
@@ -532,25 +534,42 @@ describe('agent runtime graph boundary — preview isolation from offline render
         }
     }
 
-    // Shape mirrors `renderOffline.spec.ts`'s `audioTrack` helper, extended
-    // with the strip-level fields that helper never needed: that spec mocks
-    // `createOfflineTrackStrip`, while this case runs the real builder (no
-    // devices are built here, so `buildDeviceChain` runs for real too), whose
-    // fader/pan law reads `gain`/`pan` directly.
-    const offlineRenderTrack = {
+    // This case reaches capture and the real strip builder, so keep a complete
+    // Track fixture rather than the partial shape used by specs that mock those
+    // boundaries.
+    const offlineRenderTrack: Track = {
         id: 'lead',
         name: 'Lead',
         kind: 'audio',
-        disabled: false,
         muted: false,
         soloed: false,
-        soloSafe: false,
-        outputId: 'hw_out',
+        armed: false,
         gain: 1,
         pan: 0,
-        vcaGroupId: null,
+        color: '#ff0000',
+        clips: [],
         devices: [],
         sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'hw_out',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
     };
 
     it('connects no node an offline render creates to a preview node playing on the live context', async () => {

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { toLevainDeviceState } from '../../models/LevainDeviceState';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
+import { captureOfflineLevain } from '../captureOfflineLevain';
 import { prepareOfflineLevain } from '../prepareOfflineLevain';
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +30,41 @@ describe('prepareOfflineLevain', () => {
         mocks.autoLoadLevainSamples.mockClear();
         mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve());
         levainStore.set({});
+    });
+
+    it('uses a captured patch after the same device id receives a different live patch', async () => {
+        const state = structuredClone(defaultLevainState);
+        state.patch.instrumentId = 'cello';
+        state.patch.masterGain = 0.37;
+        levainStore.set({ 'device-a': state });
+        const captured = captureOfflineLevain({ deviceId: 'device-a' });
+        state.patch.masterGain = 0.92;
+        levainStore.set({ 'device-a': defaultLevainState });
+        const { port, posted } = fakePort();
+
+        await prepareOfflineLevain({ deviceId: 'device-a', port, captured });
+
+        expect(posted).toContainEqual({ type: 'param', name: 'master_gain', value: 0.37 });
+        expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith('device-a', port, 'cello', undefined);
+    });
+
+    it('hydrates an alternate supplied device without borrowing or writing live owner state', async () => {
+        levainStore.set({ 'device-a': defaultLevainState });
+        const live = structuredClone(levainStore.value);
+        const device = {
+            parameterValues: { masterGain: 0.28 },
+            deviceState: toLevainDeviceState({ ...defaultLevainState.patch, instrumentId: 'cello' }),
+        };
+        const captured = captureOfflineLevain({ deviceId: 'device-a', device, state: null });
+        device.parameterValues.masterGain = 0.91;
+        device.deviceState.data.instrumentId = 'violin-1';
+        const { port, posted } = fakePort();
+
+        await prepareOfflineLevain({ deviceId: 'device-a', port, captured });
+
+        expect(posted).toContainEqual({ type: 'param', name: 'master_gain', value: 0.28 });
+        expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith('device-a', port, 'cello', undefined);
+        expect(levainStore.value).toEqual(live);
     });
 
     it('loads the instrument selected by the device patch without mutating the engine first', async () => {
