@@ -7,11 +7,71 @@ import {
     createDefaultGrandBouleState,
     resetGrandBouleStores,
 } from '../../stores/grandBouleStore';
+import { captureOfflineGrandBoule } from '../captureOfflineGrandBoule';
 import { prepareOfflineGrandBoule } from '../prepareOfflineGrandBoule';
 
 describe('prepareOfflineGrandBoule', () => {
     beforeEach(() => {
         resetGrandBouleStores();
+    });
+
+    it('keeps captured calibration independent of a replaced same-id store', () => {
+        const morph = {
+            modelA: 'mellow-grand',
+            modelB: 'singing-grand',
+            morphPosition: 0.4,
+            layerBalance: 0.2,
+            enabled: true,
+        };
+        const original = createDefaultGrandBouleState();
+        original.midiCalibration.sustainThreshold = 0.61;
+        original.midiCalibration.ccSmoothingMs = 41;
+        createGrandBouleStore('same-id').set(original);
+        const captured = captureOfflineGrandBoule({ deviceId: 'same-id', deviceState: toGrandBouleDeviceState(morph) });
+        original.midiCalibration.sustainThreshold = 0.02;
+        createGrandBouleStore('same-id').set(createDefaultGrandBouleState());
+        const postMessage = vi.fn();
+
+        prepareOfflineGrandBoule({
+            deviceId: 'same-id',
+            deviceState: undefined,
+            port: { postMessage } as unknown as MessagePort,
+            captured,
+        });
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'sustain_threshold', value: 0.61 });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'cc_smoothing_ms', value: 41 });
+        for (const parameter of projectGrandBouleMorphState(morph)) {
+            expect(postMessage).toHaveBeenCalledWith({ type: 'param', ...parameter });
+        }
+    });
+
+    it('captures explicit calibration without writing the live store and preserves explicit absence', () => {
+        const state = createDefaultGrandBouleState();
+        createGrandBouleStore('same-id').set(state);
+        const before = structuredClone(createGrandBouleStore('same-id').value);
+        const calibration = { sustain_threshold: 0.49, cc_smoothing_ms: 33 };
+        const alternate = captureOfflineGrandBoule({ deviceId: 'same-id', deviceState: undefined, calibration });
+        const absent = captureOfflineGrandBoule({ deviceId: 'same-id', deviceState: undefined, calibration: null });
+        calibration.sustain_threshold = 0.03;
+        const postMessage = vi.fn();
+
+        prepareOfflineGrandBoule({
+            deviceId: 'same-id',
+            deviceState: undefined,
+            port: { postMessage } as unknown as MessagePort,
+            captured: alternate,
+        });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'sustain_threshold', value: 0.49 });
+        postMessage.mockClear();
+        prepareOfflineGrandBoule({
+            deviceId: 'same-id',
+            deviceState: undefined,
+            port: { postMessage } as unknown as MessagePort,
+            captured: absent,
+        });
+        expect(postMessage.mock.calls.map(([message]) => message.name)).not.toContain('sustain_threshold');
+        expect(createGrandBouleStore('same-id').value).toEqual(before);
     });
 
     it('projects the immutable render snapshot when live project state differs', () => {

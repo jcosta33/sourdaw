@@ -72,8 +72,18 @@ function shapedFiniteProjectedState(projected: Readonly<Record<string, number>>)
  * per-device store, keyed by `deviceId` — so the "nothing committed yet"
  * guard belongs to the arms that actually need a chunk, not to this caller.
  */
-function projectDeviceState(deviceId: string, deviceType: string, deviceState: DeviceStateChunk | undefined) {
-    return getAudioDeviceRuntimeSink().projectNativeDeviceState({ deviceId, deviceType, deviceState });
+type NativeDeviceProjection = Pick<
+    ReturnType<typeof getAudioDeviceRuntimeSink>,
+    'projectNativeDeviceState' | 'nativeSampleBankKey'
+>;
+
+function projectDeviceState(
+    deviceId: string,
+    deviceType: string,
+    deviceState: DeviceStateChunk | undefined,
+    projection: NativeDeviceProjection
+) {
+    return projection.projectNativeDeviceState({ deviceId, deviceType, deviceState });
 }
 
 /**
@@ -93,19 +103,26 @@ function projectDeviceState(deviceId: string, deviceType: string, deviceState: D
  * MIDI calibration — is keyed by `deviceId`, not by a chunk, so an arm that
  * reads it has something to answer even when `deviceState` is `undefined`.
  */
-function sampleBankKeyField(deviceType: string, deviceState: DeviceStateChunk | undefined) {
-    const bankKey = getAudioDeviceRuntimeSink().nativeSampleBankKey({ deviceType, deviceState });
+function sampleBankKeyField(
+    deviceType: string,
+    deviceState: DeviceStateChunk | undefined,
+    projection: NativeDeviceProjection
+) {
+    const bankKey = projection.nativeSampleBankKey({ deviceType, deviceState });
     return bankKey === null ? {} : { sampleBankKey: bankKey };
 }
 
-export function projectDeviceForNativeBody(device: Device): NativeBodyDevice {
+export function projectDeviceForNativeBody(
+    device: Device,
+    projection: NativeDeviceProjection = getAudioDeviceRuntimeSink()
+): NativeBodyDevice {
     const body = nativeBuiltinBody(device.type);
     if (!body) {
         return device;
     }
     const patch = body.projectPatch(device.parameterValues);
-    const bank = sampleBankKeyField(device.type, device.deviceState);
-    const projectedState = projectDeviceState(device.id, device.type, device.deviceState);
+    const bank = sampleBankKeyField(device.type, device.deviceState, projection);
+    const projectedState = projectDeviceState(device.id, device.type, device.deviceState, projection);
     if (!projectedState) {
         return { ...device, ...bank, parameterValues: patch };
     }

@@ -149,8 +149,11 @@ export function sampleGainEnvelopeSeries(
  * provably a no-op — the curve is the constant-edge interpolation of its
  * points, so all-zero points can only read zero.
  */
-function activeEnvelopeFor(clipId: string): ClipGainEnvelope | undefined {
-    const envelope = getEnvelope(clipId);
+function activeEnvelopeFor(
+    clipId: string,
+    envelopes = gainEnvelopeStore.value?.envelopes
+): ClipGainEnvelope | undefined {
+    const envelope = envelopes?.[clipId];
     if (!envelope || !envelope.enabled) {
         return undefined;
     }
@@ -164,8 +167,8 @@ function activeEnvelopeFor(clipId: string): ClipGainEnvelope | undefined {
  * to keep an envelope-carrying clip off a carrier that cannot apply the
  * curve (#2865).
  */
-export function clipHasActiveGainEnvelope(clipId: string): boolean {
-    return activeEnvelopeFor(clipId) !== undefined;
+export function clipHasActiveGainEnvelope(clipId: string, envelopes?: GainEnvelopeStoreState['envelopes']): boolean {
+    return activeEnvelopeFor(clipId, envelopes) !== undefined;
 }
 
 /**
@@ -179,9 +182,10 @@ export function clipHasActiveGainEnvelope(clipId: string): boolean {
 export function getGainEnvelopeSeries(
     clipId: string,
     spanStartBeats: number,
-    spanEndBeats: number
+    spanEndBeats: number,
+    envelopes?: GainEnvelopeStoreState['envelopes']
 ): readonly GainEnvelopeSeriesPoint[] | undefined {
-    const envelope = activeEnvelopeFor(clipId);
+    const envelope = activeEnvelopeFor(clipId, envelopes);
     if (!envelope) {
         return undefined;
     }

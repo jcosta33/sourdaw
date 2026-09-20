@@ -39,7 +39,7 @@ type AgentApprovalView = {
     rePreview: { available: boolean; reason: string | null };
     consequences: Readonly<Record<string, boolean | number>> | null;
     budgets: Readonly<Record<string, number>> | null;
-    cost: readonly { category: string; reserved: number; actual: number; provenance: string }[];
+    cost: readonly { category: string; reserved: number; actual: number; provenance: string; final: boolean }[];
     dataDisclosure: { categories: readonly string[]; retention: Readonly<Record<string, string>> } | null;
     actor: { localActorId: string } | null;
     expiry: { revision: string };
@@ -134,7 +134,13 @@ function formatCost(cost: AgentApprovalView['cost']): string {
         return 'none';
     }
     return cost
-        .map((attempt) => `${attempt.category} ${attempt.actual}/${attempt.reserved} ${attempt.provenance}`)
+        .map((attempt) => {
+            if (attempt.final) {
+                return `${attempt.category} ${attempt.actual} final ${attempt.provenance}`;
+            }
+            const lowerBound = attempt.actual > 0 ? `; known minimum ${attempt.actual}` : '';
+            return `${attempt.category} ${attempt.reserved} reserved ${attempt.provenance}${lowerBound}`;
+        })
         .join('; ');
 }
 

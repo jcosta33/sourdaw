@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
 import { startInputMonitoring } from '../inputMonitoring';
+import { inputMonitoringSession } from '../inputMonitoringSession';
 import { stopInputMonitoring } from '../stopInputMonitoring';
 
 type MockMediaStreamTrack = {
@@ -136,6 +137,52 @@ describe('stopInputMonitoring', () => {
         expect(createMediaStreamSource).toHaveBeenNthCalledWith(2, secondMockStream);
         expect(secondMockSourceNode.connect).toHaveBeenCalledWith(secondMockStrip.gainNode);
     });
+
+    it('clears every session map so a later engine inherits no monitoring', async () => {
+        const mockTrack = createMockTrack();
+        const mockStream = createMockStream([mockTrack]);
+        const mockSourceNode = createMockSourceNode();
+        const mockStrip = createMockStrip();
+
+        getUserMedia.mockResolvedValue(mockStream);
+        createMediaStreamSource.mockReturnValue(mockSourceNode);
+        ensureTrackStrip.mockReturnValue(mockStrip);
+
+        await startInputMonitoring('t1', 'input-1');
+
+        stopInputMonitoring();
+
+        expect(inputMonitoringSession.captures.size).toBe(0);
+        expect(inputMonitoringSession.trackKeys.size).toBe(0);
+        expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+        expect(mockTrack.stop).toHaveBeenCalledTimes(1);
+        expect(mockSourceNode.disconnect).toHaveBeenCalledWith(mockStrip.gainNode);
+
+        // A repeated teardown over the emptied session releases nothing again.
+        expect(() => stopInputMonitoring()).not.toThrow();
+        expect(mockTrack.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases a grant that settles after teardown and attaches no edge', async () => {
+        const pendingGrant = Promise.withResolvers<MockMediaStream>();
+        getUserMedia.mockReturnValueOnce(pendingGrant.promise);
+
+        const starting = startInputMonitoring('t1', 'input-1');
+        expect(inputMonitoringSession.pendingRequests.size).toBe(1);
+
+        stopInputMonitoring();
+        expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+
+        const lateTrack = createMockTrack();
+        pendingGrant.resolve(createMockStream([lateTrack], 'stream-late'));
+
+        expect(await starting).toBe(false);
+        expect(lateTrack.stop).toHaveBeenCalledTimes(1);
+        expect(createMediaStreamSource).not.toHaveBeenCalled();
+        expect(inputMonitoringSession.captures.size).toBe(0);
+        expect(inputMonitoringSession.trackKeys.size).toBe(0);
+        expect(inputMonitoringSession.pendingRequests.size).toBe(0);
+    });
 });
 
 describe('stopInputMonitoring on keyed captures', () => {
@@ -206,5 +253,41 @@ describe('stopInputMonitoring on keyed captures', () => {
         expect(lateTrackStop.stop).toHaveBeenCalledTimes(1);
         expect(sourceInputOne.connect).not.toHaveBeenCalled();
         expect(sourceInputOne.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('lets a start after teardown acquire its own request for the same key', async () => {
+        const orphanGrant = Promise.withResolvers<MockMediaStream>();
+        getUserMedia.mockReturnValueOnce(orphanGrant.promise);
+
+        void startInputMonitoring('a', 'input-1');
+        expect(inputMonitoringSession.pendingRequests.size).toBe(1);
+
+        stopInputMonitoring();
+
+        const freshTrack = createMockTrack();
+        const freshStream = createMockStream([freshTrack], 'stream-fresh');
+        const freshSource = createMockSourceNode();
+        const freshGain = { id: 'gain-fresh' };
+        getUserMedia.mockResolvedValueOnce(freshStream);
+        createMediaStreamSource.mockReturnValueOnce(freshSource);
+        ensureTrackStrip.mockReturnValueOnce(createMockStrip(freshGain));
+
+        await startInputMonitoring('a', 'input-1');
+
+        // The teardown dropped the orphaned request, so this start minted its own
+        // acquisition rather than adopting a grant the session no longer owns.
+        expect(getUserMedia).toHaveBeenCalledTimes(2);
+        expect(createMediaStreamSource).toHaveBeenCalledTimes(1);
+        expect(freshSource.connect).toHaveBeenCalledWith(freshGain);
+        expect(inputMonitoringSession.captures.get('input-1')?.monitorEdges.get('a')).toBe(freshGain);
+
+        const orphanTrack = createMockTrack();
+        orphanGrant.resolve(createMockStream([orphanTrack], 'stream-orphan'));
+        await Promise.resolve();
+
+        // The orphan releases instead of attaching to the live capture.
+        expect(orphanTrack.stop).toHaveBeenCalledTimes(1);
+        expect(createMediaStreamSource).toHaveBeenCalledTimes(1);
+        expect(inputMonitoringSession.captures.get('input-1')?.monitorEdges.get('a')).toBe(freshGain);
     });
 });

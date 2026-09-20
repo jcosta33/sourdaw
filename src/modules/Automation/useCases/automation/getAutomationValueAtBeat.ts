@@ -18,9 +18,10 @@ const _laneByIdCache = new Map<string, AutomationLane>();
 export function getAutomationValueAtBeat(
     laneId: string,
     beat: number,
-    _visited: Set<string> = new Set()
+    _visited: Set<string> = new Set(),
+    lanes?: readonly AutomationLane[]
 ): number | null {
-    const state = automationStore.value;
+    const state = lanes === undefined ? automationStore.value : { lanes };
     if (!state) {
         return null;
     }

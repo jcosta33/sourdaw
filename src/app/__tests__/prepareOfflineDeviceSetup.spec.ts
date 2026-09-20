@@ -1,13 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type Device } from '#/modules/Arrangement/stores';
 import { createTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import {
+    createGrandBouleStore,
+    createDefaultGrandBouleState,
+    resetGrandBouleStores,
+} from '#/modules/GrandBoule/stores';
 import { prepareOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
+import { defaultToasterState, toasterStore } from '#/modules/Toaster/stores';
 import { prepareOfflineToaster } from '#/modules/Toaster/useCases';
 import { NATIVE_DSP_DEVICE_TYPES } from '#/utils/nativeDspDeviceTypes';
 
-import { prepareOfflineDeviceSetup } from '../prepareOfflineDeviceSetup';
+import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from '../prepareOfflineDeviceSetup';
 
 // Only the project read is faked. The Proof use case under test, its chain-order
 // decode and the worklet message it posts are all real — the point of this spec
@@ -21,6 +28,9 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 // Levain's offline setup fetches sample manifests; this spec never exercises it.
 vi.mock('#/modules/Levain/useCases', () => ({
     prepareOfflineLevain: vi.fn(() => Promise.resolve()),
+    captureOfflineLevain: vi.fn(() => {
+        throw new Error('this fixture does not capture Levain state');
+    }),
     getLevainArticulationId: vi.fn(),
 }));
 
@@ -28,13 +38,20 @@ vi.mock('#/modules/Levain/useCases', () => ({
 // decodes it; likewise never exercised here.
 vi.mock('#/modules/Crumbs/useCases', () => ({
     prepareCrumbsEngine: vi.fn(() => Promise.resolve('ready')),
+    captureCrumbsEngine: vi.fn(() => {
+        throw new Error('this fixture does not capture Crumbs state');
+    }),
     markCrumbsEngineAttached: vi.fn(),
 }));
-vi.mock('#/modules/GrandBoule/useCases', () => ({ prepareOfflineGrandBoule: vi.fn() }));
-// Toaster's kit push is asserted against real project state in
-// `toasterLiveOfflineParity.spec.ts`. What this spec owns is the table wiring:
-// that the `toaster` row exists and is handed the right arguments.
-vi.mock('#/modules/Toaster/useCases', () => ({ prepareOfflineToaster: vi.fn() }));
+vi.mock('#/modules/GrandBoule/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/GrandBoule/useCases')>();
+    return { ...actual, prepareOfflineGrandBoule: vi.fn(actual.prepareOfflineGrandBoule) };
+});
+// Keep owner capture and projection real while observing the table's argument shape.
+vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
+    return { ...actual, prepareOfflineToaster: vi.fn(actual.prepareOfflineToaster) };
+});
 
 type ReorderMessage = { type: string; order: number[] };
 type PortSpy = ReturnType<typeof vi.fn<(message: unknown) => void>>;
@@ -86,6 +103,16 @@ describe('prepareOfflineDeviceSetup — Proof chain order', () => {
     // path replayed the params and never sent the message, so every export
     // rendered the default EQ → Dynamics → Imager → Exciter → Limiter regardless
     // of what the project said.
+    it('delivers captured Proof order after the project reuses the device identity', async () => {
+        projectWithProofChainOrder([4, 3, 0, 2, 1]);
+        const device = getTrackStoreState()!.tracks[0]!.devices[0]!;
+        const captured = captureOfflineDeviceSetup(device);
+        projectWithProofChainOrder([0, 1, 2, 4, 3]);
+        const { port, postMessage } = makePort();
+        await prepareOfflineDeviceSetup({ deviceId: device.id, deviceType: device.type, captured, port });
+        expect(reorderMessages(postMessage)).toEqual([{ type: 'reorder', order: [4, 3, 0, 2, 1] }]);
+    });
+
     it('delivers the order the project holds, not the engine default', async () => {
         // Exciter moved after the limiter — saturating past the ceiling instead of
         // into it. Differs from the default [0,1,2,3,4] only in the last two slots,
@@ -255,5 +282,91 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         expect(postMessage).not.toHaveBeenCalled();
         expect(prepareOfflineLevain).not.toHaveBeenCalled();
         expect(prepareCrumbsEngine).not.toHaveBeenCalled();
+    });
+});
+
+describe('captureOfflineDeviceSetup explicit project source', () => {
+    beforeEach(() => {
+        toasterStore.set({});
+        resetGrandBouleStores();
+    });
+    afterEach(() => {
+        toasterStore.set({});
+        resetGrandBouleStores();
+    });
+
+    function device(type: string, deviceState?: Device['deviceState']): Device {
+        return { id: 'same-id', name: type, type, bypassed: false, parameterValues: {}, deviceState };
+    }
+
+    function parameterMessages(postMessage: PortSpy, name: string): unknown[] {
+        return postMessage.mock.calls.flatMap(([message]) => {
+            if (typeof message !== 'object' || message === null || !('name' in message) || message.name !== name) {
+                return [];
+            }
+            return [message];
+        });
+    }
+
+    it('uses the application kit for a chunkless explicit project while the same live device has another kit', async () => {
+        const live = structuredClone(defaultToasterState);
+        live.kit.masterGain = 0.19;
+        toasterStore.set({ 'same-id': live });
+        const supplied = device('toaster');
+        const captured = captureOfflineDeviceSetup(supplied, { projectOnly: true, calibration: null });
+        const { port, postMessage } = makePort();
+
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured, port });
+
+        expect(parameterMessages(postMessage, 'master_gain')).toEqual([
+            { type: 'param', name: 'master_gain', value: defaultToasterState.kit.masterGain },
+        ]);
+        expect(toasterStore.value?.['same-id']?.kit.masterGain).toBe(0.19);
+    });
+
+    it('retains the live kit fallback when no explicit project source is supplied', async () => {
+        const live = structuredClone(defaultToasterState);
+        live.kit.masterGain = 0.19;
+        toasterStore.set({ 'same-id': live });
+        const supplied = device('toaster');
+        const captured = captureOfflineDeviceSetup(supplied);
+        const { port, postMessage } = makePort();
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured, port });
+        expect(parameterMessages(postMessage, 'master_gain')).toEqual([
+            { type: 'param', name: 'master_gain', value: 0.19 },
+        ]);
+    });
+
+    it('posts an alternate persisted kit without changing the same-id live kit', async () => {
+        toasterStore.set({ 'same-id': structuredClone(defaultToasterState) });
+        const supplied = device('toaster', { version: 1, data: { kit: { masterGain: 0.33 } } });
+        const captured = captureOfflineDeviceSetup(supplied, { projectOnly: true, calibration: null });
+        const { port, postMessage } = makePort();
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured, port });
+        expect(parameterMessages(postMessage, 'master_gain')).toEqual([
+            { type: 'param', name: 'master_gain', value: 0.33 },
+        ]);
+        expect(toasterStore.value?.['same-id']?.kit.masterGain).toBe(defaultToasterState.kit.masterGain);
+    });
+
+    it('uses supplied calibration and keeps explicit absence distinct from live calibration', async () => {
+        const live = createDefaultGrandBouleState();
+        live.midiCalibration.sustainThreshold = 0.2;
+        createGrandBouleStore('same-id').set(live);
+        const supplied = device('grand-boule');
+        const captured = captureOfflineDeviceSetup(supplied, {
+            projectOnly: true,
+            calibration: { sustain_threshold: 0.44, cc_smoothing_ms: 31 },
+        });
+        const absent = captureOfflineDeviceSetup(supplied, { projectOnly: true, calibration: null });
+        const { port, postMessage } = makePort();
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured, port });
+        expect(parameterMessages(postMessage, 'sustain_threshold')).toEqual([
+            { type: 'param', name: 'sustain_threshold', value: 0.44 },
+        ]);
+        postMessage.mockClear();
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured: absent, port });
+        expect(parameterMessages(postMessage, 'sustain_threshold')).toEqual([]);
+        expect(createGrandBouleStore('same-id').value?.midiCalibration.sustainThreshold).toBe(0.2);
     });
 });

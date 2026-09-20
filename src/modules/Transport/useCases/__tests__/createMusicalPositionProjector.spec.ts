@@ -38,6 +38,28 @@ describe('createMusicalPositionProjector', () => {
         timeSigState.value = null;
     });
 
+    it('uses and detaches an explicitly supplied musical timeline instead of live stores', () => {
+        transportState.value = { tempo: 240, timeSignatureNumerator: 4, timeSignatureDenominator: 4 };
+        const source = {
+            transport: { tempo: 90, timeSignatureNumerator: 3, timeSignatureDenominator: 4, loopStart: 2, loopEnd: 8 },
+            tempoMap: {
+                changes: [
+                    { id: 'base', beat: 0, tempo: 90, curve: 'instant' as const },
+                    { id: 'tempo', beat: 3, tempo: 150, curve: 'instant' as const },
+                ],
+            },
+            timeSignatureMap: { changes: [{ id: 'meter', beat: 3, numerator: 5, denominator: 4 }] },
+        };
+        const project = createMusicalPositionProjector(source);
+        source.transport.tempo = 280;
+        source.tempoMap.changes[1]!.tempo = 290;
+        source.timeSignatureMap.changes[0]!.numerator = 7;
+
+        expect(project(0)).toMatchObject({ bpm: 90, timeSigNum: 3, loopStartPpq: 2, loopEndPpq: 8 });
+        expect(project(3)).toMatchObject({ bpm: 150, timeSigNum: 5 });
+        expect(transportState.value.tempo).toBe(240);
+    });
+
     it('derives bar/beat/bpm from defaults when the stores are absent (all ?? fallbacks)', () => {
         const project = createMusicalPositionProjector();
 

@@ -14,3 +14,4 @@ export { createOfflineYeastMidiProcessor } from './createOfflineYeastMidiProcess
 export { subscribeYeastPreview } from './subscribeYeastPreview';
 export { reorderYeastProcessor } from './reorderYeastProcessor';
 export { getYeastHandlers } from './getYeastHandlers';
+export { captureOfflineYeastProjections } from './captureOfflineYeastProjections';

@@ -63,7 +63,17 @@ vi.mock('../../hooks/useActiveDevicePanel', () => ({
 
 // Mock child components
 vi.mock('../TransportBar', () => ({
-    TransportBar: () => <div data-testid="transport-bar">TransportBar</div>,
+    TransportBar: ({ onReviewRun }: { onReviewRun: (runId: string) => void }) => (
+        <div data-testid="transport-bar">
+            TransportBar<button onClick={() => onReviewRun('requested-run')}>Review test run</button>
+        </div>
+    ),
+}));
+
+vi.mock('../AgentWorkspace', () => ({
+    AgentWorkspace: ({ requestedRun }: { requestedRun: { runId: string } | null }) => (
+        <div data-testid="agent-workspace">{requestedRun?.runId}</div>
+    ),
 }));
 
 // Every cross-module barrel mock below spreads `importOriginal` first and then
@@ -557,6 +567,17 @@ describe('AppShell', () => {
             const selected = screen.getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true');
             expect(selected).toHaveLength(1);
             expect(selected[0]?.textContent).toBe('Mixer');
+        });
+
+        it('opens a closed dock on the exact run requested by the Prompt Bar', () => {
+            vi.mocked(useWorkspaceState).mockReturnValue(createWorkspaceState({ mixerOpen: false }));
+            const rendered = render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('button', { name: 'Review test run' }));
+            expect(workspaceStore.value?.mixerOpen).toBe(true);
+            vi.mocked(useWorkspaceState).mockReturnValue(createWorkspaceState({ mixerOpen: true }));
+            rendered.rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByTestId('agent-workspace')).toHaveTextContent('requested-run');
         });
 
         it('shows the Agent bottom tab', () => {

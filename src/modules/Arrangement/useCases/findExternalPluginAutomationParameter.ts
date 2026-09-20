@@ -17,9 +17,10 @@ import { type ExternalPluginParameter, externalPluginParameterStore } from '#/mo
  */
 export function findExternalPluginAutomationParameter(
     externalInstanceId: string,
-    parameterId: string
+    parameterId: string,
+    state = externalPluginParameterStore.value
 ): ExternalPluginParameter | undefined {
-    const snapshot = externalPluginParameterStore.value?.byInstanceId[externalInstanceId];
+    const snapshot = state?.byInstanceId[externalInstanceId];
     if (!snapshot?.engineAttached) {
         return undefined;
     }

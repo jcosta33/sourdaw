@@ -8,7 +8,7 @@ import {
     isFaustModule,
 } from '#/modules/PluginHost/useCases';
 
-import { getAudioDeviceRuntimeSink } from '../engine/audioDeviceRuntimeSink';
+import { getAudioDeviceRuntimeSink, type CapturedOfflineInstrument } from '../engine/audioDeviceRuntimeSink';
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { createExportError } from '../errors/ExportError';
 import { type Device } from '../models/TrackViewTypes';
@@ -84,6 +84,7 @@ const deviceRegistry = createDeviceRegistry({
 const OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS = 30_000;
 
 type RunOfflineInstrumentSetupInput = {
+    prepare?: CapturedOfflineInstrument;
     device: Device;
     port: MessagePort;
     /** The chain's injected logger, so a swallowed failure is still reported. */
@@ -143,12 +144,21 @@ function resolveWorkletPort(node: AudioNode): MessagePort | null {
  * it is needed. `buildDeviceChainOfflineInstrumentSetup.spec.ts` pins it with a
  * sink that rejects outright.
  */
-async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineInstrumentSetupInput): Promise<void> {
+async function runOfflineInstrumentSetup({
+    device,
+    port,
+    logger,
+    prepare,
+}: RunOfflineInstrumentSetupInput): Promise<void> {
     const controller = new AbortController();
     const deadline = setTimeout(() => {
         controller.abort();
     }, OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS);
     try {
+        if (prepare) {
+            await prepare({ port, signal: controller.signal });
+            return;
+        }
         await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
             deviceId: device.id,
             deviceType: device.type,
@@ -167,6 +177,8 @@ async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineIns
 }
 
 export type BuildDeviceChainContext = {
+    instruments?: ReadonlyMap<string, CapturedOfflineInstrument>;
+    loadedExternalInstanceIds?: ReadonlySet<string>;
     /** Track name, used only to make a failure message locatable by the user. */
     trackName?: string;
     /** The export's user-visible warning channel, for degraded devices. */
@@ -349,7 +361,7 @@ export const buildDeviceChain = inject({ logger })(
             // device: the set is rebuilt from the store on each read, and a
             // rack that straddled two reads could refuse over one device and
             // degrade over another for reasons the user cannot see.
-            const loadedInstanceIds = readLoadedExternalInstanceIds();
+            const loadedInstanceIds = context.loadedExternalInstanceIds ?? readLoadedExternalInstanceIds();
             // Static for the whole chain build too — the browser build's
             // `loadPlugin` stub writes a snapshot that never sounds, so a
             // loaded instance only means something live on the desktop runtime.
@@ -404,7 +416,19 @@ export const buildDeviceChain = inject({ logger })(
                         // is what keeps that domain from being entered.
                         const workletPort = resolveWorkletPort(strategy.node.inputNode);
                         if (workletPort) {
-                            await runOfflineInstrumentSetup({ device, port: workletPort, logger });
+                            await runOfflineInstrumentSetup({
+                                device,
+                                port: workletPort,
+                                logger,
+                                prepare:
+                                    context.instruments === undefined
+                                        ? undefined
+                                        : (context.instruments.get(device.id) ??
+                                          (() =>
+                                              Promise.reject(
+                                                  new Error(`Missing captured offline setup for ${device.id}`)
+                                              ))),
+                            });
                         }
                     } catch (error) {
                         // Refuse only for a device the session is actually

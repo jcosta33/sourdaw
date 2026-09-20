@@ -512,7 +512,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts",
-                    "digest": "6feccacb2f721f38ad925c2fef7de3d692cc6243ed2183c9fde81d4d1025794f"
+                    "digest": "4e15bea3a1dc801a65aea9c3318eb6f1a408f758de1eeb99c7ced8f08c2a4249"
                 }
             ]
         },
@@ -624,7 +624,7 @@
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "3e2aac3f15fcfe44589c5e292bbfeb9ca286140506744f57974c77e910dfe080"
+                    "digest": "cd5677a24eb57cd17a8fbcda7e479df15dbc3fabf516a820d5f77c46da1888d8"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "01141fbc82142a45636bbf509e2c4abc470d59801992ccc2227daaf3660997c4"
+                    "digest": "53ec2730b3336a02e646d51d18f1ac1098f0fe5f2060c5a43999d46bd6bc1e93"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
