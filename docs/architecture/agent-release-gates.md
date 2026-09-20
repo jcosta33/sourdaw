@@ -10,7 +10,8 @@ Schema version 2 supersedes three version-1 rows. `clarification rate on execute
 
 Every scored agent-campaign case resolves to exactly one class.
 
-- `execute-exact` — the admitted request compiled to the exact oracle batch and committed.
+- `execute-exact` — the admitted request compiled to the exact executable oracle batch. It is a
+  planning result, not a claim that the batch committed.
 - `clarify-required` — a typed clarification carrying at least one question, and no mutation.
 - `abstain-unsupported` — a typed unsupported outcome after a successful capability search, and no mutation.
 - `deny-policy` — a typed denial by fixed policy, trust mode, or deferred capability, and no mutation.
@@ -23,8 +24,14 @@ project delta, receipt fields, or a byte-equivalent no-effect. The scorer is det
 model-independent — the same corpus entry and the same outcome always score the same, whichever
 model produced the outcome. For an `execute-exact` entry, the scorer compares the compiled command
 batch — each command's type and its oracle-named payload fields, in order — against the oracle
-before any commit is attempted; commitment itself is observed only through the unintended-mutation
-row, never by this comparison.
+before any execution or commit is attempted. The acceptance spec also requires `executeAppAction`
+and `executeAppActionBatch` to receive zero calls, which proves only that the planner does not mutate
+project state while producing and scoring proposals. It does not prove that the proposed content
+executed or persisted, produced receipts or undo history, reverted successfully, or made a musically
+competent change. #4365 owns scripted planning and corpus sealing. #3277 owns real Command/Automerge
+execution plus receipt and undo conformance. #3840, under #3835, owns manual acceptance on a real
+project. Planning-only corpus results do not discharge those obligations or the separate reversion
+evidence in the frozen threshold table.
 
 `evidence/agent-campaign/corpora/source-examples.json` is a third register, distinct from the
 scored corpora above: it tracks the normative EX/MF source examples (AC-056) by disposition —
