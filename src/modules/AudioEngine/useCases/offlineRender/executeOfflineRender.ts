@@ -1,12 +1,12 @@
 import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { acquireRenderLock } from './acquireRenderLock';
+import { beginExportCancellationScope } from './beginExportCancellationScope';
 import { buildOfflineWebAudioGraph } from './buildOfflineWebAudioGraph';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { createOfflineRenderBackend } from './createOfflineRenderBackend';
 import { type WebAudioOfflineBackend } from './createWebAudioOfflineBackend';
 import { cropHistoryFromRenderedBuffer } from './cropHistoryFromRenderedBuffer';
-import { resetCancelFlag } from './resetCancelFlag';
 import { resolveOfflineMixPlan } from './resolveOfflineMixPlan';
 import { scheduleOfflineMix } from './scheduleOfflineMix';
 import { tryNativeOfflineRender } from './tryNativeOfflineRender';
@@ -22,7 +22,10 @@ export async function executeOfflineRender(
     // Assign it before any Web Audio preparation can yield or fail.
     let backend: WebAudioOfflineBackend | undefined;
     try {
-        resetCancelFlag();
+        // The scope's signal is this render's cancellation handle (#4440),
+        // threaded into the backend so instrument setup aborts at the moment
+        // Cancel fires rather than at the next between-track checkpoint.
+        const cancellationSignal = beginExportCancellationScope();
         const input = capture();
         const { sampleRate, historySeconds, outputDurationSeconds } = input;
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
@@ -40,6 +43,7 @@ export async function executeOfflineRender(
                 onWarning: callbacks.onWarning,
                 instruments: input.instruments,
                 loadedExternalInstanceIds: input.loadedExternalInstanceIds,
+                cancellationSignal,
             });
             const graph = await buildOfflineWebAudioGraph({
                 input,

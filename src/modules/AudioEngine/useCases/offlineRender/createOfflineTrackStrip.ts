@@ -53,6 +53,12 @@ type CreateOfflineTrackStripOptions = Pick<BuildDeviceChainContext, 'instruments
      * export. Defaults to true.
      */
     contributesAudio?: boolean;
+    /**
+     * The owning render's cancellation signal (#4440), threaded into the
+     * device-chain build so instrument preparation can abort at cancellation.
+     * Absent for renders that do not own cancellation (the freeze path).
+     */
+    cancellationSignal?: AbortSignal;
 };
 
 export async function createOfflineTrackStrip(
@@ -96,6 +102,7 @@ export async function createOfflineTrackStrip(
         loadedExternalInstanceIds: options.loadedExternalInstanceIds,
         onWarning: options.onWarning,
         contributesAudio: options.contributesAudio,
+        cancellationSignal: options.cancellationSignal,
     });
 
     preFaderTap.connect(faderNode);
