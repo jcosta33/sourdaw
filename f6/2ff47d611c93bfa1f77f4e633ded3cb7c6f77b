@@ -1,0 +1,42 @@
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_ed5aa36a3ba357::t_b4b73a3cec3793 10,31,107-110
+src/modules/Arrangement/useCases/getDeviceContractVersionForCommand.ts
+  s_ed5aa36a3ba357::t_b4b73a3cec3793 1,4-10,16
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  s_ed5aa36a3ba357::t_c052906d411461 15,664-668,671-686
+  s_ed5aa36a3ba357::t_86527403963e50 18,662-663,669-670,687-688,735
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_ed5aa36a3ba357::t_f8affbd96e71ef 5,143-164
+  s_ed5aa36a3ba357::t_35c906f6a77bc3 165-166
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_ed5aa36a3ba357::t_902de076389e72 178-194,201-205,208-213,222-226,232-258
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_ed5aa36a3ba357::t_0d21f324204dd7 430
+  s_ed5aa36a3ba357::t_05a73ebb7e312e 394-411,417-418,421,446,460
+  s_ed5aa36a3ba357::t_c052906d411461 3,412-416,419-420,422-429,431-445,447-459,461-466
+  s_ed5aa36a3ba357::t_c38089167fb6d5 4-7,467-470
+src/modules/Project/useCases/agentDiscovery/collectDeviceDiscoveryEntries.ts
+  s_ed5aa36a3ba357::t_b4b73a3cec3793 24,40,48
+src/modules/Project/useCases/getProjectProtocolContracts.ts
+  s_ed5aa36a3ba357::t_b4b73a3cec3793 28-33
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_ed5aa36a3ba357::t_b4b73a3cec3793 480,493
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_81398adde9e15d 10,374,922
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f62ff47d611c93bfa1f77f4e633ded3cb7c6f77b",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
