@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
@@ -30,6 +30,9 @@ const { mocks } = vi.hoisted(() => ({
         scheduleNoteOffline: vi.fn(),
         getSynthParamsFromDevices: vi.fn(() => ({ waveform: 'sawtooth', gain: 0.3 })),
         scheduleTrackAutomation: vi.fn(),
+        getFaustModuleLatencyMs: vi.fn(() => 0),
+        setPluginBypass: vi.fn(() => Promise.resolve()),
+        setPluginParameter: vi.fn(() => Promise.resolve()),
     },
 }));
 
@@ -43,6 +46,9 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustModule: mocks.isFaustModule,
     isFaustInstrumentModule: mocks.isFaustInstrumentModule,
     registerFaustDSP: vi.fn(),
+    getFaustModuleLatencyMs: mocks.getFaustModuleLatencyMs,
+    setPluginBypass: mocks.setPluginBypass,
+    setPluginParameter: mocks.setPluginParameter,
 }));
 
 vi.mock('../../../repositories/faustDeviceFactory', () => ({
@@ -241,6 +247,11 @@ describe('offline render of a Faust instrument track', () => {
                 },
             });
         });
+    });
+
+    afterEach(() => {
+        expect(mocks.setPluginBypass).not.toHaveBeenCalled();
+        expect(mocks.setPluginParameter).not.toHaveBeenCalled();
     });
 
     it('voices the note on the Faust instrument instead of the fallback synth', async () => {

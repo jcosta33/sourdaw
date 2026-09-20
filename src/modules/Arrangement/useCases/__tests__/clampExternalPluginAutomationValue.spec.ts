@@ -35,6 +35,18 @@ describe('clampExternalPluginAutomationValue', () => {
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
     });
 
+    it('uses captured parameter bounds after the live instance is replaced', () => {
+        publishSnapshot('inst-1', true, [externalParameter({ minValue: 10, maxValue: 50 })]);
+        const source = structuredClone(externalPluginParameterStore.value);
+        publishSnapshot('inst-1', true, [externalParameter({ minValue: 100, maxValue: 500 })]);
+        expect(
+            clampExternalPluginAutomationValue({ externalInstanceId: 'inst-1', parameterId: '3', value: 1_000 }, source)
+        ).toBe(50);
+        expect(
+            clampExternalPluginAutomationValue({ externalInstanceId: 'inst-1', parameterId: '3', value: 1_000 }, null)
+        ).toBe(1_000);
+    });
+
     it('holds a value to the range the instance published', () => {
         publishSnapshot('inst-1', true, [externalParameter()]);
 

@@ -2,9 +2,8 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { logger } from '#/infra/logger/appLogger';
 
 import { decodeCrumbsSampleFile } from '../repositories/sampleTransfer/decodeCrumbsSampleFile';
-import { crumbsStore } from '../stores/crumbsStore';
 
-import { hydrateCrumbsStateFromProject } from './hydrateCrumbsStateFromProject';
+import { captureCrumbsEngine } from './captureCrumbsEngine';
 
 type PrepareCrumbsEngineOutcome = 'ready' | 'failed' | 'cancelled';
 
@@ -93,6 +92,7 @@ export type PrepareCrumbsEngineInput = {
     port: MessagePort;
     /** Aborts the read/decode on export cancellation or deadline. */
     signal?: AbortSignal;
+    captured?: ReturnType<typeof captureCrumbsEngine>;
 };
 
 /**
@@ -136,8 +136,9 @@ export async function prepareCrumbsEngine({
     deviceId,
     port,
     signal,
+    captured,
 }: PrepareCrumbsEngineInput): Promise<PrepareCrumbsEngineOutcome> {
-    const state = crumbsStore.value?.[deviceId] ?? hydrateCrumbsStateFromProject(deviceId);
+    const state = captured === undefined ? captureCrumbsEngine({ deviceId }) : captured;
     if (!state) {
         return 'failed';
     }
@@ -146,7 +147,7 @@ export async function prepareCrumbsEngine({
     // note arrives rather than when it is set.
     port.postMessage({ type: 'mode', mode: state.mode });
 
-    const filePath = state.activeSample?.filePath;
+    const filePath = state.filePath;
     if (!filePath) {
         return 'ready';
     }

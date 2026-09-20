@@ -1,7 +1,5 @@
-import { defaultLevainState, levainStore } from '../stores/levainStore';
-
 import { autoLoadLevainSamples } from './autoLoadSamples';
-import { hydrateLevainStateFromProject } from './hydrateLevainStateFromProject';
+import { captureOfflineLevain } from './captureOfflineLevain';
 import { projectLevainPatchToEngineParameters } from './projectLevainPatchToEngineParameters';
 
 export type PrepareOfflineLevainInput = {
@@ -11,6 +9,7 @@ export type PrepareOfflineLevainInput = {
     port: MessagePort;
     /** Aborts the sample fetch on export cancellation or deadline. */
     signal?: AbortSignal;
+    captured?: ReturnType<typeof captureOfflineLevain>;
 };
 
 /**
@@ -39,9 +38,13 @@ export type PrepareOfflineLevainInput = {
  * reload. The default branch stays reachable for a device nobody has configured
  * and matches the state seeded by live registration.
  */
-export async function prepareOfflineLevain({ deviceId, port, signal }: PrepareOfflineLevainInput): Promise<void> {
-    const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
+export async function prepareOfflineLevain({
+    deviceId,
+    port,
+    signal,
+    captured,
+}: PrepareOfflineLevainInput): Promise<void> {
+    const state = captured ?? captureOfflineLevain({ deviceId });
     const { instrumentId } = state.patch;
 
     for (const parameter of projectLevainPatchToEngineParameters(state.patch)) {

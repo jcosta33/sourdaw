@@ -1,7 +1,7 @@
 import { resolveGrooveTemplateIdAlias } from '../../models/GrooveTemplate';
-import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
+import { grooveTemplateStore, type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
-export function getGrooveTemplate(templateId: string) {
+export function getGrooveTemplate(templateId: string, state: GrooveTemplateState | null = grooveTemplateStore.value) {
     const resolvedId = resolveGrooveTemplateIdAlias(templateId);
-    return grooveTemplateStore.value?.templates.find((template) => template.id === resolvedId);
+    return state?.templates.find((template) => template.id === resolvedId);
 }
