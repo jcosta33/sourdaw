@@ -6197,7 +6197,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
-    it('rejects ratio syntax whose denominator is not the descriptor-native one', () => {
+    it.each(['4:10', '4:', '4:1/2'])('rejects unsupported descriptor-native ratio syntax %s', (stated) => {
         const context: ProjectContext = {
             ...projectContext,
             tracks: [
@@ -6235,7 +6235,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     arguments: { deviceId: 'device-native', paramId: 'native-ratio', value: 4 },
                 },
             ],
-            'set native-ratio on device-native to 4:10',
+            `set native-ratio on device-native to ${stated}`,
             context
         );
 

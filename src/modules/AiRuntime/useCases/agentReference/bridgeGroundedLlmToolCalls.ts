@@ -1936,8 +1936,8 @@ function getAdjacentDeviceParameterUnit(
         return '%';
     }
     const suffix = actionScope.masked.slice(number.end);
-    if (/^\s*:\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)/u.test(suffix)) {
-        return /^\s*:\s*1(?![\d\p{L}_]|\.(?=\d))/u.test(suffix) ? ':1' : 'unsupported-ratio';
+    if (/^\s*:/u.test(suffix)) {
+        return /^\s*:\s*1(?=$|[\s,;!?)]|\.(?!\d))/u.test(suffix) ? ':1' : 'unsupported-ratio';
     }
     const named = /^\s*(dB|Hz|ms|st|semitones)\b/iu.exec(suffix)?.[1];
     return normalizeDeviceParameterValueUnit(named);

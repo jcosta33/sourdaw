@@ -36,27 +36,6 @@ function hasExecutionGuards(action: {
 function resolveDeviceTarget(action: { payload: { deviceId: string } }, context?: HandlerValidationContext) {
     const currentTracks = getTrackStoreState()?.tracks ?? [];
     const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
-    const createdEarlierInBatch = priorActions.some(
-        (priorAction) => priorAction.type === 'addDevice' && priorAction.payload.deviceId === action.payload.deviceId
-    );
-    const currentOwners = currentTracks.filter((track) =>
-        track.devices.some((device) => device.id === action.payload.deviceId)
-    );
-    const currentOwner = currentOwners.length === 1 ? currentOwners[0] : undefined;
-    const addedDeviceAlreadyVisible = priorActions.some(
-        (priorAction) =>
-            priorAction.type === 'addDevice' &&
-            priorAction.payload.trackId === currentOwner?.id &&
-            currentOwner.devices.some((device) => device.id === priorAction.payload.deviceId)
-    );
-    // Validation runs before the batch prefix exists and execution runs after it
-    // has committed into the active transaction. Once any earlier device addition
-    // is visible on this owner, the current transaction is authoritative; projecting
-    // the prefix again would duplicate the added device and manufacture a stale chain.
-    if ((createdEarlierInBatch || addedDeviceAlreadyVisible) && currentOwner) {
-        const owner = currentOwner;
-        return { owner, device: owner?.devices.find((candidate) => candidate.id === action.payload.deviceId) };
-    }
     const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
     for (const priorAction of priorActions) {
         if (priorAction.type === 'addTrack' && priorAction.payload.id) {
@@ -151,7 +130,7 @@ function handleGuardedSetDeviceParameter(
     },
     context?: HandlerValidationContext
 ) {
-    if (!executionGuardsMatch(action, context) || !nativeUnitMatches(action, context)) {
+    if (!executionGuardsMatch(action) || !nativeUnitMatches(action)) {
         return { status: 'conflict' as const };
     }
     const didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
