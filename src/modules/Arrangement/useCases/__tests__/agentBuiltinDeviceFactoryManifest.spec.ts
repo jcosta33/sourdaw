@@ -260,13 +260,13 @@ describe('built-in descriptor manifest law', () => {
         });
         expect(synth?.parameters.find((parameter) => parameter.id === 'attack')).toMatchObject({
             guidance: {
-                semanticRole: 'Amplitude-envelope attack time',
-                typicalRange: { minimum: 0.005, maximum: 0.1 },
+                semanticRole: 'Amplitude-envelope attack duration',
+                typicalRange: { minimum: 0.005, maximum: 0.3 },
             },
         });
         expect(synth?.parameters.find((parameter) => parameter.id === 'filterCutoff')).toMatchObject({
             guidance: {
-                semanticRole: 'Filter cutoff frequency',
+                semanticRole: 'Velocity-, pitch-, and pressure-scaled filter corner',
                 typicalRange: { minimum: 200, maximum: 8000 },
             },
         });
