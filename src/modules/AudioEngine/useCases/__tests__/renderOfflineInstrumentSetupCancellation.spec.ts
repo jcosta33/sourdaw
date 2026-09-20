@@ -21,6 +21,7 @@ const emptyMidi: NonNullable<MidiStoreState> = {
 const mocks = vi.hoisted(() => ({
     sidechainStore: { value: { routes: [] as Array<Record<string, unknown>> } },
     resolveRenderContext: vi.fn(),
+    captureOfflineRenderRuntimeInput: vi.fn(),
     creators: {
         levain: vi.fn(),
     },
@@ -28,6 +29,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Routing/stores', () => ({ sidechainStore: mocks.sidechainStore }));
 vi.mock('../offlineRender/resolveRenderContext', () => ({ resolveRenderContext: mocks.resolveRenderContext }));
+vi.mock('../offlineRender/captureOfflineRenderRuntimeInput', () => ({
+    captureOfflineRenderRuntimeInput: mocks.captureOfflineRenderRuntimeInput,
+}));
 vi.mock('../../engine/LevainNode', () => ({
     isLevainDevice: (t: string) => t === 'levain',
     createLevainNode: mocks.creators.levain,
@@ -154,6 +158,14 @@ describe('renderOffline — cancelling during offline instrument setup (#4440)',
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
         mocks.sidechainStore.value.routes = [];
         mocks.resolveRenderContext.mockReturnValue(makeContext());
+        // The capture restructure reads runtime inputs (calibration, loaded
+        // instances) per device; an empty runtime keeps the mixdown on the
+        // plain captured-setup path this spec drives.
+        mocks.captureOfflineRenderRuntimeInput.mockReturnValue({
+            calibrationByDevice: new Map(),
+            soloMode: 'sip',
+            loadedExternalInstanceIds: [],
+        });
         mocks.creators.levain.mockResolvedValue({
             workletNode: new FakeAudioWorkletNode(0),
             ready: Promise.resolve({}),
@@ -171,15 +183,21 @@ describe('renderOffline — cancelling during offline instrument setup (#4440)',
     it('aborts a pending instrument setup at cancellation, releases the lock, and never reports success', async () => {
         let setupSignal: AbortSignal | undefined;
         const settleSetups: Array<(value: void) => void> = [];
+        // The mixdown path now drives each instrument through the CAPTURED setup
+        // the restructured capture returns, not the sink's live
+        // prepareOfflineInstrument — so the controllable pending setup rides the
+        // capture seam, exercising the same chain wiring end to end.
         setAudioDeviceRuntimeSink({
-            prepareOfflineInstrument: ({ signal }) =>
-                new Promise<void>((resolve, reject) => {
-                    setupSignal = signal;
-                    settleSetups.push(resolve);
-                    signal?.addEventListener('abort', () => {
-                        reject(new Error('The operation was aborted'));
-                    });
-                }),
+            captureOfflineInstrument:
+                () =>
+                ({ signal }: { port: MessagePort; signal?: AbortSignal }) =>
+                    new Promise<void>((resolve, reject) => {
+                        setupSignal = signal;
+                        settleSetups.push(resolve);
+                        signal?.addEventListener('abort', () => {
+                            reject(new Error('The operation was aborted'));
+                        });
+                    }),
         });
 
         const rendering = renderOffline({ durationBeats: 4, sampleRate: SAMPLE_RATE });
