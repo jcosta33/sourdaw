@@ -6164,6 +6164,29 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     }),
                 },
             ]);
+            for (const suffix of ['.', '!', ' exactly', ' for this device']) {
+                const withTrailingText = bridge(
+                    [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                    `set ${id} on device-native to ${stated}${suffix}`,
+                    context
+                );
+                expect(withTrailingText.rejections, suffix).toEqual([]);
+                expect(withTrailingText.actions, suffix).toEqual(result.actions);
+            }
+            for (const extraUnit of ['Hz', 'dB', '%', 'ms', 'semitones', 's', 'kHz']) {
+                if (extraUnit === carrier) {
+                    continue;
+                }
+                for (const separator of [' ', '/']) {
+                    const contradictory = bridge(
+                        [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                        `set ${id} on device-native to ${stated}${separator}${extraUnit}`,
+                        context
+                    );
+                    expect(contradictory.actions, `${stated}${separator}${extraUnit}`).toEqual([]);
+                    expect(contradictory.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+                }
+            }
             if ('wordStated' in wordCases) {
                 const matchingWord = bridge(
                     [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],

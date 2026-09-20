@@ -2,7 +2,11 @@ import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
-import { type AutomationRecordingPolicy, type HandlerValidationContext } from '#/utils/handlerContract';
+import {
+    type AutomationRecordingPolicy,
+    type HandlerSessionActionEntry,
+    type HandlerValidationContext,
+} from '#/utils/handlerContract';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
@@ -79,6 +83,20 @@ function nativeUnitMatches(
         action.payload.value >= parameter.minValue &&
         action.payload.value <= parameter.maxValue
     );
+}
+
+function sessionEntryAgreesOnValueUnit(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'setDeviceParameter') {
+        return false;
+    }
+    const forwardUnit = entry.action.payload.valueUnit;
+    return [entry.inverseAction, entry.redoAction].every((replay) => {
+        if (replay === null || replay === undefined) {
+            return true;
+        }
+        const replayUnit = replay.type === 'setDeviceParameter' ? replay.payload.valueUnit : undefined;
+        return replayUnit === forwardUnit;
+    });
 }
 
 function executionGuardsMatch(
@@ -237,7 +255,8 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         };
     },
     execute: handleGuardedSetDeviceParameter,
-    validateSessionEntry: sessionEntryAgreesOnAutomationRecordingPolicy,
+    validateSessionEntry: (entry) =>
+        sessionEntryAgreesOnAutomationRecordingPolicy(entry) && sessionEntryAgreesOnValueUnit(entry),
     isNoop: (action) => {
         if (!executionGuardsMatch(action) || !nativeUnitMatches(action)) {
             return false;

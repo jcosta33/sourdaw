@@ -104,6 +104,65 @@ describe('undoStore / pushUndo', () => {
         sessionStorage.removeItem(UNDO_SESSION_KEY);
     });
 
+    it.each([
+        { forward: 'Hz', inverse: undefined, redo: 'Hz', accepted: false },
+        { forward: 'Hz', inverse: 'ms', redo: 'Hz', accepted: false },
+        { forward: 'Hz', inverse: 'Hz', redo: undefined, accepted: false },
+        { forward: 'Hz', inverse: 'Hz', redo: 'ms', accepted: false },
+        { forward: undefined, inverse: 'Hz', redo: undefined, accepted: false },
+        { forward: undefined, inverse: undefined, redo: 'Hz', accepted: false },
+        { forward: undefined, inverse: undefined, redo: undefined, accepted: true },
+        { forward: 'Hz', inverse: 'Hz', redo: 'Hz', accepted: true },
+    ] as const)(
+        'hydrates device units $forward / $inverse / $redo through the registered owner: $accepted',
+        async ({ forward, inverse, redo, accepted }) => {
+            const { getArrangementHandlers } = await import('#/modules/Arrangement/useCases');
+            const { clearHandlerRegistry, registerHandlerMap } = await import('../handlerRegistry');
+            const { getExecutableCommandRegistration } =
+                await import('../../useCases/getExecutableCommandRegistration');
+            const subject = await import('../undoStore');
+            clearHandlerRegistry();
+            registerHandlerMap(getArrangementHandlers());
+            const registration = getExecutableCommandRegistration('setDeviceParameter');
+            const entry = {
+                id: 'device-unit-entry',
+                kind: 'action',
+                label: 'Set EQ frequency',
+                timestamp: 1,
+                source: 'ai',
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'eq', paramId: 'eq-mid-freq', value: 2400, valueUnit: forward },
+                },
+                inverseAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'eq', paramId: 'eq-mid-freq', value: 1000, valueUnit: inverse },
+                },
+                redoAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'eq', paramId: 'eq-mid-freq', value: 2400, valueUnit: redo },
+                },
+            };
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify({ past: [entry], future: [entry] }));
+
+            subject.hydrateUndoStoreFromSession([
+                {
+                    actionType: registration.actionType,
+                    operationVersion: registration.operationVersion,
+                    role: 'forward',
+                    validateArguments: registration.runtimeSchema.validate,
+                    validateEntry: registration.sessionEntryValidator,
+                },
+            ]);
+
+            clearHandlerRegistry();
+            expect(subject.undoStore.value).toEqual({
+                past: accepted ? [entry] : [],
+                future: accepted ? [entry] : [],
+            });
+        }
+    );
+
     it('rejects internal replay actions as persisted forward entries', async () => {
         const undoStoreModule = await import('../undoStore');
         const { getInternalUndoSessionReplayContracts } =

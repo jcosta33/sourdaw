@@ -1928,26 +1928,38 @@ function isRatioUnitDenominator(maskedScope: string, number: PromptNumber): bool
     return /(?:\d|\.)\s*:\s*$/u.test(maskedScope.slice(0, number.index));
 }
 
-function getAdjacentDeviceParameterUnit(
+function getAdjacentDeviceParameterUnits(
     actionScope: ActionPromptScope,
     number: PromptNumber
-): DeviceParameterValueUnit | 'unsupported-ratio' | 'unsupported-unit' | null {
-    if (number.raw.endsWith('%')) {
-        return '%';
+): Array<DeviceParameterValueUnit | 'unsupported-ratio' | 'unsupported-unit'> {
+    const units: Array<DeviceParameterValueUnit | 'unsupported-ratio' | 'unsupported-unit'> = number.raw.endsWith('%')
+        ? ['%']
+        : [];
+    let suffix = actionScope.masked.slice(number.end);
+    while (suffix.length > 0) {
+        if (/^\s*:/u.test(suffix)) {
+            const ratio = /^\s*:\s*1(?=$|[\s,;!?)]|\.(?!\d))/u.exec(suffix);
+            if (!ratio) {
+                return [...units, 'unsupported-ratio'];
+            }
+            units.push(':1');
+            suffix = suffix.slice(ratio[0].length);
+            continue;
+        }
+        if (units.length > 0 && /^\s*[/·*]/u.test(suffix)) {
+            return [...units, 'unsupported-unit'];
+        }
+        const named =
+            /^\s*(%|(?:dB|decibels?|Hz|hertz|ms|milliseconds?|percents?|st|semitones?|s|secs?|seconds?|kHz|kilohertz)\b)/iu.exec(
+                suffix
+            );
+        if (!named) {
+            break;
+        }
+        units.push(normalizeDeviceParameterValueUnit(named[1]) ?? 'unsupported-unit');
+        suffix = suffix.slice(named[0].length);
     }
-    const suffix = actionScope.masked.slice(number.end);
-    if (/^\s*:/u.test(suffix)) {
-        return /^\s*:\s*1(?=$|[\s,;!?)]|\.(?!\d))/u.test(suffix) ? ':1' : 'unsupported-ratio';
-    }
-    const named = /^\s*(dB|decibels?|Hz|hertz|ms|milliseconds?|percents?|st|semitones?)\b/iu.exec(suffix)?.[1];
-    const normalized = normalizeDeviceParameterValueUnit(named);
-    if (normalized !== null) {
-        return normalized;
-    }
-    if (/^\s*(?:s|secs?|seconds?|kHz|kilohertz)\b/iu.test(suffix)) {
-        return 'unsupported-unit';
-    }
-    return null;
+    return units;
 }
 
 /** The decibel figures the request states in the form this rule accepts, and no others. */
@@ -2572,12 +2584,12 @@ function validateDeviceParameterUnitAndBounds(
         }
         return numbersMatch(valueRule, normalizePromptNumber(number, actionScope, valueRule, undefined), assertedValue);
     });
-    const adjacentUnits = matchingNumbers.map((number) => getAdjacentDeviceParameterUnit(actionScope, number));
+    const adjacentUnits = matchingNumbers.flatMap((number) => getAdjacentDeviceParameterUnits(actionScope, number));
     if (adjacentUnits.includes('unsupported-ratio')) {
         return false;
     }
     const explicitUnits = adjacentUnits.flatMap((unit) => {
-        return unit === null || unit === 'unsupported-ratio' || unit === 'unsupported-unit' ? [] : [unit];
+        return unit === 'unsupported-ratio' || unit === 'unsupported-unit' ? [] : [unit];
     });
     const descriptorUnit = normalizeDeviceParameterValueUnit(parameter.unit);
     if (adjacentUnits.includes('unsupported-unit')) {

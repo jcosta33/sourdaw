@@ -514,6 +514,38 @@ describe('handleSetDeviceParameter', () => {
         });
     });
 
+    it.each([
+        { forward: 'Hz', inverse: undefined, redo: 'Hz', accepted: false },
+        { forward: 'Hz', inverse: 'ms', redo: 'Hz', accepted: false },
+        { forward: 'Hz', inverse: 'Hz', redo: undefined, accepted: false },
+        { forward: 'Hz', inverse: 'Hz', redo: 'ms', accepted: false },
+        { forward: undefined, inverse: 'Hz', redo: undefined, accepted: false },
+        { forward: undefined, inverse: undefined, redo: 'Hz', accepted: false },
+        { forward: undefined, inverse: undefined, redo: undefined, accepted: true },
+        { forward: 'Hz', inverse: 'Hz', redo: 'Hz', accepted: true },
+    ] as const)(
+        'validates persisted units $forward / $inverse / $redo without live state: $accepted',
+        ({ forward, inverse, redo, accepted }) => {
+            const result = handleSetDeviceParameter.validateSessionEntry?.({
+                action: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit: forward },
+                },
+                inverseAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 1000, valueUnit: inverse },
+                },
+                redoAction: {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'd1', paramId: 'eq-mid-freq', value: 2400, valueUnit: redo },
+                },
+            });
+
+            expect(result).toBe(accepted);
+            expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
+        }
+    );
+
     it('leaves the automation-recording maps alone when aborting a suppressed edit', () => {
         // `vi.clearAllMocks` drops recorded calls but keeps implementations, so a
         // throwing runtime writer set by an earlier case would still be in place.
