@@ -48,8 +48,12 @@ function primaryFixture(): {
     fixtureGit(root, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, authorLane]);
     const scratchLane = join(root, '.agents', 'worktrees', 'scratch');
     fixtureGit(root, ['worktree', 'add', '-b', 'scratch-branch', scratchLane]);
-    // One negative per `authorLanes` predicate, so deleting any single predicate turns the spec
-    // red: this one is branch-shaped but locked for a different purpose.
+    // The negatives pin the two `authorLanes` predicates a porcelain worktree record can falsify —
+    // the lock reason and the `agent/` branch prefix — so deleting either turns the spec red: this
+    // one is branch-shaped but locked for a different purpose. The remaining `locked` predicate is
+    // logically implied by the lock-reason check on porcelain records (`lockReason` is derived only
+    // from the `locked` field), so no worktree-list fixture can falsify it; its deletion alone
+    // would stay green and is guarded by this comment instead.
     const foreignLockLane = join(root, '.agents', 'worktrees', 'agent-13-foreign-lock');
     fixtureGit(root, ['worktree', 'add', '-b', 'agent/13/foreign-lock', foreignLockLane]);
     fixtureGit(root, ['worktree', 'lock', '--reason', 'lane-remove:12345', foreignLockLane]);
