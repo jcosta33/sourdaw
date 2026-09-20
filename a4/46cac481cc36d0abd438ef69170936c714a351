@@ -1,0 +1,16 @@
+scripts/__tests__/publishLane.spec.ts
+  h_1228e573df1f42 75,170,171,224,504-508,619,1582-1594,1595-1597,1598-1604,1605-1618,2146-2193
+scripts/publishLane.ts
+  h_1228e573df1f42 527-530,531-532,533-535,545,949-964,1114-1118,1121-1131,1685,1687,1689-1690
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a446cac481cc36d0abd438ef69170936c714a351",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
