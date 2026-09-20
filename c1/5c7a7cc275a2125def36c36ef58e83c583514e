@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineContextPreparation.spec.ts
+  s_ed5aa36a3ba357::t_fec886a12463ed 150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c15c7a7cc275a2125def36c36ef58e83c583514e",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
