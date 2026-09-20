@@ -21,15 +21,17 @@ type Case = {
 };
 
 /**
- * Each case automates a parameter that is bound to a real `AudioParam` offline.
+ * Each case automates a parameter whose offline binding is a real `AudioParam`.
  *
- * `lim-ceiling` is deliberately absent: the advertised cap lives in the
- * clipper's rebuilt WaveShaper curve rather than in a gain param, so
- * `resolveDeviceParamTargets('builtin-limiter', 'lim-ceiling', …)` is empty and
- * `automationScheduling` skips a lane aimed at it. A case riding it would render
- * two statically-configured limiters and could never fail for the parity it
- * names. The in-page `bindingResolved` assertion fails loudly if a future
- * binding change leaves a case aimed at an unbound parameter.
+ * `lim-ceiling` is absent because it is frame-addressed rather than
+ * param-addressed: its cap is the clipper's rebuilt WaveShaper curve, so
+ * `WebAudioDeviceStrategy` answers a `curveWrite` binding and
+ * `scheduleTrackAutomation` writes it at each automation frame through the
+ * render's frame scheduler (#4437). This harness schedules its own graph and
+ * passes none, so a ceiling case here would fail closed rather than render two
+ * statically-configured limiters; the curve write itself is pinned by the
+ * scheduler-level specs. The in-page `bindingResolved` assertion fails loudly if
+ * a future binding change leaves a case aimed at an unbound parameter.
  *
  * Each case builds the automated device holding `contrastValue`, writes
  * `targetValue` into the static device, and drives the lane to `targetValue`. A

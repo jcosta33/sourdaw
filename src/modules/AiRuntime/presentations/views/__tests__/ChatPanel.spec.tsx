@@ -102,7 +102,6 @@ vi.mock('../../components/ChatComposer', () => ({
         onChange,
         onExecutionModeChange,
         isGenerating,
-        isLlmAvailable,
         inputValue,
     }: {
         executionMode?: string;
@@ -111,7 +110,6 @@ vi.mock('../../components/ChatComposer', () => ({
         onChange: (value: string) => void;
         onExecutionModeChange?: (mode: string) => void;
         isGenerating: boolean;
-        isLlmAvailable: boolean;
         inputValue: string;
     }) => (
         <div data-testid="chat-composer">
@@ -129,7 +127,7 @@ vi.mock('../../components/ChatComposer', () => ({
                 Chat message input
                 <input value={inputValue} onChange={(event) => onChange(event.target.value)} />
             </label>
-            <button onClick={onSend} disabled={!isLlmAvailable}>
+            <button onClick={onSend} disabled={!inputValue.trim() || isGenerating}>
                 Send
             </button>
             {isGenerating ? <button onClick={onStop}>Stop</button> : null}
@@ -326,7 +324,7 @@ describe('ChatPanel', () => {
 
         expect(screen.queryByText('Checking AI availability')).not.toBeInTheDocument();
         expect(screen.queryByText('AI Not Available')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
     });
 
     it('should render ChatComposer component', () => {
@@ -345,6 +343,19 @@ describe('ChatPanel', () => {
         await act(async () => {});
 
         expect(sendChatMessage).toHaveBeenCalledWith('Outline the chorus', { mode: 'plan' });
+    });
+
+    it('submits a command while model availability is false', async () => {
+        capabilityStore.set({ phase: 'error', message: 'adapter unavailable' });
+        (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        render(<ChatPanel />);
+
+        fireEvent.change(screen.getByLabelText('Agent execution mode'), { target: { value: 'apply' } });
+        fireEvent.change(screen.getByLabelText('Chat message input'), { target: { value: 'set tempo to 128' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await act(async () => {});
+
+        expect(sendChatMessage).toHaveBeenCalledWith('set tempo to 128', { mode: 'apply' });
     });
 
     it('restores a rejected submission in the composer and announces the failure in the conversation', async () => {

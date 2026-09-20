@@ -180,6 +180,10 @@ export type ProjectContextAutomationPoint = {
     beat: number;
     value: number;
     curve: 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
+    tension?: number;
+    stairSteps?: number;
+    cp1?: { x: number; y: number };
+    cp2?: { x: number; y: number };
 };
 
 export type ProjectContextAutomationLane = {
@@ -189,7 +193,12 @@ export type ProjectContextAutomationLane = {
     parameterId: string;
     name: string;
     enabled: boolean;
+    linkedLaneId?: string;
+    linkScale?: number;
     minValue: number;
+    /** Stored project bound used to preserve segment-local legacy headroom semantics. */
+    declaredMaxValue?: number;
+    /** Effective ceiling retained for existing context consumers. */
     maxValue: number;
     /** {@link minValue} in decibels, on a gain lane only — every other lane measures
      *  something decibels do not describe. */
