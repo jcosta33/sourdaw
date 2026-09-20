@@ -1,0 +1,25 @@
+.gitignore
+  s_ed5aa36a3ba357::t_3afe060032b2f1 30-34
+package.json
+  s_ed5aa36a3ba357::t_aff68e2efe0c2b 54,154
+scripts/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_36d97191240ddb 1-79
+scripts/semanticReview/contracts.ts
+  s_ed5aa36a3ba357::t_b8845b688ff11e 1-287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8b723cca304b73c9ed6fd2b91abe86a95e6df026",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
