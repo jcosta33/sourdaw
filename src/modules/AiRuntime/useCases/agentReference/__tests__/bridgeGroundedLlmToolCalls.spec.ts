@@ -6197,6 +6197,52 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('rejects ratio syntax whose denominator is not the descriptor-native one', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({
+                    id: 'track-native',
+                    name: 'Native',
+                    devices: [
+                        {
+                            id: 'device-native',
+                            name: 'Native Device',
+                            type: 'Native',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'native-ratio',
+                                    name: 'Native Ratio',
+                                    type: 'float',
+                                    value: 2,
+                                    minValue: 1,
+                                    maxValue: 20,
+                                    unit: ':1',
+                                },
+                            ],
+                        },
+                    ],
+                }),
+                master,
+            ],
+        };
+
+        const result = bridge(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-native', paramId: 'native-ratio', value: 4 },
+                },
+            ],
+            'set native-ratio on device-native to 4:10',
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+    });
+
     it('keeps descriptor bounds mandatory for creatively admitted parameter values', () => {
         const context: ProjectContext = {
             ...projectContext,

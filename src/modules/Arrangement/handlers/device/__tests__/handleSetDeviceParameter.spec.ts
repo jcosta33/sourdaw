@@ -125,6 +125,65 @@ describe('handleSetDeviceParameter', () => {
         ).toBe(false);
     });
 
+    it('uses the current transaction chain when an earlier batch action added a sibling device', () => {
+        mocks.setDeviceParameter.mockReturnValue(true);
+        const beforePrefix = {
+            tracks: [
+                {
+                    id: 't1',
+                    frozen: false,
+                    devices: [
+                        {
+                            id: 'd1',
+                            type: 'builtin-eq',
+                            parameterValues: { 'eq-mid-freq': 1_000 },
+                        },
+                    ],
+                },
+            ],
+        };
+        mocks.getTrackStoreState.mockReturnValue(beforePrefix);
+        const addSibling: Extract<AppAction, { type: 'addDevice' }> = {
+            type: 'addDevice',
+            payload: { trackId: 't1', deviceType: 'builtin-compressor', deviceId: 'd2' },
+        };
+        const setExisting: Extract<AppAction, { type: 'setDeviceParameter' }> = {
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: 'd1',
+                paramId: 'eq-mid-freq',
+                value: 2_400,
+                valueUnit: 'Hz',
+                expectedTrackId: 't1',
+                expectedDeviceType: 'builtin-eq',
+                expectedDeviceIds: ['d1', 'd2'],
+                expectedValue: 1_000,
+                expectedValuePresent: true,
+                expectedTrackFrozen: false,
+            },
+        };
+        const context = { actions: [addSibling, setExisting], actionIndex: 1 };
+
+        expect(handleSetDeviceParameter.validate?.(setExisting, context)).toBe(true);
+
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    ...beforePrefix.tracks[0]!,
+                    devices: [
+                        beforePrefix.tracks[0]!.devices[0]!,
+                        { id: 'd2', type: 'builtin-compressor', parameterValues: {} },
+                    ],
+                },
+            ],
+        });
+
+        expect(handleSetDeviceParameter.execute(setExisting, context)).toEqual({ status: 'written' });
+        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'eq-mid-freq', 2_400, {
+            automationRecordingPolicy: undefined,
+        });
+    });
+
     it('provides a description reflecting the parameter', () => {
         const desc = handleSetDeviceParameter.describe({
             type: 'setDeviceParameter',

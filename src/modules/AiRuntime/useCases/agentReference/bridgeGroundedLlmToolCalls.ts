@@ -1931,13 +1931,13 @@ function isRatioUnitDenominator(maskedScope: string, number: PromptNumber): bool
 function getAdjacentDeviceParameterUnit(
     actionScope: ActionPromptScope,
     number: PromptNumber
-): DeviceParameterValueUnit | null {
+): DeviceParameterValueUnit | 'unsupported-ratio' | null {
     if (number.raw.endsWith('%')) {
         return '%';
     }
     const suffix = actionScope.masked.slice(number.end);
-    if (/^\s*:1\b/u.test(suffix)) {
-        return ':1';
+    if (/^\s*:\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)/u.test(suffix)) {
+        return /^\s*:\s*1(?![\d\p{L}_]|\.(?=\d))/u.test(suffix) ? ':1' : 'unsupported-ratio';
     }
     const named = /^\s*(dB|Hz|ms|st|semitones)\b/iu.exec(suffix)?.[1];
     return normalizeDeviceParameterValueUnit(named);
@@ -2565,9 +2565,12 @@ function validateDeviceParameterUnitAndBounds(
         }
         return numbersMatch(valueRule, normalizePromptNumber(number, actionScope, valueRule, undefined), assertedValue);
     });
-    const explicitUnits = matchingNumbers.flatMap((number) => {
-        const unit = getAdjacentDeviceParameterUnit(actionScope, number);
-        return unit === null ? [] : [unit];
+    const adjacentUnits = matchingNumbers.map((number) => getAdjacentDeviceParameterUnit(actionScope, number));
+    if (adjacentUnits.includes('unsupported-ratio')) {
+        return false;
+    }
+    const explicitUnits = adjacentUnits.flatMap((unit) => {
+        return unit === null || unit === 'unsupported-ratio' ? [] : [unit];
     });
     if (explicitUnits.length === 0) {
         return true;

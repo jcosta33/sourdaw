@@ -42,11 +42,19 @@ function resolveDeviceTarget(action: { payload: { deviceId: string } }, context?
     const currentOwners = currentTracks.filter((track) =>
         track.devices.some((device) => device.id === action.payload.deviceId)
     );
+    const currentOwner = currentOwners.length === 1 ? currentOwners[0] : undefined;
+    const addedDeviceAlreadyVisible = priorActions.some(
+        (priorAction) =>
+            priorAction.type === 'addDevice' &&
+            priorAction.payload.trackId === currentOwner?.id &&
+            currentOwner.devices.some((device) => device.id === priorAction.payload.deviceId)
+    );
     // Validation runs before the batch prefix exists and execution runs after it
-    // has committed into the active transaction. Re-projecting an already-created
-    // device would insert its addDevice action twice and manufacture a stale chain.
-    if (createdEarlierInBatch && currentOwners.length === 1) {
-        const owner = currentOwners[0];
+    // has committed into the active transaction. Once any earlier device addition
+    // is visible on this owner, the current transaction is authoritative; projecting
+    // the prefix again would duplicate the added device and manufacture a stale chain.
+    if ((createdEarlierInBatch || addedDeviceAlreadyVisible) && currentOwner) {
+        const owner = currentOwner;
         return { owner, device: owner?.devices.find((candidate) => candidate.id === action.payload.deviceId) };
     }
     const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
