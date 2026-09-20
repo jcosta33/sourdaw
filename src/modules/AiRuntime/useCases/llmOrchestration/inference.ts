@@ -5,6 +5,7 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
+import { isHostedToolCallingProtocolError } from '../../errors/HostedToolCallingProtocolError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
@@ -727,6 +728,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 const isTerminalModelRejection = isToolPlanningRejectedError(error);
                 const isAdmissionRejection = isProviderAttemptAdmissionError(error);
                 const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                const protocolUsage = isHostedToolCallingProtocolError(error) ? error.usage : null;
                 const normalizedProviderFailure = isModelProviderFailureError(error) ? error : null;
                 let normalizedAttemptError: Error | null = null;
                 if (providerSession !== null && providerSource !== null && !providerSessionSettled) {
@@ -759,31 +761,47 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 safeMessage: 'The model provider rejected tool planning.',
                             },
                         });
-                    } else if (normalizedProviderFailure !== null) {
-                        failedResult = providerSource.finish({
-                            reason: 'error',
-                            failure: {
-                                code: normalizedProviderFailure.code,
-                                retryable: normalizedProviderFailure.retryable,
-                                safeMessage: normalizedProviderFailure.message,
-                            },
-                        });
                     } else {
-                        const httpStatus = snapshotHostedAiHttpStatus(error);
-                        if (httpStatus !== null) {
-                            failedResult = providerSource.finish({
-                                reason: 'error',
-                                failure: hostedAiHttpFailure(httpStatus),
+                        if (protocolUsage !== null) {
+                            providerSource.push({
+                                type: 'usage',
+                                mode: 'final',
+                                usage: {
+                                    inputTokens: protocolUsage.inputTokens,
+                                    outputTokens: protocolUsage.outputTokens,
+                                    cachedInputTokens: protocolUsage.cacheReadInputTokens,
+                                    cacheWriteInputTokens: protocolUsage.cacheWriteInputTokens,
+                                    reasoningTokens: protocolUsage.reasoningTokens,
+                                },
+                                provenance: 'provider-reported',
                             });
-                        } else {
+                        }
+                        if (normalizedProviderFailure !== null) {
                             failedResult = providerSource.finish({
                                 reason: 'error',
                                 failure: {
-                                    code: 'provider-attempt-failed',
-                                    retryable: true,
-                                    safeMessage: 'The model provider request failed.',
+                                    code: normalizedProviderFailure.code,
+                                    retryable: normalizedProviderFailure.retryable,
+                                    safeMessage: normalizedProviderFailure.message,
                                 },
                             });
+                        } else {
+                            const httpStatus = snapshotHostedAiHttpStatus(error);
+                            if (httpStatus !== null) {
+                                failedResult = providerSource.finish({
+                                    reason: 'error',
+                                    failure: hostedAiHttpFailure(httpStatus),
+                                });
+                            } else {
+                                failedResult = providerSource.finish({
+                                    reason: 'error',
+                                    failure: {
+                                        code: 'provider-attempt-failed',
+                                        retryable: true,
+                                        safeMessage: 'The model provider request failed.',
+                                    },
+                                });
+                            }
                         }
                     }
                     reportProviderResult(failedResult);
