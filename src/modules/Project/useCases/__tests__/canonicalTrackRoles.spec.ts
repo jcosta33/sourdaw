@@ -93,12 +93,16 @@ describe('canonical track roles', () => {
             evidence: 'stored-drum-voices',
         });
     });
-    it.each([{}, { kit: -1 }, { kit: 0.5 }, { kit: 100 }, { kit: 0, kitId: 1 }])(
-        'refuses missing or invalid kit metadata %s',
-        (parameters) => {
-            expect(getCanonicalTrackRole(content([36], parameters)).role).toBe('unknown');
-        }
-    );
+    const invalidKitParameters: Array<Record<string, number>> = [
+        {},
+        { kit: -1 },
+        { kit: 0.5 },
+        { kit: 100 },
+        { kit: 0, kitId: 1 },
+    ];
+    it.each(invalidKitParameters)('refuses missing or invalid kit metadata %s', (parameters) => {
+        expect(getCanonicalTrackRole(content([36], parameters)).role).toBe('unknown');
+    });
     it.each([[36, 99], [36, -1], [36, 40.5], []].map((pitches) => ({ pitches })))(
         'never discards unknown or invalid pitches $pitches',
         ({ pitches }) => {
