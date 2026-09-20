@@ -1,0 +1,33 @@
+src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts
+  s_ed5aa36a3ba357::t_00eb306abc41a3 307-331
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_ed5aa36a3ba357::t_9ce40ce9b95ce4 97-103,107
+src/modules/TimelineEditor/presentations/views/Inspector/TrackRoleSection.tsx
+  s_ed5aa36a3ba357::t_271a8ce97c84cc 7-12,25-31,37,95-107,109
+  s_ed5aa36a3ba357::t_d865ca86b787c1 108
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_ed5aa36a3ba357::t_00eb306abc41a3 205-214
+  s_ed5aa36a3ba357::t_d74a0185a3d60e 215-217
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackInspector.spec.tsx
+  s_ed5aa36a3ba357::t_8ea8dfd226eca7 252
+  s_ed5aa36a3ba357::t_469a50eb76b0a5 1,287-288,292
+  s_ed5aa36a3ba357::t_7df47feec82225 274-282
+  s_ed5aa36a3ba357::t_2febf97a95de28 150-154
+  s_ed5aa36a3ba357::t_00eb306abc41a3 2-5,11-15,148-149,155-156,245-251,253-273,283-286,289-291,293-294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5533d11b61357bb85a3ccf1f95d17ac6514aaa6b",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
