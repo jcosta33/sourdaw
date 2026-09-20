@@ -114,7 +114,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts",
-                    "digest": "2634b4c59e275a361de86dbad369ded546a67da64ca771b506ff3efb9774cf14"
+                    "digest": "7f06cfc018272886de18f77323d43bcbdbafc06f868d90f26eebda487a63706f"
                 }
             ]
         },
@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "8ab2420b2a557aa8628d0270a8a62a7061884174574d4d617af8c67f84318d6e"
+                    "digest": "9a7be6783cca3116fe0d421a67e85431b58efd2e10bcd8277408d8609c5579a3"
                 }
             ]
         },
@@ -536,7 +536,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
-                    "digest": "21ae4ccc570be1f0c6cabdfcb07465e7905c9d4095abd6ea84b4d041e22ecadd"
+                    "digest": "c07970cd54dd0e2038066c5a3c33f5d1d0275d017f54ae948b34164cf683c1cb"
                 }
             ]
         },

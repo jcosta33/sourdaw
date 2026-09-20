@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
     DOC_BRANCHES: '__branches__',

@@ -59,3 +59,7 @@ export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableO
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)
 
 export { agentAssetFileBoundary } from './agentAssetFileBoundary';
+
+export { getCanonicalTrackRole } from './getCanonicalTrackRole';
+export { getCanonicalTrackRoleOptions } from './getCanonicalTrackRoleOptions';
+export { setTrackCanonicalRole } from './setTrackCanonicalRole';

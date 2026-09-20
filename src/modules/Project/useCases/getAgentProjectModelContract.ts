@@ -20,6 +20,7 @@ import {
     type ProjectTrack,
 } from '../models/ProjectData';
 
+import { getCanonicalTrackRole } from './getCanonicalTrackRole';
 import { buildProjectData } from './projectPersistence/fileIO/buildProjectData';
 import { isHydratableProjectData } from './projectPersistence/helpers/isHydratableProjectData';
 
@@ -109,7 +110,9 @@ function clipStorageKind(clip: ProjectClip): AgentProjectClip['source']['storage
 function projectClip(data: ProjectData, clip: ProjectClip): AgentProjectClip {
     const lane = data.takeLanes?.lanes.find((candidate) => candidate.takes.some((take) => take.clipId === clip.id));
     const automation = clipAutomation(data, clip.trackId);
-    const notes = clip.notes ?? data.midi?.notesByClipId[clip.id] ?? [];
+    const notesByClipId = data.midi?.notesByClipId;
+    const notes =
+        notesByClipId && Object.hasOwn(notesByClipId, clip.id) ? (notesByClipId[clip.id] ?? []) : (clip.notes ?? []);
     const assetId = clip.assetHash ?? null;
     const storageKind = clipStorageKind(clip);
     return {
@@ -159,6 +162,11 @@ function projectTrack(data: ProjectData, track: ProjectTrack, order: number): Ag
         hierarchy: { parentId: track.parentId, groupId: track.groupId },
         tags: [],
         role,
+        canonicalRole: getCanonicalTrackRole({
+            track,
+            trackRoles: data.meta.productionBrief?.trackRoles,
+            notesByClipId: data.midi?.notesByClipId,
+        }),
         controls: {
             gain: track.gain,
             pan: track.pan,
