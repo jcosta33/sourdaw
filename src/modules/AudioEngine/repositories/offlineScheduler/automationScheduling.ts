@@ -19,6 +19,7 @@ import {
 } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
+import { quantiseSuspendFrame } from './quantiseSuspendFrame';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
@@ -517,18 +518,24 @@ export function scheduleTrackAutomation({
                 // whole buffer. Such a write could not reach the buffer anyway,
                 // while a write inside the render is scheduled as it always was.
                 //
+                // Reachability is the quantised suspend frame, not the raw
+                // request frame: the context rounds the suspend time down to the
+                // nearest render-quantum boundary (`quantiseSuspendFrame`), so a
+                // request a few frames past a boundary still suspends inside the
+                // render and a `>= renderFrames` check on the raw frame drops it.
+                //
                 // The bound is the context's frame count, resolved by the same
                 // `clampRenderFrameCount` the render root builds the context
-                // with. Re-deriving it here as `floor(durationSeconds *
-                // sampleRate)` was a frame short of the `ceil` the buffer holds
-                // — durations are beat-derived, so the product is rarely whole —
-                // and it dropped the write quantising to the render's last valid
-                // frame, leaving the tail on the previous ceiling. It also
-                // ignored the `MAX_OFFLINE_FRAMES` clamp a truncated render's
-                // context actually got.
+                // with, so a beat-derived duration's `ceil` and a truncated
+                // render's `MAX_OFFLINE_FRAMES` cap both apply.
                 const renderFrames = clampRenderFrameCount({ durationSeconds, sampleRate });
                 const scheduleWithinRender: ScheduleCall = (time, call) => {
-                    if (sampleRate > 0 && time !== undefined && Math.round(time * sampleRate) >= renderFrames) {
+                    if (sampleRate <= 0 || time === undefined) {
+                        scheduleFrame(time, call);
+                        return;
+                    }
+                    const requestFrame = Math.max(0, Math.round(time * sampleRate));
+                    if (quantiseSuspendFrame(requestFrame) >= renderFrames) {
                         return;
                     }
                     scheduleFrame(time, call);
