@@ -140,18 +140,27 @@ reviews.
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
 for registered stack children.
 
-Publishing gates authorship on exactly the commits it adds to the remote: the
-remote tip when the branch already exists there at an ancestor of the head,
-otherwise the same base the title derives from — always excluding what the
-resolved bases reach, both origin/main and any stack parent head, because
-commits they already carry are not the lane's to author. Every remaining
-commit, merges included, must carry the author App's commit identity; a
-refusal names each offending commit and email. The remedy: restamp with
-`pnpm lane:identity`, then — only when the remote branch holds none of the
-lane's commits — rebase from the comparison base with
+Publishing gates authorship on exactly the commits it adds to the pull-request
+branch (the notes ref the push also carries is the tool integration's own
+channel, not publication the gate governs): the remote tip when the branch
+already exists there at an ancestor of the head, otherwise the same base the
+title derives from — always excluding what the resolved bases reach, both
+origin/main and any stack parent head, because commits they already carry are
+not the lane's to author. Every remaining commit, merges included, must carry
+the author App's commit identity; a refusal names each offending commit and
+email. Publication also refuses outright while the lane repository's shared
+object store carries rewrites a push bypasses — an `info/grafts` file in the
+common dir or any `refs/replace/*` ref — because `git log` follows the graft
+file even with `--no-replace-objects` and the replace-refs disable applies to
+the gate's read alone. The remedy: restamp with `pnpm lane:identity`, then —
+only when the remote branch holds none of the lane's commits AND the
+comparison base dominates every excluded base (it is origin/main itself, or a
+parent head that already contains current main) — rebase from the comparison
+base with
 `git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' <comparison-base>`;
-otherwise re-create the named offending commits. Never a rewrite rooted at the
-remote tip: it would replay base-side commits as the App.
+otherwise, when no offered rewrite can stay off base-side history, re-create
+the named offending commits. Never a rewrite rooted at the remote tip: it
+would replay base-side commits as the App.
 
 Labels and milestone are written by the author App. Project membership is not:
 installation tokens cannot reach user-owned Projects v2, so the project listing,
