@@ -1,0 +1,73 @@
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_2dc4665b014f2b 1204
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_011187c482d336 123-137
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e84a0e8c04b743 337-350
+scripts/resourceGuard.ts
+  s_ed5aa36a3ba357::t_1eccb2713ff10c 118
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ed5aa36a3ba357::t_a740bd9e03b012 295
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_ed5aa36a3ba357::t_35ca7e5ac0bb90 235,238-246
+src/modules/AiRuntime/models/Tools/__tests__/ClipAndDevice.spec.ts
+  s_ed5aa36a3ba357::t_8ddce0c3ad8c15 38-50
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ed5aa36a3ba357::t_eef73efa1dd312 2719-2748,2773
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/trackRoutingDeviceStrategies.spec.ts
+  s_ed5aa36a3ba357::t_58336ef87020e7 396
+src/modules/AiRuntime/transformers/llmActionStrategies/deviceStrategy.ts
+  s_ed5aa36a3ba357::t_75b45cfd038624 1-2,123,130
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_ed5aa36a3ba357::t_dd9888d3c5c143 443,458,576,591
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_14fabaf4462065 3,2633,2642-2648,2654-2670,2672-2684,2686-2703,2706-2722,2725-2726,2731-2751,2778-2780,2784,2789-2792,6010,6027,6054-6516
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ed5aa36a3ba357::t_a42890950979d2 8,23,1927-1973,2006-2008,2572-2612,3112-3136,3991-3999
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ed5aa36a3ba357::t_2eacd0d529174c 39,435,445-449
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_ed5aa36a3ba357::t_f92f4c1db26b47 77-186,485-585
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_ed5aa36a3ba357::t_c8131e18de28dd 4-9,40-100,119,143,150,212,257-258,260,302,325,348
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_ed5aa36a3ba357::t_da97d060ef4634 107-227
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ed5aa36a3ba357::t_05df10513d47e9 1057,1060-1068,2493-2500
+src/modules/Command/useCases/__tests__/parameterUnitValidation.spec.ts
+  s_ed5aa36a3ba357::t_ab83f4f9777419 1-109
+src/modules/Command/useCases/commandArgumentMetadata.ts
+  s_ed5aa36a3ba357::t_f1d5257cd10f43 1-2,107-108,116-124
+src/modules/Command/useCases/createExecutionCommandEnvelope.ts
+  s_ed5aa36a3ba357::t_5d4c30d93a8ba9 70
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ed5aa36a3ba357::t_1cdc527cee7847 108-111,2068-2069,2079-2086,2092-2097
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_ed5aa36a3ba357::t_a8a23e5f408500 220,226,277-283
+src/modules/Command/useCases/resolveVersionedCommandBatchBindings.ts
+  s_ed5aa36a3ba357::t_642afdf04beb2d 56
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ed5aa36a3ba357::t_1dd70aed09790c 1773-1799,1810,1818,1830,1846,1854,1886,1897,1934,1939,1982,1987,2073,2096-2097,2120,2139,2147,2156,2167-2169,2183-2185,2216,2222,2231,2242,2250,2261-2262,2276-2277,2302-2303,2361,2369,2430,2448,2454,2502,2510,2519,2528-2529,2534-2539,2574,2581,2597,2605,2665-2666,2739,2750,2790,2796,2846,2861,2866,2884-2885,2905,2919-2920,2929,2931,2943-2944,2952-2953,2970,2980-2981,2993-2994,3036-3037,3113-3114,3194-3195,3321,3332,3413-3414,3441-3442,3464,3478,3487,3509,3523,3530,3537-3539,3580-3583,3605,3610,3622,3629,3634,3636,3642,3647,3649-3650,3669,3676,3684-3685,3691,3694,3738-3739,3748-3749,3812,3818-3819,3832-3833,3855-3856,3890,3897,3902-3903,3919,3924-3925,3937,3947,3954,3960,3965,3974-3975,3996,4001-4002,4039-4040,4060,4074-4075,4083-4084,4173,4180,4186-4187,4194,4208,4223,4237,4242-4245,4274,4280,4294,4300,4345,4347,4362,4371-4372,4374,4387-4388,4391,4398,4403,4430,4435,4530,4537,4565,4573,4579,4587-4588,4628,4639,4647,4653,4660,4665,4673-4674,4885,4901,4918,4925-4926,4929,4960,4973-4976,4986-4987,5032,5046,5051,5053,5101,5106,5124,5129,5153,5158,5225,5234,5246,5258,5279,5291,5297,5303-5304,5329,5335-5336,5400,5406,5416,5421,5423,5432,5434,5443,5529-5536,5543-5573,5576-5581,5585,5587-5606,5609,5611-5621,5623-5624,5632-5664,5670-5671,5674-5678,5680-5681,5683,5685-5695,5699-5701,5703-5707,5709-5710,5712-5714,5716-5728,5730,5732-5734,5739,5742-5745,5749-5754,5759,5761-5762,5764-5765,5768-5780,5784-5788,5790-5792,5796-5797,5799-5806
+src/utils/__tests__/deviceParameterValueUnit.spec.ts
+  s_ed5aa36a3ba357::t_88c76f4539d111 1-32
+src/utils/deviceParameterValueUnit.ts
+  s_ed5aa36a3ba357::t_392f2de64dda23 1-34
+src/utils/handlerContract.ts
+  s_ed5aa36a3ba357::t_a38c2b8c1c24b7 12,1419-1420
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "142db3d43ff694ab2a0be3bc02b7e126dc72d388",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
