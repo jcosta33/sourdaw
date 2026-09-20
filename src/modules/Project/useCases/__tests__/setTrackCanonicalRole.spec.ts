@@ -4,7 +4,7 @@ import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
-import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import {
     createTrack,
     getArrangementHandlers,
@@ -14,6 +14,7 @@ import {
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     createCrdtProject,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -162,17 +163,35 @@ describe('set track canonical role', () => {
     });
 
     it('refuses a queued override after project replacement even when ids and brief revisions match', async () => {
-        const original = structuredClone(projectStore.value!.productionBrief);
-        const pending = setTrackCanonicalRole({ trackId: 't', role: 'snare', expectedRevision: original.revision });
+        const originalProject = structuredClone(projectStore.value!);
+        const originalTracks = structuredClone(trackStore.value!);
+        const originalIdentity = captureProjectIdentity();
+        const pending = setTrackCanonicalRole({
+            trackId: 't',
+            role: 'snare',
+            expectedRevision: originalProject.productionBrief.revision,
+        });
         const outcome = pending.then(
             () => null,
             (error: unknown) => error
         );
         resetCrdtProjectAuthority('Canonical role project replacement');
-        const replacement = { ...structuredClone(original), vision: 'Replacement project' };
-        projectStore.set({ ...projectStore.value!, productionBrief: replacement });
+        const replacementIdentity = captureProjectIdentity();
+        const replacement = {
+            ...structuredClone(originalProject.productionBrief),
+            vision: 'Replacement project',
+        };
+        projectStore.set({ ...originalProject, productionBrief: replacement });
+        setTrackStoreState(originalTracks);
+
+        expect(replacementIdentity).not.toBe(originalIdentity);
+        expect(projectStore.value!.projectId).toBe(originalProject.projectId);
+        expect(trackStore.value!.tracks.map((track) => track.id)).toEqual(['t']);
+        expect(projectStore.value!.productionBrief.revision).toBe(originalProject.productionBrief.revision);
         const undoCount = undoStore.value!.past.length;
-        expect(await outcome).toBeInstanceOf(Error);
+        expect(await outcome).toEqual(
+            expect.objectContaining({ message: 'The project changed; select the track again.' })
+        );
         expect(undoStore.value!.past).toHaveLength(undoCount);
         expect(projectStore.value!.productionBrief).toEqual(replacement);
     });

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTrack } from '#/modules/Arrangement/useCases';
+import { createTrack, normalizeTrack } from '#/modules/Arrangement/useCases';
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
 import { getCanonicalTrackRole } from '../getCanonicalTrackRole';
+import { hydrateArrangementTracks } from '../projectPersistence/fileIO/hydrateArrangementTracks';
+import { hydrateProjectMidi } from '../projectPersistence/fileIO/hydrateProjectMidi';
+import { serializeArrangementTracks } from '../projectPersistence/fileIO/serializeArrangementTracks';
 
 type Input = Parameters<typeof getCanonicalTrackRole>[0];
 function input(name = 'Track 1'): Input {
@@ -17,6 +20,52 @@ function content(pitches: number[], parameters: Record<string, number> = { kit: 
         clips: [{ id: 'c', type: 'midi', notes: pitches.map((pitch) => ({ pitch })) }],
     };
     return result;
+}
+
+function hydratedLegacyDrumInput(pitch: number): Input {
+    const clipId = 'legacy-clip';
+    const runtimeTrack = normalizeTrack({
+        id: 'legacy-drums',
+        name: '',
+        kind: 'midi',
+        clips: [
+            {
+                id: clipId,
+                trackId: 'legacy-drums',
+                name: 'Legacy pattern',
+                startBeat: 0,
+                endBeat: 4,
+                type: 'midi',
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '',
+                locked: false,
+                muted: false,
+            },
+        ],
+        devices: [
+            {
+                id: 'legacy-kit',
+                name: 'Legacy drum kit',
+                type: 'drum-kit',
+                bypassed: false,
+                parameterValues: { kitId: 0 },
+            },
+        ],
+    });
+    const notesByClipId = hydrateProjectMidi({
+        notesByClipId: {
+            [clipId]: [{ id: 'legacy-note', pitch, startBeat: 0, duration: 1, velocity: 100 }],
+        },
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    }).notesByClipId;
+    const [track] = hydrateArrangementTracks(serializeArrangementTracks([runtimeTrack], notesByClipId));
+    if (!track) {
+        throw new Error('Expected the serialized legacy drum track to hydrate');
+    }
+    return { track, trackRoles: [], notesByClipId };
 }
 
 describe('canonical track roles', () => {
@@ -91,6 +140,20 @@ describe('canonical track roles', () => {
             role,
             source: 'clip-content',
             evidence: 'stored-drum-voices',
+        });
+    });
+    it('derives a mapped voice from a hydrated legacy drum-kit', () => {
+        expect(getCanonicalTrackRole(hydratedLegacyDrumInput(36))).toMatchObject({
+            role: 'kick',
+            source: 'clip-content',
+            evidence: 'stored-drum-voices',
+        });
+    });
+    it.each([99, -1, 128, 40.5])('keeps hydrated legacy drum-kit pitch %s unmapped and bounded', (pitch) => {
+        expect(getCanonicalTrackRole(hydratedLegacyDrumInput(pitch))).toMatchObject({
+            role: 'unknown',
+            source: 'clip-content',
+            evidence: 'unmapped-drum-voice',
         });
     });
     const invalidKitParameters: Array<Record<string, number>> = [

@@ -1,6 +1,7 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getFactoryDrumKitByIndex } from '#/modules/AudioEngine/useCases';
 import { getStoredDrumVoiceMetadata } from '#/modules/Toaster/useCases';
+import { isDrumDevice } from '#/utils/deviceTypeMatching';
 
 import {
     CANONICAL_TRACK_ROLES,
@@ -69,7 +70,7 @@ function storedVoices(device: Device): Array<{ pitch: number; family: CanonicalT
         const metadata = getStoredDrumVoiceMetadata(device.deviceState);
         return metadata.status === 'known' ? metadata.voices : null;
     }
-    if (device.type !== 'builtin-drum-kit' && !device.type.startsWith('builtin-drum-machine')) {
+    if (!isDrumDevice(device.type)) {
         return null;
     }
     const { kit, kitId } = device.parameterValues;
