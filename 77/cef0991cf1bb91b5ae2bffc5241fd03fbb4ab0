@@ -1,0 +1,20 @@
+src/modules/Project/services/agentDiscovery/discoveryCandidates.ts
+  h_1228e573df1f42 47,48-52,53-64,69-71,74-76,77-86,87-107
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  h_1228e573df1f42 620,621-625,626-627,628,629,630,631-655,656,657-659,660,661,662-677,678-735
+src/modules/Project/useCases/queryAgentDiscovery.ts
+  h_1228e573df1f42 13,15,157-162,197-202,217-219
+evidence/agent-campaign/manifest.json
+  h_1228e573df1f42 15-21,25-32,36-42,62-70,104-111,115-119,123-127,131-134,967,987-991,995-998,1002-1005,1009-1012
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "77cef0991cf1bb91b5ae2bffc5241fd03fbb4ab0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
