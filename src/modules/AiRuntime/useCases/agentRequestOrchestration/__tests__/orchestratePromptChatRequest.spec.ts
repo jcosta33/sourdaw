@@ -44,6 +44,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-fixture'),
     DOC_BRANCHES: '__branches__',
