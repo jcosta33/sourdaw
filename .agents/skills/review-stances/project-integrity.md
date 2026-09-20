@@ -142,3 +142,10 @@ already-terminal path trusted live state after a failed persistence write. Fail 
 `Storage.setItem`, observe terminal live state with an unchanged saved run, then cancel again.
 Require the same run's terminal revision to reach storage before any resource cleanup; repeat with
 no temporary assets so cleanup writes cannot accidentally repair the missing durable revocation.
+
+### 2026-09-21 — linked-follower refusal must preserve both authorities and history (introduced in 2a0e594f94; fixed in #4506)
+
+Drive follower-point refusal through both `executeAppAction` and its supported singleton `executeAppActionBatch` form.
+Require the authoritative document, Automation projection, links, samples, and undo history to stay unchanged after
+refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
+`addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.

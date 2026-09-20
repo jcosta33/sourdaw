@@ -381,3 +381,10 @@ but its owner spec mocked that controller. The mock could not expose live termin
 before `Storage.setItem` failed. Use the real lifecycle and cancellation controller, fail the actual
 storage write once, then cancel the same confirmation again. Removing the persistence retry must
 leave the saved run nonterminal and fail the assertion, both with and without cleanup assets.
+
+### 2026-09-21 — unlinked command fixtures missed inaudible follower writes (escaped via PRs #931 and #4392; fixed in #4506)
+
+PR #931 tested point delegation with a mocked unlinked writer, and PR #4392 tested decibel forms only on unlinked lanes.
+For a point-command change, dispatch through real Command and CRDT-backed Automation state, then inspect the raw
+document, owning projection, undo history, and `getAutomationValueAtBeat`. A handler-call or stored-value assertion
+cannot prove the sampler will use the point.
