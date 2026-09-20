@@ -1,0 +1,75 @@
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_08f23b659ac870 1203
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_9cd01590f94984 122-129
+.agents/skills/review-stances/session-lifecycle.md
+  s_ed5aa36a3ba357::t_e15d9b9001ff31 132-141
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_e90329dd845ab6 354-361
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_10a17c7e74657c 748
+src/modules/AiRuntime/useCases/__tests__/cancelPendingChatActions.spec.ts
+  s_ed5aa36a3ba357::t_926ecd81bbd2d5 1,17,25,31-88,146-166
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_ed5aa36a3ba357::t_278a7276751be8 1,20,586-594,597,605-606,608-611
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_ed5aa36a3ba357::t_4f07d2db3b1768 11,17,27-30,33-35,40-41,51,63-84,86,90,92-96,106,109,111,116,121,127-128,139,171-172,202-225,230-231,234-249,252,261,291,314,324-341,343-367,369-377,379-399,419-422,426,431-434,459-462,477,481-482,484-487,494-533,535-536,583
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_ed5aa36a3ba357::t_50cf47a9a43556 7-12,23,63-64,107-112,148-149,161,624-748,767-768,788-790,793,797,830-832,837,843,876,881,923,925-929,934,976,983,985,987-994,996-997,1000
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_ed5aa36a3ba357::t_e2d2f1f661e11b 19-21,42-44,186,197-253
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_ed5aa36a3ba357::t_0a2b15399ad47b 5-10,41,56-66,68-87,89-120,123-125,127-144
+src/modules/AiRuntime/useCases/cancelPendingChatActions.ts
+  s_ed5aa36a3ba357::t_460e5094f5ab67 5,9,19-20,33-39,43-55,59
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_ed5aa36a3ba357::t_0bcb77742922d8 9,13,45,60-61,95,342-348,350,352-367,369-372
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ed5aa36a3ba357::t_ba38bd71bd1165 1786-1789,1791-1862,1865-1868,1870,1872,1958,1961,1963,1968-1973
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopInputMonitoring.spec.ts
+  s_ed5aa36a3ba357::t_26075ae95f17a7 257-292
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ed5aa36a3ba357::t_431ec099a26d2f 2575-2578,2647-2649
+src/modules/AudioEngine/useCases/engineAccess/__tests__/resetAudioGraph.monitorTeardown.spec.ts
+  s_ed5aa36a3ba357::t_2fd182f6953f62 1-120
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_ed5aa36a3ba357::t_efb27cc091391a 6,8,48-51,114,122-124,145,233-237,240,263,342,348,351-352,520,601-614,670,714-715,717-719,721-722
+src/modules/WorkspaceShell/presentations/hooks/useAgentWorkspaceRunSelection.ts
+  s_ed5aa36a3ba357::t_e8caf352b95667 30,37,39-45
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_ed5aa36a3ba357::t_c3b8db5aa1f403 5,59-60,68,96,104,115-126,185,198,217,221,244,257,266,282,355
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_ed5aa36a3ba357::t_1cce8a2f13d436 11,27-35,41,60,105
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_ed5aa36a3ba357::t_64a36898c76831 259-264,640,664
+src/modules/WorkspaceShell/presentations/views/PromptBar.tsx
+  s_ed5aa36a3ba357::t_3aacc98e329040 127,130-131,135-139
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ed5aa36a3ba357::t_163b13d99fab1d 57,250
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_ed5aa36a3ba357::t_6978f6279f143f 31,44,355-376
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_ed5aa36a3ba357::t_64aacaf38c5742 66-76,572-582
+src/modules/WorkspaceShell/presentations/views/__tests__/PromptBar.spec.tsx
+  s_ed5aa36a3ba357::t_e4654e1120e786 18,45,79,88,99,109,119,127,134-146,152,160,168,177,194,211,224,236,249,263,284,296,310,323,336,347
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ed5aa36a3ba357::t_e735a99e5cda4a 231,236,326,331
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_ed5aa36a3ba357::t_58e1d09899c84f 1-197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0eafa055aad7d8515a69b654a6197adc01582d2d",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
