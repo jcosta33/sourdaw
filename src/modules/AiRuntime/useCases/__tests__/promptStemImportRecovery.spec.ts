@@ -124,29 +124,9 @@ vi.mock('#/modules/Command/useCases', async () => {
         },
     };
 });
-// discardPreparedStemImportResources imports releasePreviewAudioBuffer.
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    startFaustNote: vi.fn(),
-    soundsNativeNotes: vi.fn(() => false),
-    writeNativeBuiltinParameters: vi.fn(),
-    analyzePitchForClip: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    audioEngine: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getCachedAudioBuffer: vi.fn(() => null),
-    getEngineState: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
-    removeSend: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    wireSidechainRoute: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
-    sendNativeLiveMidiControl: () => Promise.resolve(true),
-    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 // discardPreparedStemImportResources and createStemImportConfirmationResourceLease import getAssetTransfer.
 vi.mock('#/modules/Collaboration/useCases', () => ({

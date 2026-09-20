@@ -37,7 +37,7 @@ import {
 import { AgentWorkspace } from '../AgentWorkspace';
 import { PromptBar } from '../PromptBar';
 
-const execute = vi.fn<ReturnType<typeof getArrangementHandlers>['removeTrack']['execute']>();
+const handlers = getArrangementHandlers();
 
 function Surface({ showPrompt = true }: { showPrompt?: boolean }) {
     const [request, setRequest] = useState<{ runId: string } | null>(null);
@@ -84,9 +84,8 @@ describe('Prompt Bar canonical approval parity', () => {
         resetActionReplayAuthority();
         configureCommandBatchIdempotency({ canExecute: () => true });
         clearHandlerRegistry();
-        const handlers = getArrangementHandlers();
-        execute.mockImplementation(handlers.removeTrack.execute);
-        registerHandlerMap({ ...handlers, removeTrack: { ...handlers.removeTrack, execute } });
+        vi.spyOn(handlers.removeTrack, 'execute');
+        registerHandlerMap(handlers);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
         commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
             projectRevisionMatchesLiveIgnoringCommandCheckpoint
@@ -104,6 +103,7 @@ describe('Prompt Bar canonical approval parity', () => {
     });
     afterEach(() => {
         cleanup();
+        vi.restoreAllMocks();
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
@@ -139,7 +139,7 @@ describe('Prompt Bar canonical approval parity', () => {
             });
             expect(captureProjectRevision()).toBe(before);
             expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['review-track']);
-            expect(execute).not.toHaveBeenCalled();
+            expect(handlers.removeTrack.execute).not.toHaveBeenCalled();
             expect(
                 within(screen.getByRole('region', { name: 'Run summary' })).getByText('Previous selected run')
             ).toBeInTheDocument();
@@ -152,7 +152,7 @@ describe('Prompt Bar canonical approval parity', () => {
                 expect(screen.queryByRole('button', { name: 'Review in Agent' })).not.toBeInTheDocument()
             );
             expect(pendingActionConfirmationStore.value?.confirmations[0]?.status).toBe('cancelled');
-            expect(execute).not.toHaveBeenCalled();
+            expect(handlers.removeTrack.execute).not.toHaveBeenCalled();
         }
     );
 
@@ -171,7 +171,7 @@ describe('Prompt Bar canonical approval parity', () => {
             status: 'executed',
             error: null,
         });
-        expect(execute).toHaveBeenCalledOnce();
+        expect(handlers.removeTrack.execute).toHaveBeenCalledOnce();
         expect(trackStore.value?.tracks).toEqual([]);
         expect(screen.queryByRole('button', { name: 'Review in Agent' })).not.toBeInTheDocument();
     });
@@ -190,5 +190,8 @@ describe('Prompt Bar canonical approval parity', () => {
             const { cancelPendingChatActions } = await import('#/modules/AiRuntime/useCases');
             await cancelPendingChatActions({ confirmationId: confirmation.id });
         });
+        expect(pendingActionConfirmationStore.value!.confirmations[0]!.status).toBe('cancelled');
+        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['review-track']);
+        expect(handlers.removeTrack.execute).not.toHaveBeenCalled();
     });
 });
