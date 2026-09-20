@@ -5,6 +5,7 @@ import {
     getAgentBuiltinDeviceFactoryManifest,
     getDeviceContractVersionForCommand,
     getPluginById,
+    saveUserPreset,
 } from '#/modules/Arrangement/useCases';
 import { userPresetStorage } from '#/modules/Arrangement/useCases/preset/presetStorage/helpers';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
@@ -1320,6 +1321,63 @@ describe('project discovery tool', () => {
             expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('"isFactory":false');
         } finally {
             deleteUserPreset(malformedPreset.id);
+        }
+    });
+
+    it('keeps a long saved preset discoverable in one bounded receipt', async () => {
+        const preset = saveUserPreset({
+            name: 'Tube drive',
+            category: 'fx',
+            description: 'x'.repeat(17_000),
+            trackKind: 'audio',
+            devices: [{ type: 'builtin-distortion', name: 'Distortion', parameterValues: {} }],
+            tags: [...Array.from({ length: 8 }, (_, index) => `ordinary-tag-${String(index)}`), 'tube'],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-long-user-preset',
+                        name: 'project.discover',
+                        arguments: {
+                            domain: 'preset',
+                            filters: { text: 'tube', stableId: preset.id },
+                            page: { limit: 1 },
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        try {
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-long-user-preset',
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+            const receipt = result.receipts.find((entry) => entry.callId === 'discover-long-user-preset');
+
+            expect(receipt).toMatchObject({
+                status: 'success',
+                error: null,
+                data: {
+                    domain: 'preset',
+                    items: [
+                        {
+                            id: preset.id,
+                            evidence: {
+                                tags: expect.arrayContaining(['tube']),
+                                deviceTypes: ['builtin-distortion'],
+                            },
+                        },
+                    ],
+                },
+            });
+            expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
+        } finally {
+            deleteUserPreset(preset.id);
         }
     });
 
