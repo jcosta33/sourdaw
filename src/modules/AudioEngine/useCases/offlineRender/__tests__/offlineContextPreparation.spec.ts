@@ -94,7 +94,11 @@ function collectRelativeImportGraph(entry: string): string[] {
         visited.add(path);
         const source = readFileSync(path, 'utf8');
         for (const match of source.matchAll(RELATIVE_IMPORT)) {
-            const dependency = resolveRelativeImport(path, match[1]);
+            const specifier = match[1];
+            if (!specifier) {
+                continue;
+            }
+            const dependency = resolveRelativeImport(path, specifier);
             if (dependency && !visited.has(dependency)) {
                 pending.push(dependency);
             }
