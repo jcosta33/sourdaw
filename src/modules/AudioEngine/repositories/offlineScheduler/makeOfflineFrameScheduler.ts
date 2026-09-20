@@ -34,10 +34,11 @@ const schedulersByContext = new WeakMap<OfflineAudioContext, ScheduleCall>();
  * transitions (one per note). The context rounds `suspend(time)` up to the
  * render quantum, so two notes a few sample frames apart previously registered
  * two suspends for one quantum; the second was rejected with InvalidStateError
- * and its fallback fired the note immediately at the wrong time. Quantising to
- * the frame the context will actually suspend at collapses them so each
- * distinct quantum gets exactly one suspend whose handler runs every queued
- * call in order.
+ * and its fallback fired the note immediately at the wrong time. Keying the
+ * batch on the quantised frame collapses them so each distinct quantum gets
+ * exactly one suspend whose handler runs every queued call in order, while the
+ * suspend itself is still registered at the caller's raw time so a write
+ * inside the render is not rejected as past its end.
  *
  * Returns the context's existing scheduler when it already has one, so a Faust
  * device's note calls and a frame-addressed automation write share one batch
@@ -56,9 +57,9 @@ export function makeOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCal
 
 function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
     const { sampleRate } = ctx;
-    // Keyed by the render-quantum frame the context will actually suspend at.
-    // Each entry holds every call due inside that quantum; the first call to a
-    // quantum registers a single suspend for it.
+    // The batch key is the render-quantum frame the context rounds its suspend
+    // up to, so every call due inside one quantum shares one suspend and the
+    // context never sees a duplicate (which it rejects with InvalidStateError).
     const callsByFrame = new Map<number, (() => void)[]>();
 
     return (time, call) => {
@@ -70,10 +71,12 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
         // Quantise to the nearest sample frame so float drift between notes that
         // are meant to share a frame does not split into two suspends.
         const frame = Math.max(0, Math.round(time * sampleRate));
-        // The context rounds suspend() up to the render quantum, so two sample
-        // frames inside one quantum collapse onto one suspend; a second suspend
-        // for an already-scheduled quantum is rejected with InvalidStateError.
-        // Keying on this frame makes the context's own round-up a no-op.
+        // The key and the time are two separate things:
+        //   - the key is the quantised frame, so one quantum carries one suspend
+        //     and the context never sees a duplicate;
+        //   - the time passed to suspend() stays the caller's raw frame, so the
+        //     context's raw-time rejection is not tripped for a write inside the
+        //     render.
         const suspendFrame = quantiseSuspendFrame(frame);
 
         const existing = callsByFrame.get(suspendFrame);
@@ -117,7 +120,8 @@ function buildOfflineFrameScheduler(ctx: OfflineAudioContext): ScheduleCall {
         }
 
         try {
-            void ctx.suspend(suspendFrame / sampleRate).then(
+            // Raw frame, not the quantised key: the context rounds it up itself.
+            void ctx.suspend(frame / sampleRate).then(
                 () => {
                     fire();
                 },

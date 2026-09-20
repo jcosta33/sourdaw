@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { createFaustDevice } from '../../faustDeviceFactory';
 import { makeOfflineFrameScheduler } from '../makeOfflineFrameScheduler';
-import { quantiseSuspendFrame } from '../quantiseSuspendFrame';
 
 const SAMPLE_RATE = 48_000;
 // Far below half a sample frame (1 / 96_000 s), so the two times stay in one frame.
@@ -198,7 +197,7 @@ describe('makeOfflineFrameScheduler — one suspend per quantised frame', () => 
         expect(drifted).toHaveBeenCalledTimes(1);
     });
 
-    it('registers the suspend at the render-quantum frame the context will suspend at', () => {
+    it('passes the caller raw frame to suspend, which the context rounds up itself', () => {
         const { ctx, suspends } = makeContextDouble({ sampleRate: SAMPLE_RATE });
         const schedule = makeOfflineFrameScheduler(ctx);
         const drifted = 0.3 + SUB_FRAME_DRIFT;
@@ -207,12 +206,11 @@ describe('makeOfflineFrameScheduler — one suspend per quantised frame', () => 
 
         const frame = Math.round(drifted * SAMPLE_RATE);
         expect(frame).toBe(14_400);
-        const suspendFrame = quantiseSuspendFrame(frame);
-        expect(suspendFrame).toBe(14_464);
         expect(suspends).toHaveLength(1);
-        expect(suspends[0]!.time).toBe(suspendFrame / SAMPLE_RATE);
-        // The requested time is rounded up onto its render quantum, not onto the
-        // raw sample frame.
+        // The time passed is the caller's raw frame (14400/48000), not the
+        // quantised 14464/48000; the context rounds that time up to the render
+        // quantum itself.
+        expect(suspends[0]!.time).toBe(frame / SAMPLE_RATE);
         expect(suspends[0]!.time).not.toBe(drifted);
     });
 });

@@ -19,7 +19,7 @@ type QuantisedContextDouble = {
     suspends: QuantisedSuspendRecord[];
     /** Every suspend() call, including ones rejected as duplicates. */
     suspendCallCount: () => number;
-    /** Duplicate-quantum suspend() calls the context rejected. */
+    /** suspend() calls the context rejected (duplicate quantum or past the render end). */
     rejectionCount: () => number;
     resumeCount: () => number;
 };
@@ -32,14 +32,18 @@ function invalidStateError(frame: number): Error {
 
 /**
  * Honest OfflineAudioContext double: models Blink's real suspend rule. It
- * truncates `time * sampleRate` to an integer frame and rounds that UP to the
- * render quantum (`audio_utilities::RoundUpToMultiple`), then rejects a second
- * suspend at an already-scheduled quantum with an InvalidStateError-shaped
- * error. Truncating first is what makes a whole-quantum time a no-op instead of
- * drifting one quantum up on float error — the reason a double that accepts any
- * time cannot observe issue #4489.
+ * rejects a suspend whose raw time reaches `frameCount / sampleRate` (the
+ * render end), truncates `time * sampleRate` to an integer frame and rounds
+ * that UP to the render quantum (`audio_utilities::RoundUpToMultiple`), then
+ * rejects a second suspend at an already-scheduled quantum with an
+ * InvalidStateError-shaped error. Truncating first is what makes a
+ * whole-quantum time a no-op instead of drifting one quantum up on float error
+ * — the reason a double that accepts any time cannot observe issue #4489.
  */
-function makeQuantisedContextDouble(sampleRate = SAMPLE_RATE): QuantisedContextDouble {
+function makeQuantisedContextDouble(
+    sampleRate = SAMPLE_RATE,
+    frameCount = Number.POSITIVE_INFINITY
+): QuantisedContextDouble {
     const suspends: QuantisedSuspendRecord[] = [];
     const scheduledFrames = new Set<number>();
     let suspendCalls = 0;
@@ -52,6 +56,12 @@ function makeQuantisedContextDouble(sampleRate = SAMPLE_RATE): QuantisedContextD
 
         suspend(time: number): Promise<void> {
             suspendCalls += 1;
+            // Blink rejects a suspend whose raw time reaches the render end,
+            // before it rounds the frame up to the quantum.
+            if (time >= frameCount / sampleRate) {
+                rejections += 1;
+                return Promise.reject(new Error(`cannot suspend at time ${time}: at or past the render end`));
+            }
             const frame = Math.trunc(time * sampleRate);
             const quantisedFrame = Math.ceil(frame / RENDER_QUANTUM_FRAMES) * RENDER_QUANTUM_FRAMES;
             if (scheduledFrames.has(quantisedFrame)) {
@@ -100,7 +110,9 @@ describe('makeOfflineFrameScheduler — keyed by the render-quantum suspend fram
         expect(suspendCallCount()).toBe(1);
         expect(suspends).toHaveLength(1);
         expect(suspends[0]!.frame).toBe(24064);
-        expect(suspends[0]!.time).toBe(24064 / SAMPLE_RATE);
+        // The raw frame the caller asked for, not the quantised key: the context
+        // rounds the time up to its suspend frame (24064) itself.
+        expect(suspends[0]!.time).toBe(24000 / SAMPLE_RATE);
 
         suspends[0]!.resolve();
         await flushMicrotasks();
@@ -152,5 +164,29 @@ describe('makeOfflineFrameScheduler — keyed by the render-quantum suspend fram
 
         expect(first).toHaveBeenCalledTimes(1);
         expect(second).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers one suspend inside the render for a write on its last valid frame', async () => {
+        const frameCount = 24_100;
+        const { ctx, suspends, suspendCallCount, rejectionCount } = makeQuantisedContextDouble(SAMPLE_RATE, frameCount);
+        const schedule = makeOfflineFrameScheduler(ctx);
+        const write = vi.fn();
+
+        // 24065 is inside a 24100-frame render but quantises up to 24192, past
+        // the render end. The scheduler passes the raw frame so the context
+        // accepts the time, rounds it up itself, and nothing fires early.
+        schedule(24065 / SAMPLE_RATE, write);
+
+        expect(suspendCallCount()).toBe(1);
+        expect(suspends).toHaveLength(1);
+        expect(suspends[0]!.time).toBe(24065 / SAMPLE_RATE);
+        // The context still rounds the raw frame up past the render end.
+        expect(suspends[0]!.frame).toBe(24_192);
+        expect(rejectionCount()).toBe(0);
+
+        // The suspend stays pending — nothing fires at registration or on the
+        // next microtask, where a rejection fallback would have fired the write.
+        await flushMicrotasks();
+        expect(write).not.toHaveBeenCalled();
     });
 });
