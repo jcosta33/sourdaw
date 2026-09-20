@@ -135,6 +135,20 @@ describe('builtin synth guidance publication', () => {
         }
     });
 
+    it('publishes velocity-scaled attack timing for delayed vibrato', () => {
+        const published = getAgentBuiltinDeviceFactoryManifest().find(
+            (descriptor) => descriptor.type === 'builtin-synth'
+        );
+        const parameters = new Map(published?.parameters.map((parameter) => [parameter.id, parameter.guidance]));
+
+        expect(parameters.get('vibratoDelay')?.interactions).toContain(
+            'Vibrato stays at zero through the velocity-scaled amplitude attack and vibratoDelay, then reaches full depth over a 100 ms ramp; vibratoRate and vibratoDepth must both be active.'
+        );
+        expect(parameters.get('vibratoDepth')?.interactions).toContain(
+            'vibratoDepth requires vibratoRate above zero and reaches full depth after the velocity-scaled amplitude attack, vibratoDelay, and a 100 ms ramp.'
+        );
+    });
+
     it('publishes the highpass and bandpass cutoff risk with the correct frequency direction', () => {
         const published = getAgentBuiltinDeviceFactoryManifest().find(
             (descriptor) => descriptor.type === 'builtin-synth'

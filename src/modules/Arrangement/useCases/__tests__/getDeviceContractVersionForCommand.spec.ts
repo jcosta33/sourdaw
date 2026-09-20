@@ -14,11 +14,11 @@ import { getDeviceTypesForCommandDeviceIds } from '../getDeviceTypesForCommandDe
 // intentionally part of the command contract fingerprint so stale approvals refresh
 // instead of replaying against older planner-facing semantics.
 const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, string>> = {
-    'builtin-synth': 'descriptor-v1:4c767d78',
-    'builtin-synth-mellotron': 'descriptor-v1:4c32af06',
-    'builtin-synth-strings': 'descriptor-v1:9ff27cce',
-    'builtin-synth-808bass': 'descriptor-v1:e8aee043',
-    'builtin-synth-brass': 'descriptor-v1:61060347',
+    'builtin-synth': 'descriptor-v1:4a83d904',
+    'builtin-synth-mellotron': 'descriptor-v1:f9e1a882',
+    'builtin-synth-strings': 'descriptor-v1:62519c0a',
+    'builtin-synth-808bass': 'descriptor-v1:d8ad3517',
+    'builtin-synth-brass': 'descriptor-v1:e0b5d9cb',
 };
 
 const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {

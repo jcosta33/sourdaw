@@ -177,7 +177,9 @@ export const BUILTIN_SYNTH_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePar
         'Sets how far delayed vibrato bends every active main, second, and sub oscillator.',
         0,
         25,
-        ['vibratoDepth requires vibratoRate above zero and reaches full depth after vibratoDelay plus a 100 ms ramp.'],
+        [
+            'vibratoDepth requires vibratoRate above zero and reaches full depth after the velocity-scaled amplitude attack, vibratoDelay, and a 100 ms ramp.',
+        ],
         ['Deep vibrato can make sustained notes sound out of tune and exaggerate osc2Detune beating.']
     ),
     stereoSpread: synthParameterGuidance(
@@ -195,7 +197,9 @@ export const BUILTIN_SYNTH_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePar
         'Waits after the amplitude attack before fading vibrato depth in over 100 ms.',
         0.1,
         0.8,
-        ['The onset time is attack plus vibratoDelay, and vibratoRate and vibratoDepth must both be active.'],
+        [
+            'Vibrato stays at zero through the velocity-scaled amplitude attack and vibratoDelay, then reaches full depth over a 100 ms ramp; vibratoRate and vibratoDepth must both be active.',
+        ],
         ['A long delay can prevent vibrato from becoming audible on short notes.']
     ),
     filterVelocitySensitivity: synthParameterGuidance(
