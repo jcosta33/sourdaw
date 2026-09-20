@@ -1,0 +1,18 @@
+release/open-source-inventory.json
+  h_1228e573df1f42 1205
+src/modules/AudioEngine/useCases/exportStems.ts
+  h_1228e573df1f42 17
+src/modules/AudioEngine/useCases/renderOffline.ts
+  h_1228e573df1f42 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "de70128b1e8a04727a0f564ce9bf62d6ae715ced",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
