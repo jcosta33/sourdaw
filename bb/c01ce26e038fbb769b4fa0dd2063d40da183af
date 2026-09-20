@@ -1,0 +1,16 @@
+scripts/__tests__/publishLane.spec.ts
+  h_1228e573df1f42 170,224,1595-1597,1605-1618
+scripts/publishLane.ts
+  h_1228e573df1f42 531-532,1121-1131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bbc01ce26e038fbb769b4fa0dd2063d40da183af",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
