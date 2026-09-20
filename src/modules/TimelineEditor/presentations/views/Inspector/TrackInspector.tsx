@@ -18,6 +18,7 @@ import { TrackLevelSection } from './TrackLevelSection';
 import { TrackMidiFxSection } from './TrackMidiFxSection';
 import { TrackMidiOutputSection } from './TrackMidiOutputSection';
 import { TrackNotesSection } from './TrackNotesSection';
+import { TrackRoleSection } from './TrackRoleSection';
 import { TrackRoutingSection } from './TrackRoutingSection';
 import { TrackVcaSection } from './TrackVcaSection';
 
@@ -37,6 +38,7 @@ export const TrackInspector = ({
     return (
         <Stack gap={4} className="p-3">
             <TrackHeaderSection track={track} />
+            <TrackRoleSection key={track.id} track={track} />
             <TrackAlternativesSection track={track} />
             <TrackLevelSection track={track} />
             <TrackMidiFxSection track={track} />

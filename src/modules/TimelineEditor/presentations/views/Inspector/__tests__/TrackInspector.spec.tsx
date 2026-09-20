@@ -147,6 +147,7 @@ describe('TrackInspector', () => {
             />
         );
         expect(screen.getByTestId('track-header-section')).toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Track role' })).toBeVisible();
     });
 
     it('should render all sections for audio track', () => {
@@ -159,6 +160,7 @@ describe('TrackInspector', () => {
             />
         );
         expect(screen.getByTestId('track-header-section')).toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Track role' })).toBeVisible();
         expect(screen.getByTestId('track-alternatives-section')).toBeInTheDocument();
         expect(screen.getByTestId('track-level-section')).toBeInTheDocument();
         expect(screen.getByTestId('track-devices-section')).toBeInTheDocument();
@@ -209,6 +211,7 @@ describe('TrackInspector', () => {
             />
         );
         expect(screen.getByTestId('master-visualizations-section')).toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Track role' })).toBeVisible();
     });
 
     it('should not render master visualizations for non-master track', () => {

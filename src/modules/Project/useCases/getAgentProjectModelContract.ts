@@ -20,6 +20,7 @@ import {
     type ProjectTrack,
 } from '../models/ProjectData';
 
+import { getCanonicalTrackRole } from './getCanonicalTrackRole';
 import { buildProjectData } from './projectPersistence/fileIO/buildProjectData';
 import { isHydratableProjectData } from './projectPersistence/helpers/isHydratableProjectData';
 
@@ -159,6 +160,11 @@ function projectTrack(data: ProjectData, track: ProjectTrack, order: number): Ag
         hierarchy: { parentId: track.parentId, groupId: track.groupId },
         tags: [],
         role,
+        canonicalRole: getCanonicalTrackRole({
+            track,
+            trackRoles: data.meta.productionBrief?.trackRoles,
+            notesByClipId: data.midi?.notesByClipId,
+        }),
         controls: {
             gain: track.gain,
             pan: track.pan,

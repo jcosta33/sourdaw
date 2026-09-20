@@ -283,6 +283,27 @@ describe('agent project model contract', () => {
         buildProjectDataMock.mockReset();
     });
 
+    it('derives canonical roles solely from the supplied data while preserving legacy roles', async () => {
+        const supplied = projectData();
+        const track = supplied.arrangement.tracks[0]!;
+        track.name = 'Track 1';
+        track.clips = track.clips.filter((clip) => clip.type === 'midi');
+        track.devices = [
+            { id: 'kit', name: 'Kit', type: 'builtin-drum-kit', bypassed: false, parameterValues: { kit: 0 } },
+        ];
+        track.clips[0]!.notes = [{ id: 'note', pitch: 36, startBeat: 0, duration: 1, velocity: 0 }];
+        supplied.meta.productionBrief!.trackRoles = [];
+        const before = structuredClone(supplied);
+        const contract = await getAgentProjectModelContract({ projectData: supplied });
+        expect(contract?.tracks[0]?.canonicalRole).toMatchObject({ role: 'kick', source: 'clip-content' });
+        expect(contract?.tracks[0]?.role).toBeNull();
+        expect(contract?.tracks.find((item) => item.type === 'master')?.canonicalRole).toMatchObject({
+            role: 'master',
+            source: 'name-tags',
+        });
+        expect(supplied).toEqual(before);
+    });
+
     it('builds the no-input contract through project persistence without exposing media bytes', async () => {
         buildProjectDataMock.mockResolvedValueOnce({
             data: projectData(),
@@ -333,6 +354,7 @@ describe('agent project model contract', () => {
             hierarchy: { parentId: null, groupId: 'group-1' },
             tags: [],
             role: 'lead',
+            canonicalRole: { role: 'unknown', source: 'authored', evidence: 'unsupported-authored-role' },
             controls: { gain: 0.8, pan: -0.1, muted: false, soloed: true, armed: true, monitoring: 'on' },
             io: { inputId: 'input-1', outputId: 'master' },
             freeze: { status: 'frozen', compensationSeconds: 0.01 },

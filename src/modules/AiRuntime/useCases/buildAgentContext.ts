@@ -74,6 +74,18 @@ function boundedString(value: string): { value: string; truncated: boolean } {
     return boundedTo(value, MAX_IMPORTED_STRING_LENGTH);
 }
 
+function boundedCanonicalRole(role: ProjectContext['tracks'][number]['canonicalRole']) {
+    if (!role) {
+        return null;
+    }
+    return {
+        role: boundedString(role.role).value,
+        source: boundedString(role.source).value,
+        evidence: boundedString(role.evidence).value,
+        contentRevision: role.contentRevision?.slice(0, MAX_IMPORTED_STRING_LENGTH),
+    };
+}
+
 function buildProjectData(context: ProjectContext) {
     const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId) ?? null;
     // The level travels as decibels rather than as the stored amplitude: the
@@ -83,6 +95,7 @@ function buildProjectData(context: ProjectContext) {
         id: track.id,
         name: { trust: 'untrusted_imported_string' as const, ...boundedString(track.name) },
         kind: track.kind,
+        canonicalRole: boundedCanonicalRole(track.canonicalRole),
         frozen: track.frozen ?? false,
         gainDb: toLevelDb(track.gain),
     }));
@@ -105,6 +118,7 @@ function buildProjectData(context: ProjectContext) {
                   id: selectedTrack.id,
                   name: { trust: 'untrusted_imported_string' as const, ...boundedString(selectedTrack.name) },
                   kind: selectedTrack.kind,
+                  canonicalRole: boundedCanonicalRole(selectedTrack.canonicalRole),
                   frozen: selectedTrack.frozen ?? false,
                   clips: selectedTrack.clips.slice(0, MAX_SELECTED_CLIPS).map((clip) => ({
                       id: clip.id,

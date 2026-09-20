@@ -84,6 +84,53 @@ describe('buildAgentContext', () => {
     afterEach(() => {
         agentRunLifecycle.clear();
     });
+    it('serializes canonical source evidence in selected and selectable provider targets', () => {
+        const canonicalRole = {
+            role: 'kick' as const,
+            source: 'clip-content' as const,
+            evidence: 'stored-drum-voices' as const,
+            contentRevision: 'notes-1',
+        };
+        const withRoles = { ...context, tracks: context.tracks.map((track) => ({ ...track, canonicalRole })) };
+        const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'Find the kick', context: withRoles });
+        const serialized = JSON.stringify(canonicalRole);
+        expect(built.message.split(serialized).length - 1).toBe(2);
+        const changed = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Find the kick',
+            context: {
+                ...withRoles,
+                tracks: withRoles.tracks.map((track) => ({
+                    ...track,
+                    canonicalRole: { ...canonicalRole, contentRevision: 'notes-2' },
+                })),
+            },
+        });
+        expect(changed.evidence.snapshot).not.toEqual(built.evidence.snapshot);
+    });
+
+    it('bounds structural role evidence and omits extra imported properties from provider targets', () => {
+        const canonicalRole = {
+            role: 'kick',
+            source: 'clip-content',
+            evidence: 'x'.repeat(2000),
+            contentRevision: 'y'.repeat(2000),
+            notes: [{ pitch: 36 }],
+        };
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Inspect',
+            context: {
+                ...context,
+                tracks: context.tracks.map((track) => ({ ...track, canonicalRole })),
+            },
+        });
+        expect(built.message).toContain('x'.repeat(512));
+        expect(built.message).not.toContain('x'.repeat(513));
+        expect(built.message).not.toContain('y'.repeat(513));
+        expect(built.message).not.toContain('"pitch"');
+    });
+
     it('orders authority, labels untrusted data, and retains bounded resumable evidence', () => {
         const built = buildAgentContext({
             fixedPolicy: 'Fixed policy: tools only.',

@@ -1,3 +1,5 @@
+import { type CanonicalTrackRoleProjection } from './CanonicalTrackRole';
+
 export const SEMANTIC_PROJECT_QUERY_SCHEMA = 'sourdaw.semantic-project-query';
 export const SEMANTIC_PROJECT_QUERY_SCHEMA_VERSION = 1;
 export const MAX_SEMANTIC_QUERY_PAGE_SIZE = 50;
@@ -76,6 +78,7 @@ export type SemanticQueryItem = {
     kind: string;
     name?: string;
     inferredConfidence?: number;
+    canonicalRole?: CanonicalTrackRoleProjection;
     [key: string]: unknown;
 };
 
