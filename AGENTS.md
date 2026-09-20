@@ -84,8 +84,10 @@ that admits it — the input or state that breaks — never the path the diff to
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
 substance before acceptance. `pnpm stances:check <bundle>` tests each admission line with a typed
-judgment and fails lines that name touched paths instead of failure modes; run it before dispatch
-and repair what it fails.
+judgment and fails lines that name touched paths instead of failure modes. Run it before dispatch
+when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
+its inability to run — a missing key or an unavailable service — is a disclosed limitation, never a
+stop, and the orchestrator's substance duty stands either way.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,

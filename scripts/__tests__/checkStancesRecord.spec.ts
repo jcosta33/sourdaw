@@ -87,8 +87,18 @@ describe('buildStancesCheckQuestions', () => {
         const questions = buildStancesCheckQuestions(checkRecord());
 
         for (const question of Object.values(questions)) {
-            expect(question.criteria.true).toContain('not merely which files changed');
+            expect(question.criteria.true).toContain(
+                'the specific input, state, or scenario that breaks for this stance'
+            );
+            expect(question.criteria.true).toContain(
+                'generic consequence vocabulary without a stance-specific trigger does not qualify'
+            );
             expect(question.criteria.false).toContain('touched files, paths, hunks, or module areas');
+            expect(question.criteria.false).toContain('states an outcome with no named trigger');
+            expect(question.criteria.false).toContain('hedges a maybe-consequence with no concrete break');
+            expect(question.criteria.false).toContain(
+                "restates this criterion's or the question's own vocabulary without stance-specific substance"
+            );
         }
     });
 });

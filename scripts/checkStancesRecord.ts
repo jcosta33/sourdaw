@@ -22,12 +22,15 @@
  *
  *  1. **Vacuous admission.** A line that only names touched files, paths, hunks, or module areas
  *     scores low and is reported FAIL with its probability.
- *  2. **Genuine admission.** A line describing what would go wrong — a bad input publishes, a
- *     good record refuses, a rule is contradicted, a user-visible failure occurs — scores at or
- *     above the threshold and passes.
- *  3. **Missing admission.** An entry without a non-empty `admittedBy` string is refused before
+ *  2. **Triggerless admission.** A line that states a bare outcome, hedges a maybe-consequence, or
+ *     echoes generic failure-mode vocabulary without naming the stance-specific trigger scores low
+ *     and is reported FAIL with its probability.
+ *  3. **Genuine admission.** A line naming the concrete trigger and the consequence that follows
+ *     from it — a reordered send queue drops a buffered frame — scores at or above the threshold
+ *     and passes.
+ *  4. **Missing admission.** An entry without a non-empty `admittedBy` string is refused before
  *     any request: the contract requires the line, so its absence is not a judgment call.
- *  4. **Malformed shape.** The base record shape is parsed by the production parser
+ *  5. **Malformed shape.** The base record shape is parsed by the production parser
  *     (`parseReviewStancesRecord`), so a record the publication gate would refuse is refused here
  *     with the same message.
  */
@@ -126,17 +129,25 @@ export function readStancesCheckRecord(raw: unknown, path: string): StancesCheck
 }
 
 const CRITERIA_TRUE =
-    'The admission describes what would go wrong (a bad input publishes, a good record refuses, a rule is contradicted, a user-visible failure occurs), not merely which files changed';
+    'The admission names the specific input, state, or scenario that breaks for this stance — one concrete ' +
+    'causal chain whose stance-specific trigger (the actual mechanism, component, or behavior involved, not ' +
+    'a generic actor like "a bad input" or "a rule") produces the stated consequence; generic consequence ' +
+    'vocabulary without a stance-specific trigger does not qualify, even when it reads like a failure list';
 const CRITERIA_FALSE =
-    'The admission only names touched files, paths, hunks, or module areas, or restates the change without a failure consequence';
+    'The admission only names touched files, paths, hunks, or module areas; or states an outcome with no ' +
+    'named trigger; or hedges a maybe-consequence with no concrete break; or merely restates this ' +
+    "criterion's or the question's own vocabulary without stance-specific substance; or describes the check " +
+    'itself in the abstract instead of naming a concrete break; or lists generic outcomes ("a bad input ' +
+    'publishes", "a rule is contradicted") that name no concrete mechanism of this change';
 
 function buildAdmissionQuestion(index: number): StancesQuestion {
     return {
         type: 'noul',
         instructions:
             `Does \`stances[${String(index)}].admittedBy\` name a concrete failure mode for the stance ` +
-            `\`stances[${String(index)}].stance\` — an input, state, or scenario that would break — rather ` +
-            'than only naming files or paths the diff touches?',
+            `\`stances[${String(index)}].stance\` — an input, state, or scenario that would break, whose ` +
+            'consequence follows from it — rather than only naming files or paths, or stating generic ' +
+            'consequence language without a stance-specific trigger?',
         criteria: { true: CRITERIA_TRUE, false: CRITERIA_FALSE },
     };
 }
@@ -207,7 +218,8 @@ const USAGE = [
     '',
     "Checks a review bundle's stances.json admission lines with a TypeSafe Jev judgment: each",
     "stance's admittedBy line must name a concrete failure mode — an input, state, or scenario",
-    'that would break — rather than only the files or paths the diff touches.',
+    'that would break, whose consequence follows from it — rather than only the files or paths the',
+    'diff touches, a bare outcome, or generic consequence vocabulary.',
     '',
     '  <bundle-path>    Review bundle directory holding stances.json.',
     '  --threshold <t>  Pass mark for each judgment, in (0, 1]. Default 0.5.',
