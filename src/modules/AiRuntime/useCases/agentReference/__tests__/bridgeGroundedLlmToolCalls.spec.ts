@@ -6061,6 +6061,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
             value: -12,
             stated: '-12 dB',
             carrier: 'dB',
+            wordStated: '-12 decibels',
+            wrongWordStated: '-12 hertz',
         },
         {
             id: 'native-frequency',
@@ -6071,9 +6073,33 @@ describe('bridgeGroundedLlmToolCalls', () => {
             value: 2_400,
             stated: '2400 Hz',
             carrier: 'Hz',
+            wordStated: '2400 hertz',
+            wrongWordStated: '2400 milliseconds',
         },
-        { id: 'native-attack', unit: 'ms', current: 10, min: 0, max: 1_000, value: 20, stated: '20 ms', carrier: 'ms' },
-        { id: 'native-mix', unit: '%', current: 25, min: 0, max: 100, value: 50, stated: '50%', carrier: '%' },
+        {
+            id: 'native-attack',
+            unit: 'ms',
+            current: 10,
+            min: 0,
+            max: 1_000,
+            value: 20,
+            stated: '20 ms',
+            carrier: 'ms',
+            wordStated: '20 milliseconds',
+            wrongWordStated: '20 percent',
+        },
+        {
+            id: 'native-mix',
+            unit: '%',
+            current: 25,
+            min: 0,
+            max: 100,
+            value: 50,
+            stated: '50%',
+            carrier: '%',
+            wordStated: '50 percent',
+            wrongWordStated: '50 semitones',
+        },
         { id: 'native-ratio', unit: ':1', current: 2, min: 1, max: 20, value: 4, stated: '4:1', carrier: ':1' },
         {
             id: 'native-pitch',
@@ -6084,10 +6110,12 @@ describe('bridgeGroundedLlmToolCalls', () => {
             value: 5,
             stated: '5 st',
             carrier: 'semitones',
+            wordStated: '5 semitones',
+            wrongWordStated: '5 decibels',
         },
     ] as const)(
         'grounds $id in its descriptor-backed $unit native unit',
-        ({ id, unit, current, min, max, value, stated, carrier }) => {
+        ({ id, unit, current, min, max, value, stated, carrier, ...wordCases }) => {
             const context: ProjectContext = {
                 ...projectContext,
                 tracks: [
@@ -6136,6 +6164,32 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     }),
                 },
             ]);
+            if ('wordStated' in wordCases) {
+                const matchingWord = bridge(
+                    [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                    `set ${id} on device-native to ${wordCases.wordStated}`,
+                    context
+                );
+                const mismatchedWord = bridge(
+                    [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                    `set ${id} on device-native to ${wordCases.wrongWordStated}`,
+                    context
+                );
+
+                expect(matchingWord.actions).toEqual([
+                    {
+                        type: 'setDeviceParameter',
+                        payload: expect.objectContaining({
+                            deviceId: 'device-native',
+                            paramId: id,
+                            value,
+                            valueUnit: carrier,
+                        }),
+                    },
+                ]);
+                expect(mismatchedWord.actions).toEqual([]);
+                expect(mismatchedWord.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+            }
         }
     );
 

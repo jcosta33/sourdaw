@@ -1939,7 +1939,7 @@ function getAdjacentDeviceParameterUnit(
     if (/^\s*:/u.test(suffix)) {
         return /^\s*:\s*1(?=$|[\s,;!?)]|\.(?!\d))/u.test(suffix) ? ':1' : 'unsupported-ratio';
     }
-    const named = /^\s*(dB|Hz|ms|st|semitones)\b/iu.exec(suffix)?.[1];
+    const named = /^\s*(dB|decibels?|Hz|hertz|ms|milliseconds?|percents?|st|semitones?)\b/iu.exec(suffix)?.[1];
     return normalizeDeviceParameterValueUnit(named);
 }
 

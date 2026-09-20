@@ -11,12 +11,21 @@ export function normalizeDeviceParameterValueUnit(value: unknown): DeviceParamet
     }
     switch (value.trim().toLocaleLowerCase()) {
         case 'db':
+        case 'decibel':
+        case 'decibels':
             return 'dB';
         case 'hz':
+        case 'hertz':
             return 'Hz';
         case 'ms':
+        case 'millisecond':
+        case 'milliseconds':
             return 'ms';
+        case 'percent':
+        case 'percents':
+            return '%';
         case 'st':
+        case 'semitone':
         case 'semitones':
             return 'semitones';
         default:
