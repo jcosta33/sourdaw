@@ -1,0 +1,30 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_1228e573df1f42 7,27,29,31-34,37,873-924,986-993,1084-1202
+scripts/semanticReview/evidence.ts
+  h_1228e573df1f42 22,231
+scripts/semanticReview/interpret.ts
+  h_1228e573df1f42 14,16,242
+scripts/semanticReview/provider.ts
+  h_1228e573df1f42 174-178,192-200,387,401,474-476,479,485,570
+scripts/semanticReview/report.ts
+  h_1228e573df1f42 178-195,231,437-461,477-490,515-523
+scripts/semanticReview/rules.ts
+  h_1228e573df1f42 249-261,310-311
+scripts/semanticReview/run.ts
+  h_1228e573df1f42 201-203,543,608,616-618
+scripts/semanticReview/sensitive.ts
+  h_1228e573df1f42 1-40
+scripts/semanticReview/verify.ts
+  h_1228e573df1f42 29,42,44,168-210,221-222,226-227,231-232,236,297-298,306-315,324-332,350,374-375,387-389,391-392,404-413,440-441,467-468,482-488,492,509,526-536,542,563,565,582-583,585
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1ab42435ed0a1926325f80ceeaf86c43bb65d86f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
