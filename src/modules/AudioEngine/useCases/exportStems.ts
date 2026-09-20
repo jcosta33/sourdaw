@@ -23,7 +23,7 @@ import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDe
 import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
-import { resetCancelFlag } from './offlineRender/resetCancelFlag';
+import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
@@ -126,7 +126,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
     const releaseLock = acquireRenderLock();
 
     try {
-        resetCancelFlag();
+        // The scope's signal is this stem set's cancellation handle (#4440):
+        // threaded into every strip so instrument setup aborts at Cancel.
+        const cancellationSignal = beginExportCancellationScope();
 
         const durationBeats = typeof optsOrBeats === 'number' ? optsOrBeats : optsOrBeats.durationBeats;
         const sampleRate =
@@ -283,6 +285,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         honorMuted: false,
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                         onWarning,
+                        cancellationSignal,
                     });
                     trackStripsById.set(groupedTrack.id, groupedStrip);
                     deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
@@ -319,6 +322,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             groups: vcaGroups,
                         }),
                         onWarning,
+                        cancellationSignal,
                     });
                     trackStripsById.set(keySourceTrack.id, keyStrip);
                     deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);

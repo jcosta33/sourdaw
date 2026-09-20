@@ -269,3 +269,158 @@ describe('buildDeviceChain offline instrument setup', () => {
         }
     });
 });
+
+describe('buildDeviceChain offline instrument setup — cancellation (#4440)', () => {
+    let workletNode: FakeAudioWorkletNode;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
+        workletNode = new FakeAudioWorkletNode(0);
+        for (const creator of Object.values(creators)) {
+            creator.mockResolvedValue({
+                workletNode,
+                ready: Promise.resolve({}),
+                noteOn: vi.fn(),
+                noteOff: vi.fn(),
+            });
+        }
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        setAudioDeviceRuntimeSink({});
+    });
+
+    it('starts no setup for an already-aborted render and unwinds with Export cancelled', async () => {
+        const prepareOfflineInstrument = vi.fn(() => Promise.resolve());
+        setAudioDeviceRuntimeSink({ prepareOfflineInstrument });
+        const { input, output } = makeChainEnds();
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(
+            buildDeviceChain({} as BaseAudioContext, [makeDevice('levain-1', 'levain')], input, output, {
+                cancellationSignal: controller.signal,
+            })
+        ).rejects.toThrow('Export cancelled');
+        expect(prepareOfflineInstrument).not.toHaveBeenCalled();
+    });
+
+    it('aborts an in-flight setup when the render is cancelled and unwinds, never degrades', async () => {
+        let setupSignal: AbortSignal | undefined;
+        let releaseSetup: ((value: void) => void) | undefined;
+        setAudioDeviceRuntimeSink({
+            prepareOfflineInstrument: ({ signal }) =>
+                new Promise<void>((resolve, reject) => {
+                    setupSignal = signal;
+                    releaseSetup = resolve;
+                    signal?.addEventListener('abort', () => {
+                        reject(new Error('The operation was aborted'));
+                    });
+                }),
+        });
+        const { input, output } = makeChainEnds();
+        const controller = new AbortController();
+
+        const pending = buildDeviceChain({} as BaseAudioContext, [makeDevice('levain-1', 'levain')], input, output, {
+            cancellationSignal: controller.signal,
+        });
+
+        // Let the setup actually start before cancelling, so the probe lands
+        // on the in-flight abort rather than the before-start guard above.
+        for (let attempt = 0; attempt < 100 && setupSignal === undefined; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        expect(setupSignal).toBeDefined();
+
+        // Cancel while the setup is still pending: the fetch-side signal the
+        // sink received must fire at the moment of cancellation, not at the
+        // 30-second deadline and not at the next between-track checkpoint.
+        controller.abort();
+        await expect(pending).rejects.toThrow('Export cancelled');
+        expect(setupSignal?.aborted).toBe(true);
+        // The catch that degrades a failed setup to silence must not have run:
+        // a cancelled render may not report success over a missing device.
+        expect(loggerWarn).not.toHaveBeenCalledWith(expect.stringContaining('render silent'));
+        void releaseSetup;
+    });
+
+    it('discards a setup result that completes after cancellation', async () => {
+        let releaseSetup: ((value: void) => void) | undefined;
+        setAudioDeviceRuntimeSink({
+            prepareOfflineInstrument: () =>
+                new Promise<void>((resolve) => {
+                    releaseSetup = resolve;
+                }),
+        });
+        const { input, output } = makeChainEnds();
+        const controller = new AbortController();
+
+        const pending = buildDeviceChain({} as BaseAudioContext, [makeDevice('levain-1', 'levain')], input, output, {
+            cancellationSignal: controller.signal,
+        });
+
+        // The fetch settles successfully after Cancel was pressed: the late
+        // result belongs to a render that no longer wants one.
+        controller.abort();
+        releaseSetup?.();
+        await expect(pending).rejects.toThrow('Export cancelled');
+    });
+
+    it('keeps the deadline independent of the caller signal', async () => {
+        vi.useFakeTimers();
+        try {
+            let observedSignal: AbortSignal | undefined;
+            setAudioDeviceRuntimeSink({
+                prepareOfflineInstrument: ({ signal }) =>
+                    new Promise<void>((_resolve, reject) => {
+                        observedSignal = signal;
+                        signal?.addEventListener('abort', () => {
+                            reject(new Error('aborted'));
+                        });
+                    }),
+            });
+            const { input, output } = makeChainEnds();
+            const controller = new AbortController();
+
+            const pending = buildDeviceChain(
+                {} as BaseAudioContext,
+                [makeDevice('levain-1', 'levain')],
+                input,
+                output,
+                { cancellationSignal: controller.signal }
+            );
+
+            // No cancellation arrives, yet the 30-second backstop still fires:
+            // the caller signal must not have replaced the deadline.
+            await vi.advanceTimersByTimeAsync(30_000);
+            const entries = await pending;
+
+            expect(observedSignal?.aborted).toBe(true);
+            expect(controller.signal.aborted).toBe(false);
+            expect(entries.map((entry) => entry.deviceId)).toEqual(['levain-1']);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('keeps degrading a genuinely failed setup when no cancellation signal is threaded', async () => {
+        setAudioDeviceRuntimeSink({
+            prepareOfflineInstrument: () => Promise.reject(new Error('manifest 404')),
+        });
+        const { input, output } = makeChainEnds();
+
+        const entries = await buildDeviceChain(
+            {} as BaseAudioContext,
+            [makeDevice('levain-1', 'levain')],
+            input,
+            output
+        );
+
+        // The freeze path passes no signal: its degrade-to-silent contract is
+        // unchanged by the cancellation wiring.
+        expect(entries.map((entry) => entry.deviceId)).toEqual(['levain-1']);
+        expect(entries[0]?.instrumentControls).toBeTypeOf('object');
+    });
+});

@@ -264,10 +264,12 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), padChild, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: groupedTracks })
@@ -315,6 +317,7 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), child, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
             expect.objectContaining({ track: child, allTracks: [child] })
@@ -460,6 +463,7 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), activePad, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: topology })

@@ -107,6 +107,7 @@ const measuredScriptBudgets = new Map<string, number>([
     ['lint', 4 * 1024 ** 3],
     ['test:run', 2048 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
+    ['typecheck', 3072 * 1024 ** 2],
     ['typecheck:test', 6 * 1024 ** 3],
     ['test:e2e', 5.5 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],

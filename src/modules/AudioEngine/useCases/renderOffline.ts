@@ -10,6 +10,7 @@ import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/co
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
 import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { collectWiredSidechainDetectorRoutes } from './offlineRender/collectWiredSidechainDetectorRoutes';
@@ -21,7 +22,6 @@ import { cropHistoryFromRenderedBuffer } from './offlineRender/cropHistoryFromRe
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
 import { renderOfflineWithNativeEngine } from './offlineRender/renderOfflineWithNativeEngine';
-import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { resolveOutputTarget } from './offlineRender/resolveOutputTarget';
 import { resolvePrintReachability } from './offlineRender/resolvePrintReachability';
@@ -81,7 +81,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
 
     try {
         // Reset cancel token inside the try so it is never reset when acquireRenderLock throws.
-        resetCancelFlag();
+        // The scope's signal is this render's cancellation handle (#4440): threaded into
+        // the backend so instrument setup can abort at the moment Cancel fires.
+        const cancellationSignal = beginExportCancellationScope();
 
         const durationBeats = typeof optsOrBeats === 'number' ? optsOrBeats : optsOrBeats.durationBeats;
         const sampleRate =
@@ -303,7 +305,12 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // backend seam from here on. The bounce is the seam's first production
         // consumer; the native engine above is the second, answering the same
         // commands (campaign D3).
-        backend = createOfflineRenderBackend({ context: offlineCtx, masterNode: masterGain, onWarning });
+        backend = createOfflineRenderBackend({
+            context: offlineCtx,
+            masterNode: masterGain,
+            onWarning,
+            cancellationSignal,
+        });
         // A live view of the backend's own map, not a copy: sidechain routing,
         // Toaster routing, clip scheduling and the runtime-failure sweep all read
         // exactly the set of devices `dispose()` will destroy, so the read model

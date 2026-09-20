@@ -88,6 +88,12 @@ type RunOfflineInstrumentSetupInput = {
     port: MessagePort;
     /** The chain's injected logger, so a swallowed failure is still reported. */
     logger: { warn: (message: string) => void };
+    /**
+     * The render's cancellation signal, when this chain belongs to a render
+     * that owns user cancellation (#4440). `undefined` for callers that do not
+     * (the freeze path): they keep the deadline-only backstop.
+     */
+    signal?: AbortSignal;
 };
 
 /**
@@ -105,6 +111,10 @@ function resolveWorkletPort(node: AudioNode): MessagePort | null {
     return node.port;
 }
 
+function exportCancelled(): Error {
+    return createExportError('Export cancelled');
+}
+
 /**
  * Run a device's offline setup under a deadline, and never let its failure remove
  * the device from the chain.
@@ -117,11 +127,17 @@ function resolveWorkletPort(node: AudioNode): MessagePort | null {
  * never settles therefore never released the lock, and every subsequent export —
  * mixdown or stems, both take the same lock — failed with "an export is already in
  * progress" until the app was reloaded. A stalled network now ends the load
- * instead of bricking exporting. It is a backstop, not cancellation: pressing
- * Cancel during a load still does nothing, because the cancel flag is read between
- * tracks and aborts no in-flight fetch. Wiring that up means threading the
- * export's own `AbortSignal` from `renderOffline` into this call, which is a
- * separate change.
+ * instead of bricking exporting.
+ *
+ * The deadline remains a backstop; cancellation is the `signal` (#4440). A render
+ * that owns user cancellation — mixdown or stems, via
+ * `beginExportCancellationScope` — threads its scope's signal in here, and
+ * Cancel aborts an in-flight fetch at the moment it fires: before the setup
+ * starts (no new work), while it pends (the fetch's own signal aborts), or after
+ * it resolves (the late result is discarded). Cancellation then propagates as
+ * `Export cancelled` rather than degrading the device, so the render never
+ * reports success over work the user stopped. Callers without a signal — the
+ * freeze path — keep the deadline-only behaviour this function always had.
  *
  * The catch exists because throwing here is worse than failing. The call site is
  * inside the chain's device-creation `try`, so an exception is caught there,
@@ -143,11 +159,28 @@ function resolveWorkletPort(node: AudioNode): MessagePort | null {
  * it is needed. `buildDeviceChainOfflineInstrumentSetup.spec.ts` pins it with a
  * sink that rejects outright.
  */
-async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineInstrumentSetupInput): Promise<void> {
+async function runOfflineInstrumentSetup({
+    device,
+    port,
+    logger,
+    signal,
+}: RunOfflineInstrumentSetupInput): Promise<void> {
+    // An already-cancelled render starts no new work — not even a setup that
+    // would resolve instantly, because the render's answer is already decided.
+    if (signal?.aborted) {
+        throw exportCancelled();
+    }
     const controller = new AbortController();
     const deadline = setTimeout(() => {
         controller.abort();
     }, OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS);
+    // The caller's cancellation aborts the same controller the deadline uses,
+    // keeping the deadline independent: whichever fires first wins, and a
+    // caller signal that never fires leaves the deadline exactly as it was.
+    const callerAborts = () => {
+        controller.abort();
+    };
+    signal?.addEventListener('abort', callerAborts);
     try {
         await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
             deviceId: device.id,
@@ -156,12 +189,27 @@ async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineIns
             port,
             signal: controller.signal,
         });
+        // A setup that raced the cancellation button across its last await
+        // must not count: its result belongs to a render that no longer wants
+        // one, and letting it through would schedule and render a stem the
+        // user watched stop.
+        if (signal?.aborted) {
+            throw exportCancelled();
+        }
     } catch (error) {
+        // Cancellation is not a setup failure. It propagates so the render
+        // unwinds, the lock releases, and the dialog reports the cancel —
+        // degrading the device to silence here would let the render continue
+        // to a success it should never report.
+        if (signal?.aborted) {
+            throw exportCancelled();
+        }
         // Deliberately swallowed: see why above. The node stays in the chain.
         logger.warn(
             `Offline setup failed for ${device.type} (${device.id}); it will render silent rather than be replaced: ${String(error)}`
         );
     } finally {
+        signal?.removeEventListener('abort', callerAborts);
         clearTimeout(deadline);
     }
 }
@@ -184,6 +232,15 @@ export type BuildDeviceChainContext = {
      * rendering the track.
      */
     contributesAudio?: boolean;
+    /**
+     * The owning render's cancellation signal (#4440), threaded from
+     * `renderOffline`/`exportStems` through the strip build. Present only for
+     * renders that own user cancellation; its effect is that an instrument
+     * setup interrupted by Cancel unwinds the build with `Export cancelled`
+     * instead of degrading the device and reporting success. Callers that pass
+     * nothing keep the degrade-to-silent contract unchanged.
+     */
+    cancellationSignal?: AbortSignal;
 };
 
 /**
@@ -404,9 +461,25 @@ export const buildDeviceChain = inject({ logger })(
                         // is what keeps that domain from being entered.
                         const workletPort = resolveWorkletPort(strategy.node.inputNode);
                         if (workletPort) {
-                            await runOfflineInstrumentSetup({ device, port: workletPort, logger });
+                            await runOfflineInstrumentSetup({
+                                device,
+                                port: workletPort,
+                                logger,
+                                signal: context.cancellationSignal,
+                            });
                         }
                     } catch (error) {
+                        // Cancellation unwinds the build (#4440): the catch below
+                        // degrades and continues, which is exactly wrong for a
+                        // render the user stopped — it would hand back a chain
+                        // missing a device and let the export report success.
+                        // The signal, not the error's shape, decides: only a
+                        // render that threaded one can take this exit, so the
+                        // freeze path's degrade contract is untouched.
+                        if (context.cancellationSignal?.aborted) {
+                            releaseBuiltStrategies(entries, logger);
+                            throw exportCancelled();
+                        }
                         // Refuse only for a device the session is actually
                         // sounding — dropping one of those hands back a file the
                         // session does not play. A type the catalog does not know
