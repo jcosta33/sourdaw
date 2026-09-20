@@ -1,0 +1,29 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts
+  s_ed5aa36a3ba357::t_dd6213121d69ff 1,33-35,49-51,250-254
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_ed5aa36a3ba357::t_dd6213121d69ff 31-33,41-43
+src/app/__tests__/bootstrap.spec.ts
+  s_ed5aa36a3ba357::t_dd6213121d69ff 383-384,493-495,513-515,574-576,609-611
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_ed5aa36a3ba357::t_dd6213121d69ff 35
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_ed5aa36a3ba357::t_dd6213121d69ff 39
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_ed5aa36a3ba357::t_dd6213121d69ff 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bd01d32279733cd65e9db3d4fe7646acc921c0d9",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
