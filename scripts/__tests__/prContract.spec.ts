@@ -1055,6 +1055,17 @@ describe('product-scope test instructions', () => {
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
+    it('passes a launch-less annotation clause split off by a semicolon', () => {
+        // The semicolon splits the line, and the pronoun clause left behind carries no launch:
+        // annotation without a launch is the fail-open margin (an external semantic judgment
+        // scores it 0.08 for teaching a step), while the same clause attached to its launch —
+        // the three-line inventory fixture — refuses.
+        const split = 'pnpm typecheck; it is clean';
+
+        expect(commandOnlyTestInstructions(split)).toBe(false);
+        expect(() => assertObservableTestInstructions(split)).not.toThrow();
+    });
+
     it('keeps noun-clause parentheticals that name UI state', () => {
         // A parenthetical whose content is not pure annotation keeps its content in the prose, and
         // the nouns beyond the vocabulary rescue the segment.
