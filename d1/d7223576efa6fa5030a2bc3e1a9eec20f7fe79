@@ -1,0 +1,23 @@
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_3da914ee037abb 10
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  s_ed5aa36a3ba357::t_3da37eb6e2d5a1 227-228,233
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_ed5aa36a3ba357::t_e34f5a4ba2a538 13-14,21-32,147-154,161-166,168,173-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d1d7223576efa6fa5030a2bc3e1a9eec20f7fe79",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
