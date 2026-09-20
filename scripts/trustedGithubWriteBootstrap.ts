@@ -37,7 +37,9 @@ export type TrustedGithubWriteCommand =
     | 'review:publish:recover'
     | 'review:repair'
     | 'review:confirm'
-    | 'review:resolve';
+    | 'review:resolve'
+    | 'review:shadow-status'
+    | 'ruleset:harden';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -303,6 +305,19 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:shadow-status': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/reviewShadowStatus.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'ruleset:harden': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/rulesetHardening.ts',
+        'scripts/canonicalRecord.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
@@ -317,6 +332,8 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'review:repair': { path: 'scripts/repairReviewFinding.ts', runner: 'runRepairReviewFindingCli' },
     'review:confirm': { path: 'scripts/confirmReviewRepairs.ts', runner: 'runConfirmReviewRepairsCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
+    'review:shadow-status': { path: 'scripts/reviewShadowStatus.ts', runner: 'runReviewShadowStatusCli' },
+    'ruleset:harden': { path: 'scripts/rulesetHardening.ts', runner: 'runRulesetHardeningCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -1462,12 +1479,14 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'review:publish:recover' ||
         value === 'review:repair' ||
         value === 'review:confirm' ||
-        value === 'review:resolve'
+        value === 'review:resolve' ||
+        value === 'review:shadow-status' ||
+        value === 'ruleset:harden'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden> [args...]'
     );
 }
 

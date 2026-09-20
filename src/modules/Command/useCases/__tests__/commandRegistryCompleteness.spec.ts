@@ -149,8 +149,15 @@ describe('command registry completeness', () => {
 
         expectTypeOf<ExecutableAppAction['type']>().toEqualTypeOf<DescriptorActionType>();
         // The app payload carries the recording policy and the provider payload
-        // does not, which is what keeps a planner from selecting it.
-        expectTypeOf<GainProviderAction['payload']>().toEqualTypeOf<{ trackId: string; gain: number }>();
+        // does not, which is what keeps a planner from selecting it. Both offer
+        // the same three level forms: a planner that could only state a linear
+        // amplitude would be converting decibels itself.
+        expectTypeOf<GainProviderAction['payload']>().toEqualTypeOf<{
+            trackId: string;
+            gain?: number;
+            gainDb?: number;
+            deltaDb?: number;
+        }>();
         // The app payload states its level in one of three forms; the guard is
         // required whichever form asked, because every caller measures the
         // fader before it moves it.

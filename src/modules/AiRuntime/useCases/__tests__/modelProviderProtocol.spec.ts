@@ -173,7 +173,13 @@ describe('model provider protocol', () => {
             eventEnvelope(request, 1, {
                 type: 'usage',
                 mode: 'cumulative-snapshot',
-                usage: { inputTokens: 30, outputTokens: null, cachedInputTokens: null, reasoningTokens: null },
+                usage: {
+                    inputTokens: 17,
+                    outputTokens: 0,
+                    cachedInputTokens: 2,
+                    cacheWriteInputTokens: 3,
+                    reasoningTokens: null,
+                },
                 provenance: 'provider-reported',
             })
         );
@@ -181,16 +187,23 @@ describe('model provider protocol', () => {
             eventEnvelope(request, 2, {
                 type: 'usage',
                 mode: 'final',
-                usage: { inputTokens: 31, outputTokens: 12, cachedInputTokens: null, reasoningTokens: null },
+                usage: {
+                    inputTokens: null,
+                    outputTokens: 4,
+                    cachedInputTokens: null,
+                    cacheWriteInputTokens: null,
+                    reasoningTokens: null,
+                },
                 provenance: 'provider-reported',
             })
         );
         const result = session.finish(finishEnvelope(request, 3, { reason: 'stop' }));
 
         expect(result.usage).toEqual({
-            inputTokens: 31,
-            outputTokens: 12,
-            cachedInputTokens: null,
+            inputTokens: 17,
+            outputTokens: 4,
+            cachedInputTokens: 2,
+            cacheWriteInputTokens: 3,
             reasoningTokens: null,
             provenance: 'provider-reported',
         });
@@ -209,6 +222,161 @@ describe('model provider protocol', () => {
             provenance: 'unavailable',
         });
     });
+
+    it('rejects a malformed optional cache-write counter', () => {
+        const { protocol, request } = readyRequest();
+        const session = protocol.start(request);
+
+        expect(() =>
+            session.push(
+                eventEnvelope(request, 0, {
+                    type: 'usage',
+                    mode: 'final',
+                    usage: {
+                        inputTokens: 1,
+                        outputTokens: 1,
+                        cachedInputTokens: 0,
+                        cacheWriteInputTokens: -1,
+                        reasoningTokens: null,
+                    },
+                    provenance: 'provider-reported',
+                })
+            )
+        ).toThrow('Provider stream event has an invalid runtime shape.');
+    });
+
+    it('lets an explicit unavailable counter replace a prior cumulative value', () => {
+        const { protocol, request } = readyRequest();
+        const session = protocol.start(request);
+        session.push(
+            eventEnvelope(request, 0, {
+                type: 'usage',
+                mode: 'cumulative-snapshot',
+                usage: {
+                    inputTokens: 17,
+                    outputTokens: 0,
+                    cachedInputTokens: 2,
+                    cacheWriteInputTokens: 3,
+                    reasoningTokens: null,
+                },
+                provenance: 'provider-reported',
+            })
+        );
+        session.push(
+            eventEnvelope(request, 1, {
+                type: 'usage',
+                mode: 'final',
+                usage: {
+                    inputTokens: null,
+                    outputTokens: 4,
+                    cachedInputTokens: 2,
+                    cacheWriteInputTokens: Number.MAX_SAFE_INTEGER,
+                    reasoningTokens: null,
+                },
+                unavailableCounters: ['inputTokens'],
+                provenance: 'provider-reported',
+            })
+        );
+
+        const result = session.finish(finishEnvelope(request, 2, { reason: 'stop' }));
+
+        expect(result.usage).toEqual({
+            inputTokens: null,
+            outputTokens: 4,
+            cachedInputTokens: 2,
+            cacheWriteInputTokens: Number.MAX_SAFE_INTEGER,
+            reasoningTokens: null,
+            provenance: 'provider-reported',
+        });
+    });
+
+    it.each(['an explicit invalidation', 'a delta overflow'])(
+        'keeps %s unavailable across later deltas until a complete snapshot replaces it',
+        (scenario) => {
+            const runSequence = (replacement?: number): ModelProviderResult => {
+                const { protocol, request } = readyRequest();
+                const session = protocol.start(request);
+                session.push(
+                    eventEnvelope(request, 0, {
+                        type: 'usage',
+                        mode: 'delta',
+                        usage: {
+                            inputTokens: 10,
+                            outputTokens: null,
+                            cachedInputTokens: null,
+                            reasoningTokens: null,
+                        },
+                        provenance: 'provider-reported',
+                    })
+                );
+                const invalidatingEnvelope = eventEnvelope(request, 1, {
+                    type: 'usage',
+                    mode: 'delta',
+                    usage: {
+                        inputTokens: scenario === 'an explicit invalidation' ? null : Number.MAX_SAFE_INTEGER,
+                        outputTokens: null,
+                        cachedInputTokens: null,
+                        reasoningTokens: null,
+                    },
+                    provenance: 'provider-reported',
+                });
+                if (scenario === 'an explicit invalidation' && invalidatingEnvelope.event.type === 'usage') {
+                    invalidatingEnvelope.event.unavailableCounters = ['inputTokens'];
+                }
+                session.push(invalidatingEnvelope);
+                session.push(
+                    eventEnvelope(request, 2, {
+                        type: 'usage',
+                        mode: 'delta',
+                        usage: { inputTokens: 2, outputTokens: null, cachedInputTokens: null, reasoningTokens: null },
+                        provenance: 'provider-reported',
+                    })
+                );
+                if (replacement === undefined) {
+                    return session.finish(finishEnvelope(request, 3, { reason: 'stop' }));
+                }
+                session.push(
+                    eventEnvelope(request, 3, {
+                        type: 'usage',
+                        mode: 'cumulative-snapshot',
+                        usage: {
+                            inputTokens: replacement,
+                            outputTokens: null,
+                            cachedInputTokens: null,
+                            reasoningTokens: null,
+                        },
+                        provenance: 'provider-reported',
+                    })
+                );
+                return session.finish(finishEnvelope(request, 4, { reason: 'stop' }));
+            };
+
+            expect(runSequence().usage.inputTokens).toBeNull();
+            expect(runSequence(20).usage.inputTokens).toBe(20);
+        }
+    );
+
+    it.each([null, 'inputTokens', ['unknownCounter'], ['inputTokens', 'inputTokens']])(
+        'rejects malformed unavailable-counter metadata: %j',
+        (unavailableCounters) => {
+            const { protocol, request } = readyRequest();
+            const session = protocol.start(request);
+            const envelope = eventEnvelope(request, 0, {
+                type: 'usage',
+                mode: 'final',
+                usage: {
+                    inputTokens: 1,
+                    outputTokens: 1,
+                    cachedInputTokens: 0,
+                    reasoningTokens: null,
+                },
+                provenance: 'provider-reported',
+            });
+            Object.assign(envelope.event, { unavailableCounters });
+
+            expect(() => session.push(envelope)).toThrow('Provider stream event has an invalid runtime shape.');
+        }
+    );
 
     it.each(FINISH_TABLE)('$name', ({ pushOutput, exceedsBudget, finish, expected }) => {
         const { protocol, request } = readyRequest();

@@ -8,11 +8,14 @@ import { type PlanningOutcome } from '../models/PlanningOutcome';
 export const NO_MATCH_PLANNING_OUTCOME_TEXT = 'No command matched the request.';
 
 /**
- * The user-facing sentence for an outcome that produced no batch but is not a refusal. Shared so a
- * toast and a chat message never phrase the same decline two different ways. Returns `null` for the
- * outcomes that already own their text.
+ * The user-facing sentence for an outcome that produced no batch. Shared so a toast and a chat
+ * message never phrase the same decline two different ways. Returns `null` when no terminal
+ * no-action text belongs in the conversation.
  */
 export function describePlanningOutcome(outcome: PlanningOutcome | undefined): string | null {
+    if (outcome?.kind === 'denied') {
+        return outcome.reason;
+    }
     if (outcome?.kind === 'unsupported') {
         const searched =
             outcome.searchedIntents.length === 0 ? [] : [`Searched: ${outcome.searchedIntents.join(', ')}`];

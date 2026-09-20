@@ -518,8 +518,8 @@ describe('getProjectContext', () => {
             minValue: 0,
             maxValue: 1,
             points: [
-                { beat: 0, value: 0.4, curve: 'linear', tension: 0 },
-                { beat: 8, value: 0.8, curve: 'smooth', tension: 0.2 },
+                { beat: 0, value: 0.4, curve: 'bezier', tension: 0, cp1: { x: 0.2, y: 0.3 }, cp2: { x: 0.8, y: 0.7 } },
+                { beat: 8, value: 0.8, curve: 'stairs', tension: 0.2, stairSteps: 8 },
             ],
         };
         mocks.automationStoreValue.value = {
@@ -532,6 +532,8 @@ describe('getProjectContext', () => {
                     parameterId: 'gain',
                     parameterName: 'Clip Gain',
                     enabled: true,
+                    linkedLaneId: 'lane-gain',
+                    linkScale: 0.5,
                     minValue: 0,
                     maxValue: 1,
                     points: [{ beat: 0, value: 1, curve: 'linear', tension: 0 }],
@@ -556,11 +558,19 @@ describe('getProjectContext', () => {
                 // that scalar is told the lane cannot reach a value the fader
                 // plainly can, so `addAutomationPoint` refuses the ride the user
                 // asked for on an old project and takes it on a new one.
+                declaredMaxValue: 1,
                 maxValue: FADER_MAX_GAIN,
                 maxValueDb: 5.999999999999998,
                 points: [
-                    { beat: 0, value: 0.4, curve: 'linear' },
-                    { beat: 8, value: 0.8, curve: 'smooth' },
+                    {
+                        beat: 0,
+                        value: 0.4,
+                        curve: 'bezier',
+                        tension: 0,
+                        cp1: { x: 0.2, y: 0.3 },
+                        cp2: { x: 0.8, y: 0.7 },
+                    },
+                    { beat: 8, value: 0.8, curve: 'stairs', tension: 0.2, stairSteps: 8 },
                 ],
             },
             {
@@ -570,13 +580,16 @@ describe('getProjectContext', () => {
                 parameterId: 'gain',
                 name: 'Clip Gain',
                 enabled: true,
+                linkedLaneId: 'lane-gain',
+                linkScale: 0.5,
                 minValue: 0,
                 minValueDb: -60,
                 // Untouched at `1`: a clip's own gain is not a fader, and the
                 // headroom the strip gained says nothing about it.
                 maxValue: 1,
+                declaredMaxValue: 1,
                 maxValueDb: 0,
-                points: [{ beat: 0, value: 1, curve: 'linear' }],
+                points: [{ beat: 0, value: 1, curve: 'linear', tension: 0 }],
             },
         ]);
 

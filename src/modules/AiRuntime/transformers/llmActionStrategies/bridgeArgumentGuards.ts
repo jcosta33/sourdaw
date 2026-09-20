@@ -1,3 +1,4 @@
+import { type LevelArgument, type LevelLaw, resolveLevelArgument } from '#/utils/audioLevelLaw';
 import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -17,6 +18,106 @@ export function hasExactKeys(value: Record<string, unknown>, expectedKeys: reado
 
 export function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** The argument names one control offers for its level, in each form it takes. */
+export type LevelArgumentKeys = {
+    linear: string;
+    absolute: string;
+    /** Omitted by a control with nothing to move from. */
+    relative?: string;
+};
+
+export type LevelArgumentReading = {
+    argument: LevelArgument;
+    /** The single key the call stated, so the caller's exact-key check stays exact. */
+    statedKey: string;
+};
+
+function toLevelArgument(statedKey: string, value: number, keys: LevelArgumentKeys): LevelArgument {
+    if (statedKey === keys.linear) {
+        return { linear: value };
+    }
+    if (statedKey === keys.absolute) {
+        return { absoluteDb: value };
+    }
+    return { deltaDb: value };
+}
+
+/**
+ * The one level form a call states, or `null` when it states none, several, or
+ * a value that is not a finite number.
+ *
+ * Several forms at once is a contradiction rather than a preference: "-6 dB"
+ * and "0.8" name different levels, and a caller that had to pick one for the
+ * provider would be guessing which the request meant.
+ */
+export function readLevelArgument(args: Record<string, unknown>, keys: LevelArgumentKeys): LevelArgumentReading | null {
+    const candidateKeys = [keys.linear, keys.absolute];
+    if (keys.relative !== undefined) {
+        candidateKeys.push(keys.relative);
+    }
+    const statedKeys = candidateKeys.filter((key) => Object.hasOwn(args, key));
+    const statedKey = statedKeys[0];
+    if (statedKeys.length !== 1 || statedKey === undefined) {
+        return null;
+    }
+    const value = args[statedKey];
+    if (!isFiniteNumber(value)) {
+        return null;
+    }
+    return { argument: toLevelArgument(statedKey, value, keys), statedKey };
+}
+
+/**
+ * The linear amplitude a stated level lands on, or `null` when the control
+ * cannot honour it.
+ *
+ * The linear form is judged against the range the store already holds, so a
+ * caller routed through here writes exactly what it wrote before; the decibel
+ * forms are judged by the law, which is the only thing that knows what a
+ * decibel means on this control. A relative form needs somewhere to start, so a
+ * control with no current level refuses it rather than assuming unity.
+ */
+function resolveLevelReading(
+    reading: LevelArgumentReading,
+    current: number | undefined,
+    law: LevelLaw,
+    linearBounds: { min: number; max: number }
+): number | null {
+    if ('linear' in reading.argument) {
+        const { linear } = reading.argument;
+        return linear >= linearBounds.min && linear <= linearBounds.max ? linear : null;
+    }
+    if ('deltaDb' in reading.argument && current === undefined) {
+        return null;
+    }
+    const resolution = resolveLevelArgument(reading.argument, current ?? law.unity, law);
+    return resolution.ok ? resolution.linear : null;
+}
+
+/** One control's level: the form the request stated, and where it lands. */
+export type ResolvedLevelArgument = LevelArgumentReading & { linear: number };
+
+/**
+ * The level a call states on one control, once that control has agreed it can
+ * hold it. A caller that gets one back still has to check the rest of the call:
+ * this answers only what the level is and whether it fits.
+ */
+export function readResolvedLevelArgument(
+    args: Record<string, unknown>,
+    keys: LevelArgumentKeys,
+    control: { current: number | undefined; law: LevelLaw; linearBounds: { min: number; max: number } }
+): ResolvedLevelArgument | null {
+    const reading = readLevelArgument(args, keys);
+    if (reading === null) {
+        return null;
+    }
+    const linear = resolveLevelReading(reading, control.current, control.law, control.linearBounds);
+    if (linear === null) {
+        return null;
+    }
+    return { ...reading, linear };
 }
 
 export function isExecutableTrackKind(value: unknown): value is ExecutableTrackKind {

@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { dbToGain } from '#/utils/audioLevelLaw';
 
+import { makeCeilingClipCurve } from '../../../repositories/devices/dynamics/makeCeilingClipCurve';
 import {
     type DeviceNoteExpressionRequest,
     type DeviceNoteOnRequest,
@@ -1359,7 +1361,7 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
     });
 });
 
-describe('scheduleTrackClips — refuses a device-parameter lane the scheduler cannot render (#4424)', () => {
+describe('scheduleTrackClips — a frame-addressed ceiling lane (#4437)', () => {
     /** The descriptor facts live admits the limiter ceiling on, restated locally. */
     const limiterCeilingLaw = {
         isAutomatable: ({ paramId }: { deviceType: string; paramId: string }) => paramId === 'lim-ceiling',
@@ -1392,18 +1394,27 @@ describe('scheduleTrackClips — refuses a device-parameter lane the scheduler c
     });
 
     /**
-     * The limiter as the offline chain builds it: a strategy that resolves no
-     * binding for the ceiling — its cap is the clipper's rebuilt WaveShaper
-     * curve, not an AudioParam (#3736) — on a strip that reaches the print.
+     * The limiter ceiling as the strategy answers it: the ceiling gain and the
+     * clipper whose rebuilt curve is the cap, with no AudioParam between them.
      */
-    function makeLimiterEntry(): DeviceNodeEntry {
-        return {
+    function makeLimiterEntry() {
+        const ceiling = { gain: { value: 1 } } as unknown as GainNode;
+        const clipper = { curve: null } as unknown as { curve: Float32Array | null };
+        const entry: DeviceNodeEntry = {
             deviceId: 'limiter-1',
             deviceType: 'builtin-limiter',
             contributesAudio: true,
             node: {} as DeviceNodeEntry['node'],
-            strategy: { resolveOfflineAutomation: () => null } as unknown as DeviceNodeEntry['strategy'],
+            strategy: {
+                resolveOfflineAutomation: (parameterId: string) => {
+                    if (parameterId !== 'lim-ceiling') {
+                        return null;
+                    }
+                    return { kind: 'curveWrite' as const, targets: { ceiling, clipper } };
+                },
+            } as unknown as DeviceNodeEntry['strategy'],
         };
+        return { entry, ceiling, clipper };
     }
 
     function makeCeilingLane() {
@@ -1419,7 +1430,11 @@ describe('scheduleTrackClips — refuses a device-parameter lane the scheduler c
         };
     }
 
-    async function scheduleCeilingLane(pendingWorkletEvents: PendingWorkletEvent[]): Promise<void> {
+    async function scheduleCeilingLane(
+        pendingWorkletEvents: PendingWorkletEvent[],
+        entry: DeviceNodeEntry,
+        scheduleFrame?: (time: number | undefined, call: () => void) => void
+    ): Promise<void> {
         const track = makeMidiTrack();
         track.devices = [
             {
@@ -1454,26 +1469,48 @@ describe('scheduleTrackClips — refuses a device-parameter lane the scheduler c
             },
             pendingWorkletEvents,
             allTracks: [track],
-            deviceEntriesByTrack: new Map([[track.id, [makeLimiterEntry()]]]),
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+            scheduleFrame,
         });
     }
 
-    it('propagates the refusal out of the production scheduler instead of scheduling the clips', async () => {
+    it('runs the production scheduler through the frame scheduler it was handed', async () => {
         // The strip is admitted on the descriptor law — the device carries
-        // `lim-ceiling` and the law declares it automatable — and then resolves
-        // no offline binding. Running the real `scheduleTrackAutomation` here is
-        // the point: a `scheduleTrackClips` that swallowed the scheduler's
-        // refusal, or a scheduler that reverted to a bare `continue`, would make
-        // this case resolve and schedule the note.
+        // `lim-ceiling` and the law declares it automatable — and the strategy
+        // answers the frame-addressed binding. Running the real
+        // `scheduleTrackAutomation` here is the point: this observes the whole
+        // `scheduleTrackClips` → `scheduleTrackAutomation` → frame-scheduler
+        // chain, not a double of it.
+        const { entry, ceiling, clipper } = makeLimiterEntry();
+        mocks.automationValue.value = { lanes: [makeCeilingLane()] };
+        configureOfflineDeviceParameterLaw(limiterCeilingLaw);
+        mocks.runProductionScheduler = true;
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+        const scheduled: (number | undefined)[] = [];
+
+        await scheduleCeilingLane(pendingWorkletEvents, entry, (time, call) => {
+            scheduled.push(time);
+            call();
+        });
+
+        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
+        // The lane's single point sits at the region start, so one write.
+        expect(scheduled).toEqual([0]);
+        expect(ceiling.gain.value).toBeCloseTo(dbToGain(-1), 12);
+        expect(clipper.curve).toEqual(makeCeilingClipCurve(dbToGain(-1)));
+    });
+
+    it('fails closed when the caller threaded no frame scheduler instead of dropping the lane', async () => {
+        const { entry, ceiling, clipper } = makeLimiterEntry();
         mocks.automationValue.value = { lanes: [makeCeilingLane()] };
         configureOfflineDeviceParameterLaw(limiterCeilingLaw);
         mocks.runProductionScheduler = true;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
-        await expect(scheduleCeilingLane(pendingWorkletEvents)).rejects.toThrow(/limiter ceiling/i);
-        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
-        expect(pendingWorkletEvents).toEqual([]);
-        expect(mocks.scheduleNoteOffline).not.toHaveBeenCalled();
+        await expect(scheduleCeilingLane(pendingWorkletEvents, entry)).rejects.toThrow(/lim-ceiling/);
+        // Nothing half-applied, and the lane was not silently skipped.
+        expect(ceiling.gain.value).toBe(1);
+        expect(clipper.curve).toBeNull();
     });
 });
 

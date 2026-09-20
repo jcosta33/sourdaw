@@ -15,7 +15,6 @@ describe('ChatComposer', () => {
                 enableReasoning={false}
                 isGenerating={false}
                 inputValue="hello"
-                isLlmAvailable
                 textareaRef={textareaRef}
                 onChange={vi.fn()}
                 onKeyDown={vi.fn()}
@@ -39,7 +38,6 @@ describe('ChatComposer', () => {
                 enableReasoning={false}
                 isGenerating={false}
                 inputValue=""
-                isLlmAvailable
                 textareaRef={textareaRef}
                 onChange={vi.fn()}
                 onKeyDown={vi.fn()}

@@ -11,6 +11,15 @@ export type ModelProviderModality = 'text' | 'audio' | 'image' | 'video';
 export type ModelProviderUsageProvenance = 'provider-reported' | 'versioned-estimate' | 'unavailable';
 export type ModelProviderPartialOutputDisposition = 'none' | 'preserve' | 'discard';
 
+export const MODEL_PROVIDER_USAGE_COUNTER_NAMES = [
+    'inputTokens',
+    'outputTokens',
+    'cachedInputTokens',
+    'cacheWriteInputTokens',
+    'reasoningTokens',
+] as const;
+export type ModelProviderUsageCounterName = (typeof MODEL_PROVIDER_USAGE_COUNTER_NAMES)[number];
+
 export type ModelProviderCapabilities = {
     text: boolean;
     tools: boolean;
@@ -81,6 +90,8 @@ export type ModelProviderUsage = {
     inputTokens: number | null;
     outputTokens: number | null;
     cachedInputTokens: number | null;
+    /** Provider-reported cache creation tokens when the dialect exposes them. */
+    cacheWriteInputTokens?: number | null;
     reasoningTokens: number | null;
     provenance: ModelProviderUsageProvenance;
 };
@@ -108,6 +119,8 @@ export type ModelProviderEvent =
           type: 'usage';
           mode: 'delta' | 'cumulative-snapshot' | 'final';
           usage: Omit<ModelProviderUsage, 'provenance'>;
+          /** Counters reported on this event whose value cannot be represented safely. */
+          unavailableCounters?: readonly ModelProviderUsageCounterName[];
           provenance: ModelProviderUsageProvenance;
       }
     | { type: 'unknown'; providerEventType: string };
@@ -162,8 +175,7 @@ export type ModelProviderResult = {
      * caller cannot mistake "no tools were sent" for "tools were sent loosely."
      */
     strictToolSchemas?: boolean;
-    /** Anthropic-only cache-write usage figure; carried here rather than widening the
-     * broadly shared {@link ModelProviderUsage} that every provider result reads. */
+    /** Legacy hosted-tool compatibility extension; new provider flows report this in `usage`. */
     cacheWriteInputTokens?: number | null;
 };
 

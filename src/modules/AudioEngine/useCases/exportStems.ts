@@ -7,13 +7,14 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
+import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
-import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
@@ -235,6 +236,10 @@ export const exportStems: ExportStemsFn = async function exportStems(
             checkCancel();
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+            // The frame scheduler for this stem's context. One instance per
+            // `OfflineAudioContext` comes back from the factory, so this stem's
+            // Faust devices share it rather than colliding on shared frames.
+            const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
             const boundPads = toasterParentIds.has(track.id)
                 ? tracks.tracks.filter((candidate) => {
@@ -367,6 +372,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         deviceEntriesByTrack,
                         honorMuted: false,
                         regionStartBeat: 0,
+                        scheduleFrame,
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                     });
                 }
@@ -404,6 +410,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         deviceEntriesByTrack,
                         honorMuted: false,
                         regionStartBeat: 0,
+                        scheduleFrame,
                         vcaMultiplier: deriveVcaMultiplier({
                             vcaGroupId: keySourceTrack.vcaGroupId,
                             groups: vcaGroups,
