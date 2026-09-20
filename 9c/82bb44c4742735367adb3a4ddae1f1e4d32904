@@ -1,0 +1,25 @@
+scripts/semanticReview/interpret.ts
+  s_ed5aa36a3ba357::t_8ddc2fba932a9e 13-21,206-210
+scripts/semanticReview/rules.ts
+  s_ed5aa36a3ba357::t_591c3187592214 240-253,274-299
+scripts/semanticReview/run.ts
+  s_ed5aa36a3ba357::t_dd071a7543c228 51,83,87-91,93-97,124-125,135,219,311-325,386-389,515-523,552,560,566
+scripts/semanticReview/verify.ts
+  s_ed5aa36a3ba357::t_49716a3e04624d 41,466
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9c82bb44c4742735367adb3a4ddae1f1e4d32904",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
