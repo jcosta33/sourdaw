@@ -129,3 +129,13 @@ requested key — and the assertion reddens, as it does at #4423.
 
 Ownership half: a per-track edge and a per-key stream are released exactly once, and one key's failed
 acquisition must not disturb another key's source, edge, or pending grant.
+
+### 2026-09-20 — live cancellation is not durable cancellation (escaped via PR #1949)
+
+PR #1949 (`ce2ffea3fd`) made pending-confirmation cancellation revoke its run before cleanup, but
+its already-terminal retry trusted live state after local persistence failed. Inject a real
+`Storage.setItem` failure during cancellation, assert that the live run is terminal while the saved
+run is unchanged, then cancel the same confirmation again. The retry must persist that exact run
+before releasing either temporary run assets or confirmation resources, and must not report success
+while cleanup remains pending. Repeat without temporary assets: an already-terminal no-op cannot
+prove persistence. A mocked cancellation helper misses the live-store-before-storage failure seam.

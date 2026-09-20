@@ -1783,37 +1783,93 @@ describe('AudioEngine', () => {
     });
 
     // ── Fix 2: dispose() teardown contract ───────────────────────────────────────
-    describe('dispose', () => {
-        type MonitorCaptureFixture = {
-            trackStop: Mock<() => void>;
-            sourceDisconnect: Mock<(...args: unknown[]) => void>;
-        };
+    type MonitorCaptureFixture = {
+        trackStop: Mock<() => void>;
+        sourceDisconnect: Mock<(...args: unknown[]) => void>;
+    };
 
-        /** Seeds one settled monitor capture exactly as inputMonitoring leaves it. */
-        function seedMonitorCapture(key: string | null, trackId: string, stripGain: unknown): MonitorCaptureFixture {
-            const trackStop = vi.fn<() => void>();
-            const sourceConnect = vi.fn<(...args: unknown[]) => void>();
-            const sourceDisconnect = vi.fn<(...args: unknown[]) => void>();
-            inputMonitoringSession.captures.set(key, {
-                monitorStream: { getTracks: () => [{ stop: trackStop }] } as unknown as MediaStream,
-                monitorSource: {
-                    connect: sourceConnect,
-                    disconnect: sourceDisconnect,
-                } as unknown as MediaStreamAudioSourceNode,
-                monitorEdges: new Map([[trackId, stripGain as AudioNode]]),
-            });
-            inputMonitoringSession.trackKeys.set(trackId, key);
-            return { trackStop, sourceDisconnect };
-        }
+    /** Seeds one settled monitor capture exactly as inputMonitoring leaves it. */
+    function seedMonitorCapture(key: string | null, trackId: string, stripGain: unknown): MonitorCaptureFixture {
+        const trackStop = vi.fn<() => void>();
+        const sourceConnect = vi.fn<(...args: unknown[]) => void>();
+        const sourceDisconnect = vi.fn<(...args: unknown[]) => void>();
+        inputMonitoringSession.captures.set(key, {
+            monitorStream: { getTracks: () => [{ stop: trackStop }] } as unknown as MediaStream,
+            monitorSource: {
+                connect: sourceConnect,
+                disconnect: sourceDisconnect,
+            } as unknown as MediaStreamAudioSourceNode,
+            monitorEdges: new Map([[trackId, stripGain as AudioNode]]),
+        });
+        inputMonitoringSession.trackKeys.set(trackId, key);
+        return { trackStop, sourceDisconnect };
+    }
 
-        beforeEach(() => {
-            // The monitor session is HMR-persistent module state and must not leak
-            // seeded captures between cases.
-            inputMonitoringSession.captures.clear();
-            inputMonitoringSession.trackKeys.clear();
-            inputMonitoringSession.pendingRequests.clear();
+    beforeEach(() => {
+        // The monitor session is HMR-persistent module state and must not leak
+        // seeded captures between cases.
+        inputMonitoringSession.captures.clear();
+        inputMonitoringSession.trackKeys.clear();
+        inputMonitoringSession.pendingRequests.clear();
+    });
+
+    // The graph teardown owns monitor teardown on every path — a project switch
+    // reaches it through resetAudioGraph(), disposal through disposeOnce() — so a
+    // reset that leaves the microphone live would leak it on the switch path.
+    describe('resetGraph monitor teardown', () => {
+        it('releases every monitor capture, stops each stream once, and empties the session', () => {
+            const firstStrip = engine.ensureTrackStrip('t1');
+            const secondStrip = engine.ensureTrackStrip('t2');
+            const defaultCapture = seedMonitorCapture(null, 't1', firstStrip.gainNode);
+            const namedCapture = seedMonitorCapture('input-2', 't2', secondStrip.gainNode);
+            inputMonitoringSession.pendingRequests.set('input-3', Promise.withResolvers<MediaStream>().promise);
+
+            engine.resetGraph();
+
+            for (const [capture, strip] of [
+                [defaultCapture, firstStrip],
+                [namedCapture, secondStrip],
+            ] as const) {
+                expect(capture.trackStop).toHaveBeenCalledTimes(1);
+                // The per-track edge releases while its strip node still exists,
+                // then the capture-wide disconnect drops everything else.
+                expect(capture.sourceDisconnect).toHaveBeenCalledWith(strip.gainNode);
+                expect(capture.sourceDisconnect).toHaveBeenCalledWith();
+            }
+            expect(inputMonitoringSession.captures.size).toBe(0);
+            expect(inputMonitoringSession.trackKeys.size).toBe(0);
+            expect(inputMonitoringSession.pendingRequests.size).toBe(0);
         });
 
+        it('does not stop a monitor stream twice when the graph resets again', () => {
+            const strip = engine.ensureTrackStrip('t1');
+            const capture = seedMonitorCapture(null, 't1', strip.gainNode);
+
+            engine.resetGraph();
+            engine.resetGraph();
+
+            expect(capture.trackStop).toHaveBeenCalledTimes(1);
+            expect(inputMonitoringSession.captures.size).toBe(0);
+        });
+
+        it('releases the monitor edge while the strip it feeds still exists', () => {
+            const strip = engine.ensureTrackStrip('t1');
+            const capture = seedMonitorCapture(null, 't1', strip.gainNode);
+            let stripExistedAtStop = false;
+            capture.sourceDisconnect.mockImplementation(() => {
+                // A monitor edge must be dropped by the source, never by a strip
+                // that resetGraph has already disposed.
+                stripExistedAtStop = engine.getTrackStrip('t1') !== undefined;
+            });
+
+            engine.resetGraph();
+
+            expect(stripExistedAtStop).toBe(true);
+            expect(engine.getTrackStrip('t1')).toBeUndefined();
+        });
+    });
+
+    describe('dispose', () => {
         it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
@@ -1899,24 +1955,22 @@ describe('AudioEngine', () => {
             expect(inputMonitoringSession.captures.size).toBe(0);
         });
 
-        it('stops monitor captures before the graph teardown, not after', async () => {
-            const order: string[] = [];
+        it('stops monitor captures before the graph teardown, while their strip still exists', async () => {
             const strip = engine.ensureTrackStrip('t1');
             const capture = seedMonitorCapture(null, 't1', strip.gainNode);
+            let stripExistedAtStop = false;
             capture.sourceDisconnect.mockImplementation(() => {
-                if (!order.includes('monitor-stop')) {
-                    order.push('monitor-stop');
-                }
-            });
-            const resetGraph = engine.resetGraph.bind(engine);
-            vi.spyOn(engine, 'resetGraph').mockImplementation(() => {
-                order.push('graph-teardown');
-                resetGraph();
+                stripExistedAtStop = engine.getTrackStrip('t1') !== undefined;
             });
 
             await engine.dispose();
 
-            expect(order).toEqual(['monitor-stop', 'graph-teardown']);
+            // Disposal reaches the monitor teardown through resetGraph, so the
+            // ordering it must keep is "released before the strips are disposed",
+            // not "released before resetGraph is entered".
+            expect(stripExistedAtStop).toBe(true);
+            expect(engine.getTrackStrip('t1')).toBeUndefined();
+            expect(capture.trackStop).toHaveBeenCalledTimes(1);
         });
     });
 

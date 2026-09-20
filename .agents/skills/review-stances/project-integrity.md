@@ -119,3 +119,11 @@ selected take at each beat: retain both complement fragments, and require guarde
 redo to apply interval surgery to current state while preserving unrelated lane metadata and
 same-lane selections outside the footprint. A source-count assertion does not prove that the
 resolved playback retains the selected source phase; verify source timing separately.
+
+### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
+
+PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose
+already-terminal path trusted live state after a failed persistence write. Fail only the run's
+`Storage.setItem`, observe terminal live state with an unchanged saved run, then cancel again.
+Require the same run's terminal revision to reach storage before any resource cleanup; repeat with
+no temporary assets so cleanup writes cannot accidentally repair the missing durable revocation.

@@ -54,7 +54,7 @@ const findOpenNestedTrigger = (surface: HTMLElement): HTMLElement | null => {
     return trigger instanceof HTMLElement ? trigger : null;
 };
 
-export const TransportBar = (): ReactElement => {
+export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => void }): ReactElement => {
     const moreContainerRef = useRef<HTMLElement>(null);
     const moreTriggerRef = useRef<HTMLButtonElement>(null);
     const moreSurfaceRef = useRef<HTMLDivElement>(null);
@@ -247,7 +247,7 @@ export const TransportBar = (): ReactElement => {
                 </Row>
 
                 <Row justify="center" gap={1} className="transport-bar__title-prompt min-w-0">
-                    <PromptBar />
+                    <PromptBar onReviewRun={onReviewRun} />
                     <VoiceButton
                         isAvailable={voiceInputAvailable}
                         isListening={voice.isListening}
