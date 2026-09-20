@@ -1,8 +1,9 @@
 import { deriveVcaMultiplier } from '#/modules/Arrangement/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
+import { clampRenderFrameCount } from '../../repositories/clampRenderFrameCount';
+
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
-import { clampRenderFrameCount } from './clampRenderFrameCount';
 import { collectWiredSidechainDetectorRoutes } from './collectWiredSidechainDetectorRoutes';
 import { resolveOfflineMixAudibility } from './resolveOfflineMixAudibility';
 import { resolveOutputTarget } from './resolveOutputTarget';

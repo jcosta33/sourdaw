@@ -175,7 +175,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
-                    "digest": "3a4be51857632b45c38aacb3fe13433bcb97daa4f6cadd034d41746688a5482c"
+                    "digest": "914c5080e9c825d6fc9dee93044aba0ca5ad304995b13babe7e8558523028566"
                 }
             ]
         },
@@ -359,7 +359,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts",
-                    "digest": "9c30303b447d7e628ba1880f6f0c5b5169ac7cd5243f09e21365de8929a6197e"
+                    "digest": "37abc813f9c3e60113758bd96749a90f11a82bb64290a02d8fcfa45f383464dc"
                 }
             ]
         },
@@ -431,7 +431,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts",
-                    "digest": "a7ec69849750bd0be8ab12f89180fa056275a617364440e892668c291077648d"
+                    "digest": "90d6950e27bb99e7d95dc0f81fb413e9ad489071e94bdf6d79c943559692185b"
                 }
             ]
         },

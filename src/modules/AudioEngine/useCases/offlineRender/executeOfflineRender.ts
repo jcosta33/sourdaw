@@ -1,3 +1,5 @@
+import { makeOfflineFrameScheduler } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
+
 import { acquireRenderLock } from './acquireRenderLock';
 import { buildOfflineWebAudioGraph } from './buildOfflineWebAudioGraph';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
@@ -27,6 +29,8 @@ export async function executeOfflineRender(
         let buffer = await tryNativeOfflineRender(input, plan, callbacks);
         if (!buffer) {
             const offlineCtx = new OfflineAudioContext(2, plan.frameCount, sampleRate);
+            // Device construction and every track share this context’s frame scheduler.
+            const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
             const masterGain = offlineCtx.createGain();
             masterGain.gain.value = plan.masterGainValue;
             masterGain.connect(offlineCtx.destination);
@@ -44,7 +48,7 @@ export async function executeOfflineRender(
                 backend,
                 onWarning: callbacks.onWarning,
             });
-            buffer = await scheduleOfflineMix({ input, plan, graph, offlineCtx, masterGain, callbacks });
+            buffer = await scheduleOfflineMix({ input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks });
         }
         callbacks.onProgress?.(1);
         return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });

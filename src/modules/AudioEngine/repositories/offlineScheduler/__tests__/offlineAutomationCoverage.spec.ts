@@ -7,7 +7,7 @@ import { FERMENTER_AUTOMATION_PARAM_IDS, isFermenterDevice } from '../../../engi
 import { GRAND_BOULE_AUTOMATION_PARAM_IDS, isGrandBouleDevice } from '../../../engine/GrandBouleNode';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS, isProofChamberDevice } from '../../../engine/ProofChamberNode';
 import { TOASTER_AUTOMATION_PARAM_IDS, isToasterDevice } from '../../../engine/ToasterNode';
-import { resolveDeviceParamTargets } from '../../../services/deviceResolution';
+import { resolveDeviceCurveWriteTargets, resolveDeviceParamTargets } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode } from '../../deviceNodeFactory';
 import { FaustDeviceStrategy } from '../../deviceStrategy/FaustDeviceStrategy';
 import { NATIVE_DSP_DEVICE_FACTORIES } from '../../deviceStrategy/nativeDspDeviceFactories';
@@ -202,13 +202,15 @@ describe('offline device-param automation capability coverage', () => {
 
             for (const parameterId of automatableParamIds) {
                 const mapResolvesTarget = resolveDeviceParamTargets(descriptor.id, parameterId, node).length > 0;
+                const curveWriteTargets = resolveDeviceCurveWriteTargets(descriptor.id, parameterId, node);
                 const binding = strategy.resolveOfflineAutomation(parameterId);
                 // The capability is the sole resolution path: it answers a binding
-                // exactly when the family exposes an AudioParam target, and never a
-                // silent scheduler-side decision.
-                expect(binding !== null).toBe(mapResolvesTarget);
+                // exactly when the family exposes an AudioParam target or a
+                // frame-addressed curve pair, and never a silent scheduler-side
+                // decision.
+                expect(binding !== null).toBe(mapResolvesTarget || curveWriteTargets !== null);
                 if (binding) {
-                    expect(binding.kind).toBe('audioParam');
+                    expect(binding.kind).toBe(curveWriteTargets === null ? 'audioParam' : 'curveWrite');
                 }
             }
 

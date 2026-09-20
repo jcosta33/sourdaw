@@ -6,11 +6,19 @@ import { AUTOMATION_SLEW_ALPHA } from '#/utils/automationSlew';
 
 import { createExportError } from '../../errors/ExportError';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
+import { type OfflineCurveWriteTargets } from '../../models/OfflineCurveWriteTargets';
 import { beatToSeconds } from '../../services/beatConversion';
+import { clampRenderFrameCount } from '../clampRenderFrameCount';
+import { applyLimiterCeilingWrite } from '../devices/dynamics/applyLimiterCeilingWrite';
 import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
-import { type CompiledValueBound } from './compileAutomationEvents';
+import {
+    type CompiledAutomationEvent,
+    type CompiledValueBound,
+    compileAutomationEvents,
+} from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
+import { type ScheduleCall } from './makeOfflineFrameScheduler';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
@@ -102,6 +110,20 @@ export type ScheduleTrackAutomationInput = {
      */
     slewTickSeconds: number;
     deviceParameterLaw: OfflineDeviceAutomationLaw;
+    /**
+     * The offline render's frame scheduler for this context, threaded down by
+     * the render root. `makeOfflineFrameScheduler` returns the context's single
+     * shared instance, so a Faust device's note calls and these writes ride the
+     * same suspend per frame no matter which caller asks.
+     *
+     * A frame-addressed lane (see `OfflineAutomationBinding`'s `curveWrite`
+     * kind) has no `AudioParam`, so its writes land on this. Optional because
+     * the recording projection runs the same lane laws with no context of its
+     * own — and a curve-addressed lane reached there fails closed rather than
+     * being dropped, because a projector that cannot carry it must not report
+     * the lane as converted.
+     */
+    scheduleFrame?: ScheduleCall;
     regionStartSeconds?: number;
     projectBeatToSeconds?: (beat: number) => number;
     sampleRate?: number;
@@ -163,6 +185,39 @@ function resolveLaneValueBound(
         });
 }
 
+/**
+ * Write a frame-addressed lane's compiled points through the render's frame
+ * scheduler.
+ *
+ * A value with no `AudioParam` cannot be ramped: each compiled point rebuilds
+ * the device-side curve and Web Audio holds it until the next point, so the
+ * writes are discrete and land on the frames the compiled points fall on. The
+ * caller compiles those points with the same device slew the other
+ * device-parameter branches use, so they are the glided grid the monitor
+ * follows rather than one write per source point. The `compensationDelaySec`
+ * shift is `scheduleAutomationOnParam`'s, for its reason (M-038): clip audio is
+ * shifted by the track's latency compensation, so the automation that shapes it
+ * must shift identically, and the region-start seed is re-anchored at 0 so the
+ * gap the shift opens holds the lane's opening value.
+ */
+function scheduleCurveWritePoints(
+    targets: OfflineCurveWriteTargets,
+    events: CompiledAutomationEvent[],
+    clampValue: (value: number) => number,
+    compensationDelaySec: number,
+    scheduleFrame: ScheduleCall
+): void {
+    const seed = events[0];
+    if (compensationDelaySec > 0 && seed && seed.type === 'set' && seed.timeSeconds === 0) {
+        const seedValue = clampValue(seed.value);
+        scheduleFrame(0, () => applyLimiterCeilingWrite(targets, seedValue));
+    }
+    for (const event of events) {
+        const value = clampValue(event.value);
+        scheduleFrame(event.timeSeconds + compensationDelaySec, () => applyLimiterCeilingWrite(targets, value));
+    }
+}
+
 export function scheduleTrackAutomation({
     lanes,
     trackId,
@@ -175,6 +230,7 @@ export function scheduleTrackAutomation({
     changes,
     slewTickSeconds,
     deviceParameterLaw,
+    scheduleFrame,
     regionStartSeconds = 0,
     projectBeatToSeconds,
     sampleRate = 44_100,
@@ -358,20 +414,15 @@ export function scheduleTrackAutomation({
             const candidate = deviceEntries[deviceIndex]!;
             const binding = candidate.strategy.resolveOfflineAutomation(parameterId);
             if (!binding) {
-                // A parameter with no offline binding used to be dropped in
-                // silence here, so a lane the monitor follows left the bounce at
-                // its static value while the export reported success. Only a
-                // strip that prints refuses — see the refusal module for why an
-                // inaudible one must not fail an unrelated print (#4424).
-                const refusal = unrenderableAutomationRefusal({
-                    deviceType: candidate.deviceType,
-                    parameterId,
-                    contributesAudio: candidate.contributesAudio,
-                });
-                if (refusal === null) {
-                    continue;
-                }
-                throw createExportError(refusal);
+                // A parameter this strategy cannot bind offline is dropped
+                // without failing an unrelated print. Some are true structural
+                // exemptions (a reverb impulse re-render); others are known
+                // silent gaps the offline automation census carries as reasoned
+                // rows (#3739). The limiter ceiling used to be one of these; it
+                // resolves a `curveWrite` binding now (#4437), and a
+                // frame-addressed lane that cannot be written does refuse — see
+                // the branch below.
+                continue;
             }
             const clampStep = (value: number): number =>
                 deviceParameterLaw.clampValue({
@@ -416,6 +467,79 @@ export function scheduleTrackAutomation({
                     }
                 );
                 binding.apply(segments);
+                continue;
+            }
+            if (binding.kind === 'curveWrite') {
+                if (!scheduleFrame) {
+                    // Fail closed: this lane's writes have nowhere to land, and a
+                    // bare `continue` would report the render successful with the
+                    // lane's moves missing from it. Only a strip that prints
+                    // refuses — a strip that cannot reach the print contributes
+                    // silence by construction, so failing over its lane would
+                    // fail an export over audio that was never going to be in it
+                    // (#4376); the refusal answers `null` for it.
+                    const refusal = unrenderableAutomationRefusal({
+                        deviceType: candidate.deviceType,
+                        parameterId,
+                        contributesAudio: candidate.contributesAudio,
+                    });
+                    if (refusal === null) {
+                        continue;
+                    }
+                    throw createExportError(refusal);
+                }
+                // The lane's declared range runs before the device law, exactly
+                // as it does for the other two kinds (#2538); `scheduleCurveWritePoints`
+                // applies the device clamp to every emitted point. The slew is
+                // the other branches' too: live runs `slewStep` then the
+                // declared-range clamp on every device parameter including this
+                // one (`applyAutomation`), so without it the export stepped the
+                // ceiling at each point while the monitor glided between them.
+                const events = compileAutomationEvents(
+                    points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    regionStartSeconds,
+                    projectBeatToSeconds,
+                    {
+                        ...boundOptions,
+                        slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
+                        activeWindowSeconds,
+                        valueScale: laneScale,
+                    }
+                );
+                // A write the render cannot reach is dropped, for a reason the
+                // AudioParam kinds do not have: `OfflineAudioContext.suspend`
+                // rejects a time at or past the render's last frame, and the
+                // frame scheduler's rejection fallback fires the callback at
+                // once — an end-of-render ceiling applied from frame 0 for the
+                // whole buffer. Such a write could not reach the buffer anyway,
+                // while a write inside the render is scheduled as it always was.
+                //
+                // The bound is the context's frame count, resolved by the same
+                // `clampRenderFrameCount` the render root builds the context
+                // with. Re-deriving it here as `floor(durationSeconds *
+                // sampleRate)` was a frame short of the `ceil` the buffer holds
+                // — durations are beat-derived, so the product is rarely whole —
+                // and it dropped the write quantising to the render's last valid
+                // frame, leaving the tail on the previous ceiling. It also
+                // ignored the `MAX_OFFLINE_FRAMES` clamp a truncated render's
+                // context actually got.
+                const renderFrames = clampRenderFrameCount({ durationSeconds, sampleRate });
+                const scheduleWithinRender: ScheduleCall = (time, call) => {
+                    if (sampleRate > 0 && time !== undefined && Math.round(time * sampleRate) >= renderFrames) {
+                        return;
+                    }
+                    scheduleFrame(time, call);
+                };
+                scheduleCurveWritePoints(
+                    binding.targets,
+                    events,
+                    clampStep,
+                    compensationDelaySec,
+                    scheduleWithinRender
+                );
                 continue;
             }
             for (const target of binding.targets) {

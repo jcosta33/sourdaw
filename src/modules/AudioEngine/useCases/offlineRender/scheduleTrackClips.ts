@@ -22,6 +22,7 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { hasNoteExpression, normalizeNoteExpression } from '../../engine/noteExpression';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import { type ScheduleCall } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflineMidiEventProjector,
@@ -132,6 +133,13 @@ export type ScheduleTrackClipsInput = {
     tallyStartSeconds?: number;
     /** Caller-owned cancellation for freeze/bounce scheduling. */
     abortSignal?: AbortSignal;
+    /**
+     * The render's frame scheduler for its `offlineCtx`, handed down so every
+     * frame-addressed lane in the render writes through the context's one
+     * shared instance. Omitted means this caller cannot write such a lane at
+     * all; `scheduleTrackAutomation` then fails closed instead of dropping it.
+     */
+    scheduleFrame?: ScheduleCall;
 };
 
 export async function scheduleTrackClips({
@@ -160,6 +168,7 @@ export async function scheduleTrackClips({
     tally,
     tallyStartSeconds = 0,
     abortSignal,
+    scheduleFrame,
 }: ScheduleTrackClipsInput): Promise<void> {
     function checkScheduleCancel(): void {
         checkCancel();
@@ -329,6 +338,11 @@ export async function scheduleTrackClips({
             // Automation's own law, read here rather than re-derived in the
             // scheduler — the same reason `deviceParameterLaw` is injected.
             resolveLaneCeiling: getAutomationLaneCeiling,
+            // The frame scheduler for this context, threaded down by the root
+            // that created it. A frame-addressed device lane cannot be written
+            // without it and the scheduler fails closed rather than dropping
+            // the lane.
+            scheduleFrame,
         });
     }
 

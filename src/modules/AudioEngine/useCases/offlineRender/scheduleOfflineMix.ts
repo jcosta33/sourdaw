@@ -1,3 +1,5 @@
+import { type ScheduleCall } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
+
 import { type buildOfflineWebAudioGraph } from './buildOfflineWebAudioGraph';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
@@ -16,6 +18,7 @@ type ScheduleInput = {
     graph: Awaited<ReturnType<typeof buildOfflineWebAudioGraph>>;
     offlineCtx: OfflineAudioContext;
     masterGain: GainNode;
+    scheduleFrame: ScheduleCall;
     callbacks: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning'>;
 };
 
@@ -48,7 +51,7 @@ function renderScheduledMix({ plan, graph, offlineCtx, callbacks }: ScheduleInpu
 }
 
 export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuffer> {
-    const { input, plan, graph, offlineCtx, masterGain, callbacks } = args;
+    const { input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks } = args;
     const { onWarning, onProgress } = callbacks;
     const { scheduledTracks, sourceTracks, vcaMultiplierByTrackId, renderContext } = plan;
     const {
@@ -110,6 +113,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
             allTracks: tracks?.tracks ?? [],
             deviceEntriesByTrack,
             regionStartBeat: 0,
+            scheduleFrame,
             // Same multiplier the strip was seeded with, so a gain lane on a
             // VCA-member track rides its group instead of nullifying it.
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,

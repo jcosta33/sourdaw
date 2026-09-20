@@ -18,13 +18,13 @@ import { defaultTransportState, type TransportState } from '#/modules/Transport/
 import { projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
+import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphWireCommand } from '../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { captureOfflineRenderInput } from '../offlineRender/captureOfflineRenderInput';
-import { MAX_OFFLINE_FRAMES } from '../offlineRender/constants';
 import { exportCancellationState } from '../offlineRender/exportCancellationState';
 import { type OfflineRenderProjectSource } from '../offlineRender/OfflineRenderSource';
 import { renderOfflineInput } from '../offlineRender/renderOfflineInput';

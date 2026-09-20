@@ -8,7 +8,7 @@ import {
     MockAudioBuffer,
 } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
-import { resolveDeviceParamTargets } from '../../../services/deviceResolution';
+import { resolveDeviceCurveWriteTargets, resolveDeviceParamTargets } from '../../../services/deviceResolution';
 import {
     createOfflineDeviceNode,
     BUILTIN_DEVICE_NODE_FACTORIES,
@@ -25,9 +25,10 @@ import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture
 vi.stubGlobal('AudioBuffer', MockAudioBuffer);
 
 /**
- * Controls whose DSP has no AudioParam home. Each row is a reasoned
- * structural exception (issue #3739), not a silent drop: the parameter drives
- * a rendered buffer or curve, which automation cannot schedule onto.
+ * Controls whose DSP has no AudioParam home and no frame-addressed write. Each
+ * row is a reasoned structural exception (issue #3739), not a silent drop: the
+ * parameter drives a rendered buffer or curve, which automation cannot schedule
+ * onto.
  */
 const STRUCTURAL_EXCEPTIONS: Readonly<Record<string, string>> = {
     // The reverb tail IS the rendered impulse; these re-render it.
@@ -37,11 +38,6 @@ const STRUCTURAL_EXCEPTIONS: Readonly<Record<string, string>> = {
     // WaveShaper curve regeneration.
     'builtin-distortion:dist-drive': 'WaveShaper curve regeneration, no AudioParam',
     'builtin-bitcrusher:crush-bits': 'WaveShaper curve regeneration, no AudioParam',
-    // The ceiling knob's advertised cap IS the clipper's WaveShaper curve,
-    // rebuilt only on static writes (issue #3736): a gain-only binding left
-    // the factory curve in place, so an automated lane rendered peaks past
-    // the knob's ceiling. Exempted whole rather than bound halfway.
-    'builtin-limiter:lim-ceiling': 'cap is the rebuilt WaveShaper curve, not the gain param',
     // Bound to the rate decimator worklet's `rate` AudioParam (node 5,
     // parameters map) — production engages it wherever the worklet module has
     // loaded; this census's worklet double registers no processor, so its
@@ -104,7 +100,8 @@ describe('offline automation binding census (#3739)', () => {
                 }
                 const pair = `${factory.type}:${parameter.id}`;
                 const targets = resolveDeviceParamTargets(factory.type, parameter.id, node);
-                if (targets.length > 0) {
+                const curveTargets = resolveDeviceCurveWriteTargets(factory.type, parameter.id, node);
+                if (targets.length > 0 || curveTargets !== null) {
                     covered += 1;
                     coveredPairs.push(pair);
                     expect(STRUCTURAL_EXCEPTIONS[pair], `${pair} binds but still carries an exemption`).toBeUndefined();
@@ -118,11 +115,12 @@ describe('offline automation binding census (#3739)', () => {
 
         // Presence pins (ADR 0015 rule 4): a walk that went blind reaches zero
         // and cannot produce these counts. 70 automatable pairs across the 19
-        // Web Audio device descriptors, 63 of them bound to real AudioParams;
-        // the seven structural exceptions above account for the rest. Binding a
+        // Web Audio device descriptors, 64 of them bound — 63 to real AudioParams
+        // and the limiter ceiling to its frame-addressed curve write (#4437);
+        // the six structural exceptions above account for the rest. Binding a
         // previously exempt control moves both numbers by the same amount.
-        expect(covered).toBe(63);
-        expect(exempt).toBe(7);
+        expect(covered).toBe(64);
+        expect(exempt).toBe(6);
         // The issue's named examples are individually bound, not just counted.
         for (const pair of [
             'builtin-eq:eq-low-q',
@@ -139,7 +137,7 @@ describe('offline automation binding census (#3739)', () => {
         }
     });
 
-    it('leaves lim-ceiling unbound: the cap curve cannot follow an automated gain', () => {
+    it('binds lim-ceiling as a frame-addressed curve write, not as an AudioParam', () => {
         const node = createOfflineDeviceNode({
             context: asBaseAudioContext(createMockAudioContext()),
             deviceType: 'builtin-limiter',
@@ -147,12 +145,15 @@ describe('offline automation binding census (#3739)', () => {
         if (!node) {
             throw new Error('expected a builtin-limiter offline node');
         }
-        // Automation could move the ceiling gain, but the knob's advertised
-        // cap lives in the clipper's WaveShaper curve, which only static
-        // writes rebuild — the gain-only binding rendered peaks past the
-        // knob's ceiling, so the pair carries an exemption, not a target.
+        // Automation cannot move the cap through an AudioParam — the advertised
+        // cap lives in the clipper's WaveShaper curve — so the pair resolves the
+        // ceiling and the shaper themselves, and the scheduler rebuilds the
+        // curve at every automation frame (#4437).
         expect(resolveDeviceParamTargets('builtin-limiter', 'lim-ceiling', node)).toHaveLength(0);
-        // The statically-applied limiter controls stay bound.
+        const curveTargets = resolveDeviceCurveWriteTargets('builtin-limiter', 'lim-ceiling', node);
+        expect(curveTargets?.ceiling).toBe(node.namedNodes?.ceiling);
+        expect(curveTargets?.clipper).toBe(node.namedNodes?.clipper);
+        // The statically-applied limiter controls stay bound to their params.
         expect(resolveDeviceParamTargets('builtin-limiter', 'lim-threshold', node)).toHaveLength(1);
         expect(resolveDeviceParamTargets('builtin-limiter', 'lim-release', node)).toHaveLength(1);
         node.dispose?.();
