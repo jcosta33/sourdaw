@@ -139,6 +139,59 @@ describe('hosted usage attribution', () => {
         });
     });
 
+    it('settles completed WebLLM attempts without claiming unavailable token counts were measured', () => {
+        agentRunLifecycle.create({
+            runId: RUN_ID,
+            request: 'set the tempo',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'webllm',
+            budgets: { limits: { localAnalysis: 100 }, consumed: {} },
+        });
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'localAnalysis',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+        });
+        const result = providerResult({ inputTokens: null, outputTokens: null });
+
+        recordAgentProviderUsage(
+            RUN_ID,
+            {
+                ...result,
+                provider: 'webllm',
+                model: 'webllm-model',
+                usage: { ...result.usage, provenance: 'unavailable' },
+            },
+            BUDGET_ATTEMPT_ID
+        );
+
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).toMatchObject({
+            inputTokens: null,
+            outputTokens: null,
+            provenance: 'unavailable',
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toMatchObject({
+            category: 'localAnalysis',
+            reserved: 100,
+            actual: 0,
+            provenance: 'unavailable',
+            final: true,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.localAnalysis).toBe(0);
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: RUN_ID,
+                attemptId: 'next-webllm-attempt',
+                category: 'localAnalysis',
+                estimate: 100,
+                provenance: 'versioned-estimate',
+            })
+        ).toEqual({ status: 'reserved' });
+    });
+
     it('keeps the estimate when output usage is unknown', () => {
         createRun();
         agentRunLifecycle.reserveBudget({

@@ -35,7 +35,11 @@ function prepareProviderUsageBudget(input: {
     if (existingAttempt?.final) {
         return null;
     }
-    const completeRequiredUsage = input.usage.inputTokens !== null && input.usage.outputTokens !== null;
+    // WebLLM has no provider usage wire, so unavailable counters cannot turn every local planning
+    // attempt's admission ceiling into permanent cumulative spend. Hosted attempts retain the
+    // ceiling until both provider-billed counters are known.
+    const canFinalizeUsage =
+        input.executor === 'webllm' || (input.usage.inputTokens !== null && input.usage.outputTokens !== null);
     const knownUsage = (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0);
     if (!existingAttempt) {
         agentRunLifecycle.reserveBudget({
@@ -43,13 +47,13 @@ function prepareProviderUsageBudget(input: {
             attemptId: input.budgetAttemptId,
             category: input.executor === 'cloud' ? 'remoteTokens' : 'localAnalysis',
             estimate: knownUsage,
-            provenance: completeRequiredUsage ? input.usage.provenance : 'unavailable',
+            provenance: canFinalizeUsage ? input.usage.provenance : 'unavailable',
         });
     }
     return {
         consumed: knownUsage,
-        mode: completeRequiredUsage ? 'final' : 'cumulative',
-        provenance: completeRequiredUsage ? input.usage.provenance : (existingAttempt?.provenance ?? 'unavailable'),
+        mode: canFinalizeUsage ? 'final' : 'cumulative',
+        provenance: canFinalizeUsage ? input.usage.provenance : (existingAttempt?.provenance ?? 'unavailable'),
     };
 }
 
