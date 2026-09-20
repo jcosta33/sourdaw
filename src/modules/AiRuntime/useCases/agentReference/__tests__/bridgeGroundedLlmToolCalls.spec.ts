@@ -6228,6 +6228,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         };
         const accepted = bridge([call], 'set native-frequency on device-native to 2400 Hz', context);
         const bare = bridge([call], 'set native-frequency on device-native to 2400', context);
+        const bareWithTrailingText = bridge([call], 'set native-frequency on device-native to 2400 exactly', context);
         const wrongUnit = bridge([call], 'set native-frequency on device-native to 2400 ms', context);
         const wrongSourceValue = bridge([call], 'set native-frequency on device-native to 1200 Hz', context);
         const outOfBounds = bridge(
@@ -6243,13 +6244,63 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(accepted.rejections).toEqual([]);
         expect(bare.rejections).toEqual([]);
+        expect(bareWithTrailingText.rejections).toEqual([]);
         expect(accepted.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
         expect(bare.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
+        expect(bareWithTrailingText.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
         for (const rejected of [wrongUnit, wrongSourceValue, outOfBounds]) {
             expect(rejected.actions).toEqual([]);
             expect(rejected.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
         }
     });
+
+    it.each(['2400 s', '2400 sec', '2400 secs', '2400 second', '2400 seconds', '2400 kHz', '2400 kilohertz'])(
+        'rejects unsupported or scaled physical-unit syntax %s instead of treating it as bare',
+        (stated) => {
+            const context: ProjectContext = {
+                ...projectContext,
+                tracks: [
+                    createTrack({
+                        id: 'track-native',
+                        name: 'Native',
+                        devices: [
+                            {
+                                id: 'device-native',
+                                name: 'Native Device',
+                                type: 'Native',
+                                bypassed: false,
+                                parameters: [
+                                    {
+                                        id: 'native-frequency',
+                                        name: 'Native Frequency',
+                                        type: 'float',
+                                        value: 1_200,
+                                        minValue: 20,
+                                        maxValue: 20_000,
+                                        unit: 'Hz',
+                                    },
+                                ],
+                            },
+                        ],
+                    }),
+                    master,
+                ],
+            };
+            const result = bridge(
+                [
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: 'device-native', paramId: 'native-frequency', value: 2_400 },
+                    },
+                ],
+                `set native-frequency on device-native to ${stated}`,
+                context
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+        }
+    );
 
     it.each(['4:10', '4:', '4:1/2'])('rejects unsupported descriptor-native ratio syntax %s', (stated) => {
         const context: ProjectContext = {

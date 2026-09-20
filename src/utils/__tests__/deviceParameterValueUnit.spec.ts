@@ -23,7 +23,10 @@ describe('normalizeDeviceParameterValueUnit', () => {
         expect(normalizeDeviceParameterValueUnit(input)).toBe(expected);
     });
 
-    it.each(['milliseconds later', 'kilohertz', 'percentage', 'ratio'])('does not partially normalize %s', (input) => {
-        expect(normalizeDeviceParameterValueUnit(input)).toBeNull();
-    });
+    it.each(['milliseconds later', 's', 'sec', 'second', 'seconds', 'kHz', 'kilohertz', 'percentage', 'ratio'])(
+        'does not normalize unsupported or partial unit %s',
+        (input) => {
+            expect(normalizeDeviceParameterValueUnit(input)).toBeNull();
+        }
+    );
 });
