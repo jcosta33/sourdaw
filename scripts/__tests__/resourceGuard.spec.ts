@@ -1728,6 +1728,90 @@ describe('guard failure stop enforcement', () => {
             }
         });
 
+        it('refuses a pnpm package.yaml prefix before the child can clear the receipt', async () => {
+            const fixture = createLintRecoveryFixture('package-yaml-prefix');
+            const nestedCwd = join(fixture.worktreePath, 'child');
+            mkdirSync(join(nestedCwd, 'src', 'models'), { recursive: true });
+            mkdirSync(join(nestedCwd, 'src', 'useCases'), { recursive: true });
+            writeFileSync(join(nestedCwd, fixture.oldTarget), 'export {}');
+            writeFileSync(join(nestedCwd, fixture.newTarget), 'export {}');
+            writeFileSync(join(nestedCwd, fixture.retainedTarget), 'export {}');
+            writeLintProbePackage(nestedCwd, 'guard-package-yaml-prefix');
+            renameSync(join(nestedCwd, 'package.json'), join(nestedCwd, 'package.yaml'));
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(nestedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: nestedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(errors[0]).toContain('package.yaml');
+                expect(existsSync(join(nestedCwd, 'observed.json'))).toBe(false);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each([
+            {
+                marker: 'package.json5',
+                arrange: (directory: string) => writeFileSync(join(directory, 'package.json5'), '{}'),
+            },
+            {
+                marker: 'node_modules',
+                arrange: (directory: string) => mkdirSync(join(directory, 'node_modules')),
+            },
+            {
+                marker: 'pnpm-workspace.yaml',
+                arrange: (directory: string) => writeFileSync(join(directory, 'pnpm-workspace.yaml'), 'packages: []\n'),
+            },
+        ])('refuses unsupported pnpm prefix marker $marker before spawning', async ({ marker, arrange }) => {
+            const fixture = createLintRecoveryFixture(`unsupported-prefix-${marker}`);
+            const nestedCwd = join(fixture.worktreePath, 'child');
+            mkdirSync(nestedCwd, { recursive: true });
+            arrange(nestedCwd);
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(nestedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: nestedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(marker);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it.each([
             { label: 'lane-root package', packageDirectory: 'root' },
             { label: 'nested workspace package', packageDirectory: 'nested' },

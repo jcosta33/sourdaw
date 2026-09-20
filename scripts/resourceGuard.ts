@@ -1466,17 +1466,39 @@ function resolveRecoveryCwd(input: {
     return recordedCwd;
 }
 
+const PNPM_PREFIX_MARKERS = [
+    'node_modules',
+    'package.json',
+    'package.json5',
+    'package.yaml',
+    'pnpm-workspace.yaml',
+] as const;
+
 function resolvePnpmPackageDirectory(cwd: string, laneRoot: string): string {
     const canonicalLaneRoot = realpathSync(laneRoot);
     let currentDirectory = realpathSync(cwd);
 
+    while (basename(currentDirectory) === 'node_modules' && currentDirectory !== canonicalLaneRoot) {
+        currentDirectory = dirname(currentDirectory);
+    }
+
     while (containsPath(canonicalLaneRoot, currentDirectory)) {
-        const packageManifest = join(currentDirectory, 'package.json');
-        if (existsSync(packageManifest)) {
-            if (!statSync(packageManifest).isFile()) {
+        const directoryEntries = new Set(readdirSync(currentDirectory));
+        const prefixMarkers = PNPM_PREFIX_MARKERS.filter((marker) => directoryEntries.has(marker));
+        if (prefixMarkers.length > 0) {
+            if (!directoryEntries.has('package.json')) {
+                throw new Error(
+                    `--replace-lint-target cannot validate pnpm package owner from prefix marker: ${prefixMarkers.join(', ')}`
+                );
+            }
+            try {
+                if (statSync(join(currentDirectory, 'package.json')).isFile()) {
+                    return currentDirectory;
+                }
+            } catch {
                 throw new Error('--replace-lint-target found a pnpm package manifest that is not a regular file');
             }
-            return currentDirectory;
+            throw new Error('--replace-lint-target found a pnpm package manifest that is not a regular file');
         }
         if (currentDirectory === canonicalLaneRoot) {
             break;
