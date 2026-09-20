@@ -1202,7 +1202,7 @@
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
                 "tracked-set-sha256:dae45a9d53d1a451448839f8aab39631232cda882cb4c1e570943fc48c02e519:grand-boule-live-runtime",
                 "tracked-set-sha256:29916b54b261f27667a4021102e2ff8ec4fa273a3730ad290a717faa455a20d5:grand-boule-project-state",
-                "tracked-set-sha256:09d116c1af3c686e071bdfa3e4d2b7d28a50315c67e74c4fba05ba632b6450e0:grand-boule-offline-composition",
+                "tracked-set-sha256:de1f1a4c98db10e62ab52b193e69474f178e3e02be1e3eac787a731528d774db:grand-boule-offline-composition",
                 "tracked-set-sha256:e65cf347580b7d21da3bfd479b45dc7eead1647435c8c0e24fedcd782ec2f4d9:grand-boule-release-proof"
             ],
             "licenses": [
