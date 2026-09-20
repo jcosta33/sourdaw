@@ -1,6 +1,7 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
-import { applyDescriptorGuidance, descriptorGuidance, parameterGuidance } from './DescriptorGuidance';
+import { BUILTIN_SYNTH_PARAMETER_GUIDANCE } from './BuiltinInstrumentDescriptorsGuidance';
+import { applyDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
 import { declaredControl, instrumentGuidance } from './GuidanceProfiles';
 
 /** Built-in instrument plugin descriptors (Synth, Drum Kit). */
@@ -344,11 +345,6 @@ const BUILTIN_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     // ─── Native DSP (Rust/WASM) ─────────────────────────────────────────
 ];
 
-const noExternalModulation = {
-    availability: 'unavailable' as const,
-    reason: 'This descriptor declares no source-specific modulation route beyond its separate automation capability.',
-};
-
 const BUILTIN_INSTRUMENT_DESCRIPTORS_GUIDANCE = [
     descriptorGuidance(
         'builtin-synth',
@@ -360,32 +356,8 @@ const BUILTIN_INSTRUMENT_DESCRIPTORS_GUIDANCE = [
             ],
             ['High resonance, unison, and gain can build level quickly across held chords.']
         ),
-        declaredControl(
-            'Synth voice control',
-            'Changes oscillator, filter, envelope, or stereo behavior of each voice.',
-            ['Evaluate voice controls together with amp gain and polyphony.'],
-            ['Layered voices and resonance can use output headroom quickly.']
-        ),
-        {
-            attack: parameterGuidance(
-                'Amplitude-envelope attack time',
-                'Sets how quickly a played note reaches its full level.',
-                0.005,
-                0.1,
-                ['Use with decay, sustain, and release to shape the note contour.'],
-                ['Very slow attacks can hide rhythmic note starts.'],
-                noExternalModulation
-            ),
-            filterCutoff: parameterGuidance(
-                'Filter cutoff frequency',
-                'Sets the upper frequency region passed by the selected filter type.',
-                200,
-                8000,
-                ['Use with resonance, envelope amount, and key tracking.'],
-                ['High resonance near the cutoff can create sharp peaks.'],
-                noExternalModulation
-            ),
-        }
+        undefined,
+        BUILTIN_SYNTH_PARAMETER_GUIDANCE
     ),
     descriptorGuidance(
         'builtin-drum-kit',
