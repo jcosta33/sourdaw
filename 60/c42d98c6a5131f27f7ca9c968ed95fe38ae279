@@ -1,0 +1,45 @@
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_0853699769b468 1203
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_a291453e4b6501 337-346
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_985a391f574263 515,748
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_ed5aa36a3ba357::t_c4f9e2a3addb8f 12,20,22,69-84,87-131,252-253,260,456-457,460,468-487
+src/modules/AiRuntime/useCases/__tests__/hostedUsageAttribution.spec.ts
+  s_ed5aa36a3ba357::t_77d62ca5a67ce2 5,11-12,18-22,26-28,31-32,36-38,49,68-70,107-326
+src/modules/AiRuntime/useCases/__tests__/providerRouteView.spec.ts
+  s_ed5aa36a3ba357::t_f3d3fce731955b 201-253
+src/modules/AiRuntime/useCases/getProviderRouteView.ts
+  s_ed5aa36a3ba357::t_eb9221c3e4b0c4 27-28,199-200,204-205,211-213
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_ed5aa36a3ba357::t_0a621b1577ee8e 26-59,68-70,96
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ed5aa36a3ba357::t_65c340e0df9166 8,1787-1816,1865-1920
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopInputMonitoring.spec.ts
+  s_ed5aa36a3ba357::t_26360a555d5c1b 4,140-185
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ed5aa36a3ba357::t_f7018c760bb5be 38-39,2642-2647
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_ed5aa36a3ba357::t_d52c413f672da6 42,137-143
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentRouteSection.tsx
+  s_ed5aa36a3ba357::t_ca9f7e01eec3cb 17,75-81
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_ed5aa36a3ba357::t_5880a3806e6e07 600-622
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "60c42d98c6a5131f27f7ca9c968ed95fe38ae279",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
