@@ -1,7 +1,12 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { captureAutomationRecordingRollback } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AutomationRecordingPolicy, type HandlerValidationContext } from '#/utils/handlerContract';
+import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
+import {
+    type AutomationRecordingPolicy,
+    type HandlerSessionActionEntry,
+    type HandlerValidationContext,
+} from '#/utils/handlerContract';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { getPluginById } from '../../models/DeviceParameter';
@@ -32,6 +37,67 @@ function hasExecutionGuards(action: {
     );
 }
 
+function resolveDeviceTarget(action: { payload: { deviceId: string } }, context?: HandlerValidationContext) {
+    const currentTracks = getTrackStoreState()?.tracks ?? [];
+    const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
+    const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
+    for (const priorAction of priorActions) {
+        if (priorAction.type === 'addTrack' && priorAction.payload.id) {
+            candidateTrackIds.add(priorAction.payload.id);
+        }
+        if (priorAction.type === 'createBus' && priorAction.payload.busId) {
+            candidateTrackIds.add(priorAction.payload.busId);
+        }
+    }
+    const owners = [...candidateTrackIds]
+        .map((trackId) =>
+            context ? getPlannedTrackState(context, trackId) : currentTracks.find((track) => track.id === trackId)
+        )
+        .filter((track) => track?.devices.some((device) => device.id === action.payload.deviceId));
+    const owner = owners.length === 1 ? (owners[0] ?? undefined) : undefined;
+    return { owner, device: owner?.devices.find((candidate) => candidate.id === action.payload.deviceId) };
+}
+
+function nativeUnitMatches(
+    action: {
+        payload: {
+            deviceId: string;
+            paramId: string;
+            value: number;
+            valueUnit?: DeviceParameterValueUnit;
+        };
+    },
+    context?: HandlerValidationContext
+): boolean {
+    if (action.payload.valueUnit === undefined) {
+        return true;
+    }
+    const { device } = resolveDeviceTarget(action, context);
+    const parameter = device
+        ? getPluginById(device.type)?.parameters.find((candidate) => candidate.id === action.payload.paramId)
+        : undefined;
+    return (
+        parameter !== undefined &&
+        normalizeDeviceParameterValueUnit(parameter.unit) === action.payload.valueUnit &&
+        Number.isFinite(action.payload.value) &&
+        action.payload.value >= parameter.minValue &&
+        action.payload.value <= parameter.maxValue
+    );
+}
+
+function sessionEntryAgreesOnValueUnit(entry: HandlerSessionActionEntry): boolean {
+    if (entry.action.type !== 'setDeviceParameter') {
+        return false;
+    }
+    const forwardUnit = entry.action.payload.valueUnit;
+    return [entry.inverseAction, entry.redoAction].every((replay) => {
+        if (replay === null || replay === undefined) {
+            return true;
+        }
+        return replay.type === 'setDeviceParameter' && replay.payload.valueUnit === forwardUnit;
+    });
+}
+
 function executionGuardsMatch(
     action: {
         payload: {
@@ -50,23 +116,7 @@ function executionGuardsMatch(
     if (!hasExecutionGuards(action)) {
         return true;
     }
-    const currentTracks = getTrackStoreState()?.tracks ?? [];
-    const candidateTrackIds = new Set(currentTracks.map((track) => track.id));
-    for (const priorAction of context?.actions.slice(0, context.actionIndex) ?? []) {
-        if (priorAction.type === 'addTrack' && priorAction.payload.id) {
-            candidateTrackIds.add(priorAction.payload.id);
-        }
-        if (priorAction.type === 'createBus' && priorAction.payload.busId) {
-            candidateTrackIds.add(priorAction.payload.busId);
-        }
-    }
-    const owners = [...candidateTrackIds]
-        .map((trackId) =>
-            context ? getPlannedTrackState(context, trackId) : currentTracks.find((track) => track.id === trackId)
-        )
-        .filter((track) => track?.devices.some((device) => device.id === action.payload.deviceId));
-    const owner = owners.length === 1 ? (owners[0] ?? undefined) : undefined;
-    const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+    const { owner, device } = resolveDeviceTarget(action, context);
     const currentDeviceIds = owner?.devices.map((candidate) => candidate.id);
     const valuePresent = device ? Object.hasOwn(device.parameterValues, action.payload.paramId) : false;
     return (
@@ -90,13 +140,14 @@ function handleGuardedSetDeviceParameter(
             deviceId: string;
             paramId: string;
             value: number;
+            valueUnit?: DeviceParameterValueUnit;
             deleteParameter?: boolean;
             automationRecordingPolicy?: AutomationRecordingPolicy;
         };
     },
     context?: HandlerValidationContext
 ) {
-    if (!executionGuardsMatch(action)) {
+    if (!executionGuardsMatch(action) || !nativeUnitMatches(action)) {
         return { status: 'conflict' as const };
     }
     const didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
@@ -158,7 +209,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         action.payload.expectedDeviceType !== undefined &&
         action.payload.expectedDeviceIds !== undefined &&
         action.payload.expectedValuePresent !== undefined,
-    validate: (action, context) => executionGuardsMatch(action, context),
+    validate: (action, context) => executionGuardsMatch(action, context) && nativeUnitMatches(action, context),
     prepareAbort: (action) => {
         // A suppressed edit cannot reach the recording maps, so snapshotting and
         // restoring them would only be able to discard a pass some other writer
@@ -203,9 +254,10 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         };
     },
     execute: handleGuardedSetDeviceParameter,
-    validateSessionEntry: sessionEntryAgreesOnAutomationRecordingPolicy,
+    validateSessionEntry: (entry) =>
+        sessionEntryAgreesOnAutomationRecordingPolicy(entry) && sessionEntryAgreesOnValueUnit(entry),
     isNoop: (action) => {
-        if (!executionGuardsMatch(action)) {
+        if (!executionGuardsMatch(action) || !nativeUnitMatches(action)) {
             return false;
         }
         const device = getTrackStoreState()
@@ -247,6 +299,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         // static edit is still not a knob gesture.
         const automationRecordingPolicy = alpha.payload.automationRecordingPolicy;
         const carriedPolicy = automationRecordingPolicy === undefined ? {} : { automationRecordingPolicy };
+        const carriedValueUnit = alpha.payload.valueUnit === undefined ? {} : { valueUnit: alpha.payload.valueUnit };
         return {
             label: exactLabel ?? `Set ${alpha.payload.paramId}`,
             inverseAction:
@@ -269,6 +322,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                               ...(expectedTrackFrozen === undefined ? {} : { expectedTrackFrozen }),
                               ...(expectedPreviousValuePresent ? {} : { deleteParameter: true }),
                               ...carriedPolicy,
+                              ...carriedValueUnit,
                           },
                       }
                     : null,
@@ -291,6 +345,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
                               expectedValuePresent: expectedPreviousValuePresent,
                               ...(expectedTrackFrozen === undefined ? {} : { expectedTrackFrozen }),
                               ...carriedPolicy,
+                              ...carriedValueUnit,
                           },
                       }
                     : undefined,

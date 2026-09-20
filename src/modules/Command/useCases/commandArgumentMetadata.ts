@@ -1,3 +1,5 @@
+import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
+
 import {
     type CommandObjectReference,
     type CommandParameterUnit,
@@ -102,7 +104,8 @@ function appendValueMetadata(metadata: CommandArgumentMetadata, value: unknown, 
 }
 
 export function compileCommandArgumentMetadata(
-    argumentsValue: Readonly<Record<string, unknown>>
+    argumentsValue: Readonly<Record<string, unknown>>,
+    operation?: string
 ): CommandArgumentMetadata {
     const metadata: CommandArgumentMetadata = {
         objectReferences: [],
@@ -110,5 +113,14 @@ export function compileCommandArgumentMetadata(
         time: [],
     };
     appendValueMetadata(metadata, argumentsValue, '');
+    if (operation === 'setDeviceParameter' && typeof argumentsValue.value === 'number') {
+        const valueUnit = normalizeDeviceParameterValueUnit(argumentsValue.valueUnit);
+        if (valueUnit !== null) {
+            const valueMetadata = metadata.parameterUnits.find((entry) => entry.argument === 'value');
+            if (valueMetadata) {
+                valueMetadata.unit = valueUnit;
+            }
+        }
+    }
     return metadata;
 }

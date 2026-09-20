@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { type CreativeRequestAuthority } from '../../../models/CreativeInterpretation';
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { compileArbitraryCommandList } from '../../compileArbitraryCommandList';
 import { bridgeGroundedLlmToolCalls } from '../bridgeGroundedLlmToolCalls';
@@ -2629,7 +2630,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
     });
 
     it('grounds and projects a descriptor-backed parameter on a device the plan creates', () => {
-        const prompt = 'make a new MIDI track with a filter';
+        const prompt = 'make a new MIDI track with a filter and set its cutoff to 2400 Hz';
         const context: ProjectContext = {
             ...projectContext,
             availableDeviceTypes: [
@@ -2638,82 +2639,115 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     name: 'Filter',
                     parameters: [
                         {
-                            id: 'filter-type',
-                            name: 'Type',
-                            type: 'choice',
-                            value: 0,
-                            minValue: 0,
-                            maxValue: 3,
-                            unit: '',
-                            choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
+                            id: 'filter-cutoff',
+                            name: 'Cutoff',
+                            type: 'float',
+                            value: 1_000,
+                            minValue: 20,
+                            maxValue: 20_000,
+                            unit: 'Hz',
                         },
                     ],
                 },
             ],
         };
-        const compiled = compileArbitraryCommandList({
-            context,
-            revision: 'revision-created-filter',
-            calls: [
-                {
-                    name: 'command.batch.propose',
-                    arguments: {
-                        plan: {
-                            semantic: { classification: 'simple', uncertainty: [] },
-                            objective: prompt,
-                            constraints: [],
-                            scope: {
-                                targetIds: [],
-                                targetRanges: [],
-                                protectedTargetIds: [],
-                                protectedRanges: [],
+        const compile = (requestPrompt: string, value = 2_400) =>
+            compileArbitraryCommandList({
+                context,
+                revision: 'revision-created-filter',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: requestPrompt,
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
                             },
-                            capabilityIds: [],
-                            assetIds: [],
-                            alternatives: [],
-                            validationStrategy: [],
-                            stoppingConditions: [],
-                        },
-                        list: {
-                            schemaVersion: 1,
-                            items: [
-                                {
-                                    id: 'make-lead',
-                                    name: 'addTrack',
-                                    arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
-                                },
-                                {
-                                    id: 'add-filter',
-                                    name: 'addDevice',
-                                    arguments: {
-                                        trackId: '$lead',
-                                        deviceType: 'builtin-filter',
-                                        binding: 'filter',
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'make-lead',
+                                        name: 'addTrack',
+                                        arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
                                     },
-                                    dependsOn: ['make-lead'],
-                                },
-                                {
-                                    id: 'set-filter-type',
-                                    name: 'setDeviceParameter',
-                                    arguments: { deviceId: '$filter', paramId: 'filter-type', value: 1 },
-                                    dependsOn: ['add-filter'],
-                                },
-                            ],
+                                    {
+                                        id: 'add-filter',
+                                        name: 'addDevice',
+                                        arguments: {
+                                            trackId: '$lead',
+                                            deviceType: 'builtin-filter',
+                                            binding: 'filter',
+                                        },
+                                        dependsOn: ['make-lead'],
+                                    },
+                                    {
+                                        id: 'set-filter-type',
+                                        name: 'setDeviceParameter',
+                                        arguments: { deviceId: '$filter', paramId: 'filter-cutoff', value },
+                                        dependsOn: ['add-filter'],
+                                    },
+                                ],
+                            },
                         },
                     },
-                },
-            ],
-        });
-        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
-            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
-        }
+                ],
+            });
+        const compiled = compile(prompt);
+        const mismatchedPrompt = 'make a new MIDI track with a filter and set its cutoff to 2400 ms';
+        const mismatchedCompiled = compile(mismatchedPrompt);
+        const mismatchedValueCompiled = compile(prompt, 3_000);
+        const mismatchedValueAndUnitCompiled = compile(mismatchedPrompt, 3_000);
+        const requireCompilerEvidence = (candidate: ReturnType<typeof compile>) => {
+            if (candidate.status !== 'accepted' || candidate.compilerEvidence === undefined) {
+                throw new Error(candidate.status === 'rejected' ? candidate.reason : 'Expected compiler evidence');
+            }
+            return candidate.compilerEvidence;
+        };
+        const compilerEvidence = requireCompilerEvidence(compiled);
+        const mismatchedCompilerEvidence = requireCompilerEvidence(mismatchedCompiled);
+        const mismatchedValueCompilerEvidence = requireCompilerEvidence(mismatchedValueCompiled);
+        const mismatchedValueAndUnitCompilerEvidence = requireCompilerEvidence(mismatchedValueAndUnitCompiled);
 
         const result = bridgeGroundedLlmToolCalls({
-            calls: compiled.compilerEvidence.commands,
-            compilerEvidence: compiled.compilerEvidence,
+            calls: compilerEvidence.commands,
+            compilerEvidence,
             context,
             projectRevision: 'revision-created-filter',
             prompt,
+        });
+        const mismatchedUnit = bridgeGroundedLlmToolCalls({
+            calls: mismatchedCompilerEvidence.commands,
+            compilerEvidence: mismatchedCompilerEvidence,
+            context,
+            projectRevision: 'revision-created-filter',
+            prompt: mismatchedPrompt,
+        });
+        const mismatchedValue = bridgeGroundedLlmToolCalls({
+            calls: mismatchedValueCompilerEvidence.commands,
+            compilerEvidence: mismatchedValueCompilerEvidence,
+            context,
+            projectRevision: 'revision-created-filter',
+            prompt,
+        });
+        const mismatchedValueAndUnit = bridgeGroundedLlmToolCalls({
+            calls: mismatchedValueAndUnitCompilerEvidence.commands,
+            compilerEvidence: mismatchedValueAndUnitCompilerEvidence,
+            context,
+            projectRevision: 'revision-created-filter',
+            prompt: mismatchedPrompt,
         });
 
         expect(result.rejections).toEqual([]);
@@ -2741,16 +2775,21 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 type: 'setDeviceParameter',
                 payload: {
                     deviceId: deviceIdentity.deviceId,
-                    paramId: 'filter-type',
-                    value: 1,
+                    paramId: 'filter-cutoff',
+                    value: 2_400,
+                    valueUnit: 'Hz',
                     expectedTrackId: expect.stringMatching(/^track-ai-/u),
                     expectedDeviceType: 'builtin-filter',
                     expectedDeviceIds: [trackIdentity.initialDeviceId, deviceIdentity.deviceId],
-                    expectedValue: 0,
+                    expectedValue: 1_000,
                     expectedTrackFrozen: false,
                 },
             },
         ]);
+        for (const rejected of [mismatchedUnit, mismatchedValue, mismatchedValueAndUnit]) {
+            expect(rejected.actions).toEqual([]);
+            expect(rejected.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+        }
     });
 
     it.each([
@@ -5968,6 +6007,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     deviceId: 'device-eq',
                     paramId: 'frequency',
                     value: 2400,
+                    valueUnit: 'Hz',
                     expectedTrackId: 'track-vocals',
                     expectedDeviceType: 'EQ',
                     expectedDeviceIds: ['device-eq'],
@@ -5984,6 +6024,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     deviceId: 'device-eq',
                     paramId: 'frequency',
                     value: 2400,
+                    valueUnit: 'Hz',
                     expectedTrackId: 'track-vocals',
                     expectedDeviceType: 'EQ',
                     expectedDeviceIds: ['device-eq'],
@@ -6008,6 +6049,469 @@ describe('bridgeGroundedLlmToolCalls', () => {
             },
         ]);
         expect(wrongOwner.actions).toEqual([]);
+    });
+
+    it.each([
+        {
+            id: 'native-threshold',
+            unit: 'dB',
+            current: -20,
+            min: -60,
+            max: 0,
+            value: -12,
+            stated: '-12 dB',
+            carrier: 'dB',
+            wordStated: '-12 decibels',
+            wrongWordStated: '-12 hertz',
+        },
+        {
+            id: 'native-frequency',
+            unit: 'Hz',
+            current: 1_200,
+            min: 20,
+            max: 20_000,
+            value: 2_400,
+            stated: '2400 Hz',
+            carrier: 'Hz',
+            wordStated: '2400 hertz',
+            wrongWordStated: '2400 milliseconds',
+        },
+        {
+            id: 'native-attack',
+            unit: 'ms',
+            current: 10,
+            min: 0,
+            max: 1_000,
+            value: 20,
+            stated: '20 ms',
+            carrier: 'ms',
+            wordStated: '20 milliseconds',
+            wrongWordStated: '20 percent',
+        },
+        {
+            id: 'native-mix',
+            unit: '%',
+            current: 25,
+            min: 0,
+            max: 100,
+            value: 50,
+            stated: '50%',
+            carrier: '%',
+            wordStated: '50 percent',
+            wrongWordStated: '50 semitones',
+        },
+        { id: 'native-ratio', unit: ':1', current: 2, min: 1, max: 20, value: 4, stated: '4:1', carrier: ':1' },
+        {
+            id: 'native-pitch',
+            unit: 'st',
+            current: 0,
+            min: -24,
+            max: 24,
+            value: 5,
+            stated: '5 st',
+            carrier: 'semitones',
+            wordStated: '5 semitones',
+            wrongWordStated: '5 decibels',
+        },
+    ] as const)(
+        'grounds $id in its descriptor-backed $unit native unit',
+        ({ id, unit, current, min, max, value, stated, carrier, ...wordCases }) => {
+            const context: ProjectContext = {
+                ...projectContext,
+                tracks: [
+                    createTrack({
+                        id: 'track-native',
+                        name: 'Native',
+                        devices: [
+                            {
+                                id: 'device-native',
+                                name: 'Native Device',
+                                type: 'Native',
+                                bypassed: false,
+                                parameters: [
+                                    {
+                                        id,
+                                        name: id,
+                                        type: 'float',
+                                        value: current,
+                                        minValue: min,
+                                        maxValue: max,
+                                        unit,
+                                    },
+                                ],
+                            },
+                        ],
+                    }),
+                    master,
+                ],
+            };
+
+            const result = bridge(
+                [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                `set ${id} on device-native to ${stated}`,
+                context
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                {
+                    type: 'setDeviceParameter',
+                    payload: expect.objectContaining({
+                        deviceId: 'device-native',
+                        paramId: id,
+                        value,
+                        valueUnit: carrier,
+                    }),
+                },
+            ]);
+            for (const suffix of ['.', '!', ' exactly', ' for this device']) {
+                const withTrailingText = bridge(
+                    [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                    `set ${id} on device-native to ${stated}${suffix}`,
+                    context
+                );
+                expect(withTrailingText.rejections, suffix).toEqual([]);
+                expect(withTrailingText.actions, suffix).toEqual(result.actions);
+            }
+            for (const extraUnit of ['Hz', 'dB', '%', 'ms', 'semitones', 's', 'kHz']) {
+                if (extraUnit === carrier) {
+                    continue;
+                }
+                for (const separator of [' ', '/']) {
+                    const contradictory = bridge(
+                        [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                        `set ${id} on device-native to ${stated}${separator}${extraUnit}`,
+                        context
+                    );
+                    expect(contradictory.actions, `${stated}${separator}${extraUnit}`).toEqual([]);
+                    expect(contradictory.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+                }
+            }
+            if ('wordStated' in wordCases) {
+                const matchingWord = bridge(
+                    [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                    `set ${id} on device-native to ${wordCases.wordStated}`,
+                    context
+                );
+                const mismatchedWord = bridge(
+                    [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-native', paramId: id, value } }],
+                    `set ${id} on device-native to ${wordCases.wrongWordStated}`,
+                    context
+                );
+
+                expect(matchingWord.actions).toEqual([
+                    {
+                        type: 'setDeviceParameter',
+                        payload: expect.objectContaining({
+                            deviceId: 'device-native',
+                            paramId: id,
+                            value,
+                            valueUnit: carrier,
+                        }),
+                    },
+                ]);
+                expect(mismatchedWord.actions).toEqual([]);
+                expect(mismatchedWord.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+            }
+        }
+    );
+
+    it('binds one numeric source occurrence to the resolved descriptor unit and bounds', () => {
+        const frequency = {
+            id: 'native-frequency',
+            name: 'Native Frequency',
+            type: 'float' as const,
+            value: 1_200,
+            minValue: 20,
+            maxValue: 20_000,
+            unit: 'Hz',
+        };
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({
+                    id: 'track-native',
+                    name: 'Native',
+                    devices: [
+                        {
+                            id: 'device-native',
+                            name: 'Native Device',
+                            type: 'Native',
+                            bypassed: false,
+                            parameters: [frequency],
+                        },
+                    ],
+                }),
+                master,
+            ],
+        };
+        const call = {
+            name: 'setDeviceParameter',
+            arguments: { deviceId: 'device-native', paramId: frequency.id, value: 2_400 },
+        };
+        const accepted = bridge([call], 'set native-frequency on device-native to 2400 Hz', context);
+        const parenthesizedUnit = bridge([call], 'set native-frequency on device-native to 2400 (Hz)', context);
+        const bare = bridge([call], 'set native-frequency on device-native to 2400', context);
+        const bareWithTrailingText = bridge([call], 'set native-frequency on device-native to 2400 exactly', context);
+        const wrongUnit = bridge([call], 'set native-frequency on device-native to 2400 ms', context);
+        const parenthesizedWrongUnit = bridge([call], 'set native-frequency on device-native to 2400 (ms)', context);
+        const unsupportedParentheses = ['2400 ()', '2400 (Hz or ms)'].map((stated) => ({
+            stated,
+            result: bridge([call], `set native-frequency on device-native to ${stated}`, context),
+        }));
+        const wrongSourceValue = bridge([call], 'set native-frequency on device-native to 1200 Hz', context);
+        const outOfBounds = bridge(
+            [
+                {
+                    ...call,
+                    arguments: { ...call.arguments, value: 20_001 },
+                },
+            ],
+            'set native-frequency on device-native to 20001 Hz',
+            context
+        );
+
+        expect(accepted.rejections).toEqual([]);
+        expect(parenthesizedUnit.rejections).toEqual([]);
+        expect(bare.rejections).toEqual([]);
+        expect(bareWithTrailingText.rejections).toEqual([]);
+        expect(accepted.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
+        expect(parenthesizedUnit.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
+        expect(bare.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
+        expect(bareWithTrailingText.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
+        const rejected = [
+            { stated: '2400 ms', result: wrongUnit },
+            { stated: '2400 (ms)', result: parenthesizedWrongUnit },
+            ...unsupportedParentheses,
+            { stated: '1200 Hz', result: wrongSourceValue },
+            { stated: '20001 Hz', result: outOfBounds },
+        ];
+        for (const { stated, result } of rejected) {
+            expect.soft(result.actions, stated).toEqual([]);
+            expect.soft(result.rejections, stated).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+        }
+    });
+
+    it.each(['2400 s', '2400 sec', '2400 secs', '2400 second', '2400 seconds', '2400 kHz', '2400 kilohertz'])(
+        'rejects unsupported or scaled physical-unit syntax %s instead of treating it as bare',
+        (stated) => {
+            const context: ProjectContext = {
+                ...projectContext,
+                tracks: [
+                    createTrack({
+                        id: 'track-native',
+                        name: 'Native',
+                        devices: [
+                            {
+                                id: 'device-native',
+                                name: 'Native Device',
+                                type: 'Native',
+                                bypassed: false,
+                                parameters: [
+                                    {
+                                        id: 'native-frequency',
+                                        name: 'Native Frequency',
+                                        type: 'float',
+                                        value: 1_200,
+                                        minValue: 20,
+                                        maxValue: 20_000,
+                                        unit: 'Hz',
+                                    },
+                                ],
+                            },
+                        ],
+                    }),
+                    master,
+                ],
+            };
+            const result = bridge(
+                [
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: 'device-native', paramId: 'native-frequency', value: 2_400 },
+                    },
+                ],
+                `set native-frequency on device-native to ${stated}`,
+                context
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+        }
+    );
+
+    it("preserves the numeric path when the request states the descriptor's own unsupported seconds unit", () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({
+                    id: 'track-native',
+                    name: 'Native',
+                    devices: [
+                        {
+                            id: 'device-native',
+                            name: 'Native Device',
+                            type: 'Native',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'native-decay',
+                                    name: 'Native Decay',
+                                    type: 'float',
+                                    value: 2,
+                                    minValue: 0.1,
+                                    maxValue: 20,
+                                    unit: 's',
+                                },
+                            ],
+                        },
+                    ],
+                }),
+                master,
+            ],
+        };
+        const result = bridge(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-native', paramId: 'native-decay', value: 3.5 },
+                },
+            ],
+            'set native-decay on device-native to 3.5 s',
+            context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-native',
+                    paramId: 'native-decay',
+                    value: 3.5,
+                }),
+            },
+        ]);
+        expect(result.actions[0]?.payload).not.toHaveProperty('valueUnit');
+    });
+
+    it.each(['4:10', '4:', '4:1/2'])('rejects unsupported descriptor-native ratio syntax %s', (stated) => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({
+                    id: 'track-native',
+                    name: 'Native',
+                    devices: [
+                        {
+                            id: 'device-native',
+                            name: 'Native Device',
+                            type: 'Native',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'native-ratio',
+                                    name: 'Native Ratio',
+                                    type: 'float',
+                                    value: 2,
+                                    minValue: 1,
+                                    maxValue: 20,
+                                    unit: ':1',
+                                },
+                            ],
+                        },
+                    ],
+                }),
+                master,
+            ],
+        };
+
+        const result = bridge(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-native', paramId: 'native-ratio', value: 4 },
+                },
+            ],
+            `set native-ratio on device-native to ${stated}`,
+            context
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+    });
+
+    it('keeps descriptor bounds mandatory for creatively admitted parameter values', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({
+                    id: 'track-native',
+                    name: 'Native',
+                    devices: [
+                        {
+                            id: 'device-native',
+                            name: 'Native Device',
+                            type: 'Native',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'native-frequency',
+                                    name: 'Native Frequency',
+                                    type: 'float',
+                                    value: 1_200,
+                                    minValue: 20,
+                                    maxValue: 20_000,
+                                    unit: 'Hz',
+                                },
+                            ],
+                        },
+                    ],
+                }),
+                master,
+            ],
+        };
+        const creativeAuthority: CreativeRequestAuthority = {
+            schemaVersion: 1,
+            authorityId: 'creative-authority-native-frequency',
+            catalogId: 'creative-catalog-native-frequency',
+            requestDigest: 'request-digest-native-frequency',
+            revision: 'revision-native-frequency',
+            selection: { trackId: 'track-native', clipId: null, clipIds: [], activeView: context.activeView },
+            mode: 'edit',
+            targets: [
+                {
+                    provenance: 'explicit-reference',
+                    objectType: 'track',
+                    objectIds: ['track-native'],
+                    parentTrackId: null,
+                },
+            ],
+            editDimensions: ['processing'],
+            prohibitions: [],
+            creationSlots: [],
+            uncertainty: 'artistic',
+        };
+
+        const result = bridgeGroundedLlmToolCalls({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-native', paramId: 'native-frequency', value: 20_001 },
+                },
+            ],
+            context,
+            creativeAuthority,
+            prompt: 'make the Native Device sound warmer',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            expect.objectContaining({
+                name: 'setDeviceParameter',
+                reason: 'Provider value value does not match the user request',
+            }),
+        ]);
     });
 
     it('grounds catalog device insertion and destructive removal to explicit project references', () => {

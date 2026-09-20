@@ -9,6 +9,7 @@
  */
 
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
+import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
 
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
@@ -1415,6 +1416,8 @@ export type AppAction =
               deviceId: string;
               paramId: string;
               value: number;
+              /** Descriptor-backed native unit for model-authored parameter values. */
+              valueUnit?: DeviceParameterValueUnit;
               expectedTrackId?: string;
               expectedDeviceType?: string;
               expectedDeviceIds?: readonly string[];
