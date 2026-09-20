@@ -1,0 +1,66 @@
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 684-686,692-693,695-697,707,710-711,716
+  s_ed5aa36a3ba357::t_bbc8905b0ce6c7 371,687,691,694,709
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_ed5aa36a3ba357::t_ebafd464251a91 25
+  s_ed5aa36a3ba357::t_1c11fd926944e1 22,27,157,171,215-220,226-228,233-239,241-242,261-264,269-283,457,491
+  s_ed5aa36a3ba357::t_67f7ee3d1129a7 180,183,185-197,199-205,230,265,446-451
+  s_ed5aa36a3ba357::t_3b5961a2d3ca9b 14,240
+  s_ed5aa36a3ba357::t_2b9309d6ac51c8 461-470,497-503
+  s_ed5aa36a3ba357::t_7eea69a65070c7 458,492,496,504-512
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 18,43,45,47-48
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_ed5aa36a3ba357::t_791fb385ab6057 428
+  s_ed5aa36a3ba357::t_47d3dae38b1710 436-458,469-493
+src/modules/AiRuntime/models/ModelProviderProtocol.ts
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 93-94,178
+src/modules/AiRuntime/useCases/__tests__/streamHostedModelText.spec.ts
+  s_ed5aa36a3ba357::t_1c11fd926944e1 93-99,105-110,126-127
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_2b9309d6ac51c8 36-50
+src/modules/AiRuntime/useCases/recordAgentProviderUsage.ts
+  s_ed5aa36a3ba357::t_c502905e2fca84 7-9
+  s_ed5aa36a3ba357::t_bbc8905b0ce6c7 18-19
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 20
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 349-352,355
+  s_ed5aa36a3ba357::t_70ea1e34228b7a 358-363,365-366,370
+src/modules/AiRuntime/models/HostedToolPlanUsage.ts
+  s_ed5aa36a3ba357::t_2b9309d6ac51c8 12
+src/modules/AiRuntime/useCases/__tests__/hostedUsageAttribution.spec.ts
+  s_ed5aa36a3ba357::t_70ea1e34228b7a 3,23,26-34,36,43-46,49-52,54,57-63
+  s_ed5aa36a3ba357::t_c5ca8912a3741c 7-8,10-11,13-16,20-22,24-25,37-42,47-48,66,71-72,74-78,80-83,85,87,89-90,95-101,104-108,112-118,120-123,127-129,131-132
+  s_ed5aa36a3ba357::t_3705628dc25f9b 102-103,109
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 651,748
+  s_ed5aa36a3ba357::t_acf83b717a4ae1 749
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_ed5aa36a3ba357::t_2b9309d6ac51c8 226-247
+  s_ed5aa36a3ba357::t_1c11fd926944e1 176-182,190-196,203-206
+src/modules/AiRuntime/repositories/__tests__/anthropicProviderAdapter.contract.spec.ts
+  s_ed5aa36a3ba357::t_7d92029aea2c7c 57,201-204,207,483-490
+  s_ed5aa36a3ba357::t_6f92d7afaadcf3 491-492
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/normalizeAnthropicUsage.ts
+  s_ed5aa36a3ba357::t_18f42aee62cfe6 2-9,11
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_ed5aa36a3ba357::t_791fb385ab6057 261-267,273,275,278-279
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_a976af9cf27646 434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8b1cad1c79b55228743f84f8a52224f1a17b3ac2",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
