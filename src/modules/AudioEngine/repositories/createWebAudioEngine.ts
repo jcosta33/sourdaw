@@ -35,6 +35,8 @@ import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDev
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
+import { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
+
 import type {
     AdjustmentLayerTickInput,
     AudioEngine,
@@ -2636,6 +2638,12 @@ class AudioEngineImpl implements AudioEngine {
         // Tell every live worklet processor to shut down before we tear down the
         // graph and close the context, so processors stop their RT work cleanly.
         this.postShutdownToWorklets();
+
+        // The monitor session is HMR-persistent, so it outlives this engine and
+        // holds live microphone streams whose per-track edges point into the
+        // strip nodes resetGraph() is about to dispose. Release it while those
+        // nodes still exist; a repeat is a no-op because the session is emptied.
+        stopInputMonitoring();
 
         // Tear down the per-project graph (tracks, buses, sends, sidechain,
         // adjustment-layer runtime). This also closes per-track meter ports.
