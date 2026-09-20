@@ -6250,9 +6250,15 @@ describe('bridgeGroundedLlmToolCalls', () => {
             arguments: { deviceId: 'device-native', paramId: frequency.id, value: 2_400 },
         };
         const accepted = bridge([call], 'set native-frequency on device-native to 2400 Hz', context);
+        const parenthesizedUnit = bridge([call], 'set native-frequency on device-native to 2400 (Hz)', context);
         const bare = bridge([call], 'set native-frequency on device-native to 2400', context);
         const bareWithTrailingText = bridge([call], 'set native-frequency on device-native to 2400 exactly', context);
         const wrongUnit = bridge([call], 'set native-frequency on device-native to 2400 ms', context);
+        const parenthesizedWrongUnit = bridge([call], 'set native-frequency on device-native to 2400 (ms)', context);
+        const unsupportedParentheses = ['2400 ()', '2400 (Hz or ms)'].map((stated) => ({
+            stated,
+            result: bridge([call], `set native-frequency on device-native to ${stated}`, context),
+        }));
         const wrongSourceValue = bridge([call], 'set native-frequency on device-native to 1200 Hz', context);
         const outOfBounds = bridge(
             [
@@ -6266,14 +6272,23 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(accepted.rejections).toEqual([]);
+        expect(parenthesizedUnit.rejections).toEqual([]);
         expect(bare.rejections).toEqual([]);
         expect(bareWithTrailingText.rejections).toEqual([]);
         expect(accepted.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
+        expect(parenthesizedUnit.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
         expect(bare.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
         expect(bareWithTrailingText.actions[0]).toMatchObject({ payload: { valueUnit: 'Hz' } });
-        for (const rejected of [wrongUnit, wrongSourceValue, outOfBounds]) {
-            expect(rejected.actions).toEqual([]);
-            expect(rejected.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+        const rejected = [
+            { stated: '2400 ms', result: wrongUnit },
+            { stated: '2400 (ms)', result: parenthesizedWrongUnit },
+            ...unsupportedParentheses,
+            { stated: '1200 Hz', result: wrongSourceValue },
+            { stated: '20001 Hz', result: outOfBounds },
+        ];
+        for (const { stated, result } of rejected) {
+            expect.soft(result.actions, stated).toEqual([]);
+            expect.soft(result.rejections, stated).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
         }
     });
 

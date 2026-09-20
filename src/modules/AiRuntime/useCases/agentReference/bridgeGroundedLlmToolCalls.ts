@@ -1949,6 +1949,15 @@ function getAdjacentDeviceParameterUnits(
         if (units.length > 0 && /^\s*[/·*]/u.test(suffix)) {
             return [...units, 'unsupported-unit'];
         }
+        const parenthesized = /^\s*\(([^)]*)\)/u.exec(suffix);
+        if (parenthesized) {
+            units.push(normalizeDeviceParameterValueUnit(parenthesized[1]?.trim()) ?? 'unsupported-unit');
+            suffix = suffix.slice(parenthesized[0].length);
+            continue;
+        }
+        if (/^\s*\(/u.test(suffix)) {
+            return [...units, 'unsupported-unit'];
+        }
         const named =
             /^\s*(%|(?:dB|decibels?|Hz|hertz|ms|milliseconds?|percents?|st|semitones?|s|secs?|seconds?|kHz|kilohertz)\b)/iu.exec(
                 suffix
