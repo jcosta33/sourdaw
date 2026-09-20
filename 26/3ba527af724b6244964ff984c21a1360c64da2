@@ -1,0 +1,27 @@
+.agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
+  s_ed5aa36a3ba357::t_cca3dbf7d99b41 5,20-26
+.agents/decisions/README.md
+  s_ed5aa36a3ba357::t_8dfd2c5d6329be 63
+.agents/decisions/open-decision-docket.md
+  s_ed5aa36a3ba357::t_fdc4eaa8b49456 1173-1178
+AGENTS.md
+  s_ed5aa36a3ba357::t_e9a6aa92d43dc7 148-154,447-452
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ed5aa36a3ba357::t_c4b261d5c4c59b 7,2243-2335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "263ba527af724b6244964ff984c21a1360c64da2",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
