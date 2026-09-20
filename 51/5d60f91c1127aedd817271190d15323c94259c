@@ -1,0 +1,57 @@
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_ed5aa36a3ba357::t_61f0ae6eb6db9b 1002-1009,1028-1031,1034,1045-1046,1049,1597-1598,1600-1602,1649-1652
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_1f73dba8050393 36-37,39,41-43
+  s_ed5aa36a3ba357::t_1f5b5c2052ae3d 38
+  s_ed5aa36a3ba357::t_0e90615924d672 40
+src/modules/AiRuntime/__tests__/projectContextLevelUnits.spec.ts
+  s_ed5aa36a3ba357::t_83ba76aad38a75 287-290,293
+  s_ed5aa36a3ba357::t_2640a00c959b56 224-234,237-238,348-360
+  s_ed5aa36a3ba357::t_b9402e0e1aae60 175-207
+  s_ed5aa36a3ba357::t_730960c04556d5 219
+  s_ed5aa36a3ba357::t_43179da1933c1f 146,160,168-171,173-174,208-210,240-245,367
+  s_ed5aa36a3ba357::t_246113a006e473 411-417
+  s_ed5aa36a3ba357::t_cbff883c7c6898 145,147-159,161-167,172,246,344-347,361-366,368-388,391-396,398-404,437
+  s_ed5aa36a3ba357::t_91dd3db066b61a 211-218,220-223,235-236,239,389-390,397,405-410,418-436
+  s_ed5aa36a3ba357::t_8e566c5fe31582 247-286,291-292,294-343
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ed5aa36a3ba357::t_6d7a1b559bb8b1 1215,1225-1226,1265,1282
+  s_ed5aa36a3ba357::t_b84784319a613c 1271-1274
+src/modules/AiRuntime/models/AgentContext.ts
+  s_ed5aa36a3ba357::t_6d7a1b559bb8b1 1,25-26,29
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_ed5aa36a3ba357::t_320fd9c661840d 201-268,271,385,388-389
+  s_ed5aa36a3ba357::t_aa66937e22e37d 376-384
+  s_ed5aa36a3ba357::t_b4bb16101a93de 269-270,272-273,386-387
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_1f5b5c2052ae3d 59
+  s_ed5aa36a3ba357::t_0e90615924d672 61
+  s_ed5aa36a3ba357::t_1f73dba8050393 57-58,60,62-64
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_ed5aa36a3ba357::t_c413d6e3a608b3 3,73-133
+  s_ed5aa36a3ba357::t_d3ded08ea76bb2 134-135
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_ed5aa36a3ba357::t_3631d9eacc2bb8 252-259,278,289-290
+  s_ed5aa36a3ba357::t_304607b8270d7f 89-110,116-146,160-162,164-165,169-173,189,194-196,199,206-207,210
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_902c16e1a26a53 539
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ed5aa36a3ba357::t_a42a06db5a39a7 5,24,35-36,50,65,133,144,163
+  s_ed5aa36a3ba357::t_324f31b9d90e0e 3631,3641,3651,3658-3659
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "515d60f91c1127aedd817271190d15323c94259c",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
