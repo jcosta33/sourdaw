@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_ed5aa36a3ba357::t_42b1a9055a2af2 339-344,347,414-454
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ed5aa36a3ba357::t_b78236038be54e 595-603
+src/modules/AudioEngine/useCases/__tests__/renderOfflineInstrumentSetupCancellation.spec.ts
+  s_ed5aa36a3ba357::t_bc9f2a87e3958f 197-200,204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "065fc3b303b30eb973cb2e501020fbf675bfeb85",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
