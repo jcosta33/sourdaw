@@ -1,0 +1,32 @@
+src/modules/Command/useCases/__tests__/linkedAutomationPointAdmission.spec.ts
+  s_ed5aa36a3ba357::t_b5f39c102e0795 108,124,147
+  s_ed5aa36a3ba357::t_af61896b81a8b7 3-6,107
+  s_ed5aa36a3ba357::t_7ed7c4255860fc 1-2,7-27,29-106,109-123,125-146,148-161,188-211
+  s_ed5aa36a3ba357::t_af38bbca67f812 28,162-187
+.agents/skills/review-stances/test-validity.md
+  s_ed5aa36a3ba357::t_397605ad01fad5 384-390
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_397605ad01fad5 295-301
+.agents/skills/review-stances/project-integrity.md
+  s_ed5aa36a3ba357::t_af38bbca67f812 148-151
+  s_ed5aa36a3ba357::t_397605ad01fad5 145,147
+  s_ed5aa36a3ba357::t_e829fafaae9463 146
+src/modules/Automation/handlers/automation/handleAddAutomationPoint.ts
+  s_ed5aa36a3ba357::t_c55ac442ef2781 78-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e5d3c8bb50f35f20c3f34a8276ead67a8e4f9b5c",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
