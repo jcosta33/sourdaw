@@ -27,12 +27,16 @@ const mocks = vi.hoisted(() => ({
     updateTransportState: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    forgetProjectLatchedPedals: mocks.forgetProjectLatchedPedals,
-    resetAudioGraph: mocks.resetAudioGraph,
-    startInputMonitoring: mocks.startInputMonitoring,
-    stopAllScheduled: mocks.stopAllScheduled,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...actual,
+        forgetProjectLatchedPedals: mocks.forgetProjectLatchedPedals,
+        resetAudioGraph: mocks.resetAudioGraph,
+        startInputMonitoring: mocks.startInputMonitoring,
+        stopAllScheduled: mocks.stopAllScheduled,
+    };
+});
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
@@ -48,10 +52,20 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         },
     };
 });
-vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
-vi.mock('#/modules/PluginHost/useCases', () => ({
-    resetExternalPluginRuntimeForGraphRebuild: mocks.resetExternalPluginRuntimeForGraphRebuild,
-}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        ...actual,
+        resetMidiState: mocks.resetMidiState,
+    };
+});
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return {
+        ...actual,
+        resetExternalPluginRuntimeForGraphRebuild: mocks.resetExternalPluginRuntimeForGraphRebuild,
+    };
+});
 vi.mock('../../repositories/transport/getTransportState', () => ({
     getTransportState: mocks.getTransportState,
 }));
