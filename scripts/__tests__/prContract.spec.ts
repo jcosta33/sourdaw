@@ -1175,6 +1175,16 @@ describe('product-scope test instructions', () => {
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
+    it.each([
+        // A preposition behind the head takes the article guard's neighbor route: the run opens,
+        // the preposition ends it as vocabulary, and the UI nouns behind rescue the step.
+        ['a navigation step', 'go to the mixer'],
+        ['a search step', 'find the missing plugin'],
+    ])('passes a manual %s whose head-verb opens onto a preposition', (_label, step) => {
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it('passes a comma-joined observation no conjunction introduces', () => {
         const step = 'pnpm dev, drag a clip onto a lane, it lands quantized';
 
