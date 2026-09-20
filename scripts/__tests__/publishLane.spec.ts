@@ -3827,7 +3827,7 @@ describe('push delta authorship gate', () => {
         }
     });
 
-    it('publishes a stack child whose merged parent commits only the parent-head exclusion clears', () => {
+    it('publishes a stack child of an open parent whose parent-head git-range pin aliases comparisonHead', () => {
         const f = authorshipFixture();
         try {
             const parentBranch = 'agent/11/parent';
@@ -3839,8 +3839,9 @@ describe('push delta authorship gate', () => {
             fixtureGit(f.primary, ['push', f.remote, `${remoteTip}:refs/heads/${BRANCH}`]);
             // The parent head advances after the child's in-flight publish began, and the child
             // merges that advanced head as a bot-authored merge commit. origin/main never reaches
-            // the parent's human commits, so only the second exclusion — the parent head — clears
-            // them from the gated range; dropping it must condemn them and refuse the publish.
+            // the parent's human commits. This OPEN fixture sets stackBase.head and parentHead to
+            // the same SHA, so production comparisonHead aliases parentHead and the third
+            // excluded-base slot is a duplicate of comparisonHead.
             const parentHead = commitInLane(parentLane, 'parent-two.txt', 'chore: parent second advance', 'human');
             execFileSync('git', ['merge', '--no-edit', parentHead], {
                 cwd: f.lane,
@@ -3876,9 +3877,11 @@ describe('push delta authorship gate', () => {
                           headRefOid: head,
                       }
                     : undefined;
-            // With only origin/main excluded, the gated range still condemns the parent's human
-            // commits; with only the parent head excluded, it clears them. Both exclusions are
-            // load-bearing, and exactly one of them is the parent head under test.
+            // emails([baseSha]) still sees the parent's human commits and emails([parentHead])
+            // clears them — a git-range fact, not a proof that dropping production stackParentHead
+            // would refuse. Production assembly of a distinct third slot is observed by the sibling
+            // `publishes a stack child of a merged parent whose retained commits only the parent-head
+            // exclusion clears`.
             const emails = (excluded: string[]) =>
                 f.port.commitAuthorEmails(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
             expect(emails([f.baseSha])).toContain(HUMAN_EMAIL);
