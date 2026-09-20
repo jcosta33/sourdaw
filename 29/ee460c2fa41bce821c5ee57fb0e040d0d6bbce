@@ -1,0 +1,71 @@
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_ed5aa36a3ba357::t_10b1373b5c27a3 293-294
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoopCanonicalRoles.spec.ts
+  s_ed5aa36a3ba357::t_3dc768d1a3dcb2 1-110
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_ed5aa36a3ba357::t_81f31b123e3443 87-133
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_ed5aa36a3ba357::t_1fc1064cb30518 45-46,53,76-77,83-84,92-93,104-105,113-114,122-123,131-132,141-142,188-219
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_ed5aa36a3ba357::t_18bf4894aef745 77-88,98,121
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_ed5aa36a3ba357::t_8c46f04f3f7979 14,234-238
+src/modules/Project/models/AgentProjectModelContract.ts
+  s_ed5aa36a3ba357::t_2fb547d742a749 1,85
+src/modules/Project/models/CanonicalTrackRole.ts
+  s_ed5aa36a3ba357::t_a8bcb82c4a7eaf 1-41
+src/modules/Project/models/SemanticProjectQuery.ts
+  s_ed5aa36a3ba357::t_68aeb4f1e8e733 1-2,81
+src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts
+  s_ed5aa36a3ba357::t_4d28b427dbc28f 286-306,357
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_ed5aa36a3ba357::t_8f25b4c4353e41 1-201
+src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts
+  s_ed5aa36a3ba357::t_dd90fec031981c 15-16,212-259,387
+src/modules/Project/useCases/__tests__/setTrackCanonicalRole.spec.ts
+  s_ed5aa36a3ba357::t_47ba4395d8e6af 1-186
+src/modules/Project/useCases/getAgentProjectModelContract.ts
+  s_ed5aa36a3ba357::t_49bad71938eef1 23,163-167
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_ed5aa36a3ba357::t_c62ef72e573322 1-162
+src/modules/Project/useCases/getCanonicalTrackRoleOptions.ts
+  s_ed5aa36a3ba357::t_e1c46cddfed896 1-5
+src/modules/Project/useCases/index.ts
+  s_ed5aa36a3ba357::t_b0e6950e7bb7e7 62-65
+src/modules/Project/useCases/semanticProjectIndex.ts
+  s_ed5aa36a3ba357::t_81066eda7b8eff 6,20,146-147,435-437,474,497-503,508-510,545-560
+src/modules/Project/useCases/semanticProjectQueries.ts
+  s_ed5aa36a3ba357::t_d873901ce9e8bd 250-251
+src/modules/Project/useCases/setTrackCanonicalRole.ts
+  s_ed5aa36a3ba357::t_529fd65373ac0f 1-52
+src/modules/TimelineEditor/presentations/views/Inspector/TrackInspector.tsx
+  s_ed5aa36a3ba357::t_5f89d1fb7f1a8d 21,41
+src/modules/TimelineEditor/presentations/views/Inspector/TrackRoleSection.tsx
+  s_ed5aa36a3ba357::t_6a24ba7e57a9ab 1-85
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackInspector.spec.tsx
+  s_ed5aa36a3ba357::t_6a70c1abebaef9 150,163,214
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackRoleSection.spec.tsx
+  s_ed5aa36a3ba357::t_b641bf10c0077c 1-67
+src/modules/Toaster/useCases/__tests__/getStoredDrumVoiceMetadata.spec.ts
+  s_ed5aa36a3ba357::t_fe96f2ebafcfed 1-65
+src/modules/Toaster/useCases/getStoredDrumVoiceMetadata.ts
+  s_ed5aa36a3ba357::t_a86f282614f227 1-72
+src/modules/Toaster/useCases/index.ts
+  s_ed5aa36a3ba357::t_1245bb759a3e3d 12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "29ee460c2fa41bce821c5ee57fb0e040d0d6bbce",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
