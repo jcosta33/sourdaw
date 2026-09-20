@@ -6302,6 +6302,61 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     );
 
+    it("preserves the numeric path when the request states the descriptor's own unsupported seconds unit", () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({
+                    id: 'track-native',
+                    name: 'Native',
+                    devices: [
+                        {
+                            id: 'device-native',
+                            name: 'Native Device',
+                            type: 'Native',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'native-decay',
+                                    name: 'Native Decay',
+                                    type: 'float',
+                                    value: 2,
+                                    minValue: 0.1,
+                                    maxValue: 20,
+                                    unit: 's',
+                                },
+                            ],
+                        },
+                    ],
+                }),
+                master,
+            ],
+        };
+        const result = bridge(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-native', paramId: 'native-decay', value: 3.5 },
+                },
+            ],
+            'set native-decay on device-native to 3.5 s',
+            context
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-native',
+                    paramId: 'native-decay',
+                    value: 3.5,
+                }),
+            },
+        ]);
+        expect(result.actions[0]?.payload).not.toHaveProperty('valueUnit');
+    });
+
     it.each(['4:10', '4:', '4:1/2'])('rejects unsupported descriptor-native ratio syntax %s', (stated) => {
         const context: ProjectContext = {
             ...projectContext,

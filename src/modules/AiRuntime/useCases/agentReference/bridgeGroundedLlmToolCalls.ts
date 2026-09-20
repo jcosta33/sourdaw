@@ -2573,16 +2573,19 @@ function validateDeviceParameterUnitAndBounds(
         return numbersMatch(valueRule, normalizePromptNumber(number, actionScope, valueRule, undefined), assertedValue);
     });
     const adjacentUnits = matchingNumbers.map((number) => getAdjacentDeviceParameterUnit(actionScope, number));
-    if (adjacentUnits.some((unit) => unit === 'unsupported-ratio' || unit === 'unsupported-unit')) {
+    if (adjacentUnits.includes('unsupported-ratio')) {
         return false;
     }
     const explicitUnits = adjacentUnits.flatMap((unit) => {
         return unit === null || unit === 'unsupported-ratio' || unit === 'unsupported-unit' ? [] : [unit];
     });
+    const descriptorUnit = normalizeDeviceParameterValueUnit(parameter.unit);
+    if (adjacentUnits.includes('unsupported-unit')) {
+        return descriptorUnit === null && explicitUnits.length === 0;
+    }
     if (explicitUnits.length === 0) {
         return true;
     }
-    const descriptorUnit = normalizeDeviceParameterValueUnit(parameter.unit);
     return descriptorUnit !== null && explicitUnits.every((unit) => unit === descriptorUnit);
 }
 
