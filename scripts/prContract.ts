@@ -674,6 +674,7 @@ export type GuardFailureReceipt = {
     reason: GuardFailureReason;
     command: string;
     args: string[];
+    cwd?: string;
     profile: string;
     peakRssBytes: number;
     maxRssBytes: number;
@@ -721,6 +722,9 @@ export function parseGuardFailureReceipt(raw: string, label = 'guard-failure rec
     if (!Array.isArray(candidate.args) || !candidate.args.every((arg) => typeof arg === 'string')) {
         fail(`${label} args must be an array of strings`);
     }
+    if (candidate.cwd !== undefined && (typeof candidate.cwd !== 'string' || !isAbsolute(candidate.cwd))) {
+        fail(`${label} cwd must be an absolute path`);
+    }
     if (typeof candidate.profile !== 'string' || candidate.profile.trim() === '') {
         fail(`${label} profile is invalid`);
     }
@@ -754,6 +758,7 @@ export function parseGuardFailureReceipt(raw: string, label = 'guard-failure rec
         reason: candidate.reason,
         command: candidate.command,
         args: candidate.args,
+        ...(candidate.cwd === undefined ? {} : { cwd: candidate.cwd }),
         profile: candidate.profile,
         peakRssBytes: candidate.peakRssBytes,
         maxRssBytes: candidate.maxRssBytes,

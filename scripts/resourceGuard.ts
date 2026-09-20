@@ -1376,6 +1376,7 @@ type CliInput = {
     showOutput: boolean;
     recover: boolean;
     lintTargetReplacements: LintTargetReplacement[];
+    originalCwd?: string;
     command: string;
     args: string[];
 };
@@ -1414,6 +1415,55 @@ function assertRecoveryTargetShape(target: string, label: 'OLD' | 'NEW'): void {
     if (hasTraversal(target)) {
         throw new Error(`--replace-lint-target ${label} cannot contain path traversal`);
     }
+}
+
+function canonicalRecoveryDirectory(path: string, invocationCwd: string, laneRoot: string, label: string): string {
+    const canonicalLaneRoot = realpathSync(laneRoot);
+    let canonicalDirectory: string;
+    try {
+        canonicalDirectory = realpathSync(resolve(invocationCwd, path));
+    } catch {
+        throw new Error(`${label} must identify an existing directory`);
+    }
+    if (!statSync(canonicalDirectory).isDirectory()) {
+        throw new Error(`${label} must identify an existing directory`);
+    }
+    if (!containsPath(canonicalLaneRoot, canonicalDirectory)) {
+        throw new Error(`${label} is outside the author lane`);
+    }
+    return canonicalDirectory;
+}
+
+function resolveRecoveryCwd(input: {
+    receipt: GuardFailureReceipt;
+    originalCwd?: string;
+    invocationCwd: string;
+    laneRoot: string;
+}): string {
+    const attestedCwd =
+        input.originalCwd === undefined
+            ? undefined
+            : canonicalRecoveryDirectory(input.originalCwd, input.invocationCwd, input.laneRoot, '--original-cwd');
+    if (input.receipt.cwd === undefined) {
+        if (attestedCwd === undefined) {
+            throw new Error('legacy guard-failure receipt requires --original-cwd to attest its original directory');
+        }
+        return attestedCwd;
+    }
+
+    const recordedCwd = canonicalRecoveryDirectory(
+        input.receipt.cwd,
+        input.invocationCwd,
+        input.laneRoot,
+        'guard-failure receipt cwd'
+    );
+    if (recordedCwd !== input.receipt.cwd) {
+        throw new Error('guard-failure receipt cwd is not canonical');
+    }
+    if (attestedCwd !== undefined && attestedCwd !== recordedCwd) {
+        throw new Error('--original-cwd conflicts with recorded cwd');
+    }
+    return recordedCwd;
 }
 
 function resolveRecoveryLintArgs(input: {
@@ -1512,6 +1562,7 @@ export function parseCliArgs(args: string[]): CliInput {
     let requireTarget = false;
     let showOutput = false;
     let recover = false;
+    let originalCwd: string | undefined;
     const lintTargetReplacements: LintTargetReplacement[] = [];
     let index = 0;
     for (; index < args.length; index += 1) {
@@ -1526,6 +1577,18 @@ export function parseCliArgs(args: string[]): CliInput {
         }
         if (argument === '--replace-lint-target') {
             lintTargetReplacements.push(parseLintTargetReplacement(args[index + 1]));
+            index += 1;
+            continue;
+        }
+        if (argument === '--original-cwd') {
+            const value = args[index + 1];
+            if (value === undefined || value.startsWith('--')) {
+                throw new Error('--original-cwd requires a directory');
+            }
+            if (originalCwd !== undefined) {
+                throw new Error('--original-cwd may be specified only once');
+            }
+            originalCwd = value;
             index += 1;
             continue;
         }
@@ -1562,6 +1625,9 @@ export function parseCliArgs(args: string[]): CliInput {
     if (lintTargetReplacements.length > 0 && !recover) {
         throw new Error('--replace-lint-target requires --recover');
     }
+    if (originalCwd !== undefined && !recover) {
+        throw new Error('--original-cwd requires --recover');
+    }
     if (command === undefined) {
         if (recover) {
             return {
@@ -1574,6 +1640,7 @@ export function parseCliArgs(args: string[]): CliInput {
                 args: [],
                 recover,
                 lintTargetReplacements,
+                originalCwd,
             };
         }
         throw new Error('missing command after --');
@@ -1589,6 +1656,7 @@ export function parseCliArgs(args: string[]): CliInput {
         args: commandArgs,
         recover,
         lintTargetReplacements,
+        originalCwd,
     };
 }
 
@@ -1621,8 +1689,6 @@ export async function main(
         // instead. The guard is the shared entry every local verification flows through, so this
         // one check covers the fleet; `trustedGithubWriteBootstrap.ts` stays out of it by design
         // (see scripts/pnpmModulesPreflight.ts).
-        assertModulesPreflight(cwd);
-
         if (input.recover) {
             const lane = detectLane(cwd);
             if (lane === undefined) {
@@ -1633,13 +1699,23 @@ export async function main(
                 if (input.lintTargetReplacements.length > 0) {
                     throw new Error('--replace-lint-target requires an active pnpm lint guard-failure receipt');
                 }
+                if (input.originalCwd !== undefined) {
+                    throw new Error('--original-cwd requires an active guard-failure receipt');
+                }
                 log(`guard: no active guard-failure receipt for lane ${lane.laneName}`);
                 return 0;
             }
+            const recoveryCwd = resolveRecoveryCwd({
+                receipt,
+                originalCwd: input.originalCwd,
+                invocationCwd: cwd,
+                laneRoot: lane.worktreePath,
+            });
+            assertModulesPreflight(recoveryCwd);
             const recoveryArgs = resolveRecoveryLintArgs({
                 receipt,
                 replacements: input.lintTargetReplacements,
-                cwd,
+                cwd: recoveryCwd,
                 laneRoot: lane.worktreePath,
             });
             for (const replacement of input.lintTargetReplacements) {
@@ -1656,6 +1732,7 @@ export async function main(
                     : ((receipt.profile as ResourceProfile) ?? input.profile),
                 maxRssBytes: input.maxRssBytes ?? receipt.maxRssBytes,
                 showOutput: input.showOutput,
+                cwd: recoveryCwd,
             });
             if (result.code === 0 && result.reason === undefined) {
                 emitGuardedResult(receipt.command, result, input.showOutput);
@@ -1666,6 +1743,7 @@ export async function main(
                 if (input.lintTargetReplacements.length === 0 && isGuardFailureReason(result.reason)) {
                     writeGuardFailureReceipt(lane.primaryRoot, {
                         ...receipt,
+                        cwd: recoveryCwd,
                         headSha: lane.headSha,
                         failedAt: new Date().toISOString(),
                         reason: result.reason,
@@ -1684,6 +1762,9 @@ export async function main(
             throw new Error('target required; specify an affected file, crate, or filter');
         }
 
+        const commandCwd = canonicalPath(cwd, realpathSync);
+        assertModulesPreflight(commandCwd);
+
         const lane = detectLane(cwd);
         let existingReceipt: GuardFailureReceipt | undefined;
         if (lane !== undefined) {
@@ -1701,12 +1782,14 @@ export async function main(
             profile: input.profile,
             maxRssBytes: input.maxRssBytes,
             showOutput: input.showOutput,
+            cwd: commandCwd,
         });
 
         if (lane !== undefined) {
             if (result.code === 0 && result.reason === undefined) {
                 const matchesExisting =
                     existingReceipt !== undefined &&
+                    existingReceipt.cwd === commandCwd &&
                     existingReceipt.command === input.command &&
                     existingReceipt.args.length === input.args.length &&
                     existingReceipt.args.every((arg, index) => arg === input.args[index]);
@@ -1726,6 +1809,7 @@ export async function main(
                     reason: result.reason,
                     command: input.command,
                     args: input.args,
+                    cwd: commandCwd,
                     profile: input.profile,
                     peakRssBytes: result.peakRssBytes,
                     maxRssBytes: result.maxRssBytes,
