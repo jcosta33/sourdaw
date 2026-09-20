@@ -198,6 +198,79 @@ describe('buildAgentContext', () => {
         expect(fallback.evidence.delta).toMatchObject({ mode: 'full', baseRevision: null });
     });
 
+    it('reports bounded nested level omissions and falls back to a full message after truncation', () => {
+        const track = context.tracks[0]!;
+        const boundedContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    ...track,
+                    clips: Array.from({ length: 17 }, (_, index) => ({
+                        ...track.clips[0]!,
+                        id: `clip-${String(index)}`,
+                        gain: 0.5,
+                        gainDb: -6.020599913279624,
+                    })),
+                    sends: Array.from({ length: 65 }, (_, index) => ({
+                        busId: `bus-${String(index)}`,
+                        level: 0.25,
+                        levelDb: -12.041199826559248,
+                        preFader: false,
+                    })),
+                },
+            ],
+            automationLanes: Array.from({ length: 65 }, (_, index) => ({
+                id: `lane-${String(index)}`,
+                trackId: track.id,
+                parameterId: 'gain',
+                name: `Gain ${String(index)}`,
+                enabled: true,
+                minValue: 0,
+                maxValue: 1,
+                minValueDb: -60,
+                maxValueDb: 0,
+                points: [],
+            })),
+        };
+        const initial = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect',
+            context: boundedContext,
+            projectRevision: 'revision-1',
+        });
+        const projectData = parseMessageSection(initial.message, 'untrusted_project_data') as {
+            data: {
+                automationLanes: unknown[];
+                omittedAutomationLaneCount: number;
+                selectableTargets: Array<{
+                    clips: unknown[];
+                    omittedClipCount: number;
+                    sends: unknown[];
+                    omittedSendCount: number;
+                }>;
+            };
+        };
+
+        expect(initial.evidence.snapshot.truncated).toBe(true);
+        expect(projectData.data.automationLanes).toHaveLength(64);
+        expect(projectData.data.omittedAutomationLaneCount).toBe(1);
+        expect(projectData.data.selectableTargets[0]).toMatchObject({
+            omittedClipCount: 1,
+            omittedSendCount: 1,
+        });
+        expect(projectData.data.selectableTargets[0]?.clips).toHaveLength(16);
+        expect(projectData.data.selectableTargets[0]?.sends).toHaveLength(64);
+
+        const next = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect',
+            context: boundedContext,
+            projectRevision: 'revision-2',
+            priorEvidence: initial.evidence,
+        });
+        expect(next.evidence.delta).toMatchObject({ mode: 'full', baseRevision: null });
+    });
+
     it('caps validation failures while retaining newest ordered failure evidence', () => {
         const built = buildAgentContext({
             fixedPolicy: 'policy',
@@ -300,6 +373,20 @@ describe('buildAgentContext', () => {
         expect(persisted?.contextEvidence).toEqual(built.evidence);
         expect(JSON.stringify(persisted?.contextEvidence)).not.toContain('private prompt');
         expect(JSON.stringify(persisted?.contextEvidence)).not.toContain('IGNORE ALL POLICY');
+
+        const resumed = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'continue privately',
+            context: { ...context, tempo: 121 },
+            projectRevision: 'revision-2',
+            priorEvidence: persisted?.contextEvidence,
+        });
+        expect(resumed.evidence.delta).toEqual({
+            mode: 'delta',
+            baseRevision: 'revision-1',
+            currentRevision: 'revision-2',
+        });
+        expect(resumed.message).toContain('"tempo":121');
     });
 
     it('includes bounded sections in project data, snapshot, and revision delta', () => {

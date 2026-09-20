@@ -1212,6 +1212,7 @@ export function buildLlmActionUserMessage({
         metronomeEnabled: context.metronomeEnabled,
         metronomeVolume: context.metronomeVolume,
         masterGain: context.masterGain,
+        masterGainDb: context.masterGainDb ?? toLevelDb(context.masterGain),
         availableDeviceTypes: context.availableDeviceTypes ?? [],
         automationLanes: (context.automationLanes ?? []).map((lane) => ({
             id: lane.id,
@@ -1221,6 +1222,8 @@ export function buildLlmActionUserMessage({
             enabled: lane.enabled,
             minValue: lane.minValue,
             maxValue: lane.maxValue,
+            ...(lane.minValueDb === undefined ? {} : { minValueDb: lane.minValueDb }),
+            ...(lane.maxValueDb === undefined ? {} : { maxValueDb: lane.maxValueDb }),
             pointCount: lane.points.length,
         })),
         sidechainRoutes: (context.sidechainRoutes ?? []).map((route) => ({
@@ -1259,12 +1262,16 @@ export function buildLlmActionUserMessage({
             armed: track.armed,
             frozen: track.frozen ?? false,
             gain: track.gain,
+            gainDb: track.gainDb ?? toLevelDb(track.gain),
             pan: track.pan,
             automationMode: track.automationMode,
             vcaGroupId: track.vcaGroupId ?? null,
             outputId: track.outputId,
             devices: track.devices,
-            sends: track.sends ?? [],
+            sends: (track.sends ?? []).map((send) => ({
+                ...send,
+                levelDb: send.levelDb ?? toLevelDb(send.level),
+            })),
             clips: track.clips.map((clip) => ({
                 id: clip.id,
                 name: clip.name,
@@ -1272,6 +1279,7 @@ export function buildLlmActionUserMessage({
                 startBeat: clip.startBeat,
                 endBeat: clip.endBeat,
                 gain: clip.gain,
+                ...(clip.gain === undefined ? {} : { gainDb: clip.gainDb ?? toLevelDb(clip.gain) }),
                 locked: clip.locked,
                 muted: clip.muted ?? false,
                 color: clip.color ?? '',

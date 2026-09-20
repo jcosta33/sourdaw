@@ -86,19 +86,64 @@ function boundedCanonicalRole(role: ProjectContext['tracks'][number]['canonicalR
     };
 }
 
-function buildProjectData(context: ProjectContext) {
-    const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId) ?? null;
-    // The level travels as decibels rather than as the stored amplitude: the
-    // commands that move it take decibels, and a planner handed `0.8` would have
-    // to rediscover that it means −1.9 dB before it could ask for −3 dB.
-    const selectableTargets = context.tracks.slice(0, MAX_CONTEXT_TARGETS).map((track) => ({
+function buildProviderClip(clip: ProjectContext['tracks'][number]['clips'][number]) {
+    return {
+        id: clip.id,
+        name: { trust: 'untrusted_imported_string' as const, ...boundedString(clip.name) },
+        type: clip.type,
+        startBeat: clip.startBeat,
+        endBeat: clip.endBeat,
+        ...(clip.gain === undefined ? {} : { gain: clip.gain, gainDb: clip.gainDb ?? toLevelDb(clip.gain) }),
+        locked: clip.locked ?? false,
+        muted: clip.muted ?? false,
+    };
+}
+
+function buildProviderTrack(track: ProjectContext['tracks'][number]) {
+    const clips = track.clips.slice(0, MAX_SELECTED_CLIPS).map(buildProviderClip);
+    const sends = (track.sends ?? []).slice(0, MAX_CONTEXT_TARGETS).map((send) => ({
+        busId: send.busId,
+        level: send.level,
+        levelDb: send.levelDb ?? toLevelDb(send.level),
+        preFader: send.preFader,
+    }));
+    return {
         id: track.id,
         name: { trust: 'untrusted_imported_string' as const, ...boundedString(track.name) },
         kind: track.kind,
         canonicalRole: boundedCanonicalRole(track.canonicalRole),
         frozen: track.frozen ?? false,
-        gainDb: toLevelDb(track.gain),
-    }));
+        gain: track.gain,
+        gainDb: track.gainDb ?? toLevelDb(track.gain),
+        clips,
+        omittedClipCount: Math.max(0, track.clips.length - clips.length),
+        sends,
+        omittedSendCount: Math.max(0, (track.sends?.length ?? 0) - sends.length),
+    };
+}
+
+function buildProviderAutomationLane(lane: NonNullable<ProjectContext['automationLanes']>[number]) {
+    return {
+        id: lane.id,
+        trackId: lane.trackId,
+        ...(lane.clipId === undefined ? {} : { clipId: lane.clipId }),
+        parameterId: lane.parameterId,
+        name: { trust: 'untrusted_imported_string' as const, ...boundedString(lane.name) },
+        enabled: lane.enabled,
+        minValue: lane.minValue,
+        maxValue: lane.maxValue,
+        ...(lane.minValueDb === undefined ? {} : { minValueDb: lane.minValueDb }),
+        ...(lane.maxValueDb === undefined ? {} : { maxValueDb: lane.maxValueDb }),
+    };
+}
+
+function buildProjectData(context: ProjectContext) {
+    const selectedSource = context.tracks.find((track) => track.id === context.selectedTrackId) ?? null;
+    const selectedTrack = selectedSource === null ? null : buildProviderTrack(selectedSource);
+    const selectableTargets = context.tracks.slice(0, MAX_CONTEXT_TARGETS).map(buildProviderTrack);
+    const automationLanes = (context.automationLanes ?? [])
+        .slice(0, MAX_CONTEXT_TARGETS)
+        .map(buildProviderAutomationLane);
     const sections = (context.sections ?? []).slice(0, MAX_CONTEXT_TARGETS).map((section) => ({
         id: section.id,
         name: { trust: 'untrusted_imported_string' as const, ...boundedString(section.name) },
@@ -112,29 +157,20 @@ function buildProjectData(context: ProjectContext) {
         // against this window, and a reader that cannot see the window cannot
         // tell a level near the ceiling from one with room left.
         levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
-        masterGainDb: toLevelDb(context.masterGain),
-        selectedTrack: selectedTrack
-            ? {
-                  id: selectedTrack.id,
-                  name: { trust: 'untrusted_imported_string' as const, ...boundedString(selectedTrack.name) },
-                  kind: selectedTrack.kind,
-                  canonicalRole: boundedCanonicalRole(selectedTrack.canonicalRole),
-                  frozen: selectedTrack.frozen ?? false,
-                  clips: selectedTrack.clips.slice(0, MAX_SELECTED_CLIPS).map((clip) => ({
-                      id: clip.id,
-                      name: { trust: 'untrusted_imported_string' as const, ...boundedString(clip.name) },
-                      locked: clip.locked ?? false,
-                      startBeat: clip.startBeat,
-                      endBeat: clip.endBeat,
-                  })),
-                  omittedClipCount: Math.max(0, selectedTrack.clips.length - MAX_SELECTED_CLIPS),
-              }
-            : null,
+        masterGain: context.masterGain,
+        masterGainDb: context.masterGainDb ?? toLevelDb(context.masterGain),
+        selectedTrack,
         selectableTargets,
+        automationLanes,
+        omittedAutomationLaneCount: Math.max(0, (context.automationLanes?.length ?? 0) - automationLanes.length),
         sections,
         targetCount: context.tracks.length,
         truncated:
-            context.tracks.length > selectableTargets.length || (context.sections?.length ?? 0) > sections.length,
+            context.tracks.length > selectableTargets.length ||
+            (context.sections?.length ?? 0) > sections.length ||
+            (context.automationLanes?.length ?? 0) > automationLanes.length ||
+            selectableTargets.some((target) => target.omittedClipCount > 0 || target.omittedSendCount > 0) ||
+            (selectedTrack !== null && (selectedTrack.omittedClipCount > 0 || selectedTrack.omittedSendCount > 0)),
     };
 }
 
@@ -150,20 +186,28 @@ function snapshotProjectData(projectData: ReturnType<typeof buildProjectData>) {
         id: section.id,
         digest: digest(section),
     }));
+    const automationLanes = projectData.automationLanes.map((lane) => ({ id: lane.id, digest: digest(lane) }));
     return {
         identity: digest({
             tempo: projectData.tempo,
             timeSignature: projectData.timeSignature,
+            levelLaw: projectData.levelLaw,
+            masterGain: projectData.masterGain,
+            masterGainDb: projectData.masterGainDb,
             selectedTrack,
             selectableTargets,
+            automationLanes,
             sections,
             targetCount: projectData.targetCount,
             truncated: projectData.truncated,
         }),
         tempo: projectData.tempo,
         timeSignature: projectData.timeSignature,
+        masterGain: projectData.masterGain,
+        masterGainDb: projectData.masterGainDb,
         selectedTrack,
         selectableTargets,
+        automationLanes,
         sections,
         targetCount: projectData.targetCount,
         truncated: projectData.truncated,
@@ -205,6 +249,14 @@ function buildRevisionPayload(input: {
     const removedTargetIds = priorSnapshot.selectableTargets
         .filter((target) => !currentTargetIds.has(target.id))
         .map((target) => target.id);
+    const priorAutomationLanes = new Map(priorSnapshot.automationLanes.map((lane) => [lane.id, lane.digest]));
+    const changedAutomationLanes = input.projectData.automationLanes.filter(
+        (lane) => priorAutomationLanes.get(lane.id) !== digest(lane)
+    );
+    const currentAutomationLaneIds = new Set(input.snapshot.automationLanes.map((lane) => lane.id));
+    const removedAutomationLaneIds = priorSnapshot.automationLanes
+        .filter((lane) => !currentAutomationLaneIds.has(lane.id))
+        .map((lane) => lane.id);
     const priorSections = new Map((priorSnapshot.sections ?? []).map((section) => [section.id, section.digest]));
     const changedSections = input.projectData.sections.filter(
         (section) => priorSections.get(section.id) !== digest(section)
@@ -223,6 +275,7 @@ function buildRevisionPayload(input: {
             // The law is a constant, not project state: a delta that omitted it
             // would leave a correction round reading levels with no window.
             levelLaw: input.projectData.levelLaw,
+            masterGain: input.projectData.masterGain,
             masterGainDb: input.projectData.masterGainDb,
             ...(priorSnapshot.tempo === input.snapshot.tempo ? {} : { tempo: input.projectData.tempo }),
             ...(stableJson(priorSnapshot.timeSignature) === stableJson(input.snapshot.timeSignature)
@@ -233,6 +286,8 @@ function buildRevisionPayload(input: {
                 : { selectedTrack: input.projectData.selectedTrack }),
             ...(changedTargets.length === 0 ? {} : { selectableTargets: changedTargets }),
             ...(removedTargetIds.length === 0 ? {} : { removedTargetIds }),
+            ...(changedAutomationLanes.length === 0 ? {} : { automationLanes: changedAutomationLanes }),
+            ...(removedAutomationLaneIds.length === 0 ? {} : { removedAutomationLaneIds }),
             ...(changedSections.length === 0 ? {} : { sections: changedSections.map(toProviderBoundSection) }),
             ...(removedSectionIds.length === 0 ? {} : { removedSectionIds }),
         },

@@ -54,6 +54,14 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-21 — level context was complete before serialization, not after it (escaped via PR #4392)
+
+PR #4392 (`5c476c92153`) projected linear/decibel pairs into `ProjectContext`, while the full provider serializer dropped most decibel fields and the delta snapshot tracked neither nested sends/clips nor gain-lane ranges.
+
+Coverage gap: the change did not trace every produced level through the full and correction provider-message routes.
+
+Probe that would have caught it: change and remove a clip gain, send level, and gain-lane bounds on an unselected retained track without changing its name or gain; the delta message must carry the changed pair or removal, while full and delta messages each retain one law header.
+
 ### 2026-09-09 — whole-engine admission trusted its artifact's declared budget (escaped via PR #2725; merge `26a362bbc4a5b9a74d46dd713951eb9f411ded68`)
 
 PR #2725 let the release inventory compare measured costs to a table-controlled budget; the later PR #3018 only extracted that assertion. An inflated budget, negative cost, or non-finite parsed number could therefore admit an invalid whole-engine measurement.

@@ -142,4 +142,297 @@ describe('project context level units', () => {
         // The law is stated once for the whole payload rather than beside each level.
         expect(built.message.split('"floorDb"')).toHaveLength(2);
     });
+
+    it('keeps every provider-bound level paired in a full message', () => {
+        const initialContext = getProjectContext();
+        const full = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Balance the project.',
+            context: initialContext,
+            projectRevision: 'revision-1',
+        });
+        const fullProjectContext = JSON.parse(
+            full.message
+                .slice(full.message.indexOf('<project_context>\n') + '<project_context>\n'.length)
+                .split('\n</project_context>')[0] ?? '{}'
+        ) as typeof initialContext;
+
+        expect(full.message.split('"floorDb"')).toHaveLength(2);
+        expect(fullProjectContext.tracks[0]).toMatchObject({
+            gain: initialContext.tracks[0]?.gain,
+            gainDb: initialContext.tracks[0]?.gainDb,
+            clips: [{ gain: 0.5, gainDb: initialContext.tracks[0]?.clips[0]?.gainDb }],
+            sends: [{ level: 0.25, levelDb: initialContext.tracks[0]?.sends?.[0]?.levelDb }],
+        });
+        expect(fullProjectContext.automationLanes?.[0]).toMatchObject({
+            minValue: initialContext.automationLanes?.[0]?.minValue,
+            minValueDb: initialContext.automationLanes?.[0]?.minValueDb,
+            maxValue: initialContext.automationLanes?.[0]?.maxValue,
+            maxValueDb: initialContext.automationLanes?.[0]?.maxValueDb,
+        });
+        expect(fullProjectContext.masterGain).toBe(initialContext.masterGain);
+        expect(fullProjectContext.masterGainDb).toBe(initialContext.masterGainDb);
+        const panLane = fullProjectContext.automationLanes?.find((lane) => lane.id === PAN_LANE_ID);
+        expect(panLane).not.toHaveProperty('minValueDb');
+        expect(panLane).not.toHaveProperty('maxValueDb');
+
+        const silentContext = {
+            ...initialContext,
+            masterGain: 0,
+            masterGainDb: null,
+            tracks: initialContext.tracks.map((track) => ({
+                ...track,
+                gain: 0,
+                gainDb: null,
+                clips: track.clips.map((clip) => ({ ...clip, gain: 0, gainDb: null })),
+                sends: track.sends?.map((send) => ({ ...send, level: 0, levelDb: null })),
+            })),
+        };
+        const silent = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Inspect silence.',
+            context: silentContext,
+            projectRevision: 'revision-silent',
+        });
+        const silentProjectContext = JSON.parse(
+            silent.message
+                .slice(silent.message.indexOf('<project_context>\n') + '<project_context>\n'.length)
+                .split('\n</project_context>')[0] ?? '{}'
+        ) as typeof silentContext;
+        expect(silentProjectContext.masterGainDb).toBeNull();
+        expect(silentProjectContext.tracks[0]).toMatchObject({
+            gainDb: null,
+            clips: [{ gainDb: null }],
+            sends: [{ levelDb: null }],
+        });
+    });
+
+    it('keeps changed and removed nested levels paired in a delta message', () => {
+        const projectContext = getProjectContext();
+        const unselectedBus = projectContext.tracks.find((track) => track.id === 'bus-1');
+        if (!unselectedBus) {
+            throw new Error('Expected the fixture to contain an unselected bus');
+        }
+        const busGainLane = {
+            ...createAutomationLane(unselectedBus.id, 'gain', 'Bus Gain', 0, 1),
+            id: 'lane-bus-gain',
+            name: 'Bus Gain',
+            minValueDb: SEND_MIN_DB,
+            maxValue: 1,
+            maxValueDb: 0,
+        };
+        const withBusLevels = (track: (typeof projectContext.tracks)[number], gain: number, gainDb: number) => {
+            if (track.id !== unselectedBus.id) {
+                return track;
+            }
+            return {
+                ...track,
+                clips: [{ ...fixtureClip('clip-bus', track.id, gain), noteCount: 0, gainDb }],
+                sends: [{ busId: 'track-1', level: gain / 2, levelDb: gainDb - 6.020599913279624, preFader: true }],
+            };
+        };
+        const initialAutomationLanes = projectContext.automationLanes ?? [];
+        const initialContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => withBusLevels(track, 0.5, -6.020599913279624)),
+            automationLanes: [...initialAutomationLanes, busGainLane],
+        };
+        const initial = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Balance the project.',
+            context: initialContext,
+            projectRevision: 'revision-1',
+        });
+
+        const clipOnly = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Change only the bus clip gain.',
+            context: {
+                ...initialContext,
+                tracks: initialContext.tracks.map((track) => {
+                    if (track.id !== unselectedBus.id) {
+                        return track;
+                    }
+                    return {
+                        ...track,
+                        clips: [{ ...track.clips[0]!, gain: 0.25, gainDb: -12.041199826559248 }],
+                    };
+                }),
+            },
+            projectRevision: 'revision-clip',
+            priorEvidence: initial.evidence,
+        });
+        const clipOnlyPayload = JSON.parse(
+            clipOnly.message
+                .slice(clipOnly.message.indexOf('untrusted_project_data:\n') + 'untrusted_project_data:\n'.length)
+                .split('\n\n')[0] ?? '{}'
+        ) as { data: { selectableTargets: Array<{ id: string; clips: Array<{ gain: number; gainDb: number }> }> } };
+        expect(clipOnlyPayload.data.selectableTargets).toEqual([
+            expect.objectContaining({
+                id: unselectedBus.id,
+                gain: unselectedBus.gain,
+                clips: [expect.objectContaining({ gain: 0.25, gainDb: -12.041199826559248 })],
+            }),
+        ]);
+
+        const sendOnly = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Change only the bus send level.',
+            context: {
+                ...initialContext,
+                tracks: initialContext.tracks.map((track) => {
+                    if (track.id !== unselectedBus.id) {
+                        return track;
+                    }
+                    const send = track.sends?.[0];
+                    if (!send) {
+                        throw new Error('Expected the unselected bus to contain a send');
+                    }
+                    return {
+                        ...track,
+                        sends: [{ ...send, level: 0.125, levelDb: -18.06179973983887 }],
+                    };
+                }),
+            },
+            projectRevision: 'revision-send',
+            priorEvidence: initial.evidence,
+        });
+        const sendOnlyPayload = JSON.parse(
+            sendOnly.message
+                .slice(sendOnly.message.indexOf('untrusted_project_data:\n') + 'untrusted_project_data:\n'.length)
+                .split('\n\n')[0] ?? '{}'
+        ) as { data: { selectableTargets: Array<{ id: string; sends: Array<{ level: number; levelDb: number }> }> } };
+        expect(sendOnlyPayload.data.selectableTargets).toEqual([
+            expect.objectContaining({
+                id: unselectedBus.id,
+                gain: unselectedBus.gain,
+                sends: [expect.objectContaining({ level: 0.125, levelDb: -18.06179973983887 })],
+            }),
+        ]);
+
+        const laneOnly = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Change only the bus gain lane range.',
+            context: {
+                ...initialContext,
+                automationLanes: initialContext.automationLanes.map((lane) => {
+                    if (lane.id !== busGainLane.id) {
+                        return lane;
+                    }
+                    return {
+                        ...lane,
+                        minValue: 0.25,
+                        minValueDb: -12.041199826559248,
+                        maxValue: 0.5,
+                        maxValueDb: -6.020599913279624,
+                    };
+                }),
+            },
+            projectRevision: 'revision-lane',
+            priorEvidence: initial.evidence,
+        });
+        const laneOnlyPayload = JSON.parse(
+            laneOnly.message
+                .slice(laneOnly.message.indexOf('untrusted_project_data:\n') + 'untrusted_project_data:\n'.length)
+                .split('\n\n')[0] ?? '{}'
+        ) as { data: { automationLanes: Array<{ id: string; minValue: number; minValueDb: number }> } };
+        expect(laneOnlyPayload.data).not.toHaveProperty('selectableTargets');
+        expect(laneOnlyPayload.data.automationLanes).toEqual([
+            expect.objectContaining({ id: busGainLane.id, minValue: 0.25, minValueDb: -12.041199826559248 }),
+        ]);
+
+        const changedContext = {
+            ...initialContext,
+            masterGain: 0.5,
+            masterGainDb: -6.020599913279624,
+            tracks: initialContext.tracks.map((track) => withBusLevels(track, 0.25, -12.041199826559248)),
+            automationLanes: initialContext.automationLanes.map((lane) => {
+                if (lane.id !== busGainLane.id) {
+                    return lane;
+                }
+                return {
+                    ...lane,
+                    minValue: 0.25,
+                    minValueDb: -12.041199826559248,
+                    maxValue: 0.5,
+                    maxValueDb: -6.020599913279624,
+                };
+            }),
+        };
+        const delta = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Balance the project.',
+            context: changedContext,
+            projectRevision: 'revision-2',
+            priorEvidence: initial.evidence,
+        });
+        const deltaPayload = JSON.parse(
+            delta.message
+                .slice(delta.message.indexOf('untrusted_project_data:\n') + 'untrusted_project_data:\n'.length)
+                .split('\n\n')[0] ?? '{}'
+        ) as {
+            data: {
+                levelLaw: typeof initialContext.levelLaw;
+                masterGain: number;
+                masterGainDb: number;
+                selectableTargets: typeof initialContext.tracks;
+                automationLanes: NonNullable<typeof initialContext.automationLanes>;
+            };
+        };
+
+        expect(delta.evidence.delta.mode).toBe('delta');
+        expect(deltaPayload.data.levelLaw).toEqual(initialContext.levelLaw);
+        expect(deltaPayload.data).toMatchObject({ masterGain: 0.5, masterGainDb: -6.020599913279624 });
+        expect(deltaPayload.data.selectableTargets).toEqual([
+            expect.objectContaining({
+                id: 'bus-1',
+                gain: unselectedBus.gain,
+                gainDb: unselectedBus.gainDb,
+                clips: [expect.objectContaining({ gain: 0.25, gainDb: -12.041199826559248 })],
+                sends: [expect.objectContaining({ level: 0.125, levelDb: -18.06179973983887 })],
+            }),
+        ]);
+        expect(deltaPayload.data.automationLanes).toEqual([
+            expect.objectContaining({
+                id: busGainLane.id,
+                minValue: 0.25,
+                minValueDb: -12.041199826559248,
+                maxValue: 0.5,
+                maxValueDb: -6.020599913279624,
+            }),
+        ]);
+        expect(delta.message.split('"floorDb"')).toHaveLength(2);
+
+        const removed = buildAgentContext({
+            fixedPolicy: 'Fixed policy: tools only.',
+            prompt: 'Remove the nested level evidence.',
+            context: {
+                ...changedContext,
+                tracks: changedContext.tracks.map((track) => {
+                    if (track.id !== unselectedBus.id) {
+                        return track;
+                    }
+                    return { ...track, clips: [], sends: [] };
+                }),
+                automationLanes: changedContext.automationLanes.filter((lane) => lane.id !== busGainLane.id),
+            },
+            projectRevision: 'revision-3',
+            priorEvidence: delta.evidence,
+        });
+        const removedPayload = JSON.parse(
+            removed.message
+                .slice(removed.message.indexOf('untrusted_project_data:\n') + 'untrusted_project_data:\n'.length)
+                .split('\n\n')[0] ?? '{}'
+        ) as {
+            data: {
+                selectableTargets: Array<{ id: string; clips: unknown[]; sends: unknown[] }>;
+                removedAutomationLaneIds: string[];
+            };
+        };
+
+        expect(removedPayload.data.selectableTargets).toEqual([
+            expect.objectContaining({ id: unselectedBus.id, clips: [], sends: [] }),
+        ]);
+        expect(removedPayload.data.removedAutomationLaneIds).toEqual([busGainLane.id]);
+    });
 });
