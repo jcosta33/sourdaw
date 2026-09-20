@@ -640,6 +640,20 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
 
                 if (outcome.status === 'complete') {
                     const providerCallIds = outcome.toolCalls.map((call) => call.id);
+                    if (cloudToolPlan?.usage) {
+                        providerSource.push({
+                            type: 'usage',
+                            mode: 'final',
+                            usage: {
+                                inputTokens: cloudToolPlan.usage.inputTokens,
+                                outputTokens: cloudToolPlan.usage.outputTokens,
+                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
+                                cacheWriteInputTokens: cloudToolPlan.usage.cacheWriteInputTokens,
+                                reasoningTokens: cloudToolPlan.usage.reasoningTokens,
+                            },
+                            provenance: 'provider-reported',
+                        });
+                    }
                     for (const [index, call] of outcome.toolCalls.entries()) {
                         const advertisedTool = providerTools.find((tool) => tool.function.name === call.name);
                         providerSource.push({
@@ -649,19 +663,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 name: call.name,
                                 arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
                             },
-                        });
-                    }
-                    if (cloudToolPlan?.usage) {
-                        providerSource.push({
-                            type: 'usage',
-                            mode: 'final',
-                            usage: {
-                                inputTokens: cloudToolPlan.usage.inputTokens,
-                                outputTokens: cloudToolPlan.usage.outputTokens,
-                                cachedInputTokens: cloudToolPlan.usage.cacheReadInputTokens,
-                                reasoningTokens: cloudToolPlan.usage.reasoningTokens,
-                            },
-                            provenance: 'provider-reported',
                         });
                     }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });
@@ -744,7 +745,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                     inputTokens: error.usage.inputTokens,
                                     outputTokens: error.usage.outputTokens,
                                     cachedInputTokens: error.usage.cacheReadInputTokens,
-                                    reasoningTokens: null,
+                                    cacheWriteInputTokens: error.usage.cacheWriteInputTokens,
+                                    reasoningTokens: error.usage.reasoningTokens,
                                 },
                                 provenance: 'provider-reported',
                             });

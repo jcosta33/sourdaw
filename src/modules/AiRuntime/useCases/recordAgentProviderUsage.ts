@@ -4,9 +4,9 @@ import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 import { agentRunLifecycle } from './agentRunLifecycle';
 
 /**
- * The hosted tool-planning usage fields carry absence-vs-false/null meaning (see
- * `ModelProviderResult`'s own doc comments), so they are admitted onto the recorded usage
- * only when the caller actually reported them, never defaulted.
+ * Hosted tool-planning fields carry absence-vs-false/null meaning, so they are recorded only
+ * when reported. Neutral usage owns cache-write attribution when it supplies a number or null;
+ * the result-level extension remains a compatibility fallback for older callers.
  */
 function optionalHostedUsageFields(
     result: ModelProviderResult
@@ -15,7 +15,9 @@ function optionalHostedUsageFields(
     if (result.strictToolSchemas !== undefined) {
         fields.strictToolSchemas = result.strictToolSchemas;
     }
-    if (result.cacheWriteInputTokens !== undefined) {
+    if (result.usage.cacheWriteInputTokens !== undefined) {
+        fields.cacheWriteInputTokens = result.usage.cacheWriteInputTokens;
+    } else if (result.cacheWriteInputTokens !== undefined) {
         fields.cacheWriteInputTokens = result.cacheWriteInputTokens;
     }
     return fields;

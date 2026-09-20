@@ -15,6 +15,7 @@ import {
     readHostedTokenCount,
 } from './hostedToolPlan';
 import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
+import { normalizeAnthropicInputUsage } from './normalizeAnthropicUsage';
 import { projectAnthropicStrictToolSchema } from './projectAnthropicStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
@@ -39,11 +40,12 @@ function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null
     if (!isRecord(payload.usage)) {
         return null;
     }
+    const inputUsage = normalizeAnthropicInputUsage(payload.usage);
     return {
-        inputTokens: readHostedTokenCount(payload.usage.input_tokens),
+        inputTokens: inputUsage.inputTokens,
         outputTokens: readHostedTokenCount(payload.usage.output_tokens),
-        cacheReadInputTokens: readHostedTokenCount(payload.usage.cache_read_input_tokens),
-        cacheWriteInputTokens: readHostedTokenCount(payload.usage.cache_creation_input_tokens),
+        cacheReadInputTokens: inputUsage.cacheReadInputTokens,
+        cacheWriteInputTokens: inputUsage.cacheWriteInputTokens,
         reasoningTokens: readThinkingTokens(payload.usage),
     };
 }
