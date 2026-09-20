@@ -1,0 +1,29 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/makeOfflineFrameScheduler.quantisedSuspend.spec.ts
+  h_1228e573df1f42 1-21,23-34,42,47-58,65-112,116-167,260
+  s_ed5aa36a3ba357::t_fbb53c983ee6f9 192-259
+src/modules/AudioEngine/repositories/offlineScheduler/makeOfflineFrameScheduler.ts
+  h_1228e573df1f42 4-7,9,11,18-19,27,32,34-36,45,90,92,98,117
+src/modules/AudioEngine/repositories/offlineScheduler/quantiseSuspendFrame.ts
+  h_1228e573df1f42 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f3600c28633ea699862995cdadf77e4dae385af6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
