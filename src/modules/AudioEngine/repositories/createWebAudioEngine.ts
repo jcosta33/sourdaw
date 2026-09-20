@@ -2572,6 +2572,10 @@ class AudioEngineImpl implements AudioEngine {
         // The carried set names tracks of the project being torn down; a strip
         // ensured for the next one must not inherit a closed gate from it.
         this.nativeCarriedTrackIds = new Set();
+        // A monitor edge feeds a strip gain node, so it cannot outlive the graph
+        // it feeds. Release the microphone before the strips below are torn down,
+        // on every teardown path — project switch and disposal alike.
+        stopInputMonitoring();
         // Tear down all per-project audio graph state (tracks, buses, sends,
         // sidechain routes) without closing the AudioContext, master nodes,
         // or already-loaded worklet modules. Used when switching projects.
@@ -2639,14 +2643,10 @@ class AudioEngineImpl implements AudioEngine {
         // graph and close the context, so processors stop their RT work cleanly.
         this.postShutdownToWorklets();
 
-        // The monitor session is HMR-persistent, so it outlives this engine and
-        // holds live microphone streams whose per-track edges point into the
-        // strip nodes resetGraph() is about to dispose. Release it while those
-        // nodes still exist; a repeat is a no-op because the session is emptied.
-        stopInputMonitoring();
-
         // Tear down the per-project graph (tracks, buses, sends, sidechain,
-        // adjustment-layer runtime). This also closes per-track meter ports.
+        // adjustment-layer runtime). This also releases the monitor session
+        // before the strip nodes its edges feed are disposed, and closes
+        // per-track meter ports.
         this.resetGraph();
 
         this.masterGainNode.disconnect();
