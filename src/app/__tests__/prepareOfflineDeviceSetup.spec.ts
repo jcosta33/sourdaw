@@ -28,6 +28,9 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 // Levain's offline setup fetches sample manifests; this spec never exercises it.
 vi.mock('#/modules/Levain/useCases', () => ({
     prepareOfflineLevain: vi.fn(() => Promise.resolve()),
+    captureOfflineLevain: vi.fn(() => {
+        throw new Error('this fixture does not capture Levain state');
+    }),
     getLevainArticulationId: vi.fn(),
 }));
 
@@ -35,6 +38,9 @@ vi.mock('#/modules/Levain/useCases', () => ({
 // decodes it; likewise never exercised here.
 vi.mock('#/modules/Crumbs/useCases', () => ({
     prepareCrumbsEngine: vi.fn(() => Promise.resolve('ready')),
+    captureCrumbsEngine: vi.fn(() => {
+        throw new Error('this fixture does not capture Crumbs state');
+    }),
     markCrumbsEngineAttached: vi.fn(),
 }));
 vi.mock('#/modules/GrandBoule/useCases', async (importOriginal) => {

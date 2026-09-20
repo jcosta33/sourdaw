@@ -32,6 +32,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
+    gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
     trackStore: mocks.trackStore,
     adjustmentLayerStore: { value: { layers: [] }, subscribe: vi.fn() },
     takeLaneStore: { value: { lanes: [] }, subscribe: vi.fn() },

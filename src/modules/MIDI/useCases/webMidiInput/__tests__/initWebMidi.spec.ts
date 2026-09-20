@@ -36,6 +36,7 @@ vi.mock('#/infra/di/Container', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
+    gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
     trackStore: {
         subscribe: trackStoreSubscribeMock,
         value: {
