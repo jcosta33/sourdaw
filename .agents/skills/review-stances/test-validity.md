@@ -365,3 +365,11 @@ PR #4407 kept an OpenAI-compatible response with zero or multiple choices as a t
 Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/cost fixture, so it could preserve rejection identity while dropping the paid result.
 
 Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
+
+### 2026-09-20 — mocked cancellation hid failed durable revocation (escaped via PR #1949)
+
+PR #1949 (`ce2ffea3fd`) added run-controller cancellation before pending-confirmation settlement,
+but its owner spec mocked that controller. The mock could not expose live terminal state advancing
+before `Storage.setItem` failed. Use the real lifecycle and cancellation controller, fail the actual
+storage write once, then cancel the same confirmation again. Removing the persistence retry must
+leave the saved run nonterminal and fail the assertion, both with and without cleanup assets.

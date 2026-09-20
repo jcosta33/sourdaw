@@ -134,3 +134,11 @@ valid operation into inverse and redo independently. Require hydration to reject
 and without optional metadata, while admitting the owner's canonical and legacy same-operation
 entries and legitimate missing replay legs. Enforce this relationship in the owner: some other
 commands legitimately have different inverse types, so global type equality is not the contract.
+
+### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
+
+PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose
+already-terminal path trusted live state after a failed persistence write. Fail only the run's
+`Storage.setItem`, observe terminal live state with an unchanged saved run, then cancel again.
+Require the same run's terminal revision to reach storage before any resource cleanup; repeat with
+no temporary assets so cleanup writes cannot accidentally repair the missing durable revocation.
