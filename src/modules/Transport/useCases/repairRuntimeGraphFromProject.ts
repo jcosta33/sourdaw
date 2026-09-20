@@ -1,3 +1,5 @@
+import { trackStore } from '#/modules/Arrangement/stores';
+import { rearmInputMonitoring } from '#/modules/Arrangement/useCases';
 import { resetAudioGraph, stopAllScheduled } from '#/modules/AudioEngine/useCases';
 import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
@@ -52,6 +54,12 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
     if (pluginFailures.length > 0) {
         throw new Error(`Runtime graph repair failed: ${pluginFailures.map(({ reason }) => reason).join('; ')}`);
     }
+
+    // The reset above released every monitor capture, so a track whose
+    // persisted intent is 'on' must start its monitor again against the strip
+    // the rebuild just produced. The shared law re-arms only 'on' tracks and
+    // settles every start so an individual refusal cannot fail the repair.
+    await rearmInputMonitoring(trackStore.value?.tracks ?? []);
 
     if (wasPlaying) {
         updateTransportState({ isPlaying: true, playheadPosition: resumePosition });

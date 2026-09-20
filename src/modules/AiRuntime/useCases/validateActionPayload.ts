@@ -36,6 +36,7 @@ import {
     VCA_MAX_GAIN,
 } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
+import { normalizeDeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { resolveMarkerColorName } from '#/utils/markerColorPalette';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
@@ -431,6 +432,7 @@ const validators = {
             'deviceId',
             'paramId',
             'value',
+            'valueUnit',
             'expectedTrackId',
             'expectedDeviceType',
             'expectedDeviceIds',
@@ -440,6 +442,11 @@ const validators = {
         isNonEmptyString(param.deviceId) &&
         isNonEmptyString(param.paramId) &&
         isNumber(param.value) &&
+        isOptional(
+            param.valueUnit,
+            (value): value is NonNullable<PayloadOf<'setDeviceParameter'>['valueUnit']> =>
+                normalizeDeviceParameterValueUnit(value) === value
+        ) &&
         isOptional(param.expectedTrackId, isNonEmptyString) &&
         isOptional(param.expectedDeviceType, isNonEmptyString) &&
         isOptional(param.expectedDeviceIds, isUniqueNonEmptyStringArray) &&

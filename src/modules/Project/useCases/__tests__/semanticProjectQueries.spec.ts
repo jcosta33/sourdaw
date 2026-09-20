@@ -12,6 +12,8 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { executeAppAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { defaultMidiStoreState } from '#/modules/MIDI/stores';
+import { setMidiStoreState, setNotesForClip } from '#/modules/MIDI/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import {
     defaultTransportState,
@@ -207,6 +209,54 @@ describe('semantic project queries', () => {
         vi.unstubAllGlobals();
     });
 
+    it('signs note-only role changes, keeps role source in the same captured receipt, and never emits notes', () => {
+        const track = createTrack({ id: 'notes-track', name: 'Track 1', kind: 'midi' });
+        track.devices = [
+            { id: 'kit', name: 'Kit', type: 'builtin-drum-kit', bypassed: true, parameterValues: { kit: 0 } },
+        ];
+        track.clips = [
+            {
+                id: 'notes-clip',
+                trackId: track.id,
+                name: 'Clip',
+                type: 'midi',
+                startBeat: 0,
+                endBeat: 4,
+                muted: true,
+                locked: false,
+                color: '',
+                gain: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            },
+        ];
+        setTrackStoreState({ ...structuredClone(defaultTrackState), tracks: [track] });
+        setMidiStoreState({
+            ...structuredClone(defaultMidiStoreState),
+            notesByClipId: {
+                'notes-clip': [{ id: 'n', pitch: 36, startBeat: 0, duration: 1, velocity: 0, probability: 0 }],
+            },
+        });
+        const before = querySemanticProject({ type: 'object', filters: { kind: 'track' } });
+        expect(before.items[0]?.canonicalRole).toMatchObject({ role: 'kick', source: 'clip-content' });
+        setNotesForClip('notes-clip', [{ id: 'n', pitch: 38, startBeat: 0, duration: 1, velocity: 0, probability: 0 }]);
+        const after = querySemanticProject({ type: 'object', filters: { kind: 'track' } });
+        const summary = querySemanticProject({ type: 'project-summary' });
+        expect(after.items[0]?.canonicalRole).toMatchObject({ role: 'snare', source: 'clip-content' });
+        expect(summary.items[0]?.tracks).toEqual([
+            expect.objectContaining({ canonicalRole: after.items[0]?.canonicalRole }),
+        ]);
+        expect(after.revisionToken).not.toBe(before.revisionToken);
+        expect(
+            querySemanticProject({ type: 'diff', sinceRevision: before.revisionToken, filters: { kind: 'track' } })
+                .items
+        ).toEqual([expect.objectContaining({ id: track.id, change: 'updated', kind: 'track' })]);
+        expect(before.items[0]?.canonicalRole?.role).toBe('kick');
+        expect(JSON.stringify(after.items[0]?.canonicalRole)).not.toMatch(/notes|pitch|velocity|media/);
+        const unchanged = querySemanticProject({ type: 'object', filters: { kind: 'track' } });
+        expect(unchanged).toEqual(after);
+    });
+
     it('returns schema-versioned revision receipts with bounded stale-safe pagination', async () => {
         const first = querySemanticProject({
             type: 'object',
@@ -334,6 +384,7 @@ describe('semantic project queries', () => {
             expect.objectContaining({
                 id: 'track-bass',
                 roles: ['bass'],
+                canonicalRole: { role: 'bass', source: 'authored', evidence: 'authored-role' },
                 deviceTypes: ['builtin-compressor'],
                 outputId: 'master',
                 sendBusIds: ['bus-drums'],

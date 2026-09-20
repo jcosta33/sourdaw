@@ -42,13 +42,15 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     adjustmentLayerStore: {
         get value() {
             return mocks.adjustmentLayerStoreValue.value;
         },
     },
     trackStore: {
+        subscribe: () => () => {},
         get value() {
             return mocks.trackStoreValue.value;
         },
@@ -68,20 +70,18 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.markerStoreValue.value;
         },
     },
-    // Reached only through the graph `#/modules/Automation/useCases` pulls in
-    // for `getAutomationLaneCeiling`; this spec never exercises it, but a
-    // barrel factory replaces the whole module, so an omitted name is a
-    // resolution failure rather than an unused stub.
     resolveEligibleDeviceWriteTarget: () => null,
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     getGlueEligibleClipPairs: mocks.getGlueEligibleClipPairs,
     getPluginById: mocks.getPluginById,
     getPlatformPlugins: mocks.getPlatformPlugins,
 }));
 
-vi.mock('#/modules/Automation/stores', () => ({
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
     automationStore: {
         get value() {
             return mocks.automationStoreValue.value;
@@ -89,21 +89,20 @@ vi.mock('#/modules/Automation/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/CrdtDocument/stores', () => ({
+vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/stores')>()),
     agentProjectRepairStateStore: {
         get value() {
             return mocks.repairStateStoreValue.value;
         },
     },
-    // Same reason as the Arrangement factory above: these names are reached
-    // through the graph behind `#/modules/Automation/useCases`, and a barrel
-    // factory that omits one fails to resolve rather than leaving it real.
     actionHistoryStore: { value: null },
     clearSemanticContext: () => {},
     setSemanticContext: () => {},
 }));
 
-vi.mock('#/modules/Routing/stores', () => ({
+vi.mock('#/modules/Routing/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/stores')>()),
     sidechainStore: {
         get value() {
             return mocks.sidechainStoreValue.value;
@@ -111,7 +110,8 @@ vi.mock('#/modules/Routing/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: {
         get value() {
             return mocks.midiStoreValue.value;
@@ -119,7 +119,8 @@ vi.mock('#/modules/MIDI/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Project/stores', () => ({
+vi.mock('#/modules/Project/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/stores')>()),
     projectStore: {
         get value() {
             return mocks.projectStoreValue.value;
@@ -127,7 +128,8 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     DEFAULT_TEMPO_BPM: 120,
     transportStore: {
         get value() {
@@ -136,7 +138,8 @@ vi.mock('#/modules/Transport/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>()),
     workspaceStore: {
         get value() {
             return mocks.workspaceStoreValue.value;
@@ -180,6 +183,38 @@ describe('getProjectContext', () => {
             },
             { id: 'crust', name: 'Crust' },
         ]);
+    });
+
+    it('projects owner canonical role evidence and invalidates note-only context changes', () => {
+        mocks.trackStoreValue.value = {
+            selectedTrackId: 't',
+            tracks: [
+                {
+                    id: 't',
+                    name: 'Track 1',
+                    kind: 'midi',
+                    muted: true,
+                    frozen: true,
+                    gain: 1,
+                    clips: [{ id: 'c', name: 'Clip', type: 'midi', startBeat: 0, endBeat: 4 }],
+                    alternatives: [],
+                    devices: [{ id: 'd', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
+                    sends: [],
+                },
+            ],
+        };
+        mocks.midiStoreValue.value = { notesByClipId: { c: [{ pitch: 36, velocity: 0 }] } };
+        const before = getProjectContext();
+        expect(before.tracks[0]?.canonicalRole).toMatchObject({
+            role: 'kick',
+            source: 'clip-content',
+            evidence: 'stored-drum-voices',
+        });
+        mocks.midiStoreValue.value = { notesByClipId: { c: [{ pitch: 38, velocity: 0 }] } };
+        const after = getProjectContext();
+        expect(after.tracks[0]?.canonicalRole).toMatchObject({ role: 'snare', source: 'clip-content' });
+        expect(after).not.toBe(before);
+        expect(before.tracks[0]?.canonicalRole?.role).toBe('kick');
     });
 
     it('withholds all model context while raw collaborative truth requires repair', () => {

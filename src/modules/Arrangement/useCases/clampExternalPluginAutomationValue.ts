@@ -21,12 +21,11 @@ type ClampExternalPluginAutomationValueInput = {
  * mid-tick — and inventing a bound for a parameter nobody declared would be a
  * guess, not a clamp.
  */
-export function clampExternalPluginAutomationValue({
-    externalInstanceId,
-    parameterId,
-    value,
-}: ClampExternalPluginAutomationValueInput): number {
-    const parameter = findExternalPluginAutomationParameter(externalInstanceId, parameterId);
+export function clampExternalPluginAutomationValue(
+    { externalInstanceId, parameterId, value }: ClampExternalPluginAutomationValueInput,
+    state?: Parameters<typeof findExternalPluginAutomationParameter>[2]
+): number {
+    const parameter = findExternalPluginAutomationParameter(externalInstanceId, parameterId, state);
     if (!parameter) {
         return value;
     }

@@ -19,16 +19,16 @@ import { NATIVE_DSP_DESCRIPTORS } from '../NativeDspDescriptors';
  * parameter — the shape `declaredControl`'s fallback produces — because
  * copied text still satisfies "non-empty and not the literal placeholder".
  *
- * This file censuses every effect descriptor's `parameterOverrides` for the
- * defect that check cannot see: role text shared across a device's own
+ * This file censuses every descriptor whose `parameterOverrides` have been
+ * fully authored for defects that check cannot see: role text shared across a device's own
  * parameters, a `typicalRange` equal to the generic default-centered
  * fallback, and an effect descriptor that never joined the census at all.
- * Instrument descriptors are excluded by the pinned id list below; a later,
- * out-of-scope change empties that list as instruments gain the same
- * per-parameter authoring.
+ * Descriptors not yet authored are excluded by the pinned id list below; a
+ * later, separately scoped change removes each id as its guidance joins the
+ * same census.
  */
 
-// ── Population: every effect descriptor is named, and only once ────────────
+// ── Population: every descriptor is named, and only once ───────────────────
 
 /**
  * Every effect-category descriptor id this file censuses.
@@ -76,39 +76,43 @@ const EFFECT_IDS_UNDER_CENSUS = [
     'faust-de-esser',
 ] as const;
 
-/**
- * Every instrument-family descriptor id in `BUILTIN_PLUGINS`, excluded from
- * this census. Instruments still use the shared `declaredControl` fallback;
- * authoring their per-parameter guidance is a later, separately scoped
- * change that will empty this list rather than extend it.
- */
-const INSTRUMENT_IDS_EXCLUDED = [
-    // BuiltinInstrumentDescriptors.ts
+const SYNTH_FAMILY_IDS_UNDER_CENSUS = [
     'builtin-synth',
+    'builtin-synth-mellotron',
+    'builtin-synth-strings',
+    'builtin-synth-808bass',
+    'builtin-synth-brass',
+] as const;
+
+const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [...EFFECT_IDS_UNDER_CENSUS, ...SYNTH_FAMILY_IDS_UNDER_CENSUS] as const;
+
+/**
+ * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
+ * joined this census. This includes seven standalone effects as well as the
+ * remaining instrument families; all still use shared fallback guidance.
+ */
+const DESCRIPTOR_IDS_EXCLUDED = [
+    // BuiltinInstrumentDescriptors.ts
     'builtin-drum-kit',
     // FaustInstrumentDescriptors.ts
     'faust-rhodes',
     'faust-fm-synth',
     'faust-supersaw-unison',
-    // Standalone instrument descriptor files
+    // Standalone effect descriptor files
     'bacteria',
-    'builtin-crumbs',
     'crust',
-    'fermenter',
     'gluten',
-    'grand-boule',
     'grinder',
     'knead',
-    'levain',
     'proof',
-    'toaster',
     'yeast',
-    // Synth/drum variants generated in DeviceParameter.ts from the
-    // builtin-synth/builtin-drum-kit instrument bases above.
-    'builtin-synth-mellotron',
-    'builtin-synth-strings',
-    'builtin-synth-808bass',
-    'builtin-synth-brass',
+    // Standalone instrument descriptor files
+    'builtin-crumbs',
+    'fermenter',
+    'grand-boule',
+    'levain',
+    'toaster',
+    // Drum variants generated in DeviceParameter.ts from builtin-drum-kit.
     'builtin-drum-machine-808',
     'builtin-drum-machine-analog',
     'builtin-drum-machine-electronic',
@@ -127,6 +131,38 @@ const DEVICES_WITHOUT_A_SIBLING_PARAMETER = new Set(['builtin-gain']);
  * default (a stale entry) fails it too.
  */
 const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
+    [
+        'builtin-synth/vibratoRate',
+        'Zero disables the base synth vibrato LFO; 4–7 Hz describes the natural active motion musicians dial in when vibratoDepth is raised.',
+    ],
+    [
+        'builtin-synth-strings/vibratoRate',
+        'Zero keeps the Analog Strings variant vibrato disabled; 4–7 Hz describes the active orchestral-style motion used with vibratoDepth.',
+    ],
+    [
+        'builtin-synth-strings/stereoSpread',
+        'Analog Strings deliberately defaults to the maximum spread of 1 for a fully separated ensemble; ordinary width work stays inside 0–0.75.',
+    ],
+    [
+        'builtin-synth-808bass/waveform',
+        'The 808 Bass variant deliberately defaults to sine (index 0) for a pure fundamental; the normal subtractive palette begins at triangle (index 1).',
+    ],
+    [
+        'builtin-synth-808bass/sustain',
+        'The 808 Bass variant deliberately defaults to zero sustain so decay defines the whole hit; held synth notes normally retain 0.3–0.8.',
+    ],
+    [
+        'builtin-synth-808bass/subOscLevel',
+        'The 808 Bass variant deliberately defaults to a full-level octave-down sine; general layering uses the lower 0–0.7 window to preserve bass headroom.',
+    ],
+    [
+        'builtin-synth-808bass/vibratoRate',
+        'Zero keeps the 808 Bass variant pitch stable; 4–7 Hz describes active vibrato rather than its disabled state.',
+    ],
+    [
+        'builtin-synth-brass/vibratoRate',
+        'Zero keeps the Classic Brass variant vibrato disabled by default; 4–7 Hz describes the active brass-style motion used with vibratoDepth.',
+    ],
     [
         'builtin-reverb/rev-predelay',
         'The 10 ms default sits near zero separation; deliberately spacing the tail from the source calls for the longer, audible gap the window covers.',
@@ -187,6 +223,12 @@ const EFFECT_DESCRIPTORS: readonly PluginDescriptor[] = [
     ...FAUST_EFFECT_DESCRIPTORS,
 ];
 
+const SYNTH_FAMILY_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGINS.filter((descriptor) =>
+    (SYNTH_FAMILY_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
+);
+
+const AUTHORED_DESCRIPTORS: readonly PluginDescriptor[] = [...EFFECT_DESCRIPTORS, ...SYNTH_FAMILY_DESCRIPTORS];
+
 function requireGuidance(descriptor: PluginDescriptor): PluginDescriptorGuidance {
     if (!descriptor.guidance) {
         throw new Error(`${descriptor.id} has no guidance; applyDescriptorGuidance should have rejected this`);
@@ -199,9 +241,9 @@ function normalizeRoleText(role: string): string {
 }
 
 describe('authoredParameterGuidance', () => {
-    it('EFFECT_IDS_UNDER_CENSUS and INSTRUMENT_IDS_EXCLUDED together name every descriptor exactly once', () => {
+    it('the authored and excluded id lists together name every descriptor exactly once', () => {
         const allIds = BUILTIN_PLUGINS.map((descriptor) => descriptor.id);
-        const censusIds = new Set<string>([...EFFECT_IDS_UNDER_CENSUS, ...INSTRUMENT_IDS_EXCLUDED]);
+        const censusIds = new Set<string>([...AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS, ...DESCRIPTOR_IDS_EXCLUDED]);
 
         const catalogIdsNotCensused = allIds.filter((id) => !censusIds.has(id));
         expect(catalogIdsNotCensused).toEqual([]);
@@ -214,30 +256,22 @@ describe('authoredParameterGuidance', () => {
         }
         expect(censusIdsNotInCatalog).toEqual([]);
 
-        expect(EFFECT_IDS_UNDER_CENSUS.length).toBe(new Set(EFFECT_IDS_UNDER_CENSUS).size);
-        expect(INSTRUMENT_IDS_EXCLUDED.length).toBe(new Set(INSTRUMENT_IDS_EXCLUDED).size);
+        expect(AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS.length).toBe(new Set(AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS).size);
+        expect(DESCRIPTOR_IDS_EXCLUDED.length).toBe(new Set(DESCRIPTOR_IDS_EXCLUDED).size);
 
-        const overlap = EFFECT_IDS_UNDER_CENSUS.filter((id) =>
-            (INSTRUMENT_IDS_EXCLUDED as readonly string[]).includes(id)
+        const overlap = AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS.filter((id) =>
+            (DESCRIPTOR_IDS_EXCLUDED as readonly string[]).includes(id)
         );
         expect(overlap).toEqual([]);
     });
 
-    it('every excluded id actually names an instrument-family descriptor in BUILTIN_PLUGINS', () => {
+    it('every excluded id names a real descriptor outside the authored census', () => {
         const catalogById = new Map(BUILTIN_PLUGINS.map((descriptor) => [descriptor.id, descriptor]));
-        const effectDescriptorIds = new Set(EFFECT_DESCRIPTORS.map((descriptor) => descriptor.id));
-        for (const id of INSTRUMENT_IDS_EXCLUDED) {
+        const authoredDescriptorIds = new Set(AUTHORED_DESCRIPTORS.map((descriptor) => descriptor.id));
+        for (const id of DESCRIPTOR_IDS_EXCLUDED) {
             const descriptor = catalogById.get(id);
             expect(descriptor, `${id} must exist in BUILTIN_PLUGINS`).toBeDefined();
-            // The instrument-family files (BuiltinInstrumentDescriptors.ts,
-            // FaustInstrumentDescriptors.ts, and the standalone ingredient
-            // descriptors) never feed BUILTIN_EFFECT_DESCRIPTORS,
-            // NATIVE_DSP_DESCRIPTORS, or FAUST_EFFECT_DESCRIPTORS; an id
-            // showing up in both would mean this list is masking a real
-            // effect descriptor from the census below.
-            expect(effectDescriptorIds.has(id), `${id} must be absent from the three effect descriptor exports`).toBe(
-                false
-            );
+            expect(authoredDescriptorIds.has(id), `${id} must be absent from the authored census`).toBe(false);
         }
     });
 
@@ -253,9 +287,9 @@ describe('authoredParameterGuidance', () => {
         expect(censusedNotExported).toEqual([]);
     });
 
-    it('every parameter of every censused effect descriptor carries a semanticRole and perceptualRole unique within its device', () => {
+    it('every parameter of every censused descriptor carries a semanticRole and perceptualRole unique within its device', () => {
         const violations: string[] = [];
-        for (const descriptor of EFFECT_DESCRIPTORS) {
+        for (const descriptor of AUTHORED_DESCRIPTORS) {
             const guidance = requireGuidance(descriptor);
             const seenSemanticRoles = new Map<string, string>();
             const seenPerceptualRoles = new Map<string, string>();
@@ -282,9 +316,9 @@ describe('authoredParameterGuidance', () => {
         expect(violations).toEqual([]);
     });
 
-    it('every parameter of every censused effect descriptor declares a typicalRange narrower than the full bounds and different from the generic default-centered fallback', () => {
+    it('every parameter of every censused descriptor declares a typicalRange narrower than the full bounds and different from the generic default-centered fallback', () => {
         const violations: string[] = [];
-        for (const descriptor of EFFECT_DESCRIPTORS) {
+        for (const descriptor of AUTHORED_DESCRIPTORS) {
             const guidance = requireGuidance(descriptor);
             for (const parameter of descriptor.parameters) {
                 const parameterGuidance = guidance.parameters[parameter.id] as DeviceParameterGuidance;
@@ -310,7 +344,7 @@ describe('authoredParameterGuidance', () => {
 
     it("every typicalRange that excludes the parameter's declared default is a deliberate, listed exception", () => {
         const excludersMissingARow: string[] = [];
-        for (const descriptor of EFFECT_DESCRIPTORS) {
+        for (const descriptor of AUTHORED_DESCRIPTORS) {
             const guidance = requireGuidance(descriptor);
             for (const parameter of descriptor.parameters) {
                 const parameterGuidance = guidance.parameters[parameter.id] as DeviceParameterGuidance;
@@ -325,7 +359,7 @@ describe('authoredParameterGuidance', () => {
         expect(excludersMissingARow).toEqual([]);
 
         const parametersById = new Map<string, { descriptor: PluginDescriptor; parameterId: string }>();
-        for (const descriptor of EFFECT_DESCRIPTORS) {
+        for (const descriptor of AUTHORED_DESCRIPTORS) {
             for (const parameter of descriptor.parameters) {
                 parametersById.set(`${descriptor.id}/${parameter.id}`, { descriptor, parameterId: parameter.id });
             }
@@ -353,9 +387,9 @@ describe('authoredParameterGuidance', () => {
         expect(staleRows).toEqual([]);
     });
 
-    it('every parameter of every censused effect descriptor with a sibling names that sibling by id in its interactions', () => {
+    it('every parameter of every censused descriptor with a sibling names that sibling by id in its interactions', () => {
         const violations: string[] = [];
-        for (const descriptor of EFFECT_DESCRIPTORS) {
+        for (const descriptor of AUTHORED_DESCRIPTORS) {
             if (DEVICES_WITHOUT_A_SIBLING_PARAMETER.has(descriptor.id) || descriptor.parameters.length <= 1) {
                 continue;
             }
@@ -377,9 +411,9 @@ describe('authoredParameterGuidance', () => {
         expect(violations).toEqual([]);
     });
 
-    it('every parameter of every censused effect descriptor declares non-empty risks, unique within its device', () => {
+    it('every parameter of every censused descriptor declares non-empty risks, unique within its device', () => {
         const violations: string[] = [];
-        for (const descriptor of EFFECT_DESCRIPTORS) {
+        for (const descriptor of AUTHORED_DESCRIPTORS) {
             const guidance = requireGuidance(descriptor);
             const seenRisks = new Map<string, string>();
             for (const parameter of descriptor.parameters) {

@@ -290,6 +290,8 @@ export type ProjectContextSend = {
 };
 
 export type ProjectContextTrack = {
+    /** Structural copy of Project's derived evidence; the context producer calls its owner. */
+    canonicalRole?: { role: string; source: string; evidence: string; contentRevision?: string };
     id: string;
     name: string;
     kind: string;

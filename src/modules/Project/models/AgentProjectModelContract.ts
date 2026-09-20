@@ -1,3 +1,4 @@
+import { type CanonicalTrackRoleProjection } from './CanonicalTrackRole';
 import { type ProductionBrief, type ProductionBriefLock } from './ProductionBrief';
 import {
     type ProjectAutomationLane,
@@ -81,6 +82,7 @@ export type AgentProjectTrack = {
     hierarchy: { parentId: string | null; groupId: string | null };
     tags: string[];
     role: string | null;
+    canonicalRole: CanonicalTrackRoleProjection;
     controls: {
         gain: number;
         pan: number;

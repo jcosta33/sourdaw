@@ -21,10 +21,13 @@ describe('getScopedGrooveAssignment', () => {
         mockGetGrooveAssignment.mockReturnValue(assignment);
         const result = getScopedGrooveAssignment({ consumerType: 'clip', ownerId: 'owner', localId: 'local' });
         expect(result).toBe(assignment);
-        expect(mockGetGrooveAssignment).toHaveBeenCalledExactlyOnceWith({
-            consumerType: 'clip',
-            consumerId: 'owner:local',
-        });
+        expect(mockGetGrooveAssignment).toHaveBeenCalledExactlyOnceWith(
+            {
+                consumerType: 'clip',
+                consumerId: 'owner:local',
+            },
+            undefined
+        );
     });
 
     it('falls back to the legacy unscoped consumer id when no scoped assignment exists', () => {

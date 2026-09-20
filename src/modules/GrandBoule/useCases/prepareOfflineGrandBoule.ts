@@ -1,7 +1,6 @@
-import { readGrandBouleMorphState } from '../models/GrandBouleDeviceState';
 import { projectGrandBouleMorphState } from '../models/ProjectGrandBouleMorphState';
 
-import { projectGrandBouleCalibrationToNativePatch } from './projectGrandBouleCalibrationToNativePatch';
+import { captureOfflineGrandBoule } from './captureOfflineGrandBoule';
 
 /**
  * Hydrate an offline Grand Boule worklet with the morph state and MIDI
@@ -23,16 +22,17 @@ export function prepareOfflineGrandBoule({
     deviceId,
     deviceState,
     port,
+    captured,
 }: {
     deviceId: string;
     deviceState: unknown;
     port: MessagePort;
+    captured?: ReturnType<typeof captureOfflineGrandBoule>;
 }): void {
-    const morph = readGrandBouleMorphState(deviceState);
+    const { morph, calibration } = captured ?? captureOfflineGrandBoule({ deviceId, deviceState });
     for (const parameter of projectGrandBouleMorphState(morph)) {
         port.postMessage({ type: 'param', ...parameter });
     }
-    const calibration = projectGrandBouleCalibrationToNativePatch({ deviceId });
     if (calibration === null) {
         return;
     }

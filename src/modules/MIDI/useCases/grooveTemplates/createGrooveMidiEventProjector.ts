@@ -1,4 +1,8 @@
-import { defaultGrooveTemplateState, grooveTemplateStore } from '../../stores/grooveTemplateStore';
+import {
+    defaultGrooveTemplateState,
+    grooveTemplateStore,
+    type GrooveTemplateState,
+} from '../../stores/grooveTemplateStore';
 
 import { getGrooveProjection } from './getGrooveProjection';
 
@@ -24,8 +28,10 @@ type GrooveMidiEventProjector = <Event extends GrooveMidiEvent>(
     input: GrooveClipMidiEventProjectionInput<Event> | GrooveSequencerMidiEventProjectionInput<Event>
 ) => readonly Event[];
 
-export function createGrooveMidiEventProjector(): GrooveMidiEventProjector {
-    const grooveState = structuredClone(grooveTemplateStore.value ?? defaultGrooveTemplateState);
+export function createGrooveMidiEventProjector(
+    state: GrooveTemplateState | null = grooveTemplateStore.value
+): GrooveMidiEventProjector {
+    const grooveState = structuredClone(state ?? defaultGrooveTemplateState);
     const projection = getGrooveProjection(grooveState);
     return (input) => {
         if (input.phase === 'clip-groove') {

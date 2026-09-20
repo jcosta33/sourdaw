@@ -18,16 +18,15 @@ export function getFactoryPresetContractsByDeviceType(
     deviceTypes: readonly string[]
 ): readonly FactoryPresetDeviceContract[] {
     return deviceTypes.map((type) => {
-        const identities = factoryPresets
-            .filter((preset) => preset.devices.some((device) => device.type === type))
-            .map(({ id, name }) => ({ id, name }));
+        const presets = factoryPresets.filter((preset) => preset.devices.some((device) => device.type === type));
+        const identities = presets.map(({ id, name }) => ({ id, name }));
         const availability = identities.length > 0 ? 'available' : 'none';
 
         return {
             type,
             availability,
             identities,
-            presetVersion: `preset-v1:${getStableContractFingerprint({ availability, identities })}`,
+            presetVersion: `preset-v1:${getStableContractFingerprint({ availability, presets })}`,
         };
     });
 }

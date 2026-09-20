@@ -53,7 +53,7 @@ function resolveCommand(
             setArgumentPathValue(argumentsValue, reference.argument, boundValue);
         }
     }
-    const metadata = compileCommandArgumentMetadata(argumentsValue);
+    const metadata = compileCommandArgumentMetadata(argumentsValue, command.operation);
     return {
         ...command,
         arguments: argumentsValue,

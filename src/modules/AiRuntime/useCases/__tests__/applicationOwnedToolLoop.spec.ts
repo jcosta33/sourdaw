@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    deleteUserPreset,
+    getAgentBuiltinDeviceFactoryManifest,
+    getDeviceContractVersionForCommand,
+    getPluginById,
+    saveUserPreset,
+} from '#/modules/Arrangement/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
@@ -384,6 +391,83 @@ describe('application-owned tool loop', () => {
             reason: 'Provider requested an unavailable application tool.',
         });
         expect(querySemanticProject).not.toHaveBeenCalled();
+    });
+
+    it('re-versions the actual factory-manifest receipt when only character metadata changes', async () => {
+        const readManifest = async (callId: string) => {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: callId,
+                            name: 'device.factory-manifest.read',
+                            arguments: { types: ['builtin-distortion'] },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+            const result = await runApplicationOwnedToolLoop({
+                loopId: `loop-${callId}`,
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+            return result.receipts.find((receipt) => receipt.callId === callId);
+        };
+        const descriptor = getPluginById('builtin-distortion');
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find(
+            (device) => device.type === 'builtin-distortion'
+        );
+        if (!descriptor || !beforeFactory) {
+            throw new Error('Expected the built-in distortion descriptor.');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const commandVersion = getDeviceContractVersionForCommand(descriptor.id);
+        const before = await readManifest('manifest-before-character-change');
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const afterFactory = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+            if (!afterFactory) {
+                throw new Error('Expected the changed built-in distortion descriptor.');
+            }
+            const after = await readManifest('manifest-after-character-change');
+
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(commandVersion);
+            expect(afterFactory.descriptorVersion).toBe(beforeFactory.descriptorVersion);
+            expect(afterFactory.characterVersion).not.toBe(beforeFactory.characterVersion);
+            expect(before?.data).toEqual(
+                expect.objectContaining({
+                    devices: expect.arrayContaining([
+                        expect.objectContaining({
+                            type: descriptor.id,
+                            version: expect.stringContaining(beforeFactory.characterVersion),
+                            versions: expect.objectContaining({
+                                descriptor: beforeFactory.descriptorVersion,
+                                character: beforeFactory.characterVersion,
+                            }),
+                        }),
+                    ]),
+                })
+            );
+            expect(after?.data).toEqual(
+                expect.objectContaining({
+                    devices: expect.arrayContaining([
+                        expect.objectContaining({
+                            type: descriptor.id,
+                            version: expect.stringContaining(afterFactory.characterVersion),
+                            versions: expect.objectContaining({
+                                descriptor: beforeFactory.descriptorVersion,
+                                character: afterFactory.characterVersion,
+                            }),
+                        }),
+                    ]),
+                })
+            );
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
     });
 
     it('refuses a turn that declines and proposes at once, so the outcome of a turn is never ambiguous', async () => {
@@ -1165,6 +1249,104 @@ describe('project discovery tool', () => {
         expect(receipt).toMatchObject({ toolName: 'project.discover', status: 'success' });
         expect(receipt?.data).toMatchObject({ schema: 'sourdaw.agent-discovery-receipt', domain: 'device' });
         expect(receipt?.revision).toEqual(expect.any(String));
+    });
+
+    it('keeps a long saved preset discoverable in one bounded receipt', async () => {
+        const preset = saveUserPreset({
+            name: 'Tube drive',
+            category: 'fx',
+            description: 'x'.repeat(17_000),
+            trackKind: 'audio',
+            devices: [{ type: 'builtin-distortion', name: 'Distortion', parameterValues: {} }],
+            tags: [...Array.from({ length: 8 }, (_, index) => `ordinary-tag-${String(index)}`), 'tube'],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-long-user-preset',
+                        name: 'project.discover',
+                        arguments: {
+                            domain: 'preset',
+                            filters: { text: 'tube', stableId: preset.id },
+                            page: { limit: 1 },
+                        },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        try {
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-long-user-preset',
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+            const receipt = result.receipts.find((entry) => entry.callId === 'discover-long-user-preset');
+
+            expect(receipt).toMatchObject({
+                status: 'success',
+                error: null,
+                data: {
+                    domain: 'preset',
+                    items: [
+                        {
+                            id: preset.id,
+                            evidence: {
+                                tags: expect.arrayContaining(['tube']),
+                                deviceTypes: ['builtin-distortion'],
+                            },
+                        },
+                    ],
+                },
+            });
+            expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
+        } finally {
+            deleteUserPreset(preset.id);
+        }
+    });
+
+    it('forwards the owner-published preset character receipt with its concrete stable id', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-tube-preset',
+                        name: 'project.discover',
+                        arguments: { domain: 'preset', filters: { text: 'tube' } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discovery-tube-preset',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'discover-tube-preset');
+
+        expect(receipt).toMatchObject({
+            toolName: 'project.discover',
+            status: 'success',
+            data: {
+                domain: 'preset',
+                items: [
+                    {
+                        id: 'fx-dist-warm-overdrive',
+                        evidence: {
+                            isFactory: true,
+                            tags: expect.arrayContaining(['tube']),
+                            metadata: { confidence: 'declared' },
+                        },
+                    },
+                ],
+            },
+        });
     });
 
     it.each([

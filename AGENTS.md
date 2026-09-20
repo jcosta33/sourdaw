@@ -83,7 +83,11 @@ set in the bundle's `stances.json` before dispatch, one line per stance naming t
 that admits it — the input or state that breaks — never the path the diff touches; as each draw
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
-substance before acceptance.
+substance before acceptance. `pnpm stances:check <bundle>` tests each admission line with a typed
+judgment and fails lines that name touched paths instead of failure modes. Run it before dispatch
+when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
+its inability to run — a missing key, an unavailable or degraded service, or a malformed response —
+is a disclosed limitation, never a stop, and the orchestrator's substance duty stands either way.
 
 Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
 checks, standard for behavioral and integration risk, strongest for real-time audio, security,
@@ -457,8 +461,13 @@ movement requires no merge; take `main` only for real conflicts or mergeability,
 then requires fresh `Gate` and review.
 
 Dismissing stale reviews on push and requiring approval of the last push are ruleset configuration,
-and the live `main` ruleset carries both; either changes only through the trusted ruleset command,
-and only after a canary proves the change against a throwaway ruleset. The reviewer's shadow status
+and only the trusted ruleset command may change them: it plans against the live ruleset, refuses a
+change outside the approved pair or that adds a required context, captures the live ruleset's
+canonical bytes as the rollback before writing, applies as the verified orchestrator User, and
+reads back, failing unless both controls are shown. It has no throwaway-ruleset mode; the canary
+evidence #3002 requires for such a change is a live pull request - a red `Gate` blocking a merge,
+fresh approvals required after each push, unresolved threads blocking, and reviewer App
+confirmations resolving threads. Read the live ruleset rather than assume either control is on. The reviewer's shadow status
 is deliberately non-required: it attests only immutable commit facts about the exact head, never a
 verdict that another commit or a later push can inherit. No wave may make a CI context or a shadow
 status context required, because a required context converts an observation into merge authority —

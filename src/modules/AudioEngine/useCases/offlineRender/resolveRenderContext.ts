@@ -21,11 +21,11 @@ import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
-import {
-    offlineYeastMidiProcessorState,
-    type OfflineYeastMidiProcessor,
-} from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
+import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
+
+import { captureOfflineMusicalProjections } from './captureOfflineMusicalProjections';
+import { type OfflineRenderProjectSource } from './OfflineRenderSource';
 
 export type OfflineRenderContext = {
     tracks: TrackStoreState | null;
@@ -57,7 +57,10 @@ export type ResolveRenderContextInput = {
     sampleRate?: number;
 };
 
-export function resolveRenderContext(input: ResolveRenderContextInput | number): OfflineRenderContext {
+export function resolveRenderContext(
+    input: ResolveRenderContextInput | number,
+    source?: OfflineRenderProjectSource
+): OfflineRenderContext {
     const normalized: Required<ResolveRenderContextInput> =
         typeof input === 'number'
             ? { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100 }
@@ -68,10 +71,10 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
                   sampleRate: input.sampleRate ?? 44_100,
               };
 
-    const transport = transportStore.value;
-    const tracks = trackStore.value;
-    const midi = midiStore.value;
-    const tempoMap = tempoMapStore.value;
+    const transport = source ? source.transport : transportStore.value;
+    const tracks = source ? source.tracks : trackStore.value;
+    const midi = source ? source.midi : midiStore.value;
+    const tempoMap = source ? source.tempoMap : tempoMapStore.value;
     const defaultTempo = transport?.tempo ?? DEFAULT_TEMPO_BPM;
     const changes = tempoMap?.changes ?? [];
 
@@ -98,13 +101,10 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         startBeat: normalized.startBeat,
         durationSeconds,
         tailSeconds: Math.max(0, normalized.tailSeconds),
-        projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
         selectMidiEventProbability: offlineMidiEventProjectorState.selectProbability,
-        projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
         projectPpqEndpoints,
         resolveTempoAtBeat: offlinePpqEndpointProjectorState.resolveTempoAtBeat,
-        processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
-        evaluateAutomationValue: offlineMidiEventProjectorState.evaluateAutomationValue,
+        ...captureOfflineMusicalProjections(tracks, source),
         resolveArticulationId: offlineMidiEventProjectorState.resolveArticulationId,
     };
 }

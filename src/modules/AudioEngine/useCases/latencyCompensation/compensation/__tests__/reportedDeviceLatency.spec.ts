@@ -28,6 +28,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { clearReportedLatency } from '../clearReportedLatency';
 import { externalLatencyRegistry } from '../externalLatencyRegistry';
 import { getCompensationDelay } from '../getCompensationDelay';
+import { getDeviceLatencyMs } from '../getDeviceLatencyMs';
 import { getTrackLatency } from '../getTrackLatency';
 import { reportLatency } from '../reportLatency';
 
@@ -73,6 +74,13 @@ describe('a reported device latency reaches plugin-delay compensation (RT-4)', (
     beforeEach(() => {
         mockTrackStore.value = null;
         externalLatencyRegistry.clear();
+    });
+
+    it('captures sidechain block latency at the export rate and keeps hosted plugins at zero', () => {
+        expect(getDeviceLatencyMs('detector', 'builtin-sidechain-compressor', 96_000)).toBeCloseTo(128 / 96, 10);
+        expect(getDeviceLatencyMs('detector', 'builtin-sidechain-compressor')).toBeCloseTo(128 / 48, 10);
+        reportLatency('hosted', 900);
+        expect(getDeviceLatencyMs('hosted', 'external-plugin', 96_000)).toBe(0);
     });
 
     it('folds a reported device latency into its own track total', () => {

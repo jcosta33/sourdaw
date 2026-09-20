@@ -21,6 +21,7 @@ const NATIVE_DSP_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: true,
         platform: 'both',
+        characterTags: ['plate', 'spring'],
         // Absent on saved legacy devices, which keeps their original FDN
         // damping curve. New devices opt into the normalized curve.
         internalParameterValues: { fdn_damping_version: 2 },

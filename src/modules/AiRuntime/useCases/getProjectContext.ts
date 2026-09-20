@@ -11,6 +11,7 @@ import { getAutomationLaneCeiling, isLinearGainAutomationLane } from '#/modules/
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
+import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -230,6 +231,11 @@ export function getProjectContext(): ProjectContext {
             id: time.id,
             name: time.name,
             kind: time.kind,
+            canonicalRole: getCanonicalTrackRole({
+                track: time,
+                trackRoles: projectState?.productionBrief.trackRoles,
+                notesByClipId,
+            }),
             muted: time.muted,
             soloed: time.soloed,
             soloSafe: time.soloSafe,

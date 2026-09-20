@@ -37,6 +37,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     isDeviceParameterAutomatable: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     quantiseDeviceParameterValue: vi.fn(),
+    rearmInputMonitoring: vi.fn(),
     resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
     resolveClipsWithComping: vi.fn(),
     startRecording: vi.fn(),

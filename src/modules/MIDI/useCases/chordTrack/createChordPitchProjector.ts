@@ -1,5 +1,5 @@
 import { type ChordEvent } from '../../models/ChordEvent';
-import { chordTrackStore } from '../../stores/chordTrackStore';
+import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
 import { transposeForChordTrack } from '../../transformers/chordTransposer';
 
 function findChordAtBeat(events: readonly ChordEvent[], beat: number): ChordEvent | null {
@@ -12,8 +12,7 @@ function findChordAtBeat(events: readonly ChordEvent[], beat: number): ChordEven
     return null;
 }
 
-export function createChordPitchProjector() {
-    const state = chordTrackStore.value;
+export function createChordPitchProjector(state: ChordTrackState | null = chordTrackStore.value) {
     const events = state?.enabled ? state.events.map((event) => ({ ...event })) : [];
 
     return ({ pitch, referenceBeat, targetBeat }: { pitch: number; referenceBeat: number; targetBeat: number }) =>

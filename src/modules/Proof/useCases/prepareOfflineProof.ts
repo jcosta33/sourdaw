@@ -1,32 +1,14 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { DEVICE_TYPE_IDS } from '#/utils/nativeDspDeviceTypes';
-
 import { getRestoredProofChainOrder } from '../services/getRestoredProofChainOrder';
+
+import { captureOfflineProof } from './captureOfflineProof';
 
 export type PrepareOfflineProofInput = {
     /** Id of the Proof device being rendered; keys its entry in the project. */
     deviceId: string;
     /** Worklet port of the offline Proof instance. */
     port: MessagePort;
+    captured?: ReturnType<typeof captureOfflineProof>;
 };
-
-function findProofParameterValues(deviceId: string): Record<string, number> | null {
-    const trackState = getTrackStoreState();
-    if (!trackState) {
-        return null;
-    }
-
-    for (const track of trackState.tracks) {
-        const device = track.devices.find(
-            (candidate) => candidate.id === deviceId && candidate.type === DEVICE_TYPE_IDS.proof
-        );
-        if (device) {
-            return device.parameterValues;
-        }
-    }
-
-    return null;
-}
 
 /**
  * Give an offline Proof instance the module order the project holds.
@@ -54,13 +36,13 @@ function findProofParameterValues(deviceId: string): Record<string, number> | nu
  * spelling of it — lives in `AudioEngine/engine/`, which this module may not
  * import.
  */
-export function prepareOfflineProof({ deviceId, port }: PrepareOfflineProofInput): void {
-    const parameterValues = findProofParameterValues(deviceId);
-    if (!parameterValues) {
+export function prepareOfflineProof({ deviceId, port, captured }: PrepareOfflineProofInput): void {
+    const state = captured === undefined ? captureOfflineProof({ deviceId }) : captured;
+    if (!state) {
         return;
     }
 
-    const order = getRestoredProofChainOrder(parameterValues);
+    const order = getRestoredProofChainOrder(state.parameterValues);
     if (!order) {
         return;
     }

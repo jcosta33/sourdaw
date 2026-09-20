@@ -42,6 +42,13 @@ describe('getAutomationValueAtBeat — end-to-end interpolation (real algorithm)
         automationStore.set({ lanes: [] });
     });
 
+    it('evaluates supplied lanes while current project state holds different values', () => {
+        const supplied = [lane('same', [point(0, 0.25), point(4, 0.75)])];
+        automationStore.set({ lanes: [lane('same', [point(0, 0.9)])] });
+        expect(getAutomationValueAtBeat('same', 2, new Set(), supplied)).toBeCloseTo(0.5);
+        expect(automationStore.value?.lanes[0]?.points[0]?.value).toBe(0.9);
+    });
+
     it('returns null when the store has no value', () => {
         // The scheduler must skip a lane (return null) rather than drive the
         // parameter to a real 0 when the store is uninitialized.

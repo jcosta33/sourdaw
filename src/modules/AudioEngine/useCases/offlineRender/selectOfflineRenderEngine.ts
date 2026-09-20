@@ -45,7 +45,7 @@
  * wrong `native/offline` answer costs a failed or unfaithful export.
  */
 
-import { clipHasActiveGainEnvelope, type Track } from '#/modules/Arrangement/stores';
+import { clipHasActiveGainEnvelope, type GainEnvelopeStoreState, type Track } from '#/modules/Arrangement/stores';
 
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
@@ -66,6 +66,7 @@ export type OfflineRenderEngineSelection =
       }>;
 
 export type SelectOfflineRenderEngineInput = Readonly<{
+    gainEnvelopes?: GainEnvelopeStoreState['envelopes'];
     /** Every track this render will build a strip for. */
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix. */
@@ -97,7 +98,7 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             // to that renderer with this reason instead. Clip ids survive
             // comping unchanged (the resolver spreads the source clip), so
             // this raw-clips walk cannot miss a comped take's envelope.
-            if (clip.type === 'audio' && clipHasActiveGainEnvelope(clip.id)) {
+            if (clip.type === 'audio' && clipHasActiveGainEnvelope(clip.id, input.gainEnvelopes)) {
                 return `track "${track.name}" plays a clip gain envelope the native render does not apply`;
             }
         }
