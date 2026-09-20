@@ -44,13 +44,65 @@ export function matchesDiscoveryFilters(
     return true;
 }
 
+/** The content one candidate's signature row and canonical page order are taken over. */
+function discoveryCandidateRow(candidate: DiscoveryCandidate): string {
+    const { entry } = candidate;
+    return JSON.stringify([entry.id, entry.version, entry.availability]);
+}
+
+/**
+ * The content one sample candidate's signature row is taken over: the ranked
+ * key its page order depends on — score, then display name, then id. The sample
+ * catalog publishes no version and a constant availability, so the canonical
+ * row above would reduce to the id alone while the page order still moves with
+ * a rename or a re-score.
+ */
+function rankedDiscoveryCandidateRow(candidate: DiscoveryCandidate): string {
+    const { entry } = candidate;
+    return JSON.stringify([entry.evidence.score, entry.name, entry.id]);
+}
+
 /**
  * The content a domain's revision token is taken over: every entry's stable id,
  * the producer's version for it, and its availability. A catalog that gains,
  * loses or re-versions an entry mints a different token; one that answers the
- * same entries twice mints the same token twice.
+ * same entries twice mints the same token twice. A sample receipt instead uses
+ * `createSampleDiscoverySignature`, because its page order is a relevance
+ * ranking rather than the canonical order above.
  */
 export function createDiscoverySignature(candidates: readonly DiscoveryCandidate[]): string {
-    const rows = candidates.map(({ entry }) => JSON.stringify([entry.id, entry.version, entry.availability]));
-    return JSON.stringify(rows.toSorted());
+    return JSON.stringify(candidates.map(discoveryCandidateRow).toSorted());
+}
+
+/**
+ * A sample receipt's revision content, order-sensitive so the ranked key that
+ * pages it — score, display name, id — travels in the token. A rename or
+ * re-score re-ranks the same records and moves the token, so a retained cursor
+ * is refused as stale rather than naming the wrong record.
+ */
+export function createSampleDiscoverySignature(candidates: readonly DiscoveryCandidate[]): string {
+    return JSON.stringify(candidates.map(rankedDiscoveryCandidateRow).toSorted());
+}
+
+/**
+ * Candidates in a canonical, content-derived order for paging a receipt.
+ *
+ * The order is the same key the revision signature sorts over, so a catalog
+ * that answers the same entries in a different sequence pages identically and a
+ * cursor minted before a content-free reorder keeps its meaning. Comparison
+ * matches `toSorted()`'s default string order so the page order and the
+ * signature can never disagree about where an entry lands.
+ */
+export function orderDiscoveryCandidates(candidates: readonly DiscoveryCandidate[]): DiscoveryCandidate[] {
+    return candidates.toSorted((left, right) => {
+        const leftRow = discoveryCandidateRow(left);
+        const rightRow = discoveryCandidateRow(right);
+        if (leftRow < rightRow) {
+            return -1;
+        }
+        if (leftRow > rightRow) {
+            return 1;
+        }
+        return 0;
+    });
 }
