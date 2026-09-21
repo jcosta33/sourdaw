@@ -110,7 +110,7 @@ describe('handleRemoveAutomationPoint — describe', () => {
         expect(result.inverseAction?.type).toBe('addAutomationPoint');
     });
 
-    it('restores the guarded point set when removing from a linked follower', () => {
+    it('restores the guarded point when removing from a linked follower', () => {
         const retained = makePoint({ id: 'retained', beat: 2 });
         const removed = makePoint({ id: 'removed', beat: 4 });
         setLane([retained, removed], {
@@ -135,6 +135,7 @@ describe('handleRemoveAutomationPoint — describe', () => {
                 },
                 point: removed,
                 equalBeatIndex: 0,
+                expectedEqualBeatPoints: [],
                 expectedPresence: 'absent',
                 replacementPresence: 'present',
             },

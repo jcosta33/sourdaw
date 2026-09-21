@@ -47,6 +47,7 @@ function payload(overrides: Partial<ReplayPayload> = {}): ReplayPayload {
         },
         point,
         equalBeatIndex: 0,
+        expectedEqualBeatPoints: [],
         expectedPresence: 'absent',
         replacementPresence: 'present',
         ...overrides,
@@ -55,6 +56,8 @@ function payload(overrides: Partial<ReplayPayload> = {}): ReplayPayload {
 
 const mockedGetState = vi.mocked(getAutomationStoreState);
 const mockedRestore = vi.mocked(restoreAutomationPointPresence);
+const sparseEqualBeatPoints: AutomationPoint[] = [point];
+Reflect.deleteProperty(sparseEqualBeatPoints, '0');
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -65,6 +68,7 @@ describe('handleRestoreAutomationPointPresence', () => {
     it.each([
         ['an unsupported curve', payload({ point: { ...point, curve: 'warp-drive' } })],
         ['an extra payload field', { ...payload(), extra: 'smuggled' }],
+        ['a sparse equal-beat point list', payload({ expectedEqualBeatPoints: sparseEqualBeatPoints })],
     ])('rejects persisted arguments with %s without mutating', (_label, malformedPayload) => {
         expect(handleRestoreAutomationPointPresence.validateSessionActionArguments?.(malformedPayload)).toBe(false);
         expect(mockedRestore).not.toHaveBeenCalled();
@@ -88,6 +92,24 @@ describe('handleRestoreAutomationPointPresence', () => {
         const result = handleRestoreAutomationPointPresence.execute({
             type: 'restoreAutomationPointPresence',
             payload: payload({ expectedPresence: 'present', replacementPresence: 'absent' }),
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it('rejects restoration when the captured equal-beat peers changed', () => {
+        mockedGetState.mockReturnValue({
+            lanes: [
+                lane({
+                    points: [{ id: 'new-peer', beat: point.beat, value: 0.4, curve: 'linear', tension: 0 }],
+                }),
+            ],
+        });
+
+        const result = handleRestoreAutomationPointPresence.execute({
+            type: 'restoreAutomationPointPresence',
+            payload: payload(),
         });
 
         expect(result).toEqual({ status: 'conflict' });

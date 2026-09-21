@@ -2098,6 +2098,7 @@ export type AppAction =
               };
               point: AutomationPointSnapshot;
               equalBeatIndex: number;
+              expectedEqualBeatPoints: readonly AutomationPointSnapshot[];
               expectedPresence: 'present' | 'absent';
               replacementPresence: 'present' | 'absent';
           };

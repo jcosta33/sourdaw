@@ -161,6 +161,7 @@ describe('linked automation point admission', () => {
             owner: { trackId: 'track-2', parameterId: 'gain', linkedLaneId: SOURCE_LANE_ID },
             point: { id: 'ignored-follower-point', beat: 4, value: 0.9, curve: 'linear', tension: 0 },
             equalBeatIndex: 0,
+            expectedEqualBeatPoints: [],
             expectedPresence: 'present',
             replacementPresence: 'absent',
         };
@@ -226,6 +227,37 @@ describe('linked automation point admission', () => {
             after,
         ]);
         expect(getCrdtDoc<{ automation?: AutomationStoreState }>('root')?.automation).toEqual(automationStore.value);
+    });
+
+    it('refuses restoration when a new same-beat peer makes the captured rank stale', async () => {
+        const state = automationStore.value!;
+        const before = { id: 'same-beat-before', beat: 4, value: 0.2, curve: 'linear' as const, tension: 0 };
+        const target = { id: 'same-beat-target', beat: 4, value: 0.9, curve: 'linear' as const, tension: 0 };
+        const after = { id: 'same-beat-after', beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: state.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [before, target, after] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 1, pointId: target.id },
+        });
+        const removedState = automationStore.value!;
+        const peer = { id: 'new-same-beat-peer', beat: 4, value: 0.4, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: removedState.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [peer, ...lane.points] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+        const documentWithPeer = projectSnapshot();
+        const storeWithPeer = storeSnapshot();
+
+        expect((await undo()).headConsumed).toBe(false);
+        expect(projectSnapshot()).toBe(documentWithPeer);
+        expect(automationStore.value).toEqual(storeWithPeer);
     });
 
     it('replays an unambiguous legacy id-less follower point without changing unrelated points', async () => {

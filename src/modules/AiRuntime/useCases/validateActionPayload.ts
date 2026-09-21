@@ -1125,7 +1125,6 @@ const validators = {
         isInRange(param.gridSize, Number.MIN_VALUE, 64),
     // Internal inverse-only actions (emitted by handlers' describe(), never by the AI).
     restoreAutomationLanePoints: 'unchecked',
-    restoreAutomationPointPresence: 'unchecked',
 
     // Preset / template
     loadPreset: 'unchecked',

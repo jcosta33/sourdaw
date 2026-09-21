@@ -58,6 +58,9 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
             const equalBeatIndex = lane.points
                 .slice(0, pointIndex)
                 .filter((candidate) => candidate.beat === point.beat).length;
+            const expectedEqualBeatPoints = lane.points.filter(
+                (candidate) => candidate !== point && candidate.beat === point.beat
+            );
             const owner: { trackId: string; parameterId: string; linkedLaneId: string; clipId?: string } = {
                 trackId: lane.trackId,
                 parameterId: lane.parameterId,
@@ -75,6 +78,7 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
                         owner,
                         point,
                         equalBeatIndex,
+                        expectedEqualBeatPoints,
                         expectedPresence: 'absent',
                         replacementPresence: 'present',
                     },
@@ -86,6 +90,7 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
                         owner,
                         point,
                         equalBeatIndex,
+                        expectedEqualBeatPoints,
                         expectedPresence: 'present',
                         replacementPresence: 'absent',
                     },

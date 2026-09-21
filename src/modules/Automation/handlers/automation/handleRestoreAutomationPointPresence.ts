@@ -56,21 +56,40 @@ function isPresence(value: unknown): value is 'present' | 'absent' {
     return value === 'present' || value === 'absent';
 }
 
+function areValidEqualBeatPoints(value: unknown, beat: number): value is AutomationPoint[] {
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+            return false;
+        }
+        const point: unknown = value[index];
+        if (!is_exact_automation_point(point) || point.beat !== beat) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function isValidPayload(payload: unknown): payload is ValidatedReplayPayload {
     if (!isRecord(payload) || !isValidOwner(payload.owner) || !is_exact_automation_point(payload.point)) {
         return false;
     }
+    const point = payload.point;
     return (
-        Object.keys(payload).length === 6 &&
+        Object.keys(payload).length === 7 &&
         Object.hasOwn(payload, 'laneId') &&
         Object.hasOwn(payload, 'owner') &&
         Object.hasOwn(payload, 'point') &&
         Object.hasOwn(payload, 'equalBeatIndex') &&
+        Object.hasOwn(payload, 'expectedEqualBeatPoints') &&
         Object.hasOwn(payload, 'expectedPresence') &&
         Object.hasOwn(payload, 'replacementPresence') &&
         typeof payload.laneId === 'string' &&
         Number.isInteger(payload.equalBeatIndex) &&
         (payload.equalBeatIndex as number) >= 0 &&
+        areValidEqualBeatPoints(payload.expectedEqualBeatPoints, point.beat) &&
         isPresence(payload.expectedPresence) &&
         isPresence(payload.replacementPresence) &&
         payload.expectedPresence !== payload.replacementPresence
@@ -99,11 +118,25 @@ function resolveMatch(action: ReplayAction): { lane: AutomationLane; matchedInde
     if (point.id === undefined && matchedIndex < 0 && lane.points.some((candidate) => candidate.beat === point.beat)) {
         return null;
     }
+    if (
+        matchedIndex < 0 &&
+        action.payload.replacementPresence === 'present' &&
+        !samePoints(
+            lane.points.filter((candidate) => candidate.beat === point.beat),
+            action.payload.expectedEqualBeatPoints
+        )
+    ) {
+        return null;
+    }
     const isPresent = matchedIndex >= 0;
     if ((action.payload.expectedPresence === 'present') !== isPresent) {
         return null;
     }
     return { lane, matchedIndex };
+}
+
+function samePoints(actual: readonly AutomationPoint[], expected: readonly AutomationPointSnapshot[]): boolean {
+    return actual.length === expected.length && actual.every((point, index) => pointsMatch(point, expected[index]!));
 }
 
 export const handleRestoreAutomationPointPresence = createHandler<'restoreAutomationPointPresence'>({
