@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -14,6 +15,12 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
@@ -35,6 +42,12 @@ const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
+};
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
 };
 
 function projectSnapshot(): string {
@@ -60,6 +73,7 @@ async function refusalOf(action: AppAction): Promise<string | null> {
 
 describe('linked automation point admission', () => {
     beforeEach(() => {
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('linked automation point admission');
         removeCrdtDoc('root');
@@ -181,6 +195,71 @@ describe('linked automation point admission', () => {
         expect(undoStore.value).toEqual(undoBefore);
         expect(getAutomationValueAtBeat(SOURCE_LANE_ID, 2)).toBe(sourceSampleBefore);
         expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 2)).toBe(followerSampleBefore);
+    });
+
+    it('undoes and redoes removal of a pre-existing follower point without changing its link or sampled source', async () => {
+        const documentBefore = projectSnapshot();
+        const storeBefore = storeSnapshot();
+        const sourceSampleBefore = getAutomationValueAtBeat(SOURCE_LANE_ID, 4);
+        const followerSampleBefore = getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4);
+
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0, pointId: 'ignored-follower-point' },
+        });
+
+        expect(automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID)?.points).toEqual([]);
+        expect(getAutomationValueAtBeat(SOURCE_LANE_ID, 4)).toBe(sourceSampleBefore);
+        expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4)).toBe(followerSampleBefore);
+
+        expect((await undo()).headConsumed).toBe(true);
+        expect(projectSnapshot()).toBe(documentBefore);
+        expect(automationStore.value).toEqual(storeBefore);
+        expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4)).toBe(followerSampleBefore);
+
+        const restoredState = automationStore.value!;
+        const peerPoint = { id: 'peer-after-undo', beat: 6, value: 0.6, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: restoredState.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [...lane.points, peerPoint] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        const followerAfterRedo = automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID);
+        expect(followerAfterRedo?.points).toEqual([peerPoint]);
+        expect(followerAfterRedo).toMatchObject({ linkedLaneId: SOURCE_LANE_ID, linkScale: 2 });
+        expect(getCrdtDoc<{ automation?: AutomationStoreState }>('root')?.automation).toEqual(automationStore.value);
+        expect(getAutomationValueAtBeat(SOURCE_LANE_ID, 4)).toBe(sourceSampleBefore);
+        expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4)).toBe(followerSampleBefore);
+    });
+
+    it('refuses follower-point undo after its expected point set diverges', async () => {
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0, pointId: 'ignored-follower-point' },
+        });
+        const state = automationStore.value!;
+        automationStore.set({
+            lanes: state.lanes.map((lane) => {
+                if (lane.id !== FOLLOWER_LANE_ID) {
+                    return lane;
+                }
+                return {
+                    ...lane,
+                    points: [{ id: 'peer-point', beat: 6, value: 0.6, curve: 'linear', tension: 0 }],
+                };
+            }),
+        });
+        flushAutomergeStorageWrites();
+        const peerDocument = projectSnapshot();
+        const peerStore = storeSnapshot();
+
+        expect((await undo()).headConsumed).toBe(false);
+        expect(projectSnapshot()).toBe(peerDocument);
+        expect(automationStore.value).toEqual(peerStore);
     });
 
     it('keeps source-lane point writes effective for a follower through undo and redo', async () => {

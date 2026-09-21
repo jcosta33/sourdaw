@@ -53,6 +53,23 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
         if (!action.payload.pointId && beatDuplicated) {
             return { label: 'Remove automation point' };
         }
+        if (lane.linkedLaneId) {
+            let expectedPoints = lane.points.filter((candidate) => candidate.beat !== point.beat);
+            if (action.payload.pointId) {
+                expectedPoints = lane.points.filter((candidate) => candidate.id !== action.payload.pointId);
+            }
+            return {
+                label: 'Remove automation point',
+                inverseAction: {
+                    type: 'restoreAutomationLanePoints',
+                    payload: {
+                        laneId: action.payload.laneId,
+                        points: lane.points,
+                        expectedPoints,
+                    },
+                },
+            };
+        }
         return {
             label: 'Remove automation point',
             inverseAction: {

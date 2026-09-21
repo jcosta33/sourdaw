@@ -25,11 +25,11 @@ function makePoint(overrides: Record<string, unknown> = {}) {
     return { id: 'p1', beat: 4, value: 0.5, curve: 'linear', tension: 0, ...overrides };
 }
 
-function setLane(points: Record<string, unknown>[] | null) {
+function setLane(points: Record<string, unknown>[] | null, laneOverrides: Record<string, unknown> = {}) {
     if (points === null) {
         mockedGetState.mockReturnValue(null);
     } else {
-        mockedGetState.mockReturnValue({ lanes: [{ id: 'lane1', points }] } as never);
+        mockedGetState.mockReturnValue({ lanes: [{ id: 'lane1', points, ...laneOverrides }] } as never);
     }
 }
 
@@ -108,6 +108,26 @@ describe('handleRemoveAutomationPoint — describe', () => {
             payload: { laneId: 'lane1', pointIndex: 0, pointId: 'p1' },
         });
         expect(result.inverseAction?.type).toBe('addAutomationPoint');
+    });
+
+    it('restores the guarded point set when removing from a linked follower', () => {
+        const retained = makePoint({ id: 'retained', beat: 2 });
+        const removed = makePoint({ id: 'removed', beat: 4 });
+        setLane([retained, removed], { linkedLaneId: 'source-lane' });
+
+        const result = handleRemoveAutomationPoint.describe({
+            type: 'removeAutomationPoint',
+            payload: { laneId: 'lane1', pointIndex: 1, pointId: 'removed' },
+        });
+
+        expect(result.inverseAction).toEqual({
+            type: 'restoreAutomationLanePoints',
+            payload: {
+                laneId: 'lane1',
+                points: [retained, removed],
+                expectedPoints: [retained],
+            },
+        });
     });
 
     it('omits inverse when point not found', () => {
