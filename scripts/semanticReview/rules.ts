@@ -106,15 +106,23 @@ const MODULE_AND_APP_PATHS = ['src/modules/', 'src/app/'] as const;
 /** Extensions whose files can hold code, so a `__tests__/` file with one is test material. */
 const CODE_EXTENSIONS = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/u;
 
+/** Whether a runner collects the file as a test, decided by the `.spec.`/`.test.` suffix rule alone. */
+export function isCollectedSpec(path: string): boolean {
+    return /(?:^|\/)[^/]+\.(?:spec|test)\.[^.]+$/u.test(path);
+}
+
 /**
- * Whether a path holds test material, decided by suffix alone or by living under `__tests__/` with a
- * code extension.
+ * Whether a path holds test material for rule applicability, decided by suffix alone or by living
+ * under `__tests__/` with a code extension.
  *
- * The suffix rule matches both runners — Vitest's `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's
- * `**\/*.@(spec|test).?(c|m)[jt]s?(x)` — but the repository also keeps assertion-carrying suites in
- * `__tests__/` without a runner suffix: `providerProtocolConformance.ts` is a conformance suite three
- * contract specs import and execute, and `expectExternalProjectLink.ts` is an assertion helper three
- * specs import. Classifying those as implementation dropped the whole test-validity family from them.
+ * This is deliberately broader than `isCollectedSpec`, and the two predicates answer different
+ * questions. Collection is decided by the suffix alone — Vitest's
+ * `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's `**\/*.@(spec|test).?(c|m)[jt]s?(x)` — and that
+ * is what excludes implementation evidence. Applicability is wider because the repository also keeps
+ * assertion-carrying suites in `__tests__/` without a runner suffix: `providerProtocolConformance.ts`
+ * is a conformance suite three contract specs import and execute, and `expectExternalProjectLink.ts`
+ * is an assertion helper three specs import. Classifying those as implementation dropped the whole
+ * test-validity family from them.
  *
  * The honest trade-off: a `.ts` fixture or dummy directly inside `__tests__/` is now test material, so
  * a test-validity question may be asked about a file that carries no assertion. That costs a wasted
@@ -125,7 +133,7 @@ const CODE_EXTENSIONS = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/u;
  * test-validity signals on it at 0.83 and 0.78.
  */
 export function isTestPath(path: string): boolean {
-    if (/(?:^|\/)[^/]+\.(?:spec|test)\.[^.]+$/u.test(path)) {
+    if (isCollectedSpec(path)) {
         return true;
     }
     return /(?:^|\/)__tests__\//u.test(path) && CODE_EXTENSIONS.test(path);

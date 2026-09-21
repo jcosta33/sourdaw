@@ -126,12 +126,16 @@ type EgressShape = {
 
 const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
     // An armored private key: the BEGIN header of a PEM block, such as a PKCS#8 or OpenSSH private
-    // key block. `SECRET_KEY_NAME` matches only a `key = value` assignment, so a block passes
-    // untouched and would be submitted to the provider. This is the shape `reviewDossier` refuses for
-    // publication, reapplied here because egress withholds rather than refuses.
+    // key block, followed by a line break and a run of base64 key material. `SECRET_KEY_NAME` matches
+    // only a `key = value` assignment, so a block passes untouched and would be submitted to the
+    // provider. Egress requires each shape to carry a value, so the header alone is not enough: a
+    // documentation sentence that quotes the header carries no key material and must not be withheld.
+    // The body, not the closing footer, is what is required, so a block pasted without its footer is
+    // still caught — the pinned Gitleaks rule requires both, and being stricter than it buys nothing.
     {
         reason: 'an armored private key',
-        pattern: /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}/iu,
+        pattern:
+            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n[ \t]*[A-Za-z0-9+/=]{8,}/u,
     },
     // A secret in a query parameter: `?password=…`, `&access_token=…`, `&sig=…`.
     {

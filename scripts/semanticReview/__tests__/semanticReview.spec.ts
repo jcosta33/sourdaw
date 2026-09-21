@@ -18,6 +18,7 @@ import {
     type SemanticChangedFile,
     type SemanticSourcePort,
 } from '../evidence.ts';
+import { fitUnitEvidence } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
@@ -29,6 +30,7 @@ import {
     type SemanticProviderPort,
 } from '../provider.ts';
 import { renderSummary, validateReport } from '../report.ts';
+import { missingRequiredEvidence } from '../requiredEvidence.ts';
 import {
     assertBudgetProfile,
     computePolicyDigest,
@@ -36,6 +38,7 @@ import {
     PROBABILITY_SUM_TOLERANCE,
     SEMANTIC_BUDGET_PROFILES,
     SEVERE_INVESTIGATION_CATEGORIES,
+    isCollectedSpec,
     isTestPath,
     semanticRule,
     SEMANTIC_RULES,
@@ -47,7 +50,6 @@ import {
     assertQuestionsAreReplayable,
     executionState,
     isMissedAssessmentExclusion,
-    missingRequiredEvidence,
     planUnits,
     runScan,
 } from '../run.ts';
@@ -376,17 +378,23 @@ describe('change-kind applicability', () => {
         // implementation, and an added test file with no changed implementation genuinely does not
         // supply it, so asking every rule to report nothing here would hide exactly that.
         expect(
-            missingRequiredEvidence(semanticRule('assertion_deleted'), units[0]?.evidence.references ?? [], 'added')
+            missingRequiredEvidence(
+                semanticRule('assertion_deleted'),
+                units[0]?.evidence.own ?? [],
+                units[0]?.evidence.context ?? [],
+                'added'
+            )
         ).toEqual([]);
         expect(
             missingRequiredEvidence(
                 semanticRule('production_path_no_longer_reached'),
-                units[0]?.evidence.references ?? [],
+                units[0]?.evidence.own ?? [],
+                units[0]?.evidence.context ?? [],
                 'added'
             )
         ).toEqual(['after implementation source']);
         // The same rule on a modified file still demands the before side it can actually have.
-        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), [], 'modified')).toEqual([
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), [], [], 'modified')).toEqual([
             'before test source',
             'after test source',
         ]);
@@ -447,6 +455,58 @@ describe('a rename that changes test collection', () => {
     });
 });
 
+describe('a zero-line rename owes what its movement changes', () => {
+    it('plans a rename that leaves a rule-covered surface instead of skipping it', () => {
+        // `no-text-change` excluded the rename, so the check went green over a moved module boundary.
+        const file = changedFile('docs/undo.ts', {
+            kind: 'renamed',
+            previousPath: 'src/modules/Project/undo.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [file],
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/undo.ts`]: 'export const undo = () => {};\n',
+                    [`${HEAD}:docs/undo.ts`]: 'export const undo = () => {};\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+
+        const { units, excluded } = planUnits([file], set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        expect(units).toHaveLength(1);
+        expect(excluded).toEqual([]);
+        expect(units[0]?.rules.map((rule) => rule.id)).toContain('persisted_shape_changed_without_migration');
+    });
+
+    it('plans a zero-line rename that stops a runner collecting the file', () => {
+        const file = changedFile('src/modules/Project/undo-helper.ts', {
+            kind: 'renamed',
+            previousPath: 'src/modules/Project/undo.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+    });
+
+    it('still excludes a rename between two paths that change neither rule set nor collection', () => {
+        const file = changedFile('docs/undo-copy.md', {
+            kind: 'renamed',
+            previousPath: 'docs/undo.md',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBe('no-text-change');
+    });
+});
+
 describe('copied files', () => {
     it('supplies both sides of a copy and does not waive the before side', () => {
         // A copy has both sides: its source is unchanged and its destination is new. Reading it as
@@ -487,15 +547,69 @@ describe('copied files', () => {
             )
         ).toBe(true);
         // The before side is genuinely supplied, not waived.
-        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), set.references, 'copied')).toEqual([]);
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), set.references, [], 'copied')).toEqual([]);
         // A copy does not inherit the added-file waiver: with no before region supplied, the before
         // side is genuinely missing.
-        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), [], 'copied')).toEqual([
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), [], [], 'copied')).toEqual([
             'before test source',
             'after test source',
         ]);
         // A genuinely added file still gets the existing waiver for the before side.
-        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), set.references, 'added')).toEqual([]);
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), set.references, [], 'added')).toEqual([]);
+    });
+});
+
+describe('a copy whose source is also modified', () => {
+    it('yields each region once and selects own regions by the (path, side) the change implies', () => {
+        // `M a.ts` plus `C100 a.ts c.ts`: the source's before side is read twice — once for the
+        // modification, once for the copy's source — and must be minted once. Selecting own regions by
+        // path alone handed the copy the source's after region as though it belonged to the copy.
+        const files = [
+            changedFile('src/modules/Project/a.ts'),
+            changedFile('src/modules/Project/c.ts', {
+                kind: 'copied',
+                previousPath: 'src/modules/Project/a.ts',
+                added: 1,
+                deleted: 0,
+            }),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/a.ts`]: 'export const before = 1;\n',
+                    [`${HEAD}:src/modules/Project/a.ts`]: 'export const after = 1;\n',
+                    [`${HEAD}:src/modules/Project/c.ts`]: 'export const copy = 1;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        expect(set.references).toHaveLength(3);
+        expect(set.references.filter((r) => r.path === 'src/modules/Project/a.ts' && r.side === 'before')).toHaveLength(
+            1
+        );
+        expect(set.references.filter((r) => r.path === 'src/modules/Project/a.ts' && r.side === 'after')).toHaveLength(
+            1
+        );
+        expect(set.references.filter((r) => r.path === 'src/modules/Project/c.ts' && r.side === 'after')).toHaveLength(
+            1
+        );
+
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const source = units.find((unit) => unit.path === 'src/modules/Project/a.ts');
+        const copy = units.find((unit) => unit.path === 'src/modules/Project/c.ts');
+        const ownSides = (unit: typeof source): string[] =>
+            (unit?.evidence.own ?? []).map((reference) => `${reference.path}:${reference.side}`).sort();
+        expect(ownSides(source)).toEqual(['src/modules/Project/a.ts:after', 'src/modules/Project/a.ts:before']);
+        expect(ownSides(copy)).toEqual(['src/modules/Project/a.ts:before', 'src/modules/Project/c.ts:after']);
+        expect(
+            copy?.evidence.own.some(
+                (reference) => reference.path === 'src/modules/Project/a.ts' && reference.side === 'after'
+            )
+        ).toBe(false);
     });
 });
 
@@ -1157,6 +1271,74 @@ describe('a fixture is not a test', () => {
     });
 });
 
+describe('implementation source is decided by collection, not test material', () => {
+    it('separates collection from applicability', () => {
+        // Collection is the `.spec.`/`.test.` suffix alone; applicability also admits a code file
+        // under `__tests__/`. A dummy there is test material for the rules but is never collected as
+        // a test, so it must still be admissible as implementation source.
+        expect(isCollectedSpec('src/modules/Arrangement/__tests__/ClipDummy.ts')).toBe(false);
+        expect(isTestPath('src/modules/Arrangement/__tests__/ClipDummy.ts')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/__tests__/undoProject.spec.ts')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/useCases/undoProject.ts')).toBe(false);
+    });
+
+    it('supplies a changed __tests__/-resident double as the implementation a test unit reaches', () => {
+        const files = [
+            changedFile('src/modules/Arrangement/__tests__/arrange.spec.ts'),
+            changedFile('src/modules/Arrangement/__tests__/ClipDummy.ts'),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Arrangement/__tests__/arrange.spec.ts`]: 'it("before", () => {});\n',
+                    [`${HEAD}:src/modules/Arrangement/__tests__/arrange.spec.ts`]: 'it("after", () => {});\n',
+                    [`${MERGE_BASE}:src/modules/Arrangement/__tests__/ClipDummy.ts`]: 'export const dummy = 1;\n',
+                    [`${HEAD}:src/modules/Arrangement/__tests__/ClipDummy.ts`]: 'export const dummy = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path.endsWith('arrange.spec.ts'));
+        expect(unit).toBeDefined();
+        expect(unit?.rules.map((rule) => rule.id)).toContain('production_path_no_longer_reached');
+        expect(
+            missingRequiredEvidence(
+                semanticRule('production_path_no_longer_reached'),
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
+                'modified'
+            )
+        ).toEqual([]);
+    });
+
+    it('still refuses a collected spec as implementation source', () => {
+        const rule = semanticRule('production_path_no_longer_reached');
+        const beforeTest = reference({
+            evidenceId: 'b1',
+            path: 'src/modules/Arrangement/__tests__/arrange.spec.ts',
+            side: 'before',
+        });
+        const afterTest = reference({
+            evidenceId: 'a2',
+            path: 'src/modules/Arrangement/__tests__/arrange.spec.ts',
+            side: 'after',
+        });
+        const otherSpec = reference({
+            evidenceId: 'a3',
+            path: 'src/modules/Arrangement/__tests__/other.spec.ts',
+            side: 'after',
+        });
+        expect(missingRequiredEvidence(rule, [beforeTest, afterTest], [otherSpec], 'modified')).toEqual([
+            'after implementation source',
+        ]);
+    });
+});
+
 describe('the changed lines are the evidence regions', () => {
     it('parses ranges, renames, and one-sided diffs', () => {
         const diff = [
@@ -1283,14 +1465,21 @@ describe('the egress screen tells code from credentials', () => {
         }
     });
 
-    it('withholds an armored private key whatever its wrapper', () => {
+    it('withholds an armored private key only with key material, whatever its wrapper', () => {
         // Composed at runtime: the diff secret scan matches a contiguous PEM header, and the screen
         // withholds any region holding one. A `key = value` rule cannot see these, because the header
         // carries no assignment, so the armored shape is the only thing standing between a PEM block
-        // and the provider.
-        const pkcs8 = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
-        const openssh = secretFixture('-----BEGIN OPENSSH ', 'PRIVATE KEY', '-----');
-        const rsa = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
+        // and the provider. Egress requires a value, so the header alone is not enough: a prose
+        // sentence quoting the header carries no key material.
+        const pkcs8Header = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
+        const opensshHeader = secretFixture('-----BEGIN OPENSSH ', 'PRIVATE KEY', '-----');
+        const rsaHeader = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
+        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const pkcs8 = secretFixture(pkcs8Header, '\n', body);
+        const openssh = secretFixture(opensshHeader, '\n', body);
+        const rsa = secretFixture(rsaHeader, '\n', body);
+        // A block whose body is present and whose footer is absent is still withheld: the body, not
+        // the footer, is what carries the key material.
         expect(sensitiveContentReason(pkcs8)).toBe('an armored private key');
         expect(sensitiveContentReason(openssh)).toBe('an armored private key');
         expect(sensitiveContentReason(rsa)).toBe('an armored private key');
@@ -1298,6 +1487,11 @@ describe('the egress screen tells code from credentials', () => {
         // JSON field.
         expect(sensitiveContentReason(`export const key = '${pkcs8}';`)).toBe('an armored private key');
         expect(sensitiveContentReason(`{ "key": "${rsa}" }`)).toBe('an armored private key');
+        // A header quoted inline in prose carries no key material and must not be withheld.
+        expect(
+            sensitiveContentReason(`the file opens with ${pkcs8Header} and then the key material follows`)
+        ).toBeUndefined();
+        expect(sensitiveContentReason(pkcs8Header)).toBeUndefined();
     });
 });
 
@@ -1666,7 +1860,8 @@ describe('reduced-unit reporting', () => {
         expect(
             missingRequiredEvidence(
                 semanticRule('stated_invariant_contradicted'),
-                unit?.evidence.references ?? [],
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
                 'modified'
             )
         ).toContain('decision or documented invariant');
@@ -1713,19 +1908,26 @@ describe('partial-side evidence drop', () => {
         expect(unit).toBeDefined();
         // One after hunk survives, so the old predicate would have called the side present.
         expect(unit?.evidence.references.some((reference) => reference.side === 'after')).toBe(true);
-        expect(unit?.evidence.droppedSides?.has('after')).toBe(true);
+        expect(unit?.evidence.ownDroppedSides.has('after')).toBe(true);
 
         const missing = missingRequiredEvidence(
             semanticRule('assertion_deleted'),
-            unit?.evidence.references ?? [],
+            unit?.evidence.own ?? [],
+            unit?.evidence.context ?? [],
             'modified',
-            unit?.evidence.droppedSides ?? new Set<EvidenceSide>()
+            unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+            unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
         );
         expect(missing).toContain('after test source');
         // Without the dropped-side wiring, the surviving after region satisfies the side and the rule
         // returns a decisive verdict.
         expect(
-            missingRequiredEvidence(semanticRule('assertion_deleted'), unit?.evidence.references ?? [], 'modified')
+            missingRequiredEvidence(
+                semanticRule('assertion_deleted'),
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
+                'modified'
+            )
         ).toEqual([]);
 
         const assessment = interpretScanOutcome({
@@ -1740,24 +1942,188 @@ describe('partial-side evidence drop', () => {
     });
 
     it('treats a dropped after side as not supplying implementation source', () => {
-        // The implementation branch resolves to an after side that is not a test path; a dropped
-        // after side must not satisfy it even though the implementation region itself survived.
+        // The implementation branch resolves to an after side that is not a collected spec; a dropped
+        // context after side must not satisfy it even though the implementation region itself survived.
         const rule = semanticRule('production_path_no_longer_reached');
         const beforeTest = reference({
             evidenceId: 'b1',
             path: 'src/modules/Project/__tests__/undo.spec.ts',
             side: 'before',
         });
-        const implementation = reference({
+        const afterTest = reference({
             evidenceId: 'a2',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            side: 'after',
+        });
+        const implementation = reference({
+            evidenceId: 'a3',
             path: 'src/modules/Project/useCases/undoProject.ts',
             side: 'after',
         });
         const droppedAfter = new Set<EvidenceSide>(['after']);
-        expect(missingRequiredEvidence(rule, [beforeTest, implementation], 'modified', droppedAfter)).toContain(
-            'after implementation source'
+        expect(
+            missingRequiredEvidence(
+                rule,
+                [beforeTest, afterTest],
+                [implementation],
+                'modified',
+                new Set(),
+                droppedAfter
+            )
+        ).toContain('after implementation source');
+        expect(missingRequiredEvidence(rule, [beforeTest, afterTest], [implementation], 'modified')).toEqual([]);
+    });
+});
+
+describe('own and context drops are resolved separately', () => {
+    it('does not let a dropped implementation-context after region mark the own after side missing', () => {
+        const rule = semanticRule('assertion_deleted');
+        const ownBefore = reference({
+            evidenceId: 'b1',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            side: 'before',
+        });
+        const ownAfter = reference({
+            evidenceId: 'a2',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            side: 'after',
+        });
+        const implementation = reference({
+            evidenceId: 'a3',
+            path: 'src/modules/Project/useCases/undoProject.ts',
+            side: 'after',
+        });
+        const missing = missingRequiredEvidence(
+            rule,
+            [ownBefore, ownAfter],
+            [implementation],
+            'modified',
+            new Set<EvidenceSide>(),
+            new Set<EvidenceSide>(['after'])
         );
-        expect(missingRequiredEvidence(rule, [beforeTest, implementation], 'modified')).toEqual([]);
+        expect(missing).toEqual([]);
+        const assessment = interpretScanOutcome({
+            answer: { type: 'noul', noul: 0.05 },
+            rule,
+            unitId: 'u',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            missingEvidence: missing,
+        });
+        expect(assessment.outcome).not.toBe('insufficient_context');
+    });
+
+    it('still reports the own after side when it is dropped', () => {
+        const rule = semanticRule('assertion_deleted');
+        const ownBefore = reference({
+            evidenceId: 'b1',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            side: 'before',
+        });
+        const ownAfter = reference({
+            evidenceId: 'a2',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            side: 'after',
+        });
+        const missing = missingRequiredEvidence(
+            rule,
+            [ownBefore, ownAfter],
+            [],
+            'modified',
+            new Set<EvidenceSide>(['after']),
+            new Set<EvidenceSide>()
+        );
+        expect(missing).toEqual(['after test source']);
+    });
+
+    it('reports own and context drops separately from the fitter', () => {
+        const files = [
+            changedFile('src/modules/Project/__tests__/undo.spec.ts'),
+            changedFile('src/modules/Project/useCases/undoProject.ts'),
+        ];
+        const big = 'export const impl = 1;\n'.repeat(400);
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/__tests__/undo.spec.ts`]: 'it("before", () => {});\n',
+                    [`${HEAD}:src/modules/Project/__tests__/undo.spec.ts`]: 'it("after", () => {});\n',
+                    [`${MERGE_BASE}:src/modules/Project/useCases/undoProject.ts`]: 'export const before = 1;\n',
+                    [`${HEAD}:src/modules/Project/useCases/undoProject.ts`]: big,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const own = set.references.filter((r) => r.side !== 'context' && r.path.endsWith('undo.spec.ts'));
+        const context = set.references.filter((r) => r.side === 'after' && r.path.endsWith('undoProject.ts'));
+        const fitted = fitUnitEvidence(set, own, context, 2_000);
+        expect(fitted.own.droppedSides.has('after')).toBe(false);
+        expect(fitted.context.droppedSides.has('after')).toBe(true);
+        expect(
+            missingRequiredEvidence(
+                semanticRule('assertion_deleted'),
+                fitted.own.references,
+                fitted.context.references,
+                'modified',
+                fitted.own.droppedSides,
+                fitted.context.droppedSides
+            )
+        ).toEqual([]);
+    });
+
+    it('lets an own non-collected after side satisfy implementation despite a dropped context after region', () => {
+        // A context after region dropped for budget must not deny the unit's own after side when that
+        // side is itself implementation source: the two sets resolve independently and disjoin.
+        const rule = semanticRule('production_path_no_longer_reached');
+        const ownBefore = reference({
+            evidenceId: 'b1',
+            path: 'src/modules/Arrangement/__tests__/ClipDummy.ts',
+            side: 'before',
+        });
+        const ownAfter = reference({
+            evidenceId: 'a2',
+            path: 'src/modules/Arrangement/__tests__/ClipDummy.ts',
+            side: 'after',
+        });
+        const contextImpl = reference({
+            evidenceId: 'a3',
+            path: 'src/modules/Arrangement/useCases/arrange.ts',
+            side: 'after',
+        });
+        const missing = missingRequiredEvidence(
+            rule,
+            [ownBefore, ownAfter],
+            [contextImpl],
+            'modified',
+            new Set<EvidenceSide>(),
+            new Set<EvidenceSide>(['after'])
+        );
+        expect(missing).toEqual([]);
+    });
+
+    it('still reports the implementation token when the own after side is dropped', () => {
+        const rule = semanticRule('production_path_no_longer_reached');
+        const ownBefore = reference({
+            evidenceId: 'b1',
+            path: 'src/modules/Arrangement/__tests__/ClipDummy.ts',
+            side: 'before',
+        });
+        const ownAfter = reference({
+            evidenceId: 'a2',
+            path: 'src/modules/Arrangement/__tests__/ClipDummy.ts',
+            side: 'after',
+        });
+        const missing = missingRequiredEvidence(
+            rule,
+            [ownBefore, ownAfter],
+            [],
+            'modified',
+            new Set<EvidenceSide>(['after']),
+            new Set<EvidenceSide>()
+        );
+        expect(missing).toContain('after implementation source');
     });
 });
 
@@ -2100,10 +2466,12 @@ describe('execution state and required evidence resolution', () => {
 
         // The test file's own after region is not the implementation: with only that supplied, the
         // rule's declared need is reported missing rather than scored against evidence it never saw.
-        expect(missingRequiredEvidence(rule, [beforeRegion, testRegion], 'modified')).toEqual([
+        expect(missingRequiredEvidence(rule, [beforeRegion, testRegion], [], 'modified')).toEqual([
             'after implementation source',
         ]);
-        expect(missingRequiredEvidence(rule, [beforeRegion, testRegion, implementationRegion], 'modified')).toEqual([]);
+        expect(missingRequiredEvidence(rule, [beforeRegion, testRegion], [implementationRegion], 'modified')).toEqual(
+            []
+        );
     });
 });
 

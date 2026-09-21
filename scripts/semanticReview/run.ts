@@ -47,11 +47,12 @@ import {
     type SemanticUsageTotals,
 } from './provider.ts';
 import { type SemanticScanReport, type SemanticScopeReport, type SemanticUsageReport } from './report.ts';
+import { missingRequiredEvidence } from './requiredEvidence.ts';
 import {
     applicableRules,
     computePolicyDigest,
     computeRulesDigest,
-    isTestPath,
+    isCollectedSpec,
     type SemanticBudgetProfile,
     type SemanticRule,
     type SemanticRuleId,
@@ -82,7 +83,26 @@ export type SemanticUnitPlan = {
     readonly path: string;
     readonly file: SemanticChangedFile;
     readonly rules: readonly SemanticRule[];
-    readonly evidence: SemanticEvidenceSet;
+    readonly evidence: SemanticUnitEvidence;
+};
+
+/**
+ * The evidence one unit carries, with its own regions kept distinct from the context regions a rule
+ * declared it needed. The requirement predicate resolves a side against the set it belongs to: the
+ * unit's `before`/`after` come from its own regions, `context` from the context regions, and a dropped
+ * side unsupplies only the set it was dropped from.
+ */
+export type SemanticUnitEvidence = {
+    readonly own: readonly EvidenceReference[];
+    readonly context: readonly EvidenceReference[];
+    /** The union of own and context, in send order: the payload the provider receives. */
+    readonly references: readonly EvidenceReference[];
+    readonly contents: ReadonlyMap<string, string>;
+    readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly excluded: readonly SemanticScopeExclusion[];
+    readonly truncated: readonly SemanticScopeExclusion[];
+    readonly limitations: readonly string[];
 };
 
 /**
@@ -107,80 +127,22 @@ export function isMissedAssessmentExclusion(reason: string): boolean {
     return !NOTHING_OWED_EXCLUSION_REASONS.has(reason);
 }
 
-/** Required-evidence vocabulary mapped to a deterministic predicate over the supplied regions. */
-function requiredEvidencePresent(
-    token: string,
-    references: readonly EvidenceReference[],
-    droppedSides: ReadonlySet<EvidenceSide>
-): boolean {
-    const lower = token.toLowerCase();
-    // A region cut to a prefix does not answer for the whole side it came from, so it cannot satisfy
-    // a required side on its own: a rule told it has the after side while holding 6% of it would
-    // score evidence it never saw. A side the fitter dropped in part is the same defect — one of
-    // several regions of the side survived, but the side was still delivered incompletely.
-    const has = (side: EvidenceReference['side']): boolean =>
-        !droppedSides.has(side) && references.some((reference) => reference.side === side);
-    // Implementation source is a claim about *which* after side, not merely that one exists. Resolving
-    // it to `has('after')` let a test unit's own region satisfy a rule that declared it needed the
-    // implementation, so the rule scored a question it never had the evidence to answer — and this
-    // branch has to come before the generic `after` one for that resolution to mean anything.
-    if (lower.includes('implementation')) {
-        return (
-            !droppedSides.has('after') &&
-            references.some((reference) => reference.side === 'after' && !isTestPath(reference.path))
-        );
-    }
-    if (lower.includes('before')) {
-        return has('before');
-    }
-    if (lower.includes('after')) {
-        return has('after');
-    }
-    if (lower.includes('contract') || lower.includes('decision') || lower.includes('registration')) {
-        return has('context');
-    }
-    if (lower.includes('call-site') || lower.includes('caller') || lower.includes('scheduling')) {
-        return has('context') || has('after');
-    }
-    return references.length > 0;
-}
-
-/**
- * The rule's required evidence that is genuinely absent.
- *
- * A side that cannot exist for this change is not missing. An added file has no before side, so a
- * rule about removing previously-checked behavior has nothing to compare against and must not be
- * reported incomplete for evidence the change could not have produced; the same holds for the after
- * side of a deletion.
- */
-export function missingRequiredEvidence(
-    rule: SemanticRule,
-    references: readonly EvidenceReference[],
-    kind: SemanticChangedFile['kind'] = 'modified',
-    droppedSides: ReadonlySet<EvidenceSide> = new Set<EvidenceSide>()
-): string[] {
-    return rule.requiredEvidence.filter((token) => {
-        const lower = token.toLowerCase();
-        if (kind === 'added' && lower.includes('before')) {
-            return false;
-        }
-        if (kind === 'deleted' && lower.includes('after')) {
-            return false;
-        }
-        return !requiredEvidencePresent(token, references, droppedSides);
-    });
-}
-
 function evidenceForPath(
     set: SemanticEvidenceSet,
     path: string,
     previousPath: string | undefined
 ): EvidenceReference[] {
     return set.references.filter((reference) => {
-        if (reference.side === 'context') {
-            return false;
+        // A region belongs to the side its change kind implies: the before side lives at the previous
+        // path when there is one, and the after side lives at the changed path. Selecting by path alone
+        // handed a copy unit the source's after region as though it belonged to the copy's change.
+        if (reference.side === 'before') {
+            return reference.path === (previousPath ?? path);
         }
-        return reference.path === path || (previousPath !== undefined && reference.path === previousPath);
+        if (reference.side === 'after') {
+            return reference.path === path;
+        }
+        return false;
     });
 }
 
@@ -248,7 +210,7 @@ export function planUnits(
             context = context.concat(
                 set.references.filter(
                     (reference) =>
-                        reference.side === 'after' && reference.path !== file.path && !isTestPath(reference.path)
+                        reference.side === 'after' && reference.path !== file.path && !isCollectedSpec(reference.path)
                 )
             );
         }
@@ -266,11 +228,13 @@ export function planUnits(
             continue;
         }
         const fitted = fitUnitEvidence(set, own, context, evidenceBudget);
-        if (fitted.references.length === 0) {
+        const references = [...fitted.own.references, ...fitted.context.references];
+        if (references.length === 0) {
             excluded.push({ path: file.path, reason: 'no-evidence-region-within-budget' });
             incomplete.push({ path: file.path, reason: 'no-evidence-region-within-budget' });
             continue;
         }
+        const contents = new Map<string, string>([...fitted.own.contents, ...fitted.context.contents]);
         const unitTruncated = set.truncated.filter((entry) => entry.path === file.path);
         // Only reduction-specific text belongs here: the report already carries every collector-level
         // limitation, and filtering the same array by path printed each one twice.
@@ -289,12 +253,15 @@ export function planUnits(
             file,
             rules,
             evidence: {
-                references: fitted.references,
-                contents: fitted.contents,
+                own: fitted.own.references,
+                context: fitted.context.references,
+                references,
+                contents,
                 excluded: [],
                 truncated: unitTruncated,
                 limitations: unitLimitations,
-                droppedSides: fitted.droppedSides,
+                ownDroppedSides: fitted.own.droppedSides,
+                contextDroppedSides: fitted.context.droppedSides,
             },
         });
     }
@@ -459,11 +426,17 @@ async function assessOneUnit(input: {
     readonly deadline: number;
 }): Promise<UnitAssessment> {
     const references = input.unit.evidence.references;
-    const droppedSides = input.unit.evidence.droppedSides ?? new Set<EvidenceSide>();
     const missing = new Map<SemanticRuleId, string[]>(
         input.unit.rules.map((rule) => [
             rule.id,
-            missingRequiredEvidence(rule, references, input.unit.file.kind, droppedSides),
+            missingRequiredEvidence(
+                rule,
+                input.unit.evidence.own,
+                input.unit.evidence.context,
+                input.unit.file.kind,
+                input.unit.evidence.ownDroppedSides,
+                input.unit.evidence.contextDroppedSides
+            ),
         ])
     );
     const present = new Set(references.map((reference) => reference.evidenceId));

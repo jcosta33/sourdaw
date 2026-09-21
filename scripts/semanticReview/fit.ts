@@ -45,10 +45,11 @@ function regionCost(reference: EvidenceReference, content: string): number {
 /**
  * Fits one unit's regions inside the per-request state budget.
  *
- * A region that does not fit is truncated to a whole-line prefix and re-hashed, so the hash always
- * describes the text actually sent; later regions are dropped once the budget is gone. Context
- * regions are offered last, so an oversized implementation costs a contract rather than the unit.
- * Whatever is lost is reported, because an omitted region is not evidence that the region is safe.
+ * A region that does not fit is dropped, counted, and its side recorded, so the questions that
+ * needed it report the evidence as not supplied rather than answering over a fragment; later regions
+ * are dropped once the budget is gone. Context regions are offered last, so an oversized
+ * implementation costs a contract rather than the unit. Whatever is lost is reported, because an
+ * omitted region is not evidence that the region is safe.
  */
 function fitRegions(
     set: SemanticEvidenceSet,
@@ -91,32 +92,53 @@ function fitRegions(
  */
 const CONTEXT_BUDGET_SHARE = 0.4;
 
+/** One fitted region set: the regions kept, their contents, and the sides dropped by the fitter. */
+export type FittedRegions = {
+    readonly references: EvidenceReference[];
+    readonly contents: Map<string, string>;
+    readonly droppedSides: ReadonlySet<EvidenceSide>;
+};
+
+/** One unit's fitted evidence, with the own regions and the context regions kept distinct. */
+export type FittedUnitEvidence = {
+    readonly own: FittedRegions;
+    readonly context: FittedRegions;
+    readonly dropped: number;
+};
+
 /**
  * Fits one unit's regions inside the per-request state budget.
  *
- * A region that does not fit is truncated to a whole-line prefix and re-hashed, so the hash always
- * describes the text actually sent; later regions are dropped once the budget is gone. Whatever is
- * lost is reported, because an omitted region is not evidence that the region is safe.
+ * A region that does not fit is dropped, counted, and its side recorded, so the questions that
+ * needed it report the evidence as not supplied rather than answering over a fragment; later regions
+ * are dropped once the budget is gone. Context regions are offered last, so an oversized
+ * implementation costs a contract rather than the unit. Whatever is lost is reported, because an
+ * omitted region is not evidence that the region is safe.
+ *
+ * The own and context fits are returned separately rather than as one union, because a dropped side
+ * means different things in each: an own-side drop unsupplies that side of the unit, while a context
+ * drop must not. The requirement predicate resolves a side against the set it belongs to.
  */
 export function fitUnitEvidence(
     set: SemanticEvidenceSet,
     own: readonly EvidenceReference[],
     context: readonly EvidenceReference[],
     maxBytes: number
-): {
-    references: EvidenceReference[];
-    contents: Map<string, string>;
-    dropped: number;
-    droppedSides: ReadonlySet<EvidenceSide>;
-} {
+): FittedUnitEvidence {
     const contextBudget = context.length === 0 ? 0 : Math.floor(maxBytes * CONTEXT_BUDGET_SHARE);
     const ownFitted = fitRegions(set, own, maxBytes - contextBudget);
     const contextFitted = fitRegions(set, context, maxBytes - ownFitted.used);
-    const contents = new Map<string, string>([...ownFitted.contents, ...contextFitted.contents]);
     return {
-        references: [...ownFitted.references, ...contextFitted.references],
-        contents,
+        own: {
+            references: ownFitted.references,
+            contents: ownFitted.contents,
+            droppedSides: ownFitted.droppedSides,
+        },
+        context: {
+            references: contextFitted.references,
+            contents: contextFitted.contents,
+            droppedSides: contextFitted.droppedSides,
+        },
         dropped: ownFitted.dropped + contextFitted.dropped,
-        droppedSides: new Set<EvidenceSide>([...ownFitted.droppedSides, ...contextFitted.droppedSides]),
     };
 }

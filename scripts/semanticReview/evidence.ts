@@ -19,7 +19,7 @@ import {
     type EvidenceSide,
     type SemanticScopeExclusion,
 } from './contracts.ts';
-import { isTestPath } from './rules.ts';
+import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 
 export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
@@ -83,12 +83,6 @@ export type SemanticEvidenceSet = {
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
-    /**
-     * Sides that lost at least one region to the request-budget fitter. A side delivered in part does
-     * not answer for the whole side, so `requiredEvidencePresent` reads one of these as not supplied.
-     * Collection alone never sets it; the planner stamps it from the fitter's result.
-     */
-    readonly droppedSides?: ReadonlySet<EvidenceSide>;
 };
 
 /**
@@ -131,6 +125,20 @@ function baseName(path: string): string {
     return parts[parts.length - 1] ?? path;
 }
 
+/** The rule ids a path admits, sorted so two sets can be compared for equality. */
+function ruleIdsFor(path: string): string[] {
+    return applicableRules([path])
+        .map((rule) => rule.id)
+        .sort(compareLexicographic);
+}
+
+/** Whether two paths admit different rule sets, so a rename between them still owes an assessment. */
+function ruleSetsDiffer(left: string, right: string): boolean {
+    const leftIds = ruleIdsFor(left);
+    const rightIds = ruleIdsFor(right);
+    return leftIds.length !== rightIds.length || leftIds.some((id, index) => id !== rightIds[index]);
+}
+
 /**
  * Why a changed path contributes no evidence. Each reason is recorded in the scope manifest, so an
  * excluded path stays visible rather than vanishing from the report.
@@ -149,12 +157,16 @@ export function exclusionReason(file: SemanticChangedFile): string | undefined {
         return 'dependency-lockfile';
     }
     if (file.added === 0 && file.deleted === 0) {
-        // A pure rename has a zero-line diff, but a rename whose test classification changed is a
-        // semantic change: the file stopped or started being collected as a test. Calling that
-        // `no-text-change` excluded the path, and the skipped branch then read the change as delivered
-        // advice over the very collection the rename removed.
-        if (file.previousPath !== undefined && isTestPath(file.previousPath) !== isTestPath(file.path)) {
-            return undefined;
+        // A pure rename has a zero-line diff, but a rename can still be a semantic change: it can move
+        // a file out of a rule-covered surface, or stop a runner collecting it as a test. Calling every
+        // such rename `no-text-change` excluded the path, and the skipped branch then read the change as
+        // delivered advice over the very movement the rename performed. A rename that changes neither
+        // the applicable rule set nor collection owes nothing.
+        if (file.previousPath !== undefined) {
+            const collectionChanged = isCollectedSpec(file.previousPath) !== isCollectedSpec(file.path);
+            if (collectionChanged || ruleSetsDiffer(file.previousPath, file.path)) {
+                return undefined;
+            }
         }
         return 'no-text-change';
     }
@@ -215,15 +227,33 @@ export function compareByPath(left: { readonly path: string }, right: { readonly
     return compareLexicographic(left.path, right.path);
 }
 
-function makeReference(request: RegionRequest, text: string, ordinal: number): EvidenceReference {
+/** The resolved bounds of one region, matching the line accounting every region uses. */
+function regionBounds(request: RegionRequest, text: string): LineRange {
     const lines = splitLines(text);
+    return {
+        startLine: request.range?.startLine ?? 1,
+        endLine: request.range?.endLine ?? Math.max(1, lines.length),
+    };
+}
+
+/**
+ * The identity a region has. A region exists once per revision, path, side, and range; the content is
+ * a function of exactly those four, so the bounds are enough to recognise a duplicate.
+ */
+function regionIdentity(request: RegionRequest, text: string): string {
+    const bounds = regionBounds(request, text);
+    return `${request.revisionSha}:${request.path}:${request.side}:${bounds.startLine}-${bounds.endLine}`;
+}
+
+function makeReference(request: RegionRequest, text: string, ordinal: number): EvidenceReference {
+    const bounds = regionBounds(request, text);
     return {
         evidenceId: `${evidenceSidePrefix(request.side)}${String(ordinal)}`,
         revisionSha: request.revisionSha,
         path: request.path,
         side: request.side,
-        startLine: request.range?.startLine ?? 1,
-        endLine: request.range?.endLine ?? Math.max(1, lines.length),
+        startLine: bounds.startLine,
+        endLine: bounds.endLine,
         contentHash: semanticTextDigest(text),
     };
 }
@@ -268,10 +298,18 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
     const excludedPaths = new Set<string>();
     const truncated: SemanticScopeExclusion[] = [];
     const limitations: string[] = [];
+    const admitted = new Set<string>();
     let totalBytes = 0;
     let ordinal = 1;
 
     const admit = (request: RegionRequest, raw: string, label: string): void => {
+        // A region exists once per revision, path, side, and range. A copy whose source is itself
+        // changed in the same diff reads that source's before side a second time; admitting it twice
+        // would charge one region's bytes against the total budget in both units.
+        const identity = regionIdentity(request, raw);
+        if (admitted.has(identity)) {
+            return;
+        }
         // Path classification runs before the read; this runs before admission, on the whole region
         // rather than the prefix, because a credential later in the file is still a credential. An
         // ordinary-looking filename is the case path patterns cannot see.
@@ -306,6 +344,7 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
             return;
         }
         totalBytes += bytes;
+        admitted.add(identity);
         const reference = makeReference(request, text, ordinal);
         references.push(reference);
         contents.set(reference.evidenceId, text);
