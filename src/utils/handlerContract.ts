@@ -1370,7 +1370,20 @@ export type AppAction =
            *  ripple-shifted neighbors. Emitted only by the `drawClip` handler's
            *  `describe()` — not invoked directly. */
           type: 'discardDrawnClip';
-          payload: { clipId: string; trackId: string; ripplePlan: ClipRippleInsertPlanSnapshot | null };
+          payload: {
+              clipId: string;
+              trackId: string;
+              ripplePlan: ClipRippleInsertPlanSnapshot | null;
+              /**
+               * Shared holder for the take lanes this discard retires, filled in
+               * place by its `execute()` before `removeClip` runs. The paired
+               * `restoreDrawnClip` redo carries the same array, so the redo can put
+               * back a take that landed on the drawn clip after the draw. Optional
+               * so entries persisted before the field existed still decode; absent
+               * means the discard records nothing and the redo restores nothing.
+               */
+              retiredTakeLanes?: RetiredTakeLaneSnapshot[];
+          };
       }
     | {
           /** Redo of `drawClip`. Re-creates the drawn clip and re-applies the
@@ -1387,6 +1400,8 @@ export type AppAction =
               name: string;
               type: 'audio' | 'midi';
               ripplePlan: ClipRippleInsertPlanSnapshot | null;
+              /** The same shared holder `discardDrawnClip` fills; see there. */
+              retiredTakeLanes?: RetiredTakeLaneSnapshot[];
           };
       }
     | {

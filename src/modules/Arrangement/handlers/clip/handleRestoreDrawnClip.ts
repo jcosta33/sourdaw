@@ -2,6 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type ClipRippleInsertPlanSnapshot } from '#/utils/handlerContract';
 
 import { addClip } from '../../useCases/clip/addClip';
+import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -35,6 +36,9 @@ export const handleRestoreDrawnClip = createHandler<'restoreDrawnClip'>({
                 plan: { shiftedClips: plan.shiftedClips.map((shift) => ({ ...shift })) },
             });
         }
+        // The discard captured what removing this clip id retired; the redo
+        // re-created the same id, so put those takes back.
+        restoreTakesForClip(action.payload.retiredTakeLanes ?? []);
         return toHandlerExecutionResult(true);
     },
     describe: () => ({ label: 'Restore drawn clip' }),

@@ -300,4 +300,18 @@ describe('restoreTakesForClip', () => {
         expect(lanes).toHaveLength(1);
         expect(lanes?.[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
     });
+
+    it('re-adds nothing when the capture carries no retired take ids', () => {
+        const capturedTake = createTake('c1', 'Captured', 0, 4);
+        const capturedLane = laneWithTakes('t1', [capturedTake]);
+        // The live lane is the track's, but the captured take is not in it, and the
+        // capture records no retired ids (an entry persisted before the field existed).
+        const liveLane = laneWithTakes('t1', []);
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane }]);
+
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes).toEqual([]);
+    });
 });

@@ -169,4 +169,41 @@ describe('removeClip take retirement (ripple route)', () => {
             projectedTake.id,
         ]);
     });
+
+    it('keeps a comp region authored after the removal when it overlaps a restored region', async () => {
+        const retiredTake = createTake('clip-1', 'Retired', 0, 4);
+        const survivorTake = createTake('clip-2', 'Survivor', 0, 8);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await removeClipThroughHandler('clip-1');
+
+        // After the removal, a comp region is authored for the surviving take over a
+        // span that overlaps the retired one the undo is about to put back.
+        const liveRegion = { startBeat: 2, endBeat: 6, takeId: survivorTake.id };
+        const afterRemoval = takeLaneStore.value;
+        if (!afterRemoval) {
+            throw new Error('expected the take-lane store to hold the post-removal lane');
+        }
+        takeLaneStore.set({
+            lanes: afterRemoval.lanes.map((candidate) =>
+                candidate.id === lane.id ? { ...candidate, activeCompRegions: [liveRegion] } : candidate
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        flushAutomergeStorageWrites();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([retiredTake.id, survivorTake.id]);
+        // Live wins: the restored region overlapped one authored after the removal,
+        // so the later one is the only one left and the store did not have to drop it.
+        expect(restoredLane?.activeCompRegions).toEqual([liveRegion]);
+    });
 });

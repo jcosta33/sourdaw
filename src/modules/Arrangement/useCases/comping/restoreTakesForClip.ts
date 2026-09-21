@@ -7,6 +7,13 @@ function regionKey(region: CompRegion): string {
     return `${region.startBeat}:${region.endBeat}:${region.takeId}`;
 }
 
+/** Touching regions (`left.endBeat === right.startBeat`) do not overlap, matching
+ *  the store's own retention, which keeps a region whose start is at the
+ *  previous region's end. */
+function regionsOverlap(left: CompRegion, right: CompRegion): boolean {
+    return left.startBeat < right.endBeat && right.startBeat < left.endBeat;
+}
+
 /**
  * The captured pre-removal lane reconciled onto the live one, or null when live
  * already holds everything the capture would re-add.
@@ -15,16 +22,20 @@ function regionKey(region: CompRegion): string {
  * (`retiredTakeIds`) that live no longer holds, and a comp region naming such a
  * take. Everything live stays. That is what makes the undo safe against material
  * that changed after the capture: the store is CRDT-backed, so a collaborator's
- * write — a take-add or a take-deletion — can land on this lane with no local
- * undo entry, and an undo that swapped the whole lane for the capture would undo
- * that write as well. A captured take missing from live for a reason this removal
- * never recorded therefore stays absent rather than being resurrected.
+ * write — a take-add, a take-deletion or a comp region — can land on this lane
+ * with no local undo entry, and an undo that swapped the whole lane for the
+ * capture would undo that write as well. A captured take missing from live for a
+ * reason this removal never recorded therefore stays absent rather than being
+ * resurrected.
  *
  * A captured take the live lane still holds is taken from live, so an edit made to
  * it after the capture survives. Re-added regions are restricted to those naming a
- * re-added take, so a region removed later is not resurrected either. Order follows
- * the capture for the takes it knows and appends the live-only ones; regions are
- * ordered by beat, as the store's own shape requires.
+ * re-added take, so a region removed later is not resurrected either; and a
+ * re-added region that would overlap a live region is dropped, because the lane
+ * store keeps only non-overlapping regions and would otherwise discard whichever
+ * of the two it reaches second — the comp authored after the removal. Order
+ * follows the capture for the takes it knows and appends the live-only ones;
+ * regions are ordered by beat, as the store's own shape requires.
  */
 function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: readonly string[]): TakeLane | null {
     const retiredTakeIdSet = new Set(retiredTakeIds);
@@ -52,7 +63,10 @@ function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: reado
 
     const liveRegionKeys = new Set(live.activeCompRegions.map(regionKey));
     const restoredRegions = captured.activeCompRegions.filter(
-        (region) => reAddedTakeIds.has(region.takeId) && !liveRegionKeys.has(regionKey(region))
+        (region) =>
+            reAddedTakeIds.has(region.takeId) &&
+            !liveRegionKeys.has(regionKey(region)) &&
+            !live.activeCompRegions.some((liveRegion) => regionsOverlap(liveRegion, region))
     );
 
     if (reAddedTakeIds.size === 0 && restoredRegions.length === 0) {
