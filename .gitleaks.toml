@@ -49,8 +49,10 @@ regexes = [
   # Delivery-lock owner token fixture in `scripts/recoverDeliveryLock.ts` and
   # `scripts/__tests__/recoverDeliveryLock3437.spec.ts`. `generic-api-key` matched
   # only because the assignment is named `token`. It was never an issued credential.
-  # Audited 2026-09-03; Nightly `--all` still sees commit af09038c855e655b01dde6d723f185f4c13937d4
-  # on PR #3437 / `agent/recover-3437-lock`.
+  # Audited 2026-09-03; re-audited 2026-09-21: the fixture literal on `main` is what
+  # Nightly `--all` sees. Commit af09038c855e655b01dde6d723f185f4c13937d4 no longer
+  # rides any remote ref — PR #3437 squash-merged and `agent/recover-3437-lock` was
+  # pruned from the remote; it survives only as a local branch, invisible to CI scans.
   '''f515a71d-c25a-4714-b725-ef6e9b141005''',
 
   # Delivery-lock owner token of the second retained PR #3437 incident: a crashed
