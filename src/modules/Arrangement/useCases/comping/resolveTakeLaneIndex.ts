@@ -12,8 +12,8 @@ import { type TakeLane } from '../../models/TakeLane';
  * route's own defect rather than something this resolution can repair. Undo and redo
  * replay against the live store, so both directions resolve the lane the same way
  * rather than assume the identity they captured still stands: the undo merges into the
- * lane this finds, and the paired redo removes that same lane, which the captured id
- * alone no longer names.
+ * lane this finds, and the paired redo retires the insertion from that same lane, which
+ * the captured id alone no longer names.
  */
 export function resolveTakeLaneIndex(lanes: readonly TakeLane[], lane: TakeLane): number {
     return lanes.findIndex((existing) => existing.id === lane.id || existing.trackId === lane.trackId);

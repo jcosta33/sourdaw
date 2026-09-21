@@ -23,8 +23,8 @@ import { takesWithLiveClips } from './takesWithLiveClips';
  * `restoreTakesForClip` uses, so the two cannot drift about what a replayed lane may
  * re-add. Declining instead would drop the takes and regions this lane carries, which is
  * the retirement this work exists to undo. The lane this resolves is also the lane the
- * paired redo has to remove, which is why both directions go through
- * `resolveTakeLaneIndex` rather than the captured id.
+ * paired redo retires the insertion from (`retireLaneInsertion`), which is why both
+ * directions go through `resolveTakeLaneIndex` rather than the captured id.
  *
  * A lane whose own track is gone is not placed at all: it has no host, and
  * re-inserting it strands the lane and everything it carries — the orphan this

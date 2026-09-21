@@ -169,8 +169,9 @@ describe('take-lane history and retirement', () => {
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 
-    it('re-retires the lane a merge landed in when the flatten is redone', async () => {
+    it('retires only the captured take when the flatten is redone over a projected lane', async () => {
         addClip({ id: 'clip-taken', trackId: 'track-1', startBeat: 4, endBeat: 8, name: 'Take', type: 'audio' });
+        addClip({ id: 'clip-other', trackId: 'track-1', startBeat: 8, endBeat: 12, name: 'Other', type: 'audio' });
         const take = createTake('clip-taken', 'Take', 4, 8);
         const capturedLane = { ...createTakeLane('track-1'), takes: [take] };
         takeLaneStore.set({ lanes: [capturedLane] });
@@ -178,26 +179,82 @@ describe('take-lane history and retirement', () => {
         expect(flattenComp('track-1')).toBe(true);
         expect(takeLaneStore.value?.lanes).toEqual([]);
 
-        // A projection gives the track a lane of its own while the capture is away.
+        // A projection gives the track a lane of its own while the capture is away: a take
+        // for another clip and the comp region naming it. Neither of those is anything this
+        // flatten ever retired.
+        const projectedTake = createTake('clip-other', 'Projected take', 8, 12);
+        const projectedRegion = { startBeat: 8, endBeat: 12, takeId: projectedTake.id };
         const projectedLane = {
             ...createTakeLane('track-1'),
-            takes: [createTake('clip-taken', 'Projected take', 4, 8)],
+            takes: [projectedTake],
+            activeCompRegions: [projectedRegion],
         };
         takeLaneStore.set({ lanes: [projectedLane] });
         flushAutomergeStorageWrites();
 
         await undo();
         expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([projectedLane.id]);
-        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toContain(take.id);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toEqual([
+            take.id,
+            projectedTake.id,
+        ]);
 
-        // The flattened state is the track holding no lane at all, so the redo has to
-        // remove the lane the undo merged into — not the id the capture remembers.
+        await redo();
+
+        // The captured take is retired again — the lane the undo merged into is not the id
+        // the capture remembers — and the projection's take and region survive it: the
+        // flatten retired the captured lane, not the state a projection owns.
+        const redoneLane = takeLaneStore.value?.lanes[0];
+        expect(redoneLane?.takes.map((laneTake) => laneTake.id)).toEqual([projectedTake.id]);
+        expect(redoneLane?.activeCompRegions).toEqual([projectedRegion]);
+
+        // The pair keeps working over the narrowed lane.
+        await undo();
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toEqual([
+            take.id,
+            projectedTake.id,
+        ]);
+        await redo();
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toEqual([projectedTake.id]);
+    });
+
+    it('removes the lane when the insertion was the whole lane', async () => {
+        addClip({ id: 'clip-taken', trackId: 'track-1', startBeat: 4, endBeat: 8, name: 'Take', type: 'audio' });
+        const take = createTake('clip-taken', 'Take', 4, 8);
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane('track-1'), takes: [take], activeCompRegions: [] }],
+        });
+        flushAutomergeStorageWrites();
+        expect(flattenComp('track-1')).toBe(true);
+
+        await undo();
+        expect(takeLaneStore.value?.lanes).toHaveLength(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toEqual([take.id]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([]);
+
+        // Nothing but the capture lives in this lane, so re-applying the flatten leaves no
+        // lane at all — the state the flatten itself produced.
         await redo();
         expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
 
-        // And the pair keeps working: the next undo puts a lane back, the redo retires it.
+    it('removes the projected lane the insertion emptied', async () => {
+        addClip({ id: 'clip-taken', trackId: 'track-1', startBeat: 4, endBeat: 8, name: 'Take', type: 'audio' });
+        const take = createTake('clip-taken', 'Take', 4, 8);
+        takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes: [take] }] });
+        flushAutomergeStorageWrites();
+        expect(flattenComp('track-1')).toBe(true);
+
+        // A projection gives the track an empty provisional lane of its own — the shape a
+        // recorder writes before it has a take — so the capture is all that lane holds.
+        const projectedLane = createTakeLane('track-1');
+        takeLaneStore.set({ lanes: [projectedLane] });
+        flushAutomergeStorageWrites();
+
         await undo();
-        expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([capturedLane.id]);
+        expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([projectedLane.id]);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toEqual([take.id]);
+
         await redo();
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });

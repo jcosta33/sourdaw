@@ -6,7 +6,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { insertTakeLane } from './insertTakeLane';
 import { laneWithLiveTakes } from './laneWithLiveTakes';
 import { removeTakeLane } from './removeTakeLane';
-import { resolveTakeLaneIndex } from './resolveTakeLaneIndex';
+import { retireLaneInsertion } from './retireLaneInsertion';
 
 type TakeLaneFacetState =
     | { readonly kind: 'takes'; readonly value: readonly Take[] }
@@ -56,10 +56,13 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
  * lane's other facets — survive undo and redo instead of being erased by a
  * whole-store snapshot replay.
  *
- * A removed lane's redo removes the lane the undo merged into: the undo puts the
- * captured lane back through `insertTakeLane`, which merges it into whatever lane the
- * track owns, and a projection's lane no longer matches the captured id. Removing by
- * id alone there leaves the redo inert over a lane nobody names.
+ * A removed lane's redo retires the insertion the undo made, wherever it landed: the
+ * undo puts the captured lane back through `insertTakeLane`, which merges it into
+ * whatever lane the track owns, and a projection's lane no longer matches the captured
+ * id. `retireLaneInsertion` takes back exactly the captured takes and the regions
+ * naming them, leaving that lane's own state; removing the lane by id alone would be
+ * inert, and removing whatever lane the track owns would destroy state this flatten
+ * never retired.
  */
 export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void {
     const undo = () => {
@@ -82,11 +85,7 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             insertTakeLane(laneWithLiveTakes(edit.lane), edit.laneIndex);
             return;
         }
-        const lanes = takeLaneStore.value?.lanes ?? [];
-        const landedIndex = resolveTakeLaneIndex(lanes, edit.lane);
-        if (landedIndex !== -1) {
-            removeTakeLane(lanes[landedIndex]!.id);
-        }
+        retireLaneInsertion(edit.lane);
     };
     pushUndoEntry(edit.label, undo, redo);
 }
