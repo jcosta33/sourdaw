@@ -1,0 +1,30 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipCreationTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 276-280,289-290
+src/modules/Arrangement/handlers/clip/__tests__/cutClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 9,28,195,220,371-554
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 777-785,800-805
+src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts
+  h_beb54bf43b47b7 37
+src/modules/AudioRendering/useCases/__tests__/renderToClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 117-154
+src/modules/AudioRendering/useCases/renderToClip.ts
+  h_beb54bf43b47b7 10,78,87-92,94
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForward.spec.ts
+  h_beb54bf43b47b7 57-61
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForwardTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 108-139
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateSelectedClipsForward.ts
+  h_beb54bf43b47b7 1,4,7-43,61,112,123-124,126-133,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5ae522f9cc9e8ae2bc898b7f3744dea6be3d25c9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
