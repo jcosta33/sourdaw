@@ -26,6 +26,7 @@ import {
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { removeClip } from '../../../useCases/clip/removeClip';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
@@ -219,5 +220,24 @@ describe('clip-creation take restore', () => {
 
         expect(clipIds()).toEqual(['clip-source', 'clip-added']);
         expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('does not re-attach the captured lane when the redo re-creates nothing', async () => {
+        await createClip({ type: 'duplicateClip', payload: { clipId: 'clip-source', targetClipId: 'clip-copy' } });
+        projectTakeOntoClip('clip-copy');
+
+        await undo();
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        // The source leaves outside the history — a projection, not an edit — so the
+        // redo's own no-op guard refuses it and the copy is never re-created. The
+        // capture must not put its take back under an identity nothing carries.
+        removeClip('clip-source');
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        expect(clipIds()).not.toContain('clip-copy');
+        expect(takeIdsInLiveLanes()).toEqual([]);
     });
 });
