@@ -390,7 +390,15 @@ function collectFindingEvidence(input: {
             truncated.push({ path: reference.path, reason: 'region-truncated' });
         }
     }
-    return { references, contents, attribution: new Map(), excluded: [], truncated, limitations };
+    return {
+        references,
+        contents,
+        attribution: new Map(),
+        excluded: [],
+        truncated,
+        limitations,
+        withheldSides: { own: new Map(), context: new Set() },
+    };
 }
 
 export type RunVerifyInput = {

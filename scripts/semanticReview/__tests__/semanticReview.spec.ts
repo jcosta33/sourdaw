@@ -1,6 +1,7 @@
 import { AuthenticationError, RateLimitError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
+import { e2eSpecPattern, specFilePattern } from '../../vitestCollectionPatterns.ts';
 import {
     assertAdvisoryWording,
     buildRevisionContext,
@@ -2715,6 +2716,329 @@ describe('execution state and required evidence resolution', () => {
         expect(missingRequiredEvidence(rule, [beforeRegion, testRegion], [implementationRegion], 'modified')).toEqual(
             []
         );
+    });
+});
+
+describe('contract documents satisfy neither a call site nor related source', () => {
+    it('reports a scheduling call-site missing despite contract context (#4555)', () => {
+        // The only context regions the planner mints are contract documents, which say nothing about
+        // where audio events are scheduled. The token must stay missing until a call-site region is
+        // collected, never be satisfied by AGENTS.md.
+        const ownAfter = reference({ evidenceId: 'a1', path: 'crates/daw-dsp/src/a.rs', side: 'after' });
+        const contract = reference({ evidenceId: 'c1', path: 'AGENTS.md', side: 'context' });
+        expect(
+            missingRequiredEvidence(semanticRule('timing_semantics_changed'), [ownAfter], [contract], 'modified')
+        ).toContain('scheduling call-site');
+    });
+
+    it('reports related existing source missing despite contract context (#4555)', () => {
+        // A contract document is not the existing source a duplication question compares against, so a
+        // decisive duplication verdict with only AGENTS.md in the request is exactly the error this
+        // token must refuse.
+        const ownAfter = reference({ evidenceId: 'a1', path: 'src/modules/Project/undo.ts', side: 'after' });
+        const contract = reference({ evidenceId: 'c1', path: 'AGENTS.md', side: 'context' });
+        expect(
+            missingRequiredEvidence(semanticRule('duplicates_existing_mechanism'), [ownAfter], [contract], 'modified')
+        ).toContain('related existing source');
+    });
+});
+
+describe('collector withholding reaches the side accounting', () => {
+    it('reports a side missing when one of its hunks exceeded the per-region budget', () => {
+        // The collector withheld one of the after hunks at admission, not the fitter. The surviving
+        // after region alone satisfied the side before, so the rule returned a decisive verdict over a
+        // side the model saw only in part.
+        const before = 'it("before", () => {});\n';
+        const after = `it("kept", () => {});\n${'const large_line = 1;\n'.repeat(200)}`;
+        const files = [changedFile('src/modules/Project/__tests__/two-hunks.spec.ts')];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/__tests__/two-hunks.spec.ts`]: before,
+                    [`${HEAD}:src/modules/Project/__tests__/two-hunks.spec.ts`]: after,
+                },
+                hunks: new Map([
+                    [
+                        'src/modules/Project/__tests__/two-hunks.spec.ts',
+                        {
+                            path: 'src/modules/Project/__tests__/two-hunks.spec.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 201 },
+                            ],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 400, maxTotalBytes: 1_000_000 },
+        });
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units[0];
+        expect(unit).toBeDefined();
+        // One after hunk survives, so a predicate that only checks `some` would call the side present.
+        expect(unit?.evidence.references.some((ref) => ref.side === 'after')).toBe(true);
+        expect(unit?.evidence.ownDroppedSides.has('after')).toBe(true);
+
+        const missing = missingRequiredEvidence(
+            semanticRule('assertion_deleted'),
+            unit?.evidence.own ?? [],
+            unit?.evidence.context ?? [],
+            'modified',
+            unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+            unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
+        );
+        expect(missing).toContain('after test source');
+        expect(
+            interpretScanOutcome({
+                answer: { type: 'noul', noul: 0.05 },
+                rule: semanticRule('assertion_deleted'),
+                unitId: 'u',
+                path: 'src/modules/Project/__tests__/two-hunks.spec.ts',
+                missingEvidence: missing,
+            }).outcome
+        ).toBe('insufficient_context');
+    });
+
+    it('reports a side missing when a hunk was omitted for the total budget', () => {
+        const beforeLine = 'it("before", () => {});';
+        const firstLine = 'it("first", () => {});';
+        const secondLine = 'it("second", () => {});';
+        const files = [changedFile('src/modules/Project/__tests__/two-hunks.spec.ts')];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/__tests__/two-hunks.spec.ts`]: `${beforeLine}\n`,
+                    [`${HEAD}:src/modules/Project/__tests__/two-hunks.spec.ts`]: `${firstLine}\n${secondLine}\n`,
+                },
+                hunks: new Map([
+                    [
+                        'src/modules/Project/__tests__/two-hunks.spec.ts',
+                        {
+                            path: 'src/modules/Project/__tests__/two-hunks.spec.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 2 },
+                            ],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            // The total budget admits the before hunk and the first after hunk but not the second.
+            limits: {
+                maxRegionBytes: 1_000,
+                maxTotalBytes: Buffer.byteLength(beforeLine, 'utf8') + Buffer.byteLength(firstLine, 'utf8'),
+            },
+        });
+        expect(set.truncated.some((entry) => entry.reason.startsWith('total-evidence-budget-exhausted'))).toBe(true);
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units[0];
+        expect(unit?.evidence.ownDroppedSides.has('after')).toBe(true);
+        expect(
+            missingRequiredEvidence(
+                semanticRule('assertion_deleted'),
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
+                'modified',
+                unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+                unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
+            )
+        ).toContain('after test source');
+    });
+
+    it('reports a contract side missing when one contract region was withheld for a credential', () => {
+        const aws = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const files = [changedFile('src/modules/Project/undo.ts')];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/undo.ts`]: 'export const a = 1;\n',
+                    [`${HEAD}:src/modules/Project/undo.ts`]: 'export const a = 2;\n',
+                    [`${MERGE_BASE}:AGENTS.md`]: '# Rules\n',
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: `token: ${aws}\n`,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+            contractPaths: ['AGENTS.md', '.agents/decisions/README.md'],
+        });
+        // One contract region survived and one was withheld, so the context side was seen only in part.
+        expect(set.references.filter((ref) => ref.side === 'context')).toHaveLength(1);
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units[0];
+        expect(unit?.evidence.contextDroppedSides.has('context')).toBe(true);
+        expect(
+            missingRequiredEvidence(
+                semanticRule('stated_invariant_contradicted'),
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
+                'modified',
+                unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+                unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
+            )
+        ).toContain('decision or documented invariant');
+    });
+
+    it('still reports a side supplied when every region was admitted', () => {
+        const files = [changedFile('src/modules/Project/__tests__/clean.spec.ts')];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/__tests__/clean.spec.ts`]: 'it("before", () => {});\n',
+                    [`${HEAD}:src/modules/Project/__tests__/clean.spec.ts`]: 'it("after", () => {});\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units[0];
+        expect(unit?.evidence.ownDroppedSides.size).toBe(0);
+        expect(
+            missingRequiredEvidence(
+                semanticRule('assertion_deleted'),
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
+                'modified'
+            )
+        ).toEqual([]);
+    });
+});
+
+describe('the outcome line never claims completion for a partial run', () => {
+    it('words a partial execution with decisive answers as incomplete', async () => {
+        const result = await runScan(
+            scanPorts(
+                constantProvider(0.05),
+                fakeSource({
+                    files: [changedFile('src/modules/AudioEngine/live.ts')],
+                    blobs: {
+                        [`${MERGE_BASE}:src/modules/AudioEngine/live.ts`]: 'const a = 1;\n',
+                        [`${HEAD}:src/modules/AudioEngine/live.ts`]: 'const a = 2;\n',
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        const partial = {
+            ...result.report,
+            execution: 'partial' as const,
+            signals: result.report.signals.map((signal) => ({
+                ...signal,
+                outcome: 'no_signal' as const,
+                disposition: 'no_additional_recommendation' as const,
+                probability: 0.02,
+                missingEvidence: [],
+            })),
+        };
+        const summary = renderSummary(partial);
+        expect(summary).not.toContain('Completed: no additional semantic signals');
+        expect(summary).toContain('did not supply all its evidence');
+    });
+});
+
+describe('vendor prefix coverage', () => {
+    it('withholds every AWS prefix the pinned scanner recognises', () => {
+        const body = secretFixture('IOSFODNN7', 'EXAMPLE');
+        const prefixes = [
+            secretFixture('AK', 'IA'),
+            secretFixture('AS', 'IA'),
+            secretFixture('AB', 'IA'),
+            secretFixture('AC', 'CA'),
+        ];
+        for (const prefix of prefixes) {
+            expect(sensitiveContentReason(secretFixture(prefix, body))).toBe('an AWS access key id');
+        }
+        // `A3T` followed by one character from `[A-Z0-9]`, then the sixteen-character body.
+        expect(sensitiveContentReason(secretFixture('A3TA', body))).toBe('an AWS access key id');
+    });
+
+    it('withholds a temporary ASIA key id assigned to a secret-named variable', () => {
+        const asia = secretFixture('ASIA', 'IOSFODNN7', 'EXAMPLE');
+        const assigned = secretFixture('AWS_ACCESS_KEY_ID=', asia);
+        expect(sensitiveContentReason(assigned)).toBe('an AWS access key id');
+    });
+
+    it('withholds every Stripe key kind the pinned scanner recognises', () => {
+        const body = secretFixture('a1b2c3d4e5f6g7h8', 'i9j0k1l2');
+        for (const prefix of [
+            secretFixture('sk_test_'),
+            secretFixture('sk_live_'),
+            secretFixture('sk_prod_'),
+            secretFixture('rk_test_'),
+            secretFixture('rk_live_'),
+            secretFixture('rk_prod_'),
+        ]) {
+            expect(sensitiveContentReason(secretFixture(prefix, body))).toBe('a Stripe secret key');
+        }
+    });
+
+    it('withholds a Stripe test key and a restricted key', () => {
+        const test = secretFixture('sk_test_', 'a1b2c3d4e5f6g7h8', 'i9j0k1l2');
+        const restricted = secretFixture('rk_live_', 'a1b2c3d4e5f6g7h8', 'i9j0k1l2');
+        expect(sensitiveContentReason(test)).toBe('a Stripe secret key');
+        expect(sensitiveContentReason(restricted)).toBe('a Stripe secret key');
+    });
+});
+
+describe('armored envelopes with arbitrary header lines', () => {
+    it('withholds an envelope carrying a Version line between header and body', () => {
+        const rsaHeader = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
+        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const version = secretFixture('Version: ', 'OpenSSL 1.1.1');
+        const versioned = secretFixture(rsaHeader, '\n', version, '\n', body);
+        expect(sensitiveContentReason(versioned)).toBe('an armored private key');
+    });
+});
+
+describe('the collection predicate matches the runners, not a restated rule', () => {
+    it('collects exactly the paths some runner executes', () => {
+        expect(isCollectedSpec('src/modules/Project/__tests__/undo.spec.ts')).toBe(true);
+        expect(isCollectedSpec('scripts/__tests__/semanticReview.spec.ts')).toBe(true);
+        expect(isCollectedSpec('tests/e2e/audioOwnership.native.spec.ts')).toBe(true);
+        expect(isCollectedSpec('server/__tests__/health.spec.ts')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.mts')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.cts')).toBe(true);
+        // The e2e exclusion removes the path from Vitest's root, and no other runner collects it there.
+        expect(isCollectedSpec('src/modules/Project/__tests__/undo.e2e.spec.ts')).toBe(false);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.md')).toBe(false);
+    });
+
+    it('plans a zero-line rename into the e2e exclusion instead of exempting it', () => {
+        const file = changedFile('src/modules/Project/__tests__/undo.e2e.spec.ts', {
+            kind: 'renamed',
+            previousPath: 'src/modules/Project/__tests__/undo.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+    });
+
+    it('derives collection from the shared runner definition', () => {
+        // The screen must import the collection contract rather than carry a private copy, so the
+        // Vitest exclude cannot move without both consumers being updated in the same change.
+        const e2eOutside = 'src/modules/Project/__tests__/undo.e2e.spec.ts';
+        expect(e2eSpecPattern.test(e2eOutside)).toBe(true);
+        expect(specFilePattern.test(e2eOutside)).toBe(true);
+        expect(isCollectedSpec(e2eOutside)).toBe(false);
+        const playwright = 'tests/e2e/audioOwnership.native.spec.ts';
+        expect(specFilePattern.test(playwright)).toBe(true);
+        expect(isCollectedSpec(playwright)).toBe(true);
     });
 });
 

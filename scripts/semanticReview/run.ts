@@ -141,6 +141,21 @@ function evidenceForPath(set: SemanticEvidenceSet, changedPath: string): Evidenc
 }
 
 /**
+ * The sides a unit dropped, combining the fitter's drops with the collector's withholdings. A side the
+ * collector withheld at admission — one hunk over a budget or a credential-shaped region — is the same
+ * loss as one the fitter dropped later, so it must unsupply the side exactly as a fitter drop does.
+ */
+function mergedDroppedSides(
+    fitted: ReadonlySet<EvidenceSide>,
+    withheld: ReadonlySet<EvidenceSide> | undefined
+): ReadonlySet<EvidenceSide> {
+    if (withheld === undefined || withheld.size === 0) {
+        return fitted;
+    }
+    return new Set<EvidenceSide>([...fitted, ...withheld]);
+}
+
+/**
  * Plans one unit per eligible changed file. A unit carries the rules whose applicability predicate
  * admits that path, and the context regions those rules require.
  */
@@ -256,8 +271,8 @@ export function planUnits(
                 excluded: [],
                 truncated: unitTruncated,
                 limitations: unitLimitations,
-                ownDroppedSides: fitted.own.droppedSides,
-                contextDroppedSides: fitted.context.droppedSides,
+                ownDroppedSides: mergedDroppedSides(fitted.own.droppedSides, set.withheldSides.own.get(file.path)),
+                contextDroppedSides: mergedDroppedSides(fitted.context.droppedSides, set.withheldSides.context),
             },
         });
     }

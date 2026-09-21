@@ -89,6 +89,16 @@ export type SemanticEvidenceSet = {
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
+    /**
+     * The sides the collector withheld at admission — a region over the per-region or total budget, a
+     * credential-shaped region, or a hunk beyond the file — kept apart from the fitter's drops so a
+     * side the model saw only in part still reports missing. Own regions are keyed by the changed file
+     * that minted them; context regions belong to no single changed file and are reported globally.
+     */
+    readonly withheldSides: {
+        readonly own: ReadonlyMap<string, ReadonlySet<EvidenceSide>>;
+        readonly context: ReadonlySet<EvidenceSide>;
+    };
 };
 
 /**
@@ -288,6 +298,57 @@ function regionFor(port: SemanticSourcePort, revisionSha: string, path: string):
     return port.readFile(revisionSha, path);
 }
 
+/** Records the side of a withheld region against its owning changed file, or globally for context. */
+function recordWithheldSide(
+    request: RegionRequest,
+    ownWithheldSides: Map<string, Set<EvidenceSide>>,
+    contextWithheldSides: Set<EvidenceSide>
+): void {
+    if (request.changedPath === undefined) {
+        contextWithheldSides.add(request.side);
+        return;
+    }
+    const sides = ownWithheldSides.get(request.changedPath);
+    if (sides === undefined) {
+        ownWithheldSides.set(request.changedPath, new Set([request.side]));
+    } else {
+        sides.add(request.side);
+    }
+}
+
+/**
+ * Admits one side of one file: each changed hunk as its own region, or the whole side when the hunks
+ * were not read. Per-hunk regions are what make a change assessable at all — a whole-file side
+ * exceeded the per-region budget for 17 of this change's 32 paths, and one suspicious line now costs
+ * that hunk rather than the whole file.
+ */
+function admitSide(
+    request: Omit<RegionRequest, 'range'>,
+    raw: string,
+    label: string,
+    ranges: readonly LineRange[] | undefined,
+    admit: (region: RegionRequest, text: string, regionLabel: string) => void,
+    truncated: SemanticScopeExclusion[],
+    limitations: string[],
+    ownWithheldSides: Map<string, Set<EvidenceSide>>,
+    contextWithheldSides: Set<EvidenceSide>
+): void {
+    if (ranges === undefined || ranges.length === 0) {
+        admit(request, raw, label);
+        return;
+    }
+    for (const range of ranges) {
+        const sliced = sliceLines(raw, range);
+        if (sliced === undefined) {
+            truncated.push({ path: request.path, reason: `hunk-beyond-file (${label})` });
+            limitations.push(`evidence for ${request.path} (${label}) names lines this revision does not hold`);
+            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
+            continue;
+        }
+        admit({ ...request, range: sliced.range }, sliced.text, label);
+    }
+}
+
 /**
  * Admission for one change's regions: the content screen, the two byte budgets, and the identifiers.
  *
@@ -308,6 +369,8 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
     excluded: SemanticScopeExclusion[];
     truncated: SemanticScopeExclusion[];
     limitations: string[];
+    ownWithheldSides: Map<string, Set<EvidenceSide>>;
+    contextWithheldSides: Set<EvidenceSide>;
 } {
     const references: EvidenceReference[] = [];
     const contents = new Map<string, string>();
@@ -316,6 +379,8 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
     const excludedPaths = new Set<string>();
     const truncated: SemanticScopeExclusion[] = [];
     const limitations: string[] = [];
+    const ownWithheldSides = new Map<string, Set<EvidenceSide>>();
+    const contextWithheldSides = new Set<EvidenceSide>();
     const identityToEvidenceId = new Map<string, string>();
     let totalBytes = 0;
     let ordinal = 1;
@@ -348,6 +413,7 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
             // not assessed, and a run that reported completion would have claimed otherwise.
             truncated.push({ path: request.path, reason: 'evidence-withheld' });
             limitations.push(`evidence for ${request.path} (${label}) was withheld: it contains ${unsafe}`);
+            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
             return;
         }
         if (!regionFits(raw, limits.maxRegionBytes)) {
@@ -355,21 +421,22 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
             limitations.push(
                 `evidence for ${request.path} (${label}) was not supplied: it exceeds the per-region budget`
             );
+            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
             return;
         }
-        const text = raw;
-        const bytes = Buffer.byteLength(text, 'utf8');
+        const bytes = Buffer.byteLength(raw, 'utf8');
         if (totalBytes + bytes > limits.maxTotalBytes) {
             truncated.push({ path: request.path, reason: `total-evidence-budget-exhausted (${label})` });
             limitations.push(
                 `evidence for ${request.path} (${label}) was omitted: the total evidence budget was exhausted`
             );
+            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
             return;
         }
         totalBytes += bytes;
-        const reference = makeReference(request, text, ordinal);
+        const reference = makeReference(request, raw, ordinal);
         references.push(reference);
-        contents.set(reference.evidenceId, text);
+        contents.set(reference.evidenceId, raw);
         identityToEvidenceId.set(identity, reference.evidenceId);
         if (request.changedPath !== undefined) {
             attribution.set(reference.evidenceId, new Set([request.changedPath]));
@@ -377,33 +444,29 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
         ordinal += 1;
     };
 
-    /**
-     * Admits one side of one file: each changed hunk as its own region, or the whole side when the
-     * hunks were not read. Per-hunk regions are what make a change assessable at all — a whole-file
-     * side exceeded the per-region budget for 17 of this change's 32 paths, and one suspicious line
-     * now costs that hunk rather than the whole file.
-     */
-    const admitSide = (
-        request: Omit<RegionRequest, 'range'>,
-        raw: string,
-        label: string,
-        ranges: readonly LineRange[] | undefined
-    ): void => {
-        if (ranges === undefined || ranges.length === 0) {
-            admit(request, raw, label);
-            return;
-        }
-        for (const range of ranges) {
-            const sliced = sliceLines(raw, range);
-            if (sliced === undefined) {
-                truncated.push({ path: request.path, reason: `hunk-beyond-file (${label})` });
-                limitations.push(`evidence for ${request.path} (${label}) names lines this revision does not hold`);
-                continue;
-            }
-            admit({ ...request, range: sliced.range }, sliced.text, label);
-        }
+    return {
+        admit,
+        admitSide: (request, raw, label, ranges): void =>
+            admitSide(
+                request,
+                raw,
+                label,
+                ranges,
+                admit,
+                truncated,
+                limitations,
+                ownWithheldSides,
+                contextWithheldSides
+            ),
+        references,
+        contents,
+        attribution,
+        excluded,
+        truncated,
+        limitations,
+        ownWithheldSides,
+        contextWithheldSides,
     };
-    return { admit, admitSide, references, contents, attribution, excluded, truncated, limitations };
 }
 
 /** Whether a change kind has a before side at the merge base; a copy's unchanged source is one. */
@@ -504,6 +567,10 @@ export function collectEvidence(input: {
     for (const [evidenceId, changedPaths] of admission.attribution) {
         attribution.set(evidenceId, [...changedPaths].sort(compareLexicographic));
     }
+    const ownWithheld = new Map<string, ReadonlySet<EvidenceSide>>();
+    for (const [changedPath, sides] of admission.ownWithheldSides) {
+        ownWithheld.set(changedPath, sides);
+    }
     return {
         references: admission.references,
         contents: admission.contents,
@@ -511,6 +578,10 @@ export function collectEvidence(input: {
         excluded: admission.excluded,
         truncated: admission.truncated,
         limitations: admission.limitations,
+        withheldSides: {
+            own: ownWithheld,
+            context: admission.contextWithheldSides,
+        },
     };
 }
 

@@ -68,10 +68,17 @@ const REQUIRED_EVIDENCE_RESOLVERS: Readonly<Record<string, (resolution: Evidence
     'undo contract': ({ context, contextDroppedSides }) => sidePresent(context, 'context', contextDroppedSides),
     'decision or documented invariant': ({ context, contextDroppedSides }) =>
         sidePresent(context, 'context', contextDroppedSides),
-    'scheduling call-site': ({ context, contextDroppedSides }) => sidePresent(context, 'context', contextDroppedSides),
+    // A contract document is not a call site. No collector mints a call-site region, so this token
+    // reports missing until one exists; issue #4555 owns the decision to collect call-site evidence or
+    // stop declaring it. Reporting the gap as `insufficient_context` beats scoring the question from a
+    // contract document that says nothing about where the audio events are scheduled.
+    'scheduling call-site': () => false,
     'caller or contract': ({ context, contextDroppedSides }) => sidePresent(context, 'context', contextDroppedSides),
-    'related existing source': ({ context, contextDroppedSides }) =>
-        sidePresent(context, 'context', contextDroppedSides) || sidePresent(context, 'after', contextDroppedSides),
+    // A contract document is not the existing source a duplication question compares against, and no
+    // collector mints a related-source region either; issue #4555 owns the decision to collect one or
+    // stop declaring the token. Until then the question reports `insufficient_context` rather than a
+    // decisive verdict about duplication with no source region in the request.
+    'related existing source': () => false,
 };
 
 /** The tokens the resolver answers, exported so a coverage guard can fail on an unhandled declaration. */

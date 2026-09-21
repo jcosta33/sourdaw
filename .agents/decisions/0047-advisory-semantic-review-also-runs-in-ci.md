@@ -100,6 +100,11 @@ of untrusted text can be argued with, which is why it holds no authority. And th
 defense in depth: a secret split across concatenated literals or encoded before it reaches source is
 not detected by text screening and never will be.
 
+The screen is not a mirror of the pinned scanner: it withholds the credential families it enumerates
+plus a conservative secret-named assignment rule, and because the pinned rule set lives inside the
+Gitleaks binary rather than in `.gitleaks.toml`, families nobody has enumerated stay unscreened.
+Issue #4558 owns the audit that closes that gap.
+
 ## The question set was rebuilt around one property per question
 
 The first revision asked six compound Choice questions per changed file. That shape was wrong on the

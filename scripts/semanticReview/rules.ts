@@ -17,6 +17,8 @@
  * of the set so a wording or evidence change invalidates the responses it shaped.
  */
 
+import { e2eSpecPattern, specFilePattern } from '../vitestCollectionPatterns.ts';
+
 import { semanticDigest } from './contracts.ts';
 
 /**
@@ -104,19 +106,33 @@ const GATE_PATHS = ['.github/', 'scripts/healthGate', 'scripts/semanticReview', 
 const MODULE_AND_APP_PATHS = ['src/modules/', 'src/app/'] as const;
 
 /**
- * The extensions a runner collects as a test file. Vitest's default
- * `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's `**\/*.@(spec|test).?(c|m)[jt]s?(x)` both stop
- * at code extensions, so a `.spec.md` or `.spec.json` is never collected and a `.spec.d.ts` is a
- * declaration, not a runnable spec. This one set is shared by the collection predicate and the wider
- * `__tests__/`-resident code test below, so the two cannot drift apart.
+ * The code extensions the wider `__tests__/`-resident test applicability below uses. Collection itself
+ * is decided by the shared runner pattern in `checkVitestCollectionScope.ts`, so the two can no longer
+ * drift apart; this set remains because applicability also admits an assertion-carrying code file
+ * without a runner suffix.
  */
 const CODE_EXTENSION_SET = '(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)';
 const CODE_EXTENSIONS = new RegExp(`\\.${CODE_EXTENSION_SET}$`, 'u');
-const COLLECTED_SPEC_PATTERN = new RegExp(`\\.(?:spec|test)\\.${CODE_EXTENSION_SET}$`, 'u');
 
-/** Whether a runner collects the file as a test, decided by the `.spec.`/`.test.` suffix and the runner's code extensions. */
+/**
+ * Whether some runner executes this path as a test.
+ *
+ * The suffix and code-extension test comes from the runner pattern `checkVitestCollectionScope.ts`
+ * already computes, and the `**\/*.e2e.spec.*` exclusion Vitest declares is applied from that same
+ * module rather than restated here. `tests/e2e` stays collected because Playwright runs it and
+ * `server/__tests__` because node:test runs it — neither is inside Vitest's collectable roots, so
+ * reusing that module's Vitest-only predicate would newly drop both.
+ */
 export function isCollectedSpec(path: string): boolean {
-    return COLLECTED_SPEC_PATTERN.test(path);
+    if (!specFilePattern.test(path)) {
+        return false;
+    }
+    // The exclusion removes the path from Vitest's root; outside `tests/e2e` no other runner collects
+    // it, so the file is not executed as a test anywhere.
+    if (e2eSpecPattern.test(path) && !path.startsWith('tests/e2e/')) {
+        return false;
+    }
+    return true;
 }
 
 /**

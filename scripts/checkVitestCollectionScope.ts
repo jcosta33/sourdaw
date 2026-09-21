@@ -47,6 +47,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { e2eSpecPattern, specFilePattern } from './vitestCollectionPatterns.ts';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
@@ -68,12 +70,6 @@ const serverTestDirectory = `${serverRoot}/__tests__`;
 
 /** The directory the exclusion under test is responsible for. */
 const worktreeRoot = '.agents/worktrees';
-
-/** Mirrors vitest's default `include` (`**\/*.{test,spec}.?(c|m)[jt]s?(x)`). */
-const specFilePattern = /\.(?:test|spec)\.(?:c|m)?[jt]sx?$/;
-
-/** Mirrors the `**\/*.e2e.spec.*` entry in the config's `exclude`. */
-const e2eSpecPattern = /\.e2e\.spec\./;
 
 /** Directories a walk must not descend into, matching the config's `exclude`. */
 const skippedDirectories = new Set(['node_modules', 'dist', 'coverage', 'target']);

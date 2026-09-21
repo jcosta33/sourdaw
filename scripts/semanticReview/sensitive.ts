@@ -24,6 +24,12 @@
  * are known and not covered: a secret split across concatenated literals or lines, and one encoded or
  * encrypted before it reaches source. Nothing here is a security boundary; the boundary is that this
  * tool is advisory and holds no authority.
+ *
+ * This screen is not a mirror of the pinned secret scanner. The pinned rule set lives inside the
+ * Gitleaks binary — `.gitleaks.toml` extends the default set and names no rule ids — so it cannot be
+ * mechanically derived from the repository, and the screen will keep missing families nobody has
+ * enumerated. It withholds the families enumerated below plus a conservative secret-named assignment
+ * rule, and issue #4558 owns the audit that closes the gap.
  */
 
 /**
@@ -52,7 +58,15 @@ const VENDOR_SHAPES: readonly VendorShape[] = [
     // credential here, so each carries the length that makes it one.
     { reason: 'a GitHub token', parts: ['gh', 'p_'], tail: '[A-Za-z0-9]{20,}' },
     { reason: 'a fine-grained GitHub token', parts: ['github', '_pat_'], tail: '[A-Za-z0-9_]{20,}' },
+    // The pinned scanner's `aws-access-token` rule recognises `A3T[A-Z0-9]`, `ABIA`, `ACCA`, `AKIA`,
+    // and `ASIA`, so the shape covers every prefix rather than only `AKIA`. A temporary `ASIA` key is
+    // a credential too, and it is otherwise declined by the secret-named rule because its all-caps body
+    // reads as an identifier.
     { reason: 'an AWS access key id', parts: ['A', 'K', 'IA'], tail: '[0-9A-Z]{16}' },
+    { reason: 'an AWS access key id', parts: ['A', 'S', 'IA'], tail: '[0-9A-Z]{16}' },
+    { reason: 'an AWS access key id', parts: ['A', 'B', 'IA'], tail: '[0-9A-Z]{16}' },
+    { reason: 'an AWS access key id', parts: ['A', 'C', 'CA'], tail: '[0-9A-Z]{16}' },
+    { reason: 'an AWS access key id', parts: ['A', '3', 'T', '[A-Z0-9]'], tail: '[0-9A-Z]{16}' },
     {
         reason: 'a JSON web token',
         parts: ['ey', 'J'],
@@ -62,7 +76,14 @@ const VENDOR_SHAPES: readonly VendorShape[] = [
     { reason: 'an Anthropic-style secret key', parts: ['s', 'k-', 'a', 'nt-'], tail: '[A-Za-z0-9_-]{20,}' },
     { reason: 'a Google API key', parts: ['AI', 'za'], tail: '[0-9A-Za-z_-]{35}' },
     { reason: 'a Google OAuth client secret', parts: ['GO', 'CS', 'PX-'], tail: '[A-Za-z0-9_-]{10,}' },
-    { reason: 'a Stripe live secret key', parts: ['s', 'k_', 'li', 've_'], tail: '[0-9A-Za-z]{16,}' },
+    // The pinned scanner's Stripe rule matches both `sk_` and `rk_` across `test`, `live`, and `prod`.
+    // A test or restricted key is a credential too, so the shape covers the whole family rather than
+    // only `sk_live_`.
+    {
+        reason: 'a Stripe secret key',
+        parts: ['(?:s', 'k_|r', 'k_)(?:te', 'st_|li', 've_|pr', 'od_)'],
+        tail: '[0-9A-Za-z]{10,}',
+    },
     { reason: 'a Slack token', parts: ['xo', 'x'], tail: '[baprs]-[0-9A-Za-z-]{10,}' },
     { reason: 'a Twilio account identifier paired with a secret', parts: ['A', 'C'], tail: '[0-9a-f]{32}\\b' },
     { reason: 'a SendGrid API key', parts: ['S', 'G\\.'], tail: '[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{20,}' },
@@ -130,15 +151,16 @@ const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
     // only a `key = value` assignment, so a block passes untouched and would be submitted to the
     // provider. Egress requires each shape to carry a value, so the header alone is not enough: a
     // documentation sentence that quotes the header carries no key material and must not be withheld.
-    // A traditional passphrase-encrypted block (`openssl rsa -aes256 -traditional`) puts `Proc-Type`
-    // and `DEK-Info` lines, and possibly a blank line, between the header and the body, so those
-    // envelope lines must not break the match. The body, not the closing footer, is what is required,
-    // so a block pasted without its footer is still caught — the pinned Gitleaks rule requires both,
-    // and being stricter than it buys nothing.
+    // An envelope may carry any header line between the BEGIN line and the body — `Proc-Type` and
+    // `DEK-Info` on a traditional passphrase-encrypted block, or a `Version:` or `Comment:` line —
+    // plus a blank line, and the pinned scanner's private-key rule spans them all, so none of those
+    // lines may break the match. The body, not the closing footer, is what is required, so a block
+    // pasted without its footer is still caught — the pinned Gitleaks rule requires both, and being
+    // stricter than it buys nothing.
     {
         reason: 'an armored private key',
         pattern:
-            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n(?:[ \t]*(?:(?:Proc-Type|DEK-Info):[^\r\n]*)?\r?\n)*[ \t]*[A-Za-z0-9+/=]{8,}/u,
+            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?\r?\n)*[ \t]*[A-Za-z0-9+/=]{8,}/u,
     },
     // A secret in a query parameter: `?password=…`, `&access_token=…`, `&sig=…`.
     {

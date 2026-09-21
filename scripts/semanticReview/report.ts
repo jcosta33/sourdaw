@@ -510,6 +510,7 @@ function describeOutcome(input: {
     actionableCount: number;
     totalAssessments: number;
     undecided: number;
+    execution: SemanticExecutionState;
 }): string {
     if (input.assessed === 0) {
         return 'No unit was assessed; this report carries no semantic signal.';
@@ -522,6 +523,11 @@ function describeOutcome(input: {
     }
     if (input.undecided > 0) {
         return `Assessed without a decisive answer: ${String(input.undecided)} of ${String(input.totalAssessments)} question(s) were unresolved in ${String(input.assessed)} evaluated unit(s).`;
+    }
+    if (input.execution !== 'completed') {
+        // A run whose own header reads `partial` must never print the completion sentence, even when
+        // every answer it did receive was decisive: the missing evidence is the whole point.
+        return `No additional semantic signals in ${String(input.assessed)} evaluated unit(s), but the run did not supply all its evidence.`;
     }
     return `Completed: no additional semantic signals in ${String(input.assessed)} evaluated unit(s).`;
 }
@@ -606,6 +612,7 @@ export function renderSummary(report: SemanticReport): string {
             actionableCount,
             totalAssessments,
             undecided,
+            execution: report.execution,
         })
     );
     if (actionableCount > 0) {
