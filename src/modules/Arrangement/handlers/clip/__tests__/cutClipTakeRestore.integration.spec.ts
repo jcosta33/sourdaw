@@ -239,4 +239,81 @@ describe('cutClip take retirement and restore', () => {
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
+
+    it('restores a take and region that landed on the cut clip after the undo when the redo is undone', async () => {
+        // The cut clip holds no take when it leaves, so the capture names nothing.
+        const emptyLane: TakeLane = { ...createTakeLane('track-1'), takes: [], activeCompRegions: [] };
+        takeLaneStore.set({ lanes: [emptyLane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+
+        // The take and its comp region land after the undo; only a capture taken
+        // while the redo re-retires the clip can name them.
+        const lateTake = createTake('clip-1', 'Late take', 0, 4);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...emptyLane,
+                    takes: [lateTake],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: lateTake.id }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-1']);
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.id).toBe(emptyLane.id);
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([lateTake.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: lateTake.id }]);
+    });
+
+    it('restores the recorded take and the one that landed after the undo, each once', async () => {
+        const { lane, take } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+
+        const lateTake = createTake('clip-1', 'Late take', 4, 8);
+        const restored = takeLaneStore.value?.lanes[0];
+        if (!restored) {
+            throw new Error('expected the restored take lane');
+        }
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...restored,
+                    takes: [...restored.takes, lateTake],
+                    activeCompRegions: [
+                        ...restored.activeCompRegions,
+                        { startBeat: 4, endBeat: 8, takeId: lateTake.id },
+                    ],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        // The recorded capture already named the first take; the redo's capture
+        // names both, and the merge must not list it twice.
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([take.id, lateTake.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 4, takeId: take.id },
+            { startBeat: 4, endBeat: 8, takeId: lateTake.id },
+        ]);
+    });
 });

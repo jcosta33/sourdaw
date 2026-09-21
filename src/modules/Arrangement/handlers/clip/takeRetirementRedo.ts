@@ -2,7 +2,6 @@ import { undoHistoryStore } from '#/modules/Command/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
-import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 
 /**
  * The inverse of the undo entry whose redo this dispatch is replaying.
@@ -25,30 +24,6 @@ export function pairedInverseForRedo(action: object): AppAction | null | undefin
         return entry.inverseAction;
     }
     return undefined;
-}
-
-/**
- * Put back the takes the pending discard of `clipId` captured when it ran at
- * undo time. A clip-creating redo re-uses the clip id its undo retired —
- * `duplicateClip` its cached target, `addClip` and the other duplicate routes
- * their pinned ids — so the capture on that still-pending entry is what the
- * re-created clip's lane has to be reconciled against.
- *
- * Keyed by clip id rather than by the replayed action: the duplicate handlers
- * canonicalize their arguments through a clone, so the action a redo replays is
- * not the object its entry holds, while the pinned id is on both.
- */
-export function restoreTakesRetiredByPendingDiscard(clipId: string): void {
-    for (const entry of undoHistoryStore.value?.future ?? []) {
-        if (entry.kind !== 'action') {
-            continue;
-        }
-        const inverse = entry.inverseAction;
-        if (inverse?.type === 'discardDuplicatedClip' && inverse.payload.clipId === clipId) {
-            restoreTakesForClip(inverse.payload.retiredTakeLanes ?? []);
-            return;
-        }
-    }
 }
 
 /**

@@ -2,10 +2,13 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
+    type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
+    type CompRegionSnapshot,
     type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
+    type RetiredTakeLaneSnapshot,
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
@@ -19,6 +22,10 @@ import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip'
 import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
+
+import { pairedInverseForRedo } from './takeRetirementRedo';
+
+type RestoreTrackClipStatesAction = Extract<AppAction, { type: 'restoreTrackClipStates' }>;
 
 function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -716,8 +723,15 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
  * take still removes its clip again, so a take that landed on it since must not
  * survive as an orphan. A snapshot with no key belongs to a route that never
  * retires takes (flatten, paste, consolidate), and its redo must not start.
+ *
+ * A redo retires what the restored clip holds *now*, which is not what the first
+ * removal retired: a take that landed between the undo and the redo is in no
+ * capture yet. The undo that follows reads the entry's own pre-removal snapshot,
+ * so this leg writes the fresh capture back onto it — merged, because the two
+ * captures name the same takes and the entry must list each one once.
  */
 function transitionRetiredTakeLanes(
+    action: RestoreTrackClipStatesAction,
     expectedEntries: readonly TrackClipStateSnapshot[],
     replacementEntries: readonly TrackClipStateSnapshot[]
 ): void {
@@ -741,9 +755,99 @@ function transitionRetiredTakeLanes(
             }
         }
     }
-    if (retiringClipIds.size > 0) {
-        removeTakesForClips([...retiringClipIds]);
+    if (retiringClipIds.size === 0) {
+        return;
     }
+    recordRedoTakeRetirement(action, removeTakesForClips([...retiringClipIds]));
+}
+
+/**
+ * The union of two captures of one lane, keyed by take id and by comp region.
+ *
+ * The recorded capture is what the first removal retired, the fresh one what the
+ * redo just re-retired; the redo's covers the same takes plus whatever landed
+ * since, and the union keeps both claims without listing a take twice. The fresh
+ * lane's own index wins because it is the position this removal took the lane
+ * from — the one an undo has to put it back into.
+ */
+function mergeRetiredLaneCapture(
+    recorded: RetiredTakeLaneSnapshot,
+    fresh: RetiredTakeLaneSnapshot
+): RetiredTakeLaneSnapshot {
+    const takesById = new Map(recorded.lane.takes.map((take) => [take.id, take]));
+    for (const take of fresh.lane.takes) {
+        takesById.set(take.id, take);
+    }
+    const regionsBySpan = new Map<string, CompRegionSnapshot>(
+        recorded.lane.activeCompRegions.map((region) => [regionKey(region), region])
+    );
+    for (const region of fresh.lane.activeCompRegions) {
+        regionsBySpan.set(regionKey(region), region);
+    }
+    return {
+        laneIndex: fresh.laneIndex,
+        lane: {
+            ...fresh.lane,
+            takes: [...takesById.values()],
+            activeCompRegions: [...regionsBySpan.values()],
+        },
+        retiredTakeIds: [...new Set([...(recorded.retiredTakeIds ?? []), ...(fresh.retiredTakeIds ?? [])])],
+    };
+}
+
+function regionKey(region: CompRegionSnapshot): string {
+    return `${region.takeId}:${String(region.startBeat)}:${String(region.endBeat)}`;
+}
+
+function mergeRetiredTakeLanes(
+    recorded: readonly RetiredTakeLaneSnapshot[],
+    fresh: readonly RetiredTakeLaneSnapshot[]
+): RetiredTakeLaneSnapshot[] {
+    const merged: RetiredTakeLaneSnapshot[] = [];
+    for (const recordedLane of recorded) {
+        const freshLane = fresh.find((candidate) => candidate.lane.id === recordedLane.lane.id);
+        merged.push(freshLane ? mergeRetiredLaneCapture(recordedLane, freshLane) : recordedLane);
+    }
+    const recordedLaneIds = new Set(recorded.map((lane) => lane.lane.id));
+    for (const freshLane of fresh) {
+        if (!recordedLaneIds.has(freshLane.lane.id)) {
+            merged.push(freshLane);
+        }
+    }
+    return merged;
+}
+
+/**
+ * Write what this redo just re-retired onto the pre-removal snapshot the entry's
+ * inverse restores from.
+ *
+ * The redo runs with `skipUndo`, so its own `describe()` capture is discarded and
+ * nothing else carries it; the entry is still on the `future` stack while its redo
+ * replays, which is the only moment the pairing is readable. Writing to the inverse
+ * payload rather than to a shared array is what lets the capture survive the session
+ * mirror, which parses an entry's halves into independent objects.
+ */
+function recordRedoTakeRetirement(
+    action: RestoreTrackClipStatesAction,
+    retired: readonly RetiredTakeLaneSnapshot[]
+): void {
+    if (retired.length === 0) {
+        return;
+    }
+    const inverse = pairedInverseForRedo(action);
+    if (inverse?.type !== 'restoreTrackClipStates') {
+        return;
+    }
+    inverse.payload.replacement = inverse.payload.replacement.map((entry) => {
+        const fresh = retired.filter((candidate) => candidate.lane.trackId === entry.trackId);
+        if (fresh.length === 0) {
+            return entry;
+        }
+        return {
+            ...entry,
+            retiredTakeLanes: mergeRetiredTakeLanes(entry.retiredTakeLanes ?? [], fresh),
+        };
+    });
 }
 
 /**
@@ -812,7 +916,7 @@ export const handleRestoreTrackClipStates = createHandler<'restoreTrackClipState
         for (const entry of action.payload.replacement) {
             writeTrackClipState(entry);
         }
-        transitionRetiredTakeLanes(action.payload.expected, action.payload.replacement);
+        transitionRetiredTakeLanes(action, action.payload.expected, action.payload.replacement);
         return { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip state', inverseAction: null }),

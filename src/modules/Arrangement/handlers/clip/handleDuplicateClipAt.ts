@@ -7,8 +7,6 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries';
 
-import { restoreTakesRetiredByPendingDiscard } from './takeRetirementRedo';
-
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 
 type DuplicateClipAtState = { targetClipId: string };
@@ -95,11 +93,6 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
             destinationTrackId: action.payload.destinationTrackId,
             computeStartBeat: () => action.payload.startBeat,
         });
-        if (created) {
-            // The redo re-runs this duplicate with its pinned target id: put back
-            // whatever the discard of the original copy captured at its undo.
-            restoreTakesRetiredByPendingDiscard(state.targetClipId);
-        }
         return toHandlerExecutionResult(created);
     },
     describe: (action) => {

@@ -84,6 +84,24 @@ function createMidiSnapshots({ notes, controlChanges, pitchBends }: SnapshotPres
     };
 }
 
+/**
+ * A real capture, not an absent one: `expect(...).toHaveBeenCalledWith` ignores
+ * undefined-valued keys, so a fixture whose capture is `undefined` cannot tell a
+ * forwarded capture from a dropped one.
+ */
+const RETIRED_TAKE_LANES: NonNullable<RestoreClipPayload['retiredTakeLanes']> = [
+    {
+        laneIndex: 0,
+        lane: {
+            id: 'lane-1',
+            trackId: 't1',
+            takes: [{ id: 'take-1', clipId: 'c1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+        },
+        retiredTakeIds: ['take-1'],
+    },
+];
+
 function expectRippleRestore(action: RestoreClipAction): number {
     const ripplePlan = action.payload.ripplePlan;
     if (!ripplePlan) {
@@ -176,6 +194,7 @@ describe('handleRestoreClip', () => {
                                   clipAutomationLanes: [],
                               }
                             : null,
+                    retiredTakeLanes: RETIRED_TAKE_LANES,
                     ...snapshots,
                 });
 
@@ -191,25 +210,14 @@ describe('handleRestoreClip', () => {
     });
 
     it('restores the retired take lanes on the non-ripple track path', () => {
-        const retiredTakeLanes = [
-            {
-                laneIndex: 0,
-                lane: {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [{ id: 'take-1', clipId: 'c1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
-                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
-                },
-            },
-        ];
-        const action = createRestoreClipAction({ retiredTakeLanes });
+        const action = createRestoreClipAction({ retiredTakeLanes: RETIRED_TAKE_LANES });
 
         void handleRestoreClip.execute(action);
 
         expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
         expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
         expect(mocks.restoreTakesForClip).toHaveBeenCalledTimes(1);
-        expect(mocks.restoreTakesForClip).toHaveBeenCalledWith(retiredTakeLanes);
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledWith(RETIRED_TAKE_LANES);
     });
 
     it('restores an empty take-lane set on the track path when the removal retired none', () => {

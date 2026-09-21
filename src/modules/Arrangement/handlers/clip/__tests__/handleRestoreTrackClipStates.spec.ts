@@ -1514,6 +1514,9 @@ describe('handleRestoreTrackClipStates', () => {
 
         beforeEach(() => {
             mocks.takeLaneStore.value = null;
+            // The real `removeTakesForClips` returns the capture it retired; the
+            // redo leg hands that return value on, so the mock owes its contract.
+            mocks.removeTakesForClips.mockReturnValue([]);
         });
 
         it('restores the captured lanes when the pre-removal snapshot is the replacement', () => {

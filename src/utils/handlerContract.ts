@@ -2945,6 +2945,21 @@ type ActionHandlerCommon<Action extends AppAction> = {
     validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
     prepareAbort?: (action: Action) => HandlerAfterCommit;
+    /**
+     * Called with this inverse action once a redo has replayed the entry it inverts.
+     *
+     * A forward replay re-creates what its inverse removes, and the state that
+     * inverse captured at undo time is the record of what that identity carried
+     * then — state a write landing between the undo and the redo is absent from
+     * it. The redo replays with `skipUndo`, so no fresh description reaches an
+     * entry and nothing else reconciles that record; this is where the inverse's
+     * own owner does it.
+     *
+     * Only the inverse's handler is asked, so one inverse standing behind several
+     * forward actions (a clip created by `addClip`, by a duplicate, or by an AI
+     * generation route) carries exactly one reconciliation, not one per creator.
+     */
+    afterRedoReplay?: (action: Action) => void;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;
     /** Owner-provided relationship validation for a persisted forward/inverse/redo entry. */

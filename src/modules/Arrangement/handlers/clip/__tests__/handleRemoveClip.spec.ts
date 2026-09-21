@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { type rippleDeleteClips } from '../../../useCases/rippleDelete/rippleDeleteClips';
 import { handleRemoveClip } from '../handleRemoveClip';
 
@@ -89,6 +90,10 @@ describe('handleRemoveClip', () => {
             warpState: null,
         }));
         mocks.readClipScopedAutomationLanes.mockReturnValue([]);
+    });
+
+    afterEach(() => {
+        takeLaneStore.set({ lanes: [] });
     });
 
     describe('execute', () => {
@@ -278,6 +283,15 @@ describe('handleRemoveClip', () => {
                 ccByClipId: { c1: mockMidiCcs },
                 pitchBendByClipId: { c1: mockMidiPitchBends },
             });
+            // A real take names the removed clip, so the capture the inverse carries
+            // is distinguishable from no capture at all.
+            const capturedLane = {
+                id: 'lane-1',
+                trackId: 't1',
+                takes: [{ id: 'take-1', clipId: 'c1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+                activeCompRegions: [],
+            };
+            takeLaneStore.set({ lanes: [capturedLane] });
 
             const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
 
@@ -297,6 +311,9 @@ describe('handleRemoveClip', () => {
                 midiCcSnapshot: mockMidiCcs,
                 midiPitchBendSnapshot: mockMidiPitchBends,
             });
+            expect(desc.inverseAction.payload.retiredTakeLanes).toEqual([
+                { laneIndex: 0, lane: capturedLane, retiredTakeIds: ['take-1'] },
+            ]);
             expect(desc.inverseAction.payload.clipSnapshot).not.toBe(mockClip);
             expect(desc.inverseAction.payload.ripplePlan).not.toBe(ripplePlanSource);
             expect(desc.inverseAction.payload.ripplePlan?.removedClips).not.toBe(ripplePlanSource.removedClips);
