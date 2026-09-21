@@ -7,6 +7,7 @@ date: 2026-09-21
 owner: The Sourdaw team
 sources:
     - scripts/canonicalRecord.ts
+    - scripts/sourceAttestation.ts
     - scripts/reviewDossier.ts
     - scripts/reviewDossierPublication.ts
     - scripts/reviewApprovalFormat.ts
@@ -15,6 +16,7 @@ sources:
     - scripts/findingLineage.ts
     - scripts/pullRequestMutationLock.ts
     - scripts/__tests__/canonicalRecord.spec.ts
+    - scripts/__tests__/sourceAttestation.spec.ts
     - scripts/__tests__/reviewDossier.spec.ts
     - scripts/__tests__/reviewDossierPublication.spec.ts
     - scripts/__tests__/publishReview.spec.ts
@@ -61,8 +63,10 @@ reader retained.
 - `stances.json` — the caller's pre-dispatch stance record; when a bundle carries it, the dossier
   publication gate binds the record's draws to it one-to-one as sets of stance names
   (`reviewDossierPublication.ts`).
-- The `sourdaw-*-v1` marker-line records — repair records, confirmation, and finding lineage — all
-  framed by the one marker grammar in `canonicalRecord.ts`.
+- The `sourdaw-*-v1` marker-line records — repair records, confirmation, finding lineage, and the
+  source attestation (`sourceAttestation.ts`), which binds every exact commit OID above the
+  comparison base and its observed Git authorship to the published head — all framed by the one
+  marker grammar in `canonicalRecord.ts`.
 - Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
   marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
   receipts remain readable.
@@ -98,7 +102,9 @@ forgery, predecessor-digest, redaction, size bounds, head rebinding), `reviewDos
 .spec.ts` (input assembly, replay idempotence, stance-record correspondence),
 `publishReview.spec.ts` (live-head binding, recovery journal across crash, legacy adapters,
 paginated reads), `repairReviewFinding.spec.ts` / `confirmReviewRepairs.spec.ts` (foreign-actor
-marker refusal, thread and comment pagination), and `deliverPullRequest.spec.ts` (immutable
+marker refusal, thread and comment pagination), `sourceAttestation.spec.ts` (record round-trip,
+canonical byte form, exact-OID binding, foreign-actor marker refusal, newest authority), and
+`deliverPullRequest.spec.ts` (immutable
 actor identities, wrong-head and wrong-actor approvals ignored, receipt ordering).
 
 ## Consequences

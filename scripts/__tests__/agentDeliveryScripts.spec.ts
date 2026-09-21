@@ -486,6 +486,11 @@ function trustedPublishFixture(root: string, policy: string): void {
     for (const path of stackSummarySources) {
         writeFileSync(join(root, path), 'export {};\n');
     }
+    // The lane:publish closure carries the source attestation modules; the synthetic publishLane
+    // above imports none of them, but the snapshot refuses a graph path missing from the commit.
+    for (const path of ['scripts/sourceAttestation.ts', 'scripts/canonicalRecord.ts']) {
+        writeFileSync(join(root, path), 'export {};\n');
+    }
     runGit(root, ['init', '-b', 'main']);
     runGit(root, ['config', 'user.name', 'Fixture']);
     runGit(root, ['config', 'user.email', 'fixture@example.com']);
@@ -1333,6 +1338,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/syncParentLane.ts',
                     'scripts/publishLane.ts',
+                    'scripts/sourceAttestation.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                     ...stackSummarySources,
@@ -1451,6 +1458,8 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('lane:publish')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishLane.ts',
+            'scripts/sourceAttestation.ts',
+            'scripts/canonicalRecord.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
             ...stackSummarySources,
