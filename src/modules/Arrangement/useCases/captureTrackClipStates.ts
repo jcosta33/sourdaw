@@ -45,11 +45,16 @@ import { getTrackStoreState } from './getTrackStoreState';
  * undo replays is exactly the divergence `handleRestoreTrackClipStates`
  * refuses on, not a capture-time error.
  *
- * `retiringClipIds` names the pre-existing clips this action's removal retires
- * through `removeClip` (only `cutClip` today). When it is given, the capture also
- * carries the take lanes that removal will retire, so undo can put them back;
- * the post-removal capture passes none, and every other caller that removes only
- * freshly minted ids or bypasses `removeClip` passes none either.
+ * `retiringClipIds` names the pre-existing clips whose removal retires takes
+ * through `removeClip`, so the capture can carry the lanes that removal will
+ * retire and undo can put them back. `cutClip` is the only caller that passes
+ * it: `pasteClip` removes only ids it minted moments earlier, and
+ * `flattenTrack`/`consolidateAllTracks` replace the clip collection directly
+ * without going through `removeClip`, so neither retires a take here. Delete
+ * Time and Delete Time Range also drop pre-existing clips and retire nothing —
+ * they call `removeClipSatelliteData` and never `removeClip` or
+ * `removeTakesForClips` — which is a separate defect tracked as #4520 and
+ * deliberately not extended in this change.
  */
 export function captureTrackClipStates(
     trackIds: readonly string[],

@@ -471,7 +471,11 @@ function clipSatellitesMatch(expected: readonly ClipSatelliteEntrySnapshot[]): b
  * retired lanes are the pre-removal state of the lanes its action's removal
  * emptied or thinned, so on the redo leg — where `expected` is that pre-removal
  * snapshot — a take recorded onto an affected lane since the undo makes the live
- * lane disagree and refuses the redo rather than clobbering it.
+ * lane disagree and refuses the redo rather than clobbering it. The undo leg's
+ * `expected` is the post-removal snapshot, whose retired-lane capture is empty, so
+ * this guard is vacuous there; that leg reconciles the capture onto live state
+ * instead of overwriting it (see `restoreTakesForClip`), which is what keeps a
+ * take the capture never saw.
  */
 function retiredTakeLanesMatch(expected: readonly RetiredTakeLaneSnapshot[]): boolean {
     return expected.every((retired) => {
@@ -517,9 +521,9 @@ const SNAPSHOT_ENTRY_GUARDS: SnapshotEntryGuards = {
     // there has written nothing. Comparing it a second time here would only duplicate
     // that check against the same live state.
     clipAutomationLanes: notCompared,
-    // Guarded like the MIDI lanes above, not like automation: the replacement write
-    // restores these lanes itself, so the live lane has to be the captured pre-removal
-    // one before that write is authorised.
+    // Guarded like the MIDI lanes above, not like automation: the transition this
+    // authorises reads and rewrites the lane's live state, so the lane the pre-removal
+    // snapshot names has to be exactly what is live before the move runs.
     retiredTakeLanes: (_track, entry) => retiredTakeLanesMatch(entry.retiredTakeLanes ?? []),
 };
 
@@ -715,11 +719,12 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
  * Undo and redo of the take lanes a removal retired, in one atomic take-lane write.
  *
  * The pre-removal snapshot carries the affected lanes, so restoring it as the
- * `replacement` puts them back. The post-removal snapshot's capture is empty, so
- * restoring it as the `replacement` re-retires the clips it dropped — derived from
- * the clips `expected` had and `replacement` does not — through the same
- * `removeTakesForClips` rule the removal itself uses. Neither direction touches a
- * lane the removal did not affect.
+ * `replacement` reconciles them back onto live state — re-adding only what the
+ * removal dropped and keeping takes that arrived since. The post-removal
+ * snapshot's capture is empty, so restoring it as the `replacement` re-retires
+ * the clips it dropped — derived from the clips `expected` had and `replacement`
+ * does not — through the same `removeTakesForClips` rule the removal itself uses.
+ * Neither direction touches a lane the removal did not affect.
  */
 function transitionRetiredTakeLanes(
     expectedEntries: readonly TrackClipStateSnapshot[],

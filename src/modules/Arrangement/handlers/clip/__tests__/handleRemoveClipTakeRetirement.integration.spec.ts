@@ -132,4 +132,41 @@ describe('removeClip take retirement (ripple route)', () => {
         expect(lanes).toHaveLength(1);
         expect(lanes?.[0]?.takes.map((candidate) => candidate.id)).toEqual([keptTake.id]);
     });
+
+    it('keeps a take projected into the lane after the removal when the removal is undone', async () => {
+        const retiredTake = createTake('clip-1', 'Retired', 0, 4);
+        const survivorTake = createTake('clip-2', 'Survivor', 4, 8);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await removeClipThroughHandler('clip-1');
+
+        // A collaborator's take-add projects in while the removal's capture is
+        // absent; there is no local undo entry for it.
+        const projectedTake = createTake('clip-2', 'Projected', 8, 12);
+        const afterRemoval = takeLaneStore.value;
+        if (!afterRemoval) {
+            throw new Error('expected the take-lane store to hold the post-removal lane');
+        }
+        takeLaneStore.set({
+            lanes: afterRemoval.lanes.map((candidate) =>
+                candidate.id === lane.id ? { ...candidate, takes: [...candidate.takes, projectedTake] } : candidate
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await undo();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([
+            retiredTake.id,
+            survivorTake.id,
+            projectedTake.id,
+        ]);
+    });
 });

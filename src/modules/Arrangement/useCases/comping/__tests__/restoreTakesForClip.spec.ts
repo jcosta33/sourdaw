@@ -110,4 +110,49 @@ describe('restoreTakesForClip', () => {
 
         expect(mocks.takeLaneStoreValue.value?.lanes).toHaveLength(1);
     });
+
+    it('keeps a take that arrived after the removal was captured', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        // A collaborator's projection added a take for the surviving clip while the
+        // capture was absent; no local undo entry exists for it.
+        const projectedTake = createTake('c2', 'Projected', 8, 12);
+        const liveLane: TakeLane = {
+            ...capturedLane,
+            takes: [survivorTake, projectedTake],
+            activeCompRegions: [],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane }]);
+
+        const restored = mocks.takeLaneStoreValue.value?.lanes[0];
+        expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, survivorTake.id, projectedTake.id]);
+        expect(restored?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }]);
+    });
+
+    it('merges a retired lane into the track lane instead of leaving two lanes for one track', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake],
+            activeCompRegions: [],
+        };
+        // A lane for the same track appeared while the captured lane was absent.
+        const projectedTake = createTake('c3', 'Projected', 0, 4);
+        const trackLane: TakeLane = { ...createTakeLane('t1'), takes: [projectedTake], activeCompRegions: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [trackLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane }]);
+
+        const lanes = mocks.takeLaneStoreValue.value?.lanes;
+        expect(lanes).toHaveLength(1);
+        expect(lanes?.[0]?.trackId).toBe('t1');
+        expect(lanes?.[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id, projectedTake.id]);
+    });
 });
