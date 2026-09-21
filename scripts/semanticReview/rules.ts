@@ -103,12 +103,20 @@ const BOUNDARY_PATHS = ['src/modules/', 'src/infra/', 'src/helpers/', 'src/utils
 const GATE_PATHS = ['.github/', 'scripts/healthGate', 'scripts/semanticReview', 'package.json'] as const;
 const MODULE_AND_APP_PATHS = ['src/modules/', 'src/app/'] as const;
 
-/** Extensions whose files can hold code, so a `__tests__/` file with one is test material. */
-const CODE_EXTENSIONS = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/u;
+/**
+ * The extensions a runner collects as a test file. Vitest's default
+ * `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's `**\/*.@(spec|test).?(c|m)[jt]s?(x)` both stop
+ * at code extensions, so a `.spec.md` or `.spec.json` is never collected and a `.spec.d.ts` is a
+ * declaration, not a runnable spec. This one set is shared by the collection predicate and the wider
+ * `__tests__/`-resident code test below, so the two cannot drift apart.
+ */
+const CODE_EXTENSION_SET = '(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)';
+const CODE_EXTENSIONS = new RegExp(`\\.${CODE_EXTENSION_SET}$`, 'u');
+const COLLECTED_SPEC_PATTERN = new RegExp(`\\.(?:spec|test)\\.${CODE_EXTENSION_SET}$`, 'u');
 
-/** Whether a runner collects the file as a test, decided by the `.spec.`/`.test.` suffix rule alone. */
+/** Whether a runner collects the file as a test, decided by the `.spec.`/`.test.` suffix and the runner's code extensions. */
 export function isCollectedSpec(path: string): boolean {
-    return /(?:^|\/)[^/]+\.(?:spec|test)\.[^.]+$/u.test(path);
+    return COLLECTED_SPEC_PATTERN.test(path);
 }
 
 /**
@@ -116,9 +124,8 @@ export function isCollectedSpec(path: string): boolean {
  * under `__tests__/` with a code extension.
  *
  * This is deliberately broader than `isCollectedSpec`, and the two predicates answer different
- * questions. Collection is decided by the suffix alone — Vitest's
- * `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's `**\/*.@(spec|test).?(c|m)[jt]s?(x)` — and that
- * is what excludes implementation evidence. Applicability is wider because the repository also keeps
+ * questions. Collection is decided by the runner's suffix and code extensions, and that is what
+ * excludes implementation evidence. Applicability is wider because the repository also keeps
  * assertion-carrying suites in `__tests__/` without a runner suffix: `providerProtocolConformance.ts`
  * is a conformance suite three contract specs import and execute, and `expectExternalProjectLink.ts`
  * is an assertion helper three specs import. Classifying those as implementation dropped the whole

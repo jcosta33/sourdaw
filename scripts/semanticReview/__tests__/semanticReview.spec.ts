@@ -16,9 +16,10 @@ import {
     exclusionReason,
     type PathHunks,
     type SemanticChangedFile,
+    type SemanticEvidenceSet,
     type SemanticSourcePort,
 } from '../evidence.ts';
-import { fitUnitEvidence } from '../fit.ts';
+import { fitUnitEvidence, serializedRegion } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
@@ -30,7 +31,7 @@ import {
     type SemanticProviderPort,
 } from '../provider.ts';
 import { renderSummary, validateReport } from '../report.ts';
-import { missingRequiredEvidence } from '../requiredEvidence.ts';
+import { missingRequiredEvidence, RESOLVED_EVIDENCE_TOKENS } from '../requiredEvidence.ts';
 import {
     assertBudgetProfile,
     computePolicyDigest,
@@ -507,6 +508,29 @@ describe('a zero-line rename owes what its movement changes', () => {
     });
 });
 
+describe('a zero-line copy owes the duplicated mechanism', () => {
+    it('plans an exact copy instead of taking the rename exemption', () => {
+        // A pure rename has a zero-line diff, but so does an exact copy: both numstats read `0 0`.
+        // The rename exemption keys on `previousPath` alone, which is set for both kinds, so the copy
+        // took `no-text-change`, was never planned, and a PR that only duplicated a file reported a
+        // green skip over the very mechanism `duplicates_existing_mechanism` exists to question.
+        const file = changedFile('docs/undo-copy.md', {
+            kind: 'copied',
+            previousPath: 'docs/undo.md',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+    });
+
+    it('still excludes a mode-only modification as nothing owed', () => {
+        // A file whose mode changed but whose text did not is a zero-line diff with no previous path
+        // and no added tree entry: there is nothing to assess, and it must stay a skip.
+        const file = changedFile('docs/mode.md', { added: 0, deleted: 0 });
+        expect(exclusionReason(file)).toBe('no-text-change');
+    });
+});
+
 describe('copied files', () => {
     it('supplies both sides of a copy and does not waive the before side', () => {
         // A copy has both sides: its source is unchanged and its destination is new. Reading it as
@@ -610,6 +634,116 @@ describe('a copy whose source is also modified', () => {
                 (reference) => reference.path === 'src/modules/Project/a.ts' && reference.side === 'after'
             )
         ).toBe(false);
+    });
+});
+
+describe('a hunked copy whose source is also modified', () => {
+    const sourcePath = 'src/modules/Project/a.ts';
+    const copyPath = 'src/modules/Project/c.ts';
+
+    function replaceLine(text: string, lineNumber: number, replacement: string): string {
+        const lines = text.split('\n');
+        lines[lineNumber - 1] = replacement;
+        return lines.join('\n');
+    }
+
+    function serializedCost(set: SemanticEvidenceSet, reference: EvidenceReference): number {
+        return Buffer.byteLength(
+            JSON.stringify({
+                [reference.evidenceId]: serializedRegion(reference, set.contents.get(reference.evidenceId) ?? ''),
+            }),
+            'utf8'
+        );
+    }
+
+    function hunkedCopy(): { set: SemanticEvidenceSet; files: SemanticChangedFile[] } {
+        const lineText = (line: number): string => `export const value${String(line)} = ${String(line)};`;
+        const base = `${Array.from({ length: 100 }, (_, index) => lineText(index + 1)).join('\n')}\n`;
+        const files = [
+            changedFile(sourcePath),
+            changedFile(copyPath, {
+                kind: 'copied',
+                previousPath: sourcePath,
+                added: 1,
+                deleted: 0,
+            }),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${sourcePath}`]: base,
+                    [`${HEAD}:${sourcePath}`]: replaceLine(base, 20, 'export const changed = 20;'),
+                    [`${HEAD}:${copyPath}`]: replaceLine(base, 80, 'export const changed = 80;'),
+                },
+                hunks: new Map([
+                    [
+                        sourcePath,
+                        {
+                            path: sourcePath,
+                            before: [{ startLine: 14, endLine: 26 }],
+                            after: [{ startLine: 14, endLine: 26 }],
+                        },
+                    ],
+                    [
+                        copyPath,
+                        {
+                            path: copyPath,
+                            previousPath: sourcePath,
+                            before: [{ startLine: 74, endLine: 86 }],
+                            after: [{ startLine: 74, endLine: 86 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        return { set, files };
+    }
+
+    it('attributes each region to the changed file that minted it', () => {
+        // `M a.ts` plus `C097 a.ts c.ts` mints four regions: the modified source's before/after around
+        // line 20 and the copy's before/after around line 80. Both before regions carry the source
+        // path, so selecting own regions by (path, side) handed each unit the other's before region.
+        const { set, files } = hunkedCopy();
+        expect(set.references).toHaveLength(4);
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const source = units.find((unit) => unit.path === sourcePath);
+        const copy = units.find((unit) => unit.path === copyPath);
+        const ownTriples = (unit: typeof source): string[] =>
+            (unit?.evidence.own ?? [])
+                .map((reference) => `${reference.path}:${reference.side}:${reference.startLine}`)
+                .sort();
+        expect(ownTriples(source)).toEqual([`${sourcePath}:after:14`, `${sourcePath}:before:14`]);
+        expect(ownTriples(copy)).toEqual([`${sourcePath}:before:74`, `${copyPath}:after:74`]);
+    });
+
+    it('does not drop the copy own after side under a budget fitting two regions', () => {
+        const { set, files } = hunkedCopy();
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const copy = units.find((unit) => unit.path === copyPath);
+        expect(copy).toBeDefined();
+        // Under the old path-only selection the copy owned three regions — the source's before, its
+        // own before, and its own after — and the after, sorting last, was the one a two-region budget
+        // dropped while the scope still counted the path as assessed. Its own set is now its before
+        // and after alone, so a budget sized for those two keeps the after side.
+        const copyBefore = set.references.find(
+            (reference) => reference.path === sourcePath && reference.side === 'before' && reference.startLine === 74
+        );
+        const copyAfter = set.references.find((reference) => reference.path === copyPath && reference.side === 'after');
+        expect(copyBefore).toBeDefined();
+        expect(copyAfter).toBeDefined();
+        if (copyBefore === undefined || copyAfter === undefined) {
+            throw new Error('the hunked copy did not mint its own before and after regions');
+        }
+        const budget = serializedCost(set, copyBefore) + serializedCost(set, copyAfter);
+        const fitted = fitUnitEvidence(set, copy?.evidence.own ?? [], [], budget);
+        expect(fitted.dropped).toBe(0);
+        expect(fitted.own.droppedSides.has('after')).toBe(false);
+        expect(fitted.own.references.some((reference) => reference.side === 'after')).toBe(true);
     });
 });
 
@@ -1271,6 +1405,33 @@ describe('a fixture is not a test', () => {
     });
 });
 
+describe('the collection predicate uses the runner extension set', () => {
+    it('collects only spec/test files with a runner code extension', () => {
+        // The old predicate matched `\.(?:spec|test)\.[^.]+$`, so a `.spec.md` or `.spec.json` counted
+        // as collected even though no runner collects either — Vitest's and Playwright's defaults both
+        // stop at `?(c|m)[jt]s?(x)`.
+        expect(isCollectedSpec('src/modules/Project/undo.spec.ts')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.tsx')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/undo.test.mjs')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.cts')).toBe(true);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.md')).toBe(false);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.json')).toBe(false);
+        expect(isCollectedSpec('src/modules/Project/undo.spec.d.ts')).toBe(false);
+    });
+
+    it('plans a zero-line rename from a collected spec to an uncollected extension', () => {
+        // `undo.spec.md` used to read as collected, so the two sides compared equal and the rename
+        // stayed `no-text-change`: a suite that stopped running was never mentioned.
+        const file = changedFile('docs/undo.spec.md', {
+            kind: 'renamed',
+            previousPath: 'docs/undo.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+    });
+});
+
 describe('implementation source is decided by collection, not test material', () => {
     it('separates collection from applicability', () => {
         // Collection is the `.spec.`/`.test.` suffix alone; applicability also admits a code file
@@ -1492,6 +1653,21 @@ describe('the egress screen tells code from credentials', () => {
             sensitiveContentReason(`the file opens with ${pkcs8Header} and then the key material follows`)
         ).toBeUndefined();
         expect(sensitiveContentReason(pkcs8Header)).toBeUndefined();
+    });
+
+    it('withholds a passphrase-encrypted envelope and a blank line between header and body', () => {
+        // A traditional encrypted block (`openssl rsa -aes256 -traditional`) puts `Proc-Type` and
+        // `DEK-Info` lines, and a blank line, between the header and the body. The old pattern required
+        // the base64 body on the line after the header, so a real encrypted key passed the screen and
+        // its region went to the provider.
+        const rsaHeader = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
+        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const procType = secretFixture('Proc-Type: 4,', 'ENCRYPTED');
+        const dekInfo = secretFixture('DEK-Info: ', 'AES-256-CBC,0123456789ABCDEF');
+        const encrypted = secretFixture(rsaHeader, '\n', procType, '\n', dekInfo, '\n', '\n', body);
+        expect(sensitiveContentReason(encrypted)).toBe('an armored private key');
+        const blankLine = secretFixture(rsaHeader, '\n', '\n', body);
+        expect(sensitiveContentReason(blankLine)).toBe('an armored private key');
     });
 });
 
@@ -2127,6 +2303,73 @@ describe('own and context drops are resolved separately', () => {
     });
 });
 
+describe('required-evidence resolution is exhaustive', () => {
+    it('reports a declared token with no resolver as missing, not satisfied by anything', () => {
+        // `related existing source` matched no substring branch, and the final `own.length > 0 ||
+        // context.length > 0` fallback satisfied it from whatever the unit carried — so a duplication
+        // rule returned a decisive verdict with no related source ever sent.
+        const ownAfter = reference({ evidenceId: 'a1', path: 'src/modules/Project/a.ts', side: 'after' });
+        expect(
+            missingRequiredEvidence(semanticRule('duplicates_existing_mechanism'), [ownAfter], [], 'modified')
+        ).toContain('related existing source');
+    });
+
+    it('turns a missing related source into insufficient_context, not a decisive verdict', () => {
+        const assessment = interpretScanOutcome({
+            answer: { type: 'noul', noul: 0.01 },
+            rule: semanticRule('duplicates_existing_mechanism'),
+            unitId: 'u',
+            path: 'src/modules/Project/a.ts',
+            missingEvidence: missingRequiredEvidence(
+                semanticRule('duplicates_existing_mechanism'),
+                [reference({ evidenceId: 'a1', path: 'src/modules/Project/a.ts', side: 'after' })],
+                [],
+                'modified'
+            ),
+        });
+        expect(assessment.outcome).toBe('insufficient_context');
+        expect(assessment.disposition).toBe('unresolved');
+    });
+
+    it('fails when a rule declares a token the resolver mapping does not cover', () => {
+        // A guard that cannot fail is what let the fallback hide: every declared token must answer to
+        // an exact resolver, so adding a rule with a new token is a visible decision.
+        for (const rule of SEMANTIC_RULES) {
+            for (const token of rule.requiredEvidence) {
+                expect(RESOLVED_EVIDENCE_TOKENS.has(token), `no resolver for ${token}`).toBe(true);
+            }
+        }
+    });
+});
+
+describe('caller and call-site tokens resolve against context alone', () => {
+    it('does not let the own after side satisfy a caller requirement', () => {
+        // The caller branch resolved to `ownHas('after') || contextHas('context')`, and the unit's own
+        // after side is the changed file itself, not a caller outside it — so a rule asking whether
+        // callers were updated was answered with no caller in view.
+        const ownAfter = reference({ evidenceId: 'a1', path: 'src/modules/Project/a.ts', side: 'after' });
+        const contractContext = reference({ evidenceId: 'c1', path: 'AGENTS.md', side: 'context' });
+        expect(
+            missingRequiredEvidence(
+                semanticRule('public_contract_widened_silently'),
+                [ownAfter],
+                [contractContext],
+                'modified'
+            )
+        ).not.toContain('caller or contract');
+        expect(
+            missingRequiredEvidence(semanticRule('public_contract_widened_silently'), [ownAfter], [], 'modified')
+        ).toContain('caller or contract');
+    });
+
+    it('reports a scheduling call-site with no context as missing', () => {
+        const ownAfter = reference({ evidenceId: 'a1', path: 'crates/daw-dsp/src/a.rs', side: 'after' });
+        expect(missingRequiredEvidence(semanticRule('timing_semantics_changed'), [ownAfter], [], 'modified')).toContain(
+            'scheduling call-site'
+        );
+    });
+});
+
 describe('verify-path screening and identity', () => {
     // Composed at runtime: the PR diff secret scan matches these literals in source.
     const CONNECTION_SHAPED = secretFixture('postgres://', 'alice:', 'sup3rsecret', '@db.example.com:5432/app');
@@ -2475,7 +2718,7 @@ describe('execution state and required evidence resolution', () => {
     });
 });
 
-function reference(input: { evidenceId: string; path: string; side?: 'before' | 'after' }): EvidenceReference {
+function reference(input: { evidenceId: string; path: string; side?: EvidenceSide }): EvidenceReference {
     return {
         evidenceId: input.evidenceId,
         revisionSha: HEAD,

@@ -5,13 +5,79 @@
  * regions, `context` from the context regions a rule declared it needed, and `implementation` from any
  * after region that is not a collected spec. A dropped side unsupplies only the set it was dropped
  * from, so a context region dropped for budget must not mark the unit's own side missing.
+ *
+ * Every token a rule can declare is mapped here by exact string, so adding a rule with a new token is
+ * a visible decision rather than a silent fall-through. A token the mapping does not answer is
+ * reported missing: the previous `return own.length > 0 || context.length > 0` fallback let an
+ * unmatched token — `related existing source` — be satisfied by whatever the unit happened to carry,
+ * so a rule about duplication scored a decisive verdict with no related source ever sent.
  */
 
 import { type EvidenceReference, type EvidenceSide } from './contracts.ts';
 import { type SemanticChangedFile } from './evidence.ts';
 import { isCollectedSpec, type SemanticRule } from './rules.ts';
 
-/** Required-evidence vocabulary mapped to a deterministic predicate over the supplied regions. */
+/** The regions a token resolves against, split so an own-side drop never unsupplies a context region. */
+type EvidenceResolution = {
+    readonly own: readonly EvidenceReference[];
+    readonly context: readonly EvidenceReference[];
+    readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+};
+
+/**
+ * Whether a side is supplied: at least one region of that side survived the fitter. A side split
+ * across several hunks where one was dropped is not supplied, so a region that survived alone cannot
+ * satisfy a requirement over a side the model saw only in part.
+ */
+function sidePresent(
+    regions: readonly EvidenceReference[],
+    side: EvidenceReference['side'],
+    dropped: ReadonlySet<EvidenceSide>
+): boolean {
+    return !dropped.has(side) && regions.some((reference) => reference.side === side);
+}
+
+/**
+ * Whether the regions carry implementation source: an after region a runner does not collect. A
+ * collected spec is never implementation source, while a `__tests__/`-resident double the runner does
+ * not collect is admitted.
+ */
+function implementationPresent(regions: readonly EvidenceReference[], dropped: ReadonlySet<EvidenceSide>): boolean {
+    return (
+        !dropped.has('after') &&
+        regions.some((reference) => reference.side === 'after' && !isCollectedSpec(reference.path))
+    );
+}
+
+/**
+ * The exact required-evidence tokens a rule may declare, each resolved against the set it belongs to.
+ * Caller and call-site tokens resolve against the context regions alone: the unit's own after side is
+ * the changed file itself, not a caller outside it, so it must not satisfy a question about whether
+ * callers were updated.
+ */
+const REQUIRED_EVIDENCE_RESOLVERS: Readonly<Record<string, (resolution: EvidenceResolution) => boolean>> = {
+    'before test source': ({ own, ownDroppedSides }) => sidePresent(own, 'before', ownDroppedSides),
+    'after test source': ({ own, ownDroppedSides }) => sidePresent(own, 'after', ownDroppedSides),
+    'before source': ({ own, ownDroppedSides }) => sidePresent(own, 'before', ownDroppedSides),
+    'after source': ({ own, ownDroppedSides }) => sidePresent(own, 'after', ownDroppedSides),
+    'after implementation source': ({ own, context, ownDroppedSides, contextDroppedSides }) =>
+        implementationPresent(own, ownDroppedSides) || implementationPresent(context, contextDroppedSides),
+    'migration or version contract': ({ context, contextDroppedSides }) =>
+        sidePresent(context, 'context', contextDroppedSides),
+    'undo contract': ({ context, contextDroppedSides }) => sidePresent(context, 'context', contextDroppedSides),
+    'decision or documented invariant': ({ context, contextDroppedSides }) =>
+        sidePresent(context, 'context', contextDroppedSides),
+    'scheduling call-site': ({ context, contextDroppedSides }) => sidePresent(context, 'context', contextDroppedSides),
+    'caller or contract': ({ context, contextDroppedSides }) => sidePresent(context, 'context', contextDroppedSides),
+    'related existing source': ({ context, contextDroppedSides }) =>
+        sidePresent(context, 'context', contextDroppedSides) || sidePresent(context, 'after', contextDroppedSides),
+};
+
+/** The tokens the resolver answers, exported so a coverage guard can fail on an unhandled declaration. */
+export const RESOLVED_EVIDENCE_TOKENS: ReadonlySet<string> = new Set(Object.keys(REQUIRED_EVIDENCE_RESOLVERS));
+
+/** Whether a rule's required-evidence token is supplied by the unit's own or context regions. */
 function requiredEvidencePresent(
     token: string,
     own: readonly EvidenceReference[],
@@ -19,45 +85,13 @@ function requiredEvidencePresent(
     ownDroppedSides: ReadonlySet<EvidenceSide>,
     contextDroppedSides: ReadonlySet<EvidenceSide>
 ): boolean {
-    const lower = token.toLowerCase();
-    // A region cut to a prefix does not answer for the whole side it came from, so it cannot satisfy
-    // a required side on its own: a rule told it has the after side while holding 6% of it would
-    // score evidence it never saw. A side the fitter dropped in part is the same defect — one of
-    // several regions of the side survived, but the side was still delivered incompletely.
-    const ownHas = (side: EvidenceReference['side']): boolean =>
-        !ownDroppedSides.has(side) && own.some((reference) => reference.side === side);
-    const contextHas = (side: EvidenceReference['side']): boolean =>
-        !contextDroppedSides.has(side) && context.some((reference) => reference.side === side);
-    // Implementation source is a claim about *which* after side, not merely that one exists. Resolving
-    // it to `has('after')` let a test unit's own region satisfy a rule that declared it needed the
-    // implementation, so the rule scored a question it never had the evidence to answer — and this
-    // branch has to come before the generic `after` one for that resolution to mean anything. A file
-    // the runner collects as a test is never implementation source, so a spec is excluded while a
-    // `__tests__/`-resident double that the runner does not collect is admitted. Each set resolves on
-    // its own and the two disjoin, so a context region dropped for budget can neither satisfy nor deny
-    // an own-side requirement.
-    if (lower.includes('implementation')) {
-        const completeIn = (regions: readonly EvidenceReference[], dropped: ReadonlySet<EvidenceSide>): boolean =>
-            !dropped.has('after') &&
-            regions.some((reference) => reference.side === 'after' && !isCollectedSpec(reference.path));
-        return completeIn(own, ownDroppedSides) || completeIn(context, contextDroppedSides);
+    const resolver = REQUIRED_EVIDENCE_RESOLVERS[token];
+    if (resolver === undefined) {
+        // A token the mapping does not answer is missing, never satisfied by whatever happens to be
+        // carried. The coverage guard above fails when a rule declares a token that reaches this.
+        return false;
     }
-    if (lower.includes('before')) {
-        return ownHas('before');
-    }
-    if (lower.includes('after')) {
-        return ownHas('after');
-    }
-    // A caller or call-site is either a contract region or the changed file's own after side, each of
-    // which must be complete. This branch precedes the generic contract one so `caller or contract`
-    // resolves as a caller token rather than a contract-only one.
-    if (lower.includes('call-site') || lower.includes('caller') || lower.includes('scheduling')) {
-        return ownHas('after') || contextHas('context');
-    }
-    if (lower.includes('contract') || lower.includes('decision') || lower.includes('registration')) {
-        return contextHas('context');
-    }
-    return own.length > 0 || context.length > 0;
+    return resolver({ own, context, ownDroppedSides, contextDroppedSides });
 }
 
 /**

@@ -127,23 +127,17 @@ export function isMissedAssessmentExclusion(reason: string): boolean {
     return !NOTHING_OWED_EXCLUSION_REASONS.has(reason);
 }
 
-function evidenceForPath(
-    set: SemanticEvidenceSet,
-    path: string,
-    previousPath: string | undefined
-): EvidenceReference[] {
-    return set.references.filter((reference) => {
-        // A region belongs to the side its change kind implies: the before side lives at the previous
-        // path when there is one, and the after side lives at the changed path. Selecting by path alone
-        // handed a copy unit the source's after region as though it belonged to the copy's change.
-        if (reference.side === 'before') {
-            return reference.path === (previousPath ?? path);
-        }
-        if (reference.side === 'after') {
-            return reference.path === path;
-        }
-        return false;
-    });
+/** Whether a region was minted for the given changed file, by post-change path. */
+function isAttributedTo(set: SemanticEvidenceSet, reference: EvidenceReference, changedPath: string): boolean {
+    return set.attribution.get(reference.evidenceId)?.includes(changedPath) ?? false;
+}
+
+function evidenceForPath(set: SemanticEvidenceSet, changedPath: string): EvidenceReference[] {
+    // A region belongs to the changed file that minted it, not to whichever path its text came from.
+    // Selecting by (path, side) alone handed a copy unit the source's before region — or the modified
+    // source the copy's — when two changed files share a before-side path, because the two regions
+    // carry the same path and differ only in range.
+    return set.references.filter((reference) => isAttributedTo(set, reference, changedPath));
 }
 
 /**
@@ -182,7 +176,7 @@ export function planUnits(
             excluded.push({ path: file.path, reason: 'no-applicable-rule' });
             continue;
         }
-        const own = evidenceForPath(set, file.path, file.previousPath);
+        const own = evidenceForPath(set, file.path);
         if (own.length === 0) {
             // Context regions alone would otherwise make a wholly-withheld file count as assessed.
             // One exclusion per path: collection may already have excluded it, and a second entry
@@ -210,7 +204,9 @@ export function planUnits(
             context = context.concat(
                 set.references.filter(
                     (reference) =>
-                        reference.side === 'after' && reference.path !== file.path && !isCollectedSpec(reference.path)
+                        reference.side === 'after' &&
+                        !isCollectedSpec(reference.path) &&
+                        !isAttributedTo(set, reference, file.path)
                 )
             );
         }

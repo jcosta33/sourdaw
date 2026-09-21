@@ -80,6 +80,12 @@ export type SemanticEvidenceSet = {
     readonly references: readonly EvidenceReference[];
     /** Region text keyed by `evidenceId`; the only source material a request may carry. */
     readonly contents: ReadonlyMap<string, string>;
+    /**
+     * The changed-file post-change paths that minted each region, keyed by `evidenceId`. A region
+     * minted for two changed files — a copy whose unchanged source is also modified — lists both, so a
+     * unit can select its own set from attribution rather than from the region's content path.
+     */
+    readonly attribution: ReadonlyMap<string, readonly string[]>;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -161,8 +167,13 @@ export function exclusionReason(file: SemanticChangedFile): string | undefined {
         // a file out of a rule-covered surface, or stop a runner collecting it as a test. Calling every
         // such rename `no-text-change` excluded the path, and the skipped branch then read the change as
         // delivered advice over the very movement the rename performed. A rename that changes neither
-        // the applicable rule set nor collection owes nothing.
-        if (file.previousPath !== undefined) {
+        // the applicable rule set nor collection owes nothing. An exact copy shares the same zero-line
+        // numstat but is not exempt: it adds a path to the tree, and `duplicates_existing_mechanism`
+        // exists precisely to question a newly duplicated mechanism.
+        if (file.kind === 'copied') {
+            return undefined;
+        }
+        if (file.kind === 'renamed' && file.previousPath !== undefined) {
             const collectionChanged = isCollectedSpec(file.previousPath) !== isCollectedSpec(file.path);
             if (collectionChanged || ruleSetsDiffer(file.previousPath, file.path)) {
                 return undefined;
@@ -195,6 +206,11 @@ type RegionRequest = {
     readonly side: EvidenceSide;
     /** The lines this region carries. Absent means the whole file at that revision. */
     readonly range?: LineRange;
+    /**
+     * The post-change path of the changed file this region is minted for. Absent for contract-context
+     * regions, which belong to no single changed file.
+     */
+    readonly changedPath?: string;
 };
 
 /**
@@ -288,26 +304,33 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
     ) => void;
     references: EvidenceReference[];
     contents: Map<string, string>;
+    attribution: Map<string, Set<string>>;
     excluded: SemanticScopeExclusion[];
     truncated: SemanticScopeExclusion[];
     limitations: string[];
 } {
     const references: EvidenceReference[] = [];
     const contents = new Map<string, string>();
+    const attribution = new Map<string, Set<string>>();
     const excluded: SemanticScopeExclusion[] = [];
     const excludedPaths = new Set<string>();
     const truncated: SemanticScopeExclusion[] = [];
     const limitations: string[] = [];
-    const admitted = new Set<string>();
+    const identityToEvidenceId = new Map<string, string>();
     let totalBytes = 0;
     let ordinal = 1;
 
     const admit = (request: RegionRequest, raw: string, label: string): void => {
         // A region exists once per revision, path, side, and range. A copy whose source is itself
         // changed in the same diff reads that source's before side a second time; admitting it twice
-        // would charge one region's bytes against the total budget in both units.
+        // would charge one region's bytes against the total budget in both units. The single minted
+        // region is instead attributed to both changed files.
         const identity = regionIdentity(request, raw);
-        if (admitted.has(identity)) {
+        const existing = identityToEvidenceId.get(identity);
+        if (existing !== undefined) {
+            if (request.changedPath !== undefined) {
+                attribution.get(existing)?.add(request.changedPath);
+            }
             return;
         }
         // Path classification runs before the read; this runs before admission, on the whole region
@@ -344,10 +367,13 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
             return;
         }
         totalBytes += bytes;
-        admitted.add(identity);
         const reference = makeReference(request, text, ordinal);
         references.push(reference);
         contents.set(reference.evidenceId, text);
+        identityToEvidenceId.set(identity, reference.evidenceId);
+        if (request.changedPath !== undefined) {
+            attribution.set(reference.evidenceId, new Set([request.changedPath]));
+        }
         ordinal += 1;
     };
 
@@ -377,7 +403,7 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
             admit({ ...request, range: sliced.range }, sliced.text, label);
         }
     };
-    return { admit, admitSide, references, contents, excluded, truncated, limitations };
+    return { admit, admitSide, references, contents, attribution, excluded, truncated, limitations };
 }
 
 /** Whether a change kind has a before side at the merge base; a copy's unchanged source is one. */
@@ -438,7 +464,7 @@ export function collectEvidence(input: {
                 admission.limitations.push(`before-side content for ${beforePath} was unavailable at the merge base`);
             } else {
                 admitSide(
-                    { revisionSha: input.mergeBaseSha, path: beforePath, side: 'before' },
+                    { revisionSha: input.mergeBaseSha, path: beforePath, side: 'before', changedPath: file.path },
                     before,
                     'before',
                     hunks?.before
@@ -451,7 +477,12 @@ export function collectEvidence(input: {
                 admission.truncated.push({ path: file.path, reason: 'evidence-unavailable-at-revision' });
                 admission.limitations.push(`after-side content for ${file.path} was unavailable at the reviewed head`);
             } else {
-                admitSide({ revisionSha: input.headSha, path: file.path, side: 'after' }, after, 'after', hunks?.after);
+                admitSide(
+                    { revisionSha: input.headSha, path: file.path, side: 'after', changedPath: file.path },
+                    after,
+                    'after',
+                    hunks?.after
+                );
             }
         }
     }
@@ -469,9 +500,14 @@ export function collectEvidence(input: {
     if (admission.references.length === 0) {
         admission.limitations.push('no source region was eligible for assessment');
     }
+    const attribution = new Map<string, readonly string[]>();
+    for (const [evidenceId, changedPaths] of admission.attribution) {
+        attribution.set(evidenceId, [...changedPaths].sort(compareLexicographic));
+    }
     return {
         references: admission.references,
         contents: admission.contents,
+        attribution,
         excluded: admission.excluded,
         truncated: admission.truncated,
         limitations: admission.limitations,

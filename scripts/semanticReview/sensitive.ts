@@ -130,12 +130,15 @@ const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
     // only a `key = value` assignment, so a block passes untouched and would be submitted to the
     // provider. Egress requires each shape to carry a value, so the header alone is not enough: a
     // documentation sentence that quotes the header carries no key material and must not be withheld.
-    // The body, not the closing footer, is what is required, so a block pasted without its footer is
-    // still caught — the pinned Gitleaks rule requires both, and being stricter than it buys nothing.
+    // A traditional passphrase-encrypted block (`openssl rsa -aes256 -traditional`) puts `Proc-Type`
+    // and `DEK-Info` lines, and possibly a blank line, between the header and the body, so those
+    // envelope lines must not break the match. The body, not the closing footer, is what is required,
+    // so a block pasted without its footer is still caught — the pinned Gitleaks rule requires both,
+    // and being stricter than it buys nothing.
     {
         reason: 'an armored private key',
         pattern:
-            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n[ \t]*[A-Za-z0-9+/=]{8,}/u,
+            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n(?:[ \t]*(?:(?:Proc-Type|DEK-Info):[^\r\n]*)?\r?\n)*[ \t]*[A-Za-z0-9+/=]{8,}/u,
     },
     // A secret in a query parameter: `?password=…`, `&access_token=…`, `&sig=…`.
     {
