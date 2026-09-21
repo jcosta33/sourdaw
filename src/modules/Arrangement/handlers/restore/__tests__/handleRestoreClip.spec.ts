@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
     updateTrack: vi.fn<typeof updateTrack>(),
     undoRippleDelete: vi.fn<typeof undoRippleDelete>(),
     restoreMidiClipData: vi.fn<(input: RestoreMidiClipDataInput) => void>(),
+    restoreTakesForClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/updateTrack', () => ({
@@ -49,6 +50,10 @@ vi.mock('../../../useCases/updateTrack', () => ({
 
 vi.mock('../../../useCases/rippleDelete/undoRippleDelete', () => ({
     undoRippleDelete: mocks.undoRippleDelete,
+}));
+
+vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
+    restoreTakesForClip: mocks.restoreTakesForClip,
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -92,8 +97,10 @@ function expectRippleRestore(action: RestoreClipAction): number {
         shiftedClips: ripplePlan.shiftedClips,
         clipSatellites: ripplePlan.clipSatellites,
         clipAutomationLanes: ripplePlan.clipAutomationLanes,
+        retiredTakeLanes: action.payload.retiredTakeLanes,
     });
     expect(mocks.updateTrack).not.toHaveBeenCalled();
+    expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
 
     const rippleOrder = mocks.undoRippleDelete.mock.invocationCallOrder[0];
     if (rippleOrder === undefined) {
@@ -181,6 +188,37 @@ describe('handleRestoreClip', () => {
                 expect(arrangementRestoreOrder).toBeLessThan(ownerRestoreOrder);
             }
         );
+    });
+
+    it('restores the retired take lanes on the non-ripple track path', () => {
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'c1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+                },
+            },
+        ];
+        const action = createRestoreClipAction({ retiredTakeLanes });
+
+        void handleRestoreClip.execute(action);
+
+        expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.undoRippleDelete).not.toHaveBeenCalled();
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledTimes(1);
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledWith(retiredTakeLanes);
+    });
+
+    it('restores an empty take-lane set on the track path when the removal retired none', () => {
+        const action = createRestoreClipAction();
+
+        void handleRestoreClip.execute(action);
+
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledTimes(1);
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledWith([]);
     });
 
     it('provides a description', () => {

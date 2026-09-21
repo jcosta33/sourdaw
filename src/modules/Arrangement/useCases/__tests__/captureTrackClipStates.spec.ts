@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
         warpState: null,
     })),
     readClipScopedAutomationLanes: vi.fn(() => [] as unknown[]),
+    captureRetiredTakeLanes: vi.fn(() => [] as unknown[]),
 }));
 
 vi.mock('../getTrackStoreState', () => ({
@@ -47,6 +48,10 @@ vi.mock('../clip/readClipScopedAutomationLanes', () => ({
     readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
 }));
 
+vi.mock('../comping/captureRetiredTakeLanes', () => ({
+    captureRetiredTakeLanes: mocks.captureRetiredTakeLanes,
+}));
+
 /** `TrackDummy`'s track-level fields, as a collection rewrite would overwrite them. */
 const TRACK_FIELDS = {
     kind: 'audio',
@@ -67,6 +72,7 @@ describe('captureTrackClipStates', () => {
             warpState: null,
         }));
         mocks.readClipScopedAutomationLanes.mockReturnValue([]);
+        mocks.captureRetiredTakeLanes.mockReturnValue([]);
     });
 
     it('returns an empty array when the track store is unavailable', () => {
@@ -89,6 +95,7 @@ describe('captureTrackClipStates', () => {
                 midiPitchBendByClipId: {},
                 clipSatellites: [],
                 clipAutomationLanes: [],
+                retiredTakeLanes: [],
             },
         ]);
     });
@@ -123,6 +130,7 @@ describe('captureTrackClipStates', () => {
                 midiPitchBendByClipId: { c1: [pitchBendC1] },
                 clipSatellites: [],
                 clipAutomationLanes: [],
+                retiredTakeLanes: [],
             },
             {
                 trackId: 't2',
@@ -133,6 +141,7 @@ describe('captureTrackClipStates', () => {
                 midiPitchBendByClipId: {},
                 clipSatellites: [],
                 clipAutomationLanes: [],
+                retiredTakeLanes: [],
             },
         ]);
     });
@@ -202,6 +211,52 @@ describe('captureTrackClipStates', () => {
         const [snapshot] = captureTrackClipStates(['t1']);
 
         expect(snapshot?.clipSatellites).toEqual([]);
+    });
+
+    it('carries the take lanes only the named retiring clips will lose', () => {
+        const retiringClip = ClipDummy.create({ id: 'c1', trackId: 't1' });
+        const untouchedClip = ClipDummy.create({ id: 'c2', trackId: 't1' });
+        const track = TrackDummy.create({ id: 't1', clips: [retiringClip, untouchedClip] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'c1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+                    activeCompRegions: [],
+                },
+            },
+        ];
+        mocks.captureRetiredTakeLanes.mockReturnValue(retiredTakeLanes);
+
+        const [snapshot] = captureTrackClipStates(['t1'], ['c1', 'c2']);
+
+        // Scoped to the clips this track actually owns, so a retiring clip on another
+        // track never drags this track's snapshot into a lane it does not own.
+        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith(['c1', 'c2']);
+        expect(snapshot?.retiredTakeLanes).toBe(retiredTakeLanes);
+    });
+
+    it('records an empty take-lane capture when no clip is retiring', () => {
+        const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1', trackId: 't1' })] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        const [snapshot] = captureTrackClipStates(['t1']);
+
+        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith([]);
+        expect(snapshot?.retiredTakeLanes).toEqual([]);
+    });
+
+    it('captures no take lane for a retiring clip this track does not own', () => {
+        const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1', trackId: 't1' })] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+        const [snapshot] = captureTrackClipStates(['t1'], ['c-on-another-track']);
+
+        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith([]);
+        expect(snapshot?.retiredTakeLanes).toEqual([]);
     });
 
     it('includes MIDI satellites owned by a hidden alternative lane, not just the active clips', () => {

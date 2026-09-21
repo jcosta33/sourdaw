@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     readClipSatelliteEntry: vi.fn(),
     removeClipSatelliteData: vi.fn(),
     readClipScopedAutomationLanes: vi.fn(),
+    removeTakesForClips: vi.fn(),
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
@@ -40,6 +41,10 @@ vi.mock('../../clip/readClipScopedAutomationLanes', () => ({
     readClipScopedAutomationLanes: mocks.readClipScopedAutomationLanes,
 }));
 
+vi.mock('../../comping/removeTakesForClips', () => ({
+    removeTakesForClips: mocks.removeTakesForClips,
+}));
+
 describe('rippleDeleteClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -49,6 +54,7 @@ describe('rippleDeleteClips', () => {
             warpState: null,
         }));
         mocks.readClipScopedAutomationLanes.mockReturnValue([]);
+        mocks.removeTakesForClips.mockReturnValue([]);
     });
 
     it('executes the plan and updates state', () => {
@@ -71,12 +77,45 @@ describe('rippleDeleteClips', () => {
         }
         const newState = setCall[0];
         expect(newState.tracks[0].clips).toEqual([{ id: 'c2' }]);
+        expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+        expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c1']);
         expect(result).toEqual({
             removedClips: [{ id: 'c1' }],
             shiftedClips: [],
             clipSatellites: [],
             clipAutomationLanes: [],
+            retiredTakeLanes: [],
         });
+    });
+
+    it('retires and captures the takes of every removed clip in one call', () => {
+        const mockPlan = {
+            removedClips: [{ id: 'c1' }, { id: 'c2' }],
+            shiftedClips: [],
+            nextClips: [{ id: 'c3' }],
+        };
+        mocks.planRippleDelete.mockReturnValue(mockPlan);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] }],
+        });
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'c1', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+                    activeCompRegions: [],
+                },
+            },
+        ];
+        mocks.removeTakesForClips.mockReturnValue(retiredTakeLanes);
+
+        const result = rippleDeleteClips({ trackId: 't1', clipIds: ['c1', 'c2'] });
+
+        expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+        expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c1', 'c2']);
+        expect(result?.retiredTakeLanes).toBe(retiredTakeLanes);
     });
 
     it('captures a removed clip satellites before retiring them, and retires them from the live stores', () => {

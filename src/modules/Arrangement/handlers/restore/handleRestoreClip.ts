@@ -2,6 +2,7 @@ import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 import { updateTrack } from '../../useCases/updateTrack';
@@ -56,8 +57,16 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
     // preflight keeps that batch honest. Single-entry undo never calls validate.
     validate: (action, context) => restoreStateMatches(action) && batchMembersAreIndependent(action, context),
     execute: (alpha) => {
-        const { clipId, trackId, clipSnapshot, ripplePlan, midiNotesSnapshot, midiCcSnapshot, midiPitchBendSnapshot } =
-            alpha.payload;
+        const {
+            clipId,
+            trackId,
+            clipSnapshot,
+            ripplePlan,
+            midiNotesSnapshot,
+            midiCcSnapshot,
+            midiPitchBendSnapshot,
+            retiredTakeLanes,
+        } = alpha.payload;
 
         if (ripplePlan) {
             undoRippleDelete({
@@ -66,9 +75,11 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
                 shiftedClips: ripplePlan.shiftedClips as never,
                 clipSatellites: ripplePlan.clipSatellites as never,
                 clipAutomationLanes: ripplePlan.clipAutomationLanes as never,
+                retiredTakeLanes,
             });
         } else {
             updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot as never] }));
+            restoreTakesForClip(retiredTakeLanes ?? []);
         }
 
         restoreMidiClipData({

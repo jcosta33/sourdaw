@@ -10,6 +10,7 @@ import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { readClipSatelliteEntry } from '../stores/clipSatelliteState';
 
 import { readClipScopedAutomationLanes } from './clip/readClipScopedAutomationLanes';
+import { captureRetiredTakeLanes } from './comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from './getTrackStoreState';
 
 /**
@@ -43,13 +44,23 @@ import { getTrackStoreState } from './getTrackStoreState';
  * `describe()` runs before `execute()`, so a track already gone by the time
  * undo replays is exactly the divergence `handleRestoreTrackClipStates`
  * refuses on, not a capture-time error.
+ *
+ * `retiringClipIds` names the pre-existing clips this action's removal retires
+ * through `removeClip` (only `cutClip` today). When it is given, the capture also
+ * carries the take lanes that removal will retire, so undo can put them back;
+ * the post-removal capture passes none, and every other caller that removes only
+ * freshly minted ids or bypasses `removeClip` passes none either.
  */
-export function captureTrackClipStates(trackIds: readonly string[]): TrackClipStateSnapshot[] {
+export function captureTrackClipStates(
+    trackIds: readonly string[],
+    retiringClipIds: readonly string[] = []
+): TrackClipStateSnapshot[] {
     const trackState = getTrackStoreState();
     if (!trackState) {
         return [];
     }
     const midiState = midiStore.value;
+    const retiringClipIdSet = new Set(retiringClipIds);
 
     const snapshots: TrackClipStateSnapshot[] = [];
     for (const trackId of trackIds) {
@@ -82,6 +93,9 @@ export function captureTrackClipStates(trackIds: readonly string[]): TrackClipSt
             .map((clipId) => readClipSatelliteEntry(clipId))
             .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
         const clipAutomationLanes = structuredClone(readClipScopedAutomationLanes(clipIds));
+        const trackRetiringClipIds = track.clips
+            .filter((clip) => retiringClipIdSet.has(clip.id))
+            .map((clip) => clip.id);
 
         snapshots.push({
             trackId,
@@ -100,6 +114,10 @@ export function captureTrackClipStates(trackIds: readonly string[]): TrackClipSt
             midiPitchBendByClipId,
             clipSatellites,
             clipAutomationLanes,
+            // Empty unless this capture named retiring clips, so a snapshot for a
+            // removal that retires no take-lane state carries an explicitly empty
+            // capture rather than a key whose absence has to be guessed at.
+            retiredTakeLanes: captureRetiredTakeLanes(trackRetiringClipIds),
         });
     }
 

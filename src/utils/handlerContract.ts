@@ -388,6 +388,14 @@ export type TrackClipStateSnapshot = {
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
     /** Clip-scoped automation lanes, deleted by the same `removeClipSatelliteData` path. */
     readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
+    /**
+     * The take lanes this snapshot's forward action retires — `removeClip` takes
+     * the retired clip's takes with it, and only a capture made before that write
+     * can put them back. Carried on the pre-removal snapshot; the post-removal
+     * capture carries none. Optional so snapshots persisted before takes joined
+     * this payload still decode; absent means the action retired no takes.
+     */
+    readonly retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
 };
 export type TrackAlternativeStateSnapshot = {
     readonly alternatives: readonly { readonly id: string }[];
@@ -492,6 +500,40 @@ export type RippleShiftSnapshot = {
     readonly origStartBeat: number;
     readonly origEndBeat: number;
     readonly automationDelta: number;
+};
+/** A take captured inside a comp take lane — structural mirror of Arrangement's
+ *  `Take`, declared here because model isolation forbids importing it. Arrays
+ *  stay mutable so a snapshot is assignable where the take-lane store's
+ *  concrete model is expected. */
+export type TakeSnapshot = {
+    id: string;
+    clipId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    selected: boolean;
+    sourceOffsetBeats?: number;
+};
+/** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
+export type CompRegionSnapshot = {
+    startBeat: number;
+    endBeat: number;
+    takeId: string;
+};
+/** A whole comp take lane — structural mirror of Arrangement's `TakeLane`. */
+export type CompTakeLaneSnapshot = {
+    id: string;
+    trackId: string;
+    automationLaneId?: string;
+    takes: TakeSnapshot[];
+    activeCompRegions: CompRegionSnapshot[];
+};
+/** One lane a clip removal emptied or thinned, carried by `restoreClip` as it
+ *  was before the removal together with the index it held, so undoing the
+ *  removal can put the same lane back in the same place. */
+export type RetiredTakeLaneSnapshot = {
+    readonly laneIndex: number;
+    readonly lane: CompTakeLaneSnapshot;
 };
 export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
@@ -1062,6 +1104,12 @@ export type AppAction =
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;
               midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
+              /**
+               * Take lanes the removed clips left, captured before removal.
+               * Optional so restore entries persisted before takes joined this
+               * payload still decode; absent means the removal retired none.
+               */
+              retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
           };
       }
     | {

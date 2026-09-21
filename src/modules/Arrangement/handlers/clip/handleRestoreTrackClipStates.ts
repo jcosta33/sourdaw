@@ -6,14 +6,18 @@ import {
     type ClipStateSnapshot,
     type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
+    type RetiredTakeLaneSnapshot,
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
 } from '#/utils/handlerContract';
 
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip, type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
+import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
@@ -463,6 +467,20 @@ function clipSatellitesMatch(expected: readonly ClipSatelliteEntrySnapshot[]): b
 }
 
 /**
+ * Each captured retired lane against the live lane with the same id. A snapshot's
+ * retired lanes are the pre-removal state of the lanes its action's removal
+ * emptied or thinned, so on the redo leg — where `expected` is that pre-removal
+ * snapshot — a take recorded onto an affected lane since the undo makes the live
+ * lane disagree and refuses the redo rather than clobbering it.
+ */
+function retiredTakeLanesMatch(expected: readonly RetiredTakeLaneSnapshot[]): boolean {
+    return expected.every((retired) => {
+        const liveLane = takeLaneStore.value?.lanes.find((lane) => lane.id === retired.lane.id);
+        return liveLane !== undefined && structuralValueMatches(liveLane, retired.lane);
+    });
+}
+
+/**
  * One guard per key of the snapshot, keyed by `TrackClipStateSnapshot`'s own keys with
  * `-?`. Same gate as the two comparator tables below it, one level up: a key added to
  * the snapshot is a key `writeTrackClipState` will write, and it does not compile
@@ -499,6 +517,10 @@ const SNAPSHOT_ENTRY_GUARDS: SnapshotEntryGuards = {
     // there has written nothing. Comparing it a second time here would only duplicate
     // that check against the same live state.
     clipAutomationLanes: notCompared,
+    // Guarded like the MIDI lanes above, not like automation: the replacement write
+    // restores these lanes itself, so the live lane has to be the captured pre-removal
+    // one before that write is authorised.
+    retiredTakeLanes: (_track, entry) => retiredTakeLanesMatch(entry.retiredTakeLanes ?? []),
 };
 
 /**
@@ -690,6 +712,45 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
 }
 
 /**
+ * Undo and redo of the take lanes a removal retired, in one atomic take-lane write.
+ *
+ * The pre-removal snapshot carries the affected lanes, so restoring it as the
+ * `replacement` puts them back. The post-removal snapshot's capture is empty, so
+ * restoring it as the `replacement` re-retires the clips it dropped — derived from
+ * the clips `expected` had and `replacement` does not — through the same
+ * `removeTakesForClips` rule the removal itself uses. Neither direction touches a
+ * lane the removal did not affect.
+ */
+function transitionRetiredTakeLanes(
+    expectedEntries: readonly TrackClipStateSnapshot[],
+    replacementEntries: readonly TrackClipStateSnapshot[]
+): void {
+    const lanesToRestore = replacementEntries.flatMap((entry) => [...(entry.retiredTakeLanes ?? [])]);
+    if (lanesToRestore.length > 0) {
+        restoreTakesForClip(lanesToRestore);
+        return;
+    }
+
+    const expectedByTrackId = new Map(expectedEntries.map((entry) => [entry.trackId, entry]));
+    const retiringClipIds = new Set<string>();
+    for (const entry of replacementEntries) {
+        const expectedEntry = expectedByTrackId.get(entry.trackId);
+        if (!expectedEntry || (expectedEntry.retiredTakeLanes ?? []).length === 0) {
+            continue;
+        }
+        const replacementClipIds = new Set(entry.clips.map((clip) => clip.id));
+        for (const clip of expectedEntry.clips) {
+            if (!replacementClipIds.has(clip.id)) {
+                retiringClipIds.add(clip.id);
+            }
+        }
+    }
+    if (retiringClipIds.size > 0) {
+        removeTakesForClips([...retiringClipIds]);
+    }
+}
+
+/**
  * General guarded restore for whole-track clip-collection rewrites (cut, paste,
  * flatten, consolidate). Every named track must still match `expected` on
  * everything `everyEntryMatchesLiveState` compares, down to the contents of each
@@ -752,6 +813,7 @@ export const handleRestoreTrackClipStates = createHandler<'restoreTrackClipState
         for (const entry of action.payload.replacement) {
             writeTrackClipState(entry);
         }
+        transitionRetiredTakeLanes(action.payload.expected, action.payload.replacement);
         return { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip state', inverseAction: null }),

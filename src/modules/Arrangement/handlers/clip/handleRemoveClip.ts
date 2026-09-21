@@ -5,6 +5,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
+import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
@@ -111,6 +112,13 @@ export const handleRemoveClip = createHandler<'removeClip'>({
               }
             : null;
 
+        // Exactly the take-lane state the removal retires, captured before
+        // `execute` writes: whichever route it takes — `rippleDeleteClips` or
+        // the `removeClip` fallback — retires these clips' takes, and undo has
+        // to put the lanes back as they were (#4265).
+        const removedClipIds = plan ? plan.removedClips.map((clip) => clip.id) : [alpha.payload.clipId];
+        const retiredTakeLanes = captureRetiredTakeLanes(removedClipIds);
+
         const midiState = getMidiStoreState();
         const notes = midiState?.notesByClipId[alpha.payload.clipId];
         const cc = midiState?.ccByClipId[alpha.payload.clipId];
@@ -128,6 +136,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                     midiNotesSnapshot: notes ? structuredClone(notes) : null,
                     midiCcSnapshot: cc ? structuredClone(cc) : null,
                     midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
+                    retiredTakeLanes,
                 },
             },
         };

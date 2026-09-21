@@ -149,6 +149,7 @@ describe('handleRemoveClip', () => {
                 shiftedClips: [],
                 clipSatellites: [],
                 clipAutomationLanes: [],
+                retiredTakeLanes: [],
             });
 
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
@@ -211,6 +212,7 @@ describe('handleRemoveClip', () => {
                 shiftedClips: [],
                 clipSatellites: [],
                 clipAutomationLanes: [],
+                retiredTakeLanes: [],
             });
             const gainEnvelope = { clipId: 'c1', points: [{ id: 'p1', beatOffset: 0, gainDb: -6 }], enabled: true };
             mocks.readClipSatelliteEntry.mockReturnValue({ clipId: 'c1', gainEnvelope, warpState: null });
@@ -236,6 +238,7 @@ describe('handleRemoveClip', () => {
                 shiftedClips: [],
                 clipSatellites: [],
                 clipAutomationLanes: [],
+                retiredTakeLanes: [],
             });
             // No MIDI store -> every snapshot falls through to null.
             mocks.getMidiStoreState.mockReturnValue(null);
@@ -261,7 +264,7 @@ describe('handleRemoveClip', () => {
                 clipAutomationLanes: [],
             };
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [mockClip] }] });
-            mocks.planRippleDelete.mockReturnValue(ripplePlanSource);
+            mocks.planRippleDelete.mockReturnValue({ ...ripplePlanSource, retiredTakeLanes: [] });
 
             const mockMidiNote = { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
             const mockMidiCc = { id: 'cc1', controller: 1, value: 64, beat: 0.5, channel: 1 };

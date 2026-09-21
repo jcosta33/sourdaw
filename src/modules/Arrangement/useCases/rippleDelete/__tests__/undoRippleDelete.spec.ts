@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     getAutomationLanes: vi.fn(),
     restoreAutomationLanes: vi.fn(),
     writeClipSatelliteEntry: vi.fn(),
+    restoreTakesForClip: vi.fn(),
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -27,6 +28,10 @@ vi.mock('../../setTrackState', () => ({
 
 vi.mock('../../../stores/clipSatelliteState', () => ({
     writeClipSatelliteEntry: mocks.writeClipSatelliteEntry,
+}));
+
+vi.mock('../../comping/restoreTakesForClip', () => ({
+    restoreTakesForClip: mocks.restoreTakesForClip,
 }));
 
 describe('undoRippleDelete', () => {
@@ -97,6 +102,33 @@ describe('undoRippleDelete', () => {
         expect(mocks.restoreAutomationLanes).toHaveBeenCalledWith([lane]);
     });
 
+    it('restores the retired take lanes captured before retirement', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [] }],
+        });
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'c2', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+                },
+            },
+        ];
+
+        undoRippleDelete({
+            trackId: 't1',
+            removedClips: [{ id: 'c2', startBeat: 4, endBeat: 8 } as any],
+            shiftedClips: [],
+            retiredTakeLanes,
+        });
+
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledTimes(1);
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledWith(retiredTakeLanes);
+    });
+
     it('does not touch satellite stores when the ripple carried none', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: [] }],
@@ -110,6 +142,7 @@ describe('undoRippleDelete', () => {
 
         expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
         expect(mocks.restoreAutomationLanes).not.toHaveBeenCalled();
+        expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
     });
 
     it('is a no-op when there is no track state', () => {
