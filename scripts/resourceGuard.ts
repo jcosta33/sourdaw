@@ -2003,6 +2003,20 @@ export async function main(
                     );
                     if (cleared.status === 'cleared') {
                         log(`guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; receipt cleared`);
+                    } else if (cleared.status === 'absent') {
+                        log(
+                            `guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; no guard-failure receipt to clear`
+                        );
+                    } else if (cleared.status === 'mismatch') {
+                        error(
+                            `guard: failure resolved by committed change but the guard-failure receipt changed for lane ${lane.laneName}; preserving the current receipt`
+                        );
+                        return 1;
+                    } else {
+                        error(
+                            `guard: failed to clear the guard-failure receipt for lane ${lane.laneName}: ${cleared.message}`
+                        );
+                        return 1;
                     }
                 }
             } else if (isGuardFailureReason(result.reason)) {

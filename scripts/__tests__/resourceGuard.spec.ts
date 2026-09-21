@@ -1524,6 +1524,148 @@ describe('guard failure stop enforcement', () => {
         }
     });
 
+    function staleReceiptLane(
+        label: string,
+        args: string[]
+    ): {
+        repoRoot: string;
+        lane: DetectedLane;
+        laneName: string;
+        receipt: GuardFailureReceipt;
+    } {
+        const repoRoot = fixtureRoot(label);
+        const laneName = `agent-${label}`;
+        const oldHeadSha = '5555555555555555555555555555555555555555';
+        const newHeadSha = '6666666666666666666666666666666666666666';
+        const worktreePath = join(repoRoot, '.agents', 'worktrees', laneName);
+        mkdirSync(worktreePath, { recursive: true });
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: `agent/${label}`,
+            headSha: newHeadSha,
+            worktreePath,
+        };
+        const receipt: GuardFailureReceipt = {
+            version: 1,
+            lane: laneName,
+            branch: lane.branch,
+            headSha: oldHeadSha,
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'timeout',
+            command: 'pnpm',
+            args,
+            cwd: realpathSync(worktreePath),
+            profile: 'focused',
+            peakRssBytes: 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 600_000,
+        };
+        writeGuardFailureReceipt(repoRoot, receipt);
+        return { repoRoot, lane, laneName, receipt };
+    }
+
+    it('reports failure when the resolved receipt cannot be cleared during verification', async () => {
+        const { repoRoot, lane, laneName, receipt } = staleReceiptLane('clear-error', ['test:run', 'test.spec.ts']);
+        const errors: string[] = [];
+        const failingRm: typeof rmSync = () => {
+            throw Object.assign(new Error('EACCES: permission denied, unlink'), { code: 'EACCES' });
+        };
+        const failingLink: typeof linkSync = () => {
+            throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
+        };
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => fakeResult({ code: 0 }),
+                clearReceiptPorts: { rmSync: failingRm, linkSync: failingLink },
+                error: (message) => errors.push(message),
+            });
+
+            expect(code).toBe(1);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+
+            const claimEntries = readdirSync(join(repoRoot, GUARD_FAILURES_DIR)).filter((name) =>
+                name.startsWith(`${laneName}.json.claim-`)
+            );
+            expect(claimEntries).toHaveLength(1);
+            const claimName = claimEntries[0];
+            if (claimName === undefined) {
+                throw new Error(`restore left no claim file for lane ${laneName}`);
+            }
+            const claimPath = join(repoRoot, GUARD_FAILURES_DIR, claimName);
+            expect(readFileSync(claimPath, 'utf8')).toBe(`${JSON.stringify(receipt, null, 2)}\n`);
+
+            const errorLine = errors.find((message) =>
+                message.includes('guard: failed to clear the guard-failure receipt')
+            );
+            expect(errorLine).toBeDefined();
+            expect(errorLine).toContain(laneName);
+            expect(errorLine).toContain(claimPath);
+            expect(errorLine).toContain('EACCES');
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('reports failure and preserves a newer receipt that won during verification', async () => {
+        const { repoRoot, lane, laneName, receipt } = staleReceiptLane('clear-mismatch', ['test:run', 'test.spec.ts']);
+        const replacementReceipt: GuardFailureReceipt = {
+            ...receipt,
+            headSha: 'abababababababababababababababababababab',
+            args: ['test:run', 'different.spec.ts'],
+            failedAt: '2026-09-07T13:00:00.000Z',
+        };
+        const errors: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => {
+                    writeGuardFailureReceipt(repoRoot, replacementReceipt);
+                    return fakeResult({ code: 0 });
+                },
+                error: (message) => errors.push(message),
+            });
+
+            expect(code).toBe(1);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toEqual(replacementReceipt);
+            expect(errors).toContain(
+                `guard: failure resolved by committed change but the guard-failure receipt changed for lane ${laneName}; preserving the current receipt`
+            );
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('reports clean when the resolved receipt is already absent during verification', async () => {
+        const { repoRoot, lane, laneName } = staleReceiptLane('clear-absent', ['test:run', 'test.spec.ts']);
+        const logs: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => {
+                    clearGuardFailureReceipt(repoRoot, laneName);
+                    return fakeResult({ code: 0 });
+                },
+                log: (message) => logs.push(message),
+            });
+
+            expect(code).toBe(0);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(logs).toContain(
+                `guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; no guard-failure receipt to clear`
+            );
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
     it('clears a changed-head receipt only when both the command and original cwd match', async () => {
         const repoRoot = fixtureRoot('lane-mismatched-command');
         const laneName = 'agent-108-mismatch';
