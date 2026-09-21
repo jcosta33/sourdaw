@@ -1,0 +1,16 @@
+src/modules/Arrangement/handlers/clip/__tests__/cutClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 173-174,180,192,195-201,204,220-261
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 728-732,766-767,769-775,791-794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7c736a0accd5984f20f47e06a4a75fc0e292e459",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
