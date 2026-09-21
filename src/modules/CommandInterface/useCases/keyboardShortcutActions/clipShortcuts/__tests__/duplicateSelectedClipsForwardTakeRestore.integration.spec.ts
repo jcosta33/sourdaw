@@ -7,7 +7,7 @@ import {
 import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { macroStore } from '#/modules/Command/stores';
+import { macroStore, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -106,7 +106,7 @@ describe('duplicateSelectedClipsForward take restore', () => {
         expect(takeIdsInLiveLanes()).toEqual([]);
     });
 
-    it('restores nothing when the redo cannot re-create its copy', async () => {
+    it('refuses the redo when it cannot re-create its copy', async () => {
         duplicateSelectedClipsForward(['clip-1']);
         const copyId = clipIds().find((id) => id !== 'clip-1');
         if (!copyId) {
@@ -132,13 +132,18 @@ describe('duplicateSelectedClipsForward take restore', () => {
 
         await redo();
 
+        // The redo refused: a not-applied redo drops its entry rather than moving it to
+        // `past`, which is what tells this refusal apart from a redo that ran and merely
+        // restored nothing.
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
         // Nothing was re-created, so no lane may come back for a track that is gone.
         expect(clipIds()).toEqual([]);
         expect(takeIdsInLiveLanes()).toEqual([]);
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 
-    it('restores only the lanes of the copies it re-created', async () => {
+    it('leaves no lane for the copy whose destination track was gone', async () => {
         setTrackStoreState({
             ...defaultTrackState,
             tracks: [
@@ -196,6 +201,9 @@ describe('duplicateSelectedClipsForward take restore', () => {
         await redo();
 
         // Only the copy that came back may carry a lane, and it must name a live clip.
+        // The closure's own per-copy filter is observed by the unit case in
+        // `duplicateSelectedClipsForward.spec.ts`; here the shared restore guard refuses
+        // the missing track as well, so this case pins the end-to-end outcome.
         expect(clipIds()).toEqual(['clip-1', firstCopy.id]);
         expect(takeIdsInLiveLanes()).toEqual([firstTake.id]);
         expect(clipIdsNamedByLiveTakes()).toEqual([firstCopy.id]);

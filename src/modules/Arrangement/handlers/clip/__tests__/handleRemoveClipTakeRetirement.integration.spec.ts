@@ -216,15 +216,25 @@ describe('removeClip take retirement (ripple route)', () => {
         await removeClipThroughHandler('clip-1');
         expect(takeLaneStore.value?.lanes).toEqual([]);
 
-        // A projection removes the clip's whole track, and its lane with it, before
-        // the undo runs.
-        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        // A projection removes the clip's track, re-creates the clip on another one, and
+        // takes the lane with it. The take's clip is live again, so only the lane's own
+        // missing track can refuse this capture.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-2',
+                    clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-2' })],
+                }),
+            ],
+            selectedTrackId: 'track-2',
+            ghostClips: [],
+        });
         takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
 
         await undo();
 
-        expect(trackStore.value?.tracks).toEqual([]);
+        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-2']);
         // Nothing may come back keyed to a track that is gone.
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });

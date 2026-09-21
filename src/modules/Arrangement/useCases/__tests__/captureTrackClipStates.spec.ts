@@ -228,11 +228,12 @@ describe('captureTrackClipStates', () => {
         ];
         mocks.captureRetiredTakeLanes.mockReturnValue(retiredTakeLanes);
 
-        const [snapshot] = captureTrackClipStates(['t1'], ['c1', 'c2']);
+        // `c3` is retiring but not this track's, and `c2` is this track's but not
+        // retiring, so only the intersection may be captured: naming every track clip
+        // or the whole retiring list would both be wrong.
+        const [snapshot] = captureTrackClipStates(['t1'], ['c1', 'c3']);
 
-        // Scoped to the clips this track actually owns, so a retiring clip on another
-        // track never drags this track's snapshot into a lane it does not own.
-        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith(['c1', 'c2']);
+        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith(['c1']);
         expect(snapshot?.retiredTakeLanes).toBe(retiredTakeLanes);
     });
 
