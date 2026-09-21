@@ -41,6 +41,13 @@ Coverage gap: the added assertions proved producer objects and a master/track-on
 
 Probe that would have caught it: inspect `buildAgentContext().message` in full and delta modes, mutate an unselected track's clip, send, and gain lane independently of its gain/name, and require every linear value beside its decibel reading, removals represented, and exactly one law header.
 
+### 2026-09-21 — an expected refusal printed as a failure misled two readers (issue #4486)
+
+The publish spec inherited the trusted publisher's stderr, so a refusal the case deliberately provokes
+(`expected exactly one locked author lane`) printed to the shard log and read as a test failure to two
+readers across two review rounds. Probe: capture child stderr in the helper and assert refusals through
+the thrown error, then require a deliberately-refused case to leave the spec's own stderr clean.
+
 ### 2026-09-19 — an Anthropic usage fixture mirrored the raw-field mapping (escaped via PR #4393)
 
 PR #4393 normalized Anthropic `input_tokens` directly as total input while also exposing cache-read and
