@@ -1,9 +1,10 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
-import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { getTrackStoreState } from '../getTrackStoreState';
+
+import { laneTrackExists } from './laneTrackExists';
+import { takesWithLiveClips } from './takesWithLiveClips';
 
 /** Touching regions (`left.endBeat === right.startBeat`) do not overlap, matching
  *  the store's own retention, which keeps a region whose start is at the
@@ -106,10 +107,6 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
         return;
     }
 
-    const tracks = getTrackStoreState()?.tracks ?? [];
-    const liveTrackIds = new Set(tracks.map((track) => track.id));
-    const liveClipIds = new Set(tracks.flatMap((track) => collectTrackClipIds(track)));
-
     const lanes = [...state.lanes];
     let changed = false;
     for (const { lane, laneIndex, retiredTakeIds } of retiredLanes) {
@@ -119,13 +116,11 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
         // here rather than at each caller because a single-action undo dispatches its
         // inverse through `executeAppAction`, which never runs the handler's
         // live-state validation, so no caller's own guard is on that path.
-        if (!liveTrackIds.has(lane.trackId)) {
+        if (!laneTrackExists(lane.trackId)) {
             continue;
         }
-        const residentTakeIds = (retiredTakeIds ?? []).filter((takeId) => {
-            const take = lane.takes.find((candidate) => candidate.id === takeId);
-            return take !== undefined && liveClipIds.has(take.clipId);
-        });
+        const liveTakeIds = new Set(takesWithLiveClips(lane.takes).map((take) => take.id));
+        const residentTakeIds = (retiredTakeIds ?? []).filter((takeId) => liveTakeIds.has(takeId));
 
         // The captured lane's own id, or the lane its track now owns — the same
         // identity rule the cut-route guard uses, so the two can never disagree

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
@@ -99,6 +100,20 @@ describe('targeted take-lane undo entries (#4081)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneStoreValue.value = null;
+        // The entries filter the takes they replay to those whose clips are still in
+        // the project, so every case below needs the world its ids live in.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 't1',
+                    clips: ['clip-t1', 'clip-new'].map((id) => ClipDummy.create({ id, trackId: 't1' })),
+                }),
+                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'clip-t2', trackId: 't2' })] }),
+                TrackDummy.create({ id: 't3', clips: [ClipDummy.create({ id: 'clip-t3', trackId: 't3' })] }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
     });
 
     it('addTake undo removes only the added take and preserves later edits to another lane', () => {

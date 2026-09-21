@@ -6,7 +6,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { macroStore } from '#/modules/Command/stores';
+import { macroStore, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -115,7 +115,7 @@ describe('renderToClip take restore', () => {
         expect(takeIdsInLiveLanes()).toEqual([]);
     });
 
-    it('restores nothing when the redo cannot re-create its clip', async () => {
+    it('refuses the redo when it cannot re-create its clip', async () => {
         const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
         const rendered = renderToClip({
             targetTrackId: 'track-1',
@@ -147,6 +147,11 @@ describe('renderToClip take restore', () => {
 
         await redo();
 
+        // The redo refused: a not-applied redo drops its entry rather than moving it to
+        // `past`, which is what tells this refusal apart from a redo that ran and merely
+        // restored nothing.
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
         // Nothing was re-created, so no lane may come back for a track that is gone.
         expect(clipIds()).toEqual([]);
         expect(takeIdsInLiveLanes()).toEqual([]);

@@ -1556,12 +1556,9 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
         });
 
-        it('lands a redo when a projection removed the retired take', () => {
+        it('lands a redo whose capture is empty because the lane lost its take', () => {
             const track = liveTrack('t1', ['c2']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
-            mocks.takeLaneStore.value = {
-                lanes: [{ ...structuredClone(retiredTakeLanes[0]!.lane), takes: [] }],
-            };
 
             const result = handleRestoreTrackClipStates.execute({
                 type: 'restoreTrackClipStates',
@@ -1571,8 +1568,12 @@ describe('handleRestoreTrackClipStates', () => {
                 },
             });
 
-            // The lane's take is gone, so the removal has nothing to retire — but the
-            // redo itself is still safe and must land rather than pin the redo stack.
+            // The take-lane use cases are mocked here, so the lane's contents cannot be
+            // read by this handler: what this case observes is that an empty re-retire
+            // still lands rather than pinning the redo stack. The real store outcome of
+            // a projection emptying the lane is pinned with the real use cases by the
+            // cut route's "does not resurrect a take a projection removed before the
+            // redo".
             expect(result).toEqual({ status: 'written' });
             expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
             expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c2']);

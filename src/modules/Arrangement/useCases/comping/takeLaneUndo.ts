@@ -5,6 +5,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { insertTakeLane } from './insertTakeLane';
 import { removeTakeLane } from './removeTakeLane';
+import { takesWithLiveClips } from './takesWithLiveClips';
 
 type TakeLaneFacetState =
     | { readonly kind: 'takes'; readonly value: readonly Take[] }
@@ -31,7 +32,9 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
         return;
     }
     if (facet.kind === 'takes') {
-        const takes = facet.value;
+        // A take whose clip is gone is not part of the facet any more: replaying it
+        // back would resurrect material a direct retirement removed (#4265).
+        const takes = takesWithLiveClips(facet.value);
         takeLaneStore.set({
             lanes: state.lanes.map((existing) =>
                 existing.id === laneId ? { ...existing, takes: [...takes] } : existing
@@ -56,6 +59,10 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
  * whole-store snapshot replay.
  */
 export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void {
+    // A lane put back carries only the takes whose clips are still there, for the
+    // same reason: a capture surviving a direct retirement must not replay its
+    // material back into a project that no longer holds the clip it names.
+    const laneWithLiveTakes = (lane: TakeLane): TakeLane => ({ ...lane, takes: takesWithLiveClips(lane.takes) });
     const undo = () => {
         if (edit.kind === 'facet') {
             applyFacetState(edit.laneId, edit.before);
@@ -65,7 +72,7 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             removeTakeLane(edit.lane.id);
             return;
         }
-        insertTakeLane(edit.lane, edit.laneIndex);
+        insertTakeLane(laneWithLiveTakes(edit.lane), edit.laneIndex);
     };
     const redo = () => {
         if (edit.kind === 'facet') {
@@ -73,7 +80,7 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             return;
         }
         if (edit.kind === 'lane-added') {
-            insertTakeLane(edit.lane, edit.laneIndex);
+            insertTakeLane(laneWithLiveTakes(edit.lane), edit.laneIndex);
             return;
         }
         removeTakeLane(edit.lane.id);
