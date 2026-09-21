@@ -4,8 +4,8 @@ import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { insertTakeLane } from './insertTakeLane';
+import { laneWithLiveTakes } from './laneWithLiveTakes';
 import { removeTakeLane } from './removeTakeLane';
-import { takesWithLiveClips } from './takesWithLiveClips';
 
 type TakeLaneFacetState =
     | { readonly kind: 'takes'; readonly value: readonly Take[] }
@@ -31,22 +31,19 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
     if (!state || !lanePresent(state.lanes, laneId)) {
         return;
     }
-    if (facet.kind === 'takes') {
-        // A take whose clip is gone is not part of the facet any more: replaying it
-        // back would resurrect material a direct retirement removed (#4265).
-        const takes = takesWithLiveClips(facet.value);
-        takeLaneStore.set({
-            lanes: state.lanes.map((existing) =>
-                existing.id === laneId ? { ...existing, takes: [...takes] } : existing
-            ),
-        });
-        return;
-    }
-    const activeCompRegions = facet.value;
+    // Whichever facet is being replayed, the lane goes back through the one liveness
+    // rule: a take whose clip is gone is not part of the state any more, and neither is
+    // a region that names it.
     takeLaneStore.set({
-        lanes: state.lanes.map((existing) =>
-            existing.id === laneId ? { ...existing, activeCompRegions: [...activeCompRegions] } : existing
-        ),
+        lanes: state.lanes.map((existing) => {
+            if (existing.id !== laneId) {
+                return existing;
+            }
+            if (facet.kind === 'takes') {
+                return laneWithLiveTakes({ ...existing, takes: [...facet.value] });
+            }
+            return laneWithLiveTakes({ ...existing, activeCompRegions: [...facet.value] });
+        }),
     });
 }
 
@@ -59,10 +56,6 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
  * whole-store snapshot replay.
  */
 export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void {
-    // A lane put back carries only the takes whose clips are still there, for the
-    // same reason: a capture surviving a direct retirement must not replay its
-    // material back into a project that no longer holds the clip it names.
-    const laneWithLiveTakes = (lane: TakeLane): TakeLane => ({ ...lane, takes: takesWithLiveClips(lane.takes) });
     const undo = () => {
         if (edit.kind === 'facet') {
             applyFacetState(edit.laneId, edit.before);
