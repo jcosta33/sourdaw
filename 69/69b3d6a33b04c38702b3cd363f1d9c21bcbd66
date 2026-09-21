@@ -1,0 +1,20 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 1950-1953,1956-1957,1960-1965,1969-1993,2017-2018,2022,2040
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1185-1196,1394-1397,1427-1432,1443-1446,1454-1459,1475-1477,1537-1539,1666-1717
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 14,52-54,126-138,370-373,375-378,384-386,388-389
+scripts/semanticReviewWorkflowContract.ts
+  h_beb54bf43b47b7 34-36,102-134,230-258,362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6969b3d6a33b04c38702b3cd363f1d9c21bcbd66",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
