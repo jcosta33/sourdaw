@@ -1,0 +1,32 @@
+src/modules/AiGeneration/handlers/generation/__tests__/fillPlacementUndo.integration.spec.ts
+  h_beb54bf43b47b7 6-10,76-79,162-193
+src/modules/Arrangement/handlers/clip/__tests__/cutClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 242-318
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  h_beb54bf43b47b7 1,5,95-98,286-294,314-316
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 1517-1519
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  h_beb54bf43b47b7 5,8,70-82
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 5,8,11,26-29,726-731,734,758-785,787-850,919
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  h_beb54bf43b47b7 87-104,197,213,220
+src/modules/Command/useCases/redo.ts
+  h_beb54bf43b47b7 58-92,135-137,141,147,150-152,186-191
+src/utils/createHandler.ts
+  h_beb54bf43b47b7 37-38,91
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 2948-2962
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8d3ae2453e37522ae7d3c4b34dd03ca18970d4de",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
