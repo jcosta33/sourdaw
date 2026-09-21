@@ -179,7 +179,13 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
             return { status: 'conflict' };
         }
         if (error instanceof AppActionCommittedError) {
-            return { status: 'committed', error };
+            // Every path that reports a committed error did so after the write landed, so
+            // the entry's inverse reconciles against live state before this outcome is
+            // reported — the ordinary path's own reconcile below, and the grouped path's,
+            // which runs it ahead of both committed outcomes. Skipping it here leaves a
+            // replayed creation with the clip restored and its take lane not, and the
+            // next undo then recaptures that empty lane over the entry's capture.
+            return { status: 'committed', error: reconcileAfterRedo(entry) ?? error };
         }
         throw error;
     }

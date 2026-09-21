@@ -37,7 +37,49 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+const mocks = vi.hoisted(() => ({ failPostCommitStep: false }));
+
+// `executeAppAction` runs this after the storage commit and turns a throw from it into
+// an `AppActionCommittedError`. That is the same committed outcome a failing post-write
+// observer, macro recording or handler effect produces, and the one `executeRedo`'s
+// committed branch has to handle: the write it reports on already landed. The real clear
+// runs otherwise.
+vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/stores')>();
+    return {
+        ...actual,
+        clearSemanticContext: (): void => {
+            if (mocks.failPostCommitStep) {
+                throw new Error('post-commit step failed');
+            }
+            actual.clearSemanticContext();
+        },
+    };
+});
+
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+
+/** One redo whose post-commit step fails, which reports as a committed error: the
+ *  replayed write landed and the entry may never be re-applied. */
+async function redoWithFailingPostCommitStep(): Promise<void> {
+    mocks.failPostCommitStep = true;
+    try {
+        // `AppActionCommittedError`'s own wording, so the case proves the replay took the
+        // committed branch rather than any other refusal.
+        await expect(redo()).rejects.toThrow(/Action committed but post-commit processing failed: addClip/);
+    } finally {
+        mocks.failPostCommitStep = false;
+    }
+}
+
+/** The take ids the entry at the head of the redo stack would restore. */
+function capturedRetiredTakeIdsAtFutureHead(): string[] {
+    const entry = undoHistoryStore.value?.future.at(0);
+    if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'discardDuplicatedClip') {
+        throw new Error('expected the discard entry at the head of the redo stack');
+    }
+    return (entry.inverseAction.payload.retiredTakeLanes ?? []).flatMap((capture) => capture.retiredTakeIds ?? []);
+}
 
 /** The production boot sequence: register every handler map, then hydrate the undo
  *  stacks from the session mirror. Re-running it is exactly what a reload does. */
@@ -134,6 +176,60 @@ describe('clip-creation take restore', () => {
         await redo();
 
         expect(clipIds()).toEqual(['clip-source', 'clip-added']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('puts a take back when the redo commits and then throws', async () => {
+        await createClip({
+            type: 'addClip',
+            payload: {
+                id: 'clip-added',
+                trackId: 'track-1',
+                startBeat: 8,
+                endBeat: 12,
+                name: 'Added',
+                type: 'audio',
+            },
+        });
+        const takeId = projectTakeOntoClip('clip-added');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redoWithFailingPostCommitStep();
+
+        // The write landed before the observer failed, so the clip is back — and the take
+        // has to be back with it. A committed outcome reported without the entry's
+        // reconcile leaves the clip's capture unrestored.
+        expect(clipIds()).toEqual(['clip-source', 'clip-added']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('keeps the capture through a redo that commits and then throws', async () => {
+        await createClip({
+            type: 'addClip',
+            payload: {
+                id: 'clip-added',
+                trackId: 'track-1',
+                startBeat: 8,
+                endBeat: 12,
+                name: 'Added',
+                type: 'audio',
+            },
+        });
+        const takeId = projectTakeOntoClip('clip-added');
+
+        await undo();
+        await redoWithFailingPostCommitStep();
+
+        // The next undo captures what the removal actually retires, so a committed redo
+        // that skipped the reconcile would overwrite this entry's capture with the empty
+        // lane the replay left behind — and the take would be gone for good.
+        await undo();
+        expect(capturedRetiredTakeIdsAtFutureHead()).toEqual([takeId]);
+
+        await redo();
         expect(takeIdsInLiveLanes()).toEqual([takeId]);
     });
 
