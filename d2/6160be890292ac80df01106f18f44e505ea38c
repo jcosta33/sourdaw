@@ -1,0 +1,16 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipCreationTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 40-59,62-83,182-235
+src/modules/Command/useCases/redo.ts
+  h_beb54bf43b47b7 182-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d26160be890292ac80df01106f18f44e505ea38c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
