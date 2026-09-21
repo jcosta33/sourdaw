@@ -542,6 +542,87 @@ describe('flattenComp', () => {
         expect(undoStore.value!.past).toEqual([]);
     });
 
+    it('re-applies the flatten when a projection gave the track a lane while it was undone', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        seedLane(
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+        expect(laneIds()).toEqual([]);
+        // The comp's own programme: the take over the region, the source either side.
+        expect(liveClips()).toHaveLength(3);
+
+        // A projection — a collaborator's write, with no local undo entry — adds a clip to
+        // the track and places the track's lane with a take and comp region of its own.
+        // Neither names a clip this flatten affects.
+        const projectedClip = ClipDummy.create({
+            id: 'clip-projected',
+            trackId: TRACK_ID,
+            startBeat: 8,
+            endBeat: 12,
+            audioBufferId: 'buf-projected',
+        });
+        const projectedTake = {
+            id: 'take-projected',
+            clipId: 'clip-projected',
+            name: 'Projected take',
+            startBeat: 8,
+            endBeat: 12,
+            selected: false,
+        };
+        const projectedRegion = { startBeat: 8, endBeat: 12, takeId: 'take-projected' };
+        trackStore.set({
+            tracks: [{ ...trackStore.value!.tracks[0]!, clips: [...liveClips(), projectedClip] }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        const projectedLane = {
+            ...createTakeLane(TRACK_ID),
+            takes: [projectedTake],
+            activeCompRegions: [projectedRegion],
+        };
+        takeLaneStore.set({ lanes: [projectedLane] });
+        vi.clearAllMocks();
+
+        await undo();
+
+        // The captured take merged into the projection's lane — the id the redo's presence
+        // test and removal still used.
+        expect(liveClips().map((liveClip) => liveClip.id)).toEqual(['clip-a', 'clip-projected']);
+        expect(laneIds()).toEqual([projectedLane.id]);
+        expect(takeLaneStore.value!.lanes[0]!.takes.map((take) => take.id)).toEqual(['take-a', 'take-projected']);
+
+        await redo();
+
+        // Retiring the merged take is what lets the clip replacement run: a take naming a
+        // clip the transaction replaces makes it refuse. Without that the redo reports
+        // not-applied and the entry is dropped, for a forward effect that still applies.
+        expect(liveClips().map((liveClip) => liveClip.audioBufferId)).toEqual([
+            'buf-a',
+            'buf-a',
+            'buf-a',
+            'buf-projected',
+        ]);
+        // The projection's own take and region are not this replay's to retire.
+        expect(laneIds()).toEqual([projectedLane.id]);
+        const redoneLane = takeLaneStore.value!.lanes[0]!;
+        expect(redoneLane.takes.map((take) => take.id)).toEqual(['take-projected']);
+        expect(redoneLane.activeCompRegions).toEqual([projectedRegion]);
+        expect(warnings()).toEqual([]);
+        expect(notifyUserMock.mock.calls).toEqual([]);
+        expect(undoStore.value!.past.map((entry) => entry.label)).toEqual(['Flatten comp']);
+        expect(undoStore.value!.future).toEqual([]);
+    });
+
     it('refused undo followed by redo leaves the lane retired and drops the entry', async () => {
         const clip = ClipDummy.create({
             id: 'clip-a',
