@@ -81,6 +81,7 @@ import {
     type RemoteBranchRead,
 } from '../publishLane.ts';
 import { changedReviewPaths, type ReviewChangedPath } from '../reviewDiffSummary.ts';
+import { COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL } from '../testInstructions.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -93,9 +94,6 @@ const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
 /** A How-to-test value that is nothing but CI narration: exactly what the product-scope gate refuses. */
 const COMMAND_ONLY_TEST =
     '- `pnpm test:run scripts/__tests__/publishLane.spec.ts` (140 passed)\n- `pnpm typecheck` (clean)';
-const COMMAND_ONLY_TEST_REFUSAL =
-    'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
-    'expected result; automated author or CI check narration is not a substitute';
 const PRODUCT_SCOPE_PATH: ReviewChangedPath = {
     path: 'src/modules/AiRuntime/x.ts',
     group: 'handwritten',
@@ -267,10 +265,15 @@ function fakePort(input: FakeInput = {}) {
         laneSubject: () => subject,
         commitAuthorEmails: () =>
             (input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL]).map((email, index) => ({ sha: `sha${index}`, email })),
-        objectStoreRewrites: () => ({
-            graftsFile: input.objectStoreRewrites?.graftsFile,
-            replaceRefs: input.objectStoreRewrites?.replaceRefs ?? 0,
-        }),
+        // The store read is ledgered so the gate-order pins below can prove the classification
+        // read follows the object-store verification instead of merely preceding the push.
+        objectStoreRewrites: () => {
+            calls.push('objectStoreRewrites');
+            return {
+                graftsFile: input.objectStoreRewrites?.graftsFile,
+                replaceRefs: input.objectStoreRewrites?.replaceRefs ?? 0,
+            };
+        },
         headSha: () => input.headSha ?? 'abc',
         remoteBranchSha: () => input.remoteRead ?? { kind: 'present', sha: 'abc' },
         isAncestor: () => input.ancestor ?? true,
@@ -1287,11 +1290,18 @@ describe('lane publish', () => {
         const { port, calls } = fakePort({ changedPaths: [PRODUCT_SCOPE_PATH] });
 
         expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
-            COMMAND_ONLY_TEST_REFUSAL
+            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
         );
         // The gate read the lane's own diff over the exact base and head the port carries before
-        // refusing, so the classification is the lane's, not a guess.
-        expect(calls).toContain(`changedPaths:${ISSUE_LANE}:base:abc`);
+        // refusing, so the classification is the lane's, not a guess — and it read after the
+        // object-store verification, so no rewrite can split what the gate reads from what the
+        // push packs. Requiring the store read itself in the ledger is what pins the order: a
+        // read that ran before the store verification would refuse without the store read ever
+        // landing in the ledger.
+        expect(calls).toContain('objectStoreRewrites');
+        expect(calls.indexOf(`changedPaths:${ISSUE_LANE}:base:abc`)).toBeGreaterThan(
+            calls.indexOf('objectStoreRewrites')
+        );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
@@ -1311,7 +1321,9 @@ describe('lane publish', () => {
     it('refuses an explicit command-only --test on a product-scope update of an existing pull request', () => {
         const { port, calls } = fakePort({ existing: 41, changedPaths: [PRODUCT_SCOPE_PATH] });
 
-        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(COMMAND_ONLY_TEST_REFUSAL);
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
+            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+        );
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
@@ -1346,7 +1358,7 @@ describe('lane publish', () => {
             });
 
             expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
-                COMMAND_ONLY_TEST_REFUSAL
+                COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
             );
             expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         }

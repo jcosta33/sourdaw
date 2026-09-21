@@ -30,7 +30,12 @@ import {
     type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
-import { assertObservableTestInstructions, commandOnlyTestInstructions, COMMAND_HEADS } from '../testInstructions.ts';
+import {
+    assertObservableTestInstructions,
+    commandOnlyTestInstructions,
+    COMMAND_HEADS,
+    COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL,
+} from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
@@ -720,9 +725,9 @@ describe('pull-request contract', () => {
 });
 
 describe('product-scope test instructions', () => {
-    const REFUSAL =
-        'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
-        'expected result; automated author or CI check narration is not a substitute';
+    // The gate's refusal, imported rather than copied: the exported literal is the single owner,
+    // so rewording it reddens every pin in this file and in publishLane.spec.ts from one place.
+    const REFUSAL = COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL;
 
     /**
      * The full head inventory, spec-owned on purpose: dropping any head reddens the equality pin.
@@ -894,10 +899,13 @@ describe('product-scope test instructions', () => {
     it.each([
         ['a python one-liner with a quoted semicolon', 'python -c "import json; print(1)"'],
         ['a commit message carrying a quoted semicolon', 'git commit -m "fix the handle; add tests"'],
+        ['a node one-liner with a single-quoted semicolon', "node -e 'process.exit(1); console.log(2)'"],
     ])('refuses %s', (_label, instructions) => {
         // The segment split separates only on '.'/';' outside a quoted span — all three quote
         // kinds — so a separator inside the quoted argument cannot manufacture a launch-less
-        // fragment whose stray words rescue the line.
+        // fragment whose stray words rescue the line. The double-quoted pair and the single-quoted
+        // node shape each redden the deletion of their own quote kind's tracking in
+        // splitOutsideQuotedSpans.
         expect(commandOnlyTestInstructions(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
@@ -1167,6 +1175,13 @@ describe('product-scope test instructions', () => {
         ['a note-taking step', 'make a note of the levels'],
         ['a shell-named sorting step', 'sort the clips by name'],
         ['a shell-named printing step', 'echo the level'],
+        // The article guard consults the first token behind a head-only quoted span, so the
+        // quoted spellings read their article exactly where the bare ones do; deleting that
+        // probe reddens these three while 'make test' stays a launch through the pinned
+        // make-task fixture.
+        ['a backticked MIDI step', '`make` a MIDI track'],
+        ['a backticked rename step', '`format` the clip name'],
+        ['a backticked sorting step behind a filler', 'run `sort` the clips by name'],
     ])('passes a manual %s whose head-verb opens onto an article', (_label, step) => {
         // The article directly behind the peeled head keeps the argument run closed — the head is
         // the step's own verb naming its object — so the UI nouns reach the rescue check instead
@@ -1175,6 +1190,25 @@ describe('product-scope test instructions', () => {
         expect(commandOnlyTestInstructions(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
+
+    it.each([
+        ['an article naming the tested spec', 'pnpm test:run the transport spec (140 passed)'],
+        ['an article naming the launched app', 'pnpm typecheck the app (clean)'],
+        ['an article-led inventory', 'pnpm test:run the transport spec (140 passed)\npnpm typecheck the app (clean)'],
+        ['a bare argument behind a run-closing filler', 'pnpm dlx vitest run x (green)'],
+    ])(
+        'refuses %s: a bare token behind a run-closing vocabulary word stays command argument',
+        (_label, instructions) => {
+            // Behind a launch of command machinery — a command-material subcommand slot or a head
+            // dropped inside the run — the bare non-cue word behind the run-ending vocabulary word is
+            // the command's own argument, not the material that closes it: these refuse where their
+            // article-free twins (`pnpm test:run everything (140 passed)`, pinned above) always have.
+            // Reverting the strict material rule reddens this fixture while the launched drag-step
+            // pass rides its cue and clause unchanged.
+            expect(commandOnlyTestInstructions(instructions)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        }
+    );
 
     it.each([
         // A preposition behind the head takes the article guard's neighbor route: the run opens,

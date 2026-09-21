@@ -1320,10 +1320,23 @@ export function publishLane(
     // the remote tip..head when the branch exists remotely, and the lane-subject range otherwise.
     // These run before every remote write, with the rest of the pre-push refusal set: first the
     // object store must carry no rewrite that could split the gate's read from the push, and only
-    // then can a read over that store decide the authorship gate.
+    // then can a read over that store decide — the authorship gate and the product-scope
+    // test-instructions gate both.
     const rewrites = port.objectStoreRewrites(lane.path);
     if (rewrites.graftsFile !== undefined || rewrites.replaceRefs > 0) {
         fail(objectStoreRewritesRefusal(lane.branch, rewrites));
+    }
+    // Gated on the flag, never the resolved value: a body preserved verbatim from an existing pull
+    // request (--test omitted) is not re-judged, so in-flight pull requests keep their semantics,
+    // while every fresh create and explicit rewrite teaches an observable step when the change is
+    // product scope. The classification read follows the object-store verification, so no rewrite
+    // can split what it reads from what the push packs, and it still lands before any remote write,
+    // so a refusal leaves nothing pushed.
+    if (testInstructions !== undefined) {
+        const changedPaths = port.changedPaths(lane.path, comparisonHead, headSha);
+        if (isProductScopeChange(changedPaths)) {
+            assertObservableTestInstructions(testInstructions);
+        }
     }
     assertBotAuthoredDelta(lane, remoteRead, comparisonHead, baseSha, stack?.parentHead, headSha, port);
     if (port.baseSha() !== baseSha) {
@@ -1708,16 +1721,6 @@ function pullRequestWrite(
             fail('existing pull-request body is unreadable');
         }
         resolvedSummary = whatFromBody(existing.body);
-    }
-    // Gated on the flag, never the resolved value: a body preserved verbatim from an existing pull
-    // request (--test omitted) is not re-judged, so in-flight pull requests keep their semantics,
-    // while every fresh create and explicit rewrite teaches an observable step when the change is
-    // product scope. This runs before any write, so a refusal leaves nothing pushed.
-    if (testInstructions !== undefined) {
-        const changedPaths = port.changedPaths(lane.path, baseSha, headSha);
-        if (isProductScopeChange(changedPaths)) {
-            assertObservableTestInstructions(testInstructions);
-        }
     }
     const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
     return {

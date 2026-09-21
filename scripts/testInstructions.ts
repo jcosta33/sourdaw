@@ -10,8 +10,10 @@ import { fail } from './prContract.ts';
  * The refusal for a product-scope publish whose `--test` is nothing but command narration. Reviewers
  * verify a product change in the app, so the section has to teach steps they can perform and the
  * result they should observe; the checks an author or CI already ran prove nothing a reviewer can see.
+ * Exported so the specs can pin against the literal without owning a copy: rewording it reddens every
+ * refusal pin in one place, exactly like the head inventory's export-for-pin treatment.
  */
-const COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL =
+export const COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL =
     'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
     'expected result; automated author or CI check narration is not a substitute';
 
@@ -335,27 +337,40 @@ function leadingQuotedSpanContent(value: string): string {
 /**
  * The launch a segment's peel exposes, with what the argument-run scan needs around it: the head
  * token, the token that follows it (the determiner probe), and the quoted-span facts. The peel is
- * the same unwrap-and-strip alternation as before — list markers first, then a leading quoted
- * span unwrapped to its content and leading filler words stripped, each exposing the other, both
- * strictly shortening the remainder. A leading span marks the launch quoted and reports how many
- * tokens its content held: more than the head alone means the span already consumed the head's
- * subcommand slot inside the quotes; the head alone leaves the slot behind the span.
+ * an unwrap-and-strip alternation — list markers first, then a leading quoted span unwrapped to
+ * its content and leading filler words stripped, each exposing the other, both strictly shortening
+ * the remainder. A leading span marks the launch quoted and reports how many tokens its content
+ * held: more than the head alone means the span already consumed the head's subcommand slot inside
+ * the quotes; the head alone leaves the slot behind the span, so the determiner probe consults the
+ * first token behind a head-only span — '`make` a MIDI track' reads its article exactly where the
+ * bare spelling does, while a bare argument behind the span ('`make` test') still opens the run.
  */
 function peeledLaunch(segment: string): { lead: string; follower: string; spanLead: boolean; spanTokens: number } {
     let rest = stripRepeated(segment, LEADING_LIST_MARKER);
     let spanLead = false;
     let spanTokens = 0;
+    let spanFollower = '';
     for (;;) {
         const quote = rest[0];
         if (quote === '`' || quote === "'" || quote === '"') {
+            const closing = rest.indexOf(quote, 1);
             const content = leadingQuotedSpanContent(rest).trim();
             spanLead = true;
             spanTokens = content === '' ? 0 : content.split(/\s+/).length;
+            if (spanTokens === 1 && closing > 1) {
+                const behind = rest.slice(closing + 1).trim();
+                spanFollower = behind === '' ? '' : (behind.split(/\s+/)[0] ?? '');
+            }
         }
         const stripped = stripRepeated(leadingQuotedSpanContent(rest), LEADING_FILLER_WORD);
         if (stripped === rest) {
             const tokens = rest.split(/\s+/);
-            return { lead: tokens[0] ?? '', follower: tokens[1] ?? '', spanLead, spanTokens };
+            return {
+                lead: tokens[0] ?? '',
+                follower: spanLead && spanTokens === 1 ? spanFollower : (tokens[1] ?? ''),
+                spanLead,
+                spanTokens,
+            };
         }
         rest = stripped;
     }
@@ -413,16 +428,21 @@ function isAnnotationParenthetical(parenthetical: string): boolean {
  * command's trailing argument (`watch` in `gh run watch`) — stays non-material, while an
  * inflected form is a real word of the observation (`playback`, `starts`) and counts as the
  * material a rescuing word needs behind it. Annotation vocabulary stays non-material before the
- * cue test runs.
+ * cue test runs. In the strict mode a run entered through command machinery demands, a bare
+ * non-cue word is the command's own argument (`x` in `pnpm dlx vitest run x`), not the
+ * observation a rescuing word needs behind it — only a real inflected cue word counts there.
  */
-function isMaterialBehindRun(token: string): boolean {
+function isMaterialBehindRun(token: string, strict: boolean): boolean {
     if (token === '' || REMAINDER_VOCABULARY.has(token)) {
         return false;
     }
-    if (!OBSERVATION_CUE.test(token)) {
-        return true;
+    if (OBSERVATION_CUE_STEMS.includes(token)) {
+        return false;
     }
-    return !OBSERVATION_CUE_STEMS.includes(token);
+    if (!OBSERVATION_CUE.test(token)) {
+        return !strict;
+    }
+    return true;
 }
 
 /**
@@ -441,14 +461,33 @@ function opensArgumentRun(lead: string, follower: string): boolean {
  * `ast-grep run --lang ts -p …` — so the word stays the run's argument and the run stays open.
  * Otherwise real material must follow: as the segment's last token the word is the command's
  * trailing argument (`gh run watch`), and a word followed by nothing but annotation
- * (`gh pr checks watch`) drops with it.
+ * (`gh pr checks watch`) drops with it. In the strict mode, armed for runs entered through
+ * command machinery, only an inflected cue word is that material — the bare word behind the
+ * article of `pnpm test:run the transport spec` or behind the `run` that follows the `vitest`
+ * head stays the command's argument.
  */
-function closesArgumentRun(behind: string[]): boolean {
+function closesArgumentRun(behind: string[], strict: boolean): boolean {
     const next = behind.find((token) => token !== '');
     if (next !== undefined && isCommandToken(next)) {
         return false;
     }
-    return behind.some(isMaterialBehindRun);
+    return behind.some((token) => isMaterialBehindRun(token, strict));
+}
+
+/**
+ * Whether the argument run closes at this run-ending vocabulary-or-cue word. A cue word is the
+ * observation's own verb, so it always closes on any material behind it; a non-cue vocabulary
+ * word closes strictly where the run was launched by command machinery — a subcommand slot that
+ * carried command material, or a head dropped inside the run — where only an inflected cue word
+ * is the material a rescuing word needs.
+ */
+function closesAtRunEndingWord(
+    word: string,
+    behind: string[],
+    slotWasCommandMaterial: boolean,
+    behindWasHead: boolean
+): boolean {
+    return closesArgumentRun(behind, (slotWasCommandMaterial || behindWasHead) && !OBSERVATION_CUE.test(word));
 }
 
 /**
@@ -469,6 +508,10 @@ function closesArgumentRun(behind: string[]): boolean {
  * closesArgumentRun lets it, while a head inside the run, colon-bearing or not, is command
  * material the run continues through (`pnpm exec cargo build` is launch, subcommand, argument) —
  * making quoting the launch verdict-neutral and `git fetch origin` narration all the way through.
+ * When that machinery launched the run — a subcommand slot that carried command material, or a
+ * head dropped inside it — the run-ending vocabulary word closes strictly: the bare noun behind
+ * it is the command's own argument (`the transport spec` after `pnpm test:run`), where a launch
+ * through a bare subcommand or prose slot keeps closing on it (`the mixer` after `go to`).
  */
 function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
@@ -483,6 +526,13 @@ function proseRemainderWords(segment: string): string[] {
     const follower = launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     let insideArgumentRun = opensArgumentRun(lead, follower);
     let slotBehindSpan = insideArgumentRun && launch.spanLead && launch.spanTokens === 1;
+    // The strict material mode arms when the run's launch is command machinery: the head's
+    // subcommand slot carried command material, or a command head was dropped inside the run. A
+    // bare non-cue word behind a run-ending word is then that command's own argument — never the
+    // observation a rescuing word needs behind it — while a launch through a bare subcommand or
+    // prose slot (`pnpm dev and drag a clip onto a lane`, `go to the mixer`) keeps the loose rule.
+    let slotWasCommandMaterial = false;
+    let behindWasHead = false;
     for (const [index, word] of tokens.entries()) {
         if (word === '') {
             continue;
@@ -491,6 +541,7 @@ function proseRemainderWords(segment: string): string[] {
             // The head's subcommand slot, pushed behind a head-only quoted span: command
             // material whatever it is, dropped before the argument run opens.
             slotBehindSpan = false;
+            slotWasCommandMaterial = true;
             continue;
         }
         if (index === 0 && !launch.spanLead) {
@@ -507,6 +558,7 @@ function proseRemainderWords(segment: string): string[] {
             // whatever it is — `pnpm run build`, `npm start` — dropped before the argument run
             // opens. A quoted launch has no token here: its span already held the head, so the
             // words behind it are arguments, never the slot.
+            slotWasCommandMaterial = isCommandToken(word);
             continue;
         }
         if (insideArgumentRun) {
@@ -516,15 +568,18 @@ function proseRemainderWords(segment: string): string[] {
             // in `playwright show-report`) are command material whose cue-bearing halves must
             // never reach the cue test.
             if (isCommandToken(word) || word.includes('-')) {
+                behindWasHead = COMMAND_HEADS.has(word);
                 continue;
             }
             if (REMAINDER_VOCABULARY.has(word) || OBSERVATION_CUE.test(word)) {
-                if (closesArgumentRun(tokens.slice(index + 1))) {
+                if (closesAtRunEndingWord(word, tokens.slice(index + 1), slotWasCommandMaterial, behindWasHead)) {
                     insideArgumentRun = false;
                     words.push(word);
                 }
+                behindWasHead = false;
                 continue;
             }
+            behindWasHead = false;
             continue;
         }
         if (!isCommandToken(word)) {
@@ -580,7 +635,8 @@ function isCommandNarration(segment: string): boolean {
  * never split a command into a launch-less fragment; empty pieces from separators and blank lines
  * drop. List markers leave the line before that split, because a numbered marker's own dot would
  * otherwise be read as a sentence boundary and strand a bare `1` segment that no command list
- * deserves. Callers guarantee non-emptiness (`composePublishBody` refuses an empty section first).
+ * deserves. The segments-length guard in `commandOnlyTestInstructions` is load-bearing: empty
+ * input reaches it, and `composePublishBody`'s emptiness refusal runs after the gate.
  */
 function testInstructionSegments(text: string): string[] {
     const marked = text.split(/\r?\n/).map((line) => stripRepeated(line.trim(), LEADING_LIST_MARKER));
