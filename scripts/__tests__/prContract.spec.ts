@@ -1091,6 +1091,11 @@ describe('product-scope test instructions', () => {
         // annotation must refuse like its pnpm-prefixed spelling.
         ['a bare wasm-bindgen build', 'wasm-bindgen build --target web (ok)'],
         ['a conjunction pair with an annotation tail', 'pnpm typecheck and pnpm lint, both green'],
+        // A command mention behind a bare-subcommand launch's conjunction: the head drops as
+        // command material and the annotation-only remainder keeps the segment narration, so the
+        // loose arm of the run closer cannot launder a second command behind a conjunction.
+        ['a launch with a command mention behind its conjunction', 'pnpm dev and vitest everything (green)'],
+        ['a launch with a flagged command behind its conjunction', 'pnpm dev and tsc --noEmit (clean)'],
         // A run-ending word with nothing material behind it is the command's trailing argument,
         // not an observation: 'play' and 'drag' are cue stems the trailing rule drops, while
         // 'see' never reaches the cue test — it rides the annotation vocabulary, and the
