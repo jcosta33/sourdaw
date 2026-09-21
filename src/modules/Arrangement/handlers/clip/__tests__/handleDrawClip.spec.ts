@@ -99,7 +99,7 @@ describe('handleDrawClip', () => {
         expect(desc.label).toBe('Draw clip');
         expect(desc.inverseAction).toEqual({
             type: 'discardDrawnClip',
-            payload: { clipId: 'clip-next', trackId: 't1', ripplePlan: null },
+            payload: { clipId: 'clip-next', trackId: 't1', ripplePlan: null, retiredTakeLanes: [] },
         });
         expect(desc.redoAction).toEqual({
             type: 'restoreDrawnClip',
@@ -111,8 +111,20 @@ describe('handleDrawClip', () => {
                 name: 'Clip 2',
                 type: 'audio',
                 ripplePlan: null,
+                retiredTakeLanes: [],
             },
         });
+    });
+
+    it('shares one retired-take-lane holder between the discard inverse and the redo', () => {
+        const desc = handleDrawClip.describe(drawPayload());
+        if (desc.inverseAction?.type !== 'discardDrawnClip' || desc.redoAction?.type !== 'restoreDrawnClip') {
+            throw new Error('expected a discardDrawnClip inverse and a restoreDrawnClip redo');
+        }
+
+        // The discard fills this in place at undo time; the redo must read the very
+        // same array, because the take it captures does not exist at describe time.
+        expect(desc.inverseAction.payload.retiredTakeLanes).toBe(desc.redoAction.payload.retiredTakeLanes);
     });
 
     it('describes a ripple draw whose inverse restores the exact shifted neighbors', () => {
@@ -129,6 +141,7 @@ describe('handleDrawClip', () => {
                 clipId: 'clip-next',
                 trackId: 't1',
                 ripplePlan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
+                retiredTakeLanes: [],
             },
         });
     });
@@ -148,6 +161,7 @@ describe('handleDrawClip', () => {
                 clipId: 'clip-next',
                 trackId: 't1',
                 ripplePlan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
+                retiredTakeLanes: [],
             },
         });
     });
@@ -186,6 +200,7 @@ describe('handleDrawClip', () => {
                 name: 'Clip 2',
                 type: 'audio',
                 ripplePlan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
+                retiredTakeLanes: [],
             },
         });
 

@@ -388,6 +388,14 @@ export type TrackClipStateSnapshot = {
     readonly clipSatellites: readonly ClipSatelliteEntrySnapshot[];
     /** Clip-scoped automation lanes, deleted by the same `removeClipSatelliteData` path. */
     readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
+    /**
+     * The take lanes this snapshot's forward action retires — `removeClip` takes
+     * the retired clip's takes with it, and only a capture made before that write
+     * can put them back. Carried on the pre-removal snapshot; the post-removal
+     * capture carries none. Optional so snapshots persisted before takes joined
+     * this payload still decode; absent means the action retired no takes.
+     */
+    readonly retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
 };
 export type TrackAlternativeStateSnapshot = {
     readonly alternatives: readonly { readonly id: string }[];
@@ -492,6 +500,49 @@ export type RippleShiftSnapshot = {
     readonly origStartBeat: number;
     readonly origEndBeat: number;
     readonly automationDelta: number;
+};
+/** A take captured inside a comp take lane — structural mirror of Arrangement's
+ *  `Take`, declared here because model isolation forbids importing it. Arrays
+ *  stay mutable so a snapshot is assignable where the take-lane store's
+ *  concrete model is expected. */
+export type TakeSnapshot = {
+    id: string;
+    clipId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    selected: boolean;
+    sourceOffsetBeats?: number;
+};
+/** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
+export type CompRegionSnapshot = {
+    startBeat: number;
+    endBeat: number;
+    takeId: string;
+};
+/** A whole comp take lane — structural mirror of Arrangement's `TakeLane`. */
+export type CompTakeLaneSnapshot = {
+    id: string;
+    trackId: string;
+    automationLaneId?: string;
+    takes: TakeSnapshot[];
+    activeCompRegions: CompRegionSnapshot[];
+};
+/** One lane a clip removal emptied or thinned, carried by `restoreClip` as it
+ *  was before the removal together with the index it held, so undoing the
+ *  removal can put the same lane back in the same place. */
+export type RetiredTakeLaneSnapshot = {
+    readonly laneIndex: number;
+    readonly lane: CompTakeLaneSnapshot;
+    /**
+     * The take ids this removal actually retired from `lane`. An undo re-adds only
+     * these, so a captured take absent from live for any other reason — a later
+     * deletion projected in with no local undo entry — stays absent instead of
+     * being resurrected. Optional so captures persisted before the field existed
+     * still decode; absent means the removal recorded no ids and an undo re-adds
+     * no take from this lane.
+     */
+    readonly retiredTakeIds?: readonly string[];
 };
 export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
@@ -1062,6 +1113,12 @@ export type AppAction =
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;
               midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
+              /**
+               * Take lanes the removed clips left, captured before removal.
+               * Optional so restore entries persisted before takes joined this
+               * payload still decode; absent means the removal retired none.
+               */
+              retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
           };
       }
     | {
@@ -1069,7 +1126,19 @@ export type AppAction =
            *  `duplicateClip` / `duplicateClipToNextBar` without applying the user's
            *  current ripple-delete mode. */
           type: 'discardDuplicatedClip';
-          payload: { clipId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
+          payload: {
+              clipId: string;
+              generatedMidiStateGuard?: GeneratedMidiStateGuard;
+              /**
+               * The take lanes this discard retired, written by its `execute()`
+               * before `removeClip` runs. The paired redo re-creates the same clip
+               * id, so the entry's own inverse is what carries the capture — across
+               * the session mirror too, where a shared array would not survive.
+               * Optional so entries persisted before takes joined this payload still
+               * decode; absent means the discard recorded nothing.
+               */
+              retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
+          };
       }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string; expectedName?: string } }
@@ -1313,7 +1382,20 @@ export type AppAction =
            *  ripple-shifted neighbors. Emitted only by the `drawClip` handler's
            *  `describe()` — not invoked directly. */
           type: 'discardDrawnClip';
-          payload: { clipId: string; trackId: string; ripplePlan: ClipRippleInsertPlanSnapshot | null };
+          payload: {
+              clipId: string;
+              trackId: string;
+              ripplePlan: ClipRippleInsertPlanSnapshot | null;
+              /**
+               * Shared holder for the take lanes this discard retires, filled in
+               * place by its `execute()` before `removeClip` runs. The paired
+               * `restoreDrawnClip` redo carries the same array, so the redo can put
+               * back a take that landed on the drawn clip after the draw. Optional
+               * so entries persisted before the field existed still decode; absent
+               * means the discard records nothing and the redo restores nothing.
+               */
+              retiredTakeLanes?: RetiredTakeLaneSnapshot[];
+          };
       }
     | {
           /** Redo of `drawClip`. Re-creates the drawn clip and re-applies the
@@ -1330,6 +1412,8 @@ export type AppAction =
               name: string;
               type: 'audio' | 'midi';
               ripplePlan: ClipRippleInsertPlanSnapshot | null;
+              /** The same shared holder `discardDrawnClip` fills; see there. */
+              retiredTakeLanes?: RetiredTakeLaneSnapshot[];
           };
       }
     | {
@@ -2861,6 +2945,21 @@ type ActionHandlerCommon<Action extends AppAction> = {
     validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
     prepareAbort?: (action: Action) => HandlerAfterCommit;
+    /**
+     * Called with this inverse action once a redo has replayed the entry it inverts.
+     *
+     * A forward replay re-creates what its inverse removes, and the state that
+     * inverse captured at undo time is the record of what that identity carried
+     * then — state a write landing between the undo and the redo is absent from
+     * it. The redo replays with `skipUndo`, so no fresh description reaches an
+     * entry and nothing else reconciles that record; this is where the inverse's
+     * own owner does it.
+     *
+     * Only the inverse's handler is asked, so one inverse standing behind several
+     * forward actions (a clip created by `addClip`, by a duplicate, or by an AI
+     * generation route) carries exactly one reconciliation, not one per creator.
+     */
+    afterRedoReplay?: (action: Action) => void;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;
     /** Owner-provided relationship validation for a persisted forward/inverse/redo entry. */

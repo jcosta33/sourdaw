@@ -1,7 +1,9 @@
 import { type getAutomationLanes, restoreAutomationLanes, shiftClipAutomation } from '#/modules/Automation/useCases';
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type ClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
+import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -22,6 +24,8 @@ type UndoRippleDeleteInput = {
     clipSatellites?: readonly ClipSatelliteEntry[];
     /** Clip-scoped automation lanes the removed clips carried, restored verbatim. */
     clipAutomationLanes?: readonly AutomationLaneValue[];
+    /** Take lanes the removed clips lost, restored verbatim. */
+    retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
 };
 
 export function undoRippleDelete({
@@ -30,6 +34,7 @@ export function undoRippleDelete({
     shiftedClips,
     clipSatellites,
     clipAutomationLanes,
+    retiredTakeLanes,
 }: UndoRippleDeleteInput): void {
     const state = getTrackStoreState();
     if (!state) {
@@ -81,5 +86,11 @@ export function undoRippleDelete({
     }
     if (clipAutomationLanes && clipAutomationLanes.length > 0) {
         restoreAutomationLanes(clipAutomationLanes);
+    }
+
+    // The removed clips' takes and any lane they left empty were retired on
+    // the forward operation — bring them back for the restored clips (#4265).
+    if (retiredTakeLanes) {
+        restoreTakesForClip(retiredTakeLanes);
     }
 }

@@ -55,6 +55,41 @@ type RedoOutcome =
     | { readonly status: 'conflict' }
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
+/**
+ * Hands one replayed entry's inverse to its own handler, which reconciles the
+ * state the replay re-created against what that inverse captured at undo time
+ * (see `ActionHandlerCommon.afterRedoReplay`). The redo path is the only place
+ * that knows a forward action is being replayed rather than performed, so the
+ * timing has to come from here; the work stays with the handler that owns the
+ * state. A callback entry has no inverse action and nothing to reconcile.
+ *
+ * The write has already landed when this runs, so a failure here is reported as
+ * a committed error — the same outcome a post-write bookkeeping failure gets —
+ * rather than as a refusal that would leave the entry redoable over a document
+ * the replay already changed.
+ */
+function reconcileAfterRedo(entry: UndoEntry): AppActionCommittedError | null {
+    if (!isActionEntry(entry) || entry.inverseAction === null) {
+        return null;
+    }
+    try {
+        getCommandHandler(entry.inverseAction)?.afterRedoReplay?.(entry.inverseAction);
+        return null;
+    } catch (error) {
+        return new AppActionCommittedError(entry.action.type, error);
+    }
+}
+
+function reconcileAfterRedoGroup(entries: readonly UndoEntry[]): AppActionCommittedError | null {
+    for (const entry of entries) {
+        const error = reconcileAfterRedo(entry);
+        if (error) {
+            return error;
+        }
+    }
+    return null;
+}
+
 function recordCommittedGroupActions(entries: readonly UndoEntry[], committedActions: readonly object[]): void {
     let committedIndex = 0;
     for (const entry of entries) {
@@ -97,17 +132,23 @@ async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<Re
         throw new Error(`Grouped redo failed: ${result.reason}`);
     }
 
+    // Every write the batch made is live, whatever its bookkeeping outcome, so the
+    // entries' inverses reconcile against it before either outcome is reported.
+    const reconciliationError = reconcileAfterRedoGroup(entries);
     if (result.status === 'ambiguous') {
         return {
             status: 'committed',
-            error: new AppActionCommittedError('appActionBatch', new Error(result.reason)),
+            error: reconciliationError ?? new AppActionCommittedError('appActionBatch', new Error(result.reason)),
         };
     }
     if (result.status === 'committed-with-warning') {
         return {
             status: 'committed',
-            error: new AppActionCommittedError('appActionBatch', new Error(result.warning)),
+            error: reconciliationError ?? new AppActionCommittedError('appActionBatch', new Error(result.warning)),
         };
+    }
+    if (reconciliationError) {
+        return { status: 'committed', error: reconciliationError };
     }
     return { status: 'applied' };
 }
@@ -133,16 +174,27 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
 
     try {
         await executeAppAction(entry.redoAction ?? entry.action, options);
-        return { status: 'applied' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {
             return { status: 'conflict' };
         }
         if (error instanceof AppActionCommittedError) {
-            return { status: 'committed', error };
+            // Every path that reports a committed error did so after the write landed, so
+            // the entry's inverse reconciles against live state before this outcome is
+            // reported — the ordinary path's own reconcile below, and the grouped path's,
+            // which runs it ahead of both committed outcomes. Skipping it here leaves a
+            // replayed creation with the clip restored and its take lane not, and the
+            // next undo then recaptures that empty lane over the entry's capture.
+            return { status: 'committed', error: reconcileAfterRedo(entry) ?? error };
         }
         throw error;
     }
+
+    const reconciliationError = reconcileAfterRedo(entry);
+    if (reconciliationError) {
+        return { status: 'committed', error: reconciliationError };
+    }
+    return { status: 'applied' };
 }
 
 /** One member of a redo step target: an action entry whose replay resolves to

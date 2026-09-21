@@ -80,7 +80,7 @@ describe('handleCutClip', () => {
 
             const desc = handleCutClip.describe({ type: 'cutClip' });
 
-            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['shared-track']);
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['shared-track'], ['c1', 'c2']);
             if (!desc.inverseAction || desc.inverseAction.type !== 'restoreTrackClipStates') {
                 throw new Error('expected a restoreTrackClipStates inverse action');
             }

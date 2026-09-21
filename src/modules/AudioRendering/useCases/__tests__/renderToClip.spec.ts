@@ -23,6 +23,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,
     removeClip: vi.fn(),
     removeTrack: vi.fn(),
+    captureRetiredTakeLanes: vi.fn(() => []),
+    restoreTakesForClip: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -32,6 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 describe('renderToClip', () => {

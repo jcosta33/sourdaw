@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
@@ -99,6 +100,20 @@ describe('targeted take-lane undo entries (#4081)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneStoreValue.value = null;
+        // The entries filter the takes they replay to those whose clips are still in
+        // the project, so every case below needs the world its ids live in.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 't1',
+                    clips: ['clip-t1', 'clip-new'].map((id) => ClipDummy.create({ id, trackId: 't1' })),
+                }),
+                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'clip-t2', trackId: 't2' })] }),
+                TrackDummy.create({ id: 't3', clips: [ClipDummy.create({ id: 'clip-t3', trackId: 't3' })] }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
     });
 
     it('addTake undo removes only the added take and preserves later edits to another lane', () => {
@@ -200,5 +215,23 @@ describe('targeted take-lane undo entries (#4081)', () => {
         lastEntry().redo();
         expect(getLane('t1').activeCompRegions).toEqual([]);
         expect(getLane('t2').takes[0]!.name).toBe('Renamed later');
+    });
+
+    it('does not replay a take back through the lane addition when its clip is gone', () => {
+        seedLanes([]);
+        addTakeLane('t1');
+        const lane = getLane('t1');
+        // A projection writes a take onto the very lane object the entry captured, with
+        // no entry of its own, and the take's clip is not in the project.
+        lane.takes.push(createTake('clip-gone', 'Projected take', 0, 4));
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+
+        const entry = lastEntry();
+        entry.undo();
+        entry.redo();
+
+        // The lane addition is the only entry that could replay the take, and it must
+        // not: the lane comes back without it.
+        expect(getLane('t1').takes).toEqual([]);
     });
 });

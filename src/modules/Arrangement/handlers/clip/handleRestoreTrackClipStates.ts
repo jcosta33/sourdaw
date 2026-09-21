@@ -2,10 +2,12 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
+    type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
     type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
+    type RetiredTakeLaneSnapshot,
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
@@ -14,9 +16,15 @@ import {
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip, type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
+import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { freezeStateSnapshotMatches } from '../../useCases/freezeBounce/freezeStateSnapshotMatches';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
+
+import { pairedInverseForRedo } from './takeRetirementRedo';
+
+type RestoreTrackClipStatesAction = Extract<AppAction, { type: 'restoreTrackClipStates' }>;
 
 function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -499,6 +507,15 @@ const SNAPSHOT_ENTRY_GUARDS: SnapshotEntryGuards = {
     // there has written nothing. Comparing it a second time here would only duplicate
     // that check against the same live state.
     clipAutomationLanes: notCompared,
+    // Excluded because the transition it describes reads no part of it: the redo
+    // leg's only take-lane effect is `removeTakesForClips(retiringClipIds)`, a pure
+    // removal derived from the clip-set difference between `expected` and
+    // `replacement`. A lane or take a projection removed since the capture leaves
+    // that removal with less to do, never with something unsafe to do — so refusing
+    // on it would pin the entry at the head of the redo stack over state the redo
+    // cannot touch. What still protects a genuine clobber is the `clips` and
+    // `trackFields` guard above, which authorises the collection write itself.
+    retiredTakeLanes: notCompared,
 };
 
 /**
@@ -690,12 +707,114 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
 }
 
 /**
+ * Undo and redo of the take lanes a removal retired, in one atomic take-lane write.
+ *
+ * The pre-removal snapshot carries the affected lanes, so restoring it as the
+ * `replacement` reconciles them back onto live state — re-adding only what the
+ * removal dropped and keeping takes that arrived since. The post-removal
+ * snapshot's capture is empty, so restoring it as the `replacement` re-retires
+ * the clips it dropped — derived from the clips `expected` had and `replacement`
+ * does not — through the same `removeTakesForClips` rule the removal itself uses.
+ * Neither direction touches a lane the removal did not affect.
+ *
+ * The re-retire runs for any replacement whose `expected` carries the key at all,
+ * even an empty capture: a take-retiring route (cut) that happened to capture no
+ * take still removes its clip again, so a take that landed on it since must not
+ * survive as an orphan. A snapshot with no key belongs to a route that never
+ * retires takes (flatten, paste, consolidate), and its redo must not start.
+ *
+ * A redo retires what the restored clip holds *now*, which is not what the first
+ * removal retired: a take that landed between the undo and the redo is in no
+ * capture yet, and a take or comp a projection removed or moved since is in a
+ * capture that no longer describes live. The undo that follows reads the entry's
+ * own pre-removal snapshot, so this leg overwrites it with the fresh capture —
+ * the same overwrite, empty captures included, the single-clip removal route's
+ * redo already performs.
+ */
+function transitionRetiredTakeLanes(
+    action: RestoreTrackClipStatesAction,
+    expectedEntries: readonly TrackClipStateSnapshot[],
+    replacementEntries: readonly TrackClipStateSnapshot[]
+): void {
+    const lanesToRestore = replacementEntries.flatMap((entry) => [...(entry.retiredTakeLanes ?? [])]);
+    if (lanesToRestore.length > 0) {
+        restoreTakesForClip(lanesToRestore);
+        return;
+    }
+
+    const expectedByTrackId = new Map(expectedEntries.map((entry) => [entry.trackId, entry]));
+    const retiringClipIds = new Set<string>();
+    for (const entry of replacementEntries) {
+        const expectedEntry = expectedByTrackId.get(entry.trackId);
+        if (!expectedEntry || expectedEntry.retiredTakeLanes === undefined) {
+            continue;
+        }
+        const replacementClipIds = new Set(entry.clips.map((clip) => clip.id));
+        for (const clip of expectedEntry.clips) {
+            if (!replacementClipIds.has(clip.id)) {
+                retiringClipIds.add(clip.id);
+            }
+        }
+    }
+    if (retiringClipIds.size === 0) {
+        return;
+    }
+    recordRedoTakeRetirement(action, removeTakesForClips([...retiringClipIds]));
+}
+
+/**
+ * Overwrite the pre-removal snapshot the entry's inverse restores from with what
+ * this redo actually re-retired.
+ *
+ * Replacement is the point, not a detail: the entry must claim exactly the takes
+ * and comps this replay removed. A union would keep a claim on material a
+ * projection deleted — resurrected by the next undo, against the rule that a take
+ * missing from live for a reason this removal never recorded stays absent — and
+ * on a region the removal superseded, which the lane store's non-overlap retention
+ * would then prefer over the region that replaced it. An empty fresh capture is the
+ * same statement and clears the claim, so there is no early return for it.
+ *
+ * The whole capture rides on the first pre-removal entry rather than being spread
+ * by track. A lane is keyed by the track it was captured on while moving a clip
+ * re-keys the clip rather than its lane, so the two disagree exactly where this
+ * write matters most — and the redo retires that lane anyway, because the
+ * retiring-clip scan follows the clip. Nothing reads the carrier: the restore
+ * flattens every entry's lanes, so which entry names a lane is not part of the
+ * contract. What is: each lane appears exactly once, which one carrier gives by
+ * construction and a per-track spread cannot.
+ *
+ * The redo runs with `skipUndo`, so its own `describe()` capture is discarded and
+ * nothing else carries it; the entry is still on the `future` stack while its redo
+ * replays, which is the only moment the pairing is readable. Writing to the inverse
+ * payload rather than to a shared array is what lets the capture survive the session
+ * mirror, which parses an entry's halves into independent objects.
+ */
+function recordRedoTakeRetirement(
+    action: RestoreTrackClipStatesAction,
+    retired: readonly RetiredTakeLaneSnapshot[]
+): void {
+    const inverse = pairedInverseForRedo(action);
+    if (inverse?.type !== 'restoreTrackClipStates') {
+        return;
+    }
+    inverse.payload.replacement = inverse.payload.replacement.map((entry, index) => {
+        if (index === 0) {
+            return { ...entry, retiredTakeLanes: [...retired] };
+        }
+        return { ...entry, retiredTakeLanes: [] };
+    });
+}
+
+/**
  * General guarded restore for whole-track clip-collection rewrites (cut, paste,
  * flatten, consolidate). Every named track must still match `expected` on
  * everything `everyEntryMatchesLiveState` compares, down to the contents of each
  * clip, before any track write lands. `SNAPSHOT_ENTRY_GUARDS` is where that
  * comparison is enforced rather than asserted — except for `clipAutomationLanes`,
- * which it deliberately leaves `notCompared`: that key has its own guard below.
+ * which it deliberately leaves `notCompared` because that key has its own guard
+ * below, and `retiredTakeLanes`, also `notCompared` because the redo's take-lane
+ * effect derives everything it needs from the two clip sets and so cannot be made
+ * unsafe by divergence this snapshot describes.
  *
  * The guard is two halves and needs both: every `expected` entry matches live state,
  * and every `replacement` entry is named by `expected`. The second is what makes an
@@ -752,6 +871,7 @@ export const handleRestoreTrackClipStates = createHandler<'restoreTrackClipState
         for (const entry of action.payload.replacement) {
             writeTrackClipState(entry);
         }
+        transitionRetiredTakeLanes(action, action.payload.expected, action.payload.replacement);
         return { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip state', inverseAction: null }),

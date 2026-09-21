@@ -15,6 +15,8 @@ import { resolveClipsWithComping, type ResolvedClip } from '../resolveComping';
 
 import { insertTakeLane } from './insertTakeLane';
 import { removeTakeLane } from './removeTakeLane';
+import { resolveTakeLaneIndex } from './resolveTakeLaneIndex';
+import { retireLaneInsertion } from './retireLaneInsertion';
 import { pushTargetedTakeLaneUndoEntry } from './takeLaneUndo';
 
 const FLATTEN_LABEL = 'Flatten comp';
@@ -184,11 +186,19 @@ export function flattenComp(trackId: string): boolean {
             insertTakeLane(lane, laneIndex);
         },
         () => {
-            // A refused redo may only put back the lane it removed itself. After
-            // a refused undo the lane is already retired, and reinserting it
-            // there would revive takes naming the retired source clips.
-            const lanePresent = takeLaneStore.value?.lanes.some((candidate) => candidate.id === lane.id) === true;
-            removeTakeLane(lane.id);
+            // The lane this redo is about is the one the undo merged into, which the
+            // captured lane's own id no longer names — `resolveTakeLaneIndex` is the same
+            // resolution `insertTakeLane`'s merge uses for the undo. Presence is read
+            // before the retirement for the compensation below: a refused redo may only
+            // put back the lane it removed itself, and after a refused undo the lane is
+            // already retired, so reinserting it there would revive takes naming the
+            // retired source clips.
+            const lanePresent = resolveTakeLaneIndex(takeLaneStore.value?.lanes ?? [], lane) !== -1;
+            // Retire the takes the undo put back before the clip replacement runs: a take
+            // naming a clip that replacement touches makes the transaction refuse, and a
+            // merged take naming a source clip is exactly that. Only the insertion leaves,
+            // so a projection's own takes and comps on that lane survive.
+            retireLaneInsertion(lane);
             if (restoreClipGlueState({ expected: plan.previous, replacement: plan.next })) {
                 return undefined;
             }
