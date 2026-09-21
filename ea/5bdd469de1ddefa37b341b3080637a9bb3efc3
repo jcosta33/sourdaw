@@ -1,0 +1,36 @@
+src/modules/Arrangement/handlers/clip/__tests__/drawClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 1-98
+src/modules/Arrangement/handlers/clip/__tests__/handleDrawClip.spec.ts
+  h_beb54bf43b47b7 102,114,119-129,144,164,203
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClipTakeRetirement.integration.spec.ts
+  h_beb54bf43b47b7 172-208
+src/modules/Arrangement/handlers/clip/handleDiscardDrawnClip.ts
+  h_beb54bf43b47b7 4,14-20
+src/modules/Arrangement/handlers/clip/handleDrawClip.ts
+  h_beb54bf43b47b7 2,78-81,90,108
+src/modules/Arrangement/handlers/clip/handleRestoreDrawnClip.ts
+  h_beb54bf43b47b7 5,39-41
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 1-93
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  h_beb54bf43b47b7 3,11-12,68-72,76,122-123
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  h_beb54bf43b47b7 303-316
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 10-16,25-29,33-38,66-69
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 1639,1654
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 1373-1386,1403-1404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ea5bdd469de1ddefa37b341b3080637a9bb3efc3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
