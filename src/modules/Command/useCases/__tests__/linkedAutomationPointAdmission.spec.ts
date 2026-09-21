@@ -29,6 +29,7 @@ import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
 import { executeAppActionBatch } from '../executeAppActionBatch';
+import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
 import { redo } from '../redo';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 import { undo } from '../undo';
@@ -151,6 +152,142 @@ describe('linked automation point admission', () => {
         expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4)).toBe(followerSampleBefore);
     });
 
+    it('requires the owning handler to validate persisted point replay arguments', () => {
+        const contract = getInternalUndoSessionReplayContracts().find(
+            (candidate) => candidate.actionType === 'restoreAutomationPointPresence'
+        );
+        const validPayload = {
+            laneId: FOLLOWER_LANE_ID,
+            owner: { trackId: 'track-2', parameterId: 'gain', linkedLaneId: SOURCE_LANE_ID },
+            point: { id: 'ignored-follower-point', beat: 4, value: 0.9, curve: 'linear', tension: 0 },
+            equalBeatIndex: 0,
+            expectedPresence: 'present',
+            replacementPresence: 'absent',
+        };
+
+        expect(contract?.validateArguments(validPayload)).toBe(true);
+        expect(
+            contract?.validateArguments({ ...validPayload, point: { ...validPayload.point, curve: 'warp-drive' } })
+        ).toBe(false);
+        expect(contract?.validateArguments({ ...validPayload, extra: 'smuggled' })).toBe(false);
+    });
+
+    it('preserves a same-beat peer point through index-only redo', async () => {
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0 },
+        });
+        expect((await undo()).headConsumed).toBe(true);
+        const state = automationStore.value!;
+        const peerPoint = { id: 'same-beat-peer', beat: 4, value: 0.6, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: state.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [peerPoint, ...lane.points] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        expect(automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID)?.points).toEqual([peerPoint]);
+        expect(getCrdtDoc<{ automation?: AutomationStoreState }>('root')?.automation).toEqual(automationStore.value);
+    });
+
+    it('restores an identified point with its full shape and equal-beat order', async () => {
+        const state = automationStore.value!;
+        const before = { id: 'same-beat-before', beat: 4, value: 0.2, curve: 'linear' as const, tension: 0 };
+        const target = {
+            id: 'shaped-target',
+            beat: 4,
+            value: 0.9,
+            curve: 'bezier' as const,
+            tension: 0.3,
+            stairSteps: 7,
+            cp1: { x: 0.2, y: 0.4 },
+            cp2: { x: 0.8, y: 0.6 },
+        };
+        const after = { id: 'same-beat-after', beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: state.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [before, target, after] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 1, pointId: target.id },
+        });
+        expect((await undo()).headConsumed).toBe(true);
+
+        expect(automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID)?.points).toEqual([
+            before,
+            target,
+            after,
+        ]);
+        expect(getCrdtDoc<{ automation?: AutomationStoreState }>('root')?.automation).toEqual(automationStore.value);
+    });
+
+    it('replays an unambiguous legacy id-less follower point without changing unrelated points', async () => {
+        const state = automationStore.value!;
+        const legacyPoint = { beat: 4, value: 0.9, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: state.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [legacyPoint] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0 },
+        });
+        expect((await undo()).headConsumed).toBe(true);
+        const restoredState = automationStore.value!;
+        const peerPoint = { id: 'legacy-peer', beat: 6, value: 0.6, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: restoredState.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [...lane.points, peerPoint] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+        expect(automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID)?.points).toEqual([peerPoint]);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID)?.points).toEqual([
+            legacyPoint,
+            peerPoint,
+        ]);
+    });
+
+    it('refuses id-less follower restoration when a same-beat point makes identity ambiguous', async () => {
+        const state = automationStore.value!;
+        const legacyPoint = { beat: 4, value: 0.9, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: state.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [legacyPoint] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0 },
+        });
+        const removedState = automationStore.value!;
+        const ambiguousPoint = { beat: 4, value: 0.7, curve: 'linear' as const, tension: 0 };
+        automationStore.set({
+            lanes: removedState.lanes.map((lane) =>
+                lane.id === FOLLOWER_LANE_ID ? { ...lane, points: [ambiguousPoint] } : lane
+            ),
+        });
+        flushAutomergeStorageWrites();
+        const ambiguousDocument = projectSnapshot();
+
+        expect((await undo()).headConsumed).toBe(false);
+        expect(projectSnapshot()).toBe(ambiguousDocument);
+    });
+
     it.each([
         { label: 'dangling', laneId: DANGLING_LANE_ID },
         { label: 'self-linked', laneId: SELF_LINKED_LANE_ID },
@@ -225,6 +362,8 @@ describe('linked automation point admission', () => {
             ),
         });
         flushAutomergeStorageWrites();
+        const restoredWithPeerDocument = projectSnapshot();
+        const restoredWithPeerStore = storeSnapshot();
 
         await redo();
 
@@ -234,9 +373,13 @@ describe('linked automation point admission', () => {
         expect(getCrdtDoc<{ automation?: AutomationStoreState }>('root')?.automation).toEqual(automationStore.value);
         expect(getAutomationValueAtBeat(SOURCE_LANE_ID, 4)).toBe(sourceSampleBefore);
         expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4)).toBe(followerSampleBefore);
+
+        expect((await undo()).headConsumed).toBe(true);
+        expect(projectSnapshot()).toBe(restoredWithPeerDocument);
+        expect(automationStore.value).toEqual(restoredWithPeerStore);
     });
 
-    it('refuses follower-point undo after its expected point set diverges', async () => {
+    it('refuses follower-point undo after the same point identity is replaced', async () => {
         await executeAppAction({
             type: 'removeAutomationPoint',
             payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0, pointId: 'ignored-follower-point' },
@@ -249,7 +392,7 @@ describe('linked automation point admission', () => {
                 }
                 return {
                     ...lane,
-                    points: [{ id: 'peer-point', beat: 6, value: 0.6, curve: 'linear', tension: 0 }],
+                    points: [{ id: 'ignored-follower-point', beat: 4, value: 0.6, curve: 'linear', tension: 0 }],
                 };
             }),
         });

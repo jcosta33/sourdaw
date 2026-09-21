@@ -230,6 +230,7 @@ export const RUNTIME_ACTION_TYPES = [
     'removeYeastProcessor',
     'reorderYeastProcessor',
     'restoreAutomationLanePoints',
+    'restoreAutomationPointPresence',
     'restoreClip',
     'restoreProjectVersion',
     'restoreTrack',

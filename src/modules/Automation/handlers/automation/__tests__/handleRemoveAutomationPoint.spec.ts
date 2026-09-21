@@ -113,7 +113,11 @@ describe('handleRemoveAutomationPoint — describe', () => {
     it('restores the guarded point set when removing from a linked follower', () => {
         const retained = makePoint({ id: 'retained', beat: 2 });
         const removed = makePoint({ id: 'removed', beat: 4 });
-        setLane([retained, removed], { linkedLaneId: 'source-lane' });
+        setLane([retained, removed], {
+            trackId: 'track-1',
+            parameterId: 'gain',
+            linkedLaneId: 'source-lane',
+        });
 
         const result = handleRemoveAutomationPoint.describe({
             type: 'removeAutomationPoint',
@@ -121,12 +125,23 @@ describe('handleRemoveAutomationPoint — describe', () => {
         });
 
         expect(result.inverseAction).toEqual({
-            type: 'restoreAutomationLanePoints',
+            type: 'restoreAutomationPointPresence',
             payload: {
                 laneId: 'lane1',
-                points: [retained, removed],
-                expectedPoints: [retained],
+                owner: {
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    linkedLaneId: 'source-lane',
+                },
+                point: removed,
+                equalBeatIndex: 0,
+                expectedPresence: 'absent',
+                replacementPresence: 'present',
             },
+        });
+        expect(result.redoAction).toMatchObject({
+            type: 'restoreAutomationPointPresence',
+            payload: { expectedPresence: 'present', replacementPresence: 'absent' },
         });
     });
 

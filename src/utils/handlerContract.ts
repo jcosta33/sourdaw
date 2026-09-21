@@ -2086,6 +2086,23 @@ export type AppAction =
           };
       }
     | {
+          /** Internal point-scoped replay for linked-follower removal undo/redo. */
+          type: 'restoreAutomationPointPresence';
+          payload: {
+              laneId: string;
+              owner: {
+                  trackId: string;
+                  parameterId: string;
+                  clipId?: string;
+                  linkedLaneId: string;
+              };
+              point: AutomationPointSnapshot;
+              equalBeatIndex: number;
+              expectedPresence: 'present' | 'absent';
+              replacementPresence: 'present' | 'absent';
+          };
+      }
+    | {
           type: 'loadPreset';
           payload: {
               /** Preset-catalog identity retained for an execution-time authority check. */

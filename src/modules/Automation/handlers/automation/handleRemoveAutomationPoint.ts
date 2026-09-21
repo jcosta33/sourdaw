@@ -54,18 +54,40 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
             return { label: 'Remove automation point' };
         }
         if (lane.linkedLaneId) {
-            let expectedPoints = lane.points.filter((candidate) => candidate.beat !== point.beat);
-            if (action.payload.pointId) {
-                expectedPoints = lane.points.filter((candidate) => candidate.id !== action.payload.pointId);
+            const pointIndex = lane.points.indexOf(point);
+            const equalBeatIndex = lane.points
+                .slice(0, pointIndex)
+                .filter((candidate) => candidate.beat === point.beat).length;
+            const owner: { trackId: string; parameterId: string; linkedLaneId: string; clipId?: string } = {
+                trackId: lane.trackId,
+                parameterId: lane.parameterId,
+                linkedLaneId: lane.linkedLaneId,
+            };
+            if (lane.clipId !== undefined) {
+                owner.clipId = lane.clipId;
             }
             return {
                 label: 'Remove automation point',
                 inverseAction: {
-                    type: 'restoreAutomationLanePoints',
+                    type: 'restoreAutomationPointPresence',
                     payload: {
                         laneId: action.payload.laneId,
-                        points: lane.points,
-                        expectedPoints,
+                        owner,
+                        point,
+                        equalBeatIndex,
+                        expectedPresence: 'absent',
+                        replacementPresence: 'present',
+                    },
+                },
+                redoAction: {
+                    type: 'restoreAutomationPointPresence',
+                    payload: {
+                        laneId: action.payload.laneId,
+                        owner,
+                        point,
+                        equalBeatIndex,
+                        expectedPresence: 'present',
+                        replacementPresence: 'absent',
                     },
                 },
             };
