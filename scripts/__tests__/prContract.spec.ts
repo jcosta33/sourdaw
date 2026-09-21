@@ -1164,6 +1164,7 @@ describe('product-scope test instructions', () => {
     it.each([
         ['a MIDI step', 'Make a MIDI track'],
         ['a rename step', 'Format the clip name'],
+        ['a note-taking step', 'make a note of the levels'],
         ['a shell-named sorting step', 'sort the clips by name'],
         ['a shell-named printing step', 'echo the level'],
     ])('passes a manual %s whose head-verb opens onto an article', (_label, step) => {
