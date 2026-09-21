@@ -6,6 +6,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { insertTakeLane } from './insertTakeLane';
 import { laneWithLiveTakes } from './laneWithLiveTakes';
 import { removeTakeLane } from './removeTakeLane';
+import { resolveTakeLaneIndex } from './resolveTakeLaneIndex';
 
 type TakeLaneFacetState =
     | { readonly kind: 'takes'; readonly value: readonly Take[] }
@@ -54,6 +55,11 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
  * undo time, so edits made after the entry — to other lanes or to the same
  * lane's other facets — survive undo and redo instead of being erased by a
  * whole-store snapshot replay.
+ *
+ * A removed lane's redo removes the lane the undo merged into: the undo puts the
+ * captured lane back through `insertTakeLane`, which merges it into whatever lane the
+ * track owns, and a projection's lane no longer matches the captured id. Removing by
+ * id alone there leaves the redo inert over a lane nobody names.
  */
 export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void {
     const undo = () => {
@@ -76,7 +82,11 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             insertTakeLane(laneWithLiveTakes(edit.lane), edit.laneIndex);
             return;
         }
-        removeTakeLane(edit.lane.id);
+        const lanes = takeLaneStore.value?.lanes ?? [];
+        const landedIndex = resolveTakeLaneIndex(lanes, edit.lane);
+        if (landedIndex !== -1) {
+            removeTakeLane(lanes[landedIndex]!.id);
+        }
     };
     pushUndoEntry(edit.label, undo, redo);
 }

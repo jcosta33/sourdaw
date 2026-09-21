@@ -168,4 +168,37 @@ describe('take-lane history and retirement', () => {
         // against, so neither direction of the replay places it.
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
+
+    it('re-retires the lane a merge landed in when the flatten is redone', async () => {
+        addClip({ id: 'clip-taken', trackId: 'track-1', startBeat: 4, endBeat: 8, name: 'Take', type: 'audio' });
+        const take = createTake('clip-taken', 'Take', 4, 8);
+        const capturedLane = { ...createTakeLane('track-1'), takes: [take] };
+        takeLaneStore.set({ lanes: [capturedLane] });
+        flushAutomergeStorageWrites();
+        expect(flattenComp('track-1')).toBe(true);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        // A projection gives the track a lane of its own while the capture is away.
+        const projectedLane = {
+            ...createTakeLane('track-1'),
+            takes: [createTake('clip-taken', 'Projected take', 4, 8)],
+        };
+        takeLaneStore.set({ lanes: [projectedLane] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([projectedLane.id]);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((laneTake) => laneTake.id)).toContain(take.id);
+
+        // The flattened state is the track holding no lane at all, so the redo has to
+        // remove the lane the undo merged into — not the id the capture remembers.
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        // And the pair keeps working: the next undo puts a lane back, the redo retires it.
+        await undo();
+        expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([capturedLane.id]);
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
 });
