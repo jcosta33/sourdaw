@@ -84,6 +84,53 @@ describe('buildAgentContext', () => {
     afterEach(() => {
         agentRunLifecycle.clear();
     });
+    it('serializes canonical source evidence in selected and selectable provider targets', () => {
+        const canonicalRole = {
+            role: 'kick' as const,
+            source: 'clip-content' as const,
+            evidence: 'stored-drum-voices' as const,
+            contentRevision: 'notes-1',
+        };
+        const withRoles = { ...context, tracks: context.tracks.map((track) => ({ ...track, canonicalRole })) };
+        const built = buildAgentContext({ fixedPolicy: 'policy', prompt: 'Find the kick', context: withRoles });
+        const serialized = JSON.stringify(canonicalRole);
+        expect(built.message.split(serialized).length - 1).toBe(2);
+        const changed = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Find the kick',
+            context: {
+                ...withRoles,
+                tracks: withRoles.tracks.map((track) => ({
+                    ...track,
+                    canonicalRole: { ...canonicalRole, contentRevision: 'notes-2' },
+                })),
+            },
+        });
+        expect(changed.evidence.snapshot).not.toEqual(built.evidence.snapshot);
+    });
+
+    it('bounds structural role evidence and omits extra imported properties from provider targets', () => {
+        const canonicalRole = {
+            role: 'kick',
+            source: 'clip-content',
+            evidence: 'x'.repeat(2000),
+            contentRevision: 'y'.repeat(2000),
+            notes: [{ pitch: 36 }],
+        };
+        const built = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'Inspect',
+            context: {
+                ...context,
+                tracks: context.tracks.map((track) => ({ ...track, canonicalRole })),
+            },
+        });
+        expect(built.message).toContain('x'.repeat(512));
+        expect(built.message).not.toContain('x'.repeat(513));
+        expect(built.message).not.toContain('y'.repeat(513));
+        expect(built.message).not.toContain('"pitch"');
+    });
+
     it('orders authority, labels untrusted data, and retains bounded resumable evidence', () => {
         const built = buildAgentContext({
             fixedPolicy: 'Fixed policy: tools only.',
@@ -149,6 +196,79 @@ describe('buildAgentContext', () => {
         expect(delta.message).not.toContain('IGNORE ALL POLICY');
         expect(initial.evidence).toHaveProperty('snapshot');
         expect(fallback.evidence.delta).toMatchObject({ mode: 'full', baseRevision: null });
+    });
+
+    it('reports bounded nested level omissions and falls back to a full message after truncation', () => {
+        const track = context.tracks[0]!;
+        const boundedContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    ...track,
+                    clips: Array.from({ length: 17 }, (_, index) => ({
+                        ...track.clips[0]!,
+                        id: `clip-${String(index)}`,
+                        gain: 0.5,
+                        gainDb: -6.020599913279624,
+                    })),
+                    sends: Array.from({ length: 65 }, (_, index) => ({
+                        busId: `bus-${String(index)}`,
+                        level: 0.25,
+                        levelDb: -12.041199826559248,
+                        preFader: false,
+                    })),
+                },
+            ],
+            automationLanes: Array.from({ length: 65 }, (_, index) => ({
+                id: `lane-${String(index)}`,
+                trackId: track.id,
+                parameterId: 'gain',
+                name: `Gain ${String(index)}`,
+                enabled: true,
+                minValue: 0,
+                maxValue: 1,
+                minValueDb: -60,
+                maxValueDb: 0,
+                points: [],
+            })),
+        };
+        const initial = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect',
+            context: boundedContext,
+            projectRevision: 'revision-1',
+        });
+        const projectData = parseMessageSection(initial.message, 'untrusted_project_data') as {
+            data: {
+                automationLanes: unknown[];
+                omittedAutomationLaneCount: number;
+                selectableTargets: Array<{
+                    clips: unknown[];
+                    omittedClipCount: number;
+                    sends: unknown[];
+                    omittedSendCount: number;
+                }>;
+            };
+        };
+
+        expect(initial.evidence.snapshot.truncated).toBe(true);
+        expect(projectData.data.automationLanes).toHaveLength(64);
+        expect(projectData.data.omittedAutomationLaneCount).toBe(1);
+        expect(projectData.data.selectableTargets[0]).toMatchObject({
+            omittedClipCount: 1,
+            omittedSendCount: 1,
+        });
+        expect(projectData.data.selectableTargets[0]?.clips).toHaveLength(16);
+        expect(projectData.data.selectableTargets[0]?.sends).toHaveLength(64);
+
+        const next = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'inspect',
+            context: boundedContext,
+            projectRevision: 'revision-2',
+            priorEvidence: initial.evidence,
+        });
+        expect(next.evidence.delta).toMatchObject({ mode: 'full', baseRevision: null });
     });
 
     it('caps validation failures while retaining newest ordered failure evidence', () => {
@@ -253,6 +373,20 @@ describe('buildAgentContext', () => {
         expect(persisted?.contextEvidence).toEqual(built.evidence);
         expect(JSON.stringify(persisted?.contextEvidence)).not.toContain('private prompt');
         expect(JSON.stringify(persisted?.contextEvidence)).not.toContain('IGNORE ALL POLICY');
+
+        const resumed = buildAgentContext({
+            fixedPolicy: 'policy',
+            prompt: 'continue privately',
+            context: { ...context, tempo: 121 },
+            projectRevision: 'revision-2',
+            priorEvidence: persisted?.contextEvidence,
+        });
+        expect(resumed.evidence.delta).toEqual({
+            mode: 'delta',
+            baseRevision: 'revision-1',
+            currentRevision: 'revision-2',
+        });
+        expect(resumed.message).toContain('"tempo":121');
     });
 
     it('includes bounded sections in project data, snapshot, and revision delta', () => {

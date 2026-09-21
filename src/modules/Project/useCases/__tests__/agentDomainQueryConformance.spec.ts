@@ -10,9 +10,12 @@ import {
     createTrack,
     deleteUserPreset,
     getAgentBuiltinDeviceFactoryManifest,
+    getAgentPresetDiscoveryManifest,
     getArrangementHandlers,
+    getPluginById,
     getFactoryPresets,
     getUserPresets,
+    getDeviceContractVersionForCommand,
     saveCurrentAsPreset,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
@@ -95,6 +98,17 @@ const SCANNED_PLUGINS: ScannedPluginRecord[] = [
     buildScannedPlugin({ id: 'plugin-shaper', name: 'Shaper', descriptorId: 'com.discovery.shaper' }),
     buildScannedPlugin({ id: 'plugin-widener', name: 'Widener', descriptorId: 'com.discovery.widener' }),
 ];
+
+const presetDiscoveryManifestOverride = vi.hoisted(() => ({ value: null as unknown }));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        getAgentPresetDiscoveryManifest: () =>
+            presetDiscoveryManifestOverride.value ?? actual.getAgentPresetDiscoveryManifest(),
+    };
+});
 
 function seedProject(): void {
     const drums = createTrack({ id: 'track-drums', name: 'Drums', kind: 'audio' });
@@ -325,6 +339,7 @@ describe('agent domain query conformance', () => {
     let indexedDb: TransactionalIndexedDbInstallation | null = null;
 
     beforeEach(async () => {
+        presetDiscoveryManifestOverride.value = null;
         // jsdom ships no Web Locks API, and the durable reset the project
         // bootstrap performs sequences on it.
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
@@ -602,6 +617,191 @@ describe('agent domain query conformance', () => {
         expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
     });
 
+    it('pages a reordered owner catalog identically and keeps a retained cursor valid', () => {
+        // Three records prove the property. Walking the whole built-in preset
+        // catalog one record at a time re-collects, re-fingerprints and re-sorts
+        // it on every page (hundreds of full-catalog passes), which times out
+        // under CI shard contention; a handful of records keeps it cheap.
+        const catalog = getAgentPresetDiscoveryManifest().slice(0, 3);
+        const [firstPreset, secondPreset, thirdPreset] = catalog;
+        if (firstPreset === undefined || secondPreset === undefined || thirdPreset === undefined) {
+            throw new Error('Expected at least three presets to reorder.');
+        }
+        presetDiscoveryManifestOverride.value = catalog;
+
+        const walkIds = (): string[] => {
+            const ids: string[] = [];
+            let cursor: string | null = null;
+            do {
+                const page = expectReceipt(
+                    queryAgentDiscovery({
+                        domain: 'preset',
+                        page: cursor === null ? { limit: 1 } : { limit: 1, cursor },
+                    })
+                );
+                ids.push(...page.items.map((item) => item.id));
+                cursor = page.nextCursor;
+            } while (cursor !== null);
+            return ids;
+        };
+
+        // Page one yields one record and a cursor.
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'preset', page: { limit: 1 } }));
+        expect(first.items).toHaveLength(1);
+        expect(first.nextCursor).toEqual(expect.any(String));
+        const pageOneId = first.items[0]?.id;
+        const retainedCursor = first.nextCursor!;
+
+        const publishedWalk = walkIds();
+        expect(publishedWalk).toHaveLength(catalog.length);
+
+        // Swap the first two records without changing any content, so the
+        // revision signature the cursor is bound to stays byte-for-byte the same.
+        const reordered = [...catalog];
+        [reordered[0], reordered[1]] = [secondPreset, firstPreset];
+        presetDiscoveryManifestOverride.value = reordered;
+
+        // Page two with the retained cursor reads the next record, not page one
+        // again, and omits nothing page one implied came next.
+        const second = expectReceipt(
+            queryAgentDiscovery({ domain: 'preset', page: { limit: 1, cursor: retainedCursor } })
+        );
+        expect(second.items).toHaveLength(1);
+        expect(second.items[0]?.id).not.toBe(pageOneId);
+        expect(second.items[0]?.id).toBe(publishedWalk[1]);
+
+        // A second, independent walk of the same catalog in a different order
+        // yields the same pages.
+        expect(walkIds()).toEqual(publishedWalk);
+    });
+
+    it('refuses a retained sample cursor after a rename re-ranks its pages', () => {
+        const seeded = [
+            buildSample({ id: 'sample-kick-a', displayName: 'Kick A', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-b', displayName: 'Kick B', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-c', displayName: 'Kick C', status: 'indexed' }),
+        ];
+        seedLibrary(seeded);
+
+        const walkIds = (): string[] => {
+            const ids: string[] = [];
+            let cursor: string | null = null;
+            do {
+                const page = expectReceipt(
+                    queryAgentDiscovery({
+                        domain: 'sample',
+                        filters: { text: SAMPLE_TEXT },
+                        page: cursor === null ? { limit: 1 } : { limit: 1, cursor },
+                    })
+                );
+                ids.push(...page.items.map((item) => item.id));
+                cursor = page.nextCursor;
+            } while (cursor !== null);
+            return ids;
+        };
+
+        const first = expectReceipt(
+            queryAgentDiscovery({ domain: 'sample', filters: { text: SAMPLE_TEXT }, page: { limit: 1 } })
+        );
+        expect(first.items).toHaveLength(1);
+        expect(first.items[0]?.id).toBe('sample-kick-a');
+        expect(first.nextCursor).toEqual(expect.any(String));
+        const retainedCursor = first.nextCursor!;
+
+        const unchangedWalk = walkIds();
+        expect(unchangedWalk).toEqual(['sample-kick-a', 'sample-kick-b', 'sample-kick-c']);
+
+        // Rename kick-a to 'Kick Z' without changing its id. Its score is
+        // unchanged, but the display-name tiebreak now sorts it last, so the
+        // retained cursor's offset would name kick-c if the token let it.
+        seedLibrary([
+            buildSample({ id: 'sample-kick-a', displayName: 'Kick Z', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-b', displayName: 'Kick B', status: 'indexed' }),
+            buildSample({ id: 'sample-kick-c', displayName: 'Kick C', status: 'indexed' }),
+        ]);
+
+        expect(() =>
+            queryAgentDiscovery({
+                domain: 'sample',
+                filters: { text: SAMPLE_TEXT },
+                page: { limit: 1, cursor: retainedCursor },
+            })
+        ).toThrow('Invalid or stale semantic query cursor');
+
+        // A second walk of the unchanged catalog pages identically.
+        seedLibrary(seeded);
+        expect(walkIds()).toEqual(unchangedWalk);
+    });
+
+    it('matches owner-published character tags when the display name does not contain the character', () => {
+        const preset = expectReceipt(queryAgentDiscovery({ domain: 'preset', filters: { text: 'tube' } }));
+        const device = expectReceipt(queryAgentDiscovery({ domain: 'device', filters: { text: 'tape' } }));
+
+        expect(preset.items.find((item) => item.id === 'fx-dist-warm-overdrive')).toMatchObject({
+            name: 'Warm Overdrive',
+            evidence: {
+                tags: expect.arrayContaining(['tube']),
+                deviceTypes: ['builtin-distortion'],
+            },
+        });
+        expect(device.items.find((item) => item.id === 'faust-tape-delay')).toMatchObject({
+            evidence: { characterTags: ['tape'] },
+        });
+    });
+
+    it.each([
+        { label: 'metadata-only', version: 'preset-v1:metadata-only-change' },
+        { label: 'parameter-only', version: 'preset-v1:parameter-only-change' },
+    ])('rejects an older preset cursor after a $label owner reversion', ({ version }) => {
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'preset', page: { limit: 1 } }));
+        const manifest = getAgentPresetDiscoveryManifest();
+        const target = manifest.find((preset) => preset.id === 'fx-rev-plate');
+        if (!target || first.nextCursor === null) {
+            throw new Error('Expected a page cursor and the authored plate preset.');
+        }
+        presetDiscoveryManifestOverride.value = manifest.map((preset) => {
+            if (preset.id !== target.id) {
+                return preset;
+            }
+            const tags = [...preset.tags];
+            if (version.includes('metadata')) {
+                tags.push('metadata-probe');
+            }
+            return { ...preset, tags, version };
+        });
+
+        expect(() => queryAgentDiscovery({ domain: 'preset', page: { limit: 1, cursor: first.nextCursor! } })).toThrow(
+            'Invalid or stale semantic query cursor'
+        );
+    });
+
+    it('rejects an older device cursor when only owner-authored character tags change', () => {
+        const first = expectReceipt(queryAgentDiscovery({ domain: 'device', page: { limit: 1 } }));
+        const descriptor = getPluginById('builtin-distortion');
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find(
+            (device) => device.type === 'builtin-distortion'
+        );
+        if (!descriptor || !beforeFactory || first.nextCursor === null) {
+            throw new Error('Expected a page cursor and the built-in distortion descriptor.');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const commandVersion = getDeviceContractVersionForCommand(descriptor.id);
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const changed = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+            expect(changed?.descriptorVersion).toBe(commandVersion);
+            expect(changed?.descriptorVersion).toBe(beforeFactory.descriptorVersion);
+            expect(changed?.characterVersion).not.toBe(beforeFactory.characterVersion);
+            expect(() =>
+                queryAgentDiscovery({ domain: 'device', page: { limit: 1, cursor: first.nextCursor! } })
+            ).toThrow('Invalid or stale semantic query cursor');
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
+    });
+
     it('marks a built-in device unavailable when no runtime factory claims its type', () => {
         vi.mocked(getAgentBuiltinDeviceRuntimeManifest).mockReturnValueOnce([]);
 
@@ -648,6 +848,7 @@ describe('agent domain query conformance', () => {
 
         expect(contracts.discovery.operations.map((operation) => operation.name)).toEqual([...AGENT_DISCOVERY_DOMAINS]);
         expect(contracts.discovery.capabilities).toContain('owner-catalog-discovery');
+        expect(contracts.discovery.capabilities).toContain('character-tag-filtering');
         expect(contracts.query.operations.map((operation) => operation.name)).toEqual([
             ...SEMANTIC_PROJECT_QUERY_TYPES,
         ]);

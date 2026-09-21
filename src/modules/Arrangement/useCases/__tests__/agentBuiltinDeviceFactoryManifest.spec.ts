@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 
-import { type PluginDescriptor, BUILTIN_PLUGINS } from '../../models/DeviceParameter';
+import { type PluginDescriptor, BUILTIN_PLUGINS, getPluginById } from '../../models/DeviceParameter';
 import { getStableContractFingerprint } from '../../models/GetStableContractFingerprint';
 import {
     applyDescriptorGuidance,
@@ -114,18 +114,54 @@ describe('built-in descriptor manifest law', () => {
         if (!eq || !sidechain) {
             throw new Error('Expected EQ and sidechain compressor descriptors');
         }
+        const eqPresets = getFactoryPresets().filter((preset) =>
+            preset.devices.some((device) => device.type === 'builtin-eq')
+        );
         expect(eq?.presetVersion).toMatch(/^preset-v1:[a-f0-9]{8}$/);
         expect(sidechain?.presetVersion).toMatch(/^preset-v1:[a-f0-9]{8}$/);
         expect(eq?.presetVersion).not.toBe(sidechain?.presetVersion);
         expect(eq.presetVersion).toBe(
-            `preset-v1:${getStableContractFingerprint({ availability: eq.presets.availability, identities: eq.presets.identities })}`
+            `preset-v1:${getStableContractFingerprint({ availability: eq.presets.availability, presets: eqPresets })}`
         );
         expect(eq.presetVersion).not.toBe(
             `preset-v1:${getStableContractFingerprint({
                 availability: eq.presets.availability,
-                identities: eq.presets.identities.filter((identity) => identity.id !== 'fx-eq-vocal-presence'),
+                presets: eqPresets.filter((preset) => preset.id !== 'fx-eq-vocal-presence'),
             })}`
         );
+    });
+
+    it('publishes only descriptor-authored character associations', () => {
+        const manifest = getAgentBuiltinDeviceFactoryManifest();
+
+        expect(manifest.find((device) => device.type === 'dutch-oven')?.characterTags).toEqual(['plate', 'spring']);
+        expect(manifest.find((device) => device.type === 'faust-tape-delay')?.characterTags).toEqual(['tape']);
+        expect(manifest.find((device) => device.type === 'builtin-bitcrusher')?.characterTags).toEqual(['bitcrush']);
+        expect(manifest.find((device) => device.type === 'builtin-distortion')?.characterTags).toEqual([]);
+    });
+
+    it('versions descriptor character associations separately from command replay', () => {
+        const descriptor = getPluginById('builtin-distortion');
+        if (!descriptor) {
+            throw new Error('Expected the distortion descriptor');
+        }
+        const originalCharacterTags = descriptor.characterTags;
+        const beforeCommandVersion = getDeviceContractVersionForCommand(descriptor.id);
+        const beforeFactory = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+        try {
+            descriptor.characterTags = ['tube'];
+            const afterFactory = getAgentBuiltinDeviceFactoryManifest().find((device) => device.type === descriptor.id);
+
+            expect(afterFactory?.descriptorVersion).toBe(beforeFactory?.descriptorVersion);
+            expect(getDeviceContractVersionForCommand(descriptor.id)).toBe(beforeCommandVersion);
+            expect(afterFactory?.characterVersion).toBe(
+                `character-v1:${getStableContractFingerprint({ type: descriptor.id, characterTags: ['tube'] })}`
+            );
+            expect(afterFactory?.characterVersion).not.toBe(beforeFactory?.characterVersion);
+        } finally {
+            descriptor.characterTags = originalCharacterTags;
+        }
     });
 
     it('publishes complete owner-authored safety and operating guidance without inferred boilerplate', () => {
@@ -224,13 +260,13 @@ describe('built-in descriptor manifest law', () => {
         });
         expect(synth?.parameters.find((parameter) => parameter.id === 'attack')).toMatchObject({
             guidance: {
-                semanticRole: 'Amplitude-envelope attack time',
-                typicalRange: { minimum: 0.005, maximum: 0.1 },
+                semanticRole: 'Amplitude-envelope attack duration',
+                typicalRange: { minimum: 0.005, maximum: 0.3 },
             },
         });
         expect(synth?.parameters.find((parameter) => parameter.id === 'filterCutoff')).toMatchObject({
             guidance: {
-                semanticRole: 'Filter cutoff frequency',
+                semanticRole: 'Velocity-, pitch-, and pressure-scaled filter corner',
                 typicalRange: { minimum: 200, maximum: 8000 },
             },
         });

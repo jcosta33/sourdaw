@@ -23,6 +23,9 @@ const HEAD = 'a'.repeat(40);
 const BASE = 'f'.repeat(40);
 const MERGE_BASE = '1'.repeat(40);
 const COMMIT = 'b'.repeat(40);
+const REVIEWED_HEAD = 'e'.repeat(40);
+const OLD_COMMIT = 'd'.repeat(40);
+const PREDECESSOR = '9'.repeat(40);
 const STALE_HEAD = 'c'.repeat(40);
 const THREAD = 'PRRT_kwDOrepair';
 const OTHER_THREAD = 'PRRT_kwDOother';
@@ -79,6 +82,7 @@ function threadState(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRe
         rootPath: FINDING_PATH,
         rootLine: FINDING_LINE,
         rootSide: 'RIGHT',
+        rootReviewedHead: REVIEWED_HEAD,
         replies: [repairReply(11, repairRecord())],
         ...overrides,
     };
@@ -89,7 +93,14 @@ function threadState(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRe
  * itself, so a commit that reaches the head through the base is exactly the case the range refuses.
  */
 function inReviewedRange(commit: string, target: string): boolean {
-    return commit === BASE || commit === MERGE_BASE || (target === HEAD && commit === COMMIT);
+    return (
+        commit === target ||
+        commit === BASE ||
+        commit === MERGE_BASE ||
+        (target === HEAD && [COMMIT, REVIEWED_HEAD, OLD_COMMIT, PREDECESSOR].includes(commit)) ||
+        (commit === REVIEWED_HEAD && target === COMMIT) ||
+        (commit === PREDECESSOR && target === REVIEWED_HEAD)
+    );
 }
 
 function selectRepairs(
@@ -451,16 +462,40 @@ describe('selectEligibleRepairs', () => {
         });
     });
 
-    it('should refuse a record whose commit is the confirmed head', () => {
+    it('should accept a post-finding repair at the confirmed head', () => {
         const record = repairRecord({ commit: HEAD });
-        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
-
-        expect(selection).toEqual({
-            eligible: [],
-            refused: [{ thread: THREAD, reason: `commit ${HEAD} is not a distinct commit from head ${HEAD}` }],
+        expect(selectRepairs([threadState({ replies: [repairReply(11, record)] })])).toEqual({
+            eligible: [{ thread: THREAD, record, replyId: 11 }],
+            refused: [],
             ignored: [],
         });
     });
+
+    it.each([REVIEWED_HEAD, PREDECESSOR, OLD_COMMIT])(
+        'should refuse a commit that does not strictly descend the reviewed head: %s',
+        (commit) => {
+            const record = repairRecord({ commit });
+            const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+            expect(selection.eligible).toEqual([]);
+            expect(selection.refused).toEqual([
+                {
+                    thread: THREAD,
+                    reason: `commit ${commit} must strictly descend the finding reviewed head ${REVIEWED_HEAD}`,
+                },
+            ]);
+        }
+    );
+
+    it.each(['', 'abc123', 'E'.repeat(40)])(
+        'should refuse malformed root reviewed-head state: %s',
+        (rootReviewedHead) => {
+            const selection = selectRepairs([threadState({ rootReviewedHead })]);
+            expect(selection.eligible).toEqual([]);
+            expect(selection.refused).toEqual([
+                { thread: THREAD, reason: 'finding reviewed head must be forty lowercase hex characters' },
+            ]);
+        }
+    );
 
     it('should refuse a record bound to a stale head', () => {
         const record = repairRecord({ head: STALE_HEAD });
@@ -672,25 +707,25 @@ describe('confirmClientMutationId', () => {
 describe('review thread queries', () => {
     it('should ask for the repair thread and its comment page with pageInfo beside nodes', () => {
         expect(threadQuery(false)).toBe(
-            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadQuery(true)).toBe(
-            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{id isResolved diffSide pullRequest{number headRefOid baseRefOid} comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 
     it('should ask for the review threads with pageInfo beside nodes in both page forms', () => {
         expect(threadPage(undefined)).toBe(
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
         expect(threadPage('CURSOR')).toBe(
-            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){nodes{id isResolved diffSide comments(first:100){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 
     it('should drain a long thread through the same comment fragment it started with', () => {
         expect(threadCommentsPage()).toBe(
-            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}'
+            'query($threadId:ID!,$cursor:String!){node(id:$threadId){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id databaseId body path line originalLine author{__typename login ... on Bot{id}} pullRequestReview{commit{oid}}} pageInfo{hasNextPage endCursor}}}}}'
         );
     });
 });
@@ -706,6 +741,8 @@ describe('review thread queries', () => {
  */
 const QUERY_SCHEMA: Readonly<Record<string, readonly string[]>> = {
     Query: ['node', 'repository'],
+    PullRequestReview: ['commit'],
+    Commit: ['oid'],
     Node: ['id'],
     Repository: ['pullRequest'],
     PullRequest: ['number', 'headRefOid', 'baseRefOid', 'reviewThreads'],
@@ -799,6 +836,8 @@ const QUERY_FIELD_TYPES: Readonly<Record<string, string>> = {
     'PullRequestReviewThreadConnection.pageInfo': 'PageInfo',
     'PullRequestReviewCommentConnection.pageInfo': 'PageInfo',
     'PullRequestReviewComment.author': 'Actor',
+    'PullRequestReviewComment.pullRequestReview': 'PullRequestReview',
+    'PullRequestReview.commit': 'Commit',
 };
 
 /** Field names, argument lists, braces and typed inline fragments; every other character is noise. */

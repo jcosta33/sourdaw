@@ -44,6 +44,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-fixture'),
     DOC_BRANCHES: '__branches__',
@@ -552,6 +553,51 @@ describe('orchestratePromptChatRequest', () => {
             })
         );
         expect(releaseProviderCancellation).toHaveBeenCalledOnce();
+    });
+
+    it('admits no-provider planning as local work and reports actionable availability without provider usage', async () => {
+        const localPlanningLease = {
+            runId: 'agent-run-fixture',
+            workId: 'local-planning',
+            cancellationGeneration: 0,
+        };
+        mocks.claim.mockReturnValue({ status: 'claimed', lease: localPlanningLease });
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                planningOutcome: {
+                    kind: 'denied',
+                    reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+                },
+            },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'make the chorus warmer',
+            requestedRoute: 'auto',
+            backend: 'none',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ selectedRouteId: undefined }));
+        expect(mocks.claim).toHaveBeenCalledWith(
+            expect.objectContaining({ workId: 'local-planning', ownerKind: 'analysis' })
+        );
+        expect(mocks.planPromptActions).toHaveBeenCalledWith(
+            expect.objectContaining({ providerPlanning: 'disabled', onProviderResult: undefined })
+        );
+        expect(mocks.recordAgentProviderUsage).not.toHaveBeenCalled();
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content:
+                    'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+            })
+        );
     });
 
     // The case above carries no outcome at all, and the fallback above is what an absent decision

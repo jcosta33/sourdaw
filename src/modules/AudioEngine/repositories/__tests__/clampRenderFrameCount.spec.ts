@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { clampRenderFrameCount } from '../clampRenderFrameCount';
-import { MAX_OFFLINE_FRAMES } from '../constants';
+import { clampRenderFrameCount, MAX_OFFLINE_FRAMES } from '../clampRenderFrameCount';
 
 const SAMPLE_RATE = 48_000;
 
@@ -37,5 +36,9 @@ describe('clampRenderFrameCount', () => {
         const durationSeconds = (MAX_OFFLINE_FRAMES * 2) / SAMPLE_RATE;
 
         expect(clampRenderFrameCount({ durationSeconds, sampleRate: SAMPLE_RATE })).toBe(MAX_OFFLINE_FRAMES);
+    });
+
+    it('states the renderer frame cap the clamp is expressed against', () => {
+        expect(MAX_OFFLINE_FRAMES).toBe(2 ** 30);
     });
 });

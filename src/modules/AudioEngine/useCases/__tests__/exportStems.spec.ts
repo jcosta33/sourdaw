@@ -264,10 +264,12 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), padChild, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: groupedTracks })
@@ -315,6 +317,7 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), child, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
             expect.objectContaining({ track: child, allTracks: [child] })
@@ -460,6 +463,7 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), activePad, {
             honorMuted: false,
             vcaMultiplier: 1,
+            cancellationSignal: expect.any(AbortSignal),
         });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: topology })
@@ -588,6 +592,18 @@ describe('exportStems', () => {
             // 'kick' is scheduled twice: once as its own stem, once as the key
             // driving the compressor in the 'bass' stem's context.
             expect(scheduleCountFor('kick')).toBe(2);
+            // The key-source strip carries the stem set's cancellation scope
+            // (#4440). 'kick' is built twice here — once as its own stem through
+            // the grouped loop, once as the bass stem's key source — and an
+            // any-call pin would let the grouped call satisfy the matcher while
+            // the key-site threading regressed, so every kick call must carry it.
+            const kickStripCalls = offlineRenderMocks.createOfflineTrackStrip.mock.calls.filter(
+                (call) => (call[1] as { id: string }).id === 'kick'
+            );
+            expect(kickStripCalls).toHaveLength(2);
+            for (const call of kickStripCalls) {
+                expect(call[2]).toMatchObject({ cancellationSignal: expect.any(AbortSignal) });
+            }
         });
 
         it('keeps the key source out of the stem’s audio, so only the keyed track is heard', async () => {

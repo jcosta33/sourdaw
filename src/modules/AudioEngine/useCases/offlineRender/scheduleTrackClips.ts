@@ -22,6 +22,7 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { hasNoteExpression, normalizeNoteExpression } from '../../engine/noteExpression';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import { type ScheduleCall } from '../../repositories/offlineScheduler/makeOfflineFrameScheduler';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflineMidiEventProjector,
@@ -41,6 +42,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
+import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
 import { checkCancel } from './checkCancel';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
@@ -78,6 +80,7 @@ type OfflineProjectionDependencies = {
 };
 
 export type ScheduleTrackClipsInput = {
+    captured?: ReturnType<typeof captureOfflineSchedulingInput>;
     offlineCtx: OfflineAudioContext;
     track: Track;
     midi: NonNullable<MidiStoreState>;
@@ -130,9 +133,17 @@ export type ScheduleTrackClipsInput = {
     tallyStartSeconds?: number;
     /** Caller-owned cancellation for freeze/bounce scheduling. */
     abortSignal?: AbortSignal;
+    /**
+     * The render's frame scheduler for its `offlineCtx`, handed down so every
+     * frame-addressed lane in the render writes through the context's one
+     * shared instance. Omitted means this caller cannot write such a lane at
+     * all; `scheduleTrackAutomation` then fails closed instead of dropping it.
+     */
+    scheduleFrame?: ScheduleCall;
 };
 
 export async function scheduleTrackClips({
+    captured,
     offlineCtx,
     track,
     midi,
@@ -157,6 +168,7 @@ export async function scheduleTrackClips({
     tally,
     tallyStartSeconds = 0,
     abortSignal,
+    scheduleFrame,
 }: ScheduleTrackClipsInput): Promise<void> {
     function checkScheduleCancel(): void {
         checkCancel();
@@ -195,9 +207,13 @@ export async function scheduleTrackClips({
         return resolveTempoAtBeat({ changes, beat, defaultTempo });
     }
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
-    const compensationDelay = getCompensationDelay(track.id);
+    const compensationDelay = captured
+        ? getCompensationDelay(track.id, undefined, undefined, captured.latency)
+        : getCompensationDelay(track.id);
 
-    const allAutomationLanes = automationStore.value?.lanes ?? [];
+    const allAutomationLanes = captured?.automationLanes ?? automationStore.value?.lanes ?? [];
+    const buffers = captured?.buffers ?? audioBufferCache;
+    const parameterLaw = captured?.deviceParameterLaw ?? offlineDeviceParameterLawState;
     const automationLanes = includeMixerAutomation
         ? allAutomationLanes
         : allAutomationLanes.filter((lane) => {
@@ -209,7 +225,7 @@ export async function scheduleTrackClips({
     let deviceEntries: DeviceNodeEntry[] = [];
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-        const frozenBuf = audioBufferCache.get(track.freezeState.frozenBufferId);
+        const frozenBuf = buffers.get(track.freezeState.frozenBufferId);
         if (frozenBuf) {
             // Frozen buffers render from the track's earliest clip startBeat
             // (scheduleFrozenTrack), not from timeline 0 — anchor the source
@@ -285,13 +301,15 @@ export async function scheduleTrackClips({
             // the bounce's slew filter identical to the monitor's at every grain,
             // not only at the shipping default.
             slewTickSeconds: automationSlewTickSecondsForGrain(
-                transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
+                captured?.scheduleGrainMs ??
+                    transportStore.value?.scheduleGrainMs ??
+                    defaultTransportState.scheduleGrainMs
             ),
             // Arrangement's own law, injected at the composition root — the audio
             // engine may not import it (see `offlineDeviceParameterLawState`).
             deviceParameterLaw: {
                 acceptsAutomation: ({ deviceId, deviceType, parameterId }) => {
-                    const isAutomatable = offlineDeviceParameterLawState.isAutomatable;
+                    const isAutomatable = parameterLaw.isAutomatable;
                     if (!isAutomatable) {
                         return false;
                     }
@@ -302,14 +320,14 @@ export async function scheduleTrackClips({
                     return isAutomatable({ deviceType, paramId: parameterId });
                 },
                 clampValue: ({ deviceType, paramId, value }) =>
-                    offlineDeviceParameterLawState.clampValue?.({ deviceType, paramId, value }) ?? value,
+                    parameterLaw.clampValue?.({ deviceType, paramId, value }) ?? value,
                 // The declared *type*, applied to the emitted value only. Without
                 // it the bounce rendered the slew's continuous filter state for a
                 // parameter the monitor delivers as an integer — a lane on
                 // `bacteria/bitDepth` played 16, 14, 13, 12 and bounced 14.4,
                 // 13.44, 12.864.
                 quantiseValue: ({ deviceType, paramId, value }) =>
-                    offlineDeviceParameterLawState.quantiseValue?.({ deviceType, paramId, value }) ?? value,
+                    parameterLaw.quantiseValue?.({ deviceType, paramId, value }) ?? value,
             },
             regionStartSeconds: regionStartSec,
             projectBeatToSeconds,
@@ -320,6 +338,11 @@ export async function scheduleTrackClips({
             // Automation's own law, read here rather than re-derived in the
             // scheduler — the same reason `deviceParameterLaw` is injected.
             resolveLaneCeiling: getAutomationLaneCeiling,
+            // The frame scheduler for this context, threaded down by the root
+            // that created it. A frame-addressed device lane cannot be written
+            // without it and the scheduler fails closed rather than dropping
+            // the lane.
+            scheduleFrame,
         });
     }
 
@@ -328,7 +351,7 @@ export async function scheduleTrackClips({
     }
 
     const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
-    for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
+    for (const clip of resolveTrackClipsWithComping(track.id, track.clips, captured?.takeLanes)) {
         clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
     }
 
@@ -358,7 +381,7 @@ export async function scheduleTrackClips({
             if (!childTrack || (honorMuted && childTrack.muted) || childTrack.disabled) {
                 continue;
             }
-            const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
+            const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips, captured?.takeLanes);
             clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index, sourceTrack: childTrack })));
         }
     }
@@ -780,7 +803,7 @@ export async function scheduleTrackClips({
                 await scheduleMidiNoteBatch(scheduledNotes);
             }
         } else if (clip.type === 'audio' && clip.audioBufferId) {
-            const buffer = audioBufferCache.get(clip.audioBufferId);
+            const buffer = buffers.get(clip.audioBufferId);
             if (!buffer) {
                 onWarning?.(
                     `Audio clip "${clip.name}" is missing its audio buffer and will be silent in the export. ` +
@@ -803,7 +826,8 @@ export async function scheduleTrackClips({
                 compensationDelay,
                 projectBeatToSeconds,
                 resolveTempoAtBeat: resolveClipTempo,
-                readGainEnvelopeSeries: getGainEnvelopeSeries,
+                readGainEnvelopeSeries: (clipId, start, end) =>
+                    getGainEnvelopeSeries(clipId, start, end, captured?.gainEnvelopes),
             });
             for (const playback of playbacks) {
                 checkCallerAbort();

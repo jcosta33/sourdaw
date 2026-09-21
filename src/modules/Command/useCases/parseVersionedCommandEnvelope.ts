@@ -217,12 +217,13 @@ function getRequiredApplicationAssignedIdArguments(
 }
 
 function hasCanonicalArgumentMetadata(
+    operation: string,
     argumentsValue: Record<string, unknown>,
     references: readonly CommandObjectReference[],
     parameterUnits: readonly CommandParameterUnit[],
     time: readonly CommandTimeReference[]
 ): boolean {
-    const expected = compileCommandArgumentMetadata(argumentsValue);
+    const expected = compileCommandArgumentMetadata(argumentsValue, operation);
     return (
         JSON.stringify(references) === JSON.stringify(expected.objectReferences) &&
         JSON.stringify(parameterUnits) === JSON.stringify(expected.parameterUnits) &&
@@ -273,7 +274,13 @@ function validateEnvelope(value: unknown): ParseVersionedCommandEnvelopeResult {
     }
     if (
         !isRecord(value.arguments) ||
-        !hasCanonicalArgumentMetadata(value.arguments, value.objectReferences, value.parameterUnits, value.time)
+        !hasCanonicalArgumentMetadata(
+            value.operation,
+            value.arguments,
+            value.objectReferences,
+            value.parameterUnits,
+            value.time
+        )
     ) {
         return { status: 'invalid', reason: 'Command argument metadata is incomplete' };
     }

@@ -43,7 +43,7 @@ import {
     type AudioGraphStripParameterTarget,
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
-import { type DeviceNodeEntry } from '../buildDeviceChain';
+import { type DeviceNodeEntry, type BuildDeviceChainContext } from '../buildDeviceChain';
 
 import { createOfflineBusStrip } from './createOfflineBusStrip';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
@@ -56,7 +56,7 @@ function sendParameterKey(busId: string): string {
     return `send:${busId}`;
 }
 
-export type WebAudioOfflineBackendDeps = {
+export type WebAudioOfflineBackendDeps = Pick<BuildDeviceChainContext, 'instruments' | 'loadedExternalInstanceIds'> & {
     /** The render's context. Every node this backend builds belongs to it. */
     context: OfflineAudioContext;
     /** Where a strip routed to `master` lands. */
@@ -69,6 +69,11 @@ export type WebAudioOfflineBackendDeps = {
      * correlation and needs none; a caller that does pass one gets it checked.
      */
     acceptCorrelation?: (correlation: AudioGraphCorrelation) => boolean;
+    /**
+     * The owning render's cancellation signal (#4440), passed into every strip
+     * this backend builds so instrument preparation can abort at cancellation.
+     */
+    cancellationSignal?: AbortSignal;
 };
 
 export type WebAudioOfflineBackend = AudioGraphBackend & {
@@ -259,9 +264,12 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                     },
                     {
                         honorMuted: command.honorMuted,
+                        instruments: deps.instruments,
+                        loadedExternalInstanceIds: deps.loadedExternalInstanceIds,
                         vcaMultiplier: command.state.vcaMultiplier,
                         onWarning,
                         contributesAudio: command.contributesAudio,
+                        cancellationSignal: deps.cancellationSignal,
                     }
                 );
                 if (command.state.soloGated) {

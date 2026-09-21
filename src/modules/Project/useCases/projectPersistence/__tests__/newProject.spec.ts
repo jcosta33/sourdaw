@@ -31,6 +31,8 @@ type Deferred<T> = {
     resolve: (value: T) => void;
 };
 
+type MonitoredTrack = { id: string; inputMonitoring: 'on' | 'off' | 'auto'; inputId: string | null };
+
 const pluginHostMocks = vi.hoisted(() => ({
     unloadPlugin: vi.fn(() => Promise.resolve()),
 }));
@@ -38,6 +40,11 @@ const pluginHostMocks = vi.hoisted(() => ({
 const resetMocks = vi.hoisted(() => ({
     resetCrdtProject: vi.fn(),
     finalize: vi.fn(),
+}));
+
+const arrangementMocks = vi.hoisted(() => ({
+    rearmInputMonitoring: vi.fn(),
+    trackStoreValue: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null,
 }));
 
 function createDeferred<T>(): Deferred<T> {
@@ -121,10 +128,19 @@ vi.mock('../helpers/runProjectLoadTransaction', async () => {
     };
 });
 
-// newProject imports addTrack; getDurableProjectOwnerId pulls getPluginById via semanticProjectIndex.
+// newProject imports addTrack and rearmInputMonitoring; getDurableProjectOwnerId pulls getPluginById via semanticProjectIndex.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
     getPluginById: vi.fn(),
+    rearmInputMonitoring: arrangementMocks.rearmInputMonitoring,
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return arrangementMocks.trackStoreValue;
+        },
+    },
 }));
 
 // newProject imports clearUndoHistory.
@@ -159,6 +175,9 @@ describe('newProject injectable', () => {
             loading: false,
             initialized: true,
         });
+        vi.mocked(ensureTrackStrips).mockReturnValue({ status: 'ready', externalPluginActivations: [] });
+        arrangementMocks.rearmInputMonitoring.mockResolvedValue(undefined);
+        arrangementMocks.trackStoreValue = null;
     });
 
     it('should forward to injected collaborators in fresh-project order', async () => {
@@ -294,6 +313,44 @@ describe('newProject injectable', () => {
         expect(compactProject).not.toHaveBeenCalled();
         expect(resetMocks.finalize).not.toHaveBeenCalled();
         expect(projectLoadFailureStore.value).toBeNull();
+    });
+
+    it('re-arms input monitoring for an on track after restoring the previous project', async () => {
+        vi.mocked(resetCrdtProject).mockResolvedValueOnce({ status: 'refused', reason: 'session-active' });
+        arrangementMocks.trackStoreValue = {
+            tracks: [
+                { id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' },
+                { id: 'off-1', inputMonitoring: 'off', inputId: 'in-2' },
+            ],
+            selectedTrackId: null,
+        };
+
+        await expect(newProject('Refused Project')).resolves.toBe(false);
+
+        // The reset released the capture and the abort rebuilt the previous
+        // project's strips, so the restore hands the previous project's tracks
+        // to the shared re-arm law — the single predicate that arms the 'on'
+        // track and leaves the 'off' track alone.
+        expect(arrangementMocks.rearmInputMonitoring).toHaveBeenCalledOnce();
+        expect(arrangementMocks.rearmInputMonitoring).toHaveBeenCalledWith([
+            { id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' },
+            { id: 'off-1', inputMonitoring: 'off', inputId: 'in-2' },
+        ]);
+    });
+
+    it('does not re-arm when the previous graph restoration fails', async () => {
+        vi.mocked(resetCrdtProject).mockResolvedValueOnce({ status: 'refused', reason: 'session-active' });
+        arrangementMocks.trackStoreValue = {
+            tracks: [{ id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' }],
+            selectedTrackId: null,
+        };
+        vi.mocked(ensureTrackStrips).mockImplementationOnce(() => {
+            throw new Error('strip rebuild failed');
+        });
+
+        await expect(newProject('Refused Project')).resolves.toBe(false);
+
+        expect(arrangementMocks.rearmInputMonitoring).not.toHaveBeenCalled();
     });
 
     /**

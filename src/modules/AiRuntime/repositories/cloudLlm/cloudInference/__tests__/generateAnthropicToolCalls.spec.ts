@@ -425,10 +425,69 @@ describe('generateAnthropicToolCalls', () => {
         expect(body.tools[0]?.input_schema).not.toHaveProperty(['properties', 'bpm', 'minimum']);
         expect(result.strictToolSchemas).toBe(true);
         expect(result.usage).toEqual({
-            inputTokens: 50,
+            inputTokens: 63,
             outputTokens: 9,
             cacheReadInputTokens: 5,
             cacheWriteInputTokens: 8,
+            reasoningTokens: null,
+        });
+    });
+
+    it.each([
+        {
+            name: 'an overflowing input total',
+            usage: {
+                input_tokens: Number.MAX_SAFE_INTEGER,
+                output_tokens: 1,
+                cache_read_input_tokens: 1,
+                cache_creation_input_tokens: 0,
+            },
+            cacheReadInputTokens: 1,
+            cacheWriteInputTokens: 0,
+        },
+        {
+            name: 'a malformed cache counter',
+            usage: {
+                input_tokens: 10,
+                output_tokens: 1,
+                cache_read_input_tokens: -1,
+                cache_creation_input_tokens: 2,
+            },
+            cacheReadInputTokens: null,
+            cacheWriteInputTokens: 2,
+        },
+        {
+            name: 'a missing raw input counter',
+            usage: {
+                output_tokens: 1,
+                cache_read_input_tokens: 5,
+                cache_creation_input_tokens: 8,
+            },
+            cacheReadInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        },
+    ])('refuses to undercount $name', async ({ usage, cacheReadInputTokens, cacheWriteInputTokens }) => {
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+            usage,
+        });
+
+        const result = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+            signal: new AbortController().signal,
+        });
+
+        expect(result.usage).toMatchObject({
+            inputTokens: null,
+            outputTokens: 1,
+            cacheReadInputTokens,
+            cacheWriteInputTokens,
         });
     });
 

@@ -7,13 +7,15 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
+import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
+import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
+import { beginExportCancellationScope } from './offlineRender/beginExportCancellationScope';
 import { checkCancel } from './offlineRender/checkCancel';
-import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
@@ -23,7 +25,6 @@ import { destroyOfflineDeviceStrategies } from './offlineRender/destroyOfflineDe
 import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { prepareOfflineContext } from './offlineRender/prepareOfflineContext';
 import { renderInSegments } from './offlineRender/renderInSegments';
-import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveHistoryAwareRenderContext } from './offlineRender/resolveHistoryAwareRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
@@ -126,7 +127,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
     const releaseLock = acquireRenderLock();
 
     try {
-        resetCancelFlag();
+        // The scope's signal is this stem set's cancellation handle (#4440):
+        // threaded into every strip so instrument setup aborts at Cancel.
+        const cancellationSignal = beginExportCancellationScope();
 
         const durationBeats = typeof optsOrBeats === 'number' ? optsOrBeats : optsOrBeats.durationBeats;
         const sampleRate =
@@ -233,6 +236,10 @@ export const exportStems: ExportStemsFn = async function exportStems(
             checkCancel();
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+            // The frame scheduler for this stem's context. One instance per
+            // `OfflineAudioContext` comes back from the factory, so this stem's
+            // Faust devices share it rather than colliding on shared frames.
+            const scheduleFrame = makeOfflineFrameScheduler(offlineCtx);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
             const boundPads = toasterParentIds.has(track.id)
                 ? tracks.tracks.filter((candidate) => {
@@ -283,6 +290,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         honorMuted: false,
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                         onWarning,
+                        cancellationSignal,
                     });
                     trackStripsById.set(groupedTrack.id, groupedStrip);
                     deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
@@ -319,6 +327,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             groups: vcaGroups,
                         }),
                         onWarning,
+                        cancellationSignal,
                     });
                     trackStripsById.set(keySourceTrack.id, keyStrip);
                     deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
@@ -363,6 +372,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         deviceEntriesByTrack,
                         honorMuted: false,
                         regionStartBeat: 0,
+                        scheduleFrame,
                         vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                     });
                 }
@@ -400,6 +410,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         deviceEntriesByTrack,
                         honorMuted: false,
                         regionStartBeat: 0,
+                        scheduleFrame,
                         vcaMultiplier: deriveVcaMultiplier({
                             vcaGroupId: keySourceTrack.vcaGroupId,
                             groups: vcaGroups,

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectIdentity: vi.fn(() => 'project-identity'),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
     DOC_BRANCHES: '__branches__',
@@ -170,6 +171,28 @@ describe('planPromptActions', () => {
 
         expect(result.result.rejectionReason).toBe('The proposed action schema is invalid.');
         expect(mocks.parsePromptToActions).toHaveBeenCalledTimes(callsBeforePlanning + 1);
+    });
+
+    it('carries disabled provider capability through every parser admission', async () => {
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [],
+            planningOutcome: { kind: 'denied', reason: 'none' },
+        });
+
+        await planPromptActions({ prompt: 'make it warmer', providerPlanning: 'disabled' });
+
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
+            'make it warmer',
+            { tracks: [] },
+            undefined,
+            'rev-1',
+            undefined,
+            undefined,
+            expect.any(Object),
+            expect.any(Function),
+            undefined,
+            'disabled'
+        );
     });
 
     it('runs one admitted correction and retains the validation failure as durable run evidence', async () => {

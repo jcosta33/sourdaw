@@ -14,7 +14,7 @@ type AgentRouteView = {
     fallbackPolicy: string;
     dataDisclosure: { categories: readonly string[]; retention: Readonly<Record<string, string>> } | null;
     usage: { provenance: string; attempts: number };
-    cost: readonly { category: string; reserved: number; actual: number; provenance: string }[];
+    cost: readonly { category: string; reserved: number; actual: number; provenance: string; final: boolean }[];
 };
 
 type AgentRouteSectionProps = {
@@ -72,7 +72,13 @@ function formatCost(cost: AgentRouteView['cost']): string {
         return 'none';
     }
     return cost
-        .map((attempt) => `${attempt.category} ${attempt.actual}/${attempt.reserved} ${attempt.provenance}`)
+        .map((attempt) => {
+            if (attempt.final) {
+                return `${attempt.category} ${attempt.actual} final ${attempt.provenance}`;
+            }
+            const lowerBound = attempt.actual > 0 ? `; known minimum ${attempt.actual}` : '';
+            return `${attempt.category} ${attempt.reserved} reserved ${attempt.provenance}${lowerBound}`;
+        })
         .join('; ');
 }
 

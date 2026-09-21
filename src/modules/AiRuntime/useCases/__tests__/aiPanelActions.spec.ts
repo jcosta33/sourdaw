@@ -7,13 +7,16 @@ import { toggleChat } from '../aiPanelActions/toggleChat';
 import { undoLastAction } from '../aiPanelActions/undoLastAction';
 
 vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
     executeUserAppAction: vi.fn(),
     undo: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
+    isAppActionConflictError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));

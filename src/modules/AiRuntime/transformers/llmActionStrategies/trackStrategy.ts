@@ -1,4 +1,4 @@
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, type LevelArgument, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -16,9 +16,21 @@ import {
     isFiniteNumber,
     isProviderRoutableSource,
     isSafeTrackColor,
+    readResolvedLevelArgument,
     rejection,
 } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
+
+/** The track level in the form the request stated, for the handler to resolve. */
+function toTrackGainPayload(trackId: string, argument: LevelArgument) {
+    if ('linear' in argument) {
+        return { trackId, gain: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return { trackId, gainDb: argument.absoluteDb };
+    }
+    return { trackId, deltaDb: argument.deltaDb };
+}
 
 export const trackActionNames = [
     'addTrack',
@@ -189,12 +201,16 @@ const trackStrategyDefinitions = [
         name: 'setTrackGain',
         transform: ({ call, context, index }) => {
             const args = call.arguments;
+            const track = findTrack(context, args.trackId);
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'gain', absolute: 'gainDb', relative: 'deltaDb' },
+                { current: track?.gain, law: TRACK_FADER_LAW, linearBounds: { min: 0, max: FADER_MAX_GAIN } }
+            );
             if (
-                !hasExactKeys(args, ['trackId', 'gain']) ||
-                !hasTrack(context, args.trackId) ||
-                !isFiniteNumber(args.gain) ||
-                args.gain < 0 ||
-                args.gain > FADER_MAX_GAIN
+                level === null ||
+                !hasExactKeys(args, ['trackId', level.statedKey]) ||
+                !hasTrack(context, args.trackId)
             ) {
                 return rejection(
                     index,
@@ -202,7 +218,7 @@ const trackStrategyDefinitions = [
                     `Expected an available trackId and finite gain from 0 through ${FADER_MAX_GAIN}`
                 );
             }
-            return { type: 'setTrackGain', payload: { trackId: args.trackId, gain: args.gain } };
+            return { type: 'setTrackGain', payload: toTrackGainPayload(args.trackId, level.argument) };
         },
     },
     {

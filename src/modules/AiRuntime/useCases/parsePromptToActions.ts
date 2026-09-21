@@ -323,7 +323,8 @@ const planPromptIntent = inject({ logger })(
             correction?: {
                 creativeAuthority: CreativeRequestAuthority | null;
                 rejectionEvidence?: PlanningRejectionEvidence;
-            }
+            },
+            providerPlanning: 'enabled' | 'disabled' = 'enabled'
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
@@ -359,6 +360,18 @@ const planPromptIntent = inject({ logger })(
 
             if (signal?.aborted) {
                 return { actions: [], rawText: prompt, requiresConfirmation: false };
+            }
+
+            if (providerPlanning === 'disabled') {
+                return {
+                    actions: [],
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    planningOutcome: {
+                        kind: 'denied',
+                        reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+                    },
+                };
             }
 
             let applicationToolReceiptFields: { applicationToolReceipts?: IntentResult['applicationToolReceipts'] } =
@@ -511,7 +524,7 @@ const planPromptIntent = inject({ logger })(
                             };
                         },
                     },
-                    requestTurn: async ({ receiptContext, directive }) => {
+                    requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
                         if (!planningContext.authorityComplete) {
@@ -526,7 +539,11 @@ const planPromptIntent = inject({ logger })(
                             onProviderResult,
                             streamIdentity,
                             onProviderAttempt,
-                            directive
+                            directive,
+                            // A hosted turn repeats the run's first message unchanged and carries the
+                            // receipts as its own earlier turns; only a local backend reads the text
+                            // form above, which restates them inside the prompt.
+                            { firstUserMessage: initialPlanningContext.message, history, budgetNote }
                         );
                     },
                 });
@@ -986,7 +1003,8 @@ export async function parsePromptToActions(
     correction?: {
         creativeAuthority: CreativeRequestAuthority | null;
         rejectionEvidence?: PlanningRejectionEvidence;
-    }
+    },
+    providerPlanning: 'enabled' | 'disabled' = 'enabled'
 ): Promise<PlannedIntentResult> {
     const result = await planPromptIntent(
         prompt,
@@ -997,7 +1015,8 @@ export async function parsePromptToActions(
         onProviderResult,
         streamIdentity,
         onProviderAttempt,
-        correction
+        correction,
+        providerPlanning
     );
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
 }

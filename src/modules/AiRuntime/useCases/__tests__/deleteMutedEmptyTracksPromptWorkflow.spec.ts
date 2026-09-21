@@ -276,10 +276,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchemas(userMessage: string, names: readonly string[]): void {
-    const discovery = getApplicationToolReceipts(userMessage).find(
-        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
-    );
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchemas(receipts: readonly unknown[], names: readonly string[]): void {
+    const discovery = receipts.find((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover');
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
@@ -371,20 +384,6 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
     );
 }
 
-function getHostedUserMessage(body: string): string {
-    const request: unknown = JSON.parse(body);
-    const message =
-        isRecord(request) && Array.isArray(request.messages)
-            ? request.messages.find(
-                  (entry) => isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string'
-              )
-            : undefined;
-    if (!isRecord(message) || typeof message.content !== 'string') {
-        throw new TypeError('Expected hosted provider user message');
-    }
-    return message.content;
-}
-
 function setProviderPlan(plan: readonly ProviderCall[]): void {
     const names = [...new Set(plan.map((call) => call.name))];
     let webLlmTurn = 0;
@@ -398,7 +397,7 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
                 JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
         }
-        assertDiscoveredCommandSchemas(userMessage, names);
+        assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), names);
         return Promise.resolve(JSON.stringify(asCommandBatchProposal(plan, getProviderProtectedTargetIds())));
     });
     let hostedTurn = 0;
@@ -415,7 +414,7 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
                 toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
         }
-        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), names);
+        assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), names);
         return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan, getProviderProtectedTargetIds())));
     });
 }

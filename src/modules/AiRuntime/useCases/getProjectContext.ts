@@ -11,6 +11,7 @@ import { getAutomationLaneCeiling, isLinearGainAutomationLane } from '#/modules/
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '#/modules/Project/stores';
+import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -182,7 +183,10 @@ export function getProjectContext(): ProjectContext {
             parameterId: lane.parameterId,
             name: lane.parameterName,
             enabled: lane.enabled,
+            ...(lane.linkedLaneId === undefined ? {} : { linkedLaneId: lane.linkedLaneId }),
+            ...(lane.linkScale === undefined ? {} : { linkScale: lane.linkScale }),
             minValue: lane.minValue,
+            declaredMaxValue: lane.maxValue,
             // The ceiling the lane really has, not the scalar it stores: a gain
             // lane written before the fader gained its `+6 dB` of headroom still
             // records `1`. This is the single place the projection carries it,
@@ -196,6 +200,10 @@ export function getProjectContext(): ProjectContext {
                 beat: point.beat,
                 value: point.value,
                 curve: point.curve,
+                tension: point.tension,
+                ...(point.stairSteps === undefined ? {} : { stairSteps: point.stairSteps }),
+                ...(point.cp1 === undefined ? {} : { cp1: { ...point.cp1 } }),
+                ...(point.cp2 === undefined ? {} : { cp2: { ...point.cp2 } }),
             })),
         })),
         sidechainRoutes: (sidechainState?.routes ?? []).map((route) => ({
@@ -223,6 +231,11 @@ export function getProjectContext(): ProjectContext {
             id: time.id,
             name: time.name,
             kind: time.kind,
+            canonicalRole: getCanonicalTrackRole({
+                track: time,
+                trackRoles: projectState?.productionBrief.trackRoles,
+                notesByClipId,
+            }),
             muted: time.muted,
             soloed: time.soloed,
             soloSafe: time.soloSafe,

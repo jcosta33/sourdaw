@@ -10,6 +10,19 @@ export const AUTHOR_BOT_NODE_ID = 'BOT_kgDOEv71mA';
 export const REVIEWER_BOT_NODE_ID = 'BOT_kgDOEv74EA';
 export const ORCHESTRATOR_USER_NODE_ID = 'MDQ6VXNlcjg5NzgyNzA=';
 
+/**
+ * The author bot's git commit identity, as `lane:open` stamps it into lane worktrees. GitHub
+ * attributes `users.noreply.github.com` commits by the numeric database id before the `+`, so a
+ * login rename keeps every commit attributed to this App while only the display name drifts until
+ * this constant is updated — verified against squash commits on `origin/main` authored by both the
+ * current slug and the pre-rename slug `jcosta33-author[bot]`, which share database id 318698904.
+ * `lane:open` runs offline by design, so the login here is a constant, not an API read.
+ */
+export const AUTHOR_BOT_DATABASE_ID = 318698904;
+export const AUTHOR_BOT_COMMIT_LOGIN = 'hplovecraft208';
+export const AUTHOR_BOT_COMMIT_NAME = `${AUTHOR_BOT_COMMIT_LOGIN}[bot]`;
+export const AUTHOR_BOT_COMMIT_EMAIL = `${AUTHOR_BOT_DATABASE_ID}+${AUTHOR_BOT_COMMIT_NAME}@users.noreply.github.com`;
+
 export function isOrchestratorUserNodeId(nodeId: string | undefined | null): boolean {
     return nodeId === ORCHESTRATOR_USER_NODE_ID;
 }
@@ -88,6 +101,28 @@ export const REVIEWER_MINT_PERMISSIONS = {
     pull_requests: 'write',
 } as const;
 
+/**
+ * `resolveReviewThread` is gated on repository write access, so thread resolution needs contents
+ * write while review publication stays at read. Confirm keeps its own set so no other reviewer
+ * command's token is broadened.
+ */
+export const CONFIRM_REVIEWER_MINT_PERMISSIONS = {
+    contents: 'write',
+    pull_requests: 'write',
+} as const;
+
+/**
+ * Posting a commit status is gated on the `statuses` permission, which neither reviewer set above
+ * carries: the publication mint is read-only on contents, and confirm's contents write buys thread
+ * resolution, not statuses. The shadow status keeps its own set so no other reviewer command's token
+ * is broadened.
+ */
+export const SHADOW_REVIEWER_MINT_PERMISSIONS = {
+    contents: 'read',
+    pull_requests: 'write',
+    statuses: 'write',
+} as const;
+
 export type Role = 'author' | 'reviewer';
 
 export type RoleCredentials = {
@@ -102,6 +137,7 @@ export type MintPermissions = {
     pull_requests?: 'write';
     issues?: 'write';
     workflows?: 'write';
+    statuses?: 'write';
 };
 
 export type MintedInstallation = {
@@ -301,13 +337,15 @@ export async function mintInstallationToken(input: {
 export async function authenticateRole(input: {
     primaryRoot: string;
     role: Role;
+    /** Per-command mint override; only a command whose set the role default cannot serve supplies it. */
+    permissions?: MintPermissions;
     readFile?: FileReader;
     request?: GitHubJsonClient;
     env?: NodeJS.ProcessEnv;
 }): Promise<{ credentials: RoleCredentials; minted: MintedInstallation; session: GhSession }> {
     return authenticateWithPermissions(
         input,
-        input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS
+        input.permissions ?? (input.role === 'author' ? AUTHOR_MINT_PERMISSIONS : REVIEWER_MINT_PERMISSIONS)
     );
 }
 

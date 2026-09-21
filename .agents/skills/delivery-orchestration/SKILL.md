@@ -19,26 +19,38 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 
 ## Command reference
 
-| Need                         | Command                                                                                                                                                                                       |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                  | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
-| Claim the lane's issue       | `pnpm issue:claim <issue>`                                                                                                                                                                    |
-| Sync a dependent lane        | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
-| Push; open or update the PR  | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
-| Write the review bundle      | `pnpm review:prepare <pr>`                                                                                                                                                                    |
-| Post `review.json`           | `pnpm review:publish <pr>`                                                                                                                                                                    |
-| Post final `acceptance.json` | `pnpm review:accept <pr>`                                                                                                                                                                     |
-| Record a repair, leave open  | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
-| Confirm repairs, resolve     | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
-| Reply `Done` and resolve     | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
-| Squash-merge                 | `pnpm deliver <pr>`                                                                                                                                                                           |
-| Recover a crashed delivery   | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
-| Recover a wedged review post | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR        | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                                                                                             |
-| Prune spent remote branches  | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
-| Remove a spent lane          | `pnpm lane:remove <path>`                                                                                                                                                                     |
-| Strand an abandoned lane     | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
-| Prune lane artifacts         | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
+| Need                             | Command                                                                                                                                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open a lane                      | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Claim the lane's issue           | `pnpm issue:claim <issue>`                                                                                                                                                                    |
+| Sync a dependent lane            | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
+| Push; open or update the PR      | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
+| Write the review bundle          | `pnpm review:prepare <pr>`                                                                                                                                                                    |
+| Post `review.json`               | `pnpm review:publish <pr>`                                                                                                                                                                    |
+| Post final `acceptance.json`     | `pnpm review:accept <pr>`                                                                                                                                                                     |
+| Record a repair, leave open      | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
+| Confirm repairs, resolve         | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
+| Reply `Done` and resolve         | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
+| Squash-merge                     | `pnpm deliver <pr>`                                                                                                                                                                           |
+| Recover a crashed delivery       | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
+| Recover a wedged review post     | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
+| Close a superseded PR            | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
+| Prune spent remote branches      | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
+| Remove a spent lane              | `pnpm lane:remove <path>`                                                                                                                                                                     |
+| Strand an abandoned lane         | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
+| Prune lane artifacts             | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
+| Restamp author identity on lanes | `pnpm lane:identity`                                                                                                                                                                          |
+
+`pr:supersede` refuses to close a superseded pull request until every live
+review thread on it has exactly one recorded disposition on the replacement.
+Each finding is the decimal database id of a review thread's root comment, as
+GitHub reports it. The caller writes that total map as a `FindingLineage` JSON
+document and passes its path with `--lineage`; both the bare JSON object and the
+rendered marker form are accepted, `oldPr`/`replacementPr` must match the
+invocation, and a missing, unreadable, or malformed file refuses with the path.
+The transaction then posts the receipt plus a second lineage marker, converges
+duplicates to exactly one of each, and closes only afterwards, so a re-run after
+a partial transaction repairs rather than duplicates.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a
@@ -55,6 +67,12 @@ Two agents taking the same work waste both. Before `lane:open`, read
 `git worktree list` and `gh pr list --state open` for a lane or PR already on
 the same issue or surface; a lane or PR you did not open is another agent's
 claim and is read-only for you.
+
+Opening a lane stamps the worktree's git config with the author App's commit
+identity — `hplovecraft208[bot]`, keyed to its immutable database id
+318698904, unsigned — so lane commits attribute to the App without any
+credential; `pnpm lane:identity` restamps lanes opened before that stamp
+existed.
 
 An issue-bound lane claims its issue in the same step: `lane:open` prints
 the command, and `pnpm issue:claim <issue>` — run from the protected
@@ -126,6 +144,28 @@ reviews.
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
 for registered stack children.
 
+Publishing gates authorship on exactly the commits it adds to the pull-request
+branch (the notes ref the push also carries is the tool integration's own
+channel, not publication the gate governs): the remote tip when the branch
+already exists there at an ancestor of the head, otherwise the same base the
+title derives from — always excluding what the resolved bases reach, both
+origin/main and any stack parent head, because commits they already carry are
+not the lane's to author. Every remaining commit, merges included, must carry
+the author App's commit identity; a refusal names each offending commit and
+email. Publication also refuses outright while the lane repository's shared
+object store carries rewrites a push bypasses — an `info/grafts` file in the
+common dir or any `refs/replace/*` ref — because `git log` follows the graft
+file even with `--no-replace-objects` and the replace-refs disable applies to
+the gate's read alone. The remedy: restamp with `pnpm lane:identity`, then —
+only when the remote branch holds none of the lane's commits AND the
+comparison base dominates every excluded base (it is origin/main itself, or a
+parent head that already contains current main) — rebase from the comparison
+base with
+`git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' <comparison-base>`;
+otherwise, when no offered rewrite can stay off base-side history, re-create
+the named offending commits. Never a rewrite rooted at the remote tip: it
+would replay base-side commits as the App.
+
 Labels and milestone are written by the author App. Project membership is not:
 installation tokens cannot reach user-owned Projects v2, so the project listing,
 the issue's and PR's own membership, and the `--add-project` write all go through
@@ -152,8 +192,8 @@ interface. Exclude session diaries, unpublished rounds, and mutation tables.
 
 `review:prepare` prints a primary-root bundle path containing `manifest.json`,
 `diff.patch`, `review-size.json`, `risk-plan.json`, `pr.md`, and merge-base
-`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff
-and deterministic size report use the actual base/head merge-base; handwritten,
+`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff and
+deterministic size report use the actual base/head merge-base; handwritten,
 test, documentation, and generated changes (including lockfiles) remain visible
 as separate groups, and unknown paths count as handwritten. Paths are keyed by
 head sha. Re-preparing the same head replaces generated files and preserves
@@ -161,13 +201,22 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
+The caller writes `stances.json` into that bundle in two phases: before
+dispatch it holds the derived stance set, one entry per stance naming the
+failure mode that admits it; as each draw reports, its baseline-probe result —
+and its exhaustion when that draw fell back to an authoring model — is
+recorded into the same file. It sits alongside the
+later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
+
 `risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
 it is bound to, the change's `riskClasses`, the `requiredStances` those classes
 earn, and the `triggers` that fired. It is derived from the same path
 classification as `review-size.json`, so the stances and the printed size
-summary cannot disagree. Classes union when several fire, and no class may
-require a stance it did not earn: that is the proportionality rule, and
-`code-craft` is required only by `ordinary`.
+summary cannot disagree. The plan is an input to the caller's stance
+enumeration, never a stance requirement: the dispatched stances are the
+reviewer's task-derived judgement, recorded in `stances.json`. Classes union
+when several fire, and no class may require a stance it did not earn: that is
+the proportionality rule, and `code-craft` is required only by `ordinary`.
 
 - `small` (no specialist surface, handwritten change within the small-change
   budget) — correctness, test-validity.
@@ -186,9 +235,12 @@ can neither widen nor narrow its own review.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. Fresh reviewer publication also carries the head-bound dossier and
 refuses before any remote write when the plan or dossier is missing, malformed,
-or rebound from the head/base/pr it must bind; when the dossier does not
-complete exactly the plan's required stances or claims one the classes did not
-earn; when its accepted findings do not match the document's comments
+or rebound from the head/base/pr it must bind; when the bundle carries
+`stances.json` and the dossier's `stances` entries do not correspond to that
+record as sets of stance names — every draw names a recorded stance and every
+recorded stance carries at least one draw, so several draws on one stance share
+its single entry; when
+its accepted findings do not match the document's comments
 one-to-one; or when its recommendation disagrees with the document's event. It
 then persists the canonical record, `format: 'dossier-v1'`: an append-only event
 chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
@@ -206,7 +258,13 @@ When the harness cannot select subagent models, run each blind stance on another
 harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
 report returned as text for the orchestrator to validate and publish. `reviewerModel`
 records the model actually run; the dispatch never enters the trusted snapshot; the
-harness, model, and invocation are the dispatching session's choice.
+harness, model, and invocation are the dispatching session's choice. When only the
+author's model is available, the same-model review still publishes: `review.json`
+carries `modelExhaustion` (one line naming what made every other model unavailable)
+and the published body names the reviewer model, so the deviation is recorded rather
+than silently accepted. A draw on an authoring model records its own exhaustion; a
+document-level whole-round `modelExhaustion` covers every draw; per-draw exhaustion
+excuses the document-level field in a mixed round.
 
 ## Review document formats
 
@@ -229,10 +287,15 @@ report.
 
 The orchestrator writes the caller-authored `dossier.json` beside `review.json`
 and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
-`pr`/`headSha`/`baseSha`, one `stances` entry per required stance (`stance`,
-`reviewerModel`, `modelTier` of `economy`/`standard`/`strongest`, `outcome` of
-`blocker-found`/`clean`), the bounded `evidence` claims, and `limitations`. The
-accepted findings are not declared there: they are the review document's own
+`pr`/`headSha`/`baseSha`, one completed `stances` entry per dispatched draw — the
+names the bundle's `stances.json` records, plan menu ids or free-form risk names
+alike; one stance may carry several draws with distinct reviewer models — each
+with its `reviewerModel`, `modelTier` of
+`economy`/`standard`/`strongest`, and `outcome` of
+`blocker-found`/`clean`, its `exhaustion` when that draw fell back to an
+authoring model (one line naming what made every other model unavailable for
+that draw), the bounded `evidence` claims, and `limitations`.
+The accepted findings are not declared there: they are the review document's own
 inline comments. `discarded.json` is the orchestrator's discard record and is
 now actually read: an array of `{ finding, stance, reason }`, one entry per
 discarded candidate, each with a one-line reason.
@@ -293,20 +356,34 @@ acceptance on another person's behalf or claim personal human review.
 Push the fix, then record it with `review:repair`, which runs as the author App
 and leaves the thread open. It reads the thread live and refuses one already
 resolved, a `--head` that is not the pull request's live head, or a `--commit`
-outside the reviewed range `base..head`: an ancestor of that head and not of the
-pull request's `baseRefOid`, so the merge base and every pre-pull-request commit
-are refused. It binds the thread's own root comment as
+outside `base..head`: an ancestor of or equal to that head and not an ancestor
+of the pull request's `baseRefOid`, so the merge base and every pre-pull-request
+commit are refused. The repair must also strictly descend the reviewed commit
+from the thread root's live `pullRequestReview.commit.oid`; it may equal the
+live head. The reviewed commit itself, its predecessors, and commits that do
+not descend it are refused. Missing or malformed root review provenance and
+unavailable ancestry comparisons fail closed before posting. It binds the
+thread's own root comment as
 the finding, plus the commit, one-line summary, bounded evidence, and head, and
 posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
 it never resolves. Re-running the same head and commit posts nothing and reports
 the already-recorded state.
 
+For ancestry `B -> P -> R -> H`, let `B` be the PR base and `R` the root finding's
+reviewed commit. `H` qualifies as the repair even when it is the live head.
+`P` predates the finding, and `R` is the revision that received it; neither
+strictly descends `R`, so neither can be recorded or confirmed as its repair.
+
 The reviewer confirms with `review:confirm`, a distinct identity from the
 author's. It resolves, in one pass with deterministic mutation ids, the threads
 whose author-recorded repair validates: same pull request, same thread, same
-head, finding equal to the thread's root comment, repairing commit inside the
-reviewed range `base..head`, record well formed, evidence safe. It fails closed
-— a refused record, a duplicate distinct record, a thread already carrying a
+head, finding equal to the thread's root comment, repairing commit inside
+`base..head` and strictly descending the thread root's live associated review
+commit (`pullRequestReview.commit.oid`), record well formed, evidence safe.
+The repairing commit may equal the live head. Missing or malformed root review
+provenance or an unavailable ancestry comparison fails closed for the whole
+batch before any confirmation or resolution. It also fails closed — a refused
+record, a duplicate distinct record, a thread already carrying a
 confirmation for a different record or a duplicated identical confirmation, a
 rebound identity, a mismatched finding, or a commit outside the reviewed range
 resolves nothing and reports the refusal, leaving the operator to fix the

@@ -16,7 +16,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import { runAcceptReviewCli } from '../acceptReview.ts';
@@ -55,16 +55,21 @@ import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { runRepairReviewFindingCli } from '../repairReviewFinding.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
+import { runReviewShadowStatusCli } from '../reviewShadowStatus.ts';
+import { runRulesetHardeningCli } from '../rulesetHardening.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
+    defaultPort,
     executeTrustedSnapshot,
+    fetchOriginMain,
     resolveTrustedLauncherBinding,
     resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
     trustedGitReadEnv,
     trustedDependencyPaths,
     trustedSnapshotEnv,
+    type TrustedLauncherBinding,
 } from '../trustedGithubWriteBootstrap.ts';
 
 import type {
@@ -569,6 +574,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewCommentDiffPreflight.ts',
         'reviewDocumentParser.ts',
         'reviewDossier.ts',
+        'canonicalRecord.ts',
         'reviewDossierPublication.ts',
         'reviewerModelDiversity.ts',
         'reviewRiskPolicy.ts',
@@ -907,6 +913,10 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:repair']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:repair');
         expect(pkg.scripts['review:confirm']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:confirm');
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
+        expect(pkg.scripts['review:shadow-status']).toBe(
+            'node scripts/trustedGithubWriteBootstrap.ts review:shadow-status'
+        );
+        expect(pkg.scripts['ruleset:harden']).toBe('node scripts/trustedGithubWriteBootstrap.ts ruleset:harden');
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
@@ -1069,6 +1079,7 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewDocumentParser.ts',
             'scripts/reviewDossier.ts',
+            'scripts/canonicalRecord.ts',
             'scripts/reviewDossierPublication.ts',
             'scripts/reviewerModelDiversity.ts',
             'scripts/reviewRiskPolicy.ts',
@@ -1183,6 +1194,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/reviewDossierPublication.ts',
                     'scripts/reviewerModelDiversity.ts',
                     'scripts/reviewRiskPolicy.ts',
@@ -1204,6 +1216,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/reviewDossierPublication.ts',
                     'scripts/reviewerModelDiversity.ts',
                     'scripts/reviewRiskPolicy.ts',
@@ -1226,6 +1239,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/reviewDossierPublication.ts',
                     'scripts/reviewerModelDiversity.ts',
                     'scripts/reviewRiskPolicy.ts',
@@ -1248,6 +1262,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/repairReviewFinding.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/reviewRiskPolicy.ts',
                     'scripts/reviewDiffSummary.ts',
                     'scripts/wasm-artifacts.ts',
@@ -1266,6 +1281,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/confirmReviewRepairs.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/reviewRiskPolicy.ts',
                     'scripts/reviewDiffSummary.ts',
                     'scripts/wasm-artifacts.ts',
@@ -1282,6 +1298,29 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/resolveThread.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:shadow-status' as const,
+                entry: 'scripts/reviewShadowStatus.ts',
+                required: 'scripts/githubAppIdentity.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/reviewShadowStatus.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'ruleset:harden' as const,
+                entry: 'scripts/rulesetHardening.ts',
+                required: 'scripts/canonicalRecord.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/rulesetHardening.ts',
+                    'scripts/canonicalRecord.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1933,7 +1972,7 @@ describe('package scripts and gitignore', () => {
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
                 // The usage must name every command `parseCommand` accepts, not a subset of them.
                 expect(result.stderr).toContain(
-                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve>'
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden>'
                 );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
@@ -2042,6 +2081,14 @@ describe('package scripts and gitignore', () => {
             trustedPublishFixture(root, 'literal');
             const bootstrap = readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8');
             const literalCommit = runGit(root, ['rev-parse', 'HEAD']);
+            // The launcher fetches origin/main before resolving (#4436): give the fixture a real
+            // remote whose main is the commit under test, so the fetch succeeds without moving
+            // the ref and stderr stays clean.
+            const origin = join(root, 'origin.git');
+            runGit(root, ['init', '--quiet', '--bare', '--initial-branch', 'main', origin]);
+            runGit(root, ['remote', 'add', 'origin', origin]);
+            runGit(root, ['push', '--quiet', 'origin', `${literalCommit}:refs/heads/main`]);
+            runGit(root, ['update-ref', 'refs/remotes/origin/main', literalCommit]);
 
             writeFileSync(
                 join(root, 'scripts/publishLane.ts'),
@@ -2086,6 +2133,8 @@ describe('package scripts and gitignore', () => {
         'review:publish',
         'review:publish:recover',
         'review:resolve',
+        'review:shadow-status',
+        'ruleset:harden',
     ] as const)('reads no gating workflow for %s', async (command) => {
         const originReads: string[] = [];
         let gateWorkflow: unknown = 'unset';
@@ -2116,6 +2165,8 @@ describe('package scripts and gitignore', () => {
             'review:publish',
             'review:publish:recover',
             'review:resolve',
+            'review:shadow-status',
+            'ruleset:harden',
         ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
@@ -2268,6 +2319,18 @@ describe('package scripts and gitignore', () => {
             runner: 'runResolveReviewThreadCli',
             args: ['3239', '--thread', 'PRRT_example', '--head', 'a'.repeat(40)],
         },
+        {
+            command: 'review:shadow-status' as const,
+            entry: 'scripts/reviewShadowStatus.ts',
+            runner: 'runReviewShadowStatusCli',
+            args: ['3239', '--head', 'a'.repeat(40)],
+        },
+        {
+            command: 'ruleset:harden' as const,
+            entry: 'scripts/rulesetHardening.ts',
+            runner: 'runRulesetHardeningCli',
+            args: ['--apply'],
+        },
     ])('imports the $command entry and forwards its exact arguments', async ({ command, entry, runner, args }) => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-entry-'));
         const recordPath = join(fixtureRoot, 'args.json');
@@ -2293,6 +2356,8 @@ describe('package scripts and gitignore', () => {
                 'review:repair': runRepairReviewFindingCli,
                 'review:confirm': runConfirmReviewRepairsCli,
                 'review:resolve': runResolveReviewThreadCli,
+                'review:shadow-status': runReviewShadowStatusCli,
+                'ruleset:harden': runRulesetHardeningCli,
             } as const;
             expect(importedRunners[command]).toBeTypeOf('function');
         } finally {
@@ -3485,5 +3550,147 @@ describe('package scripts and gitignore', () => {
             },
         ]);
         expect(disposed).toEqual(['ghs_tracker', 'ghs_author']);
+    });
+});
+
+describe('origin/main snapshot freshness (#4436)', () => {
+    const scratchRoots: string[] = [];
+    afterEach(() => {
+        for (const root of scratchRoots.splice(0)) {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    function runGitWithInput(repository: string, args: string[], input: string): string {
+        const env = { ...process.env };
+        delete env.GIT_DIR;
+        delete env.GIT_WORK_TREE;
+        return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8', input }).trim();
+    }
+
+    function commitIdentity(repository: string): void {
+        runGit(repository, ['config', 'user.email', 'agent@example.invalid']);
+        runGit(repository, ['config', 'user.name', 'agent']);
+    }
+
+    /** Advances the bare origin's main by one commit built with plumbing, leaving any clone's tracking ref behind. */
+    function advanceBareMain(origin: string): string {
+        const blob = runGitWithInput(origin, ['hash-object', '-w', '--stdin'], 'second\n');
+        const tree = runGitWithInput(origin, ['mktree'], `100644 blob ${blob}\tfile.txt\n`);
+        const parent = runGit(origin, ['rev-parse', 'refs/heads/main']);
+        const commit = runGit(origin, ['commit-tree', tree, '-p', parent, '-m', 'second']);
+        runGit(origin, ['update-ref', 'refs/heads/main', commit]);
+        return commit;
+    }
+
+    /**
+     * A bare origin advanced past what the clone's refs/remotes/origin/main names — the exact
+     * post-merge state the issue reproduces: without a fetch before the resolve, the launcher
+     * pins and executes the pre-merge closure while the true remote main has moved.
+     */
+    function staleCloneFixture(): { primary: string; oldHead: string; newHead: string } {
+        const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-stale-origin-')));
+        scratchRoots.push(fixtureRoot);
+        const origin = join(fixtureRoot, 'origin.git');
+        const primary = join(fixtureRoot, 'primary');
+        runGit(fixtureRoot, ['init', '--quiet', '--bare', '--initial-branch', 'main', origin]);
+        commitIdentity(origin);
+        runGit(fixtureRoot, ['clone', '--quiet', origin, primary]);
+        commitIdentity(primary);
+        writeFileSync(join(primary, 'file.txt'), 'first\n');
+        runGit(primary, ['add', 'file.txt']);
+        runGit(primary, ['commit', '--quiet', '-m', 'first']);
+        runGit(primary, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+        runGit(primary, ['fetch', '--quiet', 'origin']);
+        const oldHead = runGit(primary, ['rev-parse', 'refs/remotes/origin/main']);
+        const newHead = advanceBareMain(origin);
+        return { primary, oldHead, newHead };
+    }
+
+    function bindingFor(primary: string): TrustedLauncherBinding {
+        return {
+            primaryRoot: primary,
+            commonDir: join(primary, '.git'),
+            gitPath: 'git',
+            ghPath: 'gh',
+        };
+    }
+
+    it('fetches before resolving, so a remote merge is visible without an external fetch', () => {
+        const { primary, oldHead, newHead } = staleCloneFixture();
+        expect(oldHead).not.toBe(newHead);
+
+        const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
+
+        expect(resolved).toBe(newHead);
+    });
+
+    it('reports a failed fetch loudly and still resolves the local ref', () => {
+        const fixtureRoot = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-dead-origin-')));
+        scratchRoots.push(fixtureRoot);
+        const primary = join(fixtureRoot, 'primary');
+        runGit(fixtureRoot, ['init', '--quiet', primary]);
+        commitIdentity(primary);
+        writeFileSync(join(primary, 'file.txt'), 'content\n');
+        runGit(primary, ['add', 'file.txt']);
+        runGit(primary, ['commit', '--quiet', '-m', 'first']);
+        const head = runGit(primary, ['rev-parse', 'HEAD']);
+        // A remote that cannot be fetched from, and a tracking ref the resolve falls back to.
+        runGit(primary, ['remote', 'add', 'origin', join(fixtureRoot, 'missing.git')]);
+        runGit(primary, ['update-ref', 'refs/remotes/origin/main', head]);
+        const warnings: string[] = [];
+        const originalError = console.error;
+        console.error = (message: string) => warnings.push(message);
+
+        try {
+            const resolved = defaultPort(bindingFor(primary)).resolveOriginMain();
+
+            expect(resolved).toBe(head);
+            expect(warnings.some((line) => line.includes('cannot fetch origin/main'))).toBe(true);
+            expect(warnings.some((line) => line.includes('may be stale'))).toBe(true);
+        } finally {
+            console.error = originalError;
+        }
+    });
+
+    it('fetchOriginMain pins the fetch argv, the ambient environment, and the failure shapes', () => {
+        const calls: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
+        const spawn = (command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => {
+            calls.push({ command, args, cwd: options.cwd, env: options.env });
+            return { status: 0, stderr: '' };
+        };
+        expect(fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, spawn)).toEqual({ fresh: true });
+        expect(calls).toEqual([
+            {
+                command: '/usr/bin/git',
+                args: ['fetch', 'origin', 'main'],
+                cwd: '/repo',
+                // The ambient environment is load-bearing: the scrubbed read env strips the
+                // credential helper, so a fetch routed through trustedGitReadEnv fails against
+                // every non-anonymous remote — the pin holds it to process.env by identity.
+                env: process.env,
+            },
+        ]);
+
+        expect(
+            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
+                status: 128,
+                stderr: 'fatal: remote error\n',
+            }))
+        ).toEqual({ fresh: false, reason: 'fatal: remote error' });
+        expect(
+            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
+                status: null,
+                stderr: '',
+            }))
+        ).toEqual({ fresh: false, reason: 'git fetch failed without diagnostics (exit signal)' });
+        // A spawn-level failure (EMFILE, ENOENT) answers status null with stderr undefined;
+        // warn-and-proceed must survive it rather than crash on .trim of undefined.
+        expect(
+            fetchOriginMain({ gitPath: '/usr/bin/git', primaryRoot: '/repo' }, () => ({
+                status: null,
+                stderr: undefined,
+            }))
+        ).toEqual({ fresh: false, reason: 'git fetch failed without diagnostics (exit signal)' });
     });
 });

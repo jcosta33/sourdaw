@@ -641,8 +641,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderPlanCall[]): void {
-    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls: readonly ProviderPlanCall[]): void {
+    const discoveryReceipt = receipts.find(
         (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
     );
     if (
@@ -695,7 +710,7 @@ function createTurnTrackedWebLlmResponder(
         if (turn === 1) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
         }
-        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), finalCalls);
         const response = finalCalls;
         return Promise.resolve(JSON.stringify(response));
     };
@@ -736,7 +751,7 @@ function createTurnTrackedHostedResponder(
         if (turn === 1) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
         }
-        assertDiscoveredCommandSchemas(getHostedUserMessage(init.body), finalCalls);
+        assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), finalCalls);
         return Promise.resolve(toolCallsResponse(finalCalls));
     };
 }

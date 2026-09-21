@@ -9,8 +9,11 @@
  * type so every existing adapter import keeps resolving from that one path.
  */
 export type HostedToolPlanUsage = {
+    /** Total billed input, including provider-reported cache reads and cache creation. */
     inputTokens: number | null;
     outputTokens: number | null;
     cacheReadInputTokens: number | null;
     cacheWriteInputTokens: number | null;
+    /** Thinking tokens the provider billed as output; only the Anthropic dialect reports them. */
+    reasoningTokens: number | null;
 };

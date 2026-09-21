@@ -1,7 +1,20 @@
 # Review stances
 
-This directory holds dispatch guidance for each review stance: the probes each reviewer applies,
-the lessons from escapes, and the shared principles that bind them.
+This directory is a lesson library keyed by defect class: the standing probes, escape lessons,
+and shared principles that bind them.
+
+## Stance derivation and the lesson library
+
+Stances are derived per task, never selected from this directory. Enumerate the material risks the
+diff creates, name one stance per risk, and record the dispatched set with each stance's admission
+evidence in the bundle's `stances.json`; the root `AGENTS.md` Review section carries the rule.
+
+This directory is a lesson library, not a menu. Each file collects standing probes and escape
+lessons for one defect class, and the matching key is the risk the stance attacks — never the
+files the diff touches. A stance carries the most specific matching file and never a broader one
+in addition; a stance matching no file dispatches without one. An escape attaches to every file
+whose probes participate in what would have caught it, or mints a new file for a defect class
+none covers.
 
 ## Reviewer isolation
 

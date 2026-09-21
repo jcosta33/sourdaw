@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { AGENT_CONTEXT_SCHEMA_VERSION } from '../../models/AgentContext';
 import {
     type AgentRunPendingEffectRecovery,
     type AgentRunPreparedStemImportRecoveryCapsule,
@@ -67,6 +68,69 @@ function createPreparedStemRecoveryCapsule(index: number): AgentRunPreparedStemI
 describe('agentRunStore', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
+    });
+
+    it('keeps the owning run when legacy context evidence is discarded', () => {
+        agentRunLifecycle.create({
+            runId: 'legacy-context-run',
+            request: 'Resume this run after an application update.',
+            mode: 'plan',
+            createdRevision: 'revision-1',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordContextEvidence({
+            runId: 'legacy-context-run',
+            evidence: {
+                schemaVersion: AGENT_CONTEXT_SCHEMA_VERSION,
+                revision: 'revision-1',
+                selection: { trackId: null, clipId: null, clipIds: [] },
+                grants: null,
+                budgets: null,
+                included: {
+                    receiptCount: 0,
+                    capabilitySchemaCount: 0,
+                    validationFailures: { total: 0, retained: 0, omitted: 0 },
+                    measurementCount: 0,
+                    trackCount: 0,
+                },
+                snapshot: {
+                    identity: 'snapshot-1',
+                    tempo: 120,
+                    timeSignature: [4, 4],
+                    masterGain: 1,
+                    masterGainDb: 0,
+                    selectedTrack: null,
+                    selectableTargets: [],
+                    automationLanes: [],
+                    sections: [],
+                    targetCount: 0,
+                    truncated: false,
+                },
+                delta: { mode: 'full', baseRevision: null, currentRevision: 'revision-1' },
+            },
+        });
+        const stored = readAgentRunState();
+        const run = stored.runs[0];
+        if (!run?.contextEvidence) {
+            throw new Error('Expected the run to persist current context evidence');
+        }
+
+        const sanitized = sanitizeAgentRunState({
+            ...stored,
+            runs: [
+                {
+                    ...run,
+                    contextEvidence: { ...run.contextEvidence, schemaVersion: 1 },
+                },
+            ],
+        });
+
+        expect(sanitized.runs).toHaveLength(1);
+        expect(sanitized.runs[0]).toMatchObject({
+            runId: 'legacy-context-run',
+            request: 'Resume this run after an application update.',
+            contextEvidence: null,
+        });
     });
 
     it('persists point target ranges in root, plan, and decision scope records', () => {

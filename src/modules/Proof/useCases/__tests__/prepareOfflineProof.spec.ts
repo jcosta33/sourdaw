@@ -10,9 +10,38 @@ vi.mock('../../services/getRestoredProofChainOrder', () => ({
     getRestoredProofChainOrder: mockGetRestoredProofChainOrder,
 }));
 
+import { captureOfflineProof } from '../captureOfflineProof';
 import { prepareOfflineProof } from '../prepareOfflineProof';
 
 describe('prepareOfflineProof', () => {
+    it('projects captured parameters without reacquiring the same live device id', () => {
+        const device = { parameterValues: { chain_order_0: 3 } };
+        const captured = captureOfflineProof({ deviceId: 'proof-1', device });
+        device.parameterValues.chain_order_0 = 2;
+        mockGetTrackStoreState.mockReturnValue({
+            tracks: [{ devices: [{ id: 'proof-1', type: 'proof', parameterValues: { chain_order_0: 0 } }] }],
+        });
+        mockGetRestoredProofChainOrder.mockImplementation((values) =>
+            values.chain_order_0 === 3 ? [3, 0, 1, 2, 4] : [0, 1, 2, 3, 4]
+        );
+        const port = { postMessage: vi.fn() } as unknown as MessagePort;
+
+        prepareOfflineProof({ deviceId: 'proof-1', port, captured });
+
+        expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'reorder', order: [3, 0, 1, 2, 4] });
+    });
+
+    it('preserves captured absence when the project later gains the same id', () => {
+        const captured = captureOfflineProof({ deviceId: 'proof-1', device: null });
+        mockGetTrackStoreState.mockReturnValue({
+            tracks: [{ devices: [{ id: 'proof-1', type: 'proof', parameterValues: {} }] }],
+        });
+        mockGetRestoredProofChainOrder.mockReturnValue([0, 1, 2, 3, 4]);
+        const postMessage = vi.fn();
+        prepareOfflineProof({ deviceId: 'proof-1', port: { postMessage } as unknown as MessagePort, captured });
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('posts a reorder message when the device is found with a valid chain order', () => {
         mockGetTrackStoreState.mockReturnValue({
             tracks: [

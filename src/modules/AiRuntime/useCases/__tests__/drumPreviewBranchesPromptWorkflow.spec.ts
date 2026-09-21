@@ -343,8 +343,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderCall[]): void {
-    const discoveryReceipt = getApplicationToolReceipts(userMessage).find(
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls: readonly ProviderCall[]): void {
+    const discoveryReceipt = receipts.find(
         (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
     );
     if (
@@ -398,7 +413,7 @@ function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage:
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(discoveryCalls)));
         }
         const finalCalls = createFinalProviderCalls(userMessage);
-        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), finalCalls);
         return Promise.resolve(JSON.stringify(finalCalls));
     };
 }
@@ -441,7 +456,7 @@ function useHostedFixture(): void {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(discoveryCalls)));
         }
         const finalCalls = createFinalProviderCalls(userMessage);
-        assertDiscoveredCommandSchemas(userMessage, finalCalls);
+        assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), finalCalls);
         return Promise.resolve(toolCallsResponse(finalCalls));
     });
 }

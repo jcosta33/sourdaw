@@ -1,4 +1,4 @@
-import { type DeviceStateChunk } from '#/modules/Arrangement/stores';
+import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
 import { type NativeSampleBankLease } from '../models/NativeSampleBank';
 
@@ -42,7 +42,14 @@ type ScoringTelemetry = Parameters<ScoringNodeResult['onTelemetry']>[0] extends 
     ? Telemetry
     : never;
 
+export type CapturedOfflineInstrument = (input: { port: MessagePort; signal?: AbortSignal }) => Promise<void>;
+
 export type AudioDeviceRuntimeSink = {
+    /** Synchronous owner capture; the returned preparation never reads current project state. */
+    captureOfflineInstrument: (
+        device: Device,
+        source?: { projectOnly: true; calibration: Readonly<Record<string, number>> | null }
+    ) => CapturedOfflineInstrument;
     emitDeviceLoaded: (payload: DeviceLifecyclePayload) => void;
     emitDeviceRemoved: (payload: DeviceLifecyclePayload) => void;
     registerLevainDevice: (input: {
@@ -198,6 +205,7 @@ export type AudioDeviceRuntimeSink = {
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {
+    captureOfflineInstrument: () => async () => {},
     emitDeviceLoaded: () => {},
     emitDeviceRemoved: () => {},
     registerLevainDevice: () => Promise.resolve('failed'),

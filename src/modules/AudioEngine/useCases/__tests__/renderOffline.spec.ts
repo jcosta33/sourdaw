@@ -9,7 +9,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     getMidiStoreState: vi.fn(() => null),
     getTransportStoreValue: vi.fn(() => null),
     getTempoMapState: vi.fn(() => null),
-    getAutomationLanes: vi.fn(() => []),
+    getAutomationLanes: vi.fn<() => { trackId: string; parameterId: string }[]>(() => []),
     audioBufferCache: { get: vi.fn(() => undefined) },
     buildDeviceChain: vi.fn(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
@@ -133,7 +133,9 @@ describe('renderOffline', () => {
                         kind: 'vca',
                         disabled: false,
                         muted: false,
-                        devices: [{ id: 'd1', type: 'toaster' }],
+                        freezeState: { status: 'unfrozen' },
+                        clips: [],
+                        devices: [{ id: 'd1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }],
                     },
                 ],
             },
@@ -231,6 +233,8 @@ describe('renderOffline effective audibility (OE-4)', () => {
         soloed: over.soloed ?? false,
         soloSafe: over.soloSafe ?? false,
         outputId: over.outputId ?? 'hw_out',
+        freezeState: { status: 'unfrozen' },
+        clips: [],
         devices: over.devices ?? ([] as DeviceFixture[]),
         sends: over.sends ?? ([] as SendFixture[]),
     });
@@ -746,6 +750,138 @@ describe('renderOffline effective audibility (OE-4)', () => {
             expect(contributes('gated')).toBe(false);
             expect(contributes('lead')).toBe(true);
         });
+
+        // #4437 — the ceiling lane renders instead of refusing. What this file
+        // observes is the route, not the scheduler: `scheduleTrackClips` is a
+        // double here, so the case pins that the print reaches the render and
+        // that the root threaded one frame scheduler down to every scheduled
+        // track. The `scheduleTrackClips -> scheduleTrackAutomation ->
+        // scheduleFrame` chain that actually writes the curve is pinned by the
+        // scheduler-level specs and by `scheduleTrackClips.spec.ts`.
+        describe('a frame-addressed ceiling lane (#4437)', () => {
+            const LIMITER: DeviceFixture = { id: 'limiter-1', type: 'builtin-limiter', bypassed: false };
+
+            function makeCeilingParam() {
+                return {
+                    value: 0,
+                    setValueAtTime: vi.fn(),
+                    linearRampToValueAtTime: vi.fn(),
+                    setTargetAtTime: vi.fn(),
+                };
+            }
+
+            function ceilingLane(trackId: string) {
+                return {
+                    id: `lane-ceiling-${trackId}`,
+                    trackId,
+                    parameterId: 'limiter-1:lim-ceiling',
+                    parameterName: 'Ceiling',
+                    enabled: true,
+                    minValue: -3,
+                    maxValue: 0,
+                    points: [{ beat: 0, value: -1, curve: 'linear' as const, tension: 0 }],
+                };
+            }
+
+            function primeRenderForLimiterCeiling(laneTrackId: string): void {
+                offlineRenderMocks.getAutomationLanes.mockReturnValue([ceilingLane(laneTrackId)]);
+                offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+                    (_ctx: unknown, track: { id: string }, options: { contributesAudio?: boolean }) => {
+                        // Exactly the entry `buildDeviceChain` builds: the
+                        // strip's own reachability answer, and the strategy
+                        // answering the ceiling's frame-addressed binding.
+                        const limiterEntries = [
+                            {
+                                deviceId: 'limiter-1',
+                                deviceType: 'builtin-limiter',
+                                contributesAudio: options.contributesAudio ?? true,
+                                strategy: {
+                                    resolveOfflineAutomation: (parameterId: string) => {
+                                        if (parameterId !== 'lim-ceiling') {
+                                            return null;
+                                        }
+                                        return {
+                                            kind: 'curveWrite' as const,
+                                            targets: {
+                                                ceiling: { gain: makeCeilingParam() },
+                                                clipper: {},
+                                            },
+                                        };
+                                    },
+                                },
+                            },
+                        ];
+                        const deviceEntries = track.id === laneTrackId ? limiterEntries : [];
+                        return Promise.resolve({
+                            trackId: track.id,
+                            inputNode: { connect: vi.fn() },
+                            preFaderTap: { gain: { value: 1 }, connect: vi.fn() },
+                            faderNode: { gain: makeCeilingParam(), connect: vi.fn() },
+                            postFaderGain: { connect: vi.fn() },
+                            panNode: { pan: makeCeilingParam(), connect: vi.fn() },
+                            outputNode: { connect: vi.fn() },
+                            deviceEntries,
+                        });
+                    }
+                );
+                offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
+                class TestOfflineAudioContext {
+                    readonly destination = {};
+                    readonly sampleRate = 44_100;
+                    readonly currentTime = 0;
+
+                    createGain() {
+                        return { gain: { value: 0 }, connect: vi.fn() };
+                    }
+                }
+                vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
+            }
+
+            it('renders the contributing ceiling lane and hands every scheduled track the render’s frame scheduler', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    renderContext([
+                        audioTrack({ id: 'limiter-track', devices: [LIMITER] }),
+                        audioTrack({ id: 'other' }),
+                    ])
+                );
+                primeRenderForLimiterCeiling('limiter-track');
+                const rendered = { sampleRate: 44_100 };
+                offlineRenderMocks.renderWithTimeout.mockResolvedValue(rendered);
+
+                await expect(renderOffline(4)).resolves.toBe(rendered);
+
+                // The export reaches the render rather than rejecting, and the
+                // frame-addressed lane's writes have the scheduler they need.
+                expect(scheduledTrackIds()).toEqual(['limiter-track', 'other']);
+                const schedulers = offlineRenderMocks.scheduleTrackClips.mock.calls.map(
+                    (call) => call[0].scheduleFrame
+                );
+                expect(typeof schedulers[0]).toBe('function');
+                // Exactly ONE scheduler per OfflineAudioContext: two over one
+                // context would each register a suspend for the same frame, and
+                // the second throws.
+                expect(new Set(schedulers).size).toBe(1);
+            });
+
+            it('still renders a scheduled limiter strip that cannot reach the print', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    renderContext([
+                        // Unmuted, and so scheduled by every other rule, but its
+                        // only route dies at a muted bus.
+                        audioTrack({ id: 'limiter-track', outputId: 'muted-bus', devices: [LIMITER] }),
+                        audioTrack({ id: 'muted-bus', kind: 'bus', muted: true }),
+                    ])
+                );
+                primeRenderForLimiterCeiling('limiter-track');
+
+                const rendered = { sampleRate: 44_100 };
+                offlineRenderMocks.renderWithTimeout.mockResolvedValue(rendered);
+
+                await expect(renderOffline(4)).resolves.toBe(rendered);
+                expect(scheduledTrackIds()).toContain('limiter-track');
+                expect(contributes('limiter-track')).toBe(false);
+            });
+        });
     });
 });
 
@@ -844,6 +980,8 @@ describe('renderOffline residual branches', () => {
                         soloed: false,
                         soloSafe: false,
                         outputId: 'hw_out',
+                        freezeState: { status: 'unfrozen' },
+                        clips: [],
                         devices: [],
                         sends: [],
                     },
@@ -855,6 +993,8 @@ describe('renderOffline residual branches', () => {
                         soloed: false,
                         soloSafe: false,
                         outputId: 'hw_out',
+                        freezeState: { status: 'unfrozen' },
+                        clips: [],
                         devices: [{ id: 'sc-dev', type: 'builtin-sidechain-compressor', bypassed: false }],
                         sends: [],
                     },
@@ -933,6 +1073,8 @@ describe('renderOffline residual branches', () => {
                         soloed: false,
                         soloSafe: false,
                         outputId: 'hw_out',
+                        freezeState: { status: 'unfrozen' },
+                        clips: [],
                         devices: [],
                         sends: [],
                     },
@@ -944,6 +1086,8 @@ describe('renderOffline residual branches', () => {
                         soloed: false,
                         soloSafe: false,
                         outputId: 'hw_out',
+                        freezeState: { status: 'unfrozen' },
+                        clips: [],
                         devices: [
                             { id: 'bypassed-dev', type: 'builtin-sidechain-compressor', bypassed: true },
                             { id: 'eq-dev', type: 'builtin-eq', bypassed: false },

@@ -197,6 +197,7 @@ describe('offline lane overshoot bound parity — pan, send and device lanes (#2
             {
                 deviceId: 'device-1',
                 deviceType: 'builtin-stereo-widener',
+                contributesAudio: true,
                 strategy: {
                     resolveOfflineAutomation: (name: string) =>
                         name === 'width-amount'

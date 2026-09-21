@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     cancelAgentRun: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock('../cancelAgentRun', () => ({
 
 vi.mock('../../stores/pendingActionConfirmationStore', () => ({
     getPendingActionConfirmation: mocks.getPendingActionConfirmation,
-    settlePendingActionResourceLeaseBestEffort: mocks.settlePendingActionResourceLease,
+    settlePendingActionResourceLease: mocks.settlePendingActionResourceLease,
     updatePendingActionConfirmationStatus: mocks.updatePendingActionConfirmationStatus,
 }));
 
@@ -22,12 +22,70 @@ vi.mock('../../stores/chatStore', () => ({
     updateChatMessage: mocks.updateChatMessage,
 }));
 
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 
 describe('cancelPendingChatActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.cancelAgentRun.mockResolvedValue({ status: 'cancelled', phase: 'cancelled' });
+        mocks.cancelAgentRun.mockResolvedValue({ status: 'cancelled', phase: 'cancelled', cleanupPendingAssetIds: [] });
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it.each([false, true])('persists a live cancelled run before retry cleanup (asset: %s)', async (withAsset) => {
+        const { agentRunCancellation } = await vi.importActual<typeof import('../cancelAgentRun')>('../cancelAgentRun');
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'durable-cancel',
+            request: 'Cancel proposal',
+            mode: 'apply',
+            createdRevision: 'revision-1',
+        });
+        const cleanup = vi.fn(() => {
+            expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+        });
+        if (withAsset) {
+            agentRunLifecycle.registerTemporaryAsset({
+                runId: 'durable-cancel',
+                assetId: 'asset',
+                kind: 'import',
+                cleanupOwner: 'test',
+            });
+            agentRunCancellation.registerTemporaryAssetCleanup({
+                runId: 'durable-cancel',
+                assetId: 'asset',
+                cleanupOwner: 'test',
+                cleanup,
+            });
+        }
+        mocks.getPendingActionConfirmation.mockReturnValue({
+            id: 'durable-confirmation',
+            runId: 'durable-cancel',
+            status: 'proposed',
+            assistantMessageId: 'message',
+            actionLabels: ['Cancel proposal'],
+        });
+        mocks.cancelAgentRun.mockImplementation(agentRunCancellation.cancel);
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('Cancellation storage unavailable');
+        });
+        await expect(cancelPendingChatActions({ confirmationId: 'durable-confirmation' })).rejects.toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        expect(agentRunLifecycle.get('durable-cancel')?.phase).toBe('cancelled');
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(mocks.settlePendingActionResourceLease).not.toHaveBeenCalled();
+        await expect(cancelPendingChatActions({ confirmationId: 'durable-confirmation' })).resolves.toEqual({
+            status: 'cancelled',
+        });
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toContain('cancelled');
+        expect(cleanup).toHaveBeenCalledTimes(withAsset ? 1 : 0);
+        expect(
+            agentRunLifecycle.get('durable-cancel')?.temporaryAssets.every((asset) => asset.status === 'released')
+        ).toBe(true);
+        storage.mockRestore();
     });
 
     it('returns {status: "missing"} when the confirmation does not exist', async () => {
@@ -83,6 +141,27 @@ describe('cancelPendingChatActions', () => {
         expect(mocks.cancelAgentRun.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.settlePendingActionResourceLease.mock.invocationCallOrder[0]!
         );
+    });
+
+    it('does not report cancellation settled before retained-resource cleanup succeeds', async () => {
+        mocks.getPendingActionConfirmation.mockReturnValue({
+            id: 'cleanup-confirmation',
+            status: 'proposed',
+            runId: 'run-cleanup',
+            assistantMessageId: 'message',
+            actionLabels: [],
+        });
+        mocks.settlePendingActionResourceLease
+            .mockRejectedValueOnce(new Error('Lease cleanup unavailable'))
+            .mockResolvedValueOnce(undefined);
+        await expect(cancelPendingChatActions({ confirmationId: 'cleanup-confirmation' })).rejects.toThrow(
+            'Lease cleanup unavailable'
+        );
+        expect(mocks.updatePendingActionConfirmationStatus).not.toHaveBeenCalled();
+        await expect(cancelPendingChatActions({ confirmationId: 'cleanup-confirmation' })).resolves.toEqual({
+            status: 'cancelled',
+        });
+        expect(mocks.settlePendingActionResourceLease).toHaveBeenCalledTimes(2);
     });
 
     it('updates the chat message with a formatted cancellation summary', async () => {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
+import { HostedToolCallingProtocolError } from '../../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../../errors/ToolPlanningRejectedError';
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
@@ -321,6 +322,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             outputTokens: 3,
             cacheReadInputTokens: 2,
             cacheWriteInputTokens: null,
+            reasoningTokens: null,
         });
     });
 
@@ -391,13 +393,55 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             choices: [validToolChoice(), { finish_reason: 'stop', message: { refusal: 'cannot comply' } }],
         },
         { label: 'two valid choices', choices: [validToolChoice(), validToolChoice()] },
-    ])('rejects $label instead of selecting the first choice', async ({ choices }) => {
-        respondWith({ choices });
-
-        await expect(generateToolCalls()).rejects.toMatchObject({
-            name: 'HostedToolCallingProtocolError',
-            message: 'Hosted AI returned an invalid response choice count',
+    ])('rejects $label instead of selecting the first choice while retaining reported usage', async ({ choices }) => {
+        respondWith({
+            choices,
+            usage: { prompt_tokens: 63, completion_tokens: 9, prompt_tokens_details: { cached_tokens: 5 } },
         });
+
+        const error = await generateToolCalls().catch((error: unknown) => error);
+
+        expect(error).toBeInstanceOf(HostedToolCallingProtocolError);
+        if (!(error instanceof HostedToolCallingProtocolError)) {
+            return;
+        }
+        expect(error.message).toBe('Hosted AI returned an invalid response choice count');
+        expect(error.usage).toEqual({
+            inputTokens: 63,
+            outputTokens: 9,
+            cacheReadInputTokens: 5,
+            cacheWriteInputTokens: null,
+            reasoningTokens: null,
+        });
+    });
+
+    it.each([
+        { label: 'omitted', usage: undefined, expected: null },
+        {
+            label: 'invalid',
+            usage: { prompt_tokens: '63', completion_tokens: -9, prompt_tokens_details: { cached_tokens: 1.5 } },
+            expected: {
+                inputTokens: null,
+                outputTokens: null,
+                cacheReadInputTokens: null,
+                cacheWriteInputTokens: null,
+                reasoningTokens: null,
+            },
+        },
+    ])('keeps $label protocol-rejection usage unknown', async ({ usage, expected }) => {
+        const response: Record<string, unknown> = { choices: [validToolChoice(), validToolChoice()] };
+        if (usage !== undefined) {
+            response.usage = usage;
+        }
+        respondWith(response);
+
+        const error = await generateToolCalls().catch((error: unknown) => error);
+
+        expect(error).toBeInstanceOf(HostedToolCallingProtocolError);
+        if (!(error instanceof HostedToolCallingProtocolError)) {
+            return;
+        }
+        expect(error.usage).toEqual(expected);
     });
 
     it('rejects the entire declared batch when any tool call is malformed', async () => {
@@ -460,6 +504,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(error.status).toBe(401);
         expect(error.message).not.toContain('key=sk-secret');
         expect(error.message).not.toContain('sk-secret');
+        expect(error).not.toHaveProperty('usage');
     });
 
     it('rejects tool calls from a token-limited response', async () => {
@@ -681,7 +726,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
     it('terminally rejects malformed JSON syntax', async () => {
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response('{', { status: 200 })));
 
-        await expect(generateToolCalls()).rejects.toMatchObject({ name: 'ToolPlanningRejectedError' });
+        await expect(generateToolCalls()).rejects.toMatchObject({ name: 'ToolPlanningRejectedError', usage: null });
     });
 
     it.each([

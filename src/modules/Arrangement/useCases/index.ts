@@ -42,6 +42,7 @@ export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFile
 export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
 export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
 export { setTrackInput } from './setTrackInput';
+export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
@@ -186,8 +187,10 @@ export { renameMixerSnapshot } from './mixerSnapshot/operations/renameMixerSnaps
 
 export { compileLoadPresetActions } from './preset/compileLoadPresetActions';
 export { getUserPresets } from './preset/presetStorage/getUserPresets';
+export { getAgentPresetDiscoveryManifest } from './getAgentPresetDiscoveryManifest';
 export { saveCurrentAsPreset } from './preset/presetStorage/saveCurrentAsPreset';
 export { deleteUserPreset } from './preset/presetStorage/deleteUserPreset';
+export { saveUserPreset } from './preset/presetStorage/saveUserPreset';
 
 export { armTrack } from './recording/armTrack';
 export { startRecording } from './recording/startRecording';
@@ -262,6 +265,7 @@ export { clampDeviceParameterValue } from './clampDeviceParameterValue';
 export { quantiseDeviceParameterValue } from './quantiseDeviceParameterValue';
 export { isDeviceParameterAutomatable } from './isDeviceParameterAutomatable';
 export { getAgentBuiltinDeviceFactoryManifest } from './getAgentBuiltinDeviceFactoryManifest';
+export { getMixRecipeCatalog } from './getMixRecipeCatalog';
 
 // ── Command handler access ────────────────────────────────────────────────────
 

@@ -10,16 +10,23 @@ import {
     type CreativeInterpretationCatalog,
 } from '../../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
+import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
+import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import {
     AUTO_TOOL_CHOICE,
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
+import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
+import { getProviderRouteView } from '../../getProviderRouteView';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
+import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
 const mocks = vi.hoisted(() => ({
@@ -120,6 +127,15 @@ const toolSchemas: ToolSchema[] = [
     },
 ];
 
+const compatibleRuntime: OpenAiCompatibleCloudRuntime = {
+    provider: 'openai-compatible',
+    authentication: 'none',
+    session_id: null,
+    model: 'compatible-model',
+    base_url: 'http://localhost:1234/v1',
+    strict_tool_schemas: false,
+};
+
 /** A published catalog in the shape production hands the schema builder. */
 const creativeCatalog: CreativeInterpretationCatalog = {
     schemaVersion: 1,
@@ -149,6 +165,7 @@ function toolSchema(name: string, description?: string): ToolSchema {
 describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        agentRunLifecycle.clear();
         mocks.backendChain.value = [];
         mocks.failRemoteDisclosure.value = false;
         mocks.getCloudProviderInfo.mockReturnValue({
@@ -162,7 +179,9 @@ describe('generateToolPlanningOutcome', () => {
     });
 
     afterEach(() => {
+        agentRunLifecycle.clear();
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+        vi.unstubAllGlobals();
     });
 
     it('dispatches a hosted provider through the provider-neutral tool protocol', async () => {
@@ -170,17 +189,32 @@ describe('generateToolPlanningOutcome', () => {
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
             calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
-            strictToolSchemas: true,
+            strictToolSchemas: false,
             usage: null,
         });
+        const onProviderResult = vi.fn();
 
-        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
-            {
-                status: 'complete',
-                toolCalls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
-            }
-        );
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).resolves.toMatchObject({
+            status: 'complete',
+            toolCalls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+        });
         expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce();
+        expect(onProviderResult).toHaveBeenCalledWith(
+            expect.objectContaining({
+                strictToolSchemas: false,
+                cacheWriteInputTokens: null,
+                usage: expect.objectContaining({ provenance: 'unavailable' }),
+            })
+        );
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'ready',
             backend: 'cloud',
@@ -190,13 +224,34 @@ describe('generateToolPlanningOutcome', () => {
 
     it('reports the provider-reported usage block for a completed hosted tool plan', async () => {
         mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            model: 'hosted-model',
+            baseUrl: 'https://api.anthropic.com',
+            authentication: 'api-key',
+        });
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
             calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
             strictToolSchemas: true,
-            usage: { inputTokens: 21, outputTokens: 6, cacheReadInputTokens: 3, cacheWriteInputTokens: 8 },
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cacheReadInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+            },
         });
-        const onProviderResult = vi.fn();
+        agentRunLifecycle.create({
+            runId: 'run-hosted-usage',
+            request: 'mute the first track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-hosted-usage', result, 'attempt-hosted-usage');
+        });
 
         await expect(
             generateToolPlanningOutcome(
@@ -215,25 +270,216 @@ describe('generateToolPlanningOutcome', () => {
             strictToolSchemas: true,
             cacheWriteInputTokens: 8,
             usage: {
-                inputTokens: 21,
-                outputTokens: 6,
-                cachedInputTokens: 3,
+                inputTokens: 63,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
                 provenance: 'provider-reported',
             },
         });
+        expect(agentRunLifecycle.get('run-hosted-usage')?.providerUsage[0]).toMatchObject({
+            inputTokens: 63,
+            outputTokens: 9,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        });
+        expect(getProviderRouteView({ runId: 'run-hosted-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 72,
+                actual: 72,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
+    });
+
+    it('retains billed hosted usage when local admission rejects required tool arguments', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            model: 'hosted-model',
+            baseUrl: 'https://api.anthropic.com',
+            authentication: 'api-key',
+        });
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: null } }],
+            strictToolSchemas: true,
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cacheReadInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+            },
+        });
+        agentRunLifecycle.create({
+            runId: 'run-locally-rejected-hosted-usage',
+            request: 'mute the first track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-locally-rejected-hosted-usage', result, 'attempt-local-rejection');
+        });
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).rejects.toThrow('The model provider request failed.');
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'failed',
+            output: { toolCalls: [] },
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+                provenance: 'provider-reported',
+            },
+        });
+        expect(agentRunLifecycle.get('run-locally-rejected-hosted-usage')?.providerUsage).toHaveLength(1);
+        expect(agentRunLifecycle.get('run-locally-rejected-hosted-usage')?.providerUsage[0]).toMatchObject({
+            status: 'failed',
+            inputTokens: 63,
+            outputTokens: 9,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        });
+        expect(getProviderRouteView({ runId: 'run-locally-rejected-hosted-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 72,
+                actual: 72,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
+    });
+
+    it('retains billed hosted usage once when local admission rejects excess tool calls', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            model: 'hosted-model',
+            baseUrl: 'https://api.anthropic.com',
+            authentication: 'api-key',
+        });
+        expect(configureAgentResourceLimits({ maxProviderToolCalls: 1 })).toMatchObject({ status: 'configured' });
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                { id: 'provider-call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
+                { id: 'provider-call-2', name: 'muteTrack', arguments: { trackId: 'track-2', muted: false } },
+            ],
+            strictToolSchemas: true,
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cacheReadInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+            },
+        });
+        agentRunLifecycle.create({
+            runId: 'run-tool-count-rejected-hosted-usage',
+            request: 'mute the first track and unmute the second track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-tool-count-rejected-hosted-usage', result, 'attempt-tool-count-rejection');
+        });
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track and unmute the second track',
+                toolSchemas,
+                undefined,
+                'mute the first track and unmute the second track',
+                onProviderResult
+            )
+        ).rejects.toThrow('The model provider request failed.');
+
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            status: 'partial',
+            finishReason: 'error',
+            failure: { code: 'provider-attempt-failed' },
+            output: {
+                toolCalls: [
+                    { id: 'provider-call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
+                ],
+            },
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                cacheWriteInputTokens: 8,
+                reasoningTokens: 5,
+                provenance: 'provider-reported',
+            },
+        });
+        expect(agentRunLifecycle.get('run-tool-count-rejected-hosted-usage')?.providerUsage).toHaveLength(1);
+        expect(agentRunLifecycle.get('run-tool-count-rejected-hosted-usage')?.providerUsage[0]).toMatchObject({
+            status: 'partial',
+            inputTokens: 63,
+            outputTokens: 9,
+            cachedInputTokens: 5,
+            cacheWriteInputTokens: 8,
+        });
+        expect(getProviderRouteView({ runId: 'run-tool-count-rejected-hosted-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 72,
+                actual: 72,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
     });
 
     it('attributes provider-reported usage from a rejected hosted tool plan to the reported result', async () => {
         mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'anthropic',
+            model: 'hosted-model',
+            baseUrl: 'https://api.anthropic.com',
+            authentication: 'api-key',
+        });
         mocks.generateCloudToolCalls.mockRejectedValue(
             new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch', {
                 inputTokens: 120,
                 outputTokens: 8,
                 cacheReadInputTokens: 100,
-                cacheWriteInputTokens: null,
+                cacheWriteInputTokens: 7,
+                reasoningTokens: 6,
             })
         );
-        const onProviderResult = vi.fn();
+        agentRunLifecycle.create({
+            runId: 'run-rejected-hosted-usage',
+            request: 'mute the first track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-rejected-hosted-usage', result, 'attempt-rejected-hosted-usage');
+        });
 
         await expect(
             generateToolPlanningOutcome(
@@ -254,9 +500,149 @@ describe('generateToolPlanningOutcome', () => {
                 inputTokens: 120,
                 outputTokens: 8,
                 cachedInputTokens: 100,
+                cacheWriteInputTokens: 7,
+                reasoningTokens: 6,
                 provenance: 'provider-reported',
             },
         });
+        expect(agentRunLifecycle.get('run-rejected-hosted-usage')?.providerUsage).toHaveLength(1);
+        expect(agentRunLifecycle.get('run-rejected-hosted-usage')?.providerUsage[0]).toMatchObject({
+            status: 'failed',
+            inputTokens: 120,
+            outputTokens: 8,
+            cachedInputTokens: 100,
+            cacheWriteInputTokens: 7,
+        });
+        expect(getProviderRouteView({ runId: 'run-rejected-hosted-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 128,
+                actual: 128,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
+    });
+
+    it('records compatible protocol-rejection usage from the real adapter without compiling a choice', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai-compatible',
+            model: 'compatible-model',
+            baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
+        });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn<typeof fetch>().mockResolvedValue(
+                new Response(
+                    JSON.stringify({
+                        id: 'compatible-request-1',
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        {
+                                            function: {
+                                                name: 'muteTrack',
+                                                arguments: '{"trackId":"track-1","muted":true}',
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        {
+                                            function: {
+                                                name: 'muteTrack',
+                                                arguments: '{"trackId":"track-2","muted":false}',
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                        usage: { prompt_tokens: 63, completion_tokens: 9, prompt_tokens_details: { cached_tokens: 5 } },
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                )
+            )
+        );
+        mocks.generateCloudToolCalls.mockImplementation(
+            (
+                systemPrompt: string,
+                userMessage: string,
+                schemas: readonly ToolSchema[],
+                maxOutputTokens: number,
+                directive: HostedToolChoiceDirective,
+                signal?: AbortSignal
+            ) =>
+                generateOpenAiCompatibleToolCalls({
+                    runtime: compatibleRuntime,
+                    systemPrompt,
+                    userMessage,
+                    toolSchemas: schemas,
+                    maxOutputTokens,
+                    directive,
+                    signal,
+                })
+        );
+        agentRunLifecycle.create({
+            runId: 'run-compatible-protocol-usage',
+            request: 'mute the first track',
+            mode: 'plan',
+            createdRevision: null,
+            requestedRoute: 'cloud',
+        });
+        const onProviderResult = vi.fn((result: ModelProviderResult) => {
+            recordAgentProviderUsage('run-compatible-protocol-usage', result, 'attempt-compatible-protocol-usage');
+        });
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                onProviderResult
+            )
+        ).rejects.toMatchObject({ code: 'provider-attempt-failed', retryable: true });
+
+        expect(mocks.generateCloudToolCalls).toHaveBeenCalledOnce();
+        expect(onProviderResult).toHaveBeenCalledOnce();
+        expect(onProviderResult.mock.calls[0]?.[0]).toMatchObject({
+            provider: 'openai-compatible',
+            model: 'compatible-model',
+            status: 'failed',
+            failure: { code: 'provider-attempt-failed', retryable: true },
+            output: { toolCalls: [] },
+            usage: {
+                inputTokens: 63,
+                outputTokens: 9,
+                cachedInputTokens: 5,
+                cacheWriteInputTokens: null,
+                provenance: 'provider-reported',
+            },
+        });
+        expect(agentRunLifecycle.get('run-compatible-protocol-usage')?.providerUsage).toHaveLength(1);
+        expect(getProviderRouteView({ runId: 'run-compatible-protocol-usage', candidates: [] })?.actual).toMatchObject({
+            provider: 'openai-compatible',
+            model: 'compatible-model',
+        });
+        expect(getProviderRouteView({ runId: 'run-compatible-protocol-usage', candidates: [] })?.cost).toEqual([
+            {
+                category: 'remoteTokens',
+                reserved: 72,
+                actual: 72,
+                provenance: 'provider-reported',
+                final: true,
+            },
+        ]);
     });
 
     it('forwards a required directive verbatim to generateCloudToolCalls with no abort signal supplied', async () => {
@@ -312,6 +698,126 @@ describe('generateToolPlanningOutcome', () => {
         ).resolves.toMatchObject({ status: 'complete' });
 
         expect(mocks.generateCloudToolCalls.mock.calls[0]?.[4]).toStrictEqual(directive);
+    });
+
+    it('sends the first user message and replays the hosted turns behind it', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            assistantItems: [{ type: 'function_call', call_id: 'provider-call' }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+        const history: HostedTurnHistory = [
+            {
+                turn: 1,
+                provider: 'openai',
+                assistantItems: [{ type: 'reasoning', id: 'rs_1' }],
+                calls: [{ id: 'query-1', name: 'project.query', arguments: {} }],
+                receipts: [
+                    {
+                        schema: 'sourdaw.application-tool-receipt',
+                        schemaVersion: 1,
+                        callId: 'query-1',
+                        toolName: 'project.query',
+                        turn: 1,
+                        status: 'success',
+                        revision: 'revision-2',
+                        data: { items: [] },
+                        summary: 'Queried the project.',
+                        warnings: [],
+                        error: null,
+                    },
+                ],
+            },
+        ];
+        const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
+
+        const outcome = await generateToolPlanningOutcome(
+            'system',
+            'receipts folded into the prompt',
+            toolSchemas,
+            undefined,
+            'mute the first track',
+            undefined,
+            undefined,
+            onProviderAttempt,
+            AUTO_TOOL_CHOICE,
+            { firstUserMessage: 'mute the first track', history, budgetNote: 'Remaining budget: 2 turn(s).' }
+        );
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        // The hosted turn sends the run's first message, never the receipt-folded text form.
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[1]).toBe('mute the first track');
+        expect(mocks.generateCloudToolCalls.mock.calls[0]?.[6]).toMatchObject({
+            history,
+            budgetNote: 'Remaining budget: 2 turn(s).',
+        });
+        // The protocol record states the same exchange: the earlier turn and its receipts
+        // stand between the first user message and the note that closes them.
+        expect(onProviderAttempt.mock.calls[0]?.[0].request.messages).toEqual([
+            { role: 'system', content: 'system' },
+            { role: 'user', content: 'mute the first track' },
+            { role: 'assistant', content: JSON.stringify(history[0]?.assistantItems) },
+            { role: 'tool', content: JSON.stringify(history[0]?.receipts[0]) },
+            { role: 'user', content: 'Remaining budget: 2 turn(s).' },
+        ]);
+    });
+
+    it('reports the hosted turn the cloud plan produced so a later turn can replay it', async () => {
+        mocks.backendChain.value = ['cloud'];
+        const assistantItems = [
+            { type: 'reasoning', id: 'rs_2' },
+            { type: 'function_call', call_id: 'provider-call' },
+        ];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            assistantItems,
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
+            {
+                status: 'complete',
+                providerTurn: { provider: 'openai', assistantItems },
+            }
+        );
+    });
+
+    it('reports the hosted turn with no replayable items when the provider left a call unidentified', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+            assistantItems: [{ type: 'function_call', call_id: 'provider-call' }],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        // The turn is still reported, so its calls and receipts reach the next request; only the
+        // items are withheld, because nothing in them carries the identifier the receipt answers.
+        await expect(generateToolPlanningOutcome('system', 'mute the first track', toolSchemas)).resolves.toMatchObject(
+            {
+                status: 'complete',
+                providerTurn: { provider: 'openai', assistantItems: null },
+            }
+        );
+    });
+
+    it('reports no hosted turn for a locally planned batch', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }],
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas);
+
+        expect(outcome).toMatchObject({ status: 'complete' });
+        expect(outcome.status === 'complete' ? outcome.providerTurn : 'unreached').toBeUndefined();
     });
 
     it('forwards the default auto directive to generateCloudToolCalls when no directive is supplied', async () => {
@@ -535,7 +1041,9 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             TOOL_PLAN_MAX_OUTPUT_TOKENS,
-            expect.anything()
+            expect.anything(),
+            undefined,
+            undefined
         );
     });
 
@@ -575,7 +1083,9 @@ describe('generateToolPlanningOutcome', () => {
             expect.anything(),
             expect.anything(),
             1_024,
-            expect.anything()
+            expect.anything(),
+            undefined,
+            undefined
         );
     });
 

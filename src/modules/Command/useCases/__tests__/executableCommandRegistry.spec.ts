@@ -7,7 +7,15 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
-import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
+import {
+    CLIP_GAIN_LAW,
+    CLIP_MAX_GAIN,
+    describeLevelLawDb,
+    FADER_GAIN_RANGE_DESCRIPTION,
+    FADER_MAX_GAIN_LABEL,
+    SEND_LEVEL_LAW,
+    TRACK_FADER_LAW,
+} from '#/utils/audioLevelLaw';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
@@ -275,12 +283,20 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setClipGain',
-        'Set an existing clip gain from 0.0 through 2.0.',
+        `Set clip volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(CLIP_GAIN_LAW)}.`,
         {
             clipId: { type: 'string' },
-            gain: { type: 'number', description: '0.0 to 2.0' },
+            gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(CLIP_GAIN_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the clip's current gain, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(CLIP_GAIN_LAW)}`,
+            },
+            gain: {
+                type: 'number',
+                description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). 0.0 to ${String(CLIP_MAX_GAIN)}`,
+            },
         },
-        ['clipId', 'gain'],
+        ['clipId'],
         'bounded-reversible',
         false
     ),
@@ -711,9 +727,20 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setTrackGain',
-        `Set track volume. 0.0=silence, 0.8=default, 1.0=unity, ${FADER_MAX_GAIN_LABEL}=max.`,
-        { trackId: { type: 'string' }, gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION } },
-        ['trackId', 'gain'],
+        `Set track volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
+        {
+            trackId: { type: 'string' },
+            gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(TRACK_FADER_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the track's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+            },
+            gain: {
+                type: 'number',
+                description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). ${FADER_GAIN_RANGE_DESCRIPTION}, ${FADER_MAX_GAIN_LABEL}=max`,
+            },
+        },
+        ['trackId'],
         'bounded-reversible',
         false
     ),
@@ -942,9 +969,19 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setMasterGain',
-        `Set master output gain from 0.0 through about ${FADER_MAX_GAIN_LABEL} (1.0 = unity, 0.8 = default).`,
-        { gain: { type: 'number', description: FADER_GAIN_RANGE_DESCRIPTION } },
-        ['gain'],
+        `Set the master output volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
+        {
+            gainDb: { type: 'number', description: `Absolute level. ${describeLevelLawDb(TRACK_FADER_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the master's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+            },
+            gain: {
+                type: 'number',
+                description: `Deprecated linear amplitude; prefer gainDb (absolute dB) or deltaDb (relative dB). ${FADER_GAIN_RANGE_DESCRIPTION}`,
+            },
+        },
+        [],
         'authority-sensitive',
         true
     ),
@@ -1017,11 +1054,18 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'setDeviceParameter',
-        'Adjust a parameter on an existing device.',
+        'Adjust one existing device parameter using its exact context device ID, parameter ID, native unit, and range (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold).',
         {
             deviceId: { type: 'string' },
-            paramId: { type: 'string', description: 'Parameter name (e.g. "frequency", "ratio", "mix", "threshold")' },
-            value: { type: 'number', description: 'Parameter value (range depends on the parameter)' },
+            paramId: {
+                type: 'string',
+                description:
+                    'Exact parameter ID from context (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold)',
+            },
+            value: {
+                type: 'number',
+                description: 'Value in the exact native unit and range declared for that context parameter',
+            },
         },
         ['deviceId', 'paramId', 'value'],
         'bounded-reversible',
@@ -1037,22 +1081,44 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addSend',
-        "Route a copy of a track's signal to a bus (parallel processing).",
+        `Route a copy of a track's signal to a bus (parallel processing). Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         {
             trackId: { type: 'string' },
             busId: { type: 'string' },
-            level: { type: 'number', description: 'Send level 0.0–1.0' },
+            levelDb: { type: 'number', description: `Absolute send level. ${describeLevelLawDb(SEND_LEVEL_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change measured from unity, in decibels (negative is quieter): a new send starts at 0 dB, the full copy of the tapped signal. The result must land within ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+            },
+            level: {
+                type: 'number',
+                description:
+                    'Deprecated linear amplitude; prefer levelDb (absolute dB) or deltaDb (relative dB). Send level 0.0–1.0',
+            },
             preFader: { type: 'boolean', description: 'False for a post-fader send; true for pre-fader' },
         },
-        ['trackId', 'busId', 'level'],
+        ['trackId', 'busId'],
         'authority-sensitive',
         true
     ),
     expectedCommand(
         'setSend',
-        'Adjust the send level from a track to a bus.',
-        { trackId: { type: 'string' }, busId: { type: 'string' }, level: { type: 'number' } },
-        ['trackId', 'busId', 'level'],
+        `Adjust the send level from a track to a bus. Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
+        {
+            trackId: { type: 'string' },
+            busId: { type: 'string' },
+            levelDb: { type: 'number', description: `Absolute send level. ${describeLevelLawDb(SEND_LEVEL_LAW)}` },
+            deltaDb: {
+                type: 'number',
+                description: `Change relative to the send's current level, in decibels (negative is quieter). The result must land within ${describeLevelLawDb(SEND_LEVEL_LAW)}`,
+            },
+            level: {
+                type: 'number',
+                description:
+                    'Deprecated linear amplitude; prefer levelDb (absolute dB) or deltaDb (relative dB). Send level 0.0–1.0',
+            },
+        },
+        ['trackId', 'busId'],
         'authority-sensitive',
         true
     ),
@@ -1219,10 +1285,19 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addAutomationPoint',
-        'Add a value at an explicit beat on an existing track automation lane.',
+        'Add a value at an explicit beat on an existing track automation lane. Exactly one of valueDb, deltaDb, or value; the decibel forms are accepted only on a gain lane, whose minValueDb and maxValueDb state its window.',
         {
             laneId: { type: 'string', description: 'Existing track automation lane ID' },
             beat: { type: 'number', description: 'Non-negative project beat' },
+            valueDb: {
+                type: 'number',
+                description: `Absolute level, gain lanes only. Within the lane's own minValueDb and maxValueDb; ${describeLevelLawDb(TRACK_FADER_LAW)}`,
+            },
+            deltaDb: {
+                type: 'number',
+                description:
+                    "Change relative to the level the gain lane already draws at this beat, in decibels (negative is quieter). Gain lanes only; the result must land within the lane's own minValueDb and maxValueDb",
+            },
             value: {
                 type: 'number',
                 description: 'Value within the selected lane minValue and maxValue bounds',
@@ -1233,7 +1308,7 @@ const EXPECTED_COMMANDS = [
                 description: 'Interpolation from this point to the next',
             },
         },
-        ['laneId', 'beat', 'value'],
+        ['laneId', 'beat'],
         'bounded-reversible',
         false
     ),
@@ -1651,7 +1726,17 @@ const EXPECTED_GROUNDING = [
         actionType: 'setClipGain',
         intentPhrases: ['set clip gain', 'clip gain', 'set clip volume'],
         targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
     },
     {
         actionType: 'muteClip',
@@ -2062,10 +2147,19 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
         targetRules: [{ argument: 'trackId', capability: 'track' }],
         valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            {
+                argument: 'deltaDb',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                levelForm: 'relative-decibel',
+                qualitativeDirection: 'track-gain',
+            },
             {
                 argument: 'gain',
                 kind: 'number-if-present',
                 scale: 'unit-interval',
+                levelForm: 'linear',
                 qualitativeDirection: 'track-gain',
             },
         ],
@@ -2314,7 +2408,17 @@ const EXPECTED_GROUNDING = [
             'change master volume',
         ],
         targetRules: [],
-        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        valueRules: [
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'percentage-only',
+                levelForm: 'linear',
+            },
+        ],
     },
     {
         actionType: 'setVcaGain',
@@ -2386,7 +2490,14 @@ const EXPECTED_GROUNDING = [
             { argument: 'deviceId', capability: 'device' },
             { argument: 'paramId', capability: 'device-parameter', dependsOn: 'deviceId' },
         ],
-        valueRules: [{ argument: 'value', kind: 'number-if-present', qualitativeDirection: 'device-parameter' }],
+        valueRules: [
+            {
+                argument: 'value',
+                kind: 'number-if-present',
+                qualitativeDirection: 'device-parameter',
+                descriptorUnitSource: { deviceIdArgument: 'deviceId', paramIdArgument: 'paramId' },
+            },
+        ],
     },
     {
         actionType: 'bypassDevice',
@@ -2417,7 +2528,39 @@ const EXPECTED_GROUNDING = [
             { argument: 'busId', capability: 'bus', promptRole: 'destination' },
             { argument: 'trackId', capability: 'routable-source', distinctFrom: 'busId', promptRole: 'source' },
         ],
-        valueRules: index < 2 ? [{ argument: 'level', kind: 'number-if-present', scale: 'unit-interval' }] : [],
+        valueRules: [
+            [
+                {
+                    argument: 'levelDb',
+                    kind: 'number-if-present',
+                    requiredInPrompt: true,
+                    levelForm: 'absolute-decibel',
+                },
+                {
+                    argument: 'deltaDb',
+                    kind: 'number-if-present',
+                    requiredInPrompt: true,
+                    levelForm: 'relative-decibel',
+                },
+                { argument: 'level', kind: 'number-if-present', scale: 'unit-interval', levelForm: 'linear' },
+            ],
+            [
+                {
+                    argument: 'levelDb',
+                    kind: 'number-if-present',
+                    requiredInPrompt: true,
+                    levelForm: 'absolute-decibel',
+                },
+                {
+                    argument: 'deltaDb',
+                    kind: 'number-if-present',
+                    requiredInPrompt: true,
+                    levelForm: 'relative-decibel',
+                },
+                { argument: 'level', kind: 'number-if-present', scale: 'unit-interval', levelForm: 'linear' },
+            ],
+            [],
+        ][index],
     })),
     {
         actionType: 'setTrackOutput',
@@ -2532,7 +2675,15 @@ const EXPECTED_GROUNDING = [
         targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
         valueRules: [
             { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, connector: 'beat' },
-            { argument: 'value', kind: 'number-if-present', requiredInPrompt: true, scale: 'automation-lane-range' },
+            { argument: 'valueDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
+            { argument: 'deltaDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'relative-decibel' },
+            {
+                argument: 'value',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                scale: 'automation-lane-range',
+                levelForm: 'linear',
+            },
             {
                 argument: 'curve',
                 kind: 'enum-if-present',

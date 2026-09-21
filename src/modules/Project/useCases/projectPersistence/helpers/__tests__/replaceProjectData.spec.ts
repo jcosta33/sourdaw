@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type MonitoredTrack = { id: string; inputMonitoring: 'on' | 'off' | 'auto'; inputId: string | null };
+
 const {
     mockLogger,
     mockBatchStoreUpdates,
@@ -28,6 +30,8 @@ const {
     mockHydrateModuleStores,
     mockResetModuleStores,
     mockVerifyAudioBufferReferences,
+    mockRearmInputMonitoring,
+    mockTrackStoreValue,
 } = vi.hoisted(() => ({
     mockLogger: { error: vi.fn(), warn: vi.fn() },
     mockBatchStoreUpdates: vi.fn((fn: () => void) => fn()),
@@ -64,10 +68,22 @@ const {
     mockHydrateModuleStores: vi.fn(),
     mockResetModuleStores: vi.fn(),
     mockVerifyAudioBufferReferences: vi.fn(),
+    mockRearmInputMonitoring: vi.fn(),
+    mockTrackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/createStore', () => ({ batchStoreUpdates: mockBatchStoreUpdates }));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mockTrackStoreValue.value;
+        },
+    },
+}));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    rearmInputMonitoring: mockRearmInputMonitoring,
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearRuntimeCachedAudioBuffers: mockClearRuntimeCachedAudioBuffers,
     forgetProjectLatchedPedals: mockForgetProjectLatchedPedals,
@@ -187,6 +203,9 @@ describe('replaceProjectData', () => {
             return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
         });
         mockUnloadLoadedExternalPlugins.mockResolvedValue(undefined);
+        mockEnsureTrackStrips.mockReturnValue({ status: 'ready', externalPluginActivations: [] });
+        mockRearmInputMonitoring.mockResolvedValue(undefined);
+        mockTrackStoreValue.value = null;
     });
 
     it('aborts when transaction.prepare returns false', async () => {
@@ -464,6 +483,76 @@ describe('replaceProjectData', () => {
         expect(mockCompactProject).not.toHaveBeenCalled();
         expect(mockFinalizeReset).not.toHaveBeenCalled();
         expect(mockProjectLoadFailureStore.set).not.toHaveBeenCalled();
+    });
+
+    it('re-arms input monitoring for an on track and not for an off track after restoring the previous graph', async () => {
+        mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
+        mockTrackStoreValue.value = {
+            tracks: [
+                { id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' },
+                { id: 'off-1', inputMonitoring: 'off', inputId: 'in-2' },
+            ],
+            selectedTrackId: null,
+        };
+        mockResetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'lock-unavailable' });
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toEqual({ status: 'aborted' });
+        // The reset released the capture and the abort rebuilt the previous
+        // project's strips, so the restore hands the previous project's tracks
+        // to the shared re-arm law — the single predicate that arms the 'on'
+        // track and leaves the 'off' track alone.
+        expect(mockRearmInputMonitoring).toHaveBeenCalledOnce();
+        expect(mockRearmInputMonitoring).toHaveBeenCalledWith([
+            { id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' },
+            { id: 'off-1', inputMonitoring: 'off', inputId: 'in-2' },
+        ]);
+    });
+
+    it('does not re-arm when the previous graph restoration fails', async () => {
+        mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
+        mockTrackStoreValue.value = {
+            tracks: [{ id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' }],
+            selectedTrackId: null,
+        };
+        mockEnsureTrackStrips.mockImplementationOnce(() => {
+            throw new Error('strip rebuild failed');
+        });
+        mockResetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'lock-unavailable' });
+
+        await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(mockRearmInputMonitoring).not.toHaveBeenCalled();
+    });
+
+    it('does not re-arm when the previous graph restoration reports a failed strip rebuild', async () => {
+        mockProjectStore.value = { name: 'Old', initialized: true, loading: false };
+        mockTrackStoreValue.value = {
+            tracks: [{ id: 'on-1', inputMonitoring: 'on', inputId: 'in-1' }],
+            selectedTrackId: null,
+        };
+        mockEnsureTrackStrips.mockReturnValueOnce({
+            status: 'failed',
+            reason: 'The project has an ambiguous bus owner',
+        });
+        mockResetCrdtProject.mockResolvedValue({ status: 'refused', reason: 'lock-unavailable' });
+
+        await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(mockRearmInputMonitoring).not.toHaveBeenCalled();
     });
 
     /**

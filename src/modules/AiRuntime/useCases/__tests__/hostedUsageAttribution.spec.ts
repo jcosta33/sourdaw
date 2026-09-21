@@ -1,229 +1,365 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
-import { type ModelProviderName } from '../../models/ModelProviderProtocol';
-import {
-    type HostedToolPlan,
-    type HostedToolPlanUsage,
-} from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION, type ModelProviderResult } from '../../models/ModelProviderProtocol';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
-import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
+import { getProviderRouteView } from '../getProviderRouteView';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
-import { readyRequest } from './modelProviderProtocolFixture';
+const RUN_ID = 'run-hosted-usage';
+const BUDGET_ATTEMPT_ID = 'attempt-hosted-usage';
 
-const RUN_ID = 'run-1';
-const BUDGET_ATTEMPT_ID = 'attempt-1';
-
-function buildRemoteDisclosure() {
-    return remoteTransmissionDisclosure.issue({
-        categories: REMOTE_TEXT_AGENT_DATA_CATEGORIES,
-        correlationId: 'correlation-1',
-        requestId: 'request-1',
-    });
-}
-
-/**
- * What `useCases/llmOrchestration/inference.ts` does for a completed cloud tool-planning
- * call: push the hosted plan's usage as a `final`, `provider-reported` event before
- * `finish()`, then merge the plan's `strictToolSchemas`/`cacheWriteInputTokens` onto the
- * reported result. This mirrors that exact sequence against the real protocol session and
- * the real `agentRunLifecycle` store, rather than assuming the wiring works.
- */
-function reportHostedToolPlan(plan: HostedToolPlan): void {
-    const { protocol, request } = readyRequest({
-        provider: 'anthropic',
-        operation: 'tools',
-        dataPolicy: 'remote-allowed',
-        dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-        remoteDisclosure: buildRemoteDisclosure(),
-    });
-    const session = protocol.start(request);
-    const source = createModelProviderStreamWriter(request, session);
-
-    agentRunLifecycle.reserveBudget({
+function createRun(budgets?: { limits: Record<string, number>; consumed: Record<string, number> }): void {
+    const input: Parameters<typeof agentRunLifecycle.create>[0] = {
         runId: RUN_ID,
-        attemptId: BUDGET_ATTEMPT_ID,
-        category: 'remoteTokens',
-        estimate: 0,
-        provenance: 'versioned-estimate',
-    });
-
-    if (plan.usage) {
-        source.push({
-            type: 'usage',
-            mode: 'final',
-            usage: {
-                inputTokens: plan.usage.inputTokens,
-                outputTokens: plan.usage.outputTokens,
-                cachedInputTokens: plan.usage.cacheReadInputTokens,
-                reasoningTokens: null,
-            },
-            provenance: 'provider-reported',
-        });
-    }
-    const normalizedResult = source.finish({ reason: 'stop' });
-    const reportedResult = {
-        ...normalizedResult,
-        strictToolSchemas: plan.strictToolSchemas,
-        cacheWriteInputTokens: plan.usage?.cacheWriteInputTokens ?? null,
+        request: 'set the tempo',
+        mode: 'plan',
+        createdRevision: null,
+        requestedRoute: 'cloud',
     };
-
-    recordAgentProviderUsage(RUN_ID, reportedResult, BUDGET_ATTEMPT_ID);
+    if (budgets !== undefined) {
+        input.budgets = budgets;
+    }
+    agentRunLifecycle.create(input);
 }
 
-/**
- * What `useCases/llmOrchestration/inference.ts` does when a hosted turn is rejected after
- * the provider answered: push the `ToolPlanningRejectedError`'s carried usage as a `final`,
- * `provider-reported` event before `finish({reason:'error', ...})`, so the run's cost
- * projection still reflects the tokens the provider actually spent on the refused turn.
- */
-function reportRejectedToolPlan(provider: ModelProviderName, usage: HostedToolPlanUsage | null): void {
-    const { protocol, request } = readyRequest({
-        provider,
-        operation: 'tools',
-        dataPolicy: 'remote-allowed',
-        dataCategories: [...REMOTE_TEXT_AGENT_DATA_CATEGORIES],
-        remoteDisclosure: buildRemoteDisclosure(),
-    });
-    const session = protocol.start(request);
-    const source = createModelProviderStreamWriter(request, session);
-
-    agentRunLifecycle.reserveBudget({
-        runId: RUN_ID,
-        attemptId: BUDGET_ATTEMPT_ID,
-        category: 'remoteTokens',
-        estimate: 0,
-        provenance: 'versioned-estimate',
-    });
-
-    if (usage) {
-        source.push({
-            type: 'usage',
-            mode: 'final',
-            usage: {
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                cachedInputTokens: usage.cacheReadInputTokens,
-                reasoningTokens: null,
-            },
-            provenance: 'provider-reported',
-        });
+function providerResult(input: {
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+    cachedInputTokens?: number | null;
+    usageCacheWriteInputTokens?: number | null;
+    legacyCacheWriteInputTokens?: number | null;
+    status?: 'complete' | 'partial' | 'failed' | 'cancelled';
+    correlationId?: string;
+}): ModelProviderResult {
+    const status = input.status ?? 'complete';
+    const usage: ModelProviderResult['usage'] = {
+        inputTokens: input.inputTokens ?? (Object.hasOwn(input, 'inputTokens') ? null : 63),
+        outputTokens: input.outputTokens ?? (Object.hasOwn(input, 'outputTokens') ? null : 9),
+        cachedInputTokens: input.cachedInputTokens ?? (Object.hasOwn(input, 'cachedInputTokens') ? null : 5),
+        reasoningTokens: null,
+        provenance: 'provider-reported',
+    };
+    if (Object.hasOwn(input, 'usageCacheWriteInputTokens')) {
+        usage.cacheWriteInputTokens = input.usageCacheWriteInputTokens ?? null;
     }
-    const failedResult = source.finish({
-        reason: 'error',
-        failure: {
+    const result: ModelProviderResult = {
+        schemaVersion: MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+        provider: 'anthropic',
+        model: 'hosted-model',
+        correlationId: input.correlationId ?? 'correlation-hosted-usage',
+        status,
+        output: { text: '', reasoning: '', toolCalls: [], structuredOutput: null },
+        usage,
+        finishReason: 'stop',
+        partialOutputDisposition: 'none',
+        failure: null,
+        ignoredProviderEvents: [],
+    };
+    if (status === 'failed') {
+        result.finishReason = 'error';
+        result.partialOutputDisposition = 'discard';
+        result.failure = {
             code: 'tool-planning-rejected',
+            correlationId: 'correlation-hosted-usage',
             retryable: false,
             safeMessage: 'The model provider rejected tool planning.',
-        },
-    });
-
-    recordAgentProviderUsage(RUN_ID, failedResult, BUDGET_ATTEMPT_ID);
+            partialOutputDisposition: 'discard',
+        };
+    } else if (status === 'cancelled') {
+        result.finishReason = 'cancelled';
+        result.partialOutputDisposition = 'discard';
+    }
+    if (Object.hasOwn(input, 'legacyCacheWriteInputTokens')) {
+        result.cacheWriteInputTokens = input.legacyCacheWriteInputTokens ?? null;
+    }
+    return result;
 }
 
-describe('hosted tool-planning usage attribution', () => {
+describe('hosted usage attribution', () => {
     afterEach(() => {
         agentRunLifecycle.clear();
     });
 
-    it('carries a provider-reported usage figure into the run cost projection', () => {
-        agentRunLifecycle.create({
-            runId: RUN_ID,
-            request: 'set the tempo',
-            mode: 'plan',
-            createdRevision: null,
-            requestedRoute: 'cloud',
-        });
+    it('records inclusive input once and gives the neutral usage field precedence over the legacy extension', () => {
+        createRun();
 
-        reportHostedToolPlan({
-            providerRequestId: 'msg_1',
-            calls: [],
-            strictToolSchemas: true,
-            usage: { inputTokens: 120, outputTokens: 30, cacheReadInputTokens: 40, cacheWriteInputTokens: 8 },
-        });
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ usageCacheWriteInputTokens: 8, legacyCacheWriteInputTokens: 99 }),
+            BUDGET_ATTEMPT_ID
+        );
 
-        const run = agentRunLifecycle.get(RUN_ID);
-        expect(run).not.toBeNull();
-        expect(run?.providerUsage[0]).toMatchObject({
-            provider: 'anthropic',
-            inputTokens: 120,
-            outputTokens: 30,
-            cachedInputTokens: 40,
-            provenance: 'provider-reported',
-            strictToolSchemas: true,
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).toMatchObject({
+            inputTokens: 63,
+            outputTokens: 9,
+            cachedInputTokens: 5,
             cacheWriteInputTokens: 8,
-        });
-
-        // getProviderRouteView's getCostProjection reads exactly these four fields off
-        // run.budgetAttempts to build the run's reported cost figure; asserting here
-        // proves the figure is provider-reported without the unrelated WebGPU/cloud
-        // route-candidate mocking getProviderRouteView itself requires.
-        expect(run?.budgetAttempts[0]).toMatchObject({
-            category: 'remoteTokens',
             provenance: 'provider-reported',
-            actual: 150,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toMatchObject({
+            category: 'remoteTokens',
+            reserved: 72,
+            actual: 72,
             final: true,
         });
     });
 
-    it('reports no cache-write figure and a false strictToolSchemas for a non-strict plan with no usage event', () => {
+    it('keeps an admitted estimate reserved when a required provider counter is unknown', () => {
+        createRun();
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+            estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+        });
+
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ inputTokens: null, outputTokens: 9, usageCacheWriteInputTokens: 8 }),
+            BUDGET_ATTEMPT_ID
+        );
+
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toEqual({
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            reserved: 100,
+            actual: 9,
+            provenance: 'versioned-estimate',
+            estimateMethod: 'compiled-provider-request-utf8-byte-token-ceiling-v1',
+            final: false,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.remoteTokens).toBe(100);
+        expect(getProviderRouteView({ runId: RUN_ID })?.usage).toMatchObject({
+            provenance: 'unavailable',
+            inputTokens: null,
+            outputTokens: 9,
+            cachedInputTokens: 5,
+        });
+    });
+
+    it('settles completed WebLLM attempts without claiming unavailable token counts were measured', () => {
         agentRunLifecycle.create({
             runId: RUN_ID,
             request: 'set the tempo',
             mode: 'plan',
             createdRevision: null,
-            requestedRoute: 'cloud',
+            requestedRoute: 'webllm',
+            budgets: { limits: { localAnalysis: 100 }, consumed: {} },
         });
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'localAnalysis',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+        });
+        const result = providerResult({ inputTokens: null, outputTokens: null });
 
-        reportHostedToolPlan({
-            providerRequestId: 'chatcmpl_1',
-            calls: [],
-            strictToolSchemas: false,
-            usage: null,
-        });
+        recordAgentProviderUsage(
+            RUN_ID,
+            {
+                ...result,
+                provider: 'webllm',
+                model: 'webllm-model',
+                usage: { ...result.usage, provenance: 'unavailable' },
+            },
+            BUDGET_ATTEMPT_ID
+        );
 
-        const run = agentRunLifecycle.get(RUN_ID);
-        expect(run?.providerUsage[0]).toMatchObject({
-            strictToolSchemas: false,
-            cacheWriteInputTokens: null,
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).toMatchObject({
+            inputTokens: null,
+            outputTokens: null,
+            provenance: 'unavailable',
         });
-        // No usage event was pushed, so the session's own default "unavailable"
-        // provenance stands: never a fabricated "provider-reported" claim for a
-        // figure the provider never sent.
-        expect(run?.providerUsage[0]?.provenance).toBe('unavailable');
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toMatchObject({
+            category: 'localAnalysis',
+            reserved: 100,
+            actual: 0,
+            provenance: 'unavailable',
+            final: true,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.localAnalysis).toBe(0);
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: RUN_ID,
+                attemptId: 'next-webllm-attempt',
+                category: 'localAnalysis',
+                estimate: 100,
+                provenance: 'versioned-estimate',
+            })
+        ).toEqual({ status: 'reserved' });
     });
 
-    it.each<[ModelProviderName, HostedToolPlanUsage]>([
-        ['anthropic', { inputTokens: 30, outputTokens: 12, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 }],
-        ['openai', { inputTokens: 40, outputTokens: 7, cacheReadInputTokens: 12, cacheWriteInputTokens: null }],
-        [
-            'openai-compatible',
-            { inputTokens: 18, outputTokens: 5, cacheReadInputTokens: 0, cacheWriteInputTokens: null },
-        ],
-    ])(
-        'attributes %s usage from a refused turn to the run even though the outcome is a rejection',
-        (provider, usage) => {
-            agentRunLifecycle.create({
+    it('keeps the estimate when output usage is unknown', () => {
+        createRun();
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+        });
+
+        recordAgentProviderUsage(RUN_ID, providerResult({ inputTokens: 63, outputTokens: null }), BUDGET_ATTEMPT_ID);
+
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toMatchObject({
+            reserved: 100,
+            actual: 63,
+            provenance: 'versioned-estimate',
+            final: false,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.remoteTokens).toBe(100);
+        expect(getProviderRouteView({ runId: RUN_ID })?.usage).toMatchObject({
+            provenance: 'unavailable',
+            inputTokens: 63,
+            outputTokens: null,
+        });
+    });
+
+    it('settles an explicit zero input counter as complete provider usage', () => {
+        createRun();
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+        });
+
+        recordAgentProviderUsage(RUN_ID, providerResult({ inputTokens: 0, outputTokens: 9 }), BUDGET_ATTEMPT_ID);
+
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toMatchObject({
+            reserved: 100,
+            actual: 9,
+            provenance: 'provider-reported',
+            final: true,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.remoteTokens).toBe(9);
+    });
+
+    it('settles later complete usage once and does not let a later partial report reduce the charge', () => {
+        createRun();
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+        });
+        recordAgentProviderUsage(RUN_ID, providerResult({ inputTokens: null, outputTokens: 9 }), BUDGET_ATTEMPT_ID);
+        const complete = providerResult({ inputTokens: 63, outputTokens: 9 });
+
+        recordAgentProviderUsage(RUN_ID, complete, BUDGET_ATTEMPT_ID);
+        recordAgentProviderUsage(RUN_ID, complete, BUDGET_ATTEMPT_ID);
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ inputTokens: null, outputTokens: 4, status: 'partial' }),
+            BUDGET_ATTEMPT_ID
+        );
+
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toMatchObject({
+            reserved: 100,
+            actual: 72,
+            provenance: 'provider-reported',
+            final: true,
+        });
+        expect(agentRunLifecycle.get(RUN_ID)?.budgets.consumed.remoteTokens).toBe(72);
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage).toHaveLength(1);
+        expect(getProviderRouteView({ runId: RUN_ID })?.usage).toMatchObject({
+            provenance: 'provider-reported',
+            inputTokens: 63,
+            outputTokens: 9,
+        });
+    });
+
+    it('marks incomplete unreserved usage unavailable instead of inventing an estimate', () => {
+        createRun();
+
+        recordAgentProviderUsage(RUN_ID, providerResult({ inputTokens: null, outputTokens: 9 }), BUDGET_ATTEMPT_ID);
+
+        expect(agentRunLifecycle.get(RUN_ID)?.budgetAttempts[0]).toEqual({
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            reserved: 9,
+            actual: 9,
+            provenance: 'unavailable',
+            final: false,
+        });
+    });
+
+    it('retains cancelled usage reservations while admitting only a fallback within the remaining ceiling', () => {
+        createRun({ limits: { remoteTokens: 150 }, consumed: {} });
+        agentRunLifecycle.reserveBudget({
+            runId: RUN_ID,
+            attemptId: BUDGET_ATTEMPT_ID,
+            category: 'remoteTokens',
+            estimate: 100,
+            provenance: 'versioned-estimate',
+        });
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ inputTokens: null, outputTokens: 9, status: 'cancelled' }),
+            BUDGET_ATTEMPT_ID
+        );
+
+        expect(
+            agentRunLifecycle.reserveBudget({
                 runId: RUN_ID,
-                request: 'set the tempo',
-                mode: 'plan',
-                createdRevision: null,
-                requestedRoute: 'cloud',
-            });
+                attemptId: 'fallback-within-ceiling',
+                category: 'remoteTokens',
+                estimate: 50,
+                provenance: 'versioned-estimate',
+            })
+        ).toEqual({ status: 'reserved' });
+        expect(
+            agentRunLifecycle.reserveBudget({
+                runId: RUN_ID,
+                attemptId: 'fallback-over-ceiling',
+                category: 'remoteTokens',
+                estimate: 1,
+                provenance: 'versioned-estimate',
+            })
+        ).toEqual({ status: 'hard-limit-reached', reason: 'remoteTokens' });
+    });
 
-            reportRejectedToolPlan(provider, usage);
+    it('preserves explicit null and zero from neutral usage without falling back to the legacy extension', () => {
+        createRun();
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ usageCacheWriteInputTokens: null, legacyCacheWriteInputTokens: 8 }),
+            'attempt-null'
+        );
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).toMatchObject({ cacheWriteInputTokens: null });
 
-            const run = agentRunLifecycle.get(RUN_ID);
-            expect(run).not.toBeNull();
-            expect(run?.providerUsage[0]).toMatchObject({
-                provider,
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                cachedInputTokens: usage.cacheReadInputTokens,
-                provenance: 'provider-reported',
-            });
-        }
-    );
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ usageCacheWriteInputTokens: 0, legacyCacheWriteInputTokens: 8 }),
+            'attempt-zero'
+        );
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).toMatchObject({ cacheWriteInputTokens: 0 });
+    });
+
+    it('uses the legacy extension only when neutral usage omits the counter', () => {
+        createRun();
+        recordAgentProviderUsage(
+            RUN_ID,
+            providerResult({ legacyCacheWriteInputTokens: 8, status: 'failed' }),
+            BUDGET_ATTEMPT_ID
+        );
+
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).toMatchObject({
+            status: 'failed',
+            retryable: false,
+            cacheWriteInputTokens: 8,
+        });
+    });
+
+    it('keeps the optional cache-write counter absent when neither result surface reports it', () => {
+        createRun();
+        recordAgentProviderUsage(RUN_ID, providerResult({}), BUDGET_ATTEMPT_ID);
+
+        expect(agentRunLifecycle.get(RUN_ID)?.providerUsage[0]).not.toHaveProperty('cacheWriteInputTokens');
+    });
 });

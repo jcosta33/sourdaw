@@ -4,9 +4,14 @@
  * The trusted publisher holds the orchestrator's caller-authored `dossier.json` input and the
  * bundle's `risk-plan.json`. `buildReviewDossier` turns that input into the canonical record
  * `parseReviewDossier` accepts, or recognizes an already-persisted record and replays it unchanged
- * so a retried publication is idempotent. Both paths refuse a record that disagrees with the plan,
- * the review document's comments, or the recommendation the document's event implies.
+ * so a retried publication is idempotent. Both paths bind the record's identity and risk classes to
+ * the plan, its comment findings to the review document, its recommendation to the document's event,
+ * and — when the bundle carries the caller's pre-dispatch `stances.json` — its stance draws to that
+ * record as sets of stance names. Stances are the model's task-derived judgement, so the plan's
+ * mechanically derived stance list never gates the record.
  */
+
+import { join } from 'node:path';
 
 import { fail } from './prContract.ts';
 import {
@@ -19,16 +24,23 @@ import {
     serializeReviewDossier,
 } from './reviewDossier.ts';
 
-import type { ReviewDossier, ReviewDossierEvent, ReviewModelTier } from './reviewDossier.ts';
-import type { ReviewRiskPlan, ReviewStanceId } from './reviewRiskPolicy.ts';
+import type { ReviewDossier, ReviewDossierEvent, ReviewDossierStance, ReviewModelTier } from './reviewDossier.ts';
+import type { ReviewerStanceDraw } from './reviewerModelDiversity.ts';
+import type { ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
 export const REVIEW_DOSSIER_INPUT_FORMAT = 'dossier-input-v1';
 
 export type ReviewDossierStanceInput = {
-    stance: ReviewStanceId;
+    stance: ReviewDossierStance;
     reviewerModel: string;
     modelTier: ReviewModelTier;
     outcome: 'blocker-found' | 'clean';
+    /** Present only when this draw reused an authoring model: what made every other model unavailable. */
+    exhaustion?: string;
+};
+
+export type ReviewStancesRecord = {
+    stances: { stance: string }[];
 };
 
 export type ReviewDossierInput = {
@@ -49,23 +61,15 @@ type ReviewDossierBuildInput = {
     discarded: unknown;
     comments: readonly ReviewDossierComment[];
     recommendation: ReviewRecommendation;
+    recordedStances?: readonly string[];
 };
 type ReviewDossierPublication = { dossier: ReviewDossier; canonical: string; fromPersisted: boolean };
 
 /**
- * Total maps, so a widened stance, tier or outcome union fails to compile here instead of silently
- * refusing a caller input the record format accepts.
+ * Total maps, so a widened tier or outcome union fails to compile here instead of silently
+ * refusing a caller input the record format accepts. Stance names are free-form safe strings,
+ * so they need no membership map.
  */
-const STANCE_MEMBERSHIP: Record<ReviewStanceId, true> = {
-    correctness: true,
-    'module-boundaries': true,
-    'realtime-audio': true,
-    'project-integrity-undo': true,
-    'security-platform': true,
-    'code-craft': true,
-    'test-validity': true,
-};
-
 const MODEL_TIER_MEMBERSHIP: Record<ReviewModelTier, true> = {
     economy: true,
     standard: true,
@@ -83,10 +87,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function describeValue(value: unknown): string {
     return JSON.stringify(value) ?? typeof value;
-}
-
-function isReviewStanceId(value: string): value is ReviewStanceId {
-    return Object.hasOwn(STANCE_MEMBERSHIP, value);
 }
 
 function isModelTier(value: string): value is ReviewModelTier {
@@ -139,21 +139,26 @@ function readPositiveInteger(label: string, value: unknown): number {
 
 function readStances(value: unknown): ReviewDossierStanceInput[] {
     const stances: ReviewDossierStanceInput[] = [];
-    const seen = new Map<ReviewStanceId, number>();
+    const seen = new Map<string, number>();
     for (const [index, entry] of readArray('review dossier input stances', value).entries()) {
         const label = `review dossier input stances[${index}]`;
         if (!isRecord(entry)) {
             fail(`${label} must be an object, found ${describeValue(entry)}`);
         }
-        const stance = readLiteral(`${label}.stance`, entry.stance, isReviewStanceId, 'a known review stance');
-        const firstIndex = seen.get(stance);
+        const stance = readPublicationSafeString(`${label}.stance`, entry.stance);
+        const reviewerModel = readPublicationSafeString(`${label}.reviewerModel`, entry.reviewerModel);
+        // One stance may carry several draws when their reviewer models differ; only an exact
+        // (stance, reviewerModel) repeat records the same draw twice. JSON framing cannot collide:
+        // the pair separator is structural, never string content.
+        const drawKey = JSON.stringify([stance, reviewerModel]);
+        const firstIndex = seen.get(drawKey);
         if (firstIndex !== undefined) {
-            fail(`${label}.stance duplicates stances[${firstIndex}].stance: ${stance}`);
+            fail(`${label} repeats stances[${firstIndex}]'s stance and reviewerModel: ${stance} on ${reviewerModel}`);
         }
-        seen.set(stance, index);
-        stances.push({
+        seen.set(drawKey, index);
+        const stanceInput: ReviewDossierStanceInput = {
             stance,
-            reviewerModel: readPublicationSafeString(`${label}.reviewerModel`, entry.reviewerModel),
+            reviewerModel,
             modelTier: readLiteral(
                 `${label}.modelTier`,
                 entry.modelTier,
@@ -161,7 +166,11 @@ function readStances(value: unknown): ReviewDossierStanceInput[] {
                 'economy, standard or strongest'
             ),
             outcome: readLiteral(`${label}.outcome`, entry.outcome, isOutcome, 'blocker-found or clean'),
-        });
+        };
+        if (entry.exhaustion !== undefined) {
+            stanceInput.exhaustion = readPublicationSafeString(`${label}.exhaustion`, entry.exhaustion);
+        }
+        stances.push(stanceInput);
     }
     return stances;
 }
@@ -209,6 +218,96 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
 }
 
 /**
+ * The caller's pre-dispatch `stances.json`. The gate validates only the shape it consumes — an
+ * object whose `stances` entries each name a stance — and treats the failure-mode admissions,
+ * baseline-probe results, and per-draw exhaustion records as free-form caller evidence it never
+ * reads; the dossier's own draw entries carry the gated exhaustion.
+ */
+export function parseReviewStancesRecord(value: unknown, path: string): ReviewStancesRecord {
+    if (!isRecord(value)) {
+        fail(`review stances record at ${path} must be an object, found ${describeValue(value)}`);
+    }
+    if (!Array.isArray(value.stances)) {
+        fail(`review stances record at ${path} stances must be an array, found ${describeValue(value.stances)}`);
+    }
+    const stances: { stance: string }[] = [];
+    for (const [index, entry] of value.stances.entries()) {
+        if (!isRecord(entry) || typeof entry.stance !== 'string') {
+            fail(`review stances record at ${path} stances[${index}] must carry a stance string`);
+        }
+        stances.push({ stance: entry.stance });
+    }
+    return { stances };
+}
+
+/**
+ * The dispatched-stance names a bundle's stances.json carries, or undefined when the bundle holds
+ * no such file — the legacy path that carries no stance-completeness constraint.
+ */
+export function recordedReviewStances(
+    read: { present: true; value: unknown } | { present: false },
+    path: string
+): string[] | undefined {
+    return read.present ? parseReviewStancesRecord(read.value, path).stances.map((entry) => entry.stance) : undefined;
+}
+
+/** One completed draw's disclosure fields, shared by both dossier shapes. */
+type DossierDrawFields = {
+    stance: string;
+    reviewerModel: string;
+    exhaustion?: string;
+};
+
+function dossierStanceToDraw(record: DossierDrawFields): ReviewerStanceDraw {
+    const draw: ReviewerStanceDraw = { stance: record.stance, reviewerModel: record.reviewerModel };
+    if (record.exhaustion !== undefined) {
+        draw.exhaustion = record.exhaustion;
+    }
+    return draw;
+}
+
+/**
+ * The bundle dossier's stance draws, for the diversity gate's per-draw disclosure, read from either
+ * well-formed file shape: the caller's `dossier-input-v1` stances, or — when the file parses as the
+ * persisted `dossier-v1` canonical record — that record's `stance-completed` events. The per-draw
+ * rule runs on every publication regardless of file form, so a replay reads the same draws the
+ * first publication gated and a mixed round replays unchanged. The probe never refuses: every
+ * shape it cannot use — a bundle with no risk plan (the legacy path, which must not read or require
+ * dossier material at all), an absent dossier, a malformed dossier — yields undefined and keeps
+ * exactly the document-level check, with the dossier gate refusing malformed shapes later, still
+ * before any remote write. The caller passes the publication port's bundle reader structurally; the
+ * file names are this module's bundle layout, as in `prepareReview`.
+ */
+export function readDossierStanceDraws(
+    port: { readReviewJson: (path: string) => unknown },
+    bundle: string
+): ReviewerStanceDraw[] | undefined {
+    try {
+        // Existence probe for the gate-active path, mirroring the dossier gate's legacy tolerance;
+        // the plan itself is parsed and bound there, after the diversity check runs.
+        port.readReviewJson(join(bundle, 'risk-plan.json'));
+    } catch {
+        return undefined;
+    }
+    let raw: unknown;
+    try {
+        raw = port.readReviewJson(join(bundle, 'dossier.json'));
+    } catch {
+        return undefined;
+    }
+    try {
+        return parseReviewDossierInput(raw).stances.map(dossierStanceToDraw);
+    } catch {
+        // Not caller input; the persisted canonical record is the only other well-formed shape.
+    }
+    const persisted = tryParsePersistedDossier(raw);
+    if (persisted === undefined) {
+        return undefined;
+    }
+    return completedStances(persisted).map(dossierStanceToDraw);
+}
+
+/**
  * The two forms never validate as each other, so a refusal here is the retry/replay detection:
  * `parseReviewDossier` accepts only the canonical record, and caller input is assembled below.
  */
@@ -225,13 +324,19 @@ function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
     assertSameValue('review dossier input pr', parsed.pr, input.plan.pr);
     assertSameValue('review dossier input headSha', parsed.headSha, input.plan.headSha);
     assertSameValue('review dossier input baseSha', parsed.baseSha, input.plan.baseSha);
-    const stanceEvents = parsed.stances.map((stance): ReviewDossierEvent => ({
-        kind: 'stance-completed',
-        stance: stance.stance,
-        reviewerModel: stance.reviewerModel,
-        modelTier: stance.modelTier,
-        outcome: stance.outcome,
-    }));
+    const stanceEvents = parsed.stances.map((stance): ReviewDossierEvent => {
+        const completed: ReviewDossierEvent = {
+            kind: 'stance-completed',
+            stance: stance.stance,
+            reviewerModel: stance.reviewerModel,
+            modelTier: stance.modelTier,
+            outcome: stance.outcome,
+        };
+        if (stance.exhaustion !== undefined) {
+            completed.exhaustion = stance.exhaustion;
+        }
+        return completed;
+    });
     const findingEvents = input.comments.map((comment, index): ReviewDossierEvent => ({
         kind: 'finding-accepted',
         findingId: `comment-${index}`,
@@ -262,18 +367,27 @@ function assertEqualStanceList(label: string, actual: readonly string[], expecte
     fail(`${label} mismatch: record has [${actual.join(', ')}], expected [${expected.join(', ')}]`);
 }
 
-function assertStancesMatchPlan(
-    completed: readonly { stance: ReviewStanceId }[],
-    required: readonly ReviewStanceId[]
+/**
+ * The stance correspondence is set-level over stance names against the caller's pre-dispatch
+ * record: every dossier draw names a recorded stance, and every recorded stance carries at least
+ * one draw — several draws on one stance share its single recorded entry. Stances are the model's
+ * task-derived judgement, so the plan's mechanically derived list never gates here; a bundle with
+ * no `stances.json` predates the record and is accepted without a stance-completeness constraint.
+ */
+function assertStancesMatchRecord(
+    completed: readonly { stance: ReviewDossierStance }[],
+    recorded: readonly string[]
 ): void {
-    const recorded = completed.map((entry) => entry.stance);
+    const dispatched = completed.map((entry) => entry.stance);
+    // Recorded stance names are caller-authored strings, so the correspondence compares in the
+    // string domain.
+    const dispatchedSet = new Set<string>(dispatched);
     const recordedSet = new Set(recorded);
-    const requiredSet = new Set(required);
-    const missing = required.filter((stance) => !recordedSet.has(stance));
-    const extra = recorded.filter((stance) => !requiredSet.has(stance));
+    const missing = recorded.filter((stance) => !dispatchedSet.has(stance));
+    const extra = dispatched.filter((stance) => !recordedSet.has(stance));
     if (missing.length > 0 || extra.length > 0) {
         fail(
-            `review dossier publication stances do not match the plan: missing [${missing.join(', ')}], extra [${extra.join(', ')}]`
+            `review dossier publication stances do not match stances.json: missing [${missing.join(', ')}], extra [${extra.join(', ')}]`
         );
     }
 }
@@ -324,12 +438,11 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
     assertSameValue('review dossier publication headSha', dossier.headSha, input.plan.headSha);
     assertSameValue('review dossier publication baseSha', dossier.baseSha, input.plan.baseSha);
     assertEqualStanceList('review dossier publication riskClasses', dossier.riskClasses, input.plan.riskClasses);
-    assertEqualStanceList(
-        'review dossier publication requiredStances',
-        dossier.requiredStances,
-        input.plan.requiredStances
-    );
-    assertStancesMatchPlan(completedStances(dossier), input.plan.requiredStances);
+    // The dossier's stance entries answer to the pre-dispatch record, never to the plan's menu; a
+    // bundle without one publishes with no stance-completeness constraint at all.
+    if (input.recordedStances !== undefined) {
+        assertStancesMatchRecord(completedStances(dossier), input.recordedStances);
+    }
     assertSameValue('review dossier publication recommendation', dossier.recommendation, input.recommendation);
     // The discarded-id namespace is independent of the positional accepted ids, and the accepted
     // check claims the whole comment-id namespace, so the collision guard runs first.

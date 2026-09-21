@@ -53,7 +53,7 @@ import {
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
 import { assertPublicationSafeEvidence } from './reviewDossier.ts';
-import { buildReviewDossier } from './reviewDossierPublication.ts';
+import { buildReviewDossier, readDossierStanceDraws, recordedReviewStances } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
@@ -171,6 +171,7 @@ export type PreparedReviewPublication = {
 };
 
 const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
+const REVIEW_STANCES_NAME = 'stances.json';
 const REVIEW_DOSSIER_NAME = 'dossier.json';
 const REVIEW_DISCARDED_NAME = 'discarded.json';
 
@@ -277,12 +278,18 @@ function prepareReviewDossierPublication(input: {
     }
     assertReviewEvidenceClaimsSafe(input.document);
     const discardedRead = readBundleFile(input.port, join(input.bundle, REVIEW_DISCARDED_NAME));
+    // The caller's pre-dispatch stance record is the only stance gate: when it is present the
+    // dossier must correspond to it one-to-one, and when it is absent the publication carries no
+    // stance-completeness constraint. The plan's mechanically derived list is never enforced.
+    const stancesPath = join(input.bundle, REVIEW_STANCES_NAME);
+    const recordedStances = recordedReviewStances(readBundleFile(input.port, stancesPath), stancesPath);
     const publication = buildReviewDossier({
         plan,
         raw: dossierRead.value,
         discarded: discardedRead.present ? discardedRead.value : undefined,
         comments: input.document.comments,
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
+        recordedStances,
     });
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
 }
@@ -305,11 +312,9 @@ function prepareReviewPublication(
     const document =
         actorNodeId === ORCHESTRATOR_USER_NODE_ID ? parseAcceptanceDocument(parsed) : parseReviewDocument(parsed);
     assertPublicationEvidence(document, head);
-    assertReviewerModelDiversity({
-        actorNodeId,
-        authorLabels: pullRequest.labels ?? [],
-        reviewerModel: document.reviewerModel,
-    });
+    // The acceptance identity never reads the dossier, and its diversity check is exempt anyway.
+    const stanceDraws = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? undefined : readDossierStanceDraws(port, bundle);
+    assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {

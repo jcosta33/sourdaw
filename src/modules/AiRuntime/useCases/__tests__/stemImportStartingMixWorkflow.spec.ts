@@ -409,10 +409,23 @@ function catalogDiscoveryPlan(finalCalls: readonly ProviderCall[]): ProviderCall
     ];
 }
 
-function assertDiscoveredCommandSchemas(userMessage: string, finalCalls: readonly ProviderCall[]): void {
-    const discovery = getApplicationToolReceipts(userMessage).find(
-        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
-    );
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls: readonly ProviderCall[]): void {
+    const discovery = receipts.find((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover');
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
@@ -521,22 +534,24 @@ function getFinalStemImportCalls(
 
 function getProviderCallsForUserMessage(
     userMessage: string,
-    transformPlan: (plan: ProviderCall[]) => ProviderCall[]
+    transformPlan: (plan: ProviderCall[]) => ProviderCall[],
+    receipts: readonly unknown[]
 ): ProviderCall[] {
     if (getProviderContext(userMessage).stemImportCapability === undefined) {
         return withWorkflowCapabilitySelection('stem-import-starting-mix', []);
     }
     const finalCalls = getFinalStemImportCalls(userMessage, transformPlan);
-    if (!hasApplicationToolReceiptContext(userMessage)) {
+    if (receipts.length === 0) {
         return catalogDiscoveryPlan(finalCalls);
     }
-    assertDiscoveredCommandSchemas(userMessage, finalCalls);
+    assertDiscoveredCommandSchemas(receipts, finalCalls);
     return finalCalls;
 }
 
 function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan) {
     return (_systemPrompt: string, userMessage: string) => {
-        return Promise.resolve(JSON.stringify(getProviderCallsForUserMessage(userMessage, transformPlan)));
+        const receipts = hasApplicationToolReceiptContext(userMessage) ? getApplicationToolReceipts(userMessage) : [];
+        return Promise.resolve(JSON.stringify(getProviderCallsForUserMessage(userMessage, transformPlan, receipts)));
     };
 }
 
@@ -548,7 +563,13 @@ function createHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         const userMessage = getHostedUserMessage(init.body);
-        return Promise.resolve(toolCallsResponse(getProviderCallsForUserMessage(userMessage, transformPlan)));
+        // A hosted turn answers the turns behind it natively, so its receipts arrive as tool
+        // messages rather than as text folded into the user message.
+        return Promise.resolve(
+            toolCallsResponse(
+                getProviderCallsForUserMessage(userMessage, transformPlan, getReplayedToolReceipts(init.body))
+            )
+        );
     };
 }
 

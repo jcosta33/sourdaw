@@ -28,6 +28,25 @@ describe('projectDeviceForNativeBody', () => {
         setAudioDeviceRuntimeSink({});
     });
 
+    it('uses supplied preparation dependencies without consulting the current runtime sink', () => {
+        const unexpected = () => {
+            throw new Error('Live projection was consulted');
+        };
+        setAudioDeviceRuntimeSink({ projectNativeDeviceState: unexpected, nativeSampleBankKey: unexpected });
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'alternate', type: 'levain', parameterValues: { gain: 0.9 } }),
+            {
+                nativeSampleBankKey: ({ deviceState }) => {
+                    expect(deviceState).toBeUndefined();
+                    return 'levain:provided';
+                },
+                projectNativeDeviceState: () => ({ gain: 0.25, 'invalid key': 1, ignored: Number.NaN }),
+            }
+        );
+        expect(projected.sampleBankKey).toBe('levain:provided');
+        expect(projected.parameterValues).toEqual({ gain: 0.25 });
+    });
+
     // The two vocabularies differ on both halves of the mapping: an override
     // renames the parameter outright, and everything else is the same word
     // respelled. A projector that did only one of them would still red here.

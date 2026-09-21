@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type ModelProviderEvent } from '../../models/ModelProviderProtocol';
 import { generateOpenAiResponsesToolCalls } from '../cloudLlm/cloudInference/generateOpenAiResponsesToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../cloudLlm/cloudInference/hostedToolPlan';
@@ -10,8 +11,15 @@ import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from 
 import {
     describeProviderProtocolConformance,
     FORCED_TERMINAL_TOOL_NAMES,
+    MULTI_CALL_TURN_CALL_IDS,
     PROVIDER_CONFORMANCE_FIXTURE as FIXTURE,
     PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
+    PROVIDER_MULTI_CALL_TURN_RECEIPTS,
+    PROVIDER_TURN_HISTORY_FIXTURE as HISTORY,
+    PROVIDER_SYNTHESISED_TURN_RECEIPT,
+    PROVIDER_TURN_HISTORY_RECEIPT,
+    type ProviderCorrelationObservation,
+    type ProviderProtocolHarness,
     type ProviderRequestObservation,
     type ProviderStreamObservation,
     type ProviderStreamScenario,
@@ -199,6 +207,94 @@ function toolFixture(scenario: ProviderToolScenario): Record<string, unknown> {
     };
 }
 
+/** Turn one as this API itself reported it: a reasoning item ahead of the call it produced. */
+const OWN_TURN_OUTPUT_ITEMS = [
+    { type: 'reasoning', id: HISTORY.assistantMarker, summary: [] },
+    {
+        type: 'function_call',
+        id: 'fc-item',
+        call_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+        name: 'project_query',
+        arguments: '{}',
+    },
+];
+
+const OWN_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: OWN_TURN_OUTPUT_ITEMS,
+        calls: [{ id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_TURN_HISTORY_RECEIPT],
+    },
+];
+
+/** The same turn as another dialect reported it; none of those items belong on this wire. */
+const FOREIGN_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'anthropic',
+        assistantItems: [{ type: 'tool_use', id: HISTORY.foreignMarker, name: 'project_query', input: {} }],
+        calls: [{ id: PROVIDER_TURN_HISTORY_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_TURN_HISTORY_RECEIPT],
+    },
+];
+
+/** A turn whose call the provider never named, recorded under the identity the loop resolved. */
+const SYNTHESISED_ID_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'anthropic',
+        assistantItems: [],
+        calls: [{ id: PROVIDER_SYNTHESISED_TURN_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_SYNTHESISED_TURN_RECEIPT],
+    },
+];
+
+/** This dialect's own turn, whose call it never named: no items the receipt can answer. */
+const UNIDENTIFIED_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: null,
+        calls: [{ id: PROVIDER_SYNTHESISED_TURN_RECEIPT.callId, name: 'project.query', arguments: {} }],
+        receipts: [PROVIDER_SYNTHESISED_TURN_RECEIPT],
+    },
+];
+
+/** One turn carrying two calls the provider never named, each with its own receipt. */
+const MULTI_CALL_TURN_HISTORY: HostedTurnHistory = [
+    {
+        turn: 1,
+        provider: 'openai',
+        assistantItems: null,
+        calls: [
+            { id: MULTI_CALL_TURN_CALL_IDS[0], name: 'project.query', arguments: {} },
+            { id: MULTI_CALL_TURN_CALL_IDS[1], name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
+        ],
+        receipts: PROVIDER_MULTI_CALL_TURN_RECEIPTS,
+    },
+];
+
+function turnHistoryFor(scenario: ProviderToolScenario): { history: HostedTurnHistory; budgetNote: string } | null {
+    if (scenario === 'two-turn-history') {
+        return { history: OWN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'foreign-turn-history') {
+        return { history: FOREIGN_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'synthesised-call-id-history') {
+        return { history: SYNTHESISED_ID_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'unidentified-turn-history') {
+        return { history: UNIDENTIFIED_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    if (scenario === 'multi-call-turn-history') {
+        return { history: MULTI_CALL_TURN_HISTORY, budgetNote: HISTORY.budgetNote };
+    }
+    return null;
+}
+
 let sentRequestBodies: string[] = [];
 
 function installProviderResponse(body: string, contentType: string): void {
@@ -228,7 +324,13 @@ function readRequest(): ProviderRequestObservation {
         throw new Error('Expected the adapter to send a JSON request body');
     }
     const body = JSON.parse(sent) as Record<string, unknown>;
-    return { model: body.model, stream: body.stream, tools: body.tools, toolChoice: body.tool_choice };
+    return {
+        model: body.model,
+        stream: body.stream,
+        tools: body.tools,
+        toolChoice: body.tool_choice,
+        input: body.input,
+    };
 }
 
 function readSafeMessage(error: unknown): string {
@@ -240,7 +342,7 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
-describeProviderProtocolConformance('OpenAI responses', {
+const harness: ProviderProtocolHarness = {
     streamText: async (scenario: ProviderStreamScenario): Promise<ProviderStreamObservation> => {
         installProviderResponse(streamFixture(scenario), 'text/event-stream');
         let text = '';
@@ -288,6 +390,7 @@ describeProviderProtocolConformance('OpenAI responses', {
                 toolSchemas: PROVIDER_CONFORMANCE_TOOL_SCHEMAS,
                 maxOutputTokens: 8_192,
                 directive: directiveFor(scenario),
+                ...(turnHistoryFor(scenario) ?? {}),
             });
             return {
                 calls: plan.calls,
@@ -305,10 +408,55 @@ describeProviderProtocolConformance('OpenAI responses', {
             };
         }
     },
+    readCorrelatingIds: (request): ProviderCorrelationObservation => {
+        const items = (request.input ?? []) as Record<string, unknown>[];
+        const outputs = items.filter((item) => item.type === 'function_call_output');
+        return {
+            callIds: items.filter((item) => item.type === 'function_call').map((item) => String(item.call_id)),
+            resultIds: outputs.map((item) => String(item.call_id)),
+            resultPayloads: outputs.map((item) => String(item.output)),
+        };
+    },
     readWireTool: (tool) => {
         const wireTool = tool as { strict?: unknown; parameters?: unknown };
         return { strict: wireTool.strict, parameters: wireTool.parameters };
     },
+};
+
+describeProviderProtocolConformance('OpenAI responses', harness);
+
+describe('generateOpenAiResponsesToolCalls turn history', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('replays every turn-one output item in order and answers each call', async () => {
+        const observed = await harness.planTools('two-turn-history');
+
+        expect(observed.request.input).toEqual([
+            { role: 'user', content: 'mute drums' },
+            ...OWN_TURN_OUTPUT_ITEMS,
+            {
+                type: 'function_call_output',
+                call_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+                output: JSON.stringify(PROVIDER_TURN_HISTORY_RECEIPT),
+            },
+            { role: 'user', content: HISTORY.budgetNote },
+        ]);
+    });
+
+    it('restates a turn another dialect answered as function_call items only', async () => {
+        const observed = await harness.planTools('foreign-turn-history');
+
+        const items = observed.request.input as unknown[];
+        expect(items[1]).toEqual({
+            type: 'function_call',
+            call_id: PROVIDER_TURN_HISTORY_RECEIPT.callId,
+            name: 'project_query',
+            arguments: '{}',
+        });
+    });
 });
 
 describe('generateOpenAiResponsesToolCalls usage admission', () => {

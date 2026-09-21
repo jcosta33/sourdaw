@@ -1,7 +1,7 @@
 import { clampFaderGain, toStereoPan } from '#/utils/audioLevelLaw';
 
 import { type Device } from '../../models/TrackViewTypes';
-import { buildDeviceChain } from '../buildDeviceChain';
+import { buildDeviceChain, type BuildDeviceChainContext } from '../buildDeviceChain';
 
 import { type OfflineTrackStrip } from './types';
 
@@ -21,7 +21,7 @@ type CreateOfflineTrackStripTrackInput = {
     devices: Device[];
 };
 
-type CreateOfflineTrackStripOptions = {
+type CreateOfflineTrackStripOptions = Pick<BuildDeviceChainContext, 'instruments' | 'loadedExternalInstanceIds'> & {
     /**
      * Stem exports pass false: stems of muted tracks must carry the track's
      * content for "later use in a DAW" (exportStems documents this intent).
@@ -53,6 +53,12 @@ type CreateOfflineTrackStripOptions = {
      * export. Defaults to true.
      */
     contributesAudio?: boolean;
+    /**
+     * The owning render's cancellation signal (#4440), threaded into the
+     * device-chain build so instrument preparation can abort at cancellation.
+     * Absent for renders that do not own cancellation (the freeze path).
+     */
+    cancellationSignal?: AbortSignal;
 };
 
 export async function createOfflineTrackStrip(
@@ -92,8 +98,11 @@ export async function createOfflineTrackStrip(
 
     const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap, {
         trackName: track.name,
+        instruments: options.instruments,
+        loadedExternalInstanceIds: options.loadedExternalInstanceIds,
         onWarning: options.onWarning,
         contributesAudio: options.contributesAudio,
+        cancellationSignal: options.cancellationSignal,
     });
 
     preFaderTap.connect(faderNode);

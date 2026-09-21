@@ -186,10 +186,23 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
-function assertDiscoveredCommandSchema(userMessage: string): void {
-    const discovery = getApplicationToolReceipts(userMessage).find(
-        (receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover'
-    );
+/** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
+function getReplayedToolReceipts(requestBody: string): unknown[] {
+    const request: unknown = JSON.parse(requestBody);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    return request.messages.flatMap((message: unknown) => {
+        if (!isRecord(message) || message.role !== 'tool' || typeof message.content !== 'string') {
+            return [];
+        }
+        const receipt: unknown = JSON.parse(message.content);
+        return [receipt];
+    });
+}
+
+function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
+    const discovery = receipts.find((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover');
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
@@ -293,7 +306,7 @@ function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => Provid
             );
         }
         webLlmAwaitingReceipt = false;
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
         return Promise.resolve(JSON.stringify(asCommandBatchProposal(userMessage, plan)));
     });
@@ -315,7 +328,7 @@ function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => Provid
         }
         hostedAwaitingReceipt = false;
         const userMessage = getHostedUserMessage(init.body);
-        assertDiscoveredCommandSchema(userMessage);
+        assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
         return Promise.resolve(toolCallsResponse(asCommandBatchProposal(userMessage, plan)));
     });
@@ -847,7 +860,8 @@ describe('whole-project vibe-mix planning', () => {
         expect(providerRequest).toContain('section-chorus-two');
         expect(providerRequest).toContain('baseRevision');
         expect(providerRequest).toContain('revision_and_selection');
-        expect(providerRequest).toContain('application-tool-loop');
+        // A replayed turn carries the loop's receipts as tool messages, not as evidence text.
+        expect(providerRequest).toContain('sourdaw.application-tool-receipt');
         expect(providerRequest).toContain('wholeProjectVibeMixCapability');
         expect(providerRequest).toContain('allowedRelativeGainDbValues');
         const confirmation = getPendingActionConfirmation(getConfirmationId());

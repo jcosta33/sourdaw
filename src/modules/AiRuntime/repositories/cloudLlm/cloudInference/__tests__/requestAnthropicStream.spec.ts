@@ -13,6 +13,7 @@ function input(onEvent = vi.fn()) {
         system: 'Be helpful.',
         messages: [{ role: 'user' as const, content: 'Hello' }],
         maxTokens: 128,
+        thinking: null,
         signal: new AbortController().signal,
         onEvent,
     };
@@ -46,6 +47,37 @@ describe('requestAnthropicStream', () => {
         }
         const body = JSON.parse(call.body) as { system: Array<{ type: string; text: string }> };
         expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.' }]);
+    });
+
+    it('omits the thinking key entirely when the caller configured none', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode('data: {"type":"message_stop"}\n\n'));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+
+        await requestAnthropicStream(input());
+
+        const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!call) {
+            throw new Error('Expected a recorded provider request');
+        }
+        expect('thinking' in (JSON.parse(call.body) as Record<string, unknown>)).toBe(false);
+    });
+
+    it('sends the thinking object the caller sized its output budget for', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode('data: {"type":"message_stop"}\n\n'));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+
+        await requestAnthropicStream({ ...input(), thinking: { type: 'enabled', budget_tokens: 1024 } });
+
+        const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!call) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(call.body) as { thinking: unknown };
+        expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
     });
 
     it('never marks the system block cacheable — this path always carries per-turn content', async () => {

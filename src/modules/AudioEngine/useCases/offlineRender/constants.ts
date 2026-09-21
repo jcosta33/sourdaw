@@ -92,12 +92,6 @@ export const NO_PROGRESS_POLL_MS = 1_000;
 
 export const YIELD_EVERY_N_NOTES = 200;
 
-/**
- * Maximum OfflineAudioContext frame length. Chrome enforces 2^30; Firefox is
- * higher but we cap conservatively to avoid OOM on both.
- */
-export const MAX_OFFLINE_FRAMES = 2 ** 30;
-
 /** Web Audio render quantum. `suspend()` only accepts times on this frame grid. */
 export const RENDER_QUANTUM_FRAMES = 128;
 

@@ -8,6 +8,7 @@ import {
     realpathSync,
     renameSync,
     rmSync,
+    symlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -744,6 +745,8 @@ describe('resource CLI', () => {
                 command: 'pnpm',
                 args: ['test'],
                 recover: false,
+                lintTargetReplacements: [],
+                originalCwd: undefined,
             }
         );
     });
@@ -751,6 +754,33 @@ describe('resource CLI', () => {
     it('parses an explicit memory estimate', () => {
         expect(parseCliArgs(['--max-rss-mib', '6144', '--', 'pnpm', 'test']).maxRssBytes).toBe(6144 * 1024 ** 2);
         expect(() => parseCliArgs(['--max-rss-mib', '511', '--', 'pnpm', 'test'])).toThrow(/at least 512/);
+    });
+
+    it('parses repeated recovery lint-target replacements only with --recover', () => {
+        expect(
+            parseCliArgs([
+                '--recover',
+                '--replace-lint-target',
+                'src/old.ts=src/new.ts',
+                '--replace-lint-target',
+                'src/other.ts=src/moved.ts',
+            ]).lintTargetReplacements
+        ).toEqual([
+            { oldTarget: 'src/old.ts', newTarget: 'src/new.ts' },
+            { oldTarget: 'src/other.ts', newTarget: 'src/moved.ts' },
+        ]);
+        expect(() =>
+            parseCliArgs(['--replace-lint-target', 'src/old.ts=src/new.ts', '--', 'pnpm', 'lint', 'src/old.ts'])
+        ).toThrow(/requires --recover/);
+        expect(() => parseCliArgs(['--recover', '--replace-lint-target'])).toThrow(/requires OLD=NEW/);
+    });
+
+    it('parses an explicit original cwd only with --recover', () => {
+        expect(parseCliArgs(['--recover', '--original-cwd', '/repo/lane']).originalCwd).toBe('/repo/lane');
+        expect(() => parseCliArgs(['--original-cwd', '/repo/lane', '--', 'pnpm', 'lint', 'src/x.ts'])).toThrow(
+            /requires --recover/
+        );
+        expect(() => parseCliArgs(['--recover', '--original-cwd'])).toThrow(/requires a directory/);
     });
 
     it('stays available as the opt-in guard script', () => {
@@ -1052,19 +1082,52 @@ describe('pnpm modules preflight', () => {
         expect(laneProbed).toBe(false);
     });
 
-    it('refuses a --recover re-execution before the recovery runs', async () => {
+    it('preflights the recorded cwd before a --recover re-execution', async () => {
+        const repoRoot = fixtureRoot('recover-preflight');
+        const laneName = 'agent-recover-preflight';
+        const worktreePath = join(repoRoot, '.agents', 'worktrees', laneName);
+        const originalCwd = join(worktreePath, 'src', 'nested');
+        mkdirSync(originalCwd, { recursive: true });
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/recover-preflight',
+            headSha: '1212121212121212121212121212121212121212',
+            worktreePath,
+        };
+        writeGuardFailureReceipt(repoRoot, {
+            version: 1,
+            lane: laneName,
+            branch: lane.branch,
+            headSha: lane.headSha,
+            failedAt: '2026-09-20T12:00:00.000Z',
+            reason: 'memory',
+            command: 'pnpm',
+            args: ['lint', 'src/x.ts'],
+            cwd: realpathSync(originalCwd),
+            profile: 'focused',
+            peakRssBytes: 5 * 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 100,
+        });
         const errors: string[] = [];
 
-        const code = await runGuardCli(['--recover'], {
-            detectLane: () => undefined,
-            assertModulesPreflight: () => {
-                throw new Error('refusing: foreign pnpm install record');
-            },
-            error: (message) => errors.push(message),
-        });
+        try {
+            const code = await runGuardCli(['--recover'], {
+                cwd: worktreePath,
+                detectLane: () => lane,
+                assertModulesPreflight: (cwd) => {
+                    expect(cwd).toBe(realpathSync(originalCwd));
+                    throw new Error('refusing: foreign pnpm install record');
+                },
+                error: (message) => errors.push(message),
+            });
 
-        expect(code).toBe(1);
-        expect(errors).toEqual(['refusing: foreign pnpm install record']);
+            expect(code).toBe(1);
+            expect(errors).toEqual(['refusing: foreign pnpm install record']);
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
     });
 
     it('wires the real preflight by default and stands down outside a git checkout', async () => {
@@ -1111,6 +1174,8 @@ describe('guard failure stop enforcement', () => {
             command: '',
             args: [],
             recover: true,
+            lintTargetReplacements: [],
+            originalCwd: undefined,
         });
 
         expect(parseCliArgs(['--recover', '--max-rss-mib', '2048', '--show-output'])).toEqual({
@@ -1122,6 +1187,8 @@ describe('guard failure stop enforcement', () => {
             command: '',
             args: [],
             recover: true,
+            lintTargetReplacements: [],
+            originalCwd: undefined,
         });
 
         expect(parseCliArgs(['--profile', 'broad', '--recover'])).toEqual({
@@ -1133,6 +1200,8 @@ describe('guard failure stop enforcement', () => {
             command: '',
             args: [],
             recover: true,
+            lintTargetReplacements: [],
+            originalCwd: undefined,
         });
     });
 
@@ -1302,6 +1371,7 @@ describe('guard failure stop enforcement', () => {
             headSha,
             worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
         };
+        mkdirSync(lane.worktreePath, { recursive: true });
 
         const logs: string[] = [];
         const errors: string[] = [];
@@ -1330,6 +1400,7 @@ describe('guard failure stop enforcement', () => {
                 expect(receipt?.headSha).toBe(headSha);
                 expect(receipt?.command).toBe('pnpm');
                 expect(receipt?.args).toEqual(['test:run', 'test.spec.ts']);
+                expect(receipt?.cwd).toBe(realpathSync(lane.worktreePath));
                 expect(errors).toContain(
                     `guard: recorded guard-failure receipt in ${GUARD_FAILURES_DIR}/${laneName}.json; lane is stopped`
                 );
@@ -1351,6 +1422,7 @@ describe('guard failure stop enforcement', () => {
             headSha,
             worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
         };
+        mkdirSync(lane.worktreePath, { recursive: true });
 
         const receipt: GuardFailureReceipt = {
             version: 1,
@@ -1361,6 +1433,7 @@ describe('guard failure stop enforcement', () => {
             reason: 'memory',
             command: 'pnpm',
             args: ['test:run', 'test.spec.ts'],
+            cwd: realpathSync(lane.worktreePath),
             profile: 'focused',
             peakRssBytes: 5 * 1024 ** 3,
             maxRssBytes: 4 * 1024 ** 3,
@@ -1406,6 +1479,7 @@ describe('guard failure stop enforcement', () => {
             headSha: newHeadSha,
             worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
         };
+        mkdirSync(lane.worktreePath, { recursive: true });
 
         const receipt: GuardFailureReceipt = {
             version: 1,
@@ -1416,6 +1490,7 @@ describe('guard failure stop enforcement', () => {
             reason: 'timeout',
             command: 'pnpm',
             args: ['test:run', 'test.spec.ts'],
+            cwd: realpathSync(lane.worktreePath),
             profile: 'focused',
             peakRssBytes: 1024 ** 3,
             maxRssBytes: 4 * 1024 ** 3,
@@ -1448,7 +1523,7 @@ describe('guard failure stop enforcement', () => {
         }
     });
 
-    it('does not clear receipt when headSha changes but verification command differs from failed command, and clears it once matching command succeeds', async () => {
+    it('clears a changed-head receipt only when both the command and original cwd match', async () => {
         const repoRoot = fixtureRoot('lane-mismatched-command');
         const laneName = 'agent-108-mismatch';
         const oldHeadSha = '5555555555555555555555555555555555555555';
@@ -1461,6 +1536,8 @@ describe('guard failure stop enforcement', () => {
             headSha: newHeadSha,
             worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
         };
+        const nestedCwd = join(lane.worktreePath, 'src', 'nested');
+        mkdirSync(nestedCwd, { recursive: true });
 
         const receipt: GuardFailureReceipt = {
             version: 1,
@@ -1471,6 +1548,7 @@ describe('guard failure stop enforcement', () => {
             reason: 'timeout',
             command: 'pnpm',
             args: ['test:run', 'test.spec.ts'],
+            cwd: realpathSync(lane.worktreePath),
             profile: 'focused',
             peakRssBytes: 1024 ** 3,
             maxRssBytes: 4 * 1024 ** 3,
@@ -1488,20 +1566,328 @@ describe('guard failure stop enforcement', () => {
             expect(code1).toBe(0);
             expect(readGuardFailureReceipt(repoRoot, laneName)).toBeDefined();
 
-            // Matching command succeeds under new headSha: receipt SHOULD be cleared
+            // Matching command from another directory succeeds but does not prove the failed invocation.
             const code2 = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
-                cwd: lane.worktreePath,
+                cwd: nestedCwd,
                 detectLane: () => lane,
                 runCommand: async () => fakeResult({ code: 0 }),
             });
             expect(code2).toBe(0);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeDefined();
+
+            // Matching command from the original directory discharges the stopped receipt.
+            const code3 = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => fakeResult({ code: 0 }),
+            });
+            expect(code3).toBe(0);
             expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
         } finally {
             rmSync(repoRoot, { recursive: true, force: true });
         }
     });
 
+    it('does not implicitly clear a changed-head legacy receipt with ambiguous cwd identity', async () => {
+        const repoRoot = fixtureRoot('legacy-implicit-clear');
+        const laneName = 'agent-legacy-implicit-clear';
+        const worktreePath = join(repoRoot, '.agents', 'worktrees', laneName);
+        mkdirSync(worktreePath, { recursive: true });
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/legacy-implicit-clear',
+            headSha: '6666666666666666666666666666666666666666',
+            worktreePath,
+        };
+        writeGuardFailureReceipt(repoRoot, {
+            version: 1,
+            lane: laneName,
+            branch: lane.branch,
+            headSha: '5555555555555555555555555555555555555555',
+            failedAt: '2026-09-07T12:00:00.000Z',
+            reason: 'timeout',
+            command: 'pnpm',
+            args: ['test:run', 'test.spec.ts'],
+            profile: 'focused',
+            peakRssBytes: 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 600_000,
+        });
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: worktreePath,
+                detectLane: () => lane,
+                runCommand: async () => fakeResult({ code: 0 }),
+            });
+
+            expect(code).toBe(0);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeDefined();
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
     describe('--recover workflow', () => {
+        type LintRecoveryFixture = {
+            repoRoot: string;
+            worktreePath: string;
+            lane: DetectedLane;
+            receipt: GuardFailureReceipt;
+            oldTarget: string;
+            newTarget: string;
+            retainedTarget: string;
+        };
+
+        function createLintRecoveryFixture(label: string): LintRecoveryFixture {
+            const repoRoot = fixtureRoot(label);
+            const laneName = `agent-${label}`;
+            const worktreePath = join(repoRoot, '.agents', 'worktrees', laneName);
+            const oldTarget = 'src/models/oldInput.ts';
+            const newTarget = 'src/useCases/oldInput.ts';
+            const retainedTarget = 'src/useCases/retainedInput.ts';
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: `agent/${label}`,
+                headSha: '8787878787878787878787878787878787878787',
+                worktreePath,
+            };
+            mkdirSync(join(worktreePath, 'src', 'models'), { recursive: true });
+            mkdirSync(join(worktreePath, 'src', 'useCases'), { recursive: true });
+            writeFileSync(
+                join(worktreePath, 'package.json'),
+                JSON.stringify({ name: `guard-${label}`, private: true })
+            );
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: lane.branch,
+                headSha: lane.headSha,
+                failedAt: '2026-09-20T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['lint', oldTarget, retainedTarget],
+                cwd: realpathSync(worktreePath),
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 1200,
+            };
+            writeFileSync(join(worktreePath, newTarget), 'export {}');
+            writeFileSync(join(worktreePath, retainedTarget), 'export {}');
+            return { repoRoot, worktreePath, lane, receipt, oldTarget, newTarget, retainedTarget };
+        }
+
+        function writeLintProbePackage(packageDirectory: string, name: string): void {
+            writeFileSync(
+                join(packageDirectory, 'package.json'),
+                JSON.stringify({ name, private: true, scripts: { lint: 'node lint-probe.cjs' } })
+            );
+            writeFileSync(
+                join(packageDirectory, 'lint-probe.cjs'),
+                [
+                    "const { existsSync, writeFileSync } = require('node:fs');",
+                    'const args = process.argv.slice(2);',
+                    'const allTargetsExist = args.every((target) => existsSync(target));',
+                    "writeFileSync('observed.json', JSON.stringify({ cwd: process.cwd(), args, allTargetsExist }));",
+                    'if (!allTargetsExist) process.exitCode = 2;',
+                ].join('\n')
+            );
+        }
+
+        it('refuses a mapping that leaves the package-root lint target present', async () => {
+            const fixture = createLintRecoveryFixture('package-root-target-present');
+            const nestedCwd = join(fixture.worktreePath, 'nested');
+            mkdirSync(join(nestedCwd, 'src', 'useCases'), { recursive: true });
+            writeFileSync(join(nestedCwd, fixture.newTarget), 'export {}');
+            writeFileSync(join(nestedCwd, fixture.retainedTarget), 'export {}');
+            writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
+            writeLintProbePackage(fixture.worktreePath, 'guard-package-root-target-probe');
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(nestedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: nestedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(existsSync(join(fixture.worktreePath, 'observed.json'))).toBe(false);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses a pnpm package.yaml prefix before the child can clear the receipt', async () => {
+            const fixture = createLintRecoveryFixture('package-yaml-prefix');
+            const nestedCwd = join(fixture.worktreePath, 'child');
+            mkdirSync(join(nestedCwd, 'src', 'models'), { recursive: true });
+            mkdirSync(join(nestedCwd, 'src', 'useCases'), { recursive: true });
+            writeFileSync(join(nestedCwd, fixture.oldTarget), 'export {}');
+            writeFileSync(join(nestedCwd, fixture.newTarget), 'export {}');
+            writeFileSync(join(nestedCwd, fixture.retainedTarget), 'export {}');
+            writeLintProbePackage(nestedCwd, 'guard-package-yaml-prefix');
+            renameSync(join(nestedCwd, 'package.json'), join(nestedCwd, 'package.yaml'));
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(nestedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: nestedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(errors[0]).toContain('package.yaml');
+                expect(existsSync(join(nestedCwd, 'observed.json'))).toBe(false);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each([
+            {
+                marker: 'package.json5',
+                arrange: (directory: string) => writeFileSync(join(directory, 'package.json5'), '{}'),
+            },
+            {
+                marker: 'node_modules',
+                arrange: (directory: string) => mkdirSync(join(directory, 'node_modules')),
+            },
+            {
+                marker: 'pnpm-workspace.yaml',
+                arrange: (directory: string) => writeFileSync(join(directory, 'pnpm-workspace.yaml'), 'packages: []\n'),
+            },
+        ])('refuses unsupported pnpm prefix marker $marker before spawning', async ({ marker, arrange }) => {
+            const fixture = createLintRecoveryFixture(`unsupported-prefix-${marker}`);
+            const nestedCwd = join(fixture.worktreePath, 'child');
+            mkdirSync(nestedCwd, { recursive: true });
+            arrange(nestedCwd);
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(nestedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: nestedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(marker);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each([
+            { label: 'lane-root package', packageDirectory: 'root' },
+            { label: 'nested workspace package', packageDirectory: 'nested' },
+        ] as const)('runs remapped lint targets from the $label owner', async ({ label, packageDirectory }) => {
+            const fixture = createLintRecoveryFixture(`package-owner-${packageDirectory}`);
+            const packageRoot =
+                packageDirectory === 'root' ? fixture.worktreePath : join(fixture.worktreePath, 'packages', 'child');
+            const recordedCwd = join(packageRoot, 'nested');
+            mkdirSync(join(recordedCwd, 'src'), { recursive: true });
+            if (packageDirectory === 'nested') {
+                writeFileSync(join(fixture.worktreePath, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n");
+                mkdirSync(join(packageRoot, 'src', 'useCases'), { recursive: true });
+                writeFileSync(join(packageRoot, fixture.newTarget), 'export {}');
+                writeFileSync(join(packageRoot, fixture.retainedTarget), 'export {}');
+                writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
+            }
+            writeLintProbePackage(packageRoot, `guard-package-owner-${packageDirectory}`);
+            writeGuardFailureReceipt(fixture.repoRoot, { ...fixture.receipt, cwd: realpathSync(recordedCwd) });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: recordedCwd,
+                        detectLane: () => fixture.lane,
+                        runCommand: async (input) => runIsolatedGuardedCommand(input),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code, label).toBe(0);
+                expect(JSON.parse(readFileSync(join(packageRoot, 'observed.json'), 'utf8'))).toEqual({
+                    cwd: realpathSync(packageRoot),
+                    args: [fixture.newTarget, fixture.retainedTarget],
+                    allTargetsExist: true,
+                });
+                expect(existsSync(receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses a lint-target replacement when the recorded cwd has no package owner', async () => {
+            const fixture = createLintRecoveryFixture('missing-package-owner');
+            rmSync(join(fixture.worktreePath, 'package.json'));
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            let commandRan = false;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('cannot resolve the pnpm package directory');
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it('refuses --recover outside an author worktree', async () => {
             const errors: string[] = [];
             const code = await runGuardCli(['--recover'], {
@@ -1537,6 +1923,223 @@ describe('guard failure stop enforcement', () => {
             }
         });
 
+        it('refuses a lint-target replacement when no recovery receipt exists', async () => {
+            const fixture = createLintRecoveryFixture('recover-replacement-none');
+            let commandRan = false;
+            const errors: string[] = [];
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult();
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors).toEqual(['--replace-lint-target requires an active pnpm lint guard-failure receipt']);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each([
+            { label: 'root-to-nested', original: 'root', recovery: 'nested' },
+            { label: 'nested-to-root', original: 'nested', recovery: 'root' },
+        ] as const)(
+            'preserves the producer cwd and every recorded lint argument during $label recovery',
+            async ({ label, original, recovery }) => {
+                const repoRoot = fixtureRoot(`recover-cwd-${label}`);
+                const laneName = `agent-recover-cwd-${label}`;
+                const worktreePath = join(repoRoot, '.agents', 'worktrees', laneName);
+                const nestedCwd = join(worktreePath, 'src', 'nested');
+                mkdirSync(nestedCwd, { recursive: true });
+                const originalCwd = original === 'root' ? worktreePath : nestedCwd;
+                const recoveryCwd = recovery === 'root' ? worktreePath : nestedCwd;
+                const oldTarget = original === 'root' ? 'src/models/oldInput.ts' : 'oldInput.ts';
+                const newTarget = original === 'root' ? 'src/useCases/oldInput.ts' : 'movedInput.ts';
+                const retainedTarget = original === 'root' ? 'src/useCases/retainedInput.ts' : 'retainedInput.ts';
+                mkdirSync(join(worktreePath, 'src', 'models'), { recursive: true });
+                mkdirSync(join(worktreePath, 'src', 'useCases'), { recursive: true });
+                writeFileSync(
+                    join(originalCwd, 'package.json'),
+                    JSON.stringify({ name: `guard-${label}`, private: true })
+                );
+                writeFileSync(join(originalCwd, oldTarget), 'export {}');
+                writeFileSync(join(originalCwd, retainedTarget), 'export {}');
+                let headSha = '1111111111111111111111111111111111111111';
+                const detectLane = (): DetectedLane => ({
+                    primaryRoot: repoRoot,
+                    laneName,
+                    branch: `agent/${label}`,
+                    headSha,
+                    worktreePath,
+                });
+
+                try {
+                    const stopped = await runGuardCli(['--', 'pnpm', 'lint', oldTarget, retainedTarget, '--fix'], {
+                        cwd: originalCwd,
+                        detectLane,
+                        runCommand: async () => fakeResult({ code: 0, reason: 'memory' }),
+                        assertModulesPreflight: () => undefined,
+                    });
+                    expect(stopped).toBe(1);
+                    const produced = readGuardFailureReceipt(repoRoot, laneName) as
+                        (GuardFailureReceipt & { cwd: string }) | undefined;
+                    expect(produced?.cwd).toBe(realpathSync(originalCwd));
+                    expect(produced?.args).toEqual(['lint', oldTarget, retainedTarget, '--fix']);
+
+                    rmSync(join(originalCwd, oldTarget));
+                    writeFileSync(join(originalCwd, newTarget), 'export {}');
+                    headSha = '2222222222222222222222222222222222222222';
+                    const preflightCwds: string[] = [];
+                    let replayInput: Parameters<typeof runGuardedCommand>[0] | undefined;
+                    const recovered = await runGuardCli(
+                        ['--recover', '--replace-lint-target', `${oldTarget}=${newTarget}`],
+                        {
+                            cwd: recoveryCwd,
+                            detectLane,
+                            assertModulesPreflight: (cwd) => preflightCwds.push(cwd),
+                            runCommand: async (input) => {
+                                replayInput = input;
+                                return fakeResult({ code: 0 });
+                            },
+                        }
+                    );
+
+                    expect(recovered).toBe(0);
+                    expect(preflightCwds).toEqual([realpathSync(originalCwd)]);
+                    expect(replayInput?.cwd).toBe(realpathSync(originalCwd));
+                    expect(replayInput?.args).toEqual(['lint', newTarget, retainedTarget, '--fix']);
+                    expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+                } finally {
+                    rmSync(repoRoot, { recursive: true, force: true });
+                }
+            }
+        );
+
+        it('refuses an ambiguous legacy receipt until its original cwd is explicitly attested', async () => {
+            const fixture = createLintRecoveryFixture('legacy-no-cwd');
+            delete fixture.receipt.cwd;
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            let commandRan = false;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.worktreePath,
+                    detectLane: () => fixture.lane,
+                    assertModulesPreflight: () => undefined,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('legacy guard-failure receipt requires --original-cwd');
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses a conflicting original-cwd attestation without changing the receipt', async () => {
+            const fixture = createLintRecoveryFixture('conflicting-cwd');
+            const nestedCwd = join(fixture.worktreePath, 'src');
+            writeGuardFailureReceipt(fixture.repoRoot, {
+                ...fixture.receipt,
+                cwd: realpathSync(fixture.worktreePath),
+            });
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            let commandRan = false;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--original-cwd', nestedCwd], {
+                    cwd: fixture.worktreePath,
+                    detectLane: () => fixture.lane,
+                    assertModulesPreflight: () => undefined,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('--original-cwd conflicts with recorded cwd');
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('recovers a legacy receipt from an explicitly attested in-lane original cwd', async () => {
+            const fixture = createLintRecoveryFixture('legacy-attested-cwd');
+            delete fixture.receipt.cwd;
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const preflightCwds: string[] = [];
+            let childCwd: string | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover', '--original-cwd', fixture.worktreePath], {
+                    cwd: join(fixture.worktreePath, 'src'),
+                    detectLane: () => fixture.lane,
+                    assertModulesPreflight: (cwd) => preflightCwds.push(cwd),
+                    runCommand: async (input) => {
+                        childCwd = input.cwd;
+                        return fakeResult({ code: 0 });
+                    },
+                });
+
+                expect(code).toBe(0);
+                expect(preflightCwds).toEqual([realpathSync(fixture.worktreePath)]);
+                expect(childCwd).toBe(realpathSync(fixture.worktreePath));
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.lane.laneName)).toBeUndefined();
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses a legacy original-cwd attestation outside the exact author lane', async () => {
+            const fixture = createLintRecoveryFixture('legacy-outside-cwd');
+            delete fixture.receipt.cwd;
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover', '--original-cwd', fixture.repoRoot], {
+                    cwd: fixture.worktreePath,
+                    detectLane: () => fixture.lane,
+                    assertModulesPreflight: () => undefined,
+                    runCommand: async () => fakeResult({ code: 0 }),
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(errors[0]).toContain('--original-cwd is outside the author lane');
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
         it('re-executes receipt command on --recover and clears receipt on success', async () => {
             const repoRoot = fixtureRoot('recover-success');
             const laneName = 'agent-105-recover';
@@ -1548,6 +2151,7 @@ describe('guard failure stop enforcement', () => {
                 headSha,
                 worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
             };
+            mkdirSync(lane.worktreePath, { recursive: true });
 
             const receipt: GuardFailureReceipt = {
                 version: 1,
@@ -1558,6 +2162,7 @@ describe('guard failure stop enforcement', () => {
                 reason: 'memory',
                 command: 'pnpm',
                 args: ['test:run', 'heavy.spec.ts'],
+                cwd: realpathSync(lane.worktreePath),
                 profile: 'focused',
                 peakRssBytes: 5 * 1024 ** 3,
                 maxRssBytes: 4 * 1024 ** 3,
@@ -1568,6 +2173,7 @@ describe('guard failure stop enforcement', () => {
             let capturedCommand: string | undefined;
             let capturedArgs: string[] | undefined;
             let capturedMaxRss: number | undefined;
+            let capturedCwd: string | undefined;
             const logs: string[] = [];
 
             try {
@@ -1578,6 +2184,7 @@ describe('guard failure stop enforcement', () => {
                         capturedCommand = input.command;
                         capturedArgs = input.args;
                         capturedMaxRss = input.maxRssBytes;
+                        capturedCwd = input.cwd;
                         return fakeResult({ code: 0, peakRssBytes: 5.5 * 1024 ** 3 });
                     },
                     log: (msg) => logs.push(msg),
@@ -1587,6 +2194,7 @@ describe('guard failure stop enforcement', () => {
                 expect(capturedCommand).toBe('pnpm');
                 expect(capturedArgs).toEqual(['test:run', 'heavy.spec.ts']);
                 expect(capturedMaxRss).toBe(6144 * 1024 ** 2);
+                expect(capturedCwd).toBe(realpathSync(lane.worktreePath));
                 expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
                 expect(logs).toContain(`guard: recovery succeeded; guard-failure receipt cleared for lane ${laneName}`);
             } finally {
@@ -1594,7 +2202,272 @@ describe('guard failure stop enforcement', () => {
             }
         });
 
-        it('retains updated receipt when --recover run fails', async () => {
+        it('replays every recorded lint target after an explicit missing-file replacement', async () => {
+            const repoRoot = fixtureRoot('recover-renamed-lint-target');
+            const laneName = 'agent-105-renamed-lint-target';
+            const worktreePath = join(repoRoot, '.agents', 'worktrees', laneName);
+            const oldTarget = 'src/models/oldInput.ts';
+            const newTarget = 'src/useCases/oldInput.ts';
+            const otherOldTarget = 'src/models/otherInput.ts';
+            const otherNewTarget = 'src/useCases/otherInput.ts';
+            const retainedTarget = 'scripts/resourceGuard.ts';
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: 'agent/105/renamed-lint-target',
+                headSha: '8989898989898989898989898989898989898989',
+                worktreePath,
+            };
+            mkdirSync(join(worktreePath, 'src', 'useCases'), { recursive: true });
+            mkdirSync(join(worktreePath, 'scripts'), { recursive: true });
+            writeFileSync(
+                join(worktreePath, 'package.json'),
+                JSON.stringify({ name: 'guard-recover-renamed-lint-target', private: true })
+            );
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: lane.branch,
+                headSha: lane.headSha,
+                failedAt: '2026-09-20T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['lint', oldTarget, retainedTarget, otherOldTarget, '--fix'],
+                cwd: realpathSync(worktreePath),
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 1200,
+            };
+            writeFileSync(join(worktreePath, newTarget), 'export {}');
+            writeFileSync(join(worktreePath, otherNewTarget), 'export {}');
+            writeFileSync(join(worktreePath, retainedTarget), 'export {}');
+            writeGuardFailureReceipt(repoRoot, receipt);
+
+            let capturedArgs: string[] | undefined;
+            const logs: string[] = [];
+            try {
+                const code = await runGuardCli(
+                    [
+                        '--recover',
+                        '--replace-lint-target',
+                        `${oldTarget}=${newTarget}`,
+                        '--replace-lint-target',
+                        `${otherOldTarget}=${otherNewTarget}`,
+                    ],
+                    {
+                        cwd: worktreePath,
+                        detectLane: () => lane,
+                        runCommand: async (input) => {
+                            capturedArgs = input.args;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        log: (message) => logs.push(message),
+                    }
+                );
+
+                expect(code).toBe(0);
+                expect(capturedArgs).toEqual(['lint', newTarget, retainedTarget, otherNewTarget, '--fix']);
+                expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+                expect(logs).toContain(`guard: recovery lint target '${oldTarget}' -> '${newTarget}'`);
+                expect(logs).toContain(`guard: recovery lint target '${otherOldTarget}' -> '${otherNewTarget}'`);
+            } finally {
+                rmSync(repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it.each<{
+            label: string;
+            arrange: (fixture: LintRecoveryFixture) => string[];
+        }>([
+            {
+                label: 'still-existing-old',
+                arrange: (fixture) => {
+                    writeFileSync(join(fixture.worktreePath, fixture.oldTarget), 'export {}');
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'package-manifest-directory',
+                arrange: (fixture) => {
+                    rmSync(join(fixture.worktreePath, 'package.json'));
+                    mkdirSync(join(fixture.worktreePath, 'package.json'));
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'missing-new',
+                arrange: (fixture) => {
+                    rmSync(join(fixture.worktreePath, fixture.newTarget));
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'directory-new',
+                arrange: (fixture) => {
+                    rmSync(join(fixture.worktreePath, fixture.newTarget));
+                    mkdirSync(join(fixture.worktreePath, fixture.newTarget));
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'traversal-old',
+                arrange: (fixture) => {
+                    fixture.receipt.args = ['lint', '../oldInput.ts', fixture.retainedTarget];
+                    return [`../oldInput.ts=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'absolute-new-outside-lane',
+                arrange: (fixture) => {
+                    const outside = join(fixture.repoRoot, 'outside.ts');
+                    writeFileSync(outside, 'export {}');
+                    return [`${fixture.oldTarget}=${outside}`];
+                },
+            },
+            {
+                label: 'symlink-new-escape',
+                arrange: (fixture) => {
+                    const outside = join(fixture.repoRoot, 'outside.ts');
+                    writeFileSync(outside, 'export {}');
+                    rmSync(join(fixture.worktreePath, fixture.newTarget));
+                    symlinkSync(outside, join(fixture.worktreePath, fixture.newTarget));
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'glob-old',
+                arrange: (fixture) => {
+                    fixture.receipt.args = ['lint', 'src/models/*.ts', fixture.retainedTarget];
+                    return [`src/models/*.ts=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'flag-old',
+                arrange: (fixture) => {
+                    fixture.receipt.args = ['lint', '-old.ts', fixture.retainedTarget];
+                    return [`-old.ts=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'unrecorded-old',
+                arrange: (fixture) => [`src/models/unrelated.ts=${fixture.newTarget}`],
+            },
+            {
+                label: 'non-lint-receipt',
+                arrange: (fixture) => {
+                    fixture.receipt.args = ['test:run', fixture.oldTarget];
+                    return [`${fixture.oldTarget}=${fixture.newTarget}`];
+                },
+            },
+            {
+                label: 'duplicate-old-mapping',
+                arrange: (fixture) => [
+                    `${fixture.oldTarget}=${fixture.newTarget}`,
+                    `${fixture.oldTarget}=${fixture.newTarget}`,
+                ],
+            },
+            {
+                label: 'new-aliases-retained-target',
+                arrange: (fixture) => [`${fixture.oldTarget}=${fixture.retainedTarget}`],
+            },
+            {
+                label: 'different-extension',
+                arrange: (fixture) => {
+                    const differentExtension = 'src/useCases/oldInput.tsx';
+                    writeFileSync(join(fixture.worktreePath, differentExtension), 'export {}');
+                    return [`${fixture.oldTarget}=${differentExtension}`];
+                },
+            },
+        ])('rejects invalid lint-target recovery mapping: $label', async ({ label, arrange }) => {
+            const fixture = createLintRecoveryFixture(`invalid-${label}`);
+            const mappings = arrange(fixture);
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+            let commandRan = false;
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', ...mappings.flatMap((mapping) => ['--replace-lint-target', mapping])],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => {
+                            commandRan = true;
+                            return fakeResult({ code: 0 });
+                        },
+                        assertModulesPreflight: () => undefined,
+                        error: (message) => errors.push(message),
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('--replace-lint-target');
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('keeps the original receipt byte-identical when remapped lint recovery fails', async () => {
+            const fixture = createLintRecoveryFixture('mapped-failure');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () =>
+                            fakeResult({
+                                code: 1,
+                                reason: 'memory',
+                                peakRssBytes: 6 * 1024 ** 3,
+                                durationMs: 1500,
+                            }),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('keeps the original receipt byte-identical when remapped lint recovery stops with code zero', async () => {
+            const fixture = createLintRecoveryFixture('mapped-stop-code-zero');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const receiptPath = guardFailureReceiptPath(fixture.repoRoot, fixture.lane.laneName);
+            const originalReceipt = readFileSync(receiptPath, 'utf8');
+
+            try {
+                const code = await runGuardCli(
+                    ['--recover', '--replace-lint-target', `${fixture.oldTarget}=${fixture.newTarget}`],
+                    {
+                        cwd: fixture.worktreePath,
+                        detectLane: () => fixture.lane,
+                        runCommand: async () => fakeResult({ code: 0, reason: 'memory' }),
+                        assertModulesPreflight: () => undefined,
+                    }
+                );
+
+                expect(code).toBe(1);
+                expect(readFileSync(receiptPath, 'utf8')).toBe(originalReceipt);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('migrates attested legacy cwd identity when an ordinary recovery resource-stops', async () => {
             const repoRoot = fixtureRoot('recover-fail');
             const laneName = 'agent-106-recover-fail';
             const headSha = '9999999999999999999999999999999999999999';
@@ -1605,6 +2478,7 @@ describe('guard failure stop enforcement', () => {
                 headSha,
                 worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
             };
+            mkdirSync(lane.worktreePath, { recursive: true });
 
             const receipt: GuardFailureReceipt = {
                 version: 1,
@@ -1623,19 +2497,22 @@ describe('guard failure stop enforcement', () => {
             writeGuardFailureReceipt(repoRoot, receipt);
 
             const errors: string[] = [];
+            let childCwd: string | undefined;
 
             try {
-                const code = await runGuardCli(['--recover'], {
+                const code = await runGuardCli(['--recover', '--original-cwd', lane.worktreePath], {
                     cwd: lane.worktreePath,
                     detectLane: () => lane,
-                    runCommand: async () =>
-                        fakeResult({
+                    runCommand: async (input) => {
+                        childCwd = input.cwd;
+                        return fakeResult({
                             code: 1,
                             reason: 'memory',
                             peakRssBytes: 5.8 * 1024 ** 3,
                             maxRssBytes: 4 * 1024 ** 3,
                             durationMs: 1500,
-                        }),
+                        });
+                    },
                     error: (msg) => errors.push(msg),
                 });
 
@@ -1643,6 +2520,10 @@ describe('guard failure stop enforcement', () => {
                 const updated = readGuardFailureReceipt(repoRoot, laneName);
                 expect(updated).toBeDefined();
                 expect(updated?.peakRssBytes).toBe(5.8 * 1024 ** 3);
+                expect(updated?.cwd).toBe(realpathSync(lane.worktreePath));
+                expect(updated?.command).toBe(receipt.command);
+                expect(updated?.args).toEqual(receipt.args);
+                expect(childCwd).toBe(realpathSync(lane.worktreePath));
                 expect(errors).toContain(`guard: recovery failed; lane ${laneName} remains stopped`);
             } finally {
                 rmSync(repoRoot, { recursive: true, force: true });
@@ -1660,6 +2541,7 @@ describe('guard failure stop enforcement', () => {
                 headSha,
                 worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
             };
+            mkdirSync(lane.worktreePath, { recursive: true });
 
             const receipt: GuardFailureReceipt = {
                 version: 1,
@@ -1670,6 +2552,7 @@ describe('guard failure stop enforcement', () => {
                 reason: 'memory',
                 command: 'pnpm',
                 args: ['test:run', 'heavy.spec.ts'],
+                cwd: realpathSync(lane.worktreePath),
                 profile: 'broad',
                 peakRssBytes: 5 * 1024 ** 3,
                 maxRssBytes: 4 * 1024 ** 3,

@@ -135,6 +135,31 @@ describe('getCompensationDelay with engine-hosted strips', () => {
         clearAllReportedLatency();
     });
 
+    it('uses captured routing and latency facts for hosted subtraction after the live session is replaced', () => {
+        const input = {
+            tracks: [
+                makeTrack({
+                    id: 'guitar',
+                    outputId: 'bus',
+                    devices: [{ id: 'native', type: ENGINE_COMPENSATED_TYPE }],
+                }),
+                makeTrack({ id: 'bus', devices: [{ id: 'effect' }] }),
+                makeTrack({ id: 'drums' }),
+            ],
+            routes: [],
+            deviceLatencyMs: new Map([
+                ['native', 40],
+                ['effect', 10],
+            ]),
+        };
+        mockTrackStore.value = { tracks: [makeTrack({ id: 'unrelated' })] };
+        reportLatency('native', 900);
+        reportLatency('effect', 800);
+        expect(getCompensationDelay('drums', undefined, undefined, input)).toBe(0.05);
+        expect(getCompensationDelay('drums', undefined, new Set(['guitar']), input)).toBe(0.01);
+        expect(getCompensationDelay('guitar', undefined, new Set(['guitar']), input)).toBe(0);
+    });
+
     it('counts an engine-compensated device on every strip when no strip is engine-hosted', () => {
         setUpEngineCompensatedProject();
 

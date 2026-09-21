@@ -153,8 +153,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // mentions of `updateDeviceParam` explaining why the offline scheduler
         // passes the quantiser as `quantiseEmit` rather than folding it into
         // `clampStep`, naming the live `applyAutomation` delivery this offline
-        // path mirrors. The repository schedules AudioParams and worklet
-        // segments; it holds no device write of its own.
+        // path mirrors. The repository does now carry a device write: the
+        // curve-write branch schedules the limiter ceiling's gain and clip
+        // curve through `applyLimiterCeilingWrite` on the render's frame
+        // scheduler — detail on the row that pins this file's count below.
+        // That write matches none of the identifiers this family's pattern
+        // names, so the row stays removed.
         // 'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': removed (0),
         // Count provenance: 0 in code, was 1 lexical — a doc-comment mention of
         // `updateDeviceParam` on the `quantiseEmit` option, naming the live call
@@ -591,10 +595,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        // The shared offline scheduler names its pure compilers four times in
-        // code; it schedules runtime events but does not write project device
-        // state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
+        // Count provenance (#4437): measured 6, was 4 — the two added
+        // occurrences are the `compileAutomationEvents` import the curve-write
+        // branch added and its single call, both bare `compile[A-Z]…`
+        // identifiers this family counts. Measured in code they are
+        // `compileAutomationEvents` three times (the identifier and the module
+        // path in that same import line, plus the call) and
+        // `compileAutomationSegments` three times (its identifier and module
+        // path in the older import line, plus its call). The ceiling write the
+        // branch schedules, `applyLimiterCeilingWrite`, is named by no pattern
+        // in this family, so it is not one of these six: the scheduler and
+        // device specs are what observe that the ceiling gain and the rebuilt
+        // `WaveShaper` clip curve are written. The file still writes no project
+        // device state.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 6,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
@@ -1001,6 +1015,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Project/models/AgentProjectModelContract.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
+        // Count provenance: measured 2 — `Device.parameterValues` and
+        // `RoleInput.track.devices` are type-only declarations. The classifier
+        // reads its supplied capture and reaches no store, Automerge, or action.
+        'src/modules/Project/useCases/getCanonicalTrackRole.ts': 2,
         'src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts': 3,
         'src/modules/Project/useCases/projectTemplates/templateFiles/cinematic.ts': 3,
         'src/modules/Project/useCases/projectTemplates/templateFiles/edm.ts': 4,

@@ -232,11 +232,18 @@ export const deviceTools: readonly ToolSchema[] = [
     ),
     tool(
         'setDeviceParameter',
-        'Adjust a parameter on an existing device.',
+        'Adjust one existing device parameter using its exact context device ID, parameter ID, native unit, and range.',
         {
             deviceId: { type: 'string' },
-            paramId: { type: 'string', description: 'Parameter name (e.g. "frequency", "ratio", "mix", "threshold")' },
-            value: { type: 'number', description: 'Parameter value (range depends on the parameter)' },
+            paramId: {
+                type: 'string',
+                description:
+                    'Exact parameter ID from context (for example eq-mid-freq, comp-ratio, rev-mix, or comp-threshold)',
+            },
+            value: {
+                type: 'number',
+                description: 'Value in the exact native unit and range declared for that context parameter',
+            },
         },
         ['deviceId', 'paramId', 'value']
     ),

@@ -192,6 +192,17 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
     const previousLlmStatus = llmStatusStore.value;
     llmStatusStore.set({ state: 'generating' });
     const thinkParser = createThinkBlockParser();
+    // Reasoning a provider streams as its own events, kept apart from the `<think>` block a
+    // model writes inside its answer text. A turn produces one form or the other; both are
+    // shown, the provider's own first.
+    let nativeReasoning = '';
+    const composeReasoning = (parsedReasoning: string | undefined): string | undefined => {
+        const streamed = nativeReasoning.trim();
+        if (streamed.length === 0) {
+            return parsedReasoning;
+        }
+        return parsedReasoning === undefined ? streamed : `${streamed}\n\n${parsedReasoning}`;
+    };
     let cloudOutcome: CloudChatCompletionOutcome | null = null;
     let webLlmIncompleteReason: string | null = null;
     let providerSession: ModelProviderSession | null = null;
@@ -321,7 +332,10 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                     }
                     activeProviderStreamWriter.push({ type: 'text', mode: 'delta', text: token });
                     const parsed = thinkParser.push(token);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+                    updateChatMessage(assistantMsgId, {
+                        content: parsed.content,
+                        reasoning: composeReasoning(parsed.reasoning),
+                    });
                 },
                 {
                     temperature: EXPLAIN_TEMPERATURE,
@@ -330,6 +344,18 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                     onUsage: (event) => activeProviderStreamWriter.push(event),
                     onUnknownEvent: (providerEventType) =>
                         activeProviderStreamWriter.push({ type: 'unknown', providerEventType }),
+                    onReasoning: (text) => {
+                        if (aborter.signal.aborted) {
+                            throw createAiRuntimeError('AbortedByUser');
+                        }
+                        activeProviderStreamWriter.push({ type: 'reasoning', mode: 'delta', text });
+                        nativeReasoning += text;
+                        const parsed = thinkParser.snapshot();
+                        updateChatMessage(assistantMsgId, {
+                            content: parsed.content,
+                            reasoning: composeReasoning(parsed.reasoning),
+                        });
+                    },
                 }
             );
         } else {
@@ -460,7 +486,8 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                       };
         }
         providerResult = activeProviderStreamWriter.finish(providerFinish);
-        const { reasoning, content: cleanContent } = thinkParser.snapshot();
+        const { reasoning: parsedReasoning, content: cleanContent } = thinkParser.snapshot();
+        const reasoning = composeReasoning(parsedReasoning);
         const incompleteFailure =
             providerResult.failure !== null &&
             (providerResult.status === 'partial' || providerResult.status === 'failed')
@@ -547,7 +574,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
                 content: parsed.content,
-                reasoning: parsed.reasoning,
+                reasoning: composeReasoning(parsed.reasoning),
                 error: 'Hosted AI configuration changed; this response was cancelled.',
             });
             llmStatusStore.set({ state: 'idle' });
@@ -575,7 +602,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
                 content: parsed.content,
-                reasoning: parsed.reasoning,
+                reasoning: composeReasoning(parsed.reasoning),
             });
             const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
             if (currentPreference !== 'auto' && currentPreference !== backend) {
@@ -614,7 +641,7 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                 content: persistenceWarning
                     ? `${providerFailureContent}\n\n_${persistenceWarning}_`
                     : providerFailureContent,
-                reasoning: parsed.reasoning,
+                reasoning: composeReasoning(parsed.reasoning),
             });
             llmStatusStore.set({ state: 'error', message: errorMessage });
         }

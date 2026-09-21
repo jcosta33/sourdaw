@@ -1,11 +1,69 @@
-import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
-import { prepareOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
-import { prepareOfflineLevain } from '#/modules/Levain/useCases';
-import { prepareOfflineProof } from '#/modules/Proof/useCases';
-import { prepareOfflineToaster } from '#/modules/Toaster/useCases';
+import { type Device } from '#/modules/Arrangement/stores';
+import { prepareCrumbsEngine, captureCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { prepareOfflineGrandBoule, captureOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
+import { prepareOfflineLevain, captureOfflineLevain } from '#/modules/Levain/useCases';
+import { prepareOfflineProof, captureOfflineProof } from '#/modules/Proof/useCases';
+import { prepareOfflineToaster, captureOfflineToaster } from '#/modules/Toaster/useCases';
 import { type NativeDspDeviceType, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
+type CapturedOfflineDeviceSetup =
+    | { kind: 'levain'; value: ReturnType<typeof captureOfflineLevain> }
+    | { kind: 'builtin-crumbs'; value: ReturnType<typeof captureCrumbsEngine> }
+    | { kind: 'proof'; value: ReturnType<typeof captureOfflineProof> }
+    | { kind: 'toaster'; value: ReturnType<typeof captureOfflineToaster> }
+    | { kind: 'grand-boule'; value: ReturnType<typeof captureOfflineGrandBoule> }
+    | { kind: 'none' };
+
+type OfflineDeviceProjectSource = {
+    projectOnly: true;
+    calibration: Readonly<Record<string, number>> | null;
+};
+
+/** Explicit project input suppresses live owner fallbacks for reused device identities. */
+export function captureOfflineDeviceSetup(
+    device: Device,
+    source?: OfflineDeviceProjectSource
+): CapturedOfflineDeviceSetup {
+    const deviceId = device.id;
+    const deviceState = device.deviceState;
+    switch (resolveNativeDspDeviceType(device.type)) {
+        case 'levain': {
+            const input: Parameters<typeof captureOfflineLevain>[0] = { deviceId, device };
+            if (source) {
+                input.state = null;
+            }
+            return { kind: 'levain', value: captureOfflineLevain(input) };
+        }
+        case 'builtin-crumbs': {
+            const input: Parameters<typeof captureCrumbsEngine>[0] = { deviceId, device };
+            if (source) {
+                input.state = null;
+            }
+            return { kind: 'builtin-crumbs', value: captureCrumbsEngine(input) };
+        }
+        case 'proof':
+            return { kind: 'proof', value: captureOfflineProof({ deviceId, device }) };
+        case 'toaster': {
+            const input: Parameters<typeof captureOfflineToaster>[0] = { deviceId, deviceState };
+            if (source) {
+                input.kit = null;
+            }
+            return { kind: 'toaster', value: captureOfflineToaster(input) };
+        }
+        case 'grand-boule': {
+            const input: Parameters<typeof captureOfflineGrandBoule>[0] = { deviceId, deviceState };
+            if (source) {
+                input.calibration = source.calibration;
+            }
+            return { kind: 'grand-boule', value: captureOfflineGrandBoule(input) };
+        }
+        default:
+            return { kind: 'none' };
+    }
+}
+
 export type PrepareOfflineDeviceSetupInput = {
+    captured?: CapturedOfflineDeviceSetup;
     /** Id of the device being rendered; keys the project state that configures it. */
     deviceId: string;
     /** Device type, as the offline chain read it off the project. */
@@ -52,10 +110,22 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // Its per-pad kit — engine type, tuning, decay, tone, drive, filtering, sends
     // — is pushed after construction and is not in `parameterValues`, so an export
     // rendered the engine's built-in kit: right notes, wrong drums.
-    toaster: ({ deviceId, deviceState, port }) => prepareOfflineToaster({ deviceId, deviceState, port }),
+    toaster: ({ deviceId, deviceState, port, captured }) => {
+        const input: Parameters<typeof prepareOfflineToaster>[0] = { deviceId, deviceState, port };
+        if (captured?.kind === 'toaster') {
+            input.captured = captured.value;
+        }
+        return prepareOfflineToaster(input);
+    },
     // The only entry that fetches: its sample zones come over the network, so it
     // is also the only one that needs the abort signal.
-    levain: ({ deviceId, port, signal }) => prepareOfflineLevain({ deviceId, port, signal }),
+    levain: ({ deviceId, port, signal, captured }) => {
+        const input: Parameters<typeof prepareOfflineLevain>[0] = { deviceId, port, signal };
+        if (captured?.kind === 'levain') {
+            input.captured = captured.value;
+        }
+        return prepareOfflineLevain(input);
+    },
     // Emphatically not `null`. A `CrumbsInstance` is constructed with an empty
     // sample pool, and `CrumbsEngine::note_on` returns before allocating a voice
     // when there is no active sample — so an unhydrated Crumbs renders digital
@@ -74,15 +144,25 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // so markers change no rendered sample in the session either. Hydrating them
     // here would make the export differ from live — the same trap as Toaster's
     // kit above. They belong here once the engine consumes them, not before.
-    'builtin-crumbs': async ({ deviceId, port, signal }) => {
-        const outcome = await prepareCrumbsEngine({ deviceId, port, signal });
+    'builtin-crumbs': async ({ deviceId, port, signal, captured }) => {
+        const input: Parameters<typeof prepareCrumbsEngine>[0] = { deviceId, port, signal };
+        if (captured?.kind === 'builtin-crumbs') {
+            input.captured = captured.value;
+        }
+        const outcome = await prepareCrumbsEngine(input);
         if (outcome === 'ready') {
             return;
         }
         signal?.throwIfAborted();
         throw new Error(`Crumbs content preparation ${outcome} for ${deviceId}`);
     },
-    'grand-boule': ({ deviceId, deviceState, port }) => prepareOfflineGrandBoule({ deviceId, deviceState, port }),
+    'grand-boule': ({ deviceId, deviceState, port, captured }) => {
+        const input: Parameters<typeof prepareOfflineGrandBoule>[0] = { deviceId, deviceState, port };
+        if (captured?.kind === 'grand-boule') {
+            input.captured = captured.value;
+        }
+        return prepareOfflineGrandBoule(input);
+    },
     gluten: null,
     // Every control the panel owns is a `CrustPatch` key, and every one of them
     // is encoded to a number by `crustParamBridge` and persisted as a
@@ -95,7 +175,13 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // Its module order is persisted as `chain_order_N` params the worklet ignores;
     // only a `reorder` message moves the chain, and nothing offline sent one, so
     // every export rendered the default order.
-    proof: ({ deviceId, port }) => prepareOfflineProof({ deviceId, port }),
+    proof: ({ deviceId, port, captured }) => {
+        const input: Parameters<typeof prepareOfflineProof>[0] = { deviceId, port };
+        if (captured?.kind === 'proof') {
+            input.captured = captured.value;
+        }
+        return prepareOfflineProof(input);
+    },
     'dutch-oven': null,
     'native-scoring': null,
     knead: null,
@@ -124,6 +210,14 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
  */
 export async function prepareOfflineDeviceSetup(input: PrepareOfflineDeviceSetupInput): Promise<void> {
     const deviceType = resolveNativeDspDeviceType(input.deviceType);
+    if (input.captured) {
+        if (input.captured.kind === 'none') {
+            return;
+        }
+        if (input.captured.kind !== deviceType) {
+            throw new Error('Offline device capture does not match the requested device type');
+        }
+    }
     if (!deviceType) {
         return;
     }

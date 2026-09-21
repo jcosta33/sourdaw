@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, toLevelDb } from '#/utils/audioLevelLaw';
 
 import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
@@ -21,6 +21,7 @@ const projectContext: ProjectContext = {
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
+    masterGainDb: toLevelDb(0.8),
     vcaGroups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: ['track-vocals'] }],
     automationLanes: [
         {
@@ -31,6 +32,8 @@ const projectContext: ProjectContext = {
             enabled: true,
             minValue: 0,
             maxValue: 1,
+            minValueDb: -60,
+            maxValueDb: 0,
             points: [{ beat: 4, value: 0.75, curve: 'linear' }],
         },
     ],
@@ -44,6 +47,7 @@ const projectContext: ProjectContext = {
             soloSafe: false,
             armed: false,
             gain: 0.8,
+            gainDb: toLevelDb(0.8),
             pan: 0,
             automationMode: 'read',
             vcaGroupId: 'vca-drums',
@@ -58,6 +62,7 @@ const projectContext: ProjectContext = {
                     startBeat: 0,
                     endBeat: 8,
                     gain: 1,
+                    gainDb: 0,
                     locked: false,
                     muted: false,
                     color: '#112233',
@@ -125,7 +130,7 @@ const projectContext: ProjectContext = {
                     ],
                 },
             ],
-            sends: [{ busId: 'bus-reverb', level: 0.2, preFader: true }],
+            sends: [{ busId: 'bus-reverb', level: 0.2, levelDb: toLevelDb(0.2), preFader: true }],
         },
         {
             id: 'bus-reverb',
@@ -136,6 +141,7 @@ const projectContext: ProjectContext = {
             soloSafe: false,
             armed: false,
             gain: 0.8,
+            gainDb: toLevelDb(0.8),
             pan: 0,
             automationMode: 'read',
             outputId: 'master',
@@ -154,6 +160,7 @@ const projectContext: ProjectContext = {
             soloSafe: false,
             armed: false,
             gain: 0.8,
+            gainDb: toLevelDb(0.8),
             pan: 0,
             automationMode: 'read',
             outputId: 'hw_out',
@@ -2716,6 +2723,36 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.rejections.map((rejection) => rejection.name)).toEqual(['setDeviceParameter']);
     });
 
+    it('emits the descriptor native unit only for a value admitted by the descriptor bounds', () => {
+        const accepted = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 2_400 },
+                },
+            ],
+            context: projectContext,
+        });
+        const rejected = bridge({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 20_001 },
+                },
+            ],
+            context: projectContext,
+        });
+
+        expect(accepted.actions).toEqual([
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({ value: 2_400, valueUnit: 'Hz' }),
+            },
+        ]);
+        expect(rejected.actions).toEqual([]);
+        expect(rejected.rejections).toEqual([expect.objectContaining({ name: 'setDeviceParameter' })]);
+    });
+
     it('converts bounded device and send calls for existing project targets', () => {
         const result = bridge({
             calls: [
@@ -2740,6 +2777,7 @@ describe('bridgeLlmToolCalls', () => {
                         deviceId: 'device-eq',
                         paramId: 'frequency',
                         value: 2400,
+                        valueUnit: 'Hz',
                         expectedTrackId: 'track-vocals',
                         expectedDeviceType: 'EQ',
                         expectedDeviceIds: ['device-eq'],
@@ -3590,6 +3628,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
         expect(userMessage).toContain('"masterGain":0.8');
+        expect(userMessage).toContain(`"masterGainDb":${String(toLevelDb(0.8))}`);
         expect(userMessage).toContain('"productionBrief":{');
         expect(userMessage).toContain('"revision":3');
         expect(userMessage).toContain('"vision":"Intimate verses, explosive choruses"');
@@ -3599,6 +3638,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');
         expect(userMessage).toContain('"id":"lane-vocal-gain"');
+        expect(userMessage).toContain('"minValue":0,"maxValue":1,"minValueDb":-60,"maxValueDb":0');
         expect(userMessage).toContain('"pointCount":1');
         expect(userMessage).not.toContain('"points"');
         expect(userMessage).toContain('"armed":false');
@@ -3608,13 +3648,15 @@ describe('bridgeLlmToolCalls', () => {
         );
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(
-            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false,"midiOffsetBeats":0}]'
+            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"gainDb":0,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false,"midiOffsetBeats":0}]'
         );
         expect(userMessage).not.toContain('"noteCount"');
         expect(userMessage).toContain('"devices"');
         expect(userMessage).toContain('"frequency"');
         expect(userMessage).toContain('"minValue":20');
         expect(userMessage).toContain('"sends"');
+        expect(userMessage).toContain(`"level":0.2,"levelDb":${String(toLevelDb(0.2))}`);
+        expect(userMessage).toContain(`"gain":0.8,"gainDb":${String(toLevelDb(0.8))}`);
         expect(userMessage).toContain('"outputId":"master"');
     });
 
@@ -4441,5 +4483,159 @@ describe('bridgeLlmToolCalls', () => {
                 'Clip clip-midi reports a content window that is not a finite range of beats'
             );
         });
+    });
+});
+
+/**
+ * A level in decibels is carried to the handler, not converted on the way.
+ *
+ * The strategies see a context, not the project: they cannot apply a taper, and
+ * a linear amplitude computed here would be a second answer to a question the
+ * handler already answers against the live value. What they owe the caller is
+ * the arithmetic-free part — exactly one form, and a level the control's law
+ * admits.
+ */
+describe('level arguments in decibels', () => {
+    const contextWithoutVocalSends: ProjectContext = {
+        ...projectContext,
+        tracks: projectContext.tracks.map((track) => (track.id === 'track-vocals' ? { ...track, sends: [] } : track)),
+    };
+
+    it('carries an absolute track level through untouched', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6 } }],
+        });
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', gainDb: -6 } }]);
+    });
+
+    it('carries a relative track level through untouched', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', deltaDb: -2 } }],
+        });
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', deltaDb: -2 } }]);
+    });
+
+    it('carries an absolute master level through untouched', () => {
+        const result = bridge({ calls: [{ name: 'setMasterGain', arguments: { gainDb: -3 } }] });
+
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { gainDb: -3 } }]);
+    });
+
+    it('carries an absolute clip level through untouched', () => {
+        const result = bridge({ calls: [{ name: 'setClipGain', arguments: { clipId: 'clip-verse', gainDb: -6 } }] });
+
+        expect(result.actions).toEqual([{ type: 'setClipGain', payload: { clipId: 'clip-verse', gainDb: -6 } }]);
+    });
+
+    it('carries an absolute level onto a new send, with the send state it expects', () => {
+        const result = bridge({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', levelDb: -10 } }],
+            context: contextWithoutVocalSends,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: 'track-vocals', busId: 'bus-reverb', levelDb: -10, expectedAbsent: true },
+            },
+        ]);
+    });
+
+    it('carries a relative level onto an existing send, with the send state it expects', () => {
+        const result = bridge({
+            calls: [{ name: 'setSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -2 } }],
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-vocals',
+                    busId: 'bus-reverb',
+                    deltaDb: -2,
+                    expectedLevel: 0.2,
+                    expectedPreFader: true,
+                },
+            },
+        ]);
+    });
+
+    it('carries an absolute level onto a gain automation point', () => {
+        const result = bridge({
+            calls: [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 8, valueDb: -6 } }],
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'addAutomationPoint', payload: { laneId: 'lane-vocal-gain', beat: 8, valueDb: -6 } },
+        ]);
+    });
+
+    it('refuses two level forms at once', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: -6, deltaDb: -2 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe(
+            `Expected an available trackId and finite gain from 0 through ${FADER_MAX_GAIN}`
+        );
+    });
+
+    it('refuses an absolute level above the control ceiling', () => {
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gainDb: 12 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('refuses a change that lands above the control ceiling', () => {
+        // The track sits at 0.8, about -1.9 dB, so +12 dB lands well past the
+        // fader's headroom even though the change itself is a small number.
+        const result = bridge({
+            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', deltaDb: 12 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('carries a change onto a new send, measured from the signal it taps', () => {
+        const result = bridge({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -6 } }],
+            context: contextWithoutVocalSends,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addSend',
+                payload: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: -6, expectedAbsent: true },
+            },
+        ]);
+    });
+
+    it('refuses a change that lands a new send above the send ceiling', () => {
+        // A new send starts at unity, so anything upward already sits on the
+        // ceiling and 40 dB above it is nowhere the send can go.
+        const result = bridge({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', deltaDb: 40 } }],
+            context: contextWithoutVocalSends,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe(
+            'Expected an available source, a distinct bus without an existing send, and a finite level from 0 through 1'
+        );
+    });
+
+    it('refuses a decibel level on a lane that measures something else', () => {
+        const panLane = { ...projectContext.automationLanes![0]!, id: 'lane-vocal-pan', parameterId: 'pan' };
+        const result = bridge({
+            calls: [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-pan', beat: 8, valueDb: -6 } }],
+            context: { ...projectContext, automationLanes: [panLane] },
+        });
+
+        expect(result.actions).toEqual([]);
     });
 });

@@ -47,6 +47,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
@@ -1261,6 +1262,62 @@ describe('review publish', () => {
 
         expect(publishReview(42, port)).toBe(99);
         expect(calls[1]).toBe(`post:headsha:APPROVE:${approvalBody()}`);
+    });
+
+    it('posts the same-model fallback through the publish path when exhaustion is recorded', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(publishReview(42, port)).toBe(99);
+        expect(calls[1]).toContain(
+            'APPROVE:Same-model fallback: reviewed on glm-5.3 after every other harness was unavailable.'
+        );
+    });
+
+    it('refuses the same-model fallback on the publish path when the body does not name the model', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'The change held under attack.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/naming the reviewer model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
+    });
+
+    it('refuses the same-model fallback when the body names only the longer prefix-sharing model', () => {
+        const { port, calls } = fakePort({
+            labels: [{ name: 'glm-5.3', description: 'Authored by glm-5.3' }],
+            json: {
+                format: 'compact-v1',
+                event: 'APPROVE',
+                body: 'Reviewed on glm-5.3-flash under the same-model fallback.',
+                comments: [],
+                evidence: approvalEvidence(),
+                reviewerModel: 'glm-5.3',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/naming the reviewer model/u);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
     it('treats a bare label name as descriptive, never as the authoring model', () => {
@@ -4904,6 +4961,19 @@ describe('fresh reviewer dossier publication', () => {
         };
     }
 
+    /** The canonical persisted record publication itself writes for the given caller input. */
+    function persistedDossier(stances: Record<string, unknown>[]): unknown {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput({ stances }),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const record: unknown = JSON.parse(canonical);
+        return record;
+    }
+
     const reviewDocument = {
         format: 'compact-v1',
         event: 'APPROVE',
@@ -4930,11 +5000,13 @@ describe('fresh reviewer dossier publication', () => {
     function dossierFixture(
         input: {
             plan?: unknown;
+            stances?: unknown;
             dossier?: unknown;
             discarded?: unknown;
             document?: unknown;
             documentName?: string;
             manifest?: Record<string, unknown>;
+            labels?: { name: string; description?: string }[];
             writable?: boolean;
         } = {}
     ) {
@@ -4953,6 +5025,9 @@ describe('fresh reviewer dossier publication', () => {
         if (input.plan !== undefined) {
             writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(input.plan));
         }
+        if (input.stances !== undefined) {
+            writeFileSync(join(bundle, 'stances.json'), JSON.stringify(input.stances));
+        }
         if (input.dossier !== undefined) {
             writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(input.dossier));
         }
@@ -4965,7 +5040,7 @@ describe('fresh reviewer dossier publication', () => {
         const port: PublishReviewPort = {
             primaryRoot: () => root,
             assertApprovalContext: (publishedNumber, publishedHead) => approvalContext(publishedHead, publishedNumber),
-            pullRequest: () => ({ state: 'OPEN', head }),
+            pullRequest: () => ({ state: 'OPEN', head, labels: input.labels }),
             readReviewJson: (path) => {
                 calls.push(`read:${path}`);
                 return readJsonFile(path);
@@ -5095,7 +5170,401 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a dossier that omits a required stance and never posts', () => {
+    it('refuses a dossier that omits a recorded stance and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/stances do not match stances\.json: missing \[test-validity\], extra \[\]/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a dossier naming a stance the pre-dispatch record does not carry and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                    { stance: 'code-craft', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/stances do not match stances\.json: missing \[\], extra \[code-craft\]/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier matching the pre-dispatch stance record one-to-one', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    {
+                        stance: 'correctness',
+                        admission: 'a reordered queue drops a buffered frame',
+                        baselineProbe: { spec: 'queue.spec.ts', mutation: 'revert the ordering guard' },
+                    },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput(),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toHaveLength(1);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier whose free-form stances match a free-form stances.json one-to-one', () => {
+        const gateStance = 'gate-correspondence correctness — a dossier entry the record does not carry must refuse';
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    {
+                        stance: gateStance,
+                        admission: 'a dossier entry the pre-dispatch record does not carry publishes',
+                        baselineProbe: {
+                            spec: 'publishReview.spec.ts',
+                            mutation: 'answer the correspondence gate to the plan instead of the record',
+                        },
+                    },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+                note: 'failure-mode admissions and probe results are caller evidence the gate never reads',
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: gateStance, reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(fixture.writes).toHaveLength(1);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual([gateStance, 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes two draws on one stance and persists both completed entries', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'review-model-2',
+                        modelTier: 'strongest',
+                        outcome: 'blocker-found',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            // The stance set is the dispatch; the second draw extends model diversity, not the count.
+            expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(
+                persisted.events
+                    .filter((event) => event.kind === 'stance-completed')
+                    .map((event) => event.reviewerModel)
+            ).toEqual(['review-model', 'review-model-2', 'review-model']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('does not let a second draw of one stance trip the stances.json gate', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'test-validity', admission: 'the weakened assertion can no longer fail' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'review-model-2',
+                        modelTier: 'strongest',
+                        outcome: 'clean',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            expect(parseReviewDossier(fixture.readDossier()).requiredStances).toEqual(['correctness', 'test-validity']);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a draw on an authoring model without its own exhaustion, naming the stance, and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'glm-5.3-flash', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            // The document-level refusal never names a stance, so this message proves the
+            // per-draw records reached the diversity gate.
+            expect(message).toMatch(/review stance "correctness" drew reviewer model "glm-5\.3-flash"/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes the mixed round when the fallen-back draw carries its own exhaustion', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: {
+                ...reviewDocument,
+                body: 'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.',
+            },
+            dossier: dossierInput({
+                stances: [
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'glm-5.3-flash',
+                        modelTier: 'strongest',
+                        outcome: 'clean',
+                        exhaustion: 'every other harness on this machine was committed to another lane',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            // The per-draw exhaustion round-trips into the persisted record.
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const correctness = persisted.events.find(
+                (event) => event.kind === 'stance-completed' && event.stance === 'correctness'
+            );
+            if (correctness?.kind !== 'stance-completed') {
+                throw new Error('fixture must carry a correctness draw');
+            }
+            expect(correctness.exhaustion).toBe('every other harness on this machine was committed to another lane');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('keeps the whole-round fallback working when the dossier draws carry no authoring-model draw', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: {
+                ...reviewDocument,
+                body: 'Whole-round fallback: reviewed on glm-5.3-flash after every other harness was unavailable.',
+                modelExhaustion: 'every other harness on this machine is logged out or broken',
+            },
+            dossier: dossierInput(),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a persisted-shaped dossier whose fenced-model draw carries no exhaustion anywhere and never posts', () => {
+        // The canonical record is the only dossier file this publication sees and the document
+        // model differs from every author, so the stance-naming refusal proves the per-draw gate
+        // read its draws from the persisted record's events, not only from caller input.
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: { ...reviewDocument, reviewerModel: 'claude-opus-4.5' },
+            dossier: persistedDossier([
+                { stance: 'correctness', reviewerModel: 'glm-5.3-flash', modelTier: 'strongest', outcome: 'clean' },
+                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+            ]),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/review stance "correctness" drew reviewer model "glm-5\.3-flash"/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays the mixed round from the persisted record without rewriting it', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
+            document: {
+                ...reviewDocument,
+                body: 'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.',
+            },
+            dossier: dossierInput({
+                stances: [
+                    {
+                        stance: 'correctness',
+                        reviewerModel: 'glm-5.3-flash',
+                        modelTier: 'strongest',
+                        outcome: 'clean',
+                        exhaustion: 'every other harness on this machine was committed to another lane',
+                    },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const first = fixture.readDossier();
+            expect(fixture.writes).toHaveLength(1);
+
+            // The replay derives the draws from the persisted record's events, so the mixed round
+            // publishes again unchanged instead of refusing on draws it can no longer see.
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.readDossier()).toEqual(first);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(2);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier whose recorded stances differ from the plan menu, answering to the record', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
+                ],
+            },
+            dossier: dossierInput({
+                stances: [
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    {
+                        stance: 'security-platform',
+                        reviewerModel: 'review-model',
+                        modelTier: 'standard',
+                        outcome: 'clean',
+                    },
+                ],
+            }),
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual(['correctness', 'security-platform']);
+            expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-conforming dossier the differing pre-dispatch record does not carry and never posts', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            stances: {
+                stances: [
+                    { stance: 'correctness', admission: 'a reordered queue drops a buffered frame' },
+                    { stance: 'security-platform', admission: 'an ipc boundary ships unvalidated input' },
+                ],
+            },
+            dossier: dossierInput(),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            // The refusal names the record's hypothesis — missing security-platform, extra
+            // test-validity — which differs from the plan's, so a gate answering to the plan's
+            // requiredStances instead of the record would publish this dossier and turn this red.
+            expect(message).toMatch(
+                /stances do not match stances\.json: missing \[security-platform\], extra \[test-validity\]/u
+            );
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a stances.json file that exists but does not parse and never posts', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        writeFileSync(join(fixture.bundle, 'stances.json'), '{ not a stance record');
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/stances\.json/u);
+            expect(message).toMatch(/does not parse/u);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a dossier whose dispatched stances differ from the plan menu when no stances.json exists', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
             dossier: dossierInput({
@@ -5105,11 +5574,11 @@ describe('fresh reviewer dossier publication', () => {
             }),
         });
         try {
-            const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/no completed record for required stance: test-validity/u);
-            expect(fixture.calls).not.toContain('post');
-            expect(fixture.posted.review).toBeUndefined();
-            expect(fixture.writes).toEqual([]);
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('APPROVE');
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.requiredStances).toEqual(['correctness']);
+            expect(persisted.requiredStances).not.toEqual(riskPlan().requiredStances);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
