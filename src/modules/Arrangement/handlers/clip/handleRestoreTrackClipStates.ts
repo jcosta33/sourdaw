@@ -5,7 +5,6 @@ import {
     type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipStateSnapshot,
-    type CompRegionSnapshot,
     type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
     type RetiredTakeLaneSnapshot,
@@ -726,9 +725,11 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
  *
  * A redo retires what the restored clip holds *now*, which is not what the first
  * removal retired: a take that landed between the undo and the redo is in no
- * capture yet. The undo that follows reads the entry's own pre-removal snapshot,
- * so this leg writes the fresh capture back onto it — merged, because the two
- * captures name the same takes and the entry must list each one once.
+ * capture yet, and a take or comp a projection removed or moved since is in a
+ * capture that no longer describes live. The undo that follows reads the entry's
+ * own pre-removal snapshot, so this leg overwrites it with the fresh capture —
+ * the same overwrite, empty captures included, the single-clip removal route's
+ * redo already performs.
  */
 function transitionRetiredTakeLanes(
     action: RestoreTrackClipStatesAction,
@@ -762,64 +763,16 @@ function transitionRetiredTakeLanes(
 }
 
 /**
- * The union of two captures of one lane, keyed by take id and by comp region.
+ * Overwrite the pre-removal snapshot the entry's inverse restores from with what
+ * this redo actually re-retired.
  *
- * The recorded capture is what the first removal retired, the fresh one what the
- * redo just re-retired; the redo's covers the same takes plus whatever landed
- * since, and the union keeps both claims without listing a take twice. The fresh
- * lane's own index wins because it is the position this removal took the lane
- * from — the one an undo has to put it back into.
- */
-function mergeRetiredLaneCapture(
-    recorded: RetiredTakeLaneSnapshot,
-    fresh: RetiredTakeLaneSnapshot
-): RetiredTakeLaneSnapshot {
-    const takesById = new Map(recorded.lane.takes.map((take) => [take.id, take]));
-    for (const take of fresh.lane.takes) {
-        takesById.set(take.id, take);
-    }
-    const regionsBySpan = new Map<string, CompRegionSnapshot>(
-        recorded.lane.activeCompRegions.map((region) => [regionKey(region), region])
-    );
-    for (const region of fresh.lane.activeCompRegions) {
-        regionsBySpan.set(regionKey(region), region);
-    }
-    return {
-        laneIndex: fresh.laneIndex,
-        lane: {
-            ...fresh.lane,
-            takes: [...takesById.values()],
-            activeCompRegions: [...regionsBySpan.values()],
-        },
-        retiredTakeIds: [...new Set([...(recorded.retiredTakeIds ?? []), ...(fresh.retiredTakeIds ?? [])])],
-    };
-}
-
-function regionKey(region: CompRegionSnapshot): string {
-    return `${region.takeId}:${String(region.startBeat)}:${String(region.endBeat)}`;
-}
-
-function mergeRetiredTakeLanes(
-    recorded: readonly RetiredTakeLaneSnapshot[],
-    fresh: readonly RetiredTakeLaneSnapshot[]
-): RetiredTakeLaneSnapshot[] {
-    const merged: RetiredTakeLaneSnapshot[] = [];
-    for (const recordedLane of recorded) {
-        const freshLane = fresh.find((candidate) => candidate.lane.id === recordedLane.lane.id);
-        merged.push(freshLane ? mergeRetiredLaneCapture(recordedLane, freshLane) : recordedLane);
-    }
-    const recordedLaneIds = new Set(recorded.map((lane) => lane.lane.id));
-    for (const freshLane of fresh) {
-        if (!recordedLaneIds.has(freshLane.lane.id)) {
-            merged.push(freshLane);
-        }
-    }
-    return merged;
-}
-
-/**
- * Write what this redo just re-retired onto the pre-removal snapshot the entry's
- * inverse restores from.
+ * Replacement is the point, not a detail: the entry must claim exactly the takes
+ * and comps this replay removed. A union would keep a claim on material a
+ * projection deleted — resurrected by the next undo, against the rule that a take
+ * missing from live for a reason this removal never recorded stays absent — and
+ * on a region the removal superseded, which the lane store's non-overlap retention
+ * would then prefer over the region that replaced it. An empty fresh capture is the
+ * same statement and clears the claim, so there is no early return for it.
  *
  * The redo runs with `skipUndo`, so its own `describe()` capture is discarded and
  * nothing else carries it; the entry is still on the `future` stack while its redo
@@ -831,23 +784,14 @@ function recordRedoTakeRetirement(
     action: RestoreTrackClipStatesAction,
     retired: readonly RetiredTakeLaneSnapshot[]
 ): void {
-    if (retired.length === 0) {
-        return;
-    }
     const inverse = pairedInverseForRedo(action);
     if (inverse?.type !== 'restoreTrackClipStates') {
         return;
     }
-    inverse.payload.replacement = inverse.payload.replacement.map((entry) => {
-        const fresh = retired.filter((candidate) => candidate.lane.trackId === entry.trackId);
-        if (fresh.length === 0) {
-            return entry;
-        }
-        return {
-            ...entry,
-            retiredTakeLanes: mergeRetiredTakeLanes(entry.retiredTakeLanes ?? [], fresh),
-        };
-    });
+    inverse.payload.replacement = inverse.payload.replacement.map((entry) => ({
+        ...entry,
+        retiredTakeLanes: retired.filter((candidate) => candidate.lane.trackId === entry.trackId),
+    }));
 }
 
 /**

@@ -170,13 +170,14 @@ describe('cutClip take retirement and restore', () => {
         expect(lanes?.[0]?.takes.some((candidate) => candidate.id === take.id)).toBe(false);
     });
 
-    it('lands a redo whose restored take a projection removed', async () => {
-        const { lane } = laneForClip('clip-1');
+    it('does not resurrect a take a projection removed before the redo', async () => {
+        const { lane, take } = laneForClip('clip-1');
         takeLaneStore.set({ lanes: [lane] });
         flushAutomergeStorageWrites();
 
         await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
         await undo();
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
 
         // A projection removes the take the undo restored; the lane stays.
         const restored = takeLaneStore.value;
@@ -188,11 +189,19 @@ describe('cutClip take retirement and restore', () => {
 
         await redo();
 
+        // The redo retires nothing, but it still lands rather than pinning the stack.
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(0);
+
+        await undo();
+
+        // The capture names what the redo retired — nothing — so the take the
+        // projection deleted stays deleted.
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-1']);
+        expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([]);
     });
 
-    it('lands a redo whose restored lane a projection removed', async () => {
+    it('does not resurrect a lane a projection removed before the redo', async () => {
         const { lane } = laneForClip('clip-1');
         takeLaneStore.set({ lanes: [lane] });
         flushAutomergeStorageWrites();
@@ -208,6 +217,48 @@ describe('cutClip take retirement and restore', () => {
 
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(0);
+
+        await undo();
+
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-1']);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
+
+    it('restores the comp region that replaced the captured one', async () => {
+        const { lane, take } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+
+        // A second take for the cut clip lands, and the comp switches to it.
+        const secondTake = createTake('clip-1', 'Second take', 0, 4);
+        const restored = takeLaneStore.value?.lanes[0];
+        if (!restored) {
+            throw new Error('expected the restored take lane');
+        }
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...restored,
+                    takes: [...restored.takes, secondTake],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: secondTake.id }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        // Both takes come back, and the comp is the one live when the redo ran —
+        // not the superseded region the first cut captured over the same span.
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([take.id, secondTake.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: secondTake.id }]);
     });
 
     it('retires a take that landed on the cut clip after the undo when the cut is redone', async () => {
