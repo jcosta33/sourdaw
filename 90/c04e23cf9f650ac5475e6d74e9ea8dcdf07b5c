@@ -1,0 +1,22 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClipTakeRetirement.integration.spec.ts
+  h_beb54bf43b47b7 135-171
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 474-478,524-526,722-727
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  h_beb54bf43b47b7 48-57
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  h_beb54bf43b47b7 113-157
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 3,6-57,63-71,80,82-87,89,92-97,100-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "90c04e23cf9f650ac5475e6d74e9ea8dcdf07b5c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
