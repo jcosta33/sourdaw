@@ -1,0 +1,28 @@
+src/modules/Arrangement/handlers/clip/__tests__/cutClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 212-241
+src/modules/Arrangement/handlers/clip/__tests__/drawClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 3,9,14,29-30,39-71,80-81,97,103,106-129,138
+src/modules/Arrangement/handlers/clip/handleRestoreDrawnClip.ts
+  h_beb54bf43b47b7 1,3-7,14-32,65
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 713-718,734
+src/modules/Arrangement/useCases/__tests__/captureTrackClipStates.spec.ts
+  h_beb54bf43b47b7 239,245-249,258-259
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  h_beb54bf43b47b7 50-53,58-64,112,129-139
+src/modules/Command/useCases/index.ts
+  h_beb54bf43b47b7 115
+src/modules/Command/useCases/readInverseActionForRedo.ts
+  h_beb54bf43b47b7 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "63de6a3c637112b17ed35a54d2a4bee2d1228a18",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
