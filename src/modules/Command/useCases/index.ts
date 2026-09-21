@@ -112,6 +112,7 @@ export { stampSessionUndoWitness } from './stampSessionUndoWitness';
 export { captureUndoHistory } from './captureUndoHistory';
 export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
+export { readInverseActionForRedo } from './readInverseActionForRedo';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 export { commitUndoEntry } from './commitUndoEntry';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection

@@ -209,4 +209,34 @@ describe('cutClip take retirement and restore', () => {
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(0);
     });
+
+    it('retires a take that landed on the cut clip after the undo when the cut is redone', async () => {
+        // The cut clip holds no take when it leaves, so the capture is empty.
+        const emptyLane: TakeLane = { ...createTakeLane('track-1'), takes: [], activeCompRegions: [] };
+        takeLaneStore.set({ lanes: [emptyLane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-1']);
+
+        // A take and its comp region land for the cut clip after the undo.
+        const lateTake = createTake('clip-1', 'Late take', 0, 4);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...emptyLane,
+                    takes: [lateTake],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: lateTake.id }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        // The redo removes the clip again, so the late take must not survive it.
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
 });

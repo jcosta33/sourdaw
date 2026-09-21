@@ -95,7 +95,6 @@ describe('captureTrackClipStates', () => {
                 midiPitchBendByClipId: {},
                 clipSatellites: [],
                 clipAutomationLanes: [],
-                retiredTakeLanes: [],
             },
         ]);
     });
@@ -130,7 +129,6 @@ describe('captureTrackClipStates', () => {
                 midiPitchBendByClipId: { c1: [pitchBendC1] },
                 clipSatellites: [],
                 clipAutomationLanes: [],
-                retiredTakeLanes: [],
             },
             {
                 trackId: 't2',
@@ -141,7 +139,6 @@ describe('captureTrackClipStates', () => {
                 midiPitchBendByClipId: {},
                 clipSatellites: [],
                 clipAutomationLanes: [],
-                retiredTakeLanes: [],
             },
         ]);
     });
@@ -239,14 +236,17 @@ describe('captureTrackClipStates', () => {
         expect(snapshot?.retiredTakeLanes).toBe(retiredTakeLanes);
     });
 
-    it('records an empty take-lane capture when no clip is retiring', () => {
+    it('omits the take-lane capture when no clip is retiring', () => {
         const track = TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c1', trackId: 't1' })] });
         mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
         const [snapshot] = captureTrackClipStates(['t1']);
 
-        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith([]);
-        expect(snapshot?.retiredTakeLanes).toEqual([]);
+        // The key's absence is what tells the restore this route never retires
+        // takes; an empty capture would look like a take-retiring route that found
+        // none, whose redo must re-retire.
+        expect(mocks.captureRetiredTakeLanes).not.toHaveBeenCalled();
+        expect(snapshot !== undefined && 'retiredTakeLanes' in snapshot).toBe(false);
     });
 
     it('captures no take lane for a retiring clip this track does not own', () => {
@@ -255,8 +255,8 @@ describe('captureTrackClipStates', () => {
 
         const [snapshot] = captureTrackClipStates(['t1'], ['c-on-another-track']);
 
-        expect(mocks.captureRetiredTakeLanes).toHaveBeenCalledWith([]);
-        expect(snapshot?.retiredTakeLanes).toEqual([]);
+        expect(mocks.captureRetiredTakeLanes).not.toHaveBeenCalled();
+        expect(snapshot !== undefined && 'retiredTakeLanes' in snapshot).toBe(false);
     });
 
     it('includes MIDI satellites owned by a hidden alternative lane, not just the active clips', () => {

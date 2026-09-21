@@ -710,6 +710,12 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
  * the clips it dropped — derived from the clips `expected` had and `replacement`
  * does not — through the same `removeTakesForClips` rule the removal itself uses.
  * Neither direction touches a lane the removal did not affect.
+ *
+ * The re-retire runs for any replacement whose `expected` carries the key at all,
+ * even an empty capture: a take-retiring route (cut) that happened to capture no
+ * take still removes its clip again, so a take that landed on it since must not
+ * survive as an orphan. A snapshot with no key belongs to a route that never
+ * retires takes (flatten, paste, consolidate), and its redo must not start.
  */
 function transitionRetiredTakeLanes(
     expectedEntries: readonly TrackClipStateSnapshot[],
@@ -725,7 +731,7 @@ function transitionRetiredTakeLanes(
     const retiringClipIds = new Set<string>();
     for (const entry of replacementEntries) {
         const expectedEntry = expectedByTrackId.get(entry.trackId);
-        if (!expectedEntry || (expectedEntry.retiredTakeLanes ?? []).length === 0) {
+        if (!expectedEntry || expectedEntry.retiredTakeLanes === undefined) {
             continue;
         }
         const replacementClipIds = new Set(entry.clips.map((clip) => clip.id));

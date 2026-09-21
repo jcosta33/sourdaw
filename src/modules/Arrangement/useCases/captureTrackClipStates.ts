@@ -47,18 +47,21 @@ import { getTrackStoreState } from './getTrackStoreState';
  *
  * `retiringClipIds` names the pre-existing clips whose removal retires takes
  * through `removeClip`, so the capture can carry the lanes that removal will
- * retire and undo can put them back. `cutClip` is the only caller that passes
- * it: `pasteClip` removes only ids it minted moments earlier.
+ * retire and undo can put them back; a capture that names any carries the
+ * `retiredTakeLanes` key even when it found none, which is how the restore tells
+ * a take-retiring route from one that never captured. `cutClip` is the only
+ * caller that passes it: `pasteClip` removes only ids it minted moments earlier.
  *
  * Every other route that drops pre-existing clips leaves their takes behind, and
  * that gap is filed rather than covered here. `flattenTrack` and
  * `consolidateAllTracks` replace the clip collection directly without going
- * through `removeClip`, and Delete Time / Delete Time Range drop clips through
- * `removeClipSatelliteData` alone; neither retires a take. The orphan comp region
- * then advances the comp cursor, so the replacement clip is silent over that span
- * in live playback and in the offline render. The clip-replacement routes are
- * defect #4518 and the time routes are #4520; this capture deliberately does not
- * extend either.
+ * through `removeClip`; Delete Time and Delete Time Range drop clips through
+ * `removeClipSatelliteData` alone; and undoing the `splitClip` action removes the
+ * right half directly. None retires a take. The orphan comp region then advances
+ * the comp cursor, so the replacement clip is silent over that span in live
+ * playback and in the offline render. The clip-replacement routes are defect
+ * #4518, the time routes are #4520, and the split action's undo is #4521; this
+ * capture deliberately does not extend any of them.
  */
 export function captureTrackClipStates(
     trackIds: readonly string[],
@@ -106,7 +109,7 @@ export function captureTrackClipStates(
             .filter((clip) => retiringClipIdSet.has(clip.id))
             .map((clip) => clip.id);
 
-        snapshots.push({
+        const snapshot: TrackClipStateSnapshot = {
             trackId,
             clips,
             trackFields: structuredClone({
@@ -123,11 +126,17 @@ export function captureTrackClipStates(
             midiPitchBendByClipId,
             clipSatellites,
             clipAutomationLanes,
-            // Empty unless this capture named retiring clips, so a snapshot for a
-            // removal that retires no take-lane state carries an explicitly empty
-            // capture rather than a key whose absence has to be guessed at.
-            retiredTakeLanes: captureRetiredTakeLanes(trackRetiringClipIds),
-        });
+        };
+        // A capture that names no retiring clip belongs to a route that retires no
+        // take-lane state, so the key is omitted entirely rather than left empty:
+        // the restore reads its presence to decide whether a redo may re-retire
+        // takes for the clips it drops, and an empty capture must not be
+        // indistinguishable from "this route never captured".
+        if (trackRetiringClipIds.length === 0) {
+            snapshots.push(snapshot);
+            continue;
+        }
+        snapshots.push({ ...snapshot, retiredTakeLanes: captureRetiredTakeLanes(trackRetiringClipIds) });
     }
 
     return snapshots;
