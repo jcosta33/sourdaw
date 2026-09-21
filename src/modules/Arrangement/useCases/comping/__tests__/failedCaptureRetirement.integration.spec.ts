@@ -27,6 +27,7 @@ import { addClip } from '../../clip/addClip';
 import { removeClip } from '../../clip/removeClip';
 import { addTake } from '../addTake';
 import { addTakeLane } from '../addTakeLane';
+import { flattenComp } from '../flattenComp';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -115,5 +116,56 @@ describe('take-lane history and retirement', () => {
         // A track owns one lane: readers take the first for the track, so a second one's
         // takes and regions would be dead state.
         expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([replacementLane.id]);
+    });
+
+    it('merges a replayed lane into the lane a projection gave the track', async () => {
+        // The lane's take names a clip the track still holds, so it is material the
+        // replay has to bring back.
+        addClip({ id: 'clip-taken', trackId: 'track-1', startBeat: 4, endBeat: 8, name: 'Take', type: 'audio' });
+        const take = createTake('clip-taken', 'Take', 4, 8);
+        takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes: [take] }] });
+        flushAutomergeStorageWrites();
+
+        // Flatten takes the lane-only route on a lane with no comp regions, recording a
+        // lane removal for undo.
+        expect(flattenComp('track-1')).toBe(true);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        // A projection gives the track a lane of its own while this one is away.
+        const projectedTake = createTake('clip-taken', 'Projected take', 4, 8);
+        const projectedLane = { ...createTakeLane('track-1'), takes: [projectedTake] };
+        takeLaneStore.set({ lanes: [projectedLane] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+
+        // The track keeps the one lane it owns, and the recorded take merges into it
+        // beside the projected one: declining the replay instead would drop the very take
+        // this undo exists to put back.
+        const lanes = takeLaneStore.value?.lanes ?? [];
+        expect(lanes.map((lane) => lane.id)).toEqual([projectedLane.id]);
+        expect(lanes[0]?.takes.map((laneTake) => laneTake.id)).toEqual([take.id, projectedTake.id]);
+    });
+
+    it('does not replay a lane whose track the project no longer holds', async () => {
+        addClip({ id: 'clip-taken', trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Take', type: 'audio' });
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane('track-1'), takes: [createTake('clip-taken', 'Take', 0, 4)] }],
+        });
+        flushAutomergeStorageWrites();
+        expect(flattenComp('track-1')).toBe(true);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        // The track itself leaves the project — a projection write nothing local
+        // recorded — taking the lane's host with it.
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        await redo();
+        // A lane keyed to a track the project no longer holds has no host to resolve
+        // against, so neither direction of the replay places it.
+        expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 });
