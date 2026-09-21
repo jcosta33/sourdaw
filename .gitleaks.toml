@@ -42,8 +42,10 @@ regexes = [
   # Exact v1 lock-owner UUID in the audited PR #3342 recovery incident and
   # mutation-lock token fixture in `scripts/__tests__/publishReview.spec.ts`.
   # This is an immutable historical receipt and never-issued test value, not
-  # an App credential. Audited 2026-09-02; Nightly `--all` sees the PR #3344
-  # fixture on `agent/review-publication-lock-recovery`.
+  # an App credential. Audited 2026-09-02; re-audited 2026-09-21: the fixture
+  # literal on `main` is what Nightly `--all` sees — PR #3344 squash-merged and
+  # `agent/review-publication-lock-recovery` was pruned from the remote; the
+  # incident commit survives only as a local branch, invisible to CI scans.
   '''2cd01237-cf63-4579-9e58-85893794529d''',
 
   # Delivery-lock owner token fixture in `scripts/recoverDeliveryLock.ts` and
