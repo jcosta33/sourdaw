@@ -1,0 +1,43 @@
+src/utils/handlerContract.ts
+  s_ed5aa36a3ba357::t_a9178fd0179dff 2101
+src/modules/Automation/handlers/automation/handleRemoveAutomationPoint.ts
+  s_ed5aa36a3ba357::t_a9178fd0179dff 61-63,81,93
+src/modules/Automation/handlers/automation/handleRestoreAutomationPointPresence.ts
+  s_ed5aa36a3ba357::t_a9178fd0179dff 81,86,121-130,138-139
+  s_ed5aa36a3ba357::t_6ebce89198e38e 59-74,79,92,140
+  s_ed5aa36a3ba357::t_8080fba2f634d5 141
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  s_ed5aa36a3ba357::t_66354c3d6d9bde 26-40,80-86
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_847fcdaf99d031 1204
+src/modules/Automation/handlers/automation/__tests__/handleRemoveAutomationPoint.spec.ts
+  s_ed5aa36a3ba357::t_d583a6916daa93 113,138
+src/modules/Command/useCases/__tests__/linkedAutomationPointAdmission.spec.ts
+  s_ed5aa36a3ba357::t_f276007f2c0912 164,232-260
+  s_ed5aa36a3ba357::t_e8f83c63eb134a 261-262
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationPointPresence.spec.ts
+  s_ed5aa36a3ba357::t_44f32f4c992192 71
+  s_ed5aa36a3ba357::t_f276007f2c0912 50,100-113
+  s_ed5aa36a3ba357::t_2ba3041c955f4e 59-60
+  s_ed5aa36a3ba357::t_5356dd43ccd1a5 114-116
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_ed5aa36a3ba357::t_1e1ff76b4805f7 11,89-105,326-343,388
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ed5aa36a3ba357::t_3997fb79f633f5 3338,3342-3350
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bbfc893fed2358242e27948f53533cb610d339ce",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
