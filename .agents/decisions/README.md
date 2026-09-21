@@ -61,6 +61,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0045](0045-toaster-sequencer-is-a-session-performance-tool.md)                   | The Toaster step sequencer is a session performance tool, not an arrangement source                                                     |
 | [0046](0046-semantic-review-is-advisory-and-local-first.md)                       | Semantic model review is advisory, local-first, and never merge-authoritative                                                          |
 | [0047](0047-advisory-semantic-review-also-runs-in-ci.md)                          | Advisory semantic review also runs in CI, on the trusted revision and outside merge authority                                          |
+| [0048](0048-attributable-evidence-contract-is-frozen.md)                          | The attributable review-evidence contract is frozen                                                                                     |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
