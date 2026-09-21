@@ -1,0 +1,68 @@
+src/modules/Arrangement/handlers/clip/__tests__/cutClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 1-117
+src/modules/Arrangement/handlers/clip/__tests__/handleCutClip.spec.ts
+  h_beb54bf43b47b7 83
+src/modules/Arrangement/handlers/clip/__tests__/handleDiscardDrawnClipTakeRetirement.integration.spec.ts
+  h_beb54bf43b47b7 1-56
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  h_beb54bf43b47b7 152,215,241,267
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClipFallbackTakeUndo.integration.spec.ts
+  h_beb54bf43b47b7 1-126
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClipTakeRetirement.integration.spec.ts
+  h_beb54bf43b47b7 1-135
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 33-35,62-73,1501-1575
+src/modules/Arrangement/handlers/clip/handleCutClip.ts
+  h_beb54bf43b47b7 22-25,33,35-36,38-41,43,72
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  h_beb54bf43b47b7 8,115-121,139
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 9,16,19-20,469-482,520-523,714-752,816
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
+  h_beb54bf43b47b7 44,55-58,100,103,193-223
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  h_beb54bf43b47b7 5,60-69,78,82
+src/modules/Arrangement/useCases/__tests__/captureTrackClipStates.spec.ts
+  h_beb54bf43b47b7 28,51-54,75,98,133,144,216-261
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  h_beb54bf43b47b7 13,47-52,54-57,63,96-98,117-120
+src/modules/Arrangement/useCases/clip/__tests__/removeClip.spec.ts
+  h_beb54bf43b47b7 3-4,25,61-71,79,180-188
+src/modules/Arrangement/useCases/clip/removeClip.ts
+  h_beb54bf43b47b7 4,16-19
+src/modules/Arrangement/useCases/comping/__tests__/removeTakesForClips.spec.ts
+  h_beb54bf43b47b7 1-171
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  h_beb54bf43b47b7 1-113
+src/modules/Arrangement/useCases/comping/captureRetiredTakeLanes.ts
+  h_beb54bf43b47b7 1-13
+src/modules/Arrangement/useCases/comping/planTakeRetirement.ts
+  h_beb54bf43b47b7 1-62
+src/modules/Arrangement/useCases/comping/removeTakesForClips.ts
+  h_beb54bf43b47b7 1-30
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 1-33
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  h_beb54bf43b47b7 13,44-47,57,80-81,87-99,101-118
+src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts
+  h_beb54bf43b47b7 12,33-36,105-131,145
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  h_beb54bf43b47b7 2,7,29-31,76-80,86
+src/modules/Arrangement/useCases/rippleDelete/undoRippleDelete.ts
+  h_beb54bf43b47b7 2,6,27-28,37,90-95
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 803-859,870,1048,1065,1071,1085,1094-1095,1196-1197,1214,1241,1251,1263,1267,1294,1302,1311-1312,1381,1386,1402,1414,1418,1427,1446,1469,1475,1494,1500,1518,1524,1532-1534,1543-1544,1546-1547,1559-1560,1587,1601,1619,1624,1630,1637,1650-1651,1669,1674,1683-1684,1730,1734,1737,1741,1747,1759,1763,1780,1786,1789,1807,1814,1825,1856,1868,1876,1888,1904,1912,1918,1927-1928,1944,1955,1992,1997,2040,2045,2131,2154-2155,2178,2197,2205,2214,2225-2227,2241-2243,2274,2280,2289,2300,2308,2319-2320,2334-2335,2360-2361,2419,2427,2462,2488,2506,2512,2534,2560,2568-2570,2577,2586-2587,2592-2597,2632,2639,2655,2663-2665,2688,2718-2719,2723-2724,2797,2808,2848,2854,2904,2919,2924,2942-2943,2950,2956,2963,2977-2978,2987,2989,3001-3002,3010-3011,3024-3025,3037-3038,3080-3081,3157-3158,3238-3239,3355,3362,3365,3374,3376,3457-3458,3485-3486,3508,3522,3531,3553,3567,3574,3581-3583,3624-3627,3649,3654,3666,3673,3678,3680,3686,3691,3693-3694,3713,3720,3728-3729,3735,3738,3754,3772,3782-3783,3792-3793,3856,3862-3863,3876-3877,3894,3899-3900,3926,3934,3941,3946-3947,3963,3968-3969,3981,3991,3998,4004,4007,4009,4018-4019,4025,4041,4046-4047,4084-4085,4105,4119-4120,4128-4129,4147-4148,4170,4218,4225,4231-4232,4239,4253,4268,4282,4287-4290,4319,4325,4339,4345,4390,4392-4394,4407-4408,4416-4417,4419-4420,4432-4433,4436-4437,4443,4448,4475,4480,4575,4582,4610,4618,4624,4632-4633,4673,4684,4692,4698,4705,4710,4718-4719,4930,4946,4963,4970-4971,4974,5005,5018-5021,5031-5032,5077,5083,5091,5096,5098,5146,5151,5169,5174,5198,5203,5270,5279,5291,5303,5324,5336,5342,5348-5349,5374,5380-5381,5445,5451,5454,5461,5466,5468,5477,5479,5488,5513-5851
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 391-398,504-537,1107-1112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c12e96624b1cfc68eebadb09aea2d90ce1f65708",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
