@@ -3215,3 +3215,24 @@ with open(early, "r+b", buffering=0) as file:
         expect(readFileSync(join(fixture.candidate, 'release-proof.json'), 'utf8')).toContain(fixture.revision);
     });
 });
+
+describe('release proof CLI under Node type stripping', () => {
+    /**
+     * The spec imports the module through Vitest's transform, which is exactly why the
+     * strip-only crash was invisible to every gate: only Node's own loader refuses a
+     * parameter property (#4503). Spawning the real entry point through the real Node
+     * binary covers the loader path — on the broken class the child dies with
+     * ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX before any argument handling, so asserting the
+     * argument-validation failure (not a syntax error) discriminates the fix.
+     */
+    it('starts under the real Node loader and fails on missing arguments, not on syntax', () => {
+        const script = join(import.meta.dirname, '../releaseProof.ts');
+        const result = spawnSync(process.execPath, [script, 'check'], { encoding: 'utf8' });
+
+        expect(result.status).not.toBe(0);
+        const output = `${result.stderr ?? ''}${result.stdout ?? ''}`;
+        expect(output).not.toContain('ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX');
+        expect(output).not.toContain('SyntaxError');
+        expect(output).toContain('--candidate is required');
+    });
+});
