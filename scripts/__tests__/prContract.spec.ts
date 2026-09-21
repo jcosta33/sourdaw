@@ -1192,6 +1192,16 @@ describe('product-scope test instructions', () => {
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
+    it('passes a filler-led sentence mentioning its launch mid-prose', () => {
+        // 'Run' peels as filler and the prose carries the launch mention inside the sentence,
+        // with the observation trailing — a natural author phrasing whose rescue rides the
+        // beyond-vocabulary nouns, not the cue stems.
+        const step = 'Run the app with the flag and the meter follows';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it('passes a single-quoted leading launch teaching its observation', () => {
         // The peel must treat both quote kinds as the launch's shell, so the observation after a
         // single-quoted launch rescues the segment exactly as the backtick spelling does.
