@@ -10,6 +10,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -205,5 +206,62 @@ describe('removeClip take retirement (ripple route)', () => {
         // Live wins: the restored region overlapped one authored after the removal,
         // so the later one is the only one left and the store did not have to drop it.
         expect(restoredLane?.activeCompRegions).toEqual([liveRegion]);
+    });
+
+    it('leaves no lane behind when the removed clip track is gone by the undo', async () => {
+        const { lane } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await removeClipThroughHandler('clip-1');
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        // A projection removes the clip's whole track, and its lane with it, before
+        // the undo runs.
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        // Nothing may come back keyed to a track that is gone.
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
+
+    it('restores both lanes when a grouped removal is undone', async () => {
+        const firstClip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 4 });
+        const secondClip = ClipDummy.create({ id: 'clip-2', trackId: 'track-2', startBeat: 0, endBeat: 4 });
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'track-1', clips: [firstClip] }),
+                TrackDummy.create({ id: 'track-2', clips: [secondClip] }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const { lane: firstLane, take: firstTake } = laneForClip('clip-1');
+        const secondTake = createTake('clip-2', 'Second take', 0, 4);
+        const secondLane: TakeLane = { ...createTakeLane('track-2'), takes: [secondTake] };
+        takeLaneStore.set({ lanes: [firstLane, secondLane] });
+        flushAutomergeStorageWrites();
+
+        const result = await executeAppActionBatch(
+            [
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                { type: 'removeClip', payload: { clipId: 'clip-2' } },
+            ],
+            { source: 'prompt', groupId: 'grouped-removals' }
+        );
+        expect(result.status).toBe('committed');
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        const lanes = takeLaneStore.value?.lanes ?? [];
+        expect(lanes.map((candidate) => candidate.id).sort()).toEqual([firstLane.id, secondLane.id].sort());
+        expect(lanes.flatMap((candidate) => candidate.takes.map((take) => take.id)).sort()).toEqual(
+            [firstTake.id, secondTake.id].sort()
+        );
     });
 });

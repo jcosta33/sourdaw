@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { removeTakesForClips } from '../removeTakesForClips';
 import { restoreTakesForClip } from '../restoreTakesForClip';
 
@@ -28,6 +31,27 @@ describe('restoreTakesForClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneStoreValue.value = null;
+        // The restore refuses a capture whose lane track or take clips have left the
+        // project, so the cases below need the world those ids live in.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 't1',
+                    clips: ['c1', 'c2', 'c3'].map((id) => ClipDummy.create({ id, trackId: 't1' })),
+                }),
+                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'c9', trackId: 't2' })] }),
+                TrackDummy.create({
+                    id: 't3',
+                    clips: ['c7', 'c8'].map((id) => ClipDummy.create({ id, trackId: 't3' })),
+                }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('no-ops when the take-lane store is absent', () => {
@@ -364,5 +388,50 @@ describe('restoreTakesForClip', () => {
 
         expect(takeLaneStore.set).not.toHaveBeenCalled();
         expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes).toEqual([]);
+    });
+
+    it('does not insert a lane whose track is gone, even when its take clip is live', () => {
+        // The lane's own track left the project while its take's clip moved to a track
+        // that is still there, so only the lane's missing host can refuse this capture.
+        const retiredTake = createTake('c9', 'Retired elsewhere', 0, 4);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [] };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'c9', trackId: 't2' })] })],
+            selectedTrackId: 't2',
+            ghostClips: [],
+        });
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+        expect(mocks.takeLaneStoreValue.value?.lanes).toEqual([]);
+    });
+
+    it('does not re-add a retired take whose clip is gone', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivingTake = createTake('c2', 'Survivor', 4, 8);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, survivingTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        const liveLane: TakeLane = { ...createTakeLane('t1'), takes: [survivingTake], activeCompRegions: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+        // The retired take's clip left the project; the track itself is still there.
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'c2', trackId: 't1' })] })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([survivingTake.id]);
     });
 });

@@ -38,7 +38,7 @@ const {
             ],
         },
     },
-    mockAddClip: vi.fn(() => ({ id: 'new-clip' })),
+    mockAddClip: vi.fn<() => { id: string } | null>(() => ({ id: 'new-clip' })),
     mockRemoveClip: vi.fn(),
     mockCaptureRetiredTakeLanes: vi.fn<(clipIds: readonly string[]) => RetiredTakeLaneSnapshot[]>(() => []),
     mockRestoreTakesForClip: vi.fn(),
@@ -125,7 +125,25 @@ describe('duplicateSelectedClipsForward', () => {
         const undoFn = mockPushUndoEntry.mock.calls[0]?.[1];
         const redoFn = mockPushUndoEntry.mock.calls[0]?.[2];
         const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [
-            { laneIndex: 0, lane: { id: 'lane-1', trackId: 't1', takes: [], activeCompRegions: [] } },
+            {
+                laneIndex: 0,
+                lane: {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'new-clip',
+                            name: 'Take',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                        },
+                    ],
+                    activeCompRegions: [],
+                },
+                retiredTakeIds: ['take-1'],
+            },
         ];
         mockCaptureRetiredTakeLanes.mockReturnValue(retiredTakeLanes);
         // Undo captures what the copies are carrying before it removes them.
@@ -151,5 +169,42 @@ describe('duplicateSelectedClipsForward', () => {
         duplicateSelectedClipsForward(['nonexistent']);
         expect(mockAddClip).not.toHaveBeenCalled();
         expect(mockPushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('restores only the capture of the copies it re-created', () => {
+        duplicateSelectedClipsForward(['c1', 'c2']);
+        const call = mockPushUndoEntry.mock.calls[0];
+        const undoFn = call?.[1];
+        const redoFn = call?.[2];
+        const firstCapture: RetiredTakeLaneSnapshot = {
+            laneIndex: 0,
+            lane: {
+                id: 'lane-a',
+                trackId: 't1',
+                takes: [{ id: 'take-a', clipId: 'new-clip', name: 'A', startBeat: 0, endBeat: 4, selected: false }],
+                activeCompRegions: [],
+            },
+            retiredTakeIds: ['take-a'],
+        };
+        const secondCapture: RetiredTakeLaneSnapshot = {
+            laneIndex: 1,
+            lane: {
+                id: 'lane-b',
+                trackId: 't1',
+                takes: [{ id: 'take-b', clipId: 'missing-copy', name: 'B', startBeat: 0, endBeat: 4, selected: false }],
+                activeCompRegions: [],
+            },
+            retiredTakeIds: ['take-b'],
+        };
+        // `...Once` throughout: `clearAllMocks` clears calls, not implementations, so a
+        // plain `mockReturnValue` here would leak into every later case in this file.
+        mockCaptureRetiredTakeLanes.mockReturnValueOnce([firstCapture, secondCapture]);
+        undoFn();
+        // Only the first copy comes back; the second's id is never minted again.
+        mockAddClip.mockReturnValueOnce({ id: 'new-clip' }).mockReturnValueOnce(null);
+
+        redoFn();
+
+        expect(mockRestoreTakesForClip).toHaveBeenCalledExactlyOnceWith([firstCapture]);
     });
 });

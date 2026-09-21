@@ -109,7 +109,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
             }
         },
         () => {
-            let recreated = 0;
+            const recreatedIds = new Set<string>();
             for (const copy of copies) {
                 const newClip = addClip({
                     id: copy.createdId,
@@ -123,16 +123,21 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
                 if (!newClip) {
                     continue;
                 }
-                recreated += 1;
+                recreatedIds.add(newClip.id);
                 duplicateClipAutomation(copy.info.clipId, newClip.id);
             }
-            if (recreated === 0) {
-                // The destination track is gone, or the id is taken: nothing came back,
-                // so putting the capture back would insert a lane for a track and a clip
-                // that exist nowhere. The redo reports that it did not apply instead.
+            if (recreatedIds.size === 0) {
+                // The destination tracks are gone, or the ids are taken: nothing came back,
+                // so putting the capture back would insert lanes for tracks and clips that
+                // exist nowhere. The redo reports that it did not apply instead.
                 return REDO_NOT_APPLIED;
             }
-            restoreTakesForClip(retiredTakeLanes);
+            // Only the copies that came back may take their lanes with them: a copy whose
+            // destination track is gone was never re-created, and restoring its capture
+            // would leave a lane nothing owns.
+            restoreTakesForClip(
+                retiredTakeLanes.filter((capture) => capture.lane.takes.some((take) => recreatedIds.has(take.clipId)))
+            );
             return undefined;
         }
     );

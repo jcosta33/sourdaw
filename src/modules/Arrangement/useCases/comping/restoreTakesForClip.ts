@@ -1,7 +1,9 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 /** Touching regions (`left.endBeat === right.startBeat`) do not overlap, matching
  *  the store's own retention, which keeps a region whose start is at the
@@ -104,9 +106,27 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
         return;
     }
 
+    const tracks = getTrackStoreState()?.tracks ?? [];
+    const liveTrackIds = new Set(tracks.map((track) => track.id));
+    const liveClipIds = new Set(tracks.flatMap((track) => collectTrackClipIds(track)));
+
     const lanes = [...state.lanes];
     let changed = false;
     for (const { lane, laneIndex, retiredTakeIds } of retiredLanes) {
+        // A lane whose track is gone has no host, and a take whose clip is gone has no
+        // material to resolve against: re-inserting either strands state nothing can
+        // read — the orphan this retirement work exists to prevent. The guard belongs
+        // here rather than at each caller because a single-action undo dispatches its
+        // inverse through `executeAppAction`, which never runs the handler's
+        // live-state validation, so no caller's own guard is on that path.
+        if (!liveTrackIds.has(lane.trackId)) {
+            continue;
+        }
+        const residentTakeIds = (retiredTakeIds ?? []).filter((takeId) => {
+            const take = lane.takes.find((candidate) => candidate.id === takeId);
+            return take !== undefined && liveClipIds.has(take.clipId);
+        });
+
         // The captured lane's own id, or the lane its track now owns — the same
         // identity rule the cut-route guard uses, so the two can never disagree
         // about which lane the restore/redo is about.
@@ -118,7 +138,7 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
             // empty lane and insert only what the removal retired, so a captured
             // take the removal never touched — or a capture written before
             // `retiredTakeIds` existed — cannot ride back in with the whole clone.
-            const inserted = reconcileLane({ ...lane, takes: [], activeCompRegions: [] }, lane, retiredTakeIds ?? []);
+            const inserted = reconcileLane({ ...lane, takes: [], activeCompRegions: [] }, lane, residentTakeIds);
             if (inserted) {
                 lanes.splice(Math.min(Math.max(laneIndex, 0), lanes.length), 0, inserted);
                 changed = true;
@@ -126,7 +146,7 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
             continue;
         }
 
-        const reconciled = reconcileLane(lanes[targetIndex]!, lane, retiredTakeIds ?? []);
+        const reconciled = reconcileLane(lanes[targetIndex]!, lane, residentTakeIds);
         if (reconciled) {
             lanes[targetIndex] = reconciled;
             changed = true;

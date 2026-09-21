@@ -137,4 +137,67 @@ describe('duplicateSelectedClipsForward take restore', () => {
         expect(takeIdsInLiveLanes()).toEqual([]);
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
+
+    it('restores only the lanes of the copies it re-created', async () => {
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [
+                createTrack({ id: 'track-1', name: 'Track 1', kind: 'audio' }),
+                createTrack({ id: 'track-2', name: 'Track 2', kind: 'audio' }),
+            ],
+            selectedTrackId: 'track-1',
+        });
+        addClip({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip A', type: 'audio' });
+        addClip({ id: 'clip-2', trackId: 'track-2', startBeat: 0, endBeat: 4, name: 'Clip B', type: 'audio' });
+
+        duplicateSelectedClipsForward(['clip-1', 'clip-2']);
+        const firstCopy = trackStore.value?.tracks[0]?.clips.find((clip) => clip.id !== 'clip-1');
+        const secondCopy = trackStore.value?.tracks[1]?.clips.find((clip) => clip.id !== 'clip-2');
+        if (!firstCopy || !secondCopy) {
+            throw new Error('expected both copies');
+        }
+
+        // A take on each copy, in the lane its own track owns.
+        const firstTake = {
+            id: 'take-on-first-copy',
+            clipId: firstCopy.id,
+            name: 'First copy take',
+            startBeat: 4,
+            endBeat: 8,
+            selected: false,
+        };
+        const secondTake = {
+            id: 'take-on-second-copy',
+            clipId: secondCopy.id,
+            name: 'Second copy take',
+            startBeat: 4,
+            endBeat: 8,
+            selected: false,
+        };
+        takeLaneStore.set({
+            lanes: [
+                { id: 'lane-1', trackId: 'track-1', takes: [firstTake], activeCompRegions: [] },
+                { id: 'lane-2', trackId: 'track-2', takes: [secondTake], activeCompRegions: [] },
+            ],
+        });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        // A projection removes the second copy's destination track before the redo.
+        const remainingTrack = trackStore.value?.tracks[0];
+        if (!remainingTrack) {
+            throw new Error('expected the first track');
+        }
+        trackStore.set({ tracks: [remainingTrack], selectedTrackId: 'track-1', ghostClips: [] });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        // Only the copy that came back may carry a lane, and it must name a live clip.
+        expect(clipIds()).toEqual(['clip-1', firstCopy.id]);
+        expect(takeIdsInLiveLanes()).toEqual([firstTake.id]);
+        expect(clipIdsNamedByLiveTakes()).toEqual([firstCopy.id]);
+    });
 });

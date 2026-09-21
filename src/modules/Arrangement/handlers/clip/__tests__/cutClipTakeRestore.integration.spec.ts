@@ -417,9 +417,11 @@ describe('cutClip take retirement and restore', () => {
         expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.clipId)).toEqual(['clip-1']);
     });
 
-    it('carries a lane once when the cut spans two tracks', async () => {
+    it('does not claim a retired lane twice when the cut spans two tracks', async () => {
         // One lane names a take for a clip on each of two tracks, so both pre-removal
-        // entries could claim it.
+        // entries could claim it. A lane carries one track, so a track-keyed spread can
+        // only ever claim it once too: this case observes the no-double-claim half of
+        // the rule, and the two moved-lane cases above observe the not-dropped half.
         const takeOnFirst = createTake('clip-1', 'First take', 0, 4);
         const takeOnSecond = createTake('clip-2', 'Second take', 0, 4);
         const lane: TakeLane = {
