@@ -1,4 +1,4 @@
-import { readInverseActionForRedo } from '#/modules/Command/useCases';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import { createHandler } from '#/utils/createHandler';
 import {
     type AppAction,
@@ -16,16 +16,21 @@ type RestoreDrawnClipAction = Extract<AppAction, { type: 'restoreDrawnClip' }>;
 /**
  * The capture the paired discard recorded when it ran at undo time.
  *
- * Read from the inverse rather than this action's own payload: the session
- * mirror serializes the entry at commit time and parses the inverse and the redo
- * into independent objects, so a shared array on the two payloads is empty
- * whenever the entry crossed a reload. A redo invoked outside the live stack —
- * a direct call with no paired entry — has only its own payload to fall back on.
+ * Read from the inverse on the live future stack rather than this action's own
+ * payload: the session mirror serializes the entry at commit time and parses the
+ * inverse and the redo into independent objects, so a shared array on the two
+ * payloads is empty whenever the entry crossed a reload. Reading the public undo
+ * history store keeps the pairing out of the Command barrel. A redo invoked
+ * outside the live stack — a direct call with no paired entry — has only its own
+ * payload to fall back on.
  */
 function pendingRetiredTakeLanes(action: RestoreDrawnClipAction): readonly RetiredTakeLaneSnapshot[] {
-    const inverse = readInverseActionForRedo(action);
-    if (inverse?.type === 'discardDrawnClip') {
-        return inverse.payload.retiredTakeLanes ?? [];
+    for (const entry of undoHistoryStore.value?.future ?? []) {
+        if (entry.kind !== 'action' || entry.redoAction !== action) {
+            continue;
+        }
+        const inverse = entry.inverseAction;
+        return inverse?.type === 'discardDrawnClip' ? (inverse.payload.retiredTakeLanes ?? []) : [];
     }
     return action.payload.retiredTakeLanes ?? [];
 }

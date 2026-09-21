@@ -3,10 +3,6 @@ import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
-function regionKey(region: CompRegion): string {
-    return `${region.startBeat}:${region.endBeat}:${region.takeId}`;
-}
-
 /** Touching regions (`left.endBeat === right.startBeat`) do not overlap, matching
  *  the store's own retention, which keeps a region whose start is at the
  *  previous region's end. */
@@ -31,11 +27,15 @@ function regionsOverlap(left: CompRegion, right: CompRegion): boolean {
  * A captured take the live lane still holds is taken from live, so an edit made to
  * it after the capture survives. Re-added regions are restricted to those naming a
  * re-added take, so a region removed later is not resurrected either; and a
- * re-added region that would overlap a live region is dropped, because the lane
- * store keeps only non-overlapping regions and would otherwise discard whichever
- * of the two it reaches second — the comp authored after the removal. Order
- * follows the capture for the takes it knows and appends the live-only ones;
- * regions are ordered by beat, as the store's own shape requires.
+ * re-added region that overlaps any live region is dropped, because the lane store
+ * keeps only non-overlapping regions and would otherwise discard whichever of the
+ * two it reaches second — the comp authored after the removal. That overlap test is
+ * also what de-duplicates a region the live lane already holds at the same span: a
+ * same-span region overlaps itself, and a zero-length region (which
+ * `compRegionInterval`'s `endBeat > startBeat` law never produces) is the only shape
+ * it could not absorb. Order follows the capture for the takes it knows and appends
+ * the live-only ones; regions are ordered by beat, as the store's own shape
+ * requires.
  */
 function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: readonly string[]): TakeLane | null {
     const retiredTakeIdSet = new Set(retiredTakeIds);
@@ -61,11 +61,9 @@ function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: reado
         }
     }
 
-    const liveRegionKeys = new Set(live.activeCompRegions.map(regionKey));
     const restoredRegions = captured.activeCompRegions.filter(
         (region) =>
             reAddedTakeIds.has(region.takeId) &&
-            !liveRegionKeys.has(regionKey(region)) &&
             !live.activeCompRegions.some((liveRegion) => regionsOverlap(liveRegion, region))
     );
 
