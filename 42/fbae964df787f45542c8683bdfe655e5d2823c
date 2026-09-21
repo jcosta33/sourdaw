@@ -1,0 +1,57 @@
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  s_ed5aa36a3ba357::t_27b8b9ae36675a 41
+  s_ed5aa36a3ba357::t_eb76a904f58fe8 16,42,71
+src/modules/Automation/useCases/automation/restoreAutomationPointPresence.ts
+  s_ed5aa36a3ba357::t_fe369bcdc8e01f 1-40
+src/modules/Automation/handlers/automation/handleRestoreAutomationPointPresence.ts
+  s_ed5aa36a3ba357::t_fe369bcdc8e01f 1-9,11-40,61-73,76-110,113-120,124-132
+  s_ed5aa36a3ba357::t_995ad3bb7c7096 41-58,60,74-75
+  s_ed5aa36a3ba357::t_33ab726eb89a83 10,59,111-112,121-123
+src/modules/Command/useCases/__tests__/linkedAutomationPointAdmission.spec.ts
+  s_ed5aa36a3ba357::t_df91094f44f5d4 365-366
+  s_ed5aa36a3ba357::t_027f675f012540 169-171,193-227
+  s_ed5aa36a3ba357::t_b201b33682328c 229,231-290
+  s_ed5aa36a3ba357::t_15b56d95940acf 376-379
+  s_ed5aa36a3ba357::t_be512b118b0d81 32,155-166,168,172
+  s_ed5aa36a3ba357::t_a27b5adcfd7625 167,173-192,228,382,395
+  s_ed5aa36a3ba357::t_a39f41e1918a59 230
+src/utils/handlerContract.ts
+  s_ed5aa36a3ba357::t_fe369bcdc8e01f 2089-2104
+  s_ed5aa36a3ba357::t_71ecb90bc8802e 2088
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_ed5aa36a3ba357::t_fbca0908327ec9 14-15,48
+src/modules/Automation/handlers/automation/handleRemoveAutomationPoint.ts
+  s_ed5aa36a3ba357::t_a7148c46bb1478 61,66-67
+  s_ed5aa36a3ba357::t_2958781e9d8f3f 73-74
+  s_ed5aa36a3ba357::t_eb76a904f58fe8 57-60,62-65,72,75-83,86-90
+src/modules/Automation/handlers/automation/__tests__/handleRemoveAutomationPoint.spec.ts
+  s_ed5aa36a3ba357::t_a27b5adcfd7625 128,131,134-139,142-144
+  s_ed5aa36a3ba357::t_a3c1226d373a1b 116-120,132-133,145
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationPointPresence.spec.ts
+  s_ed5aa36a3ba357::t_6e9cf6e0833f01 3-4
+  s_ed5aa36a3ba357::t_aa633ce4e65cca 2,6-8
+  s_ed5aa36a3ba357::t_f4f7d55ba8bf10 1,5,9-37,41-78,80-90,92-96
+  s_ed5aa36a3ba357::t_1dc47895e2bcca 38-40,79,91
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ed5aa36a3ba357::t_fbca0908327ec9 233
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ed5aa36a3ba357::t_fbca0908327ec9 1128
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_ed5aa36a3ba357::t_4778803e09f003 3309-3343,3356,3367,3448-3449,3476-3477,3499,3513,3522,3544,3558,3565,3572-3574,3615-3618,3640,3645,3657,3664,3669,3671,3677,3682,3684-3685,3704,3711,3719-3720,3726,3729,3773-3774,3783-3784,3847,3853,3890-3891,3925,3937-3938,3954,3959-3960,3972,3989,3995,4000,4010,4031,4036-4037,4074-4075,4109-4110,4118-4119,4208,4215,4221-4222,4229,4243,4258,4272,4277-4280,4309,4315,4329,4335,4380,4382,4397,4406-4407,4409,4422-4423,4426,4433,4438,4465,4470,4565,4572,4600,4608,4614,4622-4623,4663,4674,4682,4688,4695,4700,4708-4709,4920,4936,4953,4960-4961,4964,4995,5008-5011,5021-5022,5067,5081,5086,5088,5136,5141,5159,5164,5188,5193,5260,5269,5281,5293,5314,5326,5332,5338-5339,5364,5370-5371,5435,5441,5451,5456,5458,5467,5469,5478,5677-5700,5706-5707,5710-5714,5716-5717,5719,5721-5731,5735-5737,5739-5743,5745-5746,5748-5750,5753-5764,5766,5768-5770,5775,5778-5781,5785-5790,5795,5797-5798,5800-5801,5804-5816,5820-5821,5824,5826-5828,5832-5833,5835-5842
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "42fbae964df787f45542c8683bdfe655e5d2823c",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
