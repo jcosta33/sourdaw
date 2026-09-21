@@ -1,0 +1,16 @@
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  h_beb54bf43b47b7 57-58,60,67,285-302
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 80-87,105-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "35336359470115fedf99642c29c72762335d91a4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
