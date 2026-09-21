@@ -183,21 +183,19 @@ describe('tracked-set restamp plan', () => {
         expect(trackedSetRestampPlan(expected, expected)).toBeUndefined();
     });
 
-    it('plans exactly the drifted digest, paired by label', () => {
-        const expected = [
-            `tracked-set-sha256:${'a'.repeat(64)}:grand-boule-native-rust`,
-            `tracked-set-sha256:${'b'.repeat(64)}:grand-boule-release-proof`,
-        ];
-        const recorded = [
-            `tracked-set-sha256:${STALE_SHA256}:grand-boule-native-rust`,
-            `tracked-set-sha256:${'b'.repeat(64)}:grand-boule-release-proof`,
-        ];
+    it('plans exactly the drifted digest, paired by label, not by position', () => {
+        const nativeRust = `tracked-set-sha256:${'a'.repeat(64)}:grand-boule-native-rust`;
+        const releaseProof = `tracked-set-sha256:${'b'.repeat(64)}:grand-boule-release-proof`;
+        const expected = [nativeRust, releaseProof];
+        // Reordered relative to the registry so a positional pairing would pair release-proof with
+        // the native-rust digest and miss the real drift entirely.
+        const recorded = [releaseProof, `tracked-set-sha256:${STALE_SHA256}:grand-boule-native-rust`];
         expect(trackedSetRestampPlan(recorded, expected)).toEqual({
             digestChanges: [
                 {
                     label: 'grand-boule-native-rust',
-                    from: recorded[0],
-                    to: expected[0],
+                    from: recorded[1],
+                    to: nativeRust,
                 },
             ],
         });
@@ -227,14 +225,13 @@ describe('tracked-set restamp plan', () => {
 
 describe('tracked-set restamp write and refusals', () => {
     it('writes only the drifted entries and renders canonical serialization', () => {
-        const expected = [
-            `tracked-set-sha256:${'a'.repeat(64)}:grand-boule-native-rust`,
-            `tracked-set-sha256:${'b'.repeat(64)}:grand-boule-release-proof`,
-        ];
-        const recorded = [
-            `tracked-set-sha256:${STALE_SHA256}:grand-boule-native-rust`,
-            `tracked-set-sha256:${'b'.repeat(64)}:grand-boule-release-proof`,
-        ];
+        const nativeRust = `tracked-set-sha256:${'a'.repeat(64)}:grand-boule-native-rust`;
+        const releaseProof = `tracked-set-sha256:${'b'.repeat(64)}:grand-boule-release-proof`;
+        const retired = `tracked-set-sha256:${STALE_SHA256}:retired-boundary`;
+        const expected = [nativeRust, releaseProof];
+        // The recorded array carries a retired label the registry no longer produces; rewriting the
+        // whole array would drop it, but a restamp must move only the drifted entries.
+        const recorded = [`tracked-set-sha256:${STALE_SHA256}:grand-boule-native-rust`, releaseProof, retired];
         const inventory: RecordedInventory = {
             surfaces: [{ id: 'grand-boule', kind: 'project-source', digests: [...recorded] }],
         };
@@ -244,7 +241,7 @@ describe('tracked-set restamp write and refusals', () => {
         }
         const written = applyTrackedSetRestamp(inventory, inventory.surfaces[0]!, expected, plan);
         const parsed = parseJsonWithUniqueKeys<RecordedInventory>(written, 'written inventory');
-        expect(parsed.surfaces[0]?.digests).toEqual(expected);
+        expect(parsed.surfaces[0]?.digests).toEqual([nativeRust, releaseProof, retired]);
         expect(written.endsWith('}\n')).toBe(true);
         expect(written).toContain('\n    "surfaces"');
     });
@@ -274,6 +271,63 @@ describe('tracked-set restamp write and refusals', () => {
 
         expect(message).toContain('uncommitted changes');
         expect(message).toContain('crates/daw-dsp/benches/wasm/renderTable.mjs');
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
+    });
+
+    it('refuses a staged deletion of a tracked-set member before writing, naming the file', () => {
+        const root = createFixture();
+        writeDriftedInventory(root, STALE_LABEL);
+        const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+        execFileSync('git', ['rm', '-q', 'crates/daw-dsp/benches/quantum-cost-table.json'], { cwd: root });
+
+        const message = thrownMessage(() => restampTrackedSetInventory(root));
+
+        expect(message).toContain('uncommitted changes');
+        expect(message).toContain('crates/daw-dsp/benches/quantum-cost-table.json');
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
+    });
+
+    it('refuses an untracked member inside the set before writing, naming the file', () => {
+        const root = createFixture();
+        writeDriftedInventory(root, STALE_LABEL);
+        const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+        writeFileSync(join(root, 'crates/daw-dsp/src/grand_boule/untracked.rs'), 'untracked member\n');
+
+        const message = thrownMessage(() => restampTrackedSetInventory(root));
+
+        expect(message).toContain('uncommitted changes');
+        expect(message).toContain('crates/daw-dsp/src/grand_boule/untracked.rs');
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
+    });
+
+    it('refuses a staged addition inside the set before writing, naming the file', () => {
+        const root = createFixture();
+        writeDriftedInventory(root, STALE_LABEL);
+        const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+        writeFileSync(join(root, 'crates/daw-dsp/src/grand_boule/added.rs'), 'added member\n');
+        execFileSync('git', ['add', 'crates/daw-dsp/src/grand_boule/added.rs'], { cwd: root });
+
+        const message = thrownMessage(() => restampTrackedSetInventory(root));
+
+        expect(message).toContain('uncommitted changes');
+        expect(message).toContain('crates/daw-dsp/src/grand_boule/added.rs');
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
+    });
+
+    it('refuses a rename inside the set before writing, naming the new path', () => {
+        const root = createFixture();
+        writeDriftedInventory(root, STALE_LABEL);
+        const before = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+        execFileSync(
+            'git',
+            ['mv', 'crates/daw-dsp/src/grand_boule/mod.rs', 'crates/daw-dsp/src/grand_boule/renamed_mod.rs'],
+            { cwd: root }
+        );
+
+        const message = thrownMessage(() => restampTrackedSetInventory(root));
+
+        expect(message).toContain('uncommitted changes');
+        expect(message).toContain('crates/daw-dsp/src/grand_boule/renamed_mod.rs');
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(before);
     });
 

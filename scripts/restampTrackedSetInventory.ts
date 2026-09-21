@@ -29,37 +29,48 @@ function trackedSetPathspecs(): readonly string[] {
     return GRAND_BOULE_RELEASE_REGISTRY.boundaries.flatMap(({ gitPathspecs }) => [...gitPathspecs]);
 }
 
-/** The exact files a tracked-set digest hashes, resolved the way the checker resolves them. */
-function trackedSetFiles(root: string): string[] {
-    return execFileSync('git', ['ls-files', '-z', '--', ...trackedSetPathspecs()], {
-        cwd: root,
-        encoding: 'utf8',
-    })
-        .split('\0')
-        .filter(Boolean)
-        .sort();
-}
-
-function uncommittedTrackedSetFiles(root: string): string[] {
-    const files = trackedSetFiles(root);
-    if (files.length === 0) {
-        return [];
+/**
+ * The tracked-set members whose working-tree state differs from HEAD, plus any untracked file
+ * inside the set. The changed set comes straight from `git status` over the registry's own
+ * pathspecs, never from the index listing: a staged deletion removes a path from the index, so
+ * intersecting the status against `git ls-files` would drop that path and bless the surviving
+ * files. `git status` reports every difference a commit would record — a staged or unstaged edit,
+ * an addition, a deletion, and a rename — and also names untracked members inside the set. Ignored
+ * paths do not count: the checker's digest hashes only `git ls-files` output, which never contains
+ * an ignored untracked file, so such a file cannot drift the recorded digest, and `git status`
+ * likewise hides it.
+ */
+function trackedSetChanges(root: string): string[] {
+    const status = execFileSync(
+        'git',
+        ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...trackedSetPathspecs()],
+        { cwd: root, encoding: 'utf8' }
+    );
+    const changed: string[] = [];
+    const fields = status.split('\0');
+    for (let index = 0; index < fields.length; index += 1) {
+        const field = fields[index];
+        if (field === undefined || field.length < 4) {
+            continue;
+        }
+        changed.push(field.slice(3));
+        // A rename or copy record carries its origin path as the next NUL-terminated field.
+        if (field.startsWith('R') || field.startsWith('C')) {
+            index += 1;
+        }
     }
-    return execFileSync('git', ['diff', 'HEAD', '--name-only', '--', ...files], {
-        cwd: root,
-        encoding: 'utf8',
-    })
-        .split('\n')
-        .filter(Boolean);
+    return [...new Set(changed)].sort();
 }
 
 /**
  * The deliberate part stays deliberate: a tracked-set digest is computed over the working tree, so
- * an uncommitted edit is drift nobody has accepted. Restamp only a tree whose tracked-set members
- * are committed — the change a person made must be represented in the tree before it is recorded.
+ * any difference from HEAD — an uncommitted edit, a staged deletion, an addition, a rename, or an
+ * untracked member inside the set — is drift nobody has accepted. Restamp only a tree whose
+ * tracked-set members are committed: the change a person made must be represented in the tree
+ * before it is recorded.
  */
 export function assertTrackedSetChangesCommitted(root: string): void {
-    const changed = uncommittedTrackedSetFiles(root);
+    const changed = trackedSetChanges(root);
     if (changed.length > 0) {
         fail(
             `tracked-set members have uncommitted changes (${changed.join(', ')}); ` +
