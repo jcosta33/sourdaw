@@ -1,0 +1,16 @@
+scripts/__tests__/releaseProof.spec.ts
+  h_beb54bf43b47b7 3218-3238
+scripts/releaseProof.ts
+  h_beb54bf43b47b7 125-129,131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0bda8bae4577c00354f1069428462c9ad3fe894b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
