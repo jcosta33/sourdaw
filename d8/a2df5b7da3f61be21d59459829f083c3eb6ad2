@@ -1,0 +1,14 @@
+src/modules/Arrangement/useCases/comping/__tests__/removeCompRegion.spec.ts
+  h_beb54bf43b47b7 174-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d8a2df5b7da3f61be21d59459829f083c3eb6ad2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
