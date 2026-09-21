@@ -58,9 +58,14 @@ reader retained.
   conclusion is posted.
 - `risk-plan-v1` — the generated risk classification a bundle is prepared with
   (`reviewRiskPolicy.ts`).
-- The `sourdaw-*-v1` marker-line records — repair records, confirmation, finding lineage, and
-  delivery receipts (v2 visible-plus-hidden; v1 HTML-only receipts remain readable) — all framed by
-  the one marker grammar in `canonicalRecord.ts`.
+- `stances.json` — the caller's pre-dispatch stance record; when a bundle carries it, the dossier
+  publication gate binds the record's draws to it one-to-one as sets of stance names
+  (`reviewDossierPublication.ts`).
+- The `sourdaw-*-v1` marker-line records — repair records, confirmation, and finding lineage — all
+  framed by the one marker grammar in `canonicalRecord.ts`.
+- Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
+  marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
+  receipts remain readable.
 - The mutation-lock owner blobs and recovery journals (`pullRequestMutationLock.ts`) on
   protected-primary git refs.
 
