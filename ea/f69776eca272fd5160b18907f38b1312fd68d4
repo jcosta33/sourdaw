@@ -1,0 +1,26 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 21,33,41,381-386,391-392,397,458-509,550,553,558-612,1274-1341,1468,1472-1482,1490-1494,1863-1864,1911,1915-1916,1918-1919,1925-1930,1945-1946,1953,1955-1959,1964-2002,2004-2073,2416,2419-2421
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 22,128-141,160-169,230-231,233-249,255-256,301,306-312,347
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 94-107,112-118,125,130-139
+scripts/semanticReview/requiredEvidence.ts
+  h_beb54bf43b47b7 1-88
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 109-113,115-116,118-125,136
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 50,55,86-105,136-143,145,213,231-232,237,256-259,263-264,432-439
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 129-134,137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eaf69776eca272fd5160b18907f38b1312fd68d4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
