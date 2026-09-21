@@ -114,4 +114,42 @@ describe('renderToClip take restore', () => {
         expect(clipIds()).toEqual(['clip-1']);
         expect(takeIdsInLiveLanes()).toEqual([]);
     });
+
+    it('restores nothing when the redo cannot re-create its clip', async () => {
+        const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
+        const rendered = renderToClip({
+            targetTrackId: 'track-1',
+            startBeat: 4,
+            endBeat: 8,
+            buffer,
+            name: 'Rendered',
+        });
+        if (!rendered) {
+            throw new Error('expected the rendered clip');
+        }
+        const take = {
+            id: 'take-on-render',
+            clipId: rendered.clipId,
+            name: 'Take on render',
+            startBeat: 4,
+            endBeat: 8,
+            selected: false,
+        };
+        takeLaneStore.set({ lanes: [{ id: 'lane-1', trackId: 'track-1', takes: [take], activeCompRegions: [] }] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+
+        // A projection removes the target track, and the take lane with it.
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        // Nothing was re-created, so no lane may come back for a track that is gone.
+        expect(clipIds()).toEqual([]);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
 });

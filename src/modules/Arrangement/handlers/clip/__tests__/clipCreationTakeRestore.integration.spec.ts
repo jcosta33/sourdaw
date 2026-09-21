@@ -273,8 +273,11 @@ describe('clip-creation take restore', () => {
         expect(result.status).toBe('committed');
         expect(clipIds()).toEqual(['clip-source', 'clip-first', 'clip-second']);
 
-        // Only one of the two creations carries a take.
-        const takeId = projectTakeOntoClip('clip-first');
+        // A take on each creation, in one lane, written with no local undo entry.
+        const firstTake = createTake('clip-first', 'First take', 8, 12);
+        const secondTake = createTake('clip-second', 'Second take', 12, 16);
+        takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes: [firstTake, secondTake] }] });
+        flushAutomergeStorageWrites();
 
         await undo();
         expect(clipIds()).toEqual(['clip-source']);
@@ -283,6 +286,7 @@ describe('clip-creation take restore', () => {
         await redo();
 
         expect(clipIds()).toEqual(['clip-source', 'clip-first', 'clip-second']);
-        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+        // Every creation's capture has to be reconciled, not only the first one's.
+        expect(takeIdsInLiveLanes()).toEqual([firstTake.id, secondTake.id]);
     });
 });

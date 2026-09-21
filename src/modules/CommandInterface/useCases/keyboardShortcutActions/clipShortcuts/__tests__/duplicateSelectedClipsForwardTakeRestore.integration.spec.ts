@@ -105,4 +105,36 @@ describe('duplicateSelectedClipsForward take restore', () => {
         expect(clipIds()).toEqual(['clip-1']);
         expect(takeIdsInLiveLanes()).toEqual([]);
     });
+
+    it('restores nothing when the redo cannot re-create its copy', async () => {
+        duplicateSelectedClipsForward(['clip-1']);
+        const copyId = clipIds().find((id) => id !== 'clip-1');
+        if (!copyId) {
+            throw new Error('expected the duplicated copy');
+        }
+        const take = {
+            id: 'take-on-copy',
+            clipId: copyId,
+            name: 'Take on copy',
+            startBeat: 4,
+            endBeat: 8,
+            selected: false,
+        };
+        takeLaneStore.set({ lanes: [{ id: 'lane-1', trackId: 'track-1', takes: [take], activeCompRegions: [] }] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+
+        // A projection removes the copy's whole track, and its take lane with it.
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        // Nothing was re-created, so no lane may come back for a track that is gone.
+        expect(clipIds()).toEqual([]);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
 });

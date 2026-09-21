@@ -34,6 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
 }));
 
 describe('renderToClip', () => {

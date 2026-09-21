@@ -774,6 +774,15 @@ function transitionRetiredTakeLanes(
  * would then prefer over the region that replaced it. An empty fresh capture is the
  * same statement and clears the claim, so there is no early return for it.
  *
+ * The whole capture rides on the first pre-removal entry rather than being spread
+ * by track. A lane is keyed by the track it was captured on while moving a clip
+ * re-keys the clip rather than its lane, so the two disagree exactly where this
+ * write matters most — and the redo retires that lane anyway, because the
+ * retiring-clip scan follows the clip. Nothing reads the carrier: the restore
+ * flattens every entry's lanes, so which entry names a lane is not part of the
+ * contract. What is: each lane appears exactly once, which one carrier gives by
+ * construction and a per-track spread cannot.
+ *
  * The redo runs with `skipUndo`, so its own `describe()` capture is discarded and
  * nothing else carries it; the entry is still on the `future` stack while its redo
  * replays, which is the only moment the pairing is readable. Writing to the inverse
@@ -788,10 +797,12 @@ function recordRedoTakeRetirement(
     if (inverse?.type !== 'restoreTrackClipStates') {
         return;
     }
-    inverse.payload.replacement = inverse.payload.replacement.map((entry) => ({
-        ...entry,
-        retiredTakeLanes: retired.filter((candidate) => candidate.lane.trackId === entry.trackId),
-    }));
+    inverse.payload.replacement = inverse.payload.replacement.map((entry, index) => {
+        if (index === 0) {
+            return { ...entry, retiredTakeLanes: [...retired] };
+        }
+        return { ...entry, retiredTakeLanes: [] };
+    });
 }
 
 /**

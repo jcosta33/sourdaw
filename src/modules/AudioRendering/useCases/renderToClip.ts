@@ -7,7 +7,7 @@ import {
     restoreTakesForClip,
 } from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 export type RenderToClipInput = {
@@ -75,7 +75,7 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
             if (createdNewTrack) {
                 addTrack({ id: trackId, name: input.name, kind: 'audio' });
             }
-            addClip({
+            const recreated = addClip({
                 id: clip.id,
                 trackId,
                 startBeat: input.startBeat,
@@ -84,7 +84,14 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
                 type: 'audio',
                 audioBufferId,
             });
+            if (!recreated) {
+                // The target track is gone, or the id is taken: nothing came back, so
+                // putting the capture back would insert a lane for a track and a clip
+                // that exist nowhere. The redo reports that it did not apply instead.
+                return REDO_NOT_APPLIED;
+            }
             restoreTakesForClip(retiredTakeLanes);
+            return undefined;
         },
         // The redo closure re-creates the rendered clip with this buffer id.
         { restoresBufferIds: [audioBufferId] }

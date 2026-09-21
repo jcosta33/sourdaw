@@ -1,8 +1,45 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { addClip, captureRetiredTakeLanes, removeClip, restoreTakesForClip } from '#/modules/Arrangement/useCases';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+
+type ClipInfo = {
+    clipId: string;
+    trackId: string;
+    startBeat: number;
+    endBeat: number;
+    name: string;
+    type: 'audio' | 'midi';
+    audioBufferId?: string;
+};
+
+type ClipCopy = {
+    info: ClipInfo;
+    createdId: string;
+};
+
+/** The selected clips with the placement data a copy needs, in track order. */
+function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonly string[]): ClipInfo[] {
+    const selected: ClipInfo[] = [];
+    for (const track of tracks) {
+        for (const clip of track.clips) {
+            if (!selectedClipIds.includes(clip.id)) {
+                continue;
+            }
+            selected.push({
+                clipId: clip.id,
+                trackId: track.id,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                name: clip.name,
+                type: clip.type,
+                audioBufferId: clip.audioBufferId,
+            });
+        }
+    }
+    return selected;
+}
 
 /**
  * Duplicates all selected clips forward by the selection's total time span (R-B2).
@@ -21,39 +58,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
-    // Collect selected clips with their track info
-    type ClipInfo = {
-        clipId: string;
-        trackId: string;
-        startBeat: number;
-        endBeat: number;
-        name: string;
-        type: 'audio' | 'midi';
-        audioBufferId?: string;
-    };
-
-    type ClipCopy = {
-        info: ClipInfo;
-        createdId: string;
-    };
-
-    const selected: ClipInfo[] = [];
-    for (const track of state.tracks) {
-        for (const clip of track.clips) {
-            if (selectedClipIds.includes(clip.id)) {
-                selected.push({
-                    clipId: clip.id,
-                    trackId: track.id,
-                    startBeat: clip.startBeat,
-                    endBeat: clip.endBeat,
-                    name: clip.name,
-                    type: clip.type,
-                    audioBufferId: clip.audioBufferId,
-                });
-            }
-        }
-    }
-
+    const selected = collectSelectedClips(state.tracks, selectedClipIds);
     if (selected.length === 0) {
         return;
     }
@@ -104,6 +109,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
             }
         },
         () => {
+            let recreated = 0;
             for (const copy of copies) {
                 const newClip = addClip({
                     id: copy.createdId,
@@ -114,11 +120,20 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
                     type: copy.info.type,
                     audioBufferId: copy.info.audioBufferId,
                 });
-                if (newClip) {
-                    duplicateClipAutomation(copy.info.clipId, newClip.id);
+                if (!newClip) {
+                    continue;
                 }
+                recreated += 1;
+                duplicateClipAutomation(copy.info.clipId, newClip.id);
+            }
+            if (recreated === 0) {
+                // The destination track is gone, or the id is taken: nothing came back,
+                // so putting the capture back would insert a lane for a track and a clip
+                // that exist nowhere. The redo reports that it did not apply instead.
+                return REDO_NOT_APPLIED;
             }
             restoreTakesForClip(retiredTakeLanes);
+            return undefined;
         }
     );
 }

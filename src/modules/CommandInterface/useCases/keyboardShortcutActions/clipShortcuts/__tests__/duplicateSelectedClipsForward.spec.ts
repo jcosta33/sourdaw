@@ -54,7 +54,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     restoreTakesForClip: mockRestoreTakesForClip,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({ duplicateClipAutomation: mockDuplicateClipAutomation }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mockPushUndoEntry, executeUserAppAction: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    pushUndoEntry: mockPushUndoEntry,
+    executeUserAppAction: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+}));
 
 import { duplicateSelectedClipsForward } from '../duplicateSelectedClipsForward';
 

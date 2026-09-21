@@ -6,7 +6,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clipSelectionStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -25,6 +25,7 @@ import {
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type Take, type TakeLane } from '../../../models/TakeLane';
+import { moveClip } from '../../../useCases/clip/moveClip';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -191,7 +192,7 @@ describe('cutClip take retirement and restore', () => {
 
         // The redo retires nothing, but it still lands rather than pinning the stack.
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
-        expect(undoStore.value?.future).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
 
         await undo();
 
@@ -216,7 +217,7 @@ describe('cutClip take retirement and restore', () => {
         await redo();
 
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
-        expect(undoStore.value?.future).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
 
         await undo();
 
@@ -366,5 +367,189 @@ describe('cutClip take retirement and restore', () => {
             { startBeat: 0, endBeat: 4, takeId: take.id },
             { startBeat: 4, endBeat: 8, takeId: lateTake.id },
         ]);
+    });
+
+    it('restores a take whose lane still names the track the clip left', async () => {
+        // The clip starts on track-2 with a take lane captured there.
+        const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 4 });
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'track-1', clips: [] }),
+                TrackDummy.create({ id: 'track-2', clips: [clip] }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const take = createTake('clip-1', 'Recorded take', 0, 4);
+        const lane: TakeLane = {
+            ...createTakeLane('track-2'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        // Moving the clip re-keys the clip, not the lane: the lane still says track-2.
+        expect(moveClip('clip-1', 'track-1', 0)).toBe(true);
+        clipSelectionStore.set({ selectedClipId: 'clip-1', selectedClipIds: ['clip-1'], marqueeSelection: null });
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 4, takeId: take.id },
+        ]);
+
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: take.id }]);
+        // The take has to name the clip that came back, not the track it was captured on.
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.clipId)).toEqual(['clip-1']);
+    });
+
+    it('carries a lane once when the cut spans two tracks', async () => {
+        // One lane names a take for a clip on each of two tracks, so both pre-removal
+        // entries could claim it.
+        const takeOnFirst = createTake('clip-1', 'First take', 0, 4);
+        const takeOnSecond = createTake('clip-2', 'Second take', 0, 4);
+        const lane: TakeLane = {
+            ...createTakeLane('track-1'),
+            takes: [takeOnFirst, takeOnSecond],
+            activeCompRegions: [],
+        };
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    clips: [ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 4 })],
+                }),
+                TrackDummy.create({
+                    id: 'track-2',
+                    clips: [ClipDummy.create({ id: 'clip-2', trackId: 'track-2', startBeat: 0, endBeat: 4 })],
+                }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+        clipSelectionStore.set({
+            selectedClipId: 'clip-1',
+            selectedClipIds: ['clip-1', 'clip-2'],
+            marqueeSelection: null,
+        });
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
+        expect(trackStore.value?.tracks[1]?.clips).toHaveLength(0);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+        expect(trackStore.value?.tracks[1]?.clips).toHaveLength(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes).toHaveLength(2);
+
+        await redo();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+
+        const redoEntry = undoHistoryStore.value?.past.at(-1);
+        if (!redoEntry || redoEntry.kind !== 'action' || redoEntry.inverseAction?.type !== 'restoreTrackClipStates') {
+            throw new Error('expected the cut entry to carry a restoreTrackClipStates inverse');
+        }
+        // The capture the following undo reads must name the lane once, not once per
+        // entry: the restore reconciles every entry's lanes.
+        expect(
+            redoEntry.inverseAction.payload.replacement.flatMap((entry) =>
+                (entry.retiredTakeLanes ?? []).map((capture) => capture.lane.id)
+            )
+        ).toEqual([lane.id]);
+
+        await undo();
+
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(trackStore.value?.tracks[1]?.clips.map((candidate) => candidate.id)).toEqual(['clip-2']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([
+            takeOnFirst.id,
+            takeOnSecond.id,
+        ]);
+    });
+
+    it('restores a take whose lane the moveClips route left on the old track', async () => {
+        // The clip starts on track-2 with a lane captured there, then the product move
+        // route carries the clip to track-1 and leaves the lane pointing at track-2.
+        const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-2', startBeat: 0, endBeat: 4 });
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'track-1', clips: [] }),
+                TrackDummy.create({ id: 'track-2', clips: [clip] }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const take = createTake('clip-1', 'Recorded take', 0, 4);
+        const lane: TakeLane = {
+            ...createTakeLane('track-2'),
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction(
+            {
+                type: 'moveClips',
+                payload: { moves: [{ clipId: 'clip-1', trackId: 'track-1', startBeat: 0 }], ripple: false },
+            },
+            { source: 'prompt' }
+        );
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(takeLaneStore.value?.lanes[0]?.trackId).toBe('track-2');
+
+        clipSelectionStore.set({ selectedClipId: 'clip-1', selectedClipIds: ['clip-1'], marqueeSelection: null });
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: take.id }]);
+        expect(restoredLane?.takes.map((candidate) => candidate.clipId)).toEqual(['clip-1']);
+    });
+
+    it('restores a same-track take across undo, redo and undo', async () => {
+        const { lane, take } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+        await redo();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await undo();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(trackStore.value?.tracks[0]?.clips.map((candidate) => candidate.id)).toEqual(['clip-1']);
+        expect(restoredLane?.id).toBe(lane.id);
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: take.id }]);
     });
 });
