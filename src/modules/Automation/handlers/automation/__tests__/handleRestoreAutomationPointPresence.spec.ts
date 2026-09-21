@@ -64,7 +64,7 @@ beforeEach(() => {
 describe('handleRestoreAutomationPointPresence', () => {
     it.each([
         ['an unsupported curve', payload({ point: { ...point, curve: 'warp-drive' } })],
-        ['an extra payload field', payload({ extra: 'smuggled' })],
+        ['an extra payload field', { ...payload(), extra: 'smuggled' }],
     ])('rejects persisted arguments with %s without mutating', (_label, malformedPayload) => {
         expect(handleRestoreAutomationPointPresence.validateSessionActionArguments?.(malformedPayload)).toBe(false);
         expect(mockedRestore).not.toHaveBeenCalled();
