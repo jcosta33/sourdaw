@@ -96,27 +96,39 @@ export const SEVERITY_DISPOSITION_TIMELINE: readonly RuleInvestigationCategory[]
     'project-integrity',
 ];
 
-const TEST_PATHS = ['**/*.spec.*', '**/*.test.*'] as const;
+const TEST_PATHS = ['**/__tests__/', '**/*.spec.*', '**/*.test.*'] as const;
 const PROJECT_PATHS = ['src/modules/Project/', 'src/modules/Crdt/', 'src/modules/History/', 'src/app/'] as const;
 const REALTIME_PATHS = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 'public/wasm/'] as const;
 const BOUNDARY_PATHS = ['src/modules/', 'src/infra/', 'src/helpers/', 'src/utils/', 'scripts/', 'electron/'] as const;
 const GATE_PATHS = ['.github/', 'scripts/healthGate', 'scripts/semanticReview', 'package.json'] as const;
 const MODULE_AND_APP_PATHS = ['src/modules/', 'src/app/'] as const;
 
+/** Extensions whose files can hold code, so a `__tests__/` file with one is test material. */
+const CODE_EXTENSIONS = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/u;
+
 /**
- * Whether a path holds a test, decided by the runner's naming rule rather than by its directory.
+ * Whether a path holds test material, decided by suffix alone or by living under `__tests__/` with a
+ * code extension.
  *
- * Living under `__tests__/` does not make a file a test: that directory also holds fixtures, dummies,
- * harnesses, and snapshots — `ClipDummy.ts`, `audioContext.mock.ts`, `offlineWorkletRenderHarness.ts`
- * — and the test-validity questions are nonsense about those. A live run fired two of them, at 0.83
- * and 0.78, on `scripts/__tests__/fixtures/health-gate-workflows.snapshot.json`, a JSON pin whose
- * content happens to hold shell `if` statements; a false signal is worse than no answer.
+ * The suffix rule matches both runners — Vitest's `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's
+ * `**\/*.@(spec|test).?(c|m)[jt]s?(x)` — but the repository also keeps assertion-carrying suites in
+ * `__tests__/` without a runner suffix: `providerProtocolConformance.ts` is a conformance suite three
+ * contract specs import and execute, and `expectExternalProjectLink.ts` is an assertion helper three
+ * specs import. Classifying those as implementation dropped the whole test-validity family from them.
  *
- * Both runners here select by suffix — Vitest's `**\/*.{test,spec}.?(c|m)[jt]s?(x)` and Playwright's
- * `**\/*.@(spec|test).?(c|m)[jt]s?(x)` — so the suffix is the whole rule.
+ * The honest trade-off: a `.ts` fixture or dummy directly inside `__tests__/` is now test material, so
+ * a test-validity question may be asked about a file that carries no assertion. That costs a wasted
+ * question that answers low; the opposite choice silently removes the whole test-validity family from
+ * real shared suites, which is the family this tool exists to ask. The extension gate is what keeps a
+ * false positive out: `scripts/__tests__/fixtures/health-gate-workflows.snapshot.json` is a JSON pin
+ * whose content holds shell `if` statements, and reading every `__tests__/` file as a test fired two
+ * test-validity signals on it at 0.83 and 0.78.
  */
 export function isTestPath(path: string): boolean {
-    return /(?:^|\/)[^/]+\.(?:spec|test)\.[^.]+$/u.test(path);
+    if (/(?:^|\/)[^/]+\.(?:spec|test)\.[^.]+$/u.test(path)) {
+        return true;
+    }
+    return /(?:^|\/)__tests__\//u.test(path) && CODE_EXTENSIONS.test(path);
 }
 
 function matchesAny(path: string, prefixes: readonly string[]): boolean {

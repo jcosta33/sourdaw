@@ -18,6 +18,7 @@ import {
     SEMANTIC_POLICY_VERSION,
     SEMANTIC_REPORT_FORMAT,
     type EvidenceReference,
+    type EvidenceSide,
     type SemanticRevisionBase,
     type SemanticScopeExclusion,
 } from './contracts.ts';
@@ -107,18 +108,27 @@ export function isMissedAssessmentExclusion(reason: string): boolean {
 }
 
 /** Required-evidence vocabulary mapped to a deterministic predicate over the supplied regions. */
-function requiredEvidencePresent(token: string, references: readonly EvidenceReference[]): boolean {
+function requiredEvidencePresent(
+    token: string,
+    references: readonly EvidenceReference[],
+    droppedSides: ReadonlySet<EvidenceSide>
+): boolean {
     const lower = token.toLowerCase();
     // A region cut to a prefix does not answer for the whole side it came from, so it cannot satisfy
     // a required side on its own: a rule told it has the after side while holding 6% of it would
-    // score evidence it never saw.
-    const has = (side: EvidenceReference['side']): boolean => references.some((reference) => reference.side === side);
+    // score evidence it never saw. A side the fitter dropped in part is the same defect — one of
+    // several regions of the side survived, but the side was still delivered incompletely.
+    const has = (side: EvidenceReference['side']): boolean =>
+        !droppedSides.has(side) && references.some((reference) => reference.side === side);
     // Implementation source is a claim about *which* after side, not merely that one exists. Resolving
     // it to `has('after')` let a test unit's own region satisfy a rule that declared it needed the
     // implementation, so the rule scored a question it never had the evidence to answer — and this
     // branch has to come before the generic `after` one for that resolution to mean anything.
     if (lower.includes('implementation')) {
-        return references.some((reference) => reference.side === 'after' && !isTestPath(reference.path));
+        return (
+            !droppedSides.has('after') &&
+            references.some((reference) => reference.side === 'after' && !isTestPath(reference.path))
+        );
     }
     if (lower.includes('before')) {
         return has('before');
@@ -146,7 +156,8 @@ function requiredEvidencePresent(token: string, references: readonly EvidenceRef
 export function missingRequiredEvidence(
     rule: SemanticRule,
     references: readonly EvidenceReference[],
-    kind: SemanticChangedFile['kind'] = 'modified'
+    kind: SemanticChangedFile['kind'] = 'modified',
+    droppedSides: ReadonlySet<EvidenceSide> = new Set<EvidenceSide>()
 ): string[] {
     return rule.requiredEvidence.filter((token) => {
         const lower = token.toLowerCase();
@@ -156,7 +167,7 @@ export function missingRequiredEvidence(
         if (kind === 'deleted' && lower.includes('after')) {
             return false;
         }
-        return !requiredEvidencePresent(token, references);
+        return !requiredEvidencePresent(token, references, droppedSides);
     });
 }
 
@@ -201,7 +212,10 @@ export function planUnits(
         if (excludedPaths.has(file.path)) {
             continue;
         }
-        const rules = applicableRules([file.path]);
+        // A rename that moved a test out of collection must admit the test-validity questions: the
+        // destination path is no longer a test, but the previous path is, and `applicableRules` admits
+        // a rule when any offered path matches.
+        const rules = applicableRules(file.previousPath === undefined ? [file.path] : [file.path, file.previousPath]);
         if (rules.length === 0) {
             excluded.push({ path: file.path, reason: 'no-applicable-rule' });
             continue;
@@ -280,6 +294,7 @@ export function planUnits(
                 excluded: [],
                 truncated: unitTruncated,
                 limitations: unitLimitations,
+                droppedSides: fitted.droppedSides,
             },
         });
     }
@@ -444,8 +459,12 @@ async function assessOneUnit(input: {
     readonly deadline: number;
 }): Promise<UnitAssessment> {
     const references = input.unit.evidence.references;
+    const droppedSides = input.unit.evidence.droppedSides ?? new Set<EvidenceSide>();
     const missing = new Map<SemanticRuleId, string[]>(
-        input.unit.rules.map((rule) => [rule.id, missingRequiredEvidence(rule, references, input.unit.file.kind)])
+        input.unit.rules.map((rule) => [
+            rule.id,
+            missingRequiredEvidence(rule, references, input.unit.file.kind, droppedSides),
+        ])
     );
     const present = new Set(references.map((reference) => reference.evidenceId));
     const result = await assessUnit({

@@ -119,22 +119,24 @@ contradicted, that the audio thread can allocate, that timing semantics moved, t
 widened silently, that a dependency points the wrong way, that an existing mechanism was duplicated,
 that a gate was weakened, and that an advisory result gained authority.
 
-Three consequences follow. `insufficient_context` stopped being an answer: evidence that is absent is
-something code already knows, and the middle of the probability band is a policy decision, not a
-label the model has to learn. The band is therefore recorded in the policy digest and can be moved
-without asking the provider again — demonstrated on this change, where narrowing every band served
-all eleven units from the cache at zero cost. And the questions became answerable per property, which
-is what makes the next limitation legible.
+Three consequences follow, and each states a contract rather than a measurement.
 
-That limitation is the state, not the questions. A live run over this change asked 56 assessments
-across eleven units; the highest probability returned was 0.55 and 36 of the 56 fell in the band.
-Reading the individual values, the questions are behaving — they are low because this change does not
-delete assertions or weaken gates — but they are not decisive either, and the reason is visible in the
-same report: 37 regions were truncated to the per-request budget, because a unit is still one changed
-file holding whatever of that file fits. Questions about the relationship between a test and its
-implementation cannot be answered decisively from one truncated file at a time. Narrowing the
-evidence to the regions the questions actually name, and asking once over the change rather than once
-per file, is the next decision, and no threshold change substitutes for it.
+A missing-evidence disposition is decided by code, not by the model. The model returns a
+probability; `insufficient_context` is what the caller reports when a rule's declared evidence was
+not supplied, and the fire threshold lives in the policy digest, so calibration is a policy change
+over stored answers rather than a redesign.
+
+Evidence is the change, not the file. Each region is one changed hunk with a margin of a few lines,
+and a side with no hunks at all is supplied whole. The earlier policy sent the whole side and
+truncated what did not fit, which asked a question about a fragment while the report said the region
+had been sent. A region is now sent whole or not at all, and a rule whose declared side lost a
+region reports that evidence as absent rather than scoring it.
+
+Two limitations are properties of the state rather than of the questions. A region larger than the
+per-request budget is still withheld, which on this repository excludes its largest modules because
+a new file's only admissible region is the file. And a hunk view cannot see a relationship spanning
+more than the margin: the whole-side fallback covers a side with no hunks, not a hunk far from the
+line it interacts with.
 
 What has not changed is what 0046 established: none of this is calibrated. The thresholds are
 provisional, the questions are proposed assessment tasks, and the run above is one sample of one

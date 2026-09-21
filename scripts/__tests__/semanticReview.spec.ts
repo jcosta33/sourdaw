@@ -84,6 +84,14 @@ describe('name-status parsing', () => {
         expect(statuses.has('src/old.ts')).toBe(false);
     });
 
+    it('reads a copy as the new path carrying its source path', () => {
+        // A copy has both sides: the source is unchanged and the destination is new. Reporting it as
+        // `added` waived the before side, so it must carry its own kind and source path.
+        const statuses = parseNameStatus('C100\0src/a.ts\0src/b.ts\0');
+        expect(statuses.get('src/b.ts')).toEqual({ kind: 'copied', previousPath: 'src/a.ts' });
+        expect(statuses.has('src/a.ts')).toBe(false);
+    });
+
     it('stops cleanly on a truncated record rather than inventing an entry', () => {
         const statuses = parseNameStatus('M\0src/changed.ts\0R100\0src/old.ts\0');
         expect(statuses.size).toBe(1);

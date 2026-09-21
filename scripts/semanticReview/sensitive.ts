@@ -125,6 +125,14 @@ type EgressShape = {
 };
 
 const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
+    // An armored private key: the BEGIN header of a PEM block, such as a PKCS#8 or OpenSSH private
+    // key block. `SECRET_KEY_NAME` matches only a `key = value` assignment, so a block passes
+    // untouched and would be submitted to the provider. This is the shape `reviewDossier` refuses for
+    // publication, reapplied here because egress withholds rather than refuses.
+    {
+        reason: 'an armored private key',
+        pattern: /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}/iu,
+    },
     // A secret in a query parameter: `?password=…`, `&access_token=…`, `&sig=…`.
     {
         reason: 'a secret carried in a query parameter',

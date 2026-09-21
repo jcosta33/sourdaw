@@ -8,9 +8,16 @@ import {
     semanticDigest,
     SemanticFailure,
     type EvidenceReference,
+    type EvidenceSide,
     type SemanticRevisionBase,
 } from '../contracts.ts';
-import { collectEvidence, type PathHunks, type SemanticChangedFile, type SemanticSourcePort } from '../evidence.ts';
+import {
+    collectEvidence,
+    exclusionReason,
+    type PathHunks,
+    type SemanticChangedFile,
+    type SemanticSourcePort,
+} from '../evidence.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
@@ -383,6 +390,112 @@ describe('change-kind applicability', () => {
             'before test source',
             'after test source',
         ]);
+    });
+});
+
+describe('a rename that changes test collection', () => {
+    it('plans a zero-line rename that moves a test out of collection instead of skipping it', () => {
+        // A pure rename has a zero-line diff. `no-text-change` excluded it, the eligible count fell
+        // to zero, and the skipped branch read the change as delivered advice over the very collection
+        // the rename removed.
+        const file = changedFile('src/modules/Project/undo-helper.ts', {
+            kind: 'renamed',
+            previousPath: 'src/modules/Project/undo.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [file],
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/undo.spec.ts`]: 'it("undo", () => {});\n',
+                    [`${HEAD}:src/modules/Project/undo-helper.ts`]: 'it("undo", () => {});\n',
+                },
+                // A pure rename emits no hunks at all — only `similarity index` and `rename from`/`to`
+                // headers — so the collector's no-hunks fallback supplies each side whole.
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+
+        const { units, excluded } = planUnits([file], set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        expect(units).toHaveLength(1);
+        expect(excluded).toEqual([]);
+        const unit = units[0];
+        // The previous path still admits the test-validity questions even though the destination is no
+        // longer a test.
+        expect(unit?.rules.map((rule) => rule.id)).toContain('test_skipped_or_excluded');
+        // A hunkless rename supplies both sides as whole-file regions under their own paths.
+        expect(
+            unit?.evidence.references.some(
+                (reference) => reference.path === 'src/modules/Project/undo.spec.ts' && reference.side === 'before'
+            )
+        ).toBe(true);
+        expect(
+            unit?.evidence.references.some(
+                (reference) => reference.path === 'src/modules/Project/undo-helper.ts' && reference.side === 'after'
+            )
+        ).toBe(true);
+        // A planned unit is an assessment that was owed; the skipped branch would have claimed otherwise.
+        expect(executionState({ dryRun: false, assessed: 0, eligible: units.length, failureCode: undefined })).toBe(
+            'unavailable'
+        );
+    });
+});
+
+describe('copied files', () => {
+    it('supplies both sides of a copy and does not waive the before side', () => {
+        // A copy has both sides: its source is unchanged and its destination is new. Reading it as
+        // `added` waived the before side, so a copy whose assertion was weakened was answered from the
+        // after side alone with an empty `missingEvidence`.
+        const files = [
+            changedFile('src/modules/Project/__tests__/undo-copy.spec.ts', {
+                kind: 'copied',
+                previousPath: 'src/modules/Project/__tests__/undo.spec.ts',
+                added: 2,
+                deleted: 0,
+            }),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/__tests__/undo.spec.ts`]: 'it("undo", () => {});\n',
+                    [`${HEAD}:src/modules/Project/__tests__/undo-copy.spec.ts`]: 'it("undo", () => {});\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        // Both sides exist: before under the source path, after under the destination.
+        expect(
+            set.references.some(
+                (reference) =>
+                    reference.path === 'src/modules/Project/__tests__/undo.spec.ts' && reference.side === 'before'
+            )
+        ).toBe(true);
+        expect(
+            set.references.some(
+                (reference) =>
+                    reference.path === 'src/modules/Project/__tests__/undo-copy.spec.ts' && reference.side === 'after'
+            )
+        ).toBe(true);
+        // The before side is genuinely supplied, not waived.
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), set.references, 'copied')).toEqual([]);
+        // A copy does not inherit the added-file waiver: with no before region supplied, the before
+        // side is genuinely missing.
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), [], 'copied')).toEqual([
+            'before test source',
+            'after test source',
+        ]);
+        // A genuinely added file still gets the existing waiver for the before side.
+        expect(missingRequiredEvidence(semanticRule('assertion_deleted'), set.references, 'added')).toEqual([]);
     });
 });
 
@@ -1025,16 +1138,22 @@ describe('a fixture is not a test', () => {
     it('asks the test questions only about tests', () => {
         // A live run fired two test-validity signals on a JSON fixture, because everything under
         // `__tests__/` counted as a test and the snapshot's content holds shell `if` statements.
+        // The extension gate keeps that false positive out: a data file in a test directory is not
+        // test material.
         expect(isTestPath('scripts/__tests__/fixtures/health-gate-workflows.snapshot.json')).toBe(false);
-        // The directory holds harnesses and dummies as well as tests; only the suffix decides.
-        expect(isTestPath('src/modules/Project/__tests__/fakeIndexedDb.ts')).toBe(false);
-        expect(isTestPath('src/modules/Arrangement/__tests__/ClipDummy.ts')).toBe(false);
-        expect(isTestPath('src/helpers/__tests__/audioContext.mock.ts')).toBe(false);
-        expect(isTestPath('tests/e2e/admitLoopbackProvider.ts')).toBe(false);
+        // A code file in `__tests__/` without a runner suffix can still carry assertions the specs
+        // import and execute, so it is test material even though the suffix rule alone would miss it.
+        expect(isTestPath('src/modules/AiRuntime/repositories/__tests__/providerProtocolConformance.ts')).toBe(true);
+        expect(isTestPath('src/modules/WorkspaceShell/presentations/__tests__/expectExternalProjectLink.ts')).toBe(
+            true
+        );
+        // The suffix still decides on its own, wherever the file sits.
         expect(isTestPath('src/modules/Project/__tests__/undoProject.spec.ts')).toBe(true);
         expect(isTestPath('src/modules/Project/undoProject.spec.tsx')).toBe(true);
         expect(isTestPath('tests/e2e/audioOwnership.native.spec.ts')).toBe(true);
+        // A code file outside `__tests__/` with no runner suffix is implementation, not test material.
         expect(isTestPath('src/modules/Project/useCases/undoProject.ts')).toBe(false);
+        expect(isTestPath('tests/e2e/admitLoopbackProvider.ts')).toBe(false);
     });
 });
 
@@ -1162,6 +1281,23 @@ describe('the egress screen tells code from credentials', () => {
         for (const line of credentials) {
             expect(sensitiveContentReason(line), line).toBeDefined();
         }
+    });
+
+    it('withholds an armored private key whatever its wrapper', () => {
+        // Composed at runtime: the diff secret scan matches a contiguous PEM header, and the screen
+        // withholds any region holding one. A `key = value` rule cannot see these, because the header
+        // carries no assignment, so the armored shape is the only thing standing between a PEM block
+        // and the provider.
+        const pkcs8 = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
+        const openssh = secretFixture('-----BEGIN OPENSSH ', 'PRIVATE KEY', '-----');
+        const rsa = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
+        expect(sensitiveContentReason(pkcs8)).toBe('an armored private key');
+        expect(sensitiveContentReason(openssh)).toBe('an armored private key');
+        expect(sensitiveContentReason(rsa)).toBe('an armored private key');
+        // Two file shapes that would otherwise carry the block out unchanged: a `.ts` string and a
+        // JSON field.
+        expect(sensitiveContentReason(`export const key = '${pkcs8}';`)).toBe('an armored private key');
+        expect(sensitiveContentReason(`{ "key": "${rsa}" }`)).toBe('an armored private key');
     });
 });
 
@@ -1534,6 +1670,94 @@ describe('reduced-unit reporting', () => {
                 'modified'
             )
         ).toContain('decision or documented invariant');
+    });
+});
+
+describe('partial-side evidence drop', () => {
+    it('treats a side split across two hunks as unsupplied when one hunk is dropped', () => {
+        // A side split across two hunks where one is dropped for size was still satisfied by the
+        // surviving region, so a rule returned a decisive verdict over a side the model saw only in
+        // part. The fitter must name the dropped side, and a dropped side must not satisfy a need.
+        const before = 'it("before", () => {});\n';
+        const after = `it("kept", () => {});\n${'const large_line = 1;\n'.repeat(2000)}`;
+        const files = [changedFile('src/modules/Project/__tests__/two-hunks.spec.ts')];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/__tests__/two-hunks.spec.ts`]: before,
+                    [`${HEAD}:src/modules/Project/__tests__/two-hunks.spec.ts`]: after,
+                },
+                hunks: new Map([
+                    [
+                        'src/modules/Project/__tests__/two-hunks.spec.ts',
+                        {
+                            path: 'src/modules/Project/__tests__/two-hunks.spec.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 2001 },
+                            ],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units[0];
+        expect(unit).toBeDefined();
+        // One after hunk survives, so the old predicate would have called the side present.
+        expect(unit?.evidence.references.some((reference) => reference.side === 'after')).toBe(true);
+        expect(unit?.evidence.droppedSides?.has('after')).toBe(true);
+
+        const missing = missingRequiredEvidence(
+            semanticRule('assertion_deleted'),
+            unit?.evidence.references ?? [],
+            'modified',
+            unit?.evidence.droppedSides ?? new Set<EvidenceSide>()
+        );
+        expect(missing).toContain('after test source');
+        // Without the dropped-side wiring, the surviving after region satisfies the side and the rule
+        // returns a decisive verdict.
+        expect(
+            missingRequiredEvidence(semanticRule('assertion_deleted'), unit?.evidence.references ?? [], 'modified')
+        ).toEqual([]);
+
+        const assessment = interpretScanOutcome({
+            answer: { type: 'noul', noul: 0.05 },
+            rule: semanticRule('assertion_deleted'),
+            unitId: 'u',
+            path: 'src/modules/Project/__tests__/two-hunks.spec.ts',
+            missingEvidence: missing,
+        });
+        expect(assessment.disposition).toBe('unresolved');
+        expect(assessment.missingEvidence).toEqual(['after test source']);
+    });
+
+    it('treats a dropped after side as not supplying implementation source', () => {
+        // The implementation branch resolves to an after side that is not a test path; a dropped
+        // after side must not satisfy it even though the implementation region itself survived.
+        const rule = semanticRule('production_path_no_longer_reached');
+        const beforeTest = reference({
+            evidenceId: 'b1',
+            path: 'src/modules/Project/__tests__/undo.spec.ts',
+            side: 'before',
+        });
+        const implementation = reference({
+            evidenceId: 'a2',
+            path: 'src/modules/Project/useCases/undoProject.ts',
+            side: 'after',
+        });
+        const droppedAfter = new Set<EvidenceSide>(['after']);
+        expect(missingRequiredEvidence(rule, [beforeTest, implementation], 'modified', droppedAfter)).toContain(
+            'after implementation source'
+        );
+        expect(missingRequiredEvidence(rule, [beforeTest, implementation], 'modified')).toEqual([]);
     });
 });
 

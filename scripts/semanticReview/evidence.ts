@@ -19,9 +19,10 @@ import {
     type EvidenceSide,
     type SemanticScopeExclusion,
 } from './contracts.ts';
+import { isTestPath } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 
-export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed';
+export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
 
 export type SemanticChangedFile = {
     /** The post-change path; for a deletion, the path that was removed. */
@@ -82,6 +83,12 @@ export type SemanticEvidenceSet = {
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
+    /**
+     * Sides that lost at least one region to the request-budget fitter. A side delivered in part does
+     * not answer for the whole side, so `requiredEvidencePresent` reads one of these as not supplied.
+     * Collection alone never sets it; the planner stamps it from the fitter's result.
+     */
+    readonly droppedSides?: ReadonlySet<EvidenceSide>;
 };
 
 /**
@@ -142,6 +149,13 @@ export function exclusionReason(file: SemanticChangedFile): string | undefined {
         return 'dependency-lockfile';
     }
     if (file.added === 0 && file.deleted === 0) {
+        // A pure rename has a zero-line diff, but a rename whose test classification changed is a
+        // semantic change: the file stopped or started being collected as a test. Calling that
+        // `no-text-change` excluded the path, and the skipped branch then read the change as delivered
+        // advice over the very collection the rename removed.
+        if (file.previousPath !== undefined && isTestPath(file.previousPath) !== isTestPath(file.path)) {
+            return undefined;
+        }
         return 'no-text-change';
     }
     return undefined;
@@ -327,6 +341,16 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
     return { admit, admitSide, references, contents, excluded, truncated, limitations };
 }
 
+/** Whether a change kind has a before side at the merge base; a copy's unchanged source is one. */
+function kindHasBeforeSide(kind: SemanticChangeKind): boolean {
+    return kind === 'modified' || kind === 'renamed' || kind === 'deleted' || kind === 'copied';
+}
+
+/** Whether a change kind has an after side at the reviewed head; a copy's new destination is one. */
+function kindHasAfterSide(kind: SemanticChangeKind): boolean {
+    return kind === 'added' || kind === 'modified' || kind === 'renamed' || kind === 'copied';
+}
+
 /**
  * Collects bounded evidence for one change. `mergeBaseSha` supplies before-side content and
  * `contractSourceSha` supplies the contracts used as semantic context; `headSha` supplies after-side
@@ -368,7 +392,7 @@ export function collectEvidence(input: {
         }
         const beforePath = file.previousPath ?? file.path;
         const hunks = hunksByPath.get(file.path);
-        if (file.kind === 'modified' || file.kind === 'renamed' || file.kind === 'deleted') {
+        if (kindHasBeforeSide(file.kind)) {
             const before = regionFor(input.port, input.mergeBaseSha, beforePath);
             if (before === undefined) {
                 admission.truncated.push({ path: beforePath, reason: 'evidence-unavailable-at-revision' });
@@ -382,7 +406,7 @@ export function collectEvidence(input: {
                 );
             }
         }
-        if (file.kind === 'added' || file.kind === 'modified' || file.kind === 'renamed') {
+        if (kindHasAfterSide(file.kind)) {
             const after = regionFor(input.port, input.headSha, file.path);
             if (after === undefined) {
                 admission.truncated.push({ path: file.path, reason: 'evidence-unavailable-at-revision' });

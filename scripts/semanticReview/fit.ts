@@ -12,7 +12,7 @@
  * supplied instead of answering from a third of it.
  */
 
-import type { EvidenceReference } from './contracts.ts';
+import type { EvidenceReference, EvidenceSide } from './contracts.ts';
 import type { SemanticEvidenceSet } from './evidence.ts';
 
 /**
@@ -59,9 +59,11 @@ function fitRegions(
     contents: Map<string, string>;
     used: number;
     dropped: number;
+    droppedSides: ReadonlySet<EvidenceSide>;
 } {
     const references: EvidenceReference[] = [];
     const contents = new Map<string, string>();
+    const droppedSides = new Set<EvidenceSide>();
     let used = 0;
     let dropped = 0;
 
@@ -70,13 +72,14 @@ function fitRegions(
         const full = regionCost(reference, text);
         if (used + full > maxBytes) {
             dropped += 1;
+            droppedSides.add(reference.side);
             continue;
         }
         used += full;
         references.push(reference);
         contents.set(reference.evidenceId, text);
     }
-    return { references, contents, used, dropped };
+    return { references, contents, used, dropped, droppedSides };
 }
 
 /**
@@ -104,6 +107,7 @@ export function fitUnitEvidence(
     references: EvidenceReference[];
     contents: Map<string, string>;
     dropped: number;
+    droppedSides: ReadonlySet<EvidenceSide>;
 } {
     const contextBudget = context.length === 0 ? 0 : Math.floor(maxBytes * CONTEXT_BUDGET_SHARE);
     const ownFitted = fitRegions(set, own, maxBytes - contextBudget);
@@ -113,5 +117,6 @@ export function fitUnitEvidence(
         references: [...ownFitted.references, ...contextFitted.references],
         contents,
         dropped: ownFitted.dropped + contextFitted.dropped,
+        droppedSides: new Set<EvidenceSide>([...ownFitted.droppedSides, ...contextFitted.droppedSides]),
     };
 }

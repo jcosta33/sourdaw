@@ -73,12 +73,14 @@ export function parseNameStatus(raw: string): Map<string, NameStatus> {
         index += 1;
         if (status.startsWith('R') || status.startsWith('C')) {
             const second = fields[index];
-            // A rename record whose second path is absent is truncated; an empty path is never a change.
+            // A rename or copy record whose second path is absent is truncated; an empty path is never
+            // a change.
             if (second === undefined || second === '') {
                 break;
             }
             index += 1;
-            result.set(second, { kind: 'renamed', previousPath: first });
+            const kind = status.startsWith('C') ? 'copied' : 'renamed';
+            result.set(second, { kind, previousPath: first });
             continue;
         }
         result.set(first, { kind: changeKindFor(status) });
@@ -151,13 +153,38 @@ export function parseUnifiedDiffRanges(raw: string): Map<string, PathHunks> {
 export function createGitSourcePort(primaryRoot: string): SemanticSourcePort {
     return {
         changedFiles: (mergeBaseSha, headSha) => {
+            // All three invocations agree about a path's change kind. `-M` is explicit rather than
+            // inherited from the `diff.renames=true` default, so a user or runner configuration that
+            // sets `diff.renames=false` cannot silently turn one rename record into an add plus delete
+            // and break the pairing between numstat and name-status. `-C --find-copies-harder` makes
+            // numstat, name-status, and the hunk diff all report a copy as one copied path.
             const numstat = git(
-                ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z', `${mergeBaseSha}...${headSha}`],
+                [
+                    'diff',
+                    '--no-ext-diff',
+                    '--no-textconv',
+                    '--numstat',
+                    '-z',
+                    '-M',
+                    '-C',
+                    '--find-copies-harder',
+                    `${mergeBaseSha}...${headSha}`,
+                ],
                 primaryRoot,
                 false
             );
             const nameStatus = git(
-                ['diff', '--no-ext-diff', '--no-textconv', '--name-status', '-z', '-M', `${mergeBaseSha}...${headSha}`],
+                [
+                    'diff',
+                    '--no-ext-diff',
+                    '--no-textconv',
+                    '--name-status',
+                    '-z',
+                    '-M',
+                    '-C',
+                    '--find-copies-harder',
+                    `${mergeBaseSha}...${headSha}`,
+                ],
                 primaryRoot,
                 false
             );
@@ -189,6 +216,8 @@ export function createGitSourcePort(primaryRoot: string): SemanticSourcePort {
                     '--no-textconv',
                     '--no-color',
                     '-M',
+                    '-C',
+                    '--find-copies-harder',
                     `--unified=${String(HUNK_CONTEXT_LINES)}`,
                     `${mergeBaseSha}...${headSha}`,
                 ],
