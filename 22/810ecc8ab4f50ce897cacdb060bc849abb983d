@@ -1,0 +1,40 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 295-308
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 44-50
+AGENTS.md
+  h_beb54bf43b47b7 261
+package.json
+  h_beb54bf43b47b7 36
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169,1733
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 121-125,665-666
+scripts/__tests__/releaseProof.spec.ts
+  h_beb54bf43b47b7 3218-3238
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 4,1527-1668,2344-2679
+scripts/__tests__/restampTrackedSetInventory.spec.ts
+  h_beb54bf43b47b7 1-393
+scripts/releaseProof.ts
+  h_beb54bf43b47b7 125-129,131
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 7,29,1374-1506,1849,1919-1942,1997-2004,2006-2019
+scripts/restampDependencyBump.ts
+  h_beb54bf43b47b7 49
+scripts/restampTrackedSetInventory.ts
+  h_beb54bf43b47b7 1-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "22810ecc8ab4f50ce897cacdb060bc849abb983d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
