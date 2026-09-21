@@ -1,0 +1,19 @@
+.gitleaks.toml
+  s_df40b526e33ddb::t_8ccdbfd39b4d73 45-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "439e076cd80f8bcb18eb719caf7ad52d3eb5acb3",
+  "prompts": {},
+  "sessions": {
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
