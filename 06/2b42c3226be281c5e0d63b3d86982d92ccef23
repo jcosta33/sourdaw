@@ -1,0 +1,18 @@
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  h_beb54bf43b47b7 626-668
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  h_beb54bf43b47b7 5,33-41,66
+src/modules/Arrangement/useCases/comping/takeLaneUndo.ts
+  h_beb54bf43b47b7 66-68,80,88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "062b42c3226be281c5e0d63b3d86982d92ccef23",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
