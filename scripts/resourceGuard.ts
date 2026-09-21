@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
     existsSync,
+    linkSync,
     mkdirSync,
     readdirSync,
     readFileSync,
@@ -25,6 +26,7 @@ import {
     containsPath,
     guardFailureReceiptPath,
     isGuardFailureReason,
+    parseGuardFailureReceipt,
     readGuardFailureReceipt,
     type GuardFailureReceipt,
 } from './prContract.ts';
@@ -1369,6 +1371,139 @@ export function clearGuardFailureReceipt(primaryRoot: string, laneName: string):
     }
 }
 
+export type ClearGuardFailureReceiptPorts = {
+    renameSync?: typeof renameSync;
+    readFileSync?: typeof readFileSync;
+    rmSync?: typeof rmSync;
+    linkSync?: typeof linkSync;
+};
+
+export type ClearGuardFailureReceiptResult =
+    { status: 'cleared' } | { status: 'absent' } | { status: 'mismatch' } | { status: 'error'; message: string };
+
+function isFileSystemError(error: unknown, code: string): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function guardFailureReceiptsEqual(a: GuardFailureReceipt, b: GuardFailureReceipt): boolean {
+    return (
+        a.version === b.version &&
+        a.lane === b.lane &&
+        a.branch === b.branch &&
+        a.headSha === b.headSha &&
+        a.failedAt === b.failedAt &&
+        a.reason === b.reason &&
+        a.command === b.command &&
+        a.cwd === b.cwd &&
+        a.profile === b.profile &&
+        a.peakRssBytes === b.peakRssBytes &&
+        a.maxRssBytes === b.maxRssBytes &&
+        a.durationMs === b.durationMs &&
+        a.args.length === b.args.length &&
+        a.args.every((argument, index) => argument === b.args[index])
+    );
+}
+
+function readReceiptOrUndefined(path: string, read: typeof readFileSync): GuardFailureReceipt | undefined {
+    try {
+        return parseGuardFailureReceipt(read(path, 'utf8'), path);
+    } catch {
+        return undefined;
+    }
+}
+
+type RestoreClaimedReceiptResult =
+    { status: 'restored' } | { status: 'superseded' } | { status: 'error'; message: string };
+
+function restoreClaimedReceipt(
+    claimPath: string,
+    receiptPath: string,
+    link: typeof linkSync,
+    remove: typeof rmSync
+): RestoreClaimedReceiptResult {
+    try {
+        // linkSync refuses an existing target, so a receipt a concurrent writer installed at
+        // receiptPath after the claim is preserved rather than overwritten by the restore.
+        link(claimPath, receiptPath);
+    } catch (error) {
+        if (isFileSystemError(error, 'EEXIST')) {
+            try {
+                remove(claimPath);
+            } catch {
+                // A leftover claim file is harmless; the newer receipt at receiptPath is intact.
+            }
+            return { status: 'superseded' };
+        }
+        // Any other link failure must not fall back to an overwriting rename, which would destroy a
+        // receipt a concurrent writer installed at receiptPath during the restore. Leave the claim
+        // in place so its bytes stay recoverable and the lane receipt is untouched.
+        return { status: 'error', message: errorMessage(error) };
+    }
+    try {
+        remove(claimPath);
+    } catch {
+        // The receipt is restored through the hard link; a leftover claim file is harmless.
+    }
+    return { status: 'restored' };
+}
+
+export function clearGuardFailureReceiptIfUnchanged(
+    primaryRoot: string,
+    laneName: string,
+    expected: GuardFailureReceipt,
+    ports: ClearGuardFailureReceiptPorts = {}
+): ClearGuardFailureReceiptResult {
+    const receiptPath = guardFailureReceiptPath(primaryRoot, laneName);
+    const claimPath = `${receiptPath}.claim-${randomUUID()}`;
+    const rename = ports.renameSync ?? renameSync;
+    const read = ports.readFileSync ?? readFileSync;
+    const remove = ports.rmSync ?? rmSync;
+    const link = ports.linkSync ?? linkSync;
+
+    // Claim the receipt atomically before comparing: the rename detaches whatever is at the
+    // lane path in one operation, so a receipt a concurrent writer installs next lands at the
+    // now-vacant path and can never be the file we inspect and remove below.
+    try {
+        rename(receiptPath, claimPath);
+    } catch (error) {
+        if (isFileSystemError(error, 'ENOENT')) {
+            return { status: 'absent' };
+        }
+        return { status: 'error', message: errorMessage(error) };
+    }
+
+    const claimedReceipt = readReceiptOrUndefined(claimPath, read);
+
+    if (claimedReceipt !== undefined && guardFailureReceiptsEqual(claimedReceipt, expected)) {
+        try {
+            remove(claimPath);
+            return { status: 'cleared' };
+        } catch (error) {
+            const restored = restoreClaimedReceipt(claimPath, receiptPath, link, remove);
+            if (restored.status === 'error') {
+                return {
+                    status: 'error',
+                    message: `failed to clear the guard-failure receipt (${errorMessage(error)}) and could not restore the claim (${restored.message}); the claim remains at ${claimPath}`,
+                };
+            }
+            return { status: 'error', message: errorMessage(error) };
+        }
+    }
+
+    const restored = restoreClaimedReceipt(claimPath, receiptPath, link, remove);
+    if (restored.status === 'error') {
+        return {
+            status: 'error',
+            message: `could not restore the guard-failure receipt claim: ${restored.message}; the claim remains at ${claimPath}`,
+        };
+    }
+    return { status: 'mismatch' };
+}
+
 type CliInput = {
     profile: ResourceProfile;
     explicitProfile: boolean;
@@ -1711,6 +1846,7 @@ export async function main(
         detectLane?: (cwd: string) => DetectedLane | undefined;
         runCommand?: typeof runGuardedCommand;
         assertModulesPreflight?: (cwd: string) => void;
+        clearReceiptPorts?: ClearGuardFailureReceiptPorts;
         log?: (message: string) => void;
         error?: (message: string) => void;
     } = {}
@@ -1780,9 +1916,30 @@ export async function main(
             });
             if (result.code === 0 && result.reason === undefined) {
                 emitGuardedResult(receipt.command, result, input.showOutput);
-                clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
-                log(`guard: recovery succeeded; guard-failure receipt cleared for lane ${lane.laneName}`);
-                return 0;
+                const cleared = clearGuardFailureReceiptIfUnchanged(
+                    lane.primaryRoot,
+                    lane.laneName,
+                    receipt,
+                    options.clearReceiptPorts
+                );
+                if (cleared.status === 'cleared') {
+                    log(`guard: recovery succeeded; guard-failure receipt cleared for lane ${lane.laneName}`);
+                    return 0;
+                }
+                if (cleared.status === 'absent') {
+                    log(`guard: recovery succeeded; guard-failure receipt already cleared for lane ${lane.laneName}`);
+                    return 0;
+                }
+                if (cleared.status === 'mismatch') {
+                    error(
+                        `guard: recovery succeeded but the guard-failure receipt changed for lane ${lane.laneName}; preserving the current receipt`
+                    );
+                    return 1;
+                }
+                error(
+                    `guard: recovery failed to clear the guard-failure receipt for lane ${lane.laneName}: ${cleared.message}`
+                );
+                return 1;
             } else {
                 if (input.lintTargetReplacements.length === 0 && isGuardFailureReason(result.reason)) {
                     writeGuardFailureReceipt(lane.primaryRoot, {
@@ -1837,10 +1994,29 @@ export async function main(
                     existingReceipt.command === input.command &&
                     existingReceipt.args.length === input.args.length &&
                     existingReceipt.args.every((arg, index) => arg === input.args[index]);
-                if (matchesExisting) {
-                    const cleared = clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
-                    if (cleared) {
+                if (matchesExisting && existingReceipt !== undefined) {
+                    const cleared = clearGuardFailureReceiptIfUnchanged(
+                        lane.primaryRoot,
+                        lane.laneName,
+                        existingReceipt,
+                        options.clearReceiptPorts
+                    );
+                    if (cleared.status === 'cleared') {
                         log(`guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; receipt cleared`);
+                    } else if (cleared.status === 'absent') {
+                        log(
+                            `guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; no guard-failure receipt to clear`
+                        );
+                    } else if (cleared.status === 'mismatch') {
+                        error(
+                            `guard: failure resolved by committed change but the guard-failure receipt changed for lane ${lane.laneName}; preserving the current receipt`
+                        );
+                        return 1;
+                    } else {
+                        error(
+                            `guard: failed to clear the guard-failure receipt for lane ${lane.laneName}: ${cleared.message}`
+                        );
+                        return 1;
                     }
                 }
             } else if (isGuardFailureReason(result.reason)) {
