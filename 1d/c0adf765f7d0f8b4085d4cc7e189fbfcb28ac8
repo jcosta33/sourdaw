@@ -1,0 +1,20 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 1540-1543
+src/modules/Arrangement/useCases/comping/__tests__/failedCaptureRetirement.integration.spec.ts
+  h_beb54bf43b47b7 23,41,76-77,97-118
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  h_beb54bf43b47b7 219-236
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  h_beb54bf43b47b7 7-14,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1dc0adf765f7d0f8b4085d4cc7e189fbfcb28ac8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
