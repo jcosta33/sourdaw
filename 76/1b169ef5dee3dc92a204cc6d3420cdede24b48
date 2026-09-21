@@ -1,0 +1,22 @@
+src/modules/Arrangement/useCases/comping/__tests__/failedCaptureRetirement.integration.spec.ts
+  h_beb54bf43b47b7 172,174,182-186,189-190,197-200,202-236,239-252,255-257
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  h_beb54bf43b47b7 26-27
+src/modules/Arrangement/useCases/comping/resolveTakeLaneIndex.ts
+  h_beb54bf43b47b7 15-16
+src/modules/Arrangement/useCases/comping/retireLaneInsertion.ts
+  h_beb54bf43b47b7 1-56
+src/modules/Arrangement/useCases/comping/takeLaneUndo.ts
+  h_beb54bf43b47b7 9,59-65,88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "761b169ef5dee3dc92a204cc6d3420cdede24b48",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
