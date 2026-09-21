@@ -1,0 +1,32 @@
+.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md
+  h_beb54bf43b47b7 103-107
+scripts/checkVitestCollectionScope.ts
+  h_beb54bf43b47b7 73,76,331-333
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 4,2722-3044
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 92-101,301-351,372-373,382-383,416,424,427,433,437,439,447-468,570-573,581-584
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 513,527-531,615
+scripts/semanticReview/requiredEvidence.ts
+  h_beb54bf43b47b7 71-75,77-81
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 20-21,109-112,117-125,127-135
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 143-157,274-275
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 27-32,61-64,66-69,79-86,154-159,163
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 393-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9563f340070bdf59ee1627575093f30111209078",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
