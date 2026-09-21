@@ -216,4 +216,22 @@ describe('targeted take-lane undo entries (#4081)', () => {
         expect(getLane('t1').activeCompRegions).toEqual([]);
         expect(getLane('t2').takes[0]!.name).toBe('Renamed later');
     });
+
+    it('does not replay a take back through the lane addition when its clip is gone', () => {
+        seedLanes([]);
+        addTakeLane('t1');
+        const lane = getLane('t1');
+        // A projection writes a take onto the very lane object the entry captured, with
+        // no entry of its own, and the take's clip is not in the project.
+        lane.takes.push(createTake('clip-gone', 'Projected take', 0, 4));
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+
+        const entry = lastEntry();
+        entry.undo();
+        entry.redo();
+
+        // The lane addition is the only entry that could replay the take, and it must
+        // not: the lane comes back without it.
+        expect(getLane('t1').takes).toEqual([]);
+    });
 });

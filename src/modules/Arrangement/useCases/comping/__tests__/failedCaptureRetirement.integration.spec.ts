@@ -20,6 +20,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { addClip } from '../../clip/addClip';
@@ -37,7 +38,7 @@ function takesInLiveLanes(): string[] {
     return (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.id));
 }
 
-describe('failed capture retirement', () => {
+describe('take-lane history and retirement', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('failed capture retirement integration');
@@ -72,7 +73,8 @@ describe('failed capture retirement', () => {
         addTakeLane('track-1');
         addTake('track-1', 'clip-take', 'Take 1', 0, 4);
         flushAutomergeStorageWrites();
-        expect(takesInLiveLanes()).toHaveLength(1);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-take']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => [take.id, take.clipId])).toHaveLength(1);
 
         // The failure path discards the partial take by removing the clip directly, so
         // no entry of its own sits above the take-lane entries.
@@ -91,5 +93,27 @@ describe('failed capture retirement', () => {
         expect(takesInLiveLanes()).toEqual([]);
         expect(takeLaneStore.value?.lanes.every((lane) => lane.takes.length === 0)).toBe(true);
         expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+    });
+
+    it('does not leave a second lane for a track a projection gave one', async () => {
+        addClip({ id: 'clip-live', trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip', type: 'audio' });
+        addTakeLane('track-1');
+        expect(takeLaneStore.value?.lanes).toHaveLength(1);
+
+        // A projection replaces the track's lane with its own, carrying a live take, and
+        // records nothing locally.
+        const replacementLane = {
+            ...createTakeLane('track-1'),
+            takes: [createTake('clip-live', 'Projected take', 0, 4)],
+        };
+        takeLaneStore.set({ lanes: [replacementLane] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        await redo();
+
+        // A track owns one lane: readers take the first for the track, so a second one's
+        // takes and regions would be dead state.
+        expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual([replacementLane.id]);
     });
 });

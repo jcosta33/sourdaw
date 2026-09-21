@@ -1537,6 +1537,10 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.removeTakesForClips).not.toHaveBeenCalled();
         });
 
+        // The empty-capture variant of this route — a projection emptying the lane before
+        // the redo — is the same code path, and its real store outcome is pinned with the
+        // real take-lane use cases by the cut route's "does not resurrect a take a
+        // projection removed before the redo".
         it('re-retires the removed clips when the post-removal snapshot is the replacement', () => {
             const track = liveTrack('t1', ['c2']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
@@ -1550,30 +1554,6 @@ describe('handleRestoreTrackClipStates', () => {
                 },
             });
 
-            expect(result).toEqual({ status: 'written' });
-            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
-            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c2']);
-            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
-        });
-
-        it('lands a redo whose capture is empty because the lane lost its take', () => {
-            const track = liveTrack('t1', ['c2']);
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
-
-            const result = handleRestoreTrackClipStates.execute({
-                type: 'restoreTrackClipStates',
-                payload: {
-                    expected: [snapshotFor('t1', ['c2'], { retiredTakeLanes })],
-                    replacement: [snapshotFor('t1', [])],
-                },
-            });
-
-            // The take-lane use cases are mocked here, so the lane's contents cannot be
-            // read by this handler: what this case observes is that an empty re-retire
-            // still lands rather than pinning the redo stack. The real store outcome of
-            // a projection emptying the lane is pinned with the real use cases by the
-            // cut route's "does not resurrect a take a projection removed before the
-            // redo".
             expect(result).toEqual({ status: 'written' });
             expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
             expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c2']);
