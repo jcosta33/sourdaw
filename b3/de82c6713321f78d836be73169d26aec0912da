@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/comping/__tests__/failedCaptureRetirement.integration.spec.ts
+  h_beb54bf43b47b7 30,120-170
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  h_beb54bf43b47b7 4-7,12-25,29-46,49
+src/modules/Arrangement/useCases/comping/reconcileLane.ts
+  h_beb54bf43b47b7 1-78
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b3de82c6713321f78d836be73169d26aec0912da",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
