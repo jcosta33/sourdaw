@@ -6,14 +6,12 @@ import {
     type ClipStateSnapshot,
     type DeviceSnapshot,
     type DeviceStateChunkSnapshot,
-    type RetiredTakeLaneSnapshot,
     type TrackClipStateSnapshot,
     type TrackCollectionAlternativeSnapshot,
     type TrackCollectionFieldsSnapshot,
 } from '#/utils/handlerContract';
 
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
-import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip, type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
@@ -467,42 +465,6 @@ function clipSatellitesMatch(expected: readonly ClipSatelliteEntrySnapshot[]): b
 }
 
 /**
- * Whether the lane a redo will re-retire still holds the takes that redo removes.
- *
- * The guard is deliberately scoped to the retiring clips' takes, not the whole
- * lane. The redo only calls `removeTakesForClips` for those clips, so a take
- * projected onto the lane for a surviving clip — or any other divergence outside
- * the retiring clips — cannot make that redo unsafe, and refusing on it would
- * strand the entry at the head of the redo stack, refusing on every retry and
- * making a safe redo unreachable for the session. Regions naming a retired take
- * are not a precondition for the same reason: the redo drops them wherever it
- * finds them.
- *
- * The lane is found by the same identity rule `restoreTakesForClip` uses — the
- * captured id, or the lane its track now owns — because a correct undo may have
- * merged the captured lane into a lane for the same track, leaving no lane with
- * the captured id. The undo leg's `expected` is the post-removal snapshot, whose
- * retired-lane capture is empty, so this guard is vacuous there; that leg
- * reconciles the capture onto live state instead of overwriting it (see
- * `restoreTakesForClip`).
- */
-function retiredTakeLanesMatch(expected: readonly RetiredTakeLaneSnapshot[]): boolean {
-    const lanes = takeLaneStore.value?.lanes ?? [];
-    return expected.every((retired) => {
-        const retiredTakeIds = new Set(retired.retiredTakeIds ?? []);
-        if (retiredTakeIds.size === 0) {
-            return true;
-        }
-        const liveLane = lanes.find((lane) => lane.id === retired.lane.id || lane.trackId === retired.lane.trackId);
-        if (liveLane === undefined) {
-            return false;
-        }
-        const liveTakeIds = new Set(liveLane.takes.map((take) => take.id));
-        return [...retiredTakeIds].every((takeId) => liveTakeIds.has(takeId));
-    });
-}
-
-/**
  * One guard per key of the snapshot, keyed by `TrackClipStateSnapshot`'s own keys with
  * `-?`. Same gate as the two comparator tables below it, one level up: a key added to
  * the snapshot is a key `writeTrackClipState` will write, and it does not compile
@@ -539,10 +501,15 @@ const SNAPSHOT_ENTRY_GUARDS: SnapshotEntryGuards = {
     // there has written nothing. Comparing it a second time here would only duplicate
     // that check against the same live state.
     clipAutomationLanes: notCompared,
-    // Scoped to the take ids the redo re-retires, not the whole lane:
-    // `retiredTakeLanesMatch` explains why a divergence outside the retiring clips
-    // must not refuse a redo that cannot touch it.
-    retiredTakeLanes: (_track, entry) => retiredTakeLanesMatch(entry.retiredTakeLanes ?? []),
+    // Excluded because the transition it describes reads no part of it: the redo
+    // leg's only take-lane effect is `removeTakesForClips(retiringClipIds)`, a pure
+    // removal derived from the clip-set difference between `expected` and
+    // `replacement`. A lane or take a projection removed since the capture leaves
+    // that removal with less to do, never with something unsafe to do — so refusing
+    // on it would pin the entry at the head of the redo stack over state the redo
+    // cannot touch. What still protects a genuine clobber is the `clips` and
+    // `trackFields` guard above, which authorises the collection write itself.
+    retiredTakeLanes: notCompared,
 };
 
 /**
@@ -779,7 +746,10 @@ function transitionRetiredTakeLanes(
  * everything `everyEntryMatchesLiveState` compares, down to the contents of each
  * clip, before any track write lands. `SNAPSHOT_ENTRY_GUARDS` is where that
  * comparison is enforced rather than asserted — except for `clipAutomationLanes`,
- * which it deliberately leaves `notCompared`: that key has its own guard below.
+ * which it deliberately leaves `notCompared` because that key has its own guard
+ * below, and `retiredTakeLanes`, also `notCompared` because the redo's take-lane
+ * effect derives everything it needs from the two clip sets and so cannot be made
+ * unsafe by divergence this snapshot describes.
  *
  * The guard is two halves and needs both: every `expected` entry matches live state,
  * and every `replacement` entry is named by `expected`. The second is what makes an

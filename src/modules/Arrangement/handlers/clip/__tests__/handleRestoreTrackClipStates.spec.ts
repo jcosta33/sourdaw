@@ -1553,7 +1553,7 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
         });
 
-        it('refuses the redo when an affected live lane no longer matches the capture', () => {
+        it('lands a redo when a projection removed the retired take', () => {
             const track = liveTrack('t1', ['c2']);
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
             mocks.takeLaneStore.value = {
@@ -1568,7 +1568,30 @@ describe('handleRestoreTrackClipStates', () => {
                 },
             });
 
-            expect(result).toEqual({ status: 'conflict' });
+            // The lane's take is gone, so the removal has nothing to retire — but the
+            // redo itself is still safe and must land rather than pin the redo stack.
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c2']);
+            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+        });
+
+        it('does not retire takes for a restore whose snapshot carries no take-lane capture', () => {
+            const track = liveTrack('t1', ['c1']);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'])],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            // The clip-replacement routes (flatten, paste, consolidate) drop clips
+            // without retiring takes, so a restore that carries no take-lane capture
+            // must not start retiring them (#4518).
+            expect(result).toEqual({ status: 'written' });
             expect(mocks.removeTakesForClips).not.toHaveBeenCalled();
             expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
         });

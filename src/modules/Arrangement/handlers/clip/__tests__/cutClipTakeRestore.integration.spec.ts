@@ -6,7 +6,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clipSelectionStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -168,5 +168,45 @@ describe('cutClip take retirement and restore', () => {
         expect(lanes?.[0]?.takes.map((candidate) => candidate.id)).toEqual([projectedTake.id]);
         expect(lanes?.[0]?.id).toBe(projectedLane.id);
         expect(lanes?.[0]?.takes.some((candidate) => candidate.id === take.id)).toBe(false);
+    });
+
+    it('lands a redo whose restored take a projection removed', async () => {
+        const { lane } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+
+        // A projection removes the take the undo restored; the lane stays.
+        const restored = takeLaneStore.value;
+        if (!restored) {
+            throw new Error('expected the restored take-lane state');
+        }
+        takeLaneStore.set({ lanes: restored.lanes.map((candidate) => ({ ...candidate, takes: [] })) });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('lands a redo whose restored lane a projection removed', async () => {
+        const { lane } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'cutClip' }, { source: 'prompt' });
+        await undo();
+
+        // A projection removes the whole lane the undo restored.
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(0);
     });
 });
