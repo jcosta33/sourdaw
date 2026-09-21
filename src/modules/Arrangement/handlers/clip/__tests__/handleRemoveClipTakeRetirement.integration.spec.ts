@@ -171,6 +171,29 @@ describe('removeClip take retirement (ripple route)', () => {
         ]);
     });
 
+    it('puts back a retired comp region when a projection already put its take back', async () => {
+        const { lane, take } = laneForClip('clip-1');
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await removeClipThroughHandler('clip-1');
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        // A projection puts the retired take back while the removal's capture is absent,
+        // and leaves the region the removal deleted deleted.
+        takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes: [take], activeCompRegions: [] }] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+        // The removal deleted the region that comped this take, so the undo has to put it
+        // back: a missing region leaves the resolver playing the source clip's material
+        // over the span instead of the take.
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: take.id }]);
+    });
+
     it('keeps a comp region authored after the removal when it overlaps a restored region', async () => {
         const retiredTake = createTake('clip-1', 'Retired', 0, 4);
         const survivorTake = createTake('clip-2', 'Survivor', 0, 8);

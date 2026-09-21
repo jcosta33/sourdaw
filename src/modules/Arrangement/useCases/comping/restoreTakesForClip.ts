@@ -12,17 +12,21 @@ import { takesWithLiveClips } from './takesWithLiveClips';
  *
  * Each entry is a lane exactly as it stood before the removal, at the index it
  * held, plus the take ids that removal retired. A lane still present is
- * reconciled: only the retired takes it no longer holds — and the regions naming
- * them — are re-added, and everything live is kept, so takes and regions a
- * collaborator's projection added or removed after the capture survive. A lane
- * absent from live is inserted at its captured index when its track has no lane,
- * carrying only the retired takes and regions, reconciled against an empty lane
- * so nothing the removal did not retire rides back in; if a lane for that track
- * appeared while the capture was absent, the retired takes merge into it instead,
- * because a second lane for one track is a state every other creation path
- * forbids and no resolver can read. Every other lane is left alone. A no-op when
- * the store is absent, nothing was retired, or the live state already holds
- * everything the capture would re-add.
+ * reconciled: a retired take live no longer holds comes back, the region the
+ * removal deleted comes back with the take the lane ends up holding, and
+ * everything live is kept — so takes and regions a collaborator's projection
+ * added or removed after the capture survive, without the region a projection
+ * already put the take back for being left behind. A lane absent from live is
+ * inserted at its captured index when its track has no lane, carrying only the
+ * retired takes and regions, reconciled against an empty lane so nothing the
+ * removal did not retire rides back in; if a lane for that track appeared while
+ * the capture was absent, the retired takes merge into it instead, because a
+ * second lane for one track is dead state no resolver can read and every route
+ * that creates a lane forbids it — `handleRestoreTrack` remains the exception,
+ * appending its captured lanes straight to the store, and can still leave two
+ * for a track (#4527). Every other lane is left alone. A no-op when the store is
+ * absent, nothing was retired, or the live state already holds everything the
+ * capture would re-add.
  */
 export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapshot[]): void {
     const state = takeLaneStore.value;

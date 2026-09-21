@@ -22,17 +22,22 @@ function regionsOverlap(left: CompRegion, right: CompRegion): boolean {
  * resurrected.
  *
  * A captured take the live lane still holds is taken from live, so an edit made to
- * it after the capture survives. Re-added regions are restricted to those naming a
- * re-added take, so a region removed later is not resurrected either; and a
- * re-added region that overlaps any live region is dropped, because the lane store
- * keeps only non-overlapping regions and would otherwise discard whichever of the
- * two it reaches second — the comp authored after the removal. That overlap test is
- * also what de-duplicates a region the live lane already holds at the same span: a
- * same-span region overlaps itself, and a zero-length region (which
- * `compRegionInterval`'s `endBeat > startBeat` law never produces) is the only shape
- * it could not absorb. Order follows the capture for the takes it knows and appends
- * the live-only ones; regions are ordered by beat, as the store's own shape
- * requires.
+ * it after the capture survives. A re-added region is one naming a take this removal
+ * retired — the same set the takes come back from, because the removal is what deleted
+ * the region — and it is restored only for a take the reconciled lane ends up holding:
+ * one re-added here, or one a projection put back while the capture was absent, whose
+ * region this undo is then the only thing that can restore. A region for a take the
+ * removal never touched stays gone, and a region for a retired take that is neither live
+ * nor in the capture is dropped rather than left dangling — a region naming a take the
+ * lane does not hold still advances the resolver's gap cursor over its span. A re-added
+ * region that overlaps any live region is dropped too, because the lane store keeps
+ * only non-overlapping regions and would otherwise discard whichever of the two it
+ * reaches second — the comp authored after the removal. That overlap test is also what
+ * de-duplicates a region the live lane already holds at the same span: a same-span
+ * region overlaps itself, and a zero-length region (which `compRegionInterval`'s
+ * `endBeat > startBeat` law never produces) is the only shape it could not absorb.
+ * Order follows the capture for the takes it knows and appends the live-only ones;
+ * regions are ordered by beat, as the store's own shape requires.
  */
 export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: readonly string[]): TakeLane | null {
     const retiredTakeIdSet = new Set(retiredTakeIds);
@@ -60,7 +65,8 @@ export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds
 
     const restoredRegions = captured.activeCompRegions.filter(
         (region) =>
-            reAddedTakeIds.has(region.takeId) &&
+            retiredTakeIdSet.has(region.takeId) &&
+            (reAddedTakeIds.has(region.takeId) || liveTakesById.has(region.takeId)) &&
             !live.activeCompRegions.some((liveRegion) => regionsOverlap(liveRegion, region))
     );
 

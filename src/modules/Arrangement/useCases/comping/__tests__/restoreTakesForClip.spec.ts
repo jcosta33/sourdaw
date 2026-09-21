@@ -250,6 +250,28 @@ describe('restoreTakesForClip', () => {
         expect(restored?.takes.find((take) => take.id === capturedSurvivor.id)?.endBeat).toBe(12);
     });
 
+    it('puts back a retired region when a projection already re-added its take', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        // A projection put the retired take back while the capture was absent — no local
+        // undo entry records it — and left the region this removal deleted deleted.
+        const liveLane: TakeLane = { ...capturedLane, takes: [retiredTake, survivorTake], activeCompRegions: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        const restored = mocks.takeLaneStoreValue.value?.lanes[0];
+        expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, survivorTake.id]);
+        // The removal is what deleted this region, so the undo has to put it back even
+        // though the take itself no longer needs re-adding.
+        expect(restored?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }]);
+    });
+
     it('does not re-add a captured region for a take this removal did not retire', () => {
         const retiredTake = createTake('c1', 'Retired', 0, 4);
         const survivorTake = createTake('c2', 'Survivor', 4, 8);
