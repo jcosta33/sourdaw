@@ -1416,13 +1416,15 @@ function readReceiptOrUndefined(path: string, read: typeof readFileSync): GuardF
     }
 }
 
+type RestoreClaimedReceiptResult =
+    { status: 'restored' } | { status: 'superseded' } | { status: 'error'; message: string };
+
 function restoreClaimedReceipt(
     claimPath: string,
     receiptPath: string,
-    rename: typeof renameSync,
     link: typeof linkSync,
     remove: typeof rmSync
-): void {
+): RestoreClaimedReceiptResult {
     try {
         // linkSync refuses an existing target, so a receipt a concurrent writer installed at
         // receiptPath after the claim is preserved rather than overwritten by the restore.
@@ -1434,20 +1436,19 @@ function restoreClaimedReceipt(
             } catch {
                 // A leftover claim file is harmless; the newer receipt at receiptPath is intact.
             }
-            return;
+            return { status: 'superseded' };
         }
-        try {
-            rename(claimPath, receiptPath);
-        } catch {
-            // Best-effort preservation on an unexpected filesystem error.
-        }
-        return;
+        // Any other link failure must not fall back to an overwriting rename, which would destroy a
+        // receipt a concurrent writer installed at receiptPath during the restore. Leave the claim
+        // in place so its bytes stay recoverable and the lane receipt is untouched.
+        return { status: 'error', message: errorMessage(error) };
     }
     try {
         remove(claimPath);
     } catch {
         // The receipt is restored through the hard link; a leftover claim file is harmless.
     }
+    return { status: 'restored' };
 }
 
 export function clearGuardFailureReceiptIfUnchanged(
@@ -1482,12 +1483,24 @@ export function clearGuardFailureReceiptIfUnchanged(
             remove(claimPath);
             return { status: 'cleared' };
         } catch (error) {
-            restoreClaimedReceipt(claimPath, receiptPath, rename, link, remove);
+            const restored = restoreClaimedReceipt(claimPath, receiptPath, link, remove);
+            if (restored.status === 'error') {
+                return {
+                    status: 'error',
+                    message: `failed to clear the guard-failure receipt (${errorMessage(error)}) and could not restore the claim (${restored.message}); the claim remains at ${claimPath}`,
+                };
+            }
             return { status: 'error', message: errorMessage(error) };
         }
     }
 
-    restoreClaimedReceipt(claimPath, receiptPath, rename, link, remove);
+    const restored = restoreClaimedReceipt(claimPath, receiptPath, link, remove);
+    if (restored.status === 'error') {
+        return {
+            status: 'error',
+            message: `could not restore the guard-failure receipt claim: ${restored.message}; the claim remains at ${claimPath}`,
+        };
+    }
     return { status: 'mismatch' };
 }
 
