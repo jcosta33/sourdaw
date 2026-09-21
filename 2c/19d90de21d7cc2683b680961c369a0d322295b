@@ -1,0 +1,20 @@
+scripts/__tests__/prContract.spec.ts
+  h_beb54bf43b47b7 33-38,728-730,902,906-908,1178-1184,1194-1212
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 84,268-276,1293,1296-1304,1324-1326,1361
+scripts/publishLane.ts
+  h_beb54bf43b47b7 1323-1324,1329-1340
+scripts/testInstructions.ts
+  h_beb54bf43b47b7 13-14,16,340-346,352,356,360-363,368-373,431-433,435,439-441,443,445,464-467,469,474-490,511-514,529-535,544,561,571,575,579,582,638-639
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2c19d90de21d7cc2683b680961c369a0d322295b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
