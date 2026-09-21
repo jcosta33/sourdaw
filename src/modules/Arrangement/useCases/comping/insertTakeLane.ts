@@ -2,6 +2,7 @@ import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { laneTrackExists } from './laneTrackExists';
+import { laneWithLiveTakes } from './laneWithLiveTakes';
 import { reconcileLane } from './reconcileLane';
 import { resolveTakeLaneIndex } from './resolveTakeLaneIndex';
 import { takesWithLiveClips } from './takesWithLiveClips';
@@ -29,6 +30,15 @@ import { takesWithLiveClips } from './takesWithLiveClips';
  * A lane whose own track is gone is not placed at all: it has no host, and
  * re-inserting it strands the lane and everything it carries — the orphan this
  * work exists to prevent.
+ *
+ * Liveness is this insert's own rule, not each caller's: the lane it places holds
+ * only the takes whose clips are still in the project and only the comp regions
+ * naming those takes. A take whose clip is gone has no material to resolve
+ * against, and a region left behind for it still advances the resolver's gap
+ * cursor over its span, silencing the track's own material there in live playback
+ * and in the offline render. Both branches apply the rule — the merge through the
+ * ids it may re-add, the insert through the lane it places — so a caller replaying
+ * captured state cannot forget it.
  */
 export function insertTakeLane(lane: TakeLane, laneIndex: number): void {
     const state = takeLaneStore.value;
@@ -53,6 +63,6 @@ export function insertTakeLane(lane: TakeLane, laneIndex: number): void {
 
     const insertAt = Math.min(laneIndex, state.lanes.length);
     takeLaneStore.set({
-        lanes: [...state.lanes.slice(0, insertAt), lane, ...state.lanes.slice(insertAt)],
+        lanes: [...state.lanes.slice(0, insertAt), laneWithLiveTakes(lane), ...state.lanes.slice(insertAt)],
     });
 }

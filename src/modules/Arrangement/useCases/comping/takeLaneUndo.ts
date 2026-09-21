@@ -63,6 +63,9 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
  * naming them, leaving that lane's own state; removing the lane by id alone would be
  * inert, and removing whatever lane the track owns would destroy state this flatten
  * never retired.
+ *
+ * The insert filters the lane it places through the live-take rule itself, so the
+ * captures replayed here are handed over as they were taken.
  */
 export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void {
     const undo = () => {
@@ -74,7 +77,7 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             removeTakeLane(edit.lane.id);
             return;
         }
-        insertTakeLane(laneWithLiveTakes(edit.lane), edit.laneIndex);
+        insertTakeLane(edit.lane, edit.laneIndex);
     };
     const redo = () => {
         if (edit.kind === 'facet') {
@@ -82,7 +85,7 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             return;
         }
         if (edit.kind === 'lane-added') {
-            insertTakeLane(laneWithLiveTakes(edit.lane), edit.laneIndex);
+            insertTakeLane(edit.lane, edit.laneIndex);
             return;
         }
         retireLaneInsertion(edit.lane);

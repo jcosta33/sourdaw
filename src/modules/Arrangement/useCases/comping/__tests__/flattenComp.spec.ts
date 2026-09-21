@@ -623,6 +623,49 @@ describe('flattenComp', () => {
         expect(undoStore.value!.future).toEqual([]);
     });
 
+    it('does not revive a take whose clip is gone when the undo puts the lane back', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        // The lane holds a live take and an orphan one — a take whose clip the project no
+        // longer holds, left by a write that retired the clip without its take — each with
+        // the comp region that selects it.
+        seedLane(
+            [
+                { id: 'take-live', clipId: 'clip-a', startBeat: 0, endBeat: 8 },
+                { id: 'take-orphan', clipId: 'clip-gone', startBeat: 4, endBeat: 6 },
+            ],
+            [
+                { startBeat: 2, endBeat: 4, takeId: 'take-live' },
+                { startBeat: 4, endBeat: 6, takeId: 'take-orphan' },
+            ]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+        expect(laneIds()).toEqual([]);
+
+        await undo();
+
+        // Only the take whose clip exists belongs in the lane, and only its region with it.
+        const lane = takeLaneStore.value!.lanes[0]!;
+        expect(lane.takes.map((take) => take.id)).toEqual(['take-live']);
+        expect(lane.activeCompRegions).toEqual([{ startBeat: 2, endBeat: 4, takeId: 'take-live' }]);
+        // A region naming a take the lane does not hold still advances the resolver's gap
+        // cursor over its span, so the track's own material goes silent there in playback
+        // and in the offline render.
+        const programme = resolveClipsWithComping(TRACK_ID, liveClips());
+        expect(programme.map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([
+            [0, 2],
+            [2, 4],
+            [4, 8],
+        ]);
+    });
+
     it('refused undo followed by redo leaves the lane retired and drops the entry', async () => {
         const clip = ClipDummy.create({
             id: 'clip-a',
