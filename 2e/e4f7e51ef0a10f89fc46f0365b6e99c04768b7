@@ -1,0 +1,26 @@
+AGENTS.md
+  h_beb54bf43b47b7 242
+package.json
+  h_beb54bf43b47b7 36
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169,1697
+scripts/__tests__/restampTrackedSetInventory.spec.ts
+  h_beb54bf43b47b7 1-185,186-192,193-196,197-198,199-227,228-234,235-243,244,245-276,277-333,334-393
+scripts/restampDependencyBump.ts
+  h_beb54bf43b47b7 49
+scripts/restampTrackedSetInventory.ts
+  h_beb54bf43b47b7 1-31,32-60,61,62,63-66,67-70,71-72,73,74-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2ee4f7e51ef0a10f89fc46f0365b6e99c04768b7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
