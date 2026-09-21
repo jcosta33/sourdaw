@@ -467,20 +467,38 @@ function clipSatellitesMatch(expected: readonly ClipSatelliteEntrySnapshot[]): b
 }
 
 /**
- * Each captured retired lane against the live lane with the same id. A snapshot's
- * retired lanes are the pre-removal state of the lanes its action's removal
- * emptied or thinned, so on the redo leg — where `expected` is that pre-removal
- * snapshot — a take recorded onto an affected lane since the undo makes the live
- * lane disagree and refuses the redo rather than clobbering it. The undo leg's
- * `expected` is the post-removal snapshot, whose retired-lane capture is empty, so
- * this guard is vacuous there; that leg reconciles the capture onto live state
- * instead of overwriting it (see `restoreTakesForClip`), which is what keeps a
- * take the capture never saw.
+ * Whether the lane a redo will re-retire still holds the takes that redo removes.
+ *
+ * The guard is deliberately scoped to the retiring clips' takes, not the whole
+ * lane. The redo only calls `removeTakesForClips` for those clips, so a take
+ * projected onto the lane for a surviving clip — or any other divergence outside
+ * the retiring clips — cannot make that redo unsafe, and refusing on it would
+ * strand the entry at the head of the redo stack, refusing on every retry and
+ * making a safe redo unreachable for the session. Regions naming a retired take
+ * are not a precondition for the same reason: the redo drops them wherever it
+ * finds them.
+ *
+ * The lane is found by the same identity rule `restoreTakesForClip` uses — the
+ * captured id, or the lane its track now owns — because a correct undo may have
+ * merged the captured lane into a lane for the same track, leaving no lane with
+ * the captured id. The undo leg's `expected` is the post-removal snapshot, whose
+ * retired-lane capture is empty, so this guard is vacuous there; that leg
+ * reconciles the capture onto live state instead of overwriting it (see
+ * `restoreTakesForClip`).
  */
 function retiredTakeLanesMatch(expected: readonly RetiredTakeLaneSnapshot[]): boolean {
+    const lanes = takeLaneStore.value?.lanes ?? [];
     return expected.every((retired) => {
-        const liveLane = takeLaneStore.value?.lanes.find((lane) => lane.id === retired.lane.id);
-        return liveLane !== undefined && structuralValueMatches(liveLane, retired.lane);
+        const retiredTakeIds = new Set(retired.retiredTakeIds ?? []);
+        if (retiredTakeIds.size === 0) {
+            return true;
+        }
+        const liveLane = lanes.find((lane) => lane.id === retired.lane.id || lane.trackId === retired.lane.trackId);
+        if (liveLane === undefined) {
+            return false;
+        }
+        const liveTakeIds = new Set(liveLane.takes.map((take) => take.id));
+        return [...retiredTakeIds].every((takeId) => liveTakeIds.has(takeId));
     });
 }
 
@@ -521,9 +539,9 @@ const SNAPSHOT_ENTRY_GUARDS: SnapshotEntryGuards = {
     // there has written nothing. Comparing it a second time here would only duplicate
     // that check against the same live state.
     clipAutomationLanes: notCompared,
-    // Guarded like the MIDI lanes above, not like automation: the transition this
-    // authorises reads and rewrites the lane's live state, so the lane the pre-removal
-    // snapshot names has to be exactly what is live before the move runs.
+    // Scoped to the take ids the redo re-retires, not the whole lane:
+    // `retiredTakeLanesMatch` explains why a divergence outside the retiring clips
+    // must not refuse a redo that cannot touch it.
     retiredTakeLanes: (_track, entry) => retiredTakeLanesMatch(entry.retiredTakeLanes ?? []),
 };
 

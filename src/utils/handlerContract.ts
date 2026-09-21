@@ -534,6 +534,15 @@ export type CompTakeLaneSnapshot = {
 export type RetiredTakeLaneSnapshot = {
     readonly laneIndex: number;
     readonly lane: CompTakeLaneSnapshot;
+    /**
+     * The take ids this removal actually retired from `lane`. An undo re-adds only
+     * these, so a captured take absent from live for any other reason — a later
+     * deletion projected in with no local undo entry — stays absent instead of
+     * being resurrected. Optional so captures persisted before the field existed
+     * still decode; absent means the removal recorded no ids and an undo re-adds
+     * no take from this lane.
+     */
+    readonly retiredTakeIds?: readonly string[];
 };
 export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
+import { removeTakesForClips } from '../removeTakesForClips';
 import { restoreTakesForClip } from '../restoreTakesForClip';
 
 const mocks = vi.hoisted(() => ({
@@ -64,7 +65,7 @@ describe('restoreTakesForClip', () => {
         ]);
     });
 
-    it('rewrites a lane thinned by the removal from its captured state', () => {
+    it('re-adds the retired take onto a lane thinned by the removal', () => {
         const take = createTake('c1', 'Retired take', 0, 4);
         const survivorTake = createTake('c2', 'Survivor', 4, 8);
         // The post-removal lane kept a take for another clip; the captured lane
@@ -80,7 +81,7 @@ describe('restoreTakesForClip', () => {
         };
         mocks.takeLaneStoreValue.value = { lanes: [survivingLane] };
 
-        restoreTakesForClip([{ laneIndex: 0, lane: thinnedLane }]);
+        restoreTakesForClip([{ laneIndex: 0, lane: thinnedLane, retiredTakeIds: [take.id] }]);
 
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         const restored = mocks.takeLaneStoreValue.value?.lanes[0];
@@ -129,7 +130,7 @@ describe('restoreTakesForClip', () => {
         };
         mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
 
-        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane }]);
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
 
         const restored = mocks.takeLaneStoreValue.value?.lanes[0];
         expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, survivorTake.id, projectedTake.id]);
@@ -148,11 +149,135 @@ describe('restoreTakesForClip', () => {
         const trackLane: TakeLane = { ...createTakeLane('t1'), takes: [projectedTake], activeCompRegions: [] };
         mocks.takeLaneStoreValue.value = { lanes: [trackLane] };
 
-        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane }]);
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
 
         const lanes = mocks.takeLaneStoreValue.value?.lanes;
         expect(lanes).toHaveLength(1);
         expect(lanes?.[0]?.trackId).toBe('t1');
         expect(lanes?.[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id, projectedTake.id]);
+    });
+
+    it('does not resurrect a captured take that left the lane for another reason', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ ...createTakeLane('t1'), takes: [retiredTake, survivorTake], activeCompRegions: [] }],
+        };
+
+        const capture = removeTakesForClips(['c1']);
+        // A later write with no local undo entry deletes the surviving take too.
+        const afterRemoval = mocks.takeLaneStoreValue.value;
+        if (!afterRemoval) {
+            throw new Error('expected the post-removal take-lane state');
+        }
+        mocks.takeLaneStoreValue.value = {
+            lanes: afterRemoval.lanes.map((lane) => ({ ...lane, takes: [] })),
+        };
+
+        restoreTakesForClip(capture);
+
+        // Only the take the removal retired comes back; the survivor left for a
+        // reason this removal never recorded, so it stays gone.
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
+    });
+
+    it('keeps the live copy of a captured take that was edited after the capture', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const capturedSurvivor = createTake('c2', 'Survivor', 4, 8);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, capturedSurvivor],
+            activeCompRegions: [],
+        };
+        // The live lane holds the same take id edited after the capture — a distinct
+        // object, so a restore that used the captured object would lose the edit.
+        const liveLane: TakeLane = { ...capturedLane, takes: [{ ...capturedSurvivor, endBeat: 12 }] };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        const restored = mocks.takeLaneStoreValue.value?.lanes[0];
+        expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, capturedSurvivor.id]);
+        expect(restored?.takes.find((take) => take.id === capturedSurvivor.id)?.endBeat).toBe(12);
+    });
+
+    it('does not re-add a captured region for a take this removal did not retire', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [{ startBeat: 4, endBeat: 8, takeId: survivorTake.id }],
+        };
+        // The survivor's region was removed later; the removal dropped only the
+        // retired take, so its region must not come back.
+        const liveLane: TakeLane = { ...capturedLane, takes: [survivorTake], activeCompRegions: [] };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        const restored = mocks.takeLaneStoreValue.value?.lanes[0];
+        expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, survivorTake.id]);
+        expect(restored?.activeCompRegions).toEqual([]);
+    });
+
+    it('does not duplicate a captured region the live lane already holds', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const region = { startBeat: 0, endBeat: 4, takeId: retiredTake.id };
+        const capturedLane: TakeLane = { ...createTakeLane('t1'), takes: [retiredTake], activeCompRegions: [region] };
+        // The retired take left live, but its region was already put back by a later
+        // write; the restore must not append a second copy.
+        const liveLane: TakeLane = { ...capturedLane, takes: [], activeCompRegions: [region] };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        const restored = mocks.takeLaneStoreValue.value?.lanes[0];
+        expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
+        expect(restored?.activeCompRegions).toEqual([region]);
+    });
+
+    it('orders the restored regions by beat with the ones already live', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 8, 12);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        // The live lane keeps a later region; the restored earlier one sorts before it.
+        const liveLane: TakeLane = {
+            ...capturedLane,
+            takes: [survivorTake],
+            activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: survivorTake.id }],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.activeCompRegions.map((region) => region.startBeat)).toEqual([
+            0, 8,
+        ]);
+    });
+
+    it('writes nothing when the live lane already holds everything the capture would re-add', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const region = { startBeat: 0, endBeat: 4, takeId: retiredTake.id };
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake],
+            activeCompRegions: [region],
+        };
+        // A projection already put the retired take and its region back.
+        const liveLane: TakeLane = {
+            ...capturedLane,
+            takes: [retiredTake],
+            activeCompRegions: [region],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 });

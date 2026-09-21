@@ -48,13 +48,17 @@ import { getTrackStoreState } from './getTrackStoreState';
  * `retiringClipIds` names the pre-existing clips whose removal retires takes
  * through `removeClip`, so the capture can carry the lanes that removal will
  * retire and undo can put them back. `cutClip` is the only caller that passes
- * it: `pasteClip` removes only ids it minted moments earlier, and
- * `flattenTrack`/`consolidateAllTracks` replace the clip collection directly
- * without going through `removeClip`, so neither retires a take here. Delete
- * Time and Delete Time Range also drop pre-existing clips and retire nothing —
- * they call `removeClipSatelliteData` and never `removeClip` or
- * `removeTakesForClips` — which is a separate defect tracked as #4520 and
- * deliberately not extended in this change.
+ * it: `pasteClip` removes only ids it minted moments earlier.
+ *
+ * Every other route that drops pre-existing clips leaves their takes behind, and
+ * that gap is filed rather than covered here. `flattenTrack` and
+ * `consolidateAllTracks` replace the clip collection directly without going
+ * through `removeClip`, and Delete Time / Delete Time Range drop clips through
+ * `removeClipSatelliteData` alone; neither retires a take. The orphan comp region
+ * then advances the comp cursor, so the replacement clip is silent over that span
+ * in live playback and in the offline render. The clip-replacement routes are
+ * defect #4518 and the time routes are #4520; this capture deliberately does not
+ * extend either.
  */
 export function captureTrackClipStates(
     trackIds: readonly string[],

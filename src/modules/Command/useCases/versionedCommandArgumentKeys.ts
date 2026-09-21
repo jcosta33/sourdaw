@@ -849,6 +849,7 @@ const schemaDefinitions = [
         properties: {
             laneIndex: 1,
             lane: 120,
+            retiredTakeIds: 20,
         },
         required: ['laneIndex', 'lane'],
         additionalProperties: false,

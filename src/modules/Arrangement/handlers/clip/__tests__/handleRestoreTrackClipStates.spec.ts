@@ -1508,6 +1508,7 @@ describe('handleRestoreTrackClipStates', () => {
                     takes: [{ id: 'take-1', clipId: 'c2', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
                     activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
                 },
+                retiredTakeIds: ['take-1'],
             },
         ];
 

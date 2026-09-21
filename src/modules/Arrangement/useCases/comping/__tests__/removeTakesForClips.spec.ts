@@ -168,4 +168,33 @@ describe('removeTakesForClips', () => {
         expect(captured[0]?.lane.id).toBe(lane.id);
         expect(captured[0]?.lane.takes.map((take) => take.id)).toEqual([lane.takes[0]?.id]);
     });
+
+    it('records exactly the take ids the removal retired', () => {
+        const retiredTake = createTake('c1', 'Retire', 0, 4);
+        const keptTake = createTake('c2', 'Keep', 0, 4);
+        mocks.takeLaneStoreValue.value = { lanes: [laneWithTakes('t1', [retiredTake, keptTake])] };
+
+        const captured = captureRetiredTakeLanes(['c1']);
+
+        expect(captured[0]?.retiredTakeIds).toEqual([retiredTake.id]);
+    });
+
+    it('captures a clone, so mutating live state after the removal cannot change it', () => {
+        const retiredTake = createTake('c1', 'Retire', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        mocks.takeLaneStoreValue.value = { lanes: [laneWithTakes('t1', [retiredTake, survivorTake])] };
+
+        const captured = removeTakesForClips(['c1']);
+        const liveLane = mocks.takeLaneStoreValue.value?.lanes[0];
+        if (!liveLane) {
+            throw new Error('expected the post-removal take-lane state');
+        }
+        const liveSurvivor = liveLane.takes.find((take) => take.id === survivorTake.id);
+        if (!liveSurvivor) {
+            throw new Error('expected the surviving take to stay live');
+        }
+        liveSurvivor.endBeat = 99;
+
+        expect(captured[0]?.lane.takes.find((take) => take.id === survivorTake.id)?.endBeat).toBe(8);
+    });
 });

@@ -17,7 +17,8 @@ export type TakeRetirementPlan = {
  * actually removed — a region that named a take this removal did not touch
  * stays, dangling or not. A lane whose last take named a retiring clip is
  * retired whole. `retiredLanes` holds each touched lane exactly as it was
- * before the removal, with the index it held, so an undo can put it back.
+ * before the removal, with the index it held and the take ids this call
+ * retired, so an undo can put back exactly those takes and no others.
  *
  * Returns null when the store is absent, no clip id was given, or no take
  * names a retiring clip.
@@ -44,7 +45,7 @@ export function planTakeRetirement(clipIds: readonly string[]): TakeRetirementPl
         }
 
         changed = true;
-        retiredLanes.push({ lane: structuredClone(lane), laneIndex: index });
+        retiredLanes.push({ lane: structuredClone(lane), laneIndex: index, retiredTakeIds: [...removedTakeIds] });
 
         const takes = lane.takes.filter((take) => !removedTakeIds.has(take.id));
         // The lane lost its last take to a retiring clip: retire the lane too.
