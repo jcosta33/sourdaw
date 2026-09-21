@@ -139,9 +139,10 @@ more than the margin: the whole-side fallback covers a side with no hunks, not a
 line it interacts with.
 
 What has not changed is what 0046 established: none of this is calibrated. The thresholds are
-provisional, the questions are proposed assessment tasks, and the run above is one sample of one
-change. The design keeps calibration a threshold-and-weight change over cached answers rather than a
-redesign, which is the only property of this set that can be asserted before anyone has measured it.
+provisional, the questions are proposed assessment tasks, and no labelled evaluation compares them
+against merged outcomes yet, so no probability this tool returns is a measured accuracy. The design
+keeps calibration a threshold-and-weight change over cached answers rather than a redesign, which is
+the only property of this set that can be asserted before anyone has measured it.
 
 This ADR supersedes 0046, which was its prerequisite rather than its opposite, and it carries
 forward everything there that this decision does not change: the sidecars stay outside the
