@@ -54,15 +54,17 @@ describe('restoreTakesForClip', () => {
     it('re-inserts a lane retired whole at the index it held', () => {
         const survivingLane = laneWithTakes('t2', [createTake('c9', 'Survivor', 0, 4)]);
         mocks.takeLaneStoreValue.value = { lanes: [survivingLane] };
-        const retiredLane = laneWithTakes('t1', [createTake('c1', 'Retired', 0, 4)]);
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const retiredLane = laneWithTakes('t1', [retiredTake]);
 
-        restoreTakesForClip([{ laneIndex: 0, lane: retiredLane }]);
+        restoreTakesForClip([{ laneIndex: 0, lane: retiredLane, retiredTakeIds: [retiredTake.id] }]);
 
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         expect(mocks.takeLaneStoreValue.value?.lanes.map((lane) => lane.id)).toEqual([
             retiredLane.id,
             survivingLane.id,
         ]);
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
     });
 
     it('re-adds the retired take onto a lane thinned by the removal', () => {
@@ -279,5 +281,23 @@ describe('restoreTakesForClip', () => {
         restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
 
         expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
+    it('does not resurrect a non-retired take when the captured lane is absent from live', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        mocks.takeLaneStoreValue.value = {
+            lanes: [{ ...createTakeLane('t1'), takes: [retiredTake, survivorTake], activeCompRegions: [] }],
+        };
+
+        const capture = removeTakesForClips(['c1']);
+        // A later projection write removes the whole lane, so the insertion path runs.
+        mocks.takeLaneStoreValue.value = { lanes: [] };
+
+        restoreTakesForClip(capture);
+
+        const lanes = mocks.takeLaneStoreValue.value?.lanes;
+        expect(lanes).toHaveLength(1);
+        expect(lanes?.[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
     });
 });

@@ -77,12 +77,14 @@ function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: reado
  * reconciled: only the retired takes it no longer holds — and the regions naming
  * them — are re-added, and everything live is kept, so takes and regions a
  * collaborator's projection added or removed after the capture survive. A lane
- * retired whole is inserted at its captured index only when its track has no
- * lane; if a lane for that track appeared while the capture was absent, the
- * retired takes merge into it instead, because a second lane for one track is a
- * state every other creation path forbids and no resolver can read. Every other
- * lane is left alone. A no-op when the store is absent, nothing was retired, or
- * the live state already holds everything the capture would re-add.
+ * absent from live is inserted at its captured index when its track has no lane,
+ * carrying only the retired takes and regions, reconciled against an empty lane
+ * so nothing the removal did not retire rides back in; if a lane for that track
+ * appeared while the capture was absent, the retired takes merge into it instead,
+ * because a second lane for one track is a state every other creation path
+ * forbids and no resolver can read. Every other lane is left alone. A no-op when
+ * the store is absent, nothing was retired, or the live state already holds
+ * everything the capture would re-add.
  */
 export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapshot[]): void {
     const state = takeLaneStore.value;
@@ -100,8 +102,15 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
             (candidate) => candidate.id === lane.id || candidate.trackId === lane.trackId
         );
         if (targetIndex === -1) {
-            lanes.splice(Math.min(Math.max(laneIndex, 0), lanes.length), 0, structuredClone(lane));
-            changed = true;
+            // The captured lane is gone from live. Reconcile the capture against an
+            // empty lane and insert only what the removal retired, so a captured
+            // take the removal never touched — or a capture written before
+            // `retiredTakeIds` existed — cannot ride back in with the whole clone.
+            const inserted = reconcileLane({ ...lane, takes: [], activeCompRegions: [] }, lane, retiredTakeIds ?? []);
+            if (inserted) {
+                lanes.splice(Math.min(Math.max(laneIndex, 0), lanes.length), 0, inserted);
+                changed = true;
+            }
             continue;
         }
 
