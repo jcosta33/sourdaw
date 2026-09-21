@@ -1,0 +1,26 @@
+.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md
+  h_beb54bf43b47b7 103-143
+scripts/semanticReview.ts
+  h_beb54bf43b47b7 52,564,577,591
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 14,102-106,108,115-119,122,367,369,373,377,383,394-395,397,399,401-405,414,418,431-432,443-444,454-455,585-591,674,690-699,715,731-740,795,835,844,863,883,913,1048,1070,1174,1225,1300,1344,1476,1529,1548,1569,1678
+scripts/semanticReview/interpret.ts
+  h_beb54bf43b47b7 35,37-42,132-146,148-150,160-161,163,166,169,171,173-174,176-179,181-182,184,186-187,195-196
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 394-399,405
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 2,4-13,17,22-25,29-33,35-36,43-63,68,74,76,84,86,95-96,98-100,110-125,128-129,131,133-186,188-189,193-194,196-243,245-276,278-297,299-300,302-303,306,308-320,322-331,333-337,339-340,343,346,348-368,371-380,382-391,393-397,399-400,403,406,408-411,413-417,419-420,422-443,446,448-451,453-457,459-460,463-503,508,512,527-529,537-538,562,570-572,580
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 303,306-307,309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "128f1bf6230be0ed668d2c691e9c35e4b6897319",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
