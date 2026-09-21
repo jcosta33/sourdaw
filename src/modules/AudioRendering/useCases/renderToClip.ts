@@ -1,6 +1,14 @@
-import { addClip, addTrack, removeClip, removeTrack } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    addTrack,
+    captureRetiredTakeLanes,
+    removeClip,
+    removeTrack,
+    restoreTakesForClip,
+} from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 export type RenderToClipInput = {
     /** Target track id, or the literal 'new' to create a fresh audio track. */
@@ -49,9 +57,15 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
         return null;
     }
 
+    // Redo re-creates the clip under the id it was rendered with, so the takes the
+    // undo retires come back under the same clip identity. Only the undo knows what
+    // the clip is carrying by the time it leaves, so it takes the capture.
+    let retiredTakeLanes: readonly RetiredTakeLaneSnapshot[] = [];
+
     pushUndoEntry(
         'Render to clip',
         () => {
+            retiredTakeLanes = captureRetiredTakeLanes([clip.id]);
             removeClip(clip.id);
             if (createdNewTrack) {
                 removeTrack(trackId);
@@ -62,6 +76,7 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
                 addTrack({ id: trackId, name: input.name, kind: 'audio' });
             }
             addClip({
+                id: clip.id,
                 trackId,
                 startBeat: input.startBeat,
                 endBeat: input.endBeat,
@@ -69,6 +84,7 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
                 type: 'audio',
                 audioBufferId,
             });
+            restoreTakesForClip(retiredTakeLanes);
         },
         // The redo closure re-creates the rendered clip with this buffer id.
         { restoresBufferIds: [audioBufferId] }

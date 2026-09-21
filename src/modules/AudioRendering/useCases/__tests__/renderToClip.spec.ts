@@ -23,6 +23,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,
     removeClip: vi.fn(),
     removeTrack: vi.fn(),
+    captureRetiredTakeLanes: vi.fn(() => []),
+    restoreTakesForClip: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({

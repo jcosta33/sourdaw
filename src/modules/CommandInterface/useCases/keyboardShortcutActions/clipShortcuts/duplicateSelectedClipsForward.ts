@@ -1,7 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, removeClip } from '#/modules/Arrangement/useCases';
+import { addClip, captureRetiredTakeLanes, removeClip, restoreTakesForClip } from '#/modules/Arrangement/useCases';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 /**
  * Duplicates all selected clips forward by the selection's total time span (R-B2).
@@ -29,6 +30,11 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         name: string;
         type: 'audio' | 'midi';
         audioBufferId?: string;
+    };
+
+    type ClipCopy = {
+        info: ClipInfo;
+        createdId: string;
     };
 
     const selected: ClipInfo[] = [];
@@ -60,7 +66,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
-    const createdIds: string[] = [];
+    const copies: ClipCopy[] = [];
 
     for (const info of selected) {
         const newClip = addClip({
@@ -71,55 +77,48 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
             type: info.type,
             audioBufferId: info.audioBufferId,
         });
-        if (newClip) {
-            createdIds.push(newClip.id);
-            duplicateClipAutomation(info.clipId, newClip.id);
+        if (!newClip) {
+            continue;
         }
+        copies.push({ info, createdId: newClip.id });
+        duplicateClipAutomation(info.clipId, newClip.id);
     }
 
-    if (createdIds.length === 0) {
+    if (copies.length === 0) {
         return;
     }
 
-    // Capture the exact clips+positions for redo so we don't re-enter pushUndoEntry
-    const redoInfos = selected.map((info, index) => ({
-        trackId: info.trackId,
-        startBeat: info.startBeat + span,
-        endBeat: info.endBeat + span,
-        name: `${info.name} (copy)`,
-        type: info.type,
-        audioBufferId: info.audioBufferId,
-        sourceClipId: info.clipId,
-        createdId: createdIds[index]!,
-    }));
+    const createdIds = copies.map((copy) => copy.createdId);
 
-    // Mutable tracking: redo creates new clip IDs, so undo must reference the latest set.
-    let currentIds = [...createdIds];
+    // Redo re-creates every copy under the id it was minted with, so the takes the
+    // undo retires come back under the same clip identity. Only the undo knows what
+    // the copies are carrying by the time they leave, so it takes the capture.
+    let retiredTakeLanes: readonly RetiredTakeLaneSnapshot[] = [];
 
     pushUndoEntry(
         `Duplicate ${createdIds.length} clip${createdIds.length > 1 ? 's' : ''} forward`,
         () => {
-            for (const id of currentIds) {
+            retiredTakeLanes = captureRetiredTakeLanes(createdIds);
+            for (const id of createdIds) {
                 removeClip(id);
             }
         },
         () => {
-            const newIds: string[] = [];
-            for (const ri of redoInfos) {
+            for (const copy of copies) {
                 const newClip = addClip({
-                    trackId: ri.trackId,
-                    startBeat: ri.startBeat,
-                    endBeat: ri.endBeat,
-                    name: ri.name,
-                    type: ri.type,
-                    audioBufferId: ri.audioBufferId,
+                    id: copy.createdId,
+                    trackId: copy.info.trackId,
+                    startBeat: copy.info.startBeat + span,
+                    endBeat: copy.info.endBeat + span,
+                    name: `${copy.info.name} (copy)`,
+                    type: copy.info.type,
+                    audioBufferId: copy.info.audioBufferId,
                 });
                 if (newClip) {
-                    newIds.push(newClip.id);
-                    duplicateClipAutomation(ri.sourceClipId, newClip.id);
+                    duplicateClipAutomation(copy.info.clipId, newClip.id);
                 }
             }
-            currentIds = newIds;
+            restoreTakesForClip(retiredTakeLanes);
         }
     );
 }

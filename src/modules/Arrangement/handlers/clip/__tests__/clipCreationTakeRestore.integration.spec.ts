@@ -10,6 +10,7 @@ import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Co
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
@@ -239,5 +240,49 @@ describe('clip-creation take restore', () => {
 
         expect(clipIds()).not.toContain('clip-copy');
         expect(takeIdsInLiveLanes()).toEqual([]);
+    });
+
+    it('restores every capture when a grouped redo replays two creations', async () => {
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'clip-first',
+                        trackId: 'track-1',
+                        startBeat: 8,
+                        endBeat: 12,
+                        name: 'First',
+                        type: 'audio',
+                    },
+                },
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'clip-second',
+                        trackId: 'track-1',
+                        startBeat: 12,
+                        endBeat: 16,
+                        name: 'Second',
+                        type: 'audio',
+                    },
+                },
+            ],
+            { source: 'prompt', groupId: 'grouped-creations' }
+        );
+        expect(result.status).toBe('committed');
+        expect(clipIds()).toEqual(['clip-source', 'clip-first', 'clip-second']);
+
+        // Only one of the two creations carries a take.
+        const takeId = projectTakeOntoClip('clip-first');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-first', 'clip-second']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
     });
 });

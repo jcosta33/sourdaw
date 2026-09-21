@@ -87,7 +87,11 @@ describe('splitClipWithUndo take restore', () => {
 
         await redo();
 
-        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id).sort()).toEqual(['clip-1', splitRightClipId]);
+        // The right half's id is generated, so its order against the source's is not
+        // a contract: compare both sides sorted rather than pinning one order.
+        expect([...(trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id)].sort()).toEqual(
+            [splitRightClipId, 'clip-1'].sort()
+        );
         expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
     });
 });

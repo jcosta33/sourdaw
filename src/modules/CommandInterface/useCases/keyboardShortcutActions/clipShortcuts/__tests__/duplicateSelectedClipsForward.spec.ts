@@ -1,45 +1,57 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockTrackStore, mockAddClip, mockRemoveClip, mockDuplicateClipAutomation, mockPushUndoEntry } = vi.hoisted(
-    () => ({
-        mockTrackStore: {
-            value: {
-                tracks: [
-                    {
-                        id: 't1',
-                        name: 'Track 1',
-                        clips: [
-                            {
-                                id: 'c1',
-                                name: 'Clip A',
-                                startBeat: 0,
-                                endBeat: 4,
-                                type: 'audio',
-                                audioBufferId: 'buf-1',
-                            },
-                            {
-                                id: 'c2',
-                                name: 'Clip B',
-                                startBeat: 8,
-                                endBeat: 12,
-                                type: 'midi',
-                            },
-                        ],
-                    },
-                ],
-            },
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+
+const {
+    mockTrackStore,
+    mockAddClip,
+    mockRemoveClip,
+    mockCaptureRetiredTakeLanes,
+    mockRestoreTakesForClip,
+    mockDuplicateClipAutomation,
+    mockPushUndoEntry,
+} = vi.hoisted(() => ({
+    mockTrackStore: {
+        value: {
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'Track 1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            name: 'Clip A',
+                            startBeat: 0,
+                            endBeat: 4,
+                            type: 'audio',
+                            audioBufferId: 'buf-1',
+                        },
+                        {
+                            id: 'c2',
+                            name: 'Clip B',
+                            startBeat: 8,
+                            endBeat: 12,
+                            type: 'midi',
+                        },
+                    ],
+                },
+            ],
         },
-        mockAddClip: vi.fn(() => ({ id: 'new-clip' })),
-        mockRemoveClip: vi.fn(),
-        mockDuplicateClipAutomation: vi.fn(),
-        mockPushUndoEntry: vi.fn(),
-    })
-);
+    },
+    mockAddClip: vi.fn(() => ({ id: 'new-clip' })),
+    mockRemoveClip: vi.fn(),
+    mockCaptureRetiredTakeLanes: vi.fn<(clipIds: readonly string[]) => RetiredTakeLaneSnapshot[]>(() => []),
+    mockRestoreTakesForClip: vi.fn(),
+    mockDuplicateClipAutomation: vi.fn(),
+    mockPushUndoEntry: vi.fn(),
+}));
 
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mockTrackStore }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mockAddClip,
     removeClip: mockRemoveClip,
+    captureRetiredTakeLanes: mockCaptureRetiredTakeLanes,
+    restoreTakesForClip: mockRestoreTakesForClip,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({ duplicateClipAutomation: mockDuplicateClipAutomation }));
 vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mockPushUndoEntry, executeUserAppAction: vi.fn() }));
@@ -108,13 +120,19 @@ describe('duplicateSelectedClipsForward', () => {
         duplicateSelectedClipsForward(['c1']);
         const undoFn = mockPushUndoEntry.mock.calls[0]?.[1];
         const redoFn = mockPushUndoEntry.mock.calls[0]?.[2];
-        // Undo removes the created clips
+        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [
+            { laneIndex: 0, lane: { id: 'lane-1', trackId: 't1', takes: [], activeCompRegions: [] } },
+        ];
+        mockCaptureRetiredTakeLanes.mockReturnValue(retiredTakeLanes);
+        // Undo captures what the copies are carrying before it removes them.
         undoFn();
+        expect(mockCaptureRetiredTakeLanes).toHaveBeenCalledWith(['new-clip']);
         expect(mockRemoveClip).toHaveBeenCalledWith('new-clip');
-        // Redo creates new clips with the same offsets
+        // Redo creates the copies under the same ids and puts those takes back.
         vi.clearAllMocks();
         redoFn();
         expect(mockAddClip).toHaveBeenCalledExactlyOnceWith({
+            id: 'new-clip',
             trackId: 't1',
             startBeat: 4,
             endBeat: 8,
@@ -122,6 +140,7 @@ describe('duplicateSelectedClipsForward', () => {
             type: 'audio',
             audioBufferId: 'buf-1',
         });
+        expect(mockRestoreTakesForClip).toHaveBeenCalledWith(retiredTakeLanes);
     });
 
     it('does nothing when selected clip ids do not match any clips in the store', () => {

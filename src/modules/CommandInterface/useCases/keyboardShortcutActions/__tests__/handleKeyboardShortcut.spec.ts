@@ -69,6 +69,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTimeRange: vi.fn(),
     removeClip: vi.fn(),
     addClip: vi.fn(),
+    captureRetiredTakeLanes: vi.fn(() => []),
+    restoreTakesForClip: vi.fn(),
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
