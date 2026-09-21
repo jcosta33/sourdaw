@@ -7,6 +7,8 @@ import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isAddClipSessionEntry } from '../validateCreationSessionEntries';
 
+import { restoreTakesRetiredByPendingDiscard } from './takeRetirementRedo';
+
 type AddClipAction = { payload: { id?: string } };
 
 type AddClipState = {
@@ -48,6 +50,9 @@ export const handleAddClip = createHandler<'addClip'>({
         if (!clip) {
             return toHandlerExecutionResult(false);
         }
+        // The redo re-creates this exact clip id: put back whatever the discard of
+        // the original creation captured at its undo.
+        restoreTakesRetiredByPendingDiscard(state.clipId);
         state.generatedMidiStateGuard.entityJson = JSON.stringify(clip);
         state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([clip.id]);
         return toHandlerExecutionResult(true);

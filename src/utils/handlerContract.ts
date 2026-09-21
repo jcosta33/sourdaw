@@ -1126,7 +1126,19 @@ export type AppAction =
            *  `duplicateClip` / `duplicateClipToNextBar` without applying the user's
            *  current ripple-delete mode. */
           type: 'discardDuplicatedClip';
-          payload: { clipId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
+          payload: {
+              clipId: string;
+              generatedMidiStateGuard?: GeneratedMidiStateGuard;
+              /**
+               * The take lanes this discard retired, written by its `execute()`
+               * before `removeClip` runs. The paired redo re-creates the same clip
+               * id, so the entry's own inverse is what carries the capture — across
+               * the session mirror too, where a shared array would not survive.
+               * Optional so entries persisted before takes joined this payload still
+               * decode; absent means the discard recorded nothing.
+               */
+              retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
+          };
       }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string; expectedName?: string } }

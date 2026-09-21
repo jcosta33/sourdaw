@@ -10,6 +10,8 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
+import { refreshRetiredTakeLanesForRedo } from './takeRetirementRedo';
+
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
 type MinimalClipShape = { id: string; trackId: string; name: string; startBeat: number; endBeat: number };
@@ -61,6 +63,12 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     validate: (action, context) =>
         clipStillExists(action.payload.clipId) && batchMembersAreIndependent(action, context),
     execute: (alpha) => {
+        // A redo replays this removal with `skipUndo`, so the fresh capture
+        // `describe()` just took never reaches an entry: without this the entry
+        // keeps the first removal's capture and the undo that follows the redo
+        // cannot put back a take that landed on the restored clip in between.
+        refreshRetiredTakeLanesForRedo(alpha, alpha.payload.clipId);
+
         const state = getTrackStoreState();
         let trackId: string | null = null;
         if (state) {

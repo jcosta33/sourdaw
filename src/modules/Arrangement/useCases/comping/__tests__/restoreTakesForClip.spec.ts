@@ -52,19 +52,42 @@ describe('restoreTakesForClip', () => {
     });
 
     it('re-inserts a lane retired whole at the index it held', () => {
-        const survivingLane = laneWithTakes('t2', [createTake('c9', 'Survivor', 0, 4)]);
-        mocks.takeLaneStoreValue.value = { lanes: [survivingLane] };
+        const firstLane = laneWithTakes('t2', [createTake('c9', 'First survivor', 0, 4)]);
+        const secondLane = laneWithTakes('t3', [createTake('c8', 'Second survivor', 0, 4)]);
+        mocks.takeLaneStoreValue.value = { lanes: [firstLane, secondLane] };
         const retiredTake = createTake('c1', 'Retired', 0, 4);
         const retiredLane = laneWithTakes('t1', [retiredTake]);
 
-        restoreTakesForClip([{ laneIndex: 0, lane: retiredLane, retiredTakeIds: [retiredTake.id] }]);
+        // The retired lane held index 1, between two lanes that outlive it: an
+        // insertion anywhere else puts it back in a place it never occupied.
+        restoreTakesForClip([{ laneIndex: 1, lane: retiredLane, retiredTakeIds: [retiredTake.id] }]);
 
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         expect(mocks.takeLaneStoreValue.value?.lanes.map((lane) => lane.id)).toEqual([
+            firstLane.id,
             retiredLane.id,
-            survivingLane.id,
+            secondLane.id,
         ]);
-        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
+        expect(mocks.takeLaneStoreValue.value?.lanes[1]?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
+    });
+
+    it('inserts a lane whose captured index is past the surviving lanes at the end', () => {
+        const firstLane = laneWithTakes('t2', [createTake('c9', 'First survivor', 0, 4)]);
+        const secondLane = laneWithTakes('t3', [createTake('c8', 'Second survivor', 0, 4)]);
+        mocks.takeLaneStoreValue.value = { lanes: [firstLane, secondLane] };
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const retiredLane = laneWithTakes('t1', [retiredTake]);
+
+        // Index 3 no longer exists — the lanes that followed the retired one are
+        // gone too — so the capture's index has to clamp to the end, not to the
+        // last existing lane.
+        restoreTakesForClip([{ laneIndex: 3, lane: retiredLane, retiredTakeIds: [retiredTake.id] }]);
+
+        expect(mocks.takeLaneStoreValue.value?.lanes.map((lane) => lane.id)).toEqual([
+            firstLane.id,
+            secondLane.id,
+            retiredLane.id,
+        ]);
     });
 
     it('re-adds the retired take onto a lane thinned by the removal', () => {
@@ -237,6 +260,34 @@ describe('restoreTakesForClip', () => {
         const restored = mocks.takeLaneStoreValue.value?.lanes[0];
         expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
         expect(restored?.activeCompRegions).toEqual([region]);
+    });
+
+    it('keeps a restored region that only touches a live one', () => {
+        const retiredTake = createTake('c1', 'Retired', 0, 4);
+        const survivorTake = createTake('c2', 'Survivor', 4, 8);
+        const capturedLane: TakeLane = {
+            ...createTakeLane('t1'),
+            takes: [retiredTake, survivorTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        // The live lane comps the survivor up to beat 4, where the restored region
+        // ends. Touching is not overlapping — the same boundary the lane store's
+        // own retention keeps — so both regions survive.
+        const liveLane: TakeLane = {
+            ...capturedLane,
+            takes: [survivorTake],
+            activeCompRegions: [{ startBeat: 4, endBeat: 8, takeId: survivorTake.id }],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [liveLane] };
+
+        restoreTakesForClip([{ laneIndex: 0, lane: capturedLane, retiredTakeIds: [retiredTake.id] }]);
+
+        const restored = mocks.takeLaneStoreValue.value?.lanes[0];
+        expect(restored?.takes.map((take) => take.id)).toEqual([retiredTake.id, survivorTake.id]);
+        expect(restored?.activeCompRegions).toEqual([
+            { startBeat: 0, endBeat: 4, takeId: retiredTake.id },
+            { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
+        ]);
     });
 
     it('orders the restored regions by beat with the ones already live', () => {

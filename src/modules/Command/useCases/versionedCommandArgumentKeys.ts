@@ -886,6 +886,7 @@ const schemaDefinitions = [
         properties: {
             clipId: 0,
             generatedMidiStateGuard: 21,
+            retiredTakeLanes: 122,
         },
         required: ['clipId'],
         additionalProperties: false,

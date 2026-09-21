@@ -10,6 +10,8 @@ import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializ
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { restoreTakesRetiredByPendingDiscard } from './takeRetirementRedo';
+
 type DuplicateClipToNextBarAction = { payload: { clipId: string; targetClipId?: string } };
 
 type DuplicateClipToNextBarState = {
@@ -90,6 +92,9 @@ export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBa
         if (!succeeded) {
             return toHandlerExecutionResult(false);
         }
+        // The redo re-runs this duplicate with its cached target id: put back
+        // whatever the discard of the original copy captured at its undo.
+        restoreTakesRetiredByPendingDiscard(state.targetClipId);
         const duplicatedClip = findClipById(state.targetClipId);
         if (duplicatedClip) {
             state.generatedMidiStateGuard.entityJson = JSON.stringify(duplicatedClip);

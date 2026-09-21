@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { removeClip } from '../../useCases/clip/removeClip';
+import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
@@ -55,6 +56,11 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
         ) {
             return { status: 'conflict' };
         }
+        // What removing this clip is about to retire, captured before it goes. It
+        // goes on this inverse's own payload because the paired redo re-creates the
+        // same clip id off the entry, and the entry is what survives the session
+        // mirror — a second array shared with that redo's payload would not.
+        alpha.payload.retiredTakeLanes = captureRetiredTakeLanes([alpha.payload.clipId]);
         removeClip(alpha.payload.clipId);
         return { status: 'written' };
     },
