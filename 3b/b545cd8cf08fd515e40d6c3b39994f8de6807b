@@ -1,0 +1,18 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 295-308
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 4,1522-1663,2344-2514,2515-2679
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 7,29,1374-1418,1419-1421,1422-1424,1425-1426,1427,1428-1438,1439,1440,1441-1444,1445-1450,1451,1452-1485,1486-1492,1493-1496,1497-1503,1504-1506,1849,1919-1942,1997-2004,2006-2019
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3bb545cd8cf08fd515e40d6c3b39994f8de6807b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
