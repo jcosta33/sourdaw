@@ -1,0 +1,32 @@
+src/modules/Arrangement/handlers/clip/__tests__/cutClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 117-171
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 1511
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 470-487,490,492-501,542-544
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  h_beb54bf43b47b7 51-61
+src/modules/Arrangement/useCases/comping/__tests__/removeTakesForClips.spec.ts
+  h_beb54bf43b47b7 171-199
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  h_beb54bf43b47b7 5,68,84,133,152,159-282
+src/modules/Arrangement/useCases/comping/planTakeRetirement.ts
+  h_beb54bf43b47b7 20-21,48
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 14-21,23-27,29-30,33-46,48,55,58,76-85,95-98,108
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 852
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 537-545
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "01321575528fe945033174297f50a792e4b9156f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
