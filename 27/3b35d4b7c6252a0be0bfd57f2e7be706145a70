@@ -1,0 +1,22 @@
+.agents/decisions/0048-attributable-evidence-contract-is-frozen.md
+  h_beb54bf43b47b7 1-110
+.agents/decisions/README.md
+  h_beb54bf43b47b7 64
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 12-18
+.gitleaks.toml
+  h_beb54bf43b47b7 45-48,54-57
+scripts/__tests__/canonicalRecord.spec.ts
+  h_beb54bf43b47b7 1-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "273b35d4b7c6252a0be0bfd57f2e7be706145a70",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
