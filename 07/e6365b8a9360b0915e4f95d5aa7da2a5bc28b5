@@ -1,0 +1,28 @@
+.github/workflows/semantic-review.yml
+  h_beb54bf43b47b7 161-167
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 2322
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 1887,1902-1929
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 36,351-368,1034-1037,1049,1540-1583
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 85
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 53,99-110,211-217,222-229,674-679
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 55-59,62
+scripts/semanticReviewWorkflowContract.ts
+  h_beb54bf43b47b7 34-36,169-175,184-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "07e6365b8a9360b0915e4f95d5aa7da2a5bc28b5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
