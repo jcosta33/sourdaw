@@ -9,6 +9,13 @@ Stances are derived per task, never selected from this directory. Enumerate the 
 diff creates, name one stance per risk, and record the dispatched set with each stance's admission
 evidence in the bundle's `stances.json`; the root `AGENTS.md` Review section carries the rule.
 
+Every dispatched draw and its adjudication become durable evidence under the frozen attributable
+evidence contract ([ADR 0048](../../decisions/0048-attributable-evidence-contract-is-frozen.md)):
+stance names, models, tiers, outcomes, and dispositions enter the head-bound `dossier-v1` record.
+Name stances by the failure mode that admits them so that record stays meaningful to a cold reader,
+and keep every recorded value single-line and free of credentials or transcript material — the
+contract's parsers refuse anything else.
+
 This directory is a lesson library, not a menu. Each file collects standing probes and escape
 lessons for one defect class, and the matching key is the risk the stance attacks — never the
 files the diff touches. A stance carries the most specific matching file and never a broader one
