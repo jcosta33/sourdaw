@@ -1,0 +1,18 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 1886-1888,1902,1913,1923,1940,1947,1976-2012
+scripts/semanticReviewWorkflowContract.ts
+  h_beb54bf43b47b7 34-36,206-207,213-230
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 199-201,213-215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8480eb0607ba0df8d7d78a25ed77adbbc0d48e47",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
