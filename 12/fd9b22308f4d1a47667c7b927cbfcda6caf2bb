@@ -1,0 +1,16 @@
+scripts/__tests__/restampTrackedSetInventory.spec.ts
+  h_beb54bf43b47b7 186-192,197-198,228-234,244,277-333
+scripts/restampTrackedSetInventory.ts
+  h_beb54bf43b47b7 32-60,62,67-70,73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "12fd9b22308f4d1a47667c7b927cbfcda6caf2bb",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
