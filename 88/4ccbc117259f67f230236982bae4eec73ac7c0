@@ -1,0 +1,28 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 1559,1571-1576
+src/modules/Arrangement/useCases/comping/__tests__/failedCaptureRetirement.integration.spec.ts
+  h_beb54bf43b47b7 1-95
+src/modules/Arrangement/useCases/comping/__tests__/targetedTakeLaneUndo.spec.ts
+  h_beb54bf43b47b7 3,103-116
+src/modules/Arrangement/useCases/comping/laneTrackExists.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 5-7,119,122-123
+src/modules/Arrangement/useCases/comping/takeLaneUndo.ts
+  h_beb54bf43b47b7 8,35-37,62-65,75,83
+src/modules/Arrangement/useCases/comping/takesWithLiveClips.ts
+  h_beb54bf43b47b7 1-18
+src/modules/AudioRendering/useCases/__tests__/renderToClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 9,118,150-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "884ccbc117259f67f230236982bae4eec73ac7c0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
