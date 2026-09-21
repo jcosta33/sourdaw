@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/comping/__tests__/flattenCompLaneRegionRestore.integration.spec.ts
+  h_beb54bf43b47b7 1-106
+src/modules/Arrangement/useCases/comping/__tests__/removeCompRegion.spec.ts
+  h_beb54bf43b47b7 3-5,9-10,38-50,58,85,95-102,117,123,143-152
+src/modules/Arrangement/useCases/comping/laneWithLiveTakes.ts
+  h_beb54bf43b47b7 1-23
+src/modules/Arrangement/useCases/comping/takeLaneUndo.ts
+  h_beb54bf43b47b7 7,34-36,38-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3d474ef7ebe42f7094ef2fe4b365bc5557a0fd95",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
