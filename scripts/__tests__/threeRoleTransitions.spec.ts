@@ -68,6 +68,7 @@ describe('three-role permission matrix (spec #3367 AC-002)', () => {
         ]);
         expect(state).toEqual({
             latestReviewerStateOnHead: 'APPROVED',
+            latestReviewerReviewDatabaseId: 1,
             orchestratorAcceptedAfterReviewer: true,
             orchestratorAcceptanceReviewDatabaseId: 777,
             unresolvedThreads: 0,

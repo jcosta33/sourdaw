@@ -866,6 +866,7 @@ describe('package scripts and gitignore', () => {
             requiredStatusCheckContexts: () => ['Gate'],
             reviewState: () => ({
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,

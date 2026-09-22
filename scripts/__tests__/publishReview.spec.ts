@@ -4759,6 +4759,7 @@ describe('orchestrator acceptance', () => {
                 latestReviewerStateOnHead:
                     input.missingReviewer || (inFence && input.revokeAtFence) ? null : 'APPROVED',
                 orchestratorAcceptedAfterReviewer: false,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: input.unresolved ? 1 : 0,
             }),
@@ -5110,6 +5111,7 @@ describe('fresh reviewer dossier publication', () => {
             reviewState: () => ({
                 latestReviewerStateOnHead: 'APPROVED',
                 orchestratorAcceptedAfterReviewer: false,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: 0,
             }),

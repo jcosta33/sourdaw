@@ -1003,6 +1003,7 @@ function fakePort(input: FakeInput = {}) {
                 reviewStates.shift() ??
                 input.review ?? {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
@@ -5557,24 +5558,28 @@ describe('pull-request delivery', () => {
             reviewStates: [
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                     unresolvedThreads: 0,
@@ -6296,6 +6301,7 @@ describe('pull-request delivery', () => {
         const approved = {
             latestReviewerStateOnHead: 'APPROVED',
             orchestratorAcceptedAfterReviewer: true,
+            latestReviewerReviewDatabaseId: null,
             orchestratorAcceptanceReviewDatabaseId: null,
             unresolvedThreads: 0,
         };
@@ -6469,6 +6475,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             review: {
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 1,
@@ -6483,6 +6490,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             review: {
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: null,
                 unresolvedThreads: 0,
@@ -6498,12 +6506,14 @@ describe('pull-request delivery', () => {
             reviewStates: [
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
                     orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: null,
                     unresolvedThreads: 0,
@@ -6519,6 +6529,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             reviewStateOnReceiptRead: {
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 1,
@@ -6543,6 +6554,7 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             review: {
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: state,
                 unresolvedThreads: 0,
@@ -6553,12 +6565,13 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('merges when the recorded delivery authorization binds the live orchestrator acceptance', () => {
+    it('merges when the recorded delivery authorization binds the live acceptance and reviewer approval', () => {
         const digest = 'd'.repeat(64);
         const { port, calls } = fakePort({
             review: {
                 orchestratorAcceptedAfterReviewer: true,
-                orchestratorAcceptanceReviewDatabaseId: 777,
+                latestReviewerReviewDatabaseId: 777,
+                orchestratorAcceptanceReviewDatabaseId: 770,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,
             },
@@ -6602,7 +6615,8 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             review: {
                 orchestratorAcceptedAfterReviewer: true,
-                orchestratorAcceptanceReviewDatabaseId: 777,
+                latestReviewerReviewDatabaseId: 777,
+                orchestratorAcceptanceReviewDatabaseId: 770,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,
             },
@@ -6624,33 +6638,70 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        ['a stale acceptance review', 778, 777],
-        ['no identifiable live acceptance review', 777, null],
-    ])('rejects a delivery authorization bound to %s', (_label, authorizationReviewId, liveReviewId) => {
-        const digest = 'd'.repeat(64);
-        const { port, calls } = fakePort({
-            review: {
-                orchestratorAcceptedAfterReviewer: true,
-                orchestratorAcceptanceReviewDatabaseId: liveReviewId,
-                latestReviewerStateOnHead: 'APPROVED',
-                unresolvedThreads: 0,
-            },
-            deliveryAuthorization: {
-                kind: 'required',
-                authorization: {
-                    reviewId: 770,
-                    approvalReviewId: authorizationReviewId,
-                    evidenceManifestDigest: digest,
+        ['a stale acceptance review', 778, 770],
+        ['no identifiable live acceptance review', 770, null],
+    ])(
+        'rejects a delivery authorization bound to %s',
+        (_label, authorizationReviewId: number, liveAcceptanceId: number | null) => {
+            const digest = 'd'.repeat(64);
+            const { port, calls } = fakePort({
+                review: {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: 777,
+                    orchestratorAcceptanceReviewDatabaseId: liveAcceptanceId,
+                    latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
-                    intent: 'deliver',
                 },
-                dossierDigest: digest,
-            },
-        });
+                deliveryAuthorization: {
+                    kind: 'required',
+                    authorization: {
+                        reviewId: authorizationReviewId,
+                        approvalReviewId: 777,
+                        evidenceManifestDigest: digest,
+                        unresolvedThreads: 0,
+                        intent: 'deliver',
+                    },
+                    dossierDigest: digest,
+                },
+            });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live orchestrator acceptance review/);
-        expect(calls).not.toContain('merge:42:head');
-    });
+            expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live orchestrator acceptance review/);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
+
+    it.each([
+        ['a stale reviewer approval review', 778, 777],
+        ['no identifiable live reviewer approval review', 777, null],
+    ])(
+        'rejects a delivery authorization bound to %s',
+        (_label, authorizationApprovalReviewId: number, liveReviewerId: number | null) => {
+            const digest = 'd'.repeat(64);
+            const { port, calls } = fakePort({
+                review: {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: liveReviewerId,
+                    orchestratorAcceptanceReviewDatabaseId: 770,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                deliveryAuthorization: {
+                    kind: 'required',
+                    authorization: {
+                        reviewId: 770,
+                        approvalReviewId: authorizationApprovalReviewId,
+                        evidenceManifestDigest: digest,
+                        unresolvedThreads: 0,
+                        intent: 'deliver',
+                    },
+                    dossierDigest: digest,
+                },
+            });
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live reviewer approval review/);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
 
     it('merges when the local working tree is unrelated to the pull-request head', () => {
         const { port, calls } = fakePort();
@@ -11660,6 +11711,7 @@ describe('delivery shell boundary', () => {
 
         expect(port.reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: true,
+            latestReviewerReviewDatabaseId: 1,
             orchestratorAcceptanceReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
@@ -12131,6 +12183,7 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: null,
             orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -12211,6 +12264,7 @@ describe('delivery shell boundary', () => {
                 shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
             ).toEqual({
                 orchestratorAcceptedAfterReviewer: false,
+                latestReviewerReviewDatabaseId: null,
                 orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
@@ -12271,6 +12325,7 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: 1,
             orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
@@ -12321,6 +12376,7 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: 1,
             orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
@@ -12575,6 +12631,7 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: null,
             orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
@@ -12679,6 +12736,7 @@ describe('delivery shell boundary', () => {
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: 1,
             orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
@@ -12728,6 +12786,7 @@ describe('delivery shell boundary', () => {
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: null,
             orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,

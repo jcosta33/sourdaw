@@ -5,6 +5,7 @@ import { fail } from './prContract.ts';
 
 export type ReviewState = {
     latestReviewerStateOnHead: string | null;
+    latestReviewerReviewDatabaseId: number | null;
     orchestratorAcceptedAfterReviewer: boolean;
     orchestratorAcceptanceReviewDatabaseId: number | null;
     unresolvedThreads: number;
@@ -294,6 +295,8 @@ export function readPullRequestReviewState(
         acceptanceIndex > reviewerIndex;
     return {
         latestReviewerStateOnHead: reviewer?.commitOid === expectedHead ? reviewer.state : null,
+        latestReviewerReviewDatabaseId:
+            reviewer?.commitOid === expectedHead && reviewer.state === 'APPROVED' ? reviewer.databaseId : null,
         orchestratorAcceptedAfterReviewer,
         orchestratorAcceptanceReviewDatabaseId:
             orchestratorAcceptedAfterReviewer && acceptance !== undefined ? acceptance.databaseId : null,

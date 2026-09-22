@@ -1352,8 +1352,9 @@ function validateReview(number: number, review: ReviewState): void {
 
 /**
  * The merge consumes the authorization the orchestrator's acceptance recorded into the head's dossier
- * (#3376, spec #3367 AC-005): it must bind the live orchestrator acceptance review, so a stale or
- * replayed acceptance cannot unlock delivery, and the acceptance-time dossier digest, so the
+ * (#3376, spec #3367 AC-005): it must bind the live orchestrator acceptance review and the live
+ * reviewer approval it accepted, so a stale or replayed acceptance cannot unlock delivery, and the
+ * acceptance-time dossier digest, so the
  * authorized evidence is exactly the evidence this head carries. `parseReviewDossier` has already
  * proven the persisted chain when the port read the record.
  */
@@ -1374,9 +1375,15 @@ function validateDeliveryAuthorization(number: number, head: string, review: Rev
     }
     if (
         review.orchestratorAcceptanceReviewDatabaseId === null ||
-        authorization.approvalReviewId !== review.orchestratorAcceptanceReviewDatabaseId
+        authorization.reviewId !== review.orchestratorAcceptanceReviewDatabaseId
     ) {
         fail(`PR #${number} delivery authorization does not bind the live orchestrator acceptance review`);
+    }
+    if (
+        review.latestReviewerReviewDatabaseId === null ||
+        authorization.approvalReviewId !== review.latestReviewerReviewDatabaseId
+    ) {
+        fail(`PR #${number} delivery authorization does not bind the live reviewer approval review`);
     }
 }
 
