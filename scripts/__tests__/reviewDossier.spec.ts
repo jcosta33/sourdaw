@@ -13,13 +13,19 @@ import {
 } from '../reviewDossier.ts';
 import {
     acceptedFindings,
+    assessmentImpact,
     completedStances,
     discardedDispositions,
     publishedFindings,
     publishedReviewId,
 } from '../reviewDossierViews.ts';
 
-import type { ReviewDossier, ReviewDossierEvent, ReviewDossierEventRecord } from '../reviewDossier.ts';
+import type {
+    AssessmentImpact,
+    ReviewDossier,
+    ReviewDossierEvent,
+    ReviewDossierEventRecord,
+} from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const PLAN: ReviewRiskPlan = {
@@ -85,6 +91,7 @@ function assembleWith(overrides: Partial<AssembleInput>): ReviewDossier {
         evidence: [EVIDENCE_ENTRY],
         limitations: [LIMITATION],
         recommendation: 'request-changes',
+        assessmentImpact: 'none',
         ...overrides,
     });
 }
@@ -207,6 +214,62 @@ describe('derived views', () => {
         expect(discardedDispositions(validDossier())).toEqual([
             { findingId: 'finding-2', stance: 'correctness', reason: 'stale diff context' },
         ]);
+    });
+
+    it('should report the recorded assessment impact beside the recommendation', () => {
+        expect(assessmentImpact(validDossier())).toBe('none');
+        expect(assessmentImpact(assembleWith({ assessmentImpact: 'finding-led' }))).toBe('finding-led');
+    });
+});
+
+const ASSESSMENT_IMPACTS: readonly AssessmentImpact[] = ['none', 'limitation-only', 'stance-changed', 'finding-led'];
+
+describe('assessment impact', () => {
+    it.each(ASSESSMENT_IMPACTS)('should round-trip the %s token through assembly, serialize and parse', (token) => {
+        const dossier = assembleWith({ assessmentImpact: token });
+
+        expect(dossier.assessmentImpact).toBe(token);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(reparsed.assessmentImpact).toBe(token);
+        expect(assessmentImpact(reparsed)).toBe(token);
+        expect(serializeReviewDossier(reparsed)).toBe(serializeReviewDossier(dossier));
+    });
+
+    it('should give two dossiers differing only in assessmentImpact different digests', () => {
+        const none = assembleWith({ assessmentImpact: 'none' });
+        const findingLed = assembleWith({ assessmentImpact: 'finding-led' });
+
+        expect(none.dossierDigest).not.toBe(findingLed.dossierDigest);
+        // The impact never enters the event chain, so the head digest is unchanged.
+        expect(none.headDigest).toBe(findingLed.headDigest);
+    });
+
+    it('should refuse an unknown token when assembling and name the field and the four tokens', () => {
+        expect(() => assembleWith({ assessmentImpact: 'ignored' as AssessmentImpact })).toThrow(
+            /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found "ignored"/
+        );
+    });
+
+    it('should refuse a non-string token when assembling and name the field', () => {
+        expect(() => assembleWith({ assessmentImpact: 7 as unknown as AssessmentImpact })).toThrow(
+            /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found 7/
+        );
+    });
+
+    it('should refuse an unknown token in a persisted record', () => {
+        const mutated = cloneDossier();
+        mutated.assessmentImpact = 'agreed' as AssessmentImpact;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(
+            /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found "agreed"/
+        );
+    });
+
+    it('should refuse a null impact in a persisted record and name the field', () => {
+        const mutated = cloneDossier() as unknown as Record<string, unknown>;
+        mutated.assessmentImpact = null;
+
+        expect(() => parseReviewDossier(mutated)).toThrow(/assessmentImpact must be none/);
     });
 });
 
@@ -818,6 +881,12 @@ describe('historical dossier records', () => {
         }
 
         expect(only.exhaustion).toBeUndefined();
+    });
+
+    it('should read a record persisted before assessmentImpact existed with no recorded impact', () => {
+        const parsed = parseReviewDossier(JSON.parse(HISTORICAL_SINGLE_DRAW_RECORD));
+
+        expect(assessmentImpact(parsed)).toBeUndefined();
     });
 });
 

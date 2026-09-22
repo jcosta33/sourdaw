@@ -164,15 +164,24 @@ branch's, which the command's own trusted-execution assertion refuses.
 Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one completed
 entry per dispatched draw, each recording its stance, reviewer model, tier, and outcome; one stance
 may carry several draws with distinct models, and a draw that fell back to an authoring model
-records its exhaustion. Alongside the draw entries go the bounded evidence claims and the
-limitations. Accepted findings are not declared there; they are the review document's own inline
-comments. `review:publish` refuses a fresh reviewer publication before any remote write when the
-dossier is missing, malformed, or rebound from the head the plan binds; when the bundle carries
+records its exhaustion. Alongside the draw entries go the bounded evidence claims, the
+limitations, and the required `assessmentImpact`: how the round's advisory semantic assessment
+influenced it, one token the orchestrator chooses honestly for the round — `finding-led` only when
+the round carries an accepted finding the assessment surfaced, `stance-changed` only when it
+changed the dispatched stance enumeration, `limitation-only` when it produced a disclosed
+limitation without changing the round, and `none` when it had no effect. It records influence,
+never agreement: it is
+not a verdict, an approval, or merge authority. Accepted findings are not declared there; they are
+the review document's own inline comments. `review:publish` refuses a fresh reviewer publication
+before any remote write when the
+dossier is missing, malformed, or rebound from the head the plan binds; when its `assessmentImpact`
+is missing or is not one of the four tokens; when the bundle carries
 `stances.json`, every dossier entry must match a recorded stance and every recorded stance an
 entry (draws on one stance share its single recorded entry);
 when its accepted findings do not match the document's comments one-to-one; or when its
-recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head; re-publishing
-the same head replays that record unchanged rather than minting a second one.
+recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head, with `assessmentImpact` beside `recommendation` and covered by `dossierDigest`; re-publishing
+the same head replays that record unchanged rather than minting a second one. A record persisted
+before the field existed carries none and still verifies.
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a

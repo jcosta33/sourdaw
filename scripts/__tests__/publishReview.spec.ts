@@ -4968,6 +4968,7 @@ describe('fresh reviewer dossier publication', () => {
                 },
             ],
             limitations: [],
+            assessmentImpact: 'none',
             ...overrides,
         };
     }

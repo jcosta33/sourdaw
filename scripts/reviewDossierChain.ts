@@ -3,8 +3,10 @@
  * spec #3367 AC-004): per-event field ordering, the sequence/predecessor digest chain, `headDigest`
  * and `dossierDigest`, assembly of a chained record from a validated payload, the coarse size
  * ceiling, and serialization. `reviewDossier.ts` owns the record's types, readers and validation;
- * this module owns turning a validated payload into canonical bytes and back-stop digests. Every
- * import from the record module is type-only, so the dependency runs one way.
+ * this module owns turning a validated payload into canonical bytes and back-stop digests. It also
+ * owns the `assessmentImpact` field's four-token vocabulary and reader, the one definition the
+ * record reader and the caller-input parser share. Every import from the record module is type-only,
+ * so the dependency runs one way.
  */
 
 import { createHash } from 'node:crypto';
@@ -18,6 +20,38 @@ export const REVIEW_DOSSIER_FORMAT = 'dossier-v1';
 export const REVIEW_DOSSIER_MAX_BYTES = 32_768;
 
 export const GENESIS_DIGEST: string = '0'.repeat(64);
+
+/**
+ * How the round's advisory semantic assessment influenced it (ADR 0047): the orchestrator's honest
+ * record of what the advice did to this round, chosen from exactly four outcomes. It records
+ * influence, never agreement — a token here is not a verdict, an approval, or merge authority.
+ */
+export type AssessmentImpact = 'none' | 'limitation-only' | 'stance-changed' | 'finding-led';
+
+const ASSESSMENT_IMPACT_MEMBERSHIP: Record<AssessmentImpact, true> = {
+    none: true,
+    'limitation-only': true,
+    'stance-changed': true,
+    'finding-led': true,
+};
+const ASSESSMENT_IMPACT_TOKENS = 'none, limitation-only, stance-changed or finding-led';
+
+/** A total map behind the predicate, so a widened union fails to compile rather than at run time. */
+function isAssessmentImpact(value: string): value is AssessmentImpact {
+    return Object.hasOwn(ASSESSMENT_IMPACT_MEMBERSHIP, value);
+}
+
+/**
+ * Reads the impact token a record or a caller input carries, refusing any other value, a missing
+ * value, or a non-string with a message naming the field and the four admissible tokens. The label
+ * defaults to the record's own field name; the caller-input parser passes its qualified label.
+ */
+export function readAssessmentImpact(value: unknown, label = 'assessmentImpact'): AssessmentImpact {
+    if (typeof value !== 'string' || !isAssessmentImpact(value)) {
+        fail(`${label} must be ${ASSESSMENT_IMPACT_TOKENS}, found ${JSON.stringify(value) ?? typeof value}`);
+    }
+    return value;
+}
 
 type FieldEntry = readonly [string, JsonValue];
 
@@ -110,26 +144,30 @@ export function headDigestOf(events: readonly ReviewDossierEventRecord[]): strin
 }
 
 export function computeDossierDigest(payload: DossierPayload, headDigest: string): string {
-    return sha256Hex(
-        canonicalJson({
-            format: REVIEW_DOSSIER_FORMAT,
-            pr: payload.pr,
-            headSha: payload.headSha,
-            baseSha: payload.baseSha,
-            riskClasses: payload.riskClasses,
-            requiredStances: payload.requiredStances,
-            evidence: payload.evidence,
-            limitations: payload.limitations,
-            recommendation: payload.recommendation,
-            headDigest,
-        })
-    );
+    const record: Record<string, JsonValue> = {
+        format: REVIEW_DOSSIER_FORMAT,
+        pr: payload.pr,
+        headSha: payload.headSha,
+        baseSha: payload.baseSha,
+        riskClasses: payload.riskClasses,
+        requiredStances: payload.requiredStances,
+        evidence: payload.evidence,
+        limitations: payload.limitations,
+        recommendation: payload.recommendation,
+    };
+    // Absent, never undefined-valued: a record persisted before the field existed keeps its exact
+    // digest, and two records differing only in this field still differ.
+    if (payload.assessmentImpact !== undefined) {
+        record.assessmentImpact = payload.assessmentImpact;
+    }
+    record.headDigest = headDigest;
+    return sha256Hex(canonicalJson(record));
 }
 
 export function buildDossier(payload: DossierPayload): ReviewDossier {
     const events = chainEvents(payload.events);
     const headDigest = headDigestOf(events);
-    return {
+    const dossier: ReviewDossier = {
         format: REVIEW_DOSSIER_FORMAT,
         pr: payload.pr,
         headSha: payload.headSha,
@@ -143,6 +181,10 @@ export function buildDossier(payload: DossierPayload): ReviewDossier {
         headDigest,
         dossierDigest: computeDossierDigest(payload, headDigest),
     };
+    if (payload.assessmentImpact !== undefined) {
+        dossier.assessmentImpact = payload.assessmentImpact;
+    }
+    return dossier;
 }
 
 export function assertDossierSize(dossier: ReviewDossier): void {
@@ -158,7 +200,7 @@ function serializeEventRecord(record: ReviewDossierEventRecord): Record<string, 
 }
 
 export function serializeReviewDossier(dossier: ReviewDossier): string {
-    const record = {
+    const record: Record<string, unknown> = {
         format: dossier.format,
         pr: dossier.pr,
         headSha: dossier.headSha,
@@ -173,8 +215,12 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
         })),
         limitations: dossier.limitations,
         recommendation: dossier.recommendation,
-        headDigest: dossier.headDigest,
-        dossierDigest: dossier.dossierDigest,
     };
+    // Absent, never null: a record persisted before the field existed reserializes byte-identically.
+    if (dossier.assessmentImpact !== undefined) {
+        record.assessmentImpact = dossier.assessmentImpact;
+    }
+    record.headDigest = dossier.headDigest;
+    record.dossierDigest = dossier.dossierDigest;
     return `${JSON.stringify(record, null, 4)}\n`;
 }

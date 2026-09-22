@@ -21,9 +21,16 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from './reviewDossier.ts';
+import { readAssessmentImpact } from './reviewDossierChain.ts';
 import { acceptedFindings, completedStances, discardedDispositions } from './reviewDossierViews.ts';
 
-import type { ReviewDossier, ReviewDossierEvent, ReviewDossierStance, ReviewModelTier } from './reviewDossier.ts';
+import type {
+    AssessmentImpact,
+    ReviewDossier,
+    ReviewDossierEvent,
+    ReviewDossierStance,
+    ReviewModelTier,
+} from './reviewDossier.ts';
 import type { ReviewerStanceDraw } from './reviewerModelDiversity.ts';
 import type { ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
@@ -50,6 +57,8 @@ export type ReviewDossierInput = {
     stances: ReviewDossierStanceInput[];
     evidence: { observable: string; verification: string; observed: string }[];
     limitations: string[];
+    /** How the round's advisory semantic assessment influenced it: influence, never agreement. */
+    assessmentImpact: AssessmentImpact;
 };
 
 type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
@@ -213,6 +222,7 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
         stances: readStances(value.stances),
         evidence: readEvidence(value.evidence),
         limitations: readLimitations(value.limitations),
+        assessmentImpact: readAssessmentImpact(value.assessmentImpact, 'review dossier input assessmentImpact'),
     };
 }
 
@@ -354,6 +364,7 @@ function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
         evidence: parsed.evidence,
         limitations: parsed.limitations,
         recommendation: input.recommendation,
+        assessmentImpact: parsed.assessmentImpact,
     });
 }
 

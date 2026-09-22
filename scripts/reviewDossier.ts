@@ -21,7 +21,9 @@ import {
     buildDossier,
     computeDossierDigest,
     headDigestOf,
+    readAssessmentImpact,
     reviewDossierEventDigest,
+    type AssessmentImpact,
 } from './reviewDossierChain.ts';
 
 import type { ReviewRiskClass, ReviewRiskPlan } from './reviewRiskPolicy.ts';
@@ -32,6 +34,7 @@ export {
     REVIEW_DOSSIER_MAX_BYTES,
     reviewDossierEventDigest,
     serializeReviewDossier,
+    type AssessmentImpact,
 } from './reviewDossierChain.ts';
 
 export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
@@ -92,6 +95,12 @@ export type ReviewDossier = {
     evidence: { observable: string; verification: string; observed: string }[];
     limitations: string[];
     recommendation: 'approve' | 'request-changes';
+    /**
+     * Required of input and of every record this chain assembles; absent only from records persisted
+     * before the field existed, which keep verifying rather than being refused for a field they never
+     * carried (the same historical tolerance `exhaustion` gets).
+     */
+    assessmentImpact?: AssessmentImpact;
     headDigest: string;
     dossierDigest: string;
 };
@@ -563,7 +572,12 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
     if (!isRecord(value)) {
         fail(`review dossier must be an object, found ${describeValue(value)}`);
     }
-    assertExactKeys(value, DOSSIER_KEYS, 'dossier');
+    // `assessmentImpact` is required of the input and of newly assembled records, but a record
+    // persisted before the field existed carries none: carry it out of the key-set check it would
+    // otherwise fail, and read it only when present so a historical digest keeps verifying.
+    const assessmentImpact = 'assessmentImpact' in value ? readAssessmentImpact(value.assessmentImpact) : undefined;
+    const { assessmentImpact: _optional, ...requiredKeys } = value;
+    assertExactKeys(requiredKeys, DOSSIER_KEYS, 'dossier');
     if (value.format !== REVIEW_DOSSIER_FORMAT) {
         fail(`review dossier format must be ${REVIEW_DOSSIER_FORMAT}, found ${describeValue(value.format)}`);
     }
@@ -585,6 +599,7 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
             isRecommendation,
             'approve or request-changes'
         ),
+        assessmentImpact,
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -625,6 +640,7 @@ export function assembleReviewDossier(input: {
     evidence: readonly { observable: string; verification: string; observed: string }[];
     limitations: readonly string[];
     recommendation: 'approve' | 'request-changes';
+    assessmentImpact: AssessmentImpact;
 }): ReviewDossier {
     const callerEvents = input.events.map((event, index) => readEventRecord(event, `event ${index}`, false).event);
     const payload: DossierPayload = {
@@ -642,6 +658,7 @@ export function assembleReviewDossier(input: {
             isRecommendation,
             'approve or request-changes'
         ),
+        assessmentImpact: readAssessmentImpact(input.assessmentImpact),
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -675,6 +692,7 @@ export function appendReviewDossierEvents(
         evidence: dossier.evidence,
         limitations: dossier.limitations,
         recommendation: dossier.recommendation,
+        assessmentImpact: dossier.assessmentImpact,
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -705,5 +723,6 @@ export function authorizedEvidenceDigest(dossier: ReviewDossier): string {
         evidence: dossier.evidence,
         limitations: dossier.limitations,
         recommendation: dossier.recommendation,
+        assessmentImpact: dossier.assessmentImpact,
     }).dossierDigest;
 }

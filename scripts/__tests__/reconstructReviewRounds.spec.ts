@@ -41,6 +41,7 @@ const dossierInput: ReviewDossierInput = {
     ],
     evidence: [],
     limitations: [],
+    assessmentImpact: 'none',
 };
 
 function repairRecord(rootCommentId: number, commit: string): ReviewRepairRecord {
