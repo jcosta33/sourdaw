@@ -1,0 +1,156 @@
+src/modules/Arrangement/useCases/warp/getStretchModeInfo.ts
+  s_fabbe41ad743be::t_a0742c0c19d116 16-18
+src/modules/Arrangement/useCases/warp/setStretchMode.ts
+  s_fabbe41ad743be::t_e3ddb756819b67 2,6
+src/modules/Arrangement/stores/index.ts
+  s_fabbe41ad743be::t_163989438726ce 77-79,81-93
+  s_fabbe41ad743be::t_06293ca2416abe 80
+src/modules/Arrangement/useCases/warp/removeWarpMarker.ts
+  s_fabbe41ad743be::t_bccb02881d8c79 1,5
+src/modules/Arrangement/useCases/index.ts
+  s_fabbe41ad743be::t_579e77e38a294e 99
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  s_fabbe41ad743be::t_1bf5c4aa6e1eb6 91,93
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.warpSubscription.spec.tsx
+  s_fabbe41ad743be::t_7046c0b25c62d5 98-104
+  s_fabbe41ad743be::t_117201e8d43a35 1-3,5-85,96-97,105-111,117-118,120-123,125-130
+  s_fabbe41ad743be::t_f78c4f93a6b507 4,86-95,112-116
+  s_fabbe41ad743be::t_62677ce6c50cfc 119,124
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  s_fabbe41ad743be::t_8406576f34a97c 53-63
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_fabbe41ad743be::t_adf2ae96ce128d 75
+src/modules/Project/models/ProjectData.ts
+  s_fabbe41ad743be::t_8eaf403f53ec17 120
+  s_fabbe41ad743be::t_3e23012c0fe640 440-457
+src/modules/Arrangement/useCases/warp/commitWarpMarkerBeatDrag.ts
+  s_fabbe41ad743be::t_0177e1f628448c 3,17,21,43
+src/modules/Arrangement/AGENTS.md
+  s_fabbe41ad743be::t_809f8dc8f4d757 7
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_fabbe41ad743be::t_09ae7a64ce6b4f 9
+  s_fabbe41ad743be::t_806eb6e5475291 304-306
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/removeMarker.spec.ts
+  s_fabbe41ad743be::t_0f85649d645baf 30-46
+src/modules/Arrangement/useCases/warp/__tests__/hydrateClipWarpStates.spec.ts
+  s_fabbe41ad743be::t_620767408d59bd 1-64
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  s_fabbe41ad743be::t_2eb109d0513254 196-198,204,221-223
+  s_fabbe41ad743be::t_0cd6238f383b37 18-24
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/quantizeTransients.spec.ts
+  s_fabbe41ad743be::t_a123cf57214d35 37-47
+src/modules/Arrangement/useCases/__tests__/restoreStripSilenceStateRollback.spec.ts
+  s_fabbe41ad743be::t_90b0154e264f5b 111-114
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_fabbe41ad743be::t_f8358d229642ca 33
+  s_fabbe41ad743be::t_dad0677ae4020a 3
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_fabbe41ad743be::t_c51e299b6b5f89 15
+  s_fabbe41ad743be::t_846c98fc99431d 199-207,230,235
+  s_fabbe41ad743be::t_cead5c13954b78 71
+  s_fabbe41ad743be::t_a854446bedf617 32
+  s_fabbe41ad743be::t_e324a075494bab 248
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  s_fabbe41ad743be::t_26d6289777f067 1,3,5,7,12-13,15,21,58-91,100,103,111,115,118
+  s_fabbe41ad743be::t_5c37802f0acd90 33,38
+  s_fabbe41ad743be::t_2562319d2dcbae 1
+src/modules/Arrangement/useCases/restoreStripSilenceState.ts
+  s_fabbe41ad743be::t_1f87f84b9d8528 30-34
+src/modules/Arrangement/useCases/warp/hydrateClipWarpStates.ts
+  s_fabbe41ad743be::t_a993ac2e981c9c 1-13
+src/modules/Arrangement/useCases/warp/disableWarp.ts
+  s_fabbe41ad743be::t_84255db300556d 1,5
+src/modules/ElasticAudio/useCases/elasticAudio/addManualMarker.ts
+  s_fabbe41ad743be::t_583ce8a7bb4dee 1,16,19
+src/modules/ElasticAudio/useCases/elasticAudio/toggleMarkerLock.ts
+  s_fabbe41ad743be::t_364b19e0753cfb 1,5,18,26,31,34
+src/modules/Arrangement/useCases/warp/enableWarp.ts
+  s_fabbe41ad743be::t_5177debbe1ae3e 1,5
+src/modules/Arrangement/useCases/warp/updateWarpMarkerBeat.ts
+  s_fabbe41ad743be::t_8ccfb9f9da8bb9 1,11,23,26
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_fabbe41ad743be::t_489c247ccc52cc 48
+src/modules/ElasticAudio/useCases/elasticAudio/removeMarker.ts
+  s_fabbe41ad743be::t_51008c4c0ee198 1,5,18,26,31,34
+src/modules/Arrangement/stores/warpStates.ts
+  s_fabbe41ad743be::t_1ee2fb67e135ed 368-393,397-404
+  s_fabbe41ad743be::t_c27f3a4b6bf285 2-8,10-12,20-32,35,71-73,76,80-85,87-94,98,102-107,118,123-148,155-171,188-232,252-268,270-335,337-367
+  s_fabbe41ad743be::t_d96c8a1cc4a495 405
+  s_fabbe41ad743be::t_d0de4ea34d6148 394-396
+  s_fabbe41ad743be::t_e69e8dd82393ea 269
+  s_fabbe41ad743be::t_54d805885d233e 149,152-154,172-186
+  s_fabbe41ad743be::t_7e52862bcf709d 336
+  s_fabbe41ad743be::t_8841fbb38d5ad4 13-17,19
+  s_fabbe41ad743be::t_511f46fb8c0ee1 150-151
+  s_fabbe41ad743be::t_4e4f4542e39878 187,233-251
+  s_fabbe41ad743be::t_ace55c80ade74a 18
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  s_fabbe41ad743be::t_5be3add82d4511 108-110,114
+  s_fabbe41ad743be::t_a81f24af913fcd 9
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_fabbe41ad743be::t_79b4af13cae9bc 8
+  s_fabbe41ad743be::t_f1a0e14f34c3cd 94
+src/modules/ElasticAudio/useCases/elasticAudio/quantizeTransients.ts
+  s_fabbe41ad743be::t_a6e2865e1ccfb4 1
+  s_fabbe41ad743be::t_3526da570080ae 92,97,100
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_fabbe41ad743be::t_c8b6c9e10e3538 34
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  s_fabbe41ad743be::t_70cfcc8f574128 40-44
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  s_fabbe41ad743be::t_6d40e017bd7919 1
+  s_fabbe41ad743be::t_96fac01af3a5ad 70
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/addManualMarker.spec.ts
+  s_fabbe41ad743be::t_7818610dbc90b6 49-59
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/toggleMarkerLock.spec.ts
+  s_fabbe41ad743be::t_68554746d48141 30-46
+release/open-source-inventory.json
+  s_fabbe41ad743be::t_21b9acc03770d6 1204
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_fabbe41ad743be::t_a1ef0f83ff47f4 46-48
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_fabbe41ad743be::t_77cfaf01043b67 72-74
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_fabbe41ad743be::t_c59b9996214850 107
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_fabbe41ad743be::t_77744519118ef0 70-72
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_fabbe41ad743be::t_d2026aaf45e952 39-41
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_fabbe41ad743be::t_2d1886a241c678 40-42
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_fabbe41ad743be::t_ba304502040408 183
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_fabbe41ad743be::t_10c4687c41a5c7 67
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  s_fabbe41ad743be::t_cba673a1299c2c 213-216,218
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_fabbe41ad743be::t_b166121b9bc593 472,474-475,477,480,525-527,529
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  s_fabbe41ad743be::t_63f42c32564b06 125-146
+  s_fabbe41ad743be::t_69570579eb26f8 3-10,41,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c3017a8bd52b5afc99688b2f0addf7cdd326b3af",
+  "prompts": {},
+  "sessions": {
+    "s_234778f24d1dc4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "58969f20-b984-43f8-8d66-4492a69fbee5",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
