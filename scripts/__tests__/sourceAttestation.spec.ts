@@ -57,6 +57,17 @@ describe('sourceAttestation', () => {
         expect(prose).not.toContain(AUTHOR_BOT_COMMIT_EMAIL);
     });
 
+    it('collapses the marker into a details block after the sentence, marker line byte-for-byte', () => {
+        const record = sourceAttestationRecord(4526, HEAD, [COMMIT_A, COMMIT_B]);
+        const body = sourceAttestationComment(record);
+
+        expect(body.split('\n\n')[0]).toContain('2 commits');
+        expect(body).toContain('<details>');
+        expect(body).toContain('<summary>Attestation record</summary>');
+        expect(body.split('\n')).toContain(attestationMarkerLine(record));
+        expect(parseSourceAttestation(body)).toEqual(record);
+    });
+
     it('ignores prose that merely mentions the marker token', () => {
         const body = `See ${SOURCE_ATTESTATION_MARKER} for the record format — this note is prose, not a record.`;
 
