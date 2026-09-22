@@ -1,6 +1,6 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
 import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { armRetrospectiveCapture, disarmRetrospectiveCapture } from '#/modules/AudioEngine/useCases';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { punchRecordingStore } from '../../stores/punchRecordingStore';
 
