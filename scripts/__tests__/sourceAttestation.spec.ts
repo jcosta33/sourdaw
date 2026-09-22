@@ -66,6 +66,16 @@ describe('sourceAttestation', () => {
         expect(body).toContain('<summary>Attestation record</summary>');
         expect(body.split('\n')).toContain(attestationMarkerLine(record));
         expect(parseSourceAttestation(body)).toEqual(record);
+
+        // The record must be readable only on expand: the block wraps it, and nothing outside the
+        // block repeats it — a marker after the close, a missing close, or a duplicate outside all
+        // leave the wall of JSON visible where this change exists to hide it.
+        const openIndex = body.indexOf('<details>');
+        const closeIndex = body.indexOf('</details>');
+        expect(closeIndex).toBeGreaterThan(openIndex);
+        expect(body.slice(openIndex, closeIndex)).toContain(attestationMarkerLine(record));
+        expect(body.slice(0, openIndex) + body.slice(closeIndex)).not.toContain(attestationMarkerLine(record));
+        expect(body.split('\n').filter((line) => line === attestationMarkerLine(record))).toHaveLength(1);
     });
 
     it('ignores prose that merely mentions the marker token', () => {
