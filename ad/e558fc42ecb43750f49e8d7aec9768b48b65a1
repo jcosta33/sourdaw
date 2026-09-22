@@ -1,0 +1,23 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_df40b526e33ddb::t_69710e72c9ce85 32,43-44,257-346
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_df40b526e33ddb::t_00d0b7634b5ede 105,116-124
+src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
+  s_df40b526e33ddb::t_3fb677c226a57c 18,26,60-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ade558fc42ecb43750f49e8d7aec9768b48b65a1",
+  "prompts": {},
+  "sessions": {
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
