@@ -18,6 +18,7 @@ import {
     type EvidenceSide,
     type SemanticRevisionBase,
 } from '../contracts.ts';
+import { EGRESS_VENDOR_SHAPES } from '../egressVendorShapes.ts';
 import {
     collectEvidence,
     exclusionReason,
@@ -1609,6 +1610,13 @@ describe('the egress screen tells code from credentials', () => {
             '// A URI with embedded credentials: scheme://user:secret@host',
             'redis://:pass@h',
             'KEYS: Record<ReviewDossierEvent[',
+            // Vendor family names are now secret key names, so a vendor keyword used as an ordinary
+            // identifier, assigned a filesystem path (absolute or relative), or mentioned in a comment
+            // must stay admitted.
+            'linear: usage.actualInputTokens,',
+            'datadog = "/var/lib/datadog",',
+            'datadog = "./metrics/datadog.json",',
+            '// facebook OAuth client integration',
             // A header quoted in documentation with a redaction word where the body belongs is ordinary
             // text, not key material: an eight-character word is not a PEM body line.
             secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----', '\n', 'REDACTED'),
@@ -1644,6 +1652,35 @@ describe('the egress screen tells code from credentials', () => {
         for (const line of credentials) {
             expect(sensitiveContentReason(line), line).toBeDefined();
         }
+    });
+
+    it('withholds an all-uppercase alphanumeric value but not a SCREAMING_SNAKE name', () => {
+        // An opaque all-uppercase run that carries both letters and digits and no underscore is a
+        // value, not an environment-variable name; the name shape must stay admitted.
+        const keyId = secretFixture('ABCDEF', '123456', '7890AB');
+        expect(sensitiveContentReason(secretFixture('API_KEY=', keyId))).toBeDefined();
+        // A name carries no digits or carries an underscore separator, so it stays ordinary.
+        expect(sensitiveContentReason(secretFixture('apiKey=', 'TYPESAFE', '_API_KEY'))).toBeUndefined();
+    });
+
+    it('withholds a value assigned to a vendor family name', () => {
+        // A keyword-proximity family is recognised as a secret key name, so its assignment reaches
+        // the value heuristic instead of passing the screen untouched.
+        const value = 'a'.repeat(40);
+        expect(sensitiveContentReason(secretFixture('datadog=', value))).toBeDefined();
+    });
+
+    it('admits a filesystem path but withholds a slash-led base64 credential', () => {
+        // A path is made of short name segments; a base64 credential is one long opaque run. The
+        // leading slash must not make a credential read as a path, and it must not make a path read
+        // as a credential.
+        expect(sensitiveContentReason(secretFixture('datadog=', '/var/lib/datadog'))).toBeUndefined();
+        const slashLedBase64 = secretFixture('/', 'AbCdEfGh', 'IjKlMnOp', 'QrStUvWx', 'Yz012345', '6789AB');
+        expect(sensitiveContentReason(secretFixture('datadog=', slashLedBase64))).toBeDefined();
+        // A base64 credential may also contain an internal slash and `+`; the non-name characters keep
+        // it credential-shaped rather than path-shaped.
+        const base64WithSlashAndPlus = secretFixture('/', 'AbCdEfGh+', 'IjKlMnOp/', 'QrStUvWx', 'Yz012345');
+        expect(sensitiveContentReason(secretFixture('datadog=', base64WithSlashAndPlus))).toBeDefined();
     });
 
     it('withholds an armored private key only with key material, whatever its wrapper', () => {
@@ -3315,6 +3352,16 @@ describe('vendor prefix coverage', () => {
         const restricted = secretFixture('rk_live_', 'a1b2c3d4e5f6g7h8', 'i9j0k1l2');
         expect(sensitiveContentReason(test)).toBe('a Stripe secret key');
         expect(sensitiveContentReason(restricted)).toBe('a Stripe secret key');
+    });
+
+    it('withholds a value composed from every generated shape', () => {
+        // Every generated entry must be able to match a fixture composed from its own parts, so a
+        // pattern whose parts and tail disagree fails here instead of silently missing a family.
+        expect(EGRESS_VENDOR_SHAPES.length).toBeGreaterThan(0);
+        for (const shape of EGRESS_VENDOR_SHAPES) {
+            const fixture = secretFixture(...shape.parts, ...shape.fixture);
+            expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
+        }
     });
 });
 
