@@ -1,0 +1,18 @@
+.agents/decisions/0048-attributable-evidence-contract-is-frozen.md
+  h_beb54bf43b47b7 160-171
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  h_beb54bf43b47b7 3,122-136,138,141,152,156-161
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 82,184-193,199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e9e6bfaa6246c78d0be0d76b50dbc0ae4be41766",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
