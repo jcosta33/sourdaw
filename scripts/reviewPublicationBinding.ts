@@ -21,12 +21,12 @@ import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 import { appendReviewDossierEvents, parseReviewDossier } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
 import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
-import { acceptedFindings, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
+import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
 import { exactPublishedReview } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
 import type { PublishReviewPort } from './publishReview.ts';
-import type { ReviewDocument } from './reviewDocumentParser.ts';
+import type { DeliveryAuthorization, ReviewDocument } from './reviewDocumentParser.ts';
 
 const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
 const REVIEW_STANCES_NAME = 'stances.json';
@@ -311,4 +311,130 @@ export function assertAcceptanceDossierAccounting(number: number, head: string, 
                 .join(', ')}`
         );
     }
+}
+
+/**
+ * Whether the bundle carries its risk plan, failing when the manifest records generating one that
+ * is absent. The three outcomes — plan present, legacy bundle, refusal — are the only ones every
+ * gate in this module distinguishes.
+ */
+function bundleRiskPlanPresent(port: PublishReviewPort, bundle: string): boolean {
+    const planPath = join(bundle, REVIEW_RISK_PLAN_NAME);
+    if (readBundleFile(port, planPath).present) {
+        return true;
+    }
+    if (readBundleGeneratedSet(bundle)?.has(REVIEW_RISK_PLAN_NAME) === true) {
+        fail(`missing review risk plan at ${planPath}; the bundle manifest records generating it`);
+    }
+    return false;
+}
+
+function readBundleDossier(
+    port: PublishReviewPort,
+    bundle: string,
+    label: string
+): ReturnType<typeof parseReviewDossier> {
+    const dossierPath = join(bundle, REVIEW_DOSSIER_NAME);
+    const dossierRead = readBundleFile(port, dossierPath);
+    if (!dossierRead.present) {
+        fail(`${label} requires the head's review dossier at ${dossierPath}; the bundle carries a risk plan`);
+    }
+    return parseReviewDossier(dossierRead.value);
+}
+
+/**
+ * Acceptance authorization gate (#3376, spec #3367 AC-005): a plan-carrying bundle's acceptance
+ * must declare the authorization block, and every field must match the durable record and the
+ * observed live state — the reviewer App's recorded publication id, the observed unresolved-thread
+ * count, and the dossier's own evidence-manifest digest. A dossier already carrying the
+ * authorization refuses a duplicate. A legacy bundle carries no evidence manifest to bind, so it
+ * must not declare the block and is accepted exactly as before.
+ */
+export function assertAcceptanceAuthorization(
+    number: number,
+    head: string,
+    authorization: DeliveryAuthorization | undefined,
+    observedUnresolvedThreads: number,
+    port: PublishReviewPort
+): void {
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    if (!bundleRiskPlanPresent(port, bundle)) {
+        if (authorization !== undefined) {
+            fail(`acceptance authorization cannot bind: the legacy bundle at ${bundle} carries no evidence manifest`);
+        }
+        return;
+    }
+    if (authorization === undefined) {
+        fail(
+            'acceptance of a plan-carrying bundle requires an authorization block: intent, approvalReviewId, unresolvedThreads, evidenceManifestDigest'
+        );
+    }
+    const dossier = readBundleDossier(port, bundle, 'acceptance authorization');
+    const approvalId = publishedReviewId(dossier);
+    if (approvalId === undefined) {
+        fail('acceptance authorization requires the dossier to record its review publication; it binds none');
+    }
+    if (authorization.approvalReviewId !== approvalId) {
+        fail(
+            `acceptance authorization approvalReviewId ${authorization.approvalReviewId} does not match the dossier's recorded publication ${approvalId}`
+        );
+    }
+    if (authorization.unresolvedThreads !== observedUnresolvedThreads) {
+        fail(
+            `acceptance authorization unresolvedThreads ${authorization.unresolvedThreads} does not match the observed ${observedUnresolvedThreads}`
+        );
+    }
+    if (authorization.evidenceManifestDigest !== dossier.dossierDigest) {
+        fail(
+            `acceptance authorization evidenceManifestDigest does not match the dossier's digest ${dossier.dossierDigest}`
+        );
+    }
+    const existing = deliveryAuthorization(dossier);
+    if (existing !== undefined) {
+        fail(
+            `review dossier already records delivery authorization ${existing.reviewId}; refusing a duplicate authorization`
+        );
+    }
+}
+
+/**
+ * Appends the landed acceptance's delivery authorization to the head's dossier (#3376, spec #3367
+ * AC-005), re-validating the whole chain before persisting — the same post-write binding pattern
+ * as the reviewer publication. Legacy bundles carry no dossier and record nothing.
+ */
+export function recordAcceptanceAuthorization(
+    number: number,
+    head: string,
+    authorization: DeliveryAuthorization | undefined,
+    reviewId: number,
+    port: PublishReviewPort
+): void {
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    if (!bundleRiskPlanPresent(port, bundle)) {
+        return;
+    }
+    if (authorization === undefined) {
+        fail(`acceptance ${reviewId} posted but carries no authorization block to record`);
+    }
+    const dossier = readBundleDossier(port, bundle, 'delivery authorization recording');
+    const existing = deliveryAuthorization(dossier);
+    if (existing !== undefined) {
+        fail(
+            `review dossier already records delivery authorization ${existing.reviewId}; refusing to rebind to ${reviewId}`
+        );
+    }
+    const bound = appendReviewDossierEvents(dossier, [
+        {
+            kind: 'delivery-authorized',
+            reviewId,
+            approvalReviewId: authorization.approvalReviewId,
+            evidenceManifestDigest: authorization.evidenceManifestDigest,
+            unresolvedThreads: authorization.unresolvedThreads,
+            intent: 'deliver',
+        },
+    ]);
+    if (port.writeBundleText === undefined) {
+        fail(`acceptance cannot write ${join(bundle, REVIEW_DOSSIER_NAME)}: the port has no bundle writer`);
+    }
+    port.writeBundleText(join(bundle, REVIEW_DOSSIER_NAME), serializeReviewDossier(bound));
 }

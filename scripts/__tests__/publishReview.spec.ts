@@ -47,6 +47,7 @@ import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier }
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
+    deliveryAuthorization,
     discardedDispositions,
     publishedFindings,
     publishedReviewId,
@@ -4758,6 +4759,7 @@ describe('orchestrator acceptance', () => {
                 latestReviewerStateOnHead:
                     input.missingReviewer || (inFence && input.revokeAtFence) ? null : 'APPROVED',
                 orchestratorAcceptedAfterReviewer: false,
+                orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: input.unresolved ? 1 : 0,
             }),
             postReview: (review) => ({
@@ -5108,6 +5110,7 @@ describe('fresh reviewer dossier publication', () => {
             reviewState: () => ({
                 latestReviewerStateOnHead: 'APPROVED',
                 orchestratorAcceptedAfterReviewer: false,
+                orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: 0,
             }),
             postReview: (review) => {
@@ -6234,17 +6237,173 @@ describe('fresh reviewer dossier publication', () => {
         const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
             { kind: 'review-published', reviewId: 99 },
         ]);
+        const dossierJson = JSON.parse(serializeReviewDossier(withPublication));
         const fixture = dossierFixture({
             plan: riskPlan(),
-            dossier: JSON.parse(serializeReviewDossier(withPublication)),
-            document: acceptanceDocument(),
+            dossier: dossierJson,
+            document: {
+                ...acceptanceDocument(),
+                authorization: {
+                    intent: 'deliver',
+                    approvalReviewId: 99,
+                    unresolvedThreads: 0,
+                    evidenceManifestDigest: withPublication.dossierDigest,
+                },
+            },
             documentName: 'acceptance.json',
         });
         const accepted: string[] = [];
         try {
             await coordinateAcceptReview(number, acceptanceDependencies(fixture, accepted));
             expect(accepted).toEqual(['Final contract held.']);
-            expect(fixture.writes).toEqual([]);
+            // One write: the delivery-authorized binding appended after the acceptance POST lands.
+            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes[0]?.path).toBe(join(fixture.bundle, 'dossier.json'));
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(deliveryAuthorization(persisted)).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                evidenceManifestDigest: withPublication.dossierDigest,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+            });
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    function acceptanceWithAuthorization() {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        return { withPublication };
+    }
+
+    it('refuses orchestrator acceptance of a plan-carrying bundle without an authorization block', async () => {
+        const { withPublication } = acceptanceWithAuthorization();
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /requires an authorization block/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each([
+        {
+            label: 'an approval review id that is not the recorded publication',
+            authorization: (dossierDigest: string) => ({
+                intent: 'deliver',
+                approvalReviewId: 97,
+                unresolvedThreads: 0,
+                evidenceManifestDigest: dossierDigest,
+            }),
+            message: /approvalReviewId 97 does not match the dossier's recorded publication 99/u,
+        },
+        {
+            label: 'an unresolved-thread count that was never observed',
+            authorization: (dossierDigest: string) => ({
+                intent: 'deliver',
+                approvalReviewId: 99,
+                unresolvedThreads: 1,
+                evidenceManifestDigest: dossierDigest,
+            }),
+            message: /unresolvedThreads 1 does not match the observed 0/u,
+        },
+        {
+            label: 'an evidence-manifest digest that is not the dossier’s own',
+            authorization: (_dossierDigest: string) => ({
+                intent: 'deliver',
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                evidenceManifestDigest: 'e'.repeat(64),
+            }),
+            message: /evidenceManifestDigest does not match the dossier's digest/u,
+        },
+    ])('refuses orchestrator acceptance carrying %s', async ({ authorization, message }) => {
+        const { withPublication } = acceptanceWithAuthorization();
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: {
+                ...acceptanceDocument(),
+                authorization: authorization(withPublication.dossierDigest),
+            },
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(message);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a duplicate delivery authorization already recorded in the dossier', async () => {
+        const { withPublication } = acceptanceWithAuthorization();
+        const alreadyAuthorized = appendReviewDossierEvents(withPublication, [
+            {
+                kind: 'delivery-authorized',
+                reviewId: 98,
+                approvalReviewId: 99,
+                evidenceManifestDigest: withPublication.dossierDigest,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+            },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(alreadyAuthorized)),
+            document: {
+                ...acceptanceDocument(),
+                authorization: {
+                    intent: 'deliver',
+                    approvalReviewId: 99,
+                    unresolvedThreads: 0,
+                    evidenceManifestDigest: alreadyAuthorized.dossierDigest,
+                },
+            },
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /already records delivery authorization 98; refusing a duplicate authorization/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses an authorization block on a legacy bundle with no evidence manifest', async () => {
+        const fixture = dossierFixture({
+            document: {
+                ...acceptanceDocument(),
+                authorization: {
+                    intent: 'deliver',
+                    approvalReviewId: 99,
+                    unresolvedThreads: 0,
+                    evidenceManifestDigest: 'e'.repeat(64),
+                },
+            },
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance authorization cannot bind: the legacy bundle .* carries no evidence manifest/u
+            );
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

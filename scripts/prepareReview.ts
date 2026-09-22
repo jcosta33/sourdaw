@@ -19,6 +19,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import { reviewBundlePath } from './reviewBundleLocator.ts';
 import { changedReviewPaths, formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
 import { planReviewRisk } from './reviewRiskPolicy.ts';
 
@@ -59,9 +60,7 @@ export function parsePrepareReviewArgs(args: string[]): { number?: number; help:
     return { number: value, help: false };
 }
 
-export function reviewBundlePath(primaryRoot: string, pr: number, headSha: string): string {
-    return join(primaryRoot, '.agents', 'review-bundles', `${pr}-${headSha}`);
-}
+export { reviewBundlePath };
 
 export type ReviewBundleContext = {
     pr: number;

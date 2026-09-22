@@ -134,3 +134,21 @@ accepted finding unbound; legacy bundles without a risk plan publish and accept 
 and repair markers — and shadow-compares each local dossier against that reconstruction, recording
 mismatches without gating (`reconstructReviewRounds.ts`). No existing event kind, digest rule, or
 channel assignment changed; dossiers written before this extension parse unchanged.
+
+## Extension — three-role transition enforcement (2026-09-22, #3376)
+
+Under the same addition-only rule, `dossier-v1` gains one event kind: `delivery-authorized`, binding
+the orchestrator's delivery intent to the landed acceptance review id, the acceptance-time dossier
+digest, the observed unresolved-thread count, and the literal intent `deliver`. `acceptance.json`
+carries the matching `authorization` block (refused in `review.json`); `review:accept` refuses a
+plan-carrying bundle when the block is missing, mismatched to the dossier, or duplicating a recorded
+authorization, then appends the event after the acceptance POST lands. The parse-level invariants
+admit at most one authorization, only after the recorded publication, binding exactly that
+publication as the approval. `deliver` consumes the record: a plan-carrying head bundle without a
+recorded authorization, with a digest that is not the dossier-minus-authorization digest
+(`authorizedEvidenceDigest`), or bound to anything but the live orchestrator acceptance review is
+refused; legacy bundles without a risk plan deliver exactly as before. The review-state read gains
+`databaseId` so the live acceptance's numeric id can be bound, and the deliver trusted closure pins
+the dossier modules it now reads. `threeRoleTransitions.spec.ts` pins the cross-role matrix —
+author, reviewer, and orchestrator approvals are never interchangeable, and an acceptance left
+behind on a stale head authorizes nothing.

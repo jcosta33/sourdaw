@@ -376,6 +376,24 @@ resolved before publishing final acceptance as the immutable orchestrator
 User. The posting identity supplies the role; generated text must not announce
 acceptance on another person's behalf or claim personal human review.
 
+A plan-carrying bundle's acceptance also authorizes delivery (#3376, spec
+#3367 AC-005): the document MUST carry an `authorization` block —
+`{ intent: 'deliver', approvalReviewId, unresolvedThreads,
+evidenceManifestDigest }` — where `approvalReviewId` is the reviewer-publication
+review id the dossier records, `unresolvedThreads` the count observed at
+acceptance, and `evidenceManifestDigest` the dossier's `dossierDigest` as it
+stands before the authorization is recorded. `review:accept` refuses a missing,
+mismatched, or duplicated block, and appends a `delivery-authorized` event to
+the dossier after the acceptance POST lands. `review.json` carrying
+`authorization` is refused; the block is acceptance-only. Legacy bundles
+without a risk plan accept without the block, and a block on such a bundle is
+refused.
+
+`deliver` consumes the record: a plan-carrying head bundle with no recorded
+authorization, an authorization whose digest is not the
+dossier-minus-authorization digest, or one bound to anything but the live
+orchestrator acceptance review refuses delivery before any merge.
+
 ## Thread resolution
 
 Push the fix, then record it with `review:repair`, which runs as the author App
