@@ -76,17 +76,17 @@ const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
  *
  * The quoted alternative reads an opening delimiter run — one to four of `'`, `"` or a backtick, the
  * scanner's `[\x60'"\s=]{0,5}` ceiling — and a terminator that is any single delimiter, whitespace, a
- * semicolon, an escaped newline (`\\[nr]`), or end of input, matching the scanner's
- * `(?:[\x60'"\s;]|\\[nr]|$)`. The captured run stops at the first delimiter, whitespace, semicolon,
- * or backslash, so a mismatched pair (`'…"`), a value closed by end of input, a space, a semicolon, a
- * four-quote run, or an escaped newline are all withheld, and a nested delimiter (`'''…"…'''`) or an
- * escaped delimiter (`\"`) still ends the run and is admitted. A doubled or nested delimiter diverges
- * from the scanner only at the length floor (the scanner's 10-character floor plus entropy gate can
- * see a prefix the screen's 16-character floor does not).
+ * semicolon, or end of input. The captured run stops at the first delimiter, whitespace, or
+ * semicolon, so a mismatched pair (`'…"`), a value closed by end of input, a space, a semicolon, or a
+ * four-quote run are all withheld, and a nested delimiter (`'''…"…'''`) or an escaped delimiter
+ * (`\"`) still ends the run and is admitted. The scanner's escaped-newline terminator (`\\[nr]`) is
+ * deliberately not modelled: the scanner pairs it with an entropy gate and a value allowlist this
+ * screen cannot apply, so reading it in isolation over-withholds ordinary camel-case values; it is
+ * filed as #4579 to be modelled with those gates.
  */
 const SECRET_ASSIGNMENT = new RegExp(
     `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:` +
-        `['"\\x60]{1,4}(?<quoted>[^'"\\x60\\s;\\\\]{16,})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `['"\\x60]{1,4}(?<quoted>[^'"\\x60\\s;]{16,})(?=['"\\x60\\s;]|$)` +
         `|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );

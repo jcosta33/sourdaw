@@ -239,4 +239,11 @@ keywords = [
         expect(fromCrlf.shapes).toEqual(fromLf.shapes);
         expect(fromCrlf.residual).toEqual(fromLf.residual);
     });
+
+    it('refuses a lone-CR file', () => {
+        // TOML allows LF and CRLF only; a lone-CR ending is outside the emitted grammar and is refused.
+        const lf = "[[rules]]\nid = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}'''\n";
+        const loneCr = lf.replaceAll('\n', '\r');
+        expect(() => deriveEgressVendorShapes(loneCr)).toThrow(/line 1/);
+    });
 });

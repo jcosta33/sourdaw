@@ -121,9 +121,12 @@ function isArrayElement(line: string, key: string): boolean {
     return /^(?:'''(?:(?!''')[^])*'''|"[^"]*")(?:\s*,\s*(?:'''(?:(?!''')[^])*'''|"[^"]*"))*,?$/.test(body);
 }
 
-/** Normalizes CRLF and lone-CR line endings so an LF input and its CRLF twin derive identical rules. */
+/**
+ * Normalizes CRLF line endings so an LF input and its CRLF twin derive identical rules. A lone-CR
+ * ending is left untouched, so a lone-CR file stays outside the emitted grammar and is refused.
+ */
 function normalizeLines(toml: string): string {
-    return toml.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    return toml.replaceAll('\r\n', '\n');
 }
 
 export function parseRules(toml: string): Rule[] {
