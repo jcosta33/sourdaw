@@ -136,9 +136,11 @@ can resolve it. A wrongly posted finding therefore blocks delivery without a rep
 `review:prepare` records the change's risk classes — `small`, `ordinary`, `test-only`,
 `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
 derived from the same path classification as the size report beside it so the two cannot disagree.
-The plan is an input to the stance enumeration, never a stance requirement: its classes and their
-standing stance mapping name risk surfaces the enumeration must weigh, and the derived stances
-remain the orchestrator's judgement recorded in `stances.json`.
+The classification encodes semantic risk beyond size: playback-timing, project-persistence, and
+every trusted GitHub-write closure path earn their specialist class however small the diff
+(#3377). The plan is an input to the stance enumeration, never a stance requirement: its classes
+and their standing stance mapping name risk surfaces the enumeration must weigh, and the derived
+stances remain the orchestrator's judgement recorded in `stances.json`.
 
 `pnpm review:semantic scan --pr <pr>` may be run before dispatch to surface risks the enumeration
 should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <path>` after independent
