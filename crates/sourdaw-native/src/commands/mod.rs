@@ -16,5 +16,6 @@ pub mod plugin_gui;
 pub mod plugins;
 pub mod provider_gateway;
 pub mod speech;
+pub mod store_verified_whisper_model;
 pub mod tuning;
 pub mod verified_cached_model;

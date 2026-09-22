@@ -15,6 +15,7 @@ import { TransportBar } from '../TransportBar';
 const voiceRuntimeMocks = vi.hoisted(() => ({
     isVoiceInputAvailable: vi.fn<() => boolean>(),
     toggleVoiceInput: vi.fn<() => void>(),
+    downloadWhisperModel: vi.fn<(options?: { downloadConsent?: boolean }) => Promise<void>>(),
 }));
 
 // Mock hooks
@@ -26,6 +27,7 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AiRuntime/useCases')>()),
     isVoiceInputAvailable: voiceRuntimeMocks.isVoiceInputAvailable,
     toggleVoiceInput: voiceRuntimeMocks.toggleVoiceInput,
+    downloadWhisperModel: voiceRuntimeMocks.downloadWhisperModel,
 }));
 
 const transportState = vi.hoisted(() => ({
@@ -199,6 +201,8 @@ describe('TransportBar', () => {
         voiceInputAvailable = false;
         voiceRuntimeMocks.isVoiceInputAvailable.mockClear();
         voiceRuntimeMocks.toggleVoiceInput.mockClear();
+        voiceRuntimeMocks.downloadWhisperModel.mockClear();
+        voiceRuntimeMocks.downloadWhisperModel.mockResolvedValue(undefined);
         voiceRuntimeMocks.isVoiceInputAvailable.mockReturnValue(false);
         windowChromeMocks.frameless = false;
         windowChromeMocks.windowControlsOverlay = false;
@@ -338,6 +342,27 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         expect(screen.queryByRole('button', { name: /Voice command/ })).not.toBeInTheDocument();
+    });
+
+    it('offers the enable-voice setup on the desktop runtime and turns its confirmation into consent', async () => {
+        // The desktop marker the preload publishes; the affordance exists only there.
+        Reflect.set(window, 'sourdaw', {});
+        try {
+            renderTransportBar();
+
+            fireEvent.click(screen.getByTestId('voice-setup-button'));
+            fireEvent.click(await screen.findByTestId('voice-setup-download-button'));
+
+            expect(voiceRuntimeMocks.downloadWhisperModel).toHaveBeenCalledWith({ downloadConsent: true });
+        } finally {
+            Reflect.deleteProperty(window, 'sourdaw');
+        }
+    });
+
+    it('offers no enable-voice setup off the desktop runtime', () => {
+        renderTransportBar();
+
+        expect(screen.queryByTestId('voice-setup-button')).not.toBeInTheDocument();
     });
 
     it('passes the native browser event through the voice-button admission seam', () => {

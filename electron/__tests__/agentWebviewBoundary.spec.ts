@@ -69,6 +69,7 @@ const PRIVILEGED_COMMANDS = [
     'write_file_bytes',
     'list_directory',
     'load_cached_whisper_model',
+    'store_verified_whisper_model',
     'collab_apply_change',
     'collab_create_project',
     'collab_get_document_state',
