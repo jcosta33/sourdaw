@@ -1,0 +1,23 @@
+crates/daw-engine/src/retrospective.rs
+  s_79a4735522d528::t_02c39b2729ac04 187-193,195-204,209-211,214-216,224-244
+  s_79a4735522d528::t_f980305846c40e 298-311
+  s_79a4735522d528::t_0194fcfb8302b7 284,407,445-520,605,617,635-637,640-644,646
+  s_79a4735522d528::t_5442a324528d86 76-93,406
+  s_79a4735522d528::t_4dfec754ad03a7 281-283,293,297,440-444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f04a3c2d2f4378beb02743c926e10522fd9589bc",
+  "prompts": {},
+  "sessions": {
+    "s_79a4735522d528": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "df2605c7-64a6-4ac3-806a-20ac0d32372d",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
