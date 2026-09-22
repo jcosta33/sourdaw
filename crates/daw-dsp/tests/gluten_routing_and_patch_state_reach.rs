@@ -281,36 +281,33 @@ fn external_sidechain_is_encoded_before_side_only_detection() {
 }
 
 /// Topologies the page says duck from Ext SC once the switch is on. Default
-/// VCA stays constructor-default (`None` — no `topology` write); Opto and FET
-/// need an explicit write. A zero-buffer Ext SC toggle alone cannot prove the
-/// key amplitude reaches those detectors.
-const EXTERNAL_KEY_TOPOLOGIES: [(&str, Option<f32>); 3] = [
+/// VCA stays constructor-default (`None` — no `topology` write); Opto, FET,
+/// and Diode need an explicit write. A zero-buffer Ext SC toggle alone cannot
+/// prove the key amplitude reaches those detectors.
+const EXTERNAL_KEY_TOPOLOGIES: [(&str, Option<f32>); 4] = [
     ("vca", None),
     ("opto", Some(TOPOLOGY_OPTO)),
     ("fet", Some(TOPOLOGY_FET)),
+    ("diode", Some(TOPOLOGY_DIODE)),
 ];
 
-fn rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let sum_sq: f32 = samples.iter().map(|sample| sample * sample).sum();
-    (sum_sq / samples.len() as f32).sqrt()
-}
-
-/// Stereo: a real external key must duck the program once Ext SC is on, and
-/// must be ignored while the switch is off.
+/// Stereo: a real external key must deepen GR once Ext SC is on, and must be
+/// ignored while the switch is off.
 ///
 /// `the_filtered_detector_reaches_every_topology` toggles `ext_sidechain` but
 /// never writes a distinct key buffer on stereo. The Side-mode presence pin
 /// feeds a key, but only after `stereo_mode` leaves Stereo. This case is the
 /// missing ducking proof: program above threshold, silent vs loud key, then
 /// the same silent-versus-loud pair with Ext SC off.
+///
+/// Returns the captured wet stereo and the instance's final `get_gr_db`. GR
+/// meter depth is the ducking oracle: scaling the captured samples while the
+/// sidechain stays silent would quiet RMS without deepening GR.
 fn render_with_external_key(
     topology: Option<f32>,
     ext_sidechain: bool,
     key_level: f32,
-) -> Vec<f32> {
+) -> (Vec<f32>, f32) {
     let mut instance = GlutenInstance::new(SAMPLE_RATE);
     // Default VCA stays constructor-default — do not call set_param("topology", …).
     if let Some(topology) = topology {
@@ -355,25 +352,24 @@ fn render_with_external_key(
             captured.push(unsafe { *out_right.add(n) });
         }
     }
-    captured
+    let gr_db = instance.get_gr_db();
+    (captured, gr_db)
 }
 
 #[test]
 fn external_key_reaches_the_default_vca_detector() {
     for (label, topology) in EXTERNAL_KEY_TOPOLOGIES {
-        let silent_key = render_with_external_key(topology, true, 0.0);
-        let loud_key = render_with_external_key(topology, true, 0.9);
-        let silent_key_off = render_with_external_key(topology, false, 0.0);
-        let loud_key_off = render_with_external_key(topology, false, 0.9);
+        let (_silent_key, silent_gr) = render_with_external_key(topology, true, 0.0);
+        let (_loud_key, loud_gr) = render_with_external_key(topology, true, 0.9);
+        let (silent_key_off, _) = render_with_external_key(topology, false, 0.0);
+        let (loud_key_off, _) = render_with_external_key(topology, false, 0.9);
 
-        let silent_rms = rms(&silent_key);
-        let loud_rms = rms(&loud_key);
-        // Quieter, not merely different: mixing the key into the wet path while
-        // the sidechain stays silent moves samples without reducing them.
+        // Deeper GR (more negative), not merely quieter samples: attenuating the
+        // wet buffer while the sidechain stays silent must fail this case.
         assert!(
-            loud_rms < silent_rms * 0.95,
-            "a loud external key must duck the {label} program when Ext SC is on \
-             (quieter output), but silent rms {silent_rms:e} vs loud rms {loud_rms:e}"
+            loud_gr < silent_gr - 0.5,
+            "a loud external key must deepen {label} GR when Ext SC is on, \
+             but silent gr {silent_gr} vs loud gr {loud_gr}"
         );
 
         let ignored_delta = max_delta(&silent_key_off, &loud_key_off);
