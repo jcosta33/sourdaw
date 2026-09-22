@@ -147,7 +147,7 @@ export function forwardTrustedSnapshotSignal(
     }
 }
 
-const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
+export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',

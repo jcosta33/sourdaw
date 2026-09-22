@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
+import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 import type { ReviewChangedPath } from '../reviewDiffSummary.ts';
 import type { ReviewRiskClass, ReviewRiskPlan, ReviewStanceId } from '../reviewRiskPolicy.ts';
@@ -105,6 +106,46 @@ describe('planReviewRisk', () => {
         expect(result.riskClasses).toEqual(['native-security']);
         expect(result.requiredStances).toEqual(['correctness', 'security-platform', 'test-validity']);
         expect(result.triggers).toContain('native-security:src/utils/desktopBridge.ts');
+    });
+
+    it('should call a small playhead-scheduler change realtime-audio, since it can move audible timing (#3377)', () => {
+        const result = reviewPlan([
+            handwritten('src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts', 10, 10),
+        ]);
+
+        expect(result.riskClasses).toEqual(['realtime-audio']);
+        expect(result.requiredStances).toEqual(['correctness', 'realtime-audio', 'test-validity']);
+        expect(result.triggers).toContain('realtime-audio:src/modules/Transport/useCases/playheadScheduler/');
+    });
+
+    it('should call a small project-persistence change undo, since it can corrupt saved projects (#3377)', () => {
+        const result = reviewPlan([
+            handwritten('src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts', 10, 10),
+        ]);
+
+        expect(result.riskClasses).toEqual(['undo']);
+        expect(result.requiredStances).toEqual(['correctness', 'project-integrity-undo', 'test-validity']);
+        expect(result.triggers).toContain(
+            'undo:src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts'
+        );
+    });
+
+    it('should call a small privileged-transition script change native-security (#3377)', () => {
+        const result = reviewPlan([handwritten('scripts/confirmReviewRepairs.ts', 10, 10)]);
+
+        expect(result.riskClasses).toEqual(['native-security']);
+        expect(result.requiredStances).toEqual(['correctness', 'security-platform', 'test-validity']);
+        expect(result.triggers).toContain('native-security:scripts/confirmReviewRepairs.ts');
+    });
+
+    it('should classify every trusted GitHub-write closure path native-security, so the list cannot drift', () => {
+        const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();
+
+        expect(closurePaths.length).toBeGreaterThan(0);
+        for (const path of closurePaths) {
+            const result = reviewPlan([handwritten(path, 1, 1)]);
+            expect(result.riskClasses, path).toContain('native-security');
+        }
     });
 
     it('should flag every undo marker: action name, CRDT document, project file, and bootstrap wiring', () => {
