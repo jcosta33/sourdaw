@@ -371,6 +371,9 @@ export const warpStates = {
     clear(): void {
         warpStateStore.set(defaultWarpStateStoreState);
     },
+    get size(): number {
+        return Object.keys(warpStateStore.value?.states ?? {}).length;
+    },
     entries(): IterableIterator<[string, WarpState]> {
         return Object.entries(warpStateStore.value?.states ?? {})[Symbol.iterator]() as IterableIterator<
             [string, WarpState]

@@ -30,10 +30,12 @@ describe('warpStates', () => {
     it('removeWarpState deletes the entry, falling back to the default afterwards', () => {
         addWarpMarker('c1', 1, 1.2);
         expect(getWarpState('c1').markers).toHaveLength(1);
+        expect(warpStates.size).toBe(1);
 
         removeWarpState('c1');
 
         expect(warpStates.has('c1')).toBe(false);
+        expect(warpStates.size).toBe(0);
         expect(getWarpState('c1')).toBe(defaultWarpState);
     });
 
