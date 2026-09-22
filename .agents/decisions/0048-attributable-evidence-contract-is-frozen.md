@@ -161,3 +161,31 @@ refused; legacy bundles without a risk plan deliver exactly as before. The revie
 the dossier modules it now reads. `threeRoleTransitions.spec.ts` pins the cross-role matrix —
 author, reviewer, and orchestrator approvals are never interchangeable, and an acceptance left
 behind on a stale head authorizes nothing.
+
+## Extension — risk calibration and enforcement cutover (2026-09-22, #3377)
+
+AC-009 calibration closes the demonstrated policy-coverage gap without changing the class or
+stance vocabularies: the path classifier now earns `realtime-audio` for the playback-timing
+surface (`src/modules/Transport/useCases/playheadScheduler/`), `undo` for the saved-project
+integrity surfaces (the `useCases/projectPersistence/` prefix and the Project `repositories/`
+tree, anchored so a like-named path outside the Project module earns nothing), and
+`native-security` for every file in a trusted GitHub-write closure
+(`GOVERNANCE_TRANSITION_PATHS`, pinned to the `trustedDependencyGraphs` union as sets in both
+directions by a spec so either list diverging from the other fails red). Each is a semantic risk
+that size-based classification called `small`; the earned-stance union and the proportionality
+rule — no class contributes a stance outside its own entry, and a plan's `requiredStances` must
+equal exactly what its classes earn — are unchanged. Task-derived stances beyond the heuristic
+prefixes were already representable: `stances.json` and the dossier admit free-form justified
+names, and the admission lines are judged by `stances:check` where the typed-judgment credential
+is available.
+
+For the record, the #3376 section above describes the delivery authorization as bound to the live
+orchestrator acceptance review; as reviewed and merged, `deliver` binds both live reviews —
+`reviewId` to the orchestrator acceptance and `approvalReviewId` to the reviewer approval
+(`latestReviewerReviewDatabaseId`) — refusing a record that names a stale or unidentifiable
+either.
+
+AC-010 is preserved by non-change: this calibration touches no workflow, no ruleset, and no CI
+admission rule, and the before/after ruleset readback in the change's evidence shows byte-equal
+required contexts. CI admission stays advisory; exact-head, identity, thread,
+structural-mergeability, and immutable-evidence gates stay blocking.
