@@ -34,20 +34,25 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
   name, aria-label, or text and re-home the affected specs in the same change. A control can also be
   retired with no rename at all: when a diff changes a control's enabled, disabled, or visibility
-  condition, sweep `tests/e2e/` for every state read of that control: the state assertions
-  `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the conditional guards `isDisabled()`,
-  `isEnabled()`, `isVisible()` — the conditional-admission class the blind spot below names.
-  Re-check each hit against the new condition and re-home it in the same change: a guard strands
-  every assertion behind it, so a guard keyed on a state the diff changes must be re-homed even when
-  no control was renamed, removed, or replaced. When a diff adds text-bearing UI beside an existing
+  condition, the sweep is `tests/e2e/` searched for the changed control's own identity — its name,
+  aria-label, test id, or rendered text, the same terms the rename sweep above uses — never for
+  assertion names, which select unrelated specs. The population the step acts on is the specs that
+  search returns, the specs that read the changed control's own locator; inside them, inspect every
+  state read of that control: `toBeVisible`, `not.toBeVisible`, `toHaveCount`, `toBeDisabled`,
+  `toBeEnabled`, `toBeHidden`, and the `isDisabled()`, `isEnabled()`, `isVisible()` conditional
+  guards — the conditional-admission class the blind spot below names. Re-check each against the new
+  condition and re-home it in the same change: a guard strands every assertion behind it, so a guard
+  keyed on a state the diff changes must be re-homed even when no control was renamed, removed, or
+  replaced. When a diff adds text-bearing UI beside an existing
   text locator, the sweep is `tests/e2e/` searched case-insensitively for the existing locator's text
   and for the added sibling's own text; run every spec those searches return and require each to
   redden if the locator is now ambiguous — `getByText` matches case-insensitive substrings, so a new
   sibling makes it a strict-mode violation or makes `.first()` select the wrong element.
-- An either-arm assertion whose arms can hold independently is a standing escape: flag each arm that
-  can be satisfied on its own, and require each arm to be load-bearing by mutating one arm's
-  condition away and confirming the assertion reddens — until then the disjunction can be silently
-  narrowed to a single live arm.
+- An either-arm assertion is a standing escape: select every hit of `expect\([^)]*\|\|` across the
+  specs under review, with no qualifier about whether its arms can hold independently, and require
+  each arm to be load-bearing by mutating that arm's condition away and confirming the assertion
+  reddens — that mutation is how a dead arm is exposed, and until both arms are proven the
+  disjunction can be silently narrowed to a single live arm.
 
 ## Lessons from escapes
 
@@ -78,16 +83,20 @@ independently is accepted as covering both when one arm may be dead.
 
 Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
 `tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
-change; when a diff changes a control's enabled, disabled, or visibility condition, sweep for every
-state read of it — `toBeDisabled`, `toBeEnabled`, `toBeHidden`, `isDisabled()`, `isEnabled()`,
-`isVisible()` — and re-home each in the same change; when a diff adds text-bearing UI beside an
-existing text locator, sweep `tests/e2e/` case-insensitively for the existing locator's text and for
-the added sibling's own text, run every spec those searches return, and require each to redden if
-the locator is made ambiguous — `getByText` matches case-insensitive substrings, so a new sibling
-makes it a strict-mode violation or makes `.first()` select the wrong element — then assert the
-control through stable handles (test ids, roles) rather than bare text; and flag every either-arm
-assertion whose arms can hold independently, requiring each arm to be load-bearing by mutating one
-arm's condition away and confirming the assertion reddens before the disjunction counts.
+change; when a diff changes a control's enabled, disabled, or visibility condition, search
+`tests/e2e/` for the changed control's own identity — its name, aria-label, test id, or rendered
+text, the same terms the rename sweep uses, never assertion names — and inside the specs that search
+returns, the specs that read that control's own locator, inspect every state read of it —
+`toBeVisible`, `not.toBeVisible`, `toHaveCount`, `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the
+`isDisabled()`, `isEnabled()`, `isVisible()` guards — and re-home each in the same change; when a
+diff adds text-bearing UI beside an existing text locator, sweep `tests/e2e/` case-insensitively for
+the existing locator's text and for the added sibling's own text, run every spec those searches
+return, and require each to redden if the locator is made ambiguous — `getByText` matches
+case-insensitive substrings, so a new sibling makes it a strict-mode violation or makes `.first()`
+select the wrong element — then assert the control through stable handles (test ids, roles) rather
+than bare text; and select every hit of `expect\([^)]*\|\|` across the specs under review, requiring
+each arm to be load-bearing by mutating that arm's condition away and confirming the assertion
+reddens before the disjunction counts.
 
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 
