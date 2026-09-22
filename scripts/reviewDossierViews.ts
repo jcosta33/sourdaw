@@ -47,3 +47,26 @@ export function publishedFindings(
         .filter((event) => event.kind === 'finding-published')
         .map((event) => ({ findingId: event.findingId, reviewId: event.reviewId, commentId: event.commentId }));
 }
+
+export type RecordedDeliveryAuthorization = {
+    reviewId: number;
+    approvalReviewId: number;
+    evidenceManifestDigest: string;
+    unresolvedThreads: number;
+    intent: 'deliver';
+};
+
+/** The one delivery authorization the record binds, or undefined while none has been recorded. */
+export function deliveryAuthorization(dossier: ReviewDossier): RecordedDeliveryAuthorization | undefined {
+    const event = dossier.events.find((entry) => entry.kind === 'delivery-authorized');
+    if (!event) {
+        return undefined;
+    }
+    return {
+        reviewId: event.reviewId,
+        approvalReviewId: event.approvalReviewId,
+        evidenceManifestDigest: event.evidenceManifestDigest,
+        unresolvedThreads: event.unresolvedThreads,
+        intent: event.intent,
+    };
+}

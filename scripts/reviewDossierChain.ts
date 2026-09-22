@@ -63,6 +63,16 @@ function eventFieldEntries(event: ReviewDossierEvent): FieldEntry[] {
             ['commentId', event.commentId],
         ];
     }
+    if (event.kind === 'delivery-authorized') {
+        return [
+            ['kind', event.kind],
+            ['reviewId', event.reviewId],
+            ['approvalReviewId', event.approvalReviewId],
+            ['evidenceManifestDigest', event.evidenceManifestDigest],
+            ['unresolvedThreads', event.unresolvedThreads],
+            ['intent', event.intent],
+        ];
+    }
     return [
         ['kind', event.kind],
         ['findingId', event.findingId],

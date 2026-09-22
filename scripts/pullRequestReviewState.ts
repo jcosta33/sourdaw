@@ -5,7 +5,9 @@ import { fail } from './prContract.ts';
 
 export type ReviewState = {
     latestReviewerStateOnHead: string | null;
+    latestReviewerReviewDatabaseId: number | null;
     orchestratorAcceptedAfterReviewer: boolean;
+    orchestratorAcceptanceReviewDatabaseId: number | null;
     unresolvedThreads: number;
 };
 
@@ -15,6 +17,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 type PullRequestReviewRecord = {
     id: string;
+    databaseId: number | null;
     state: string;
     submittedAt: string | null;
     author: { id: string | null; login: string; __typename: string } | null;
@@ -48,7 +51,7 @@ type CompleteReviewState = {
 
 const REVIEW_STATE_PAGE_SIZE = 100;
 const REVIEW_STATE_PAGE_LIMIT = 1_000;
-const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id state submittedAt author{login __typename ... on Bot{id} ... on User{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id databaseId state submittedAt author{login __typename ... on Bot{id} ... on User{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
 
 function invalidReviewState(number: number): never {
     fail(`cannot prove complete review state for PR #${number}`);
@@ -85,6 +88,12 @@ function parseReviewRecord(value: unknown, number: number): PullRequestReviewRec
     if (value.submittedAt !== null && typeof value.submittedAt !== 'string') {
         invalidReviewState(number);
     }
+    if (
+        value.databaseId !== null &&
+        (typeof value.databaseId !== 'number' || !Number.isSafeInteger(value.databaseId) || value.databaseId <= 0)
+    ) {
+        invalidReviewState(number);
+    }
     let commitOid: string | null = null;
     if (value.commit !== null) {
         if (!isRecord(value.commit)) {
@@ -94,6 +103,7 @@ function parseReviewRecord(value: unknown, number: number): PullRequestReviewRec
     }
     return {
         id: requiredReviewStateString(value.id, number),
+        databaseId: value.databaseId,
         state: requiredReviewStateString(value.state, number),
         submittedAt: value.submittedAt,
         author: parseReviewAuthor(value.author, number),
@@ -277,14 +287,19 @@ export function readPullRequestReviewState(
     );
     const reviewer = second.reviews[reviewerIndex];
     const acceptance = second.reviews[acceptanceIndex];
+    const orchestratorAcceptedAfterReviewer =
+        reviewer?.state === 'APPROVED' &&
+        reviewer.commitOid === expectedHead &&
+        acceptance?.state === 'APPROVED' &&
+        acceptance.commitOid === expectedHead &&
+        acceptanceIndex > reviewerIndex;
     return {
         latestReviewerStateOnHead: reviewer?.commitOid === expectedHead ? reviewer.state : null,
-        orchestratorAcceptedAfterReviewer:
-            reviewer?.state === 'APPROVED' &&
-            reviewer.commitOid === expectedHead &&
-            acceptance?.state === 'APPROVED' &&
-            acceptance.commitOid === expectedHead &&
-            acceptanceIndex > reviewerIndex,
+        latestReviewerReviewDatabaseId:
+            reviewer?.commitOid === expectedHead && reviewer.state === 'APPROVED' ? reviewer.databaseId : null,
+        orchestratorAcceptedAfterReviewer,
+        orchestratorAcceptanceReviewDatabaseId:
+            orchestratorAcceptedAfterReviewer && acceptance !== undefined ? acceptance.databaseId : null,
         unresolvedThreads: second.reviewThreads.filter((thread) => !thread.isResolved).length,
     };
 }

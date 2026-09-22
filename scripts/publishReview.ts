@@ -43,6 +43,7 @@ import {
     assertPublicationEvidence,
     parseAcceptanceDocument,
     parseReviewDocument,
+    type AcceptanceDocument,
     type ReviewComment,
     type ReviewDocument,
     type ReviewEvent,
@@ -50,8 +51,10 @@ import {
 import { readDossierStanceDraws } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import {
+    assertAcceptanceAuthorization,
     assertAcceptanceDossierAccounting,
     prepareReviewDossierPublication,
+    recordAcceptanceAuthorization,
     recordedPublicationReplay,
     recordPublicationBindings,
 } from './reviewPublicationBinding.ts';
@@ -247,7 +250,7 @@ function publishPreparedReviewForActor(
             ? parseAcceptanceDocument(prepared.document)
             : parseReviewDocument(prepared.document);
     if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
-        assertAcceptancePreconditions(number, prepared.head, port);
+        assertAcceptancePreconditions(number, prepared.head, document, port);
     }
     assertPublicationEvidence(document, pullRequest.head);
     const context = publicationApprovalContext(number, prepared.head, document, port);
@@ -298,17 +301,26 @@ function publishPreparedReviewForActor(
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
         recordPublicationBindings(number, prepared.head, document, posted.id, port);
+    } else {
+        recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
     }
     port.log(String(posted.id));
     return posted.id;
 }
 
-function assertAcceptancePreconditions(number: number, head: string, port: PublishReviewPort): void {
+function assertAcceptancePreconditions(
+    number: number,
+    head: string,
+    document: AcceptanceDocument,
+    port: PublishReviewPort
+): void {
     if (port.reviewState === undefined) {
         fail('orchestrator acceptance requires a complete independent review-state reader');
     }
-    assertIndependentReviewerApproval(number, port.reviewState(number, head));
+    const state = port.reviewState(number, head);
+    assertIndependentReviewerApproval(number, state);
     assertAcceptanceDossierAccounting(number, head, port);
+    assertAcceptanceAuthorization(number, head, document.authorization, state.unresolvedThreads, port);
 }
 
 export function publishPreparedReview(
@@ -481,7 +493,12 @@ async function coordinateReviewPublication(
             );
             const prepared = prepareReviewPublication(number, preflightPort, actorNodeId);
             if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
-                assertAcceptancePreconditions(number, prepared.head, preflightPort);
+                assertAcceptancePreconditions(
+                    number,
+                    prepared.head,
+                    parseAcceptanceDocument(prepared.document),
+                    preflightPort
+                );
             }
             await dependencies.serializeMutation(
                 primaryRoot,

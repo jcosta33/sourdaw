@@ -29,6 +29,7 @@ import {
     type ShellRunner,
     type StackedPullRequest,
     type TrackerCompletionPort,
+    type DeliveryAuthorizationBinding,
     run,
 } from '../deliverPullRequest';
 import {
@@ -372,6 +373,7 @@ function reviewStateResponse(
 function acceptanceReview() {
     return {
         id: 'orchestrator-acceptance',
+        databaseId: 1,
         state: 'APPROVED',
         submittedAt: '2026-09-09T00:00:00Z',
         author: { id: ORCHESTRATOR_USER_NODE_ID, login: 'jcosta33', __typename: 'User' },
@@ -427,11 +429,13 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                         repository: {
                             pullRequest: {
                                 id: 'pull-request-id',
+                                databaseId: 1,
                                 headRefOid: 'head',
                                 reviews: {
                                     nodes: [
                                         {
                                             id: 'review-approved',
+                                            databaseId: 1,
                                             state: 'APPROVED',
                                             submittedAt: '2026-08-19T00:00:00Z',
                                             author: {
@@ -759,6 +763,7 @@ type FakeInput = {
     primaryBaseRefNameOnReceiptRead?: string;
     primaryBodyOnReceiptRead?: string;
     reviewStateOnReceiptRead?: ReviewState;
+    deliveryAuthorization?: DeliveryAuthorizationBinding;
     receipts?: DeliveryReceiptComment[];
     persistedReceiptAuthority?: PersistedDeliveryReceiptAuthority;
     deliveryReceiptProof?: DeliveryReceiptProof;
@@ -998,10 +1003,16 @@ function fakePort(input: FakeInput = {}) {
                 reviewStates.shift() ??
                 input.review ?? {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 }
             );
+        },
+        reviewBundleDeliveryAuthorization: (number, head) => {
+            calls.push(`delivery-authorization:${number}:${head}`);
+            return input.deliveryAuthorization ?? { kind: 'legacy' };
         },
         dependents: (baseBranch) => {
             const next = dependentSets.shift();
@@ -5547,21 +5558,29 @@ describe('pull-request delivery', () => {
             reviewStates: [
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                     unresolvedThreads: 0,
                 },
@@ -6282,6 +6301,8 @@ describe('pull-request delivery', () => {
         const approved = {
             latestReviewerStateOnHead: 'APPROVED',
             orchestratorAcceptedAfterReviewer: true,
+            latestReviewerReviewDatabaseId: null,
+            orchestratorAcceptanceReviewDatabaseId: null,
             unresolvedThreads: 0,
         };
         const absent = { ...approved, orchestratorAcceptedAfterReviewer: false };
@@ -6454,6 +6475,8 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             review: {
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
+                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 1,
             },
@@ -6465,7 +6488,13 @@ describe('pull-request delivery', () => {
 
     it('rejects missing reviewer approval on the current head', () => {
         const { port, calls } = fakePort({
-            review: { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+            review: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
+                orchestratorAcceptanceReviewDatabaseId: null,
+                latestReviewerStateOnHead: null,
+                unresolvedThreads: 0,
+            },
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved by the required reviewer actor/);
@@ -6477,10 +6506,18 @@ describe('pull-request delivery', () => {
             reviewStates: [
                 {
                     orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
-                { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: null, unresolvedThreads: 0 },
+                {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: null,
+                    orchestratorAcceptanceReviewDatabaseId: null,
+                    latestReviewerStateOnHead: null,
+                    unresolvedThreads: 0,
+                },
             ],
         });
 
@@ -6492,6 +6529,8 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             reviewStateOnReceiptRead: {
                 orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
+                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 1,
             },
@@ -6513,12 +6552,156 @@ describe('pull-request delivery', () => {
 
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
         const { port, calls } = fakePort({
-            review: { orchestratorAcceptedAfterReviewer: true, latestReviewerStateOnHead: state, unresolvedThreads: 0 },
+            review: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: null,
+                orchestratorAcceptanceReviewDatabaseId: null,
+                latestReviewerStateOnHead: state,
+                unresolvedThreads: 0,
+            },
         });
 
         expect(() => deliverPullRequest(42, port)).toThrow(/not approved/);
         expect(calls).not.toContain('merge:42:head');
     });
+
+    it('merges when the recorded delivery authorization binds the live acceptance and reviewer approval', () => {
+        const digest = 'd'.repeat(64);
+        const { port, calls } = fakePort({
+            review: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: 777,
+                orchestratorAcceptanceReviewDatabaseId: 770,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 0,
+            },
+            deliveryAuthorization: {
+                kind: 'required',
+                authorization: {
+                    reviewId: 770,
+                    approvalReviewId: 777,
+                    evidenceManifestDigest: digest,
+                    unresolvedThreads: 0,
+                    intent: 'deliver',
+                },
+                dossierDigest: digest,
+            },
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('delivery-authorization:42:head');
+    });
+
+    it('merges a legacy bundle head without any recorded delivery authorization', () => {
+        const { port, calls } = fakePort({ deliveryAuthorization: { kind: 'legacy' } });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('rejects a planned bundle whose dossier records no delivery authorization', () => {
+        const { port, calls } = fakePort({
+            deliveryAuthorization: { kind: 'required', authorization: undefined, dossierDigest: 'd'.repeat(64) },
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/carries no recorded delivery authorization/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects a delivery authorization bound to a different dossier digest', () => {
+        const { port, calls } = fakePort({
+            review: {
+                orchestratorAcceptedAfterReviewer: true,
+                latestReviewerReviewDatabaseId: 777,
+                orchestratorAcceptanceReviewDatabaseId: 770,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 0,
+            },
+            deliveryAuthorization: {
+                kind: 'required',
+                authorization: {
+                    reviewId: 770,
+                    approvalReviewId: 777,
+                    evidenceManifestDigest: 'd'.repeat(64),
+                    unresolvedThreads: 0,
+                    intent: 'deliver',
+                },
+                dossierDigest: 'e'.repeat(64),
+            },
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the dossier digest/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it.each([
+        ['a stale acceptance review', 778, 770],
+        ['no identifiable live acceptance review', 770, null],
+    ])(
+        'rejects a delivery authorization bound to %s',
+        (_label, authorizationReviewId: number, liveAcceptanceId: number | null) => {
+            const digest = 'd'.repeat(64);
+            const { port, calls } = fakePort({
+                review: {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: 777,
+                    orchestratorAcceptanceReviewDatabaseId: liveAcceptanceId,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                deliveryAuthorization: {
+                    kind: 'required',
+                    authorization: {
+                        reviewId: authorizationReviewId,
+                        approvalReviewId: 777,
+                        evidenceManifestDigest: digest,
+                        unresolvedThreads: 0,
+                        intent: 'deliver',
+                    },
+                    dossierDigest: digest,
+                },
+            });
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live orchestrator acceptance review/);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
+
+    it.each([
+        ['a stale reviewer approval review', 778, 777],
+        ['no identifiable live reviewer approval review', 777, null],
+    ])(
+        'rejects a delivery authorization bound to %s',
+        (_label, authorizationApprovalReviewId: number, liveReviewerId: number | null) => {
+            const digest = 'd'.repeat(64);
+            const { port, calls } = fakePort({
+                review: {
+                    orchestratorAcceptedAfterReviewer: true,
+                    latestReviewerReviewDatabaseId: liveReviewerId,
+                    orchestratorAcceptanceReviewDatabaseId: 770,
+                    latestReviewerStateOnHead: 'APPROVED',
+                    unresolvedThreads: 0,
+                },
+                deliveryAuthorization: {
+                    kind: 'required',
+                    authorization: {
+                        reviewId: 770,
+                        approvalReviewId: authorizationApprovalReviewId,
+                        evidenceManifestDigest: digest,
+                        unresolvedThreads: 0,
+                        intent: 'deliver',
+                    },
+                    dossierDigest: digest,
+                },
+            });
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live reviewer approval review/);
+            expect(calls).not.toContain('merge:42:head');
+        }
+    );
 
     it('merges when the local working tree is unrelated to the pull-request head', () => {
         const { port, calls } = fakePort();
@@ -9299,6 +9482,7 @@ describe('delivery shell boundary', () => {
                     {
                         __typename: 'StatusContext',
                         id: 'SC_1',
+                        databaseId: 1,
                         context: 'coverage/external',
                         state: 'FAILURE',
                         createdAt: PUSH_RUN_START,
@@ -9306,6 +9490,7 @@ describe('delivery shell boundary', () => {
                     {
                         __typename: 'StatusContext',
                         id: 'SC_2',
+                        databaseId: 1,
                         context: 'deploy/preview',
                         state: 'PENDING',
                         createdAt: null,
@@ -10539,6 +10724,7 @@ describe('delivery shell boundary', () => {
                                     nodes: [
                                         {
                                             id: 'PRR_delivery_42_review',
+                                            databaseId: 1,
                                             state: 'APPROVED',
                                             submittedAt: '2026-08-21T00:00:00Z',
                                             author: {
@@ -11462,11 +11648,13 @@ describe('delivery shell boundary', () => {
                             repository: {
                                 pullRequest: {
                                     id: 'pull-request-id',
+                                    databaseId: 1,
                                     headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
                                                 id: 'review-approved',
+                                                databaseId: 1,
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -11523,6 +11711,8 @@ describe('delivery shell boundary', () => {
 
         expect(port.reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: true,
+            latestReviewerReviewDatabaseId: 1,
+            orchestratorAcceptanceReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
@@ -11940,6 +12130,7 @@ describe('delivery shell boundary', () => {
         const captures: string[][] = [];
         const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
             id: `review-unrelated-${index}`,
+            databaseId: 1,
             state: 'COMMENTED',
             submittedAt: null,
             author: {
@@ -11968,6 +12159,7 @@ describe('delivery shell boundary', () => {
                             nodes: [
                                 {
                                     id: 'review-approved',
+                                    databaseId: 1,
                                     state: 'APPROVED',
                                     submittedAt: '2026-08-19T00:00:00Z',
                                     author: {
@@ -11991,6 +12183,8 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: null,
+            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -12021,6 +12215,7 @@ describe('delivery shell boundary', () => {
                                 nodes: [
                                     {
                                         id: 'review-newest',
+                                        databaseId: 1,
                                         state: 'CHANGES_REQUESTED',
                                         submittedAt,
                                         author: {
@@ -12043,6 +12238,7 @@ describe('delivery shell boundary', () => {
                                 nodes: [
                                     {
                                         id: 'review-older',
+                                        databaseId: 1,
                                         state: 'APPROVED',
                                         submittedAt,
                                         author: {
@@ -12068,6 +12264,8 @@ describe('delivery shell boundary', () => {
                 shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
             ).toEqual({
                 orchestratorAcceptedAfterReviewer: false,
+                latestReviewerReviewDatabaseId: null,
+                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
             });
@@ -12092,6 +12290,7 @@ describe('delivery shell boundary', () => {
                     nodes: [
                         {
                             id: 'review-approved',
+                            databaseId: 1,
                             state: 'APPROVED',
                             submittedAt: '2026-08-19T00:00:00Z',
                             author: {
@@ -12126,6 +12325,8 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: 1,
+            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -12149,6 +12350,7 @@ describe('delivery shell boundary', () => {
                         nodes: [
                             {
                                 id: 'review-approved',
+                                databaseId: 1,
                                 state: 'APPROVED',
                                 submittedAt: '2026-08-19T00:00:00Z',
                                 author: {
@@ -12174,6 +12376,8 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: 1,
+            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -12181,7 +12385,9 @@ describe('delivery shell boundary', () => {
         expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
             'pullRequest(number:$number){id headRefOid'
         );
-        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id state submittedAt');
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
+            'nodes{id databaseId state submittedAt'
+        );
         expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id isResolved}');
     });
 
@@ -12191,6 +12397,7 @@ describe('delivery shell boundary', () => {
                 nodes: [
                     {
                         id: 'review-approved-older',
+                        databaseId: 1,
                         state: 'APPROVED',
                         submittedAt: '2026-08-19T00:00:00Z',
                         author: {
@@ -12202,6 +12409,7 @@ describe('delivery shell boundary', () => {
                     },
                     {
                         id: 'review-changes-requested-newer',
+                        databaseId: 1,
                         state: 'CHANGES_REQUESTED',
                         submittedAt: '2026-08-20T00:00:00Z',
                         author: null,
@@ -12241,6 +12449,7 @@ describe('delivery shell boundary', () => {
                         nodes: [
                             {
                                 id: 'review-state',
+                                databaseId: 1,
                                 state: connection === 'review' && secondScan ? 'CHANGES_REQUESTED' : 'APPROVED',
                                 submittedAt: null,
                                 author: {
@@ -12391,6 +12600,7 @@ describe('delivery shell boundary', () => {
                 nodes: [
                     {
                         id: 'review-user',
+                        databaseId: 1,
                         state: 'APPROVED',
                         submittedAt: '2026-08-19T00:00:00Z',
                         author: { login: 'human-reviewer', __typename: 'User' },
@@ -12398,6 +12608,7 @@ describe('delivery shell boundary', () => {
                     },
                     {
                         id: 'review-wrong-bot',
+                        databaseId: 1,
                         state: 'APPROVED',
                         submittedAt: '2026-08-20T00:00:00Z',
                         author: { id: 'B_wrong-reviewer', login: 'wrong-reviewer[bot]', __typename: 'Bot' },
@@ -12420,6 +12631,8 @@ describe('delivery shell boundary', () => {
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: null,
+            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -12489,11 +12702,13 @@ describe('delivery shell boundary', () => {
                             repository: {
                                 pullRequest: {
                                     id: 'pull-request-id',
+                                    databaseId: 1,
                                     headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
                                                 id: 'review-approved',
+                                                databaseId: 1,
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -12521,6 +12736,8 @@ describe('delivery shell boundary', () => {
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: 1,
+            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
@@ -12535,11 +12752,13 @@ describe('delivery shell boundary', () => {
                             repository: {
                                 pullRequest: {
                                     id: 'pull-request-id',
+                                    databaseId: 1,
                                     headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
                                                 id: 'review-wrong-head',
+                                                databaseId: 1,
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -12567,6 +12786,8 @@ describe('delivery shell boundary', () => {
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
             orchestratorAcceptedAfterReviewer: false,
+            latestReviewerReviewDatabaseId: null,
+            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });

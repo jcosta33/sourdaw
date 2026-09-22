@@ -61,7 +61,19 @@ export type ReviewDossierEvent =
     // ids append to the chain so the record binds not just the dispositions but the exact public
     // records they produced. Records persisted before these kinds existed carry neither.
     | { kind: 'review-published'; reviewId: number }
-    | { kind: 'finding-published'; findingId: string; reviewId: number; commentId: number };
+    | { kind: 'finding-published'; findingId: string; reviewId: number; commentId: number }
+    // The orchestrator's delivery authorization (#3376, spec #3367 AC-005): once the acceptance
+    // POST lands, the record binds the acceptance review id to the exact approval review,
+    // evidence-manifest digest, unresolved-thread count, and delivery intent it authorizes.
+    // Records persisted before this kind existed carry none.
+    | {
+          kind: 'delivery-authorized';
+          reviewId: number;
+          approvalReviewId: number;
+          evidenceManifestDigest: string;
+          unresolvedThreads: number;
+          intent: 'deliver';
+      };
 
 export type ReviewDossierEventRecord = ReviewDossierEvent & {
     sequence: number;
@@ -130,6 +142,14 @@ const EVENT_KIND_KEYS: Record<ReviewDossierEvent['kind'], readonly string[]> = {
     'finding-discarded': ['kind', 'findingId', 'stance', 'reason'],
     'review-published': ['kind', 'reviewId'],
     'finding-published': ['kind', 'findingId', 'reviewId', 'commentId'],
+    'delivery-authorized': [
+        'kind',
+        'reviewId',
+        'approvalReviewId',
+        'evidenceManifestDigest',
+        'unresolvedThreads',
+        'intent',
+    ],
 };
 const EVIDENCE_KEYS = ['observable', 'verification', 'observed'] as const;
 const DISCARDED_KEYS = ['finding', 'stance', 'reason'] as const;
@@ -207,6 +227,13 @@ function readPositiveInteger(label: string, value: unknown): number {
     return value;
 }
 
+function readNonNegativeInteger(label: string, value: unknown): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        fail(`review dossier ${label} must be a non-negative safe integer, found ${describeValue(value)}`);
+    }
+    return value;
+}
+
 function assertExactKeys(record: Record<string, unknown>, allowed: readonly string[], label: string): void {
     const actual = Object.keys(record).sort().join(',');
     const expected = [...allowed].sort().join(',');
@@ -253,7 +280,8 @@ function readEventKind(record: Record<string, unknown>, label: string): ReviewDo
         kind !== 'finding-accepted' &&
         kind !== 'finding-discarded' &&
         kind !== 'review-published' &&
-        kind !== 'finding-published'
+        kind !== 'finding-published' &&
+        kind !== 'delivery-authorized'
     ) {
         fail(`review dossier ${label} kind must be a known event kind, found ${describeValue(kind)}`);
     }
@@ -301,6 +329,25 @@ function readEvent(
             findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
             reviewId: readPositiveInteger(`${label} reviewId`, record.reviewId),
             commentId: readPositiveInteger(`${label} commentId`, record.commentId),
+        };
+    }
+    if (kind === 'delivery-authorized') {
+        const digest = readNonBlankString(`${label} evidenceManifestDigest`, record.evidenceManifestDigest);
+        if (!/^[0-9a-f]{64}$/u.test(digest)) {
+            fail(`review dossier ${label} evidenceManifestDigest must be a sha256 hex digest, found ${digest}`);
+        }
+        return {
+            kind,
+            reviewId: readPositiveInteger(`${label} reviewId`, record.reviewId),
+            approvalReviewId: readPositiveInteger(`${label} approvalReviewId`, record.approvalReviewId),
+            evidenceManifestDigest: digest,
+            unresolvedThreads: readNonNegativeInteger(`${label} unresolvedThreads`, record.unresolvedThreads),
+            intent: readLiteral(
+                `${label} intent`,
+                record.intent,
+                (value): value is 'deliver' => value === 'deliver',
+                'deliver'
+            ),
         };
     }
     return {
@@ -369,6 +416,7 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
 type PublicationBindings = {
     reviewId: number | undefined;
     findings: Map<string, Extract<ReviewDossierEvent, { kind: 'finding-published' }>>;
+    authorization: Extract<ReviewDossierEvent, { kind: 'delivery-authorized' }> | undefined;
 };
 
 /**
@@ -378,7 +426,7 @@ type PublicationBindings = {
  * event order — bindings always append after the dispositions — is not part of the rule.
  */
 function collectPublicationBindings(events: readonly ReviewDossierEvent[]): PublicationBindings {
-    const bindings: PublicationBindings = { reviewId: undefined, findings: new Map() };
+    const bindings: PublicationBindings = { reviewId: undefined, findings: new Map(), authorization: undefined };
     for (const event of events) {
         if (event.kind === 'review-published') {
             if (bindings.reviewId !== undefined) {
@@ -391,6 +439,22 @@ function collectPublicationBindings(events: readonly ReviewDossierEvent[]): Publ
                 fail(`review dossier publishes finding ${event.findingId} more than once`);
             }
             bindings.findings.set(event.findingId, event);
+        }
+        if (event.kind === 'delivery-authorized') {
+            if (bindings.authorization !== undefined) {
+                fail(
+                    `review dossier records more than one delivery authorization: ${bindings.authorization.reviewId} and ${event.reviewId}`
+                );
+            }
+            if (bindings.reviewId === undefined) {
+                fail(`review dossier records delivery authorization ${event.reviewId} without a recorded publication`);
+            }
+            if (event.approvalReviewId !== bindings.reviewId) {
+                fail(
+                    `review dossier delivery authorization ${event.reviewId} binds approval ${event.approvalReviewId}, not the recorded publication ${bindings.reviewId}`
+                );
+            }
+            bindings.authorization = event;
         }
     }
     return bindings;
@@ -420,7 +484,11 @@ function assertTotalMaps(payload: DossierPayload): void {
     const discarded = new Set<string>();
     const bindings = collectPublicationBindings(payload.events);
     for (const event of payload.events) {
-        if (event.kind === 'review-published' || event.kind === 'finding-published') {
+        if (
+            event.kind === 'review-published' ||
+            event.kind === 'finding-published' ||
+            event.kind === 'delivery-authorized'
+        ) {
             continue;
         }
         if (event.kind === 'stance-completed') {
@@ -613,4 +681,29 @@ export function appendReviewDossierEvents(
     const result = buildDossier(payload);
     assertDossierSize(result);
     return result;
+}
+
+/**
+ * The digest the orchestrator's acceptance authorized (#3376, spec #3367 AC-005): the dossier exactly
+ * as it stood when delivery was authorized, before the `delivery-authorized` event was appended.
+ * Rebuilding without that event reproduces the acceptance-time digest byte for byte because the chain
+ * is deterministic, which is what lets delivery prove the authorized evidence is the evidence this
+ * head still carries.
+ */
+export function authorizedEvidenceDigest(dossier: ReviewDossier): string {
+    const events = dossier.events.filter((event) => event.kind !== 'delivery-authorized');
+    if (events.length === dossier.events.length) {
+        return dossier.dossierDigest;
+    }
+    return buildDossier({
+        pr: dossier.pr,
+        headSha: dossier.headSha,
+        baseSha: dossier.baseSha,
+        riskClasses: dossier.riskClasses,
+        requiredStances: dossier.requiredStances,
+        events,
+        evidence: dossier.evidence,
+        limitations: dossier.limitations,
+        recommendation: dossier.recommendation,
+    }).dossierDigest;
 }

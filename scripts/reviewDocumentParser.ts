@@ -23,6 +23,21 @@ export type ApprovalEvidence = {
     claims: { observable: string; verification: string; observed: string }[];
 };
 
+/**
+ * The orchestrator's delivery authorization (#3376, spec #3367 AC-005): a distinct authorization
+ * bound to the current head (through the document's evidence), the durable evidence-manifest
+ * digest, the reviewer App's approval review id, the observed unresolved-thread count, and the
+ * delivery intent. Acceptance-only: a review document carrying it is refused.
+ */
+export type DeliveryAuthorization = {
+    intent: 'deliver';
+    approvalReviewId: number;
+    unresolvedThreads: number;
+    evidenceManifestDigest: string;
+};
+
+export type AcceptanceDocument = ReviewDocument;
+
 export type ReviewDocument = {
     format?: 'compact-v1';
     event: ReviewEvent;
@@ -45,13 +60,26 @@ export type ReviewDocument = {
      * reviewer model so the deviation is recorded in the review itself.
      */
     modelExhaustion?: string;
+    /**
+     * Acceptance-only delivery authorization: `parseAcceptanceDocument` sets it from the
+     * `authorization` block, and `parseReviewDocument` refuses that key, so a review document
+     * never carries it. Absent on legacy acceptance bundles with no evidence manifest to bind.
+     */
+    authorization?: DeliveryAuthorization;
 };
+
+function assertReviewDocumentCarriesNoAuthorization(record: Record<string, unknown>): void {
+    if ('authorization' in record && record.authorization !== undefined) {
+        fail('review.json must not carry authorization; delivery authorization is acceptance-only');
+    }
+}
 
 export function parseReviewDocument(value: unknown): ReviewDocument {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         fail('review.json must be an object');
     }
     const record = value as Record<string, unknown>;
+    assertReviewDocumentCarriesNoAuthorization(record);
     assertReviewDocumentFormat(record);
     if (record.event !== 'APPROVE' && record.event !== 'REQUEST_CHANGES') {
         fail('review.json event must be APPROVE or REQUEST_CHANGES');
@@ -137,19 +165,51 @@ export function assertPublicationEvidence(document: ReviewDocument, head: string
     }
 }
 
-export function parseAcceptanceDocument(value: unknown): ReviewDocument {
-    const document = parseReviewDocument(value);
+export function parseAcceptanceDocument(value: unknown): AcceptanceDocument {
+    let stripped = value;
+    let authorization: DeliveryAuthorization | undefined;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        const record = value as Record<string, unknown>;
+        if (record.authorization !== undefined) {
+            authorization = parseDeliveryAuthorization(record.authorization);
+            const { authorization: _authorization, ...rest } = record;
+            stripped = rest;
+        }
+    }
+    const document = parseReviewDocument(stripped);
     if (document.event !== 'APPROVE') {
         fail('acceptance.json must APPROVE');
     }
-    if (document.format === 'compact-v1') {
-        return document;
+    let accepted: AcceptanceDocument = document;
+    if (document.format !== 'compact-v1' && !document.body.startsWith(`${ACCEPTANCE_ATTRIBUTION}\n\n`)) {
+        accepted = { ...document, body: `${ACCEPTANCE_ATTRIBUTION}\n\n${document.body}` };
     }
-    const attribution = 'Orchestrator acceptance on behalf of jcosta33';
-    return {
-        ...document,
-        body: document.body.startsWith(`${attribution}\n\n`) ? document.body : `${attribution}\n\n${document.body}`,
-    };
+    return authorization === undefined ? accepted : { ...accepted, authorization };
+}
+
+const ACCEPTANCE_ATTRIBUTION = 'Orchestrator acceptance on behalf of jcosta33';
+
+function parseDeliveryAuthorization(value: unknown): DeliveryAuthorization {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        fail('acceptance.json authorization must be an object');
+    }
+    const record = value as Record<string, unknown>;
+    if (record.intent !== 'deliver') {
+        fail("acceptance.json authorization.intent must be 'deliver'");
+    }
+    const approvalReviewId = record.approvalReviewId;
+    if (typeof approvalReviewId !== 'number' || !Number.isSafeInteger(approvalReviewId) || approvalReviewId <= 0) {
+        fail('acceptance.json authorization.approvalReviewId must be a positive safe integer');
+    }
+    const unresolvedThreads = record.unresolvedThreads;
+    if (typeof unresolvedThreads !== 'number' || !Number.isSafeInteger(unresolvedThreads) || unresolvedThreads < 0) {
+        fail('acceptance.json authorization.unresolvedThreads must be a non-negative safe integer');
+    }
+    const evidenceManifestDigest = record.evidenceManifestDigest;
+    if (typeof evidenceManifestDigest !== 'string' || !/^[0-9a-f]{64}$/u.test(evidenceManifestDigest)) {
+        fail('acceptance.json authorization.evidenceManifestDigest must be a sha256 hex digest');
+    }
+    return { intent: 'deliver', approvalReviewId, unresolvedThreads, evidenceManifestDigest };
 }
 
 function commentsArray(value: unknown): unknown[] {

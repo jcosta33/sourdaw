@@ -8,6 +8,7 @@ const userId = 'MDQ6VXNlcjg5NzgyNzA=';
 function review(id: string, actorId: string, state = 'APPROVED', commit = head, actorType = 'User') {
     return {
         id,
+        databaseId: 1,
         state,
         submittedAt: '2026-09-09T00:00:00Z',
         author: { id: actorId, login: 'display-only', __typename: actorType },
