@@ -1,0 +1,20 @@
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 22,91-97,130,133-139
+scripts/__tests__/semanticReviewContext.spec.ts
+  h_beb54bf43b47b7 1-420
+scripts/prepareReview.ts
+  h_beb54bf43b47b7 25-29,51,165,352,405
+scripts/semanticReviewContext.ts
+  h_beb54bf43b47b7 1-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dd45e5d72127845e8d2be5a603bb9d22df585c82",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
