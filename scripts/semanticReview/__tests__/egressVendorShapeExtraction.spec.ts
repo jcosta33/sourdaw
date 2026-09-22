@@ -215,4 +215,28 @@ regex = '''FLWPUBK_TEST-(?i)[a-h0-9]{32}-X'''
         expect(inline?.bodyInsensitive).toBe(true);
         expect(inline?.tail).toBe('(?i:[a-h0-9]{32}-X)');
     });
+
+    it('derives identical rules from an LF config and its CRLF twin', () => {
+        // The reader must consume lines with the carriage return stripped, so a CRLF file derives the
+        // same key names as its LF twin instead of silently re-bucketing the rule.
+        const lf = String.raw`[[rules]]
+id = "keyword"
+description = "A keyword rule."
+regex = '''(?:vendor)[ \t\w.-]{0,20}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)([a-z0-9]{20})'''
+keywords = [
+    "vendorx",
+    "vendory",
+]
+`;
+        const crlf = lf.replaceAll('\n', '\r\n');
+
+        const fromLf = deriveEgressVendorShapes(lf);
+        const fromCrlf = deriveEgressVendorShapes(crlf);
+
+        expect(fromLf.keyNames).toEqual(['vendorx', 'vendory']);
+        expect(fromCrlf.keyNames).toEqual(['vendorx', 'vendory']);
+        expect(fromCrlf.counts).toEqual(fromLf.counts);
+        expect(fromCrlf.shapes).toEqual(fromLf.shapes);
+        expect(fromCrlf.residual).toEqual(fromLf.residual);
+    });
 });

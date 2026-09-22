@@ -1719,6 +1719,9 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "''''"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "''''", value))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''''", value))).toBeUndefined();
+        // An escaped newline is also a terminator the scanner reads.
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\n'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\r'))).toBeDefined();
         // A nested or escaped delimiter ends the run and is admitted.
         expect(
             sensitiveContentReason(
@@ -3445,9 +3448,9 @@ describe('vendor prefix coverage', () => {
         // key names, and the residual record — so deleting a key name, merging two fragments, editing a
         // residual reason, or rewriting a fixture all fail here. The shape, key-name and residual counts
         // are asserted separately, so a regeneration that drops an entry fails even if the digest line
-        // is edited to match. Each entry's own pattern must match its own fixture, and the screen's own
-        // prefix case scope must match the source: a whole-insensitive shape withholds its case-flipped
-        // prefix under the same reason, while a case-sensitive prefix rejects the flipped form.
+        // is edited to match. Each entry's own pattern matches its own fixture, and the screen's own
+        // prefix case scope agrees with the table's `flags`; the standalone literal cases below anchor
+        // the table to the source's scope.
         expect(EGRESS_VENDOR_SHAPES).toHaveLength(100);
         expect(VENDOR_KEY_NAMES).toHaveLength(85);
         expect(RESIDUAL_RULES).toHaveLength(39);
@@ -3466,14 +3469,17 @@ describe('vendor prefix coverage', () => {
             const prefix = shape.parts.join('');
             const fixture = secretFixture(...shape.parts, ...shape.fixture);
             const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
-            // The fixture is generated from the tail, so this self-consistency check cannot fail for
-            // generator output; the digest above is what pins the content against a hand edit.
+            // The fixture is concretised from the tail, so this is a fixture-to-tail consistency check:
+            // it fails when the concretiser and the tail disagree. The digest above pins the checked-in
+            // content against a hand edit.
             expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
             // The screen withholds the shape's own fixture.
             expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
             // The screen's prefix case scope, observed through the screen rather than the rebuilt
-            // pattern: the case-flipped prefix reaches the shape exactly when the source's leading flag
-            // covers the prefix. Reason equality, not presence, so a different shape cannot mask.
+            // pattern. This asserts the table's `flags` agree with the screen's compilation, not the
+            // source's scope — a consistently wrong flag-and-body pair passes once the digest is
+            // restamped; the standalone literal cases below anchor the source's scope. Reason equality,
+            // not presence, so a different shape cannot mask.
             const flippedPrefix = secretFixture(flipCase(prefix), ...shape.fixture);
             if (shape.flags === 'iu') {
                 expect(sensitiveContentReason(flippedPrefix), `${shape.reason}: prefix case scope`).toBe(shape.reason);

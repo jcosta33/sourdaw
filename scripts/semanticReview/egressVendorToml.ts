@@ -121,11 +121,17 @@ function isArrayElement(line: string, key: string): boolean {
     return /^(?:'''(?:(?!''')[^])*'''|"[^"]*")(?:\s*,\s*(?:'''(?:(?!''')[^])*'''|"[^"]*"))*,?$/.test(body);
 }
 
+/** Normalizes CRLF and lone-CR line endings so an LF input and its CRLF twin derive identical rules. */
+function normalizeLines(toml: string): string {
+    return toml.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+}
+
 export function parseRules(toml: string): Rule[] {
-    validateGrammar(toml);
+    const text = normalizeLines(toml);
+    validateGrammar(text);
     const blocks: string[][] = [];
     let current: string[] | null = null;
-    for (const line of toml.split('\n')) {
+    for (const line of text.split('\n')) {
         if (isRuleHeader(line)) {
             current = [];
             blocks.push(current);
@@ -142,7 +148,7 @@ export function parseRules(toml: string): Rule[] {
  */
 export function countRuleBlocks(toml: string): number {
     let count = 0;
-    for (const line of toml.split('\n')) {
+    for (const line of normalizeLines(toml).split('\n')) {
         if (isRuleHeader(line)) {
             count += 1;
         }
@@ -151,7 +157,7 @@ export function countRuleBlocks(toml: string): number {
 }
 
 function isRuleHeader(line: string): boolean {
-    return line.replace(/\r$/, '') === '[[rules]]';
+    return line === '[[rules]]';
 }
 
 /** Decodes a TOML basic string's escape sequences; literal strings are left untouched by the caller. */
