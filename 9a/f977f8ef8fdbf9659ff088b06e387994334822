@@ -1,0 +1,26 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 33-38,42-61
+tests/e2e/aiChatActionButtonsTestId.spec.ts
+  h_beb54bf43b47b7 11,14-21,59-61
+tests/e2e/chatComposerTestId.spec.ts
+  h_beb54bf43b47b7 22-31,42-46,48
+tests/e2e/deepCoverage.spec.ts
+  h_beb54bf43b47b7 205-208,219-231,234-240,242-247,253-255,258-263,270-275
+tests/e2e/instrumentPanels.spec.ts
+  h_beb54bf43b47b7 30-35,41-46,51-54
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  h_beb54bf43b47b7 28,30-32,55-58,60-61,65-67,70-72,76-83,86-87,89-93,97,105-108
+tests/e2e/templateAndInspectorFinal.spec.ts
+  h_beb54bf43b47b7 2-3,63-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9af977f8ef8fdbf9659ff088b06e387994334822",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
