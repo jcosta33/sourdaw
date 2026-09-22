@@ -1,0 +1,24 @@
+.agents/decisions/0048-attributable-evidence-contract-is-frozen.md
+  h_beb54bf43b47b7 5,72-74,113-115
+.agents/decisions/0049-retire-the-source-attestation-comment.md
+  h_beb54bf43b47b7 1-66
+.agents/decisions/README.md
+  h_beb54bf43b47b7 62-65
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 489-492
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 369,3755,4372,4377-4378,4385-4386,4389-4391,4394,4399-4401,4403,4405-4412,4414,4416,4419-4420,4422,4424
+scripts/publishLane.ts
+  h_beb54bf43b47b7 530-531,533-537,573-574,990-994,1076,1322-1325,1331,1798
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9ca9d8d000c1dd3e0796954959ccb5adac033783",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
