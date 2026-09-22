@@ -30,8 +30,34 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   the population actually has — an ordering normalizer, an encoding change, a dropped field — and
   require a case in each that reverting the detector's invariant check fails. A suite green on the
   incident fixture alone does not discharge the detector's global claim.
+- The e2e matrix never runs on a pull request, so nothing on the reviewing head catches a spec left
+  asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
+  name, aria-label, or text and re-home the affected specs in the same change. When a diff adds
+  text-bearing UI beside an existing text locator, run the affected specs and require them to redden
+  if the locator is now ambiguous — `getByText` matches case-insensitive substrings, so a new sibling
+  makes it a strict-mode violation or makes `.first()` select the wrong element.
 
 ## Lessons from escapes
+
+### 2026-09-22 — renamed controls and an ambiguous text locator left `tests/e2e/` stale (escaped via PRs #4464, #4473, #4479)
+
+The nightly end-to-end train reddened on `main` across six of twelve shards, every failure a spec
+asserting a control the product no longer exposes. PR #4464 and PR #4479 renamed or removed controls
+their e2e specs still asserted (the composer's "Command Mode" button, the prompt bar's inline
+`Confirm actions` / `Cancel actions` controls, the composer's removed disabled contract), and PR
+#4473 added a track-role `<option value="synth">` above the inspector's `Synth` device card, so
+`getByText('Synth')` resolved to both — a strict-mode violation in one spec and, under `.first()`, a
+non-clickable option in another whose case stayed green on an assertion that held either way.
+
+Blind spot: e2e never runs on a pull request, so a control rename, removal, or replacement has no
+check on the reviewing head; and a text locator is treated as stable when a new sibling's text is a
+case-insensitive substring of it.
+
+Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
+`tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
+change; when a diff adds text-bearing UI beside an existing text locator, run the affected specs and
+require them to redden if the locator is made ambiguous, then assert the control through stable
+handles (test ids, roles) rather than bare text.
 
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 

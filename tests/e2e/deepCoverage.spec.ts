@@ -202,8 +202,10 @@ test.describe('Setlist — list mutations', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Prompt bar — destructive commands open a confirm/cancel preview; cancelling
-// preserves state, confirming mutates state and shows an AI change toast.
+// Prompt bar — destructive commands raise a review instead of executing. The
+// confirmation itself lives on the Agent surface, reached through the prompt
+// bar's "Review in Agent" control; cancelling preserves state, confirming
+// mutates state and shows an AI change toast.
 // ---------------------------------------------------------------------------
 
 test.describe('Prompt bar — preview and execution', () => {
@@ -214,42 +216,67 @@ test.describe('Prompt bar — preview and execution', () => {
     });
 
     test('Destructive command opens a confirm/cancel preview; cancelling keeps tracks', async ({ page }) => {
-        const prompt = page.getByRole('textbox', { name: 'Prompt command input' });
-        await prompt.fill('Delete Track');
+        const awaiting_review = page.getByText('Changes awaiting review', { exact: true });
+        const agent_confirm = page.getByRole('button', { name: 'Confirm agent actions' });
+        const agent_cancel = page.getByRole('button', { name: 'Cancel agent actions' });
+        const track_rows = page.getByRole('grid', { name: /Track list/i }).locator(':scope > [role="row"]');
+
+        // No review exists and nothing is confirmable before the command.
+        await expect(awaiting_review).toHaveCount(0);
+        await expect(agent_confirm).toHaveCount(0);
+        await expect(agent_cancel).toHaveCount(0);
+        const track_rows_before = await track_rows.count();
+        expect(track_rows_before).toBeGreaterThan(0);
+
+        await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete Track');
         await page.getByRole('option', { name: /Delete Track/i }).click();
 
-        // Preview row appears only for destructive actions.
-        const confirm = page.getByRole('button', { name: 'Confirm actions' });
-        const cancel = page.getByRole('button', { name: 'Cancel actions' });
-        await expect(confirm).toBeVisible();
-        await expect(cancel).toBeVisible();
+        // The destructive command raises a review rather than executing: the
+        // prompt bar shows the awaiting-review indicator and hands the actions
+        // to the Agent surface. Its own controls are still unmounted, so the
+        // review route is the only way to reach them.
+        await expect(awaiting_review).toBeVisible();
+        await expect(agent_confirm).toHaveCount(0);
+        await expect(agent_cancel).toHaveCount(0);
 
-        // Cancelling clears the preview without removing any track.
-        const track_rows = page.getByRole('grid', { name: /Track list/i }).locator(':scope > [role="row"]');
-        const track_rows_before = await track_rows.count();
-        await cancel.click();
-        await expect(confirm).toHaveCount(0);
+        await page.getByRole('button', { name: 'Review in Agent' }).click();
+        await expect(agent_cancel).toBeVisible({ timeout: 15_000 });
+
+        // Cancelling clears the review without removing any track.
+        await agent_cancel.click();
+        await expect(awaiting_review).toHaveCount(0);
         const track_rows_after = await track_rows.count();
         expect(track_rows_after).toBe(track_rows_before);
     });
 
     test('Confirming a destructive command removes tracks and shows an AI change toast', async ({ page }) => {
+        const awaiting_review = page.getByText('Changes awaiting review', { exact: true });
+        const agent_confirm = page.getByRole('button', { name: 'Confirm agent actions' });
+        const toast = ai_toast(page);
         const track_list = page.getByRole('grid', { name: /Track list/i });
         const track_rows = track_list.locator(':scope > [role="row"]');
+
+        // The confirmed state does not exist yet: no review, no Agent control,
+        // and no change toast before the command.
+        await expect(awaiting_review).toHaveCount(0);
+        await expect(agent_confirm).toHaveCount(0);
+        await expect(toast).toHaveCount(0);
         const rows_before = await track_rows.count();
         expect(rows_before).toBeGreaterThan(0);
 
         await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete Track');
         await page.getByRole('option', { name: /Delete Track/i }).click();
 
-        const confirm = page.getByRole('button', { name: 'Confirm actions' });
-        await expect(confirm).toBeVisible();
-        await confirm.click();
+        await expect(awaiting_review).toBeVisible();
+        await expect(agent_confirm).toHaveCount(0);
+
+        await page.getByRole('button', { name: 'Review in Agent' }).click();
+        await expect(agent_confirm).toBeVisible({ timeout: 15_000 });
+        await agent_confirm.click();
 
         await expect(track_rows).toHaveCount(rows_before - 1);
 
         // The AI change toast (role=status with Undo/Dismiss) reports the confirmed action.
-        const toast = ai_toast(page);
         await expect(toast).toBeVisible();
         await expect(toast.getByText(/Confirmed:.*Delete Track/i)).toBeVisible();
     });
