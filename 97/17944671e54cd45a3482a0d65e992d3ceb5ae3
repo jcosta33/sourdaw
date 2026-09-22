@@ -1,0 +1,27 @@
+evidence/agent-campaign/manifest.json
+  s_53fee6662f9489::t_2b7769261f564e 668
+crates/daw-engine/src/audio_thread.rs
+  s_53fee6662f9489::t_23f4d33e6f5b0c 1710-1716
+crates/daw-engine/src/lib.rs
+  s_53fee6662f9489::t_e4f6480a8b137b 4,359
+crates/daw-engine/src/retrospective.rs
+  s_53fee6662f9489::t_4b12b54c1db021 68,381-384
+src/modules/PunchRecording/useCases/punchRecording/__tests__/startBackgroundCapture.spec.ts
+  s_53fee6662f9489::t_9645670d200e97 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9717944671e54cd45a3482a0d65e992d3ceb5ae3",
+  "prompts": {},
+  "sessions": {
+    "s_53fee6662f9489": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "d4d56164-7851-4d20-b9da-cdfe31c86418",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
