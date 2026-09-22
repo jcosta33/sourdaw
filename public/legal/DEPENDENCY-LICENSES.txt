@@ -7,7 +7,7 @@ Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
 - Cargo.lock sha256:5ac230db621b42340a8e97d10d6460958b95cb03d56062723b509b9ec7a6fc1e
-- pnpm-lock.yaml sha256:16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac
+- pnpm-lock.yaml sha256:d272cdc5f0ae88b7e2ad3578cd4d868f95e3d2e5384820c06f2959e60dbcde91
 - server/package-lock.json sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db
 
 Package inventory: 353 npm, 321 Cargo

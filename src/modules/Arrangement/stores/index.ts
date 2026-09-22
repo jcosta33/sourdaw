@@ -74,7 +74,23 @@ export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from
 export { sampleGainEnvelopeSeries, getGainEnvelopeSeries, clipHasActiveGainEnvelope } from './gainEnvelopeStore';
 export type { GainEnvelopeSeriesPoint } from './gainEnvelopeStore';
 
-export { warpStates, getWarpState, addWarpMarker } from './warpStates';
+export {
+    warpStateStore,
+    defaultWarpStateStoreState,
+    warpStates,
+    getWarpState,
+    getStoredWarpState,
+    getAllWarpStates,
+    setWarpState,
+    setAllWarpStates,
+    addWarpMarker,
+    removeWarpState,
+    hasNonDefaultWarpState,
+    isDefaultWarpState,
+    sanitizeClipWarpStates,
+    __resetWarpStatesForTest,
+} from './warpStates';
+export type { WarpStateStoreState } from './warpStates';
 
 export { mixerSnapshotStore } from './mixerSnapshotStore';
 export type { MixerSnapshotState } from './mixerSnapshotStore';

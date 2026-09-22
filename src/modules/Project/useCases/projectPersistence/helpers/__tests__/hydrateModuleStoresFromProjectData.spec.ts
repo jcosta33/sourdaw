@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     hydrateYeastState: vi.fn(),
     hydrateVcaGroups: vi.fn(),
     hydrateClipGainEnvelopes: vi.fn(),
+    hydrateClipWarpStates: vi.fn(),
     hydrateModulationState: vi.fn(),
     hydrateCvGateState: vi.fn(),
     setSidechainRoutes: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     restoreAdjustmentLayerSnapshot: mocks.restoreAdjustmentLayerSnapshot,
     hydrateVcaGroups: mocks.hydrateVcaGroups,
     hydrateClipGainEnvelopes: mocks.hydrateClipGainEnvelopes,
+    hydrateClipWarpStates: mocks.hydrateClipWarpStates,
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -66,6 +68,7 @@ type HydratableProjectDataOverrides = Pick<
     | 'chordTrack'
     | 'cvGate'
     | 'gainEnvelopes'
+    | 'warpStates'
     | 'grooves'
     | 'markers'
     | 'modulation'
@@ -193,6 +196,15 @@ describe('hydrateModuleStoresFromProjectData', () => {
         const gainEnvelopes = [
             { clipId: 'clip-vox', enabled: true, points: [{ id: 'point-a', beatOffset: 2, gainDb: -4 }] },
         ];
+        const warpStates = [
+            {
+                clipId: 'clip-vox',
+                enabled: true,
+                markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0.5 }],
+                stretchMode: 'beats' as const,
+                originalTempo: 120,
+            },
+        ];
         const modulation = {
             modulators: [
                 {
@@ -215,11 +227,12 @@ describe('hydrateModuleStoresFromProjectData', () => {
         };
 
         hydrateModuleStoresFromProjectData(
-            createHydratableProjectData({ vcaGroups, gainEnvelopes, modulation, cvGate })
+            createHydratableProjectData({ vcaGroups, gainEnvelopes, warpStates, modulation, cvGate })
         );
 
         expect(mocks.hydrateVcaGroups).toHaveBeenCalledWith(vcaGroups);
         expect(mocks.hydrateClipGainEnvelopes).toHaveBeenCalledWith(gainEnvelopes);
+        expect(mocks.hydrateClipWarpStates).toHaveBeenCalledWith(warpStates);
         expect(mocks.hydrateModulationState).toHaveBeenCalledWith(modulation);
         expect(mocks.hydrateCvGateState).toHaveBeenCalledWith(cvGate);
     });
@@ -232,6 +245,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         expect(mocks.hydrateVcaGroups).toHaveBeenCalledWith(undefined);
         expect(mocks.hydrateClipGainEnvelopes).toHaveBeenCalledWith(undefined);
+        expect(mocks.hydrateClipWarpStates).toHaveBeenCalledWith(undefined);
         expect(mocks.hydrateModulationState).toHaveBeenCalledWith(undefined);
         expect(mocks.hydrateCvGateState).toHaveBeenCalledWith(undefined);
     });

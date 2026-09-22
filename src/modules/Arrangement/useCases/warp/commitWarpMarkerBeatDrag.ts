@@ -1,6 +1,6 @@
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
-import { warpStates } from '../../stores/warpStates';
+import { getStoredWarpState, setWarpState } from '../../stores/warpStates';
 
 type MarkerBeatValues = {
     originalBeat: number;
@@ -14,11 +14,11 @@ type SetMarkerBeatValuesInput = {
 };
 
 function setMarkerBeatValues(input: SetMarkerBeatValuesInput): void {
-    const current = warpStates.get(input.clipId);
+    const current = getStoredWarpState(input.clipId);
     if (!current) {
         return;
     }
-    warpStates.set(input.clipId, {
+    setWarpState(input.clipId, {
         ...current,
         markers: current.markers.map((marker) =>
             marker.id === input.markerId
@@ -40,7 +40,7 @@ type CommitWarpMarkerBeatDragInput = {
 };
 
 export function commitWarpMarkerBeatDrag(input: CommitWarpMarkerBeatDragInput): void {
-    const current = warpStates.get(input.clipId);
+    const current = getStoredWarpState(input.clipId);
     if (!current) {
         return;
     }

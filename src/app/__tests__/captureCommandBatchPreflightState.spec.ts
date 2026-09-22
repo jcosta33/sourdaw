@@ -43,6 +43,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     warpStates: new Map(),
     getWarpState: vi.fn(),
     addWarpMarker: vi.fn(),
+    setWarpState: vi.fn(),
+    getStoredWarpState: vi.fn(),
+    warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
     clampDeviceParamWrite: vi.fn(),
     // A barrel factory replaces the whole module, so every member anything in
     // this spec's graph imports has to be present here — Automation's range

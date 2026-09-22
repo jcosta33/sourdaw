@@ -1,4 +1,4 @@
-import { warpStates } from '../../stores/warpStates';
+import { getStoredWarpState, setWarpState } from '../../stores/warpStates';
 
 type UpdateWarpMarkerBeatInput = {
     clipId: string;
@@ -8,7 +8,7 @@ type UpdateWarpMarkerBeatInput = {
 };
 
 export function updateWarpMarkerBeat(input: UpdateWarpMarkerBeatInput): void {
-    const current = warpStates.get(input.clipId);
+    const current = getStoredWarpState(input.clipId);
     if (!current) {
         return;
     }
@@ -20,9 +20,8 @@ export function updateWarpMarkerBeat(input: UpdateWarpMarkerBeatInput): void {
     const nextMarkers = current.markers.map((marker) =>
         marker.id === input.markerId ? { ...marker, [input.field]: input.beat } : marker
     );
-    const nextState = {
+    setWarpState(input.clipId, {
         ...current,
         markers: nextMarkers,
-    };
-    warpStates.set(input.clipId, nextState);
+    });
 }

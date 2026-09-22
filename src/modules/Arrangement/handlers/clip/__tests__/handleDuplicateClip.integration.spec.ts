@@ -210,12 +210,12 @@ describe('handleDuplicateClip atomic integration', () => {
         expect(result.status).toBe('committed');
         const duplicated = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id !== 'clip-1')!;
 
-        // Re-selecting the already-active stretch mode writes a map entry whose
-        // value IS defaultWarpState — by the system's own definition
-        // (hasNonDefaultWarpState) the copy still carries no warp state, so the
-        // captured satellite guard must still match and undo must still run.
+        // Re-selecting the already-active stretch mode is a semantic no-op:
+        // setWarpState stores default values as absent, so by the system's own
+        // definition (hasNonDefaultWarpState) the copy still carries no warp
+        // state, and the captured satellite guard must still match so undo runs.
         setStretchMode(duplicated.id, 'repitch');
-        expect(warpStates.has(duplicated.id)).toBe(true);
+        expect(warpStates.has(duplicated.id)).toBe(false);
 
         await undo();
 

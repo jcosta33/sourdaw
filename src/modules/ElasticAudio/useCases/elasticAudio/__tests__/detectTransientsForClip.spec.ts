@@ -50,6 +50,17 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             stretchMode: 'complex',
             originalTempo: null,
         },
+    setWarpState: (
+        clipId: string,
+        state: {
+            enabled: boolean;
+            markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
+            stretchMode: string;
+            originalTempo: number | null;
+        }
+    ) => {
+        mocks.warpStates.set(clipId, state);
+    },
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({

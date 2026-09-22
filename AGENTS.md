@@ -140,6 +140,25 @@ The plan is an input to the stance enumeration, never a stance requirement: its 
 standing stance mapping name risk surfaces the enumeration must weigh, and the derived stances
 remain the orchestrator's judgement recorded in `stances.json`.
 
+`pnpm review:semantic scan --pr <pr>` may be run before dispatch to surface risks the enumeration
+should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <path>` after independent
+findings are collected and before `review.json` is written. Both are advisory and optional: their
+output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
+a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
+deterministic check, or publish anything. Their sidecars live outside the review bundle, in gitignored
+`.agents/semantic-review/`, so a blind reviewer is never handed a proposed verdict. They never
+substitute for the reproduction and baseline-probe duties below, and no semantic result may approve,
+request changes, resolve a thread, or merge
+([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
+
+The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
+same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
+still gets it. Read it the same way: green means the assessment was delivered, never that the change is
+clean, and a red check means no assessment was delivered at all — a coverage gap to disclose in the
+review document, not a finding to weigh and not a blocker. A stacked lane whose base is another lane
+branch is not assessed: it would run that branch's revision of the command rather than the default
+branch's, which the command's own trusted-execution assertion refuses.
+
 Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one completed
 entry per dispatched draw, each recording its stance, reviewer model, tier, and outcome; one stance
 may carry several draws with distinct models, and a draw that fell back to an authoring model
@@ -434,6 +453,12 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
 - `.github/workflows/health-gates.yml` answers to `pull_request` alone and mints `Gate`. Its `gate`
   job carries `!cancelled()` and no other predicate: any predicate that can be
   false is the hole. Do not add a trigger to this file, and do not rename `gate`.
+- `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
+  `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
+  reviewed head as Git objects and never checks out or executes it, and it mints the non-required
+  `Semantic review` check. Its whole trust boundary is pinned by
+  `scripts/semanticReviewWorkflowContract.ts`
+  ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 - `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, unit matrix,
   build, Rust, natives, smoke set, secret scan, dependency review — shared by both gate workflows
   so one definition does not drift.
