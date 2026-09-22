@@ -34,11 +34,15 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
   name, aria-label, or text and re-home the affected specs in the same change. A control can also be
   retired with no rename at all: when a diff changes a control's enabled, disabled, or visibility
-  condition, sweep `tests/e2e/` for that control's state assertions — `toBeDisabled`, `toBeEnabled`,
-  `toBeHidden` — and re-home them in the same change. When a diff adds text-bearing UI beside an
-  existing text locator, run the affected specs and require them to redden if the locator is now
-  ambiguous — `getByText` matches case-insensitive substrings, so a new sibling makes it a
-  strict-mode violation or makes `.first()` select the wrong element.
+  condition, sweep `tests/e2e/` for every state read of that control: the state assertions
+  `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the conditional guards `isDisabled()`,
+  `isEnabled()`, `isVisible()` — the conditional-admission class the blind spot below names.
+  Re-check each hit against the new condition and re-home it in the same change: a guard strands
+  every assertion behind it, so a guard keyed on a state the diff changes must be re-homed even when
+  no control was renamed, removed, or replaced. When a diff adds text-bearing UI beside an existing
+  text locator, run the affected specs and require them to redden if the locator is now ambiguous —
+  `getByText` matches case-insensitive substrings, so a new sibling makes it a strict-mode violation
+  or makes `.first()` select the wrong element.
 
 ## Lessons from escapes
 
@@ -53,8 +57,11 @@ composer's `disabled` expression — retiring that state contract, leaving
 `chatComposerTestId.spec.ts`'s `toBeDisabled()` assertion stale, and, because the stale `Command Mode`
 locator sat behind an `isDisabled()` guard, unmasking that five-week-old locator. PR #4473 added a
 track-role `<option value="synth">` above the inspector's `Synth` device card, so `getByText('Synth')`
-resolved to both — a strict-mode violation in one spec and, under `.first()`, a non-clickable option
-in another whose case stayed green on an assertion that held either way.
+resolved to both — a strict-mode violation in one spec and, in `templateAndInspectorFinal.spec.ts`,
+`.first()` resolving to the invisible `<option value="synth">`, whose click timed out at line 63 and
+reddened that spec and its shard. The weak-assertion pass was a separate case:
+`instrumentPanels.spec.ts`'s Toaster case asserted `has_toaster || has_synth`, a disjunction that
+held either way.
 
 Blind spot: e2e never runs on a pull request, so a control rename, removal, replacement, or state
 change has no check on the reviewing head; a guard keyed on a state the diff changes hides the stale
@@ -63,10 +70,11 @@ case-insensitive substring of it.
 
 Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
 `tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
-change; when a diff changes a control's enabled, disabled, or visibility condition, sweep for its
-state assertions and re-home them too; when a diff adds text-bearing UI beside an existing text
-locator, run the affected specs and require them to redden if the locator is made ambiguous, then
-assert the control through stable handles (test ids, roles) rather than bare text.
+change; when a diff changes a control's enabled, disabled, or visibility condition, sweep for every
+state read of it — `toBeDisabled`, `toBeEnabled`, `toBeHidden`, `isDisabled()`, `isEnabled()`,
+`isVisible()` — and re-home each in the same change; when a diff adds text-bearing UI beside an
+existing text locator, run the affected specs and require them to redden if the locator is made
+ambiguous, then assert the control through stable handles (test ids, roles) rather than bare text.
 
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 
