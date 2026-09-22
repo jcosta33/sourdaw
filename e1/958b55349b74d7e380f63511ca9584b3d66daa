@@ -1,0 +1,50 @@
+crates/daw-engine/src/lib.rs
+  s_fc329da86b0e81::t_254acaabfee41a 322
+  s_fc329da86b0e81::t_90dcea64c17fd6 1480
+  s_fc329da86b0e81::t_c58322d6bb6e56 211-213
+  s_fc329da86b0e81::t_02dff46f2cae99 354-374
+  s_fc329da86b0e81::t_ed373bba73ae97 3
+crates/daw-engine/src/retrospective.rs
+  s_fc329da86b0e81::t_fa0df1090a929c 202
+  s_fc329da86b0e81::t_4c96f9f8b9ff14 296,302
+  s_fc329da86b0e81::t_d82058ce6bc341 401-402,404,407
+  s_fc329da86b0e81::t_414f182a0268cb 110-112,122
+  s_fc329da86b0e81::t_4f56c466141b73 133,139
+  s_fc329da86b0e81::t_6dbe2f506c75e9 1-9,11,13-109,113-121,123-132,134-138,140-201,203-295,297-301,303-309,311-313,315-400,403,405-406,408-468
+  s_fc329da86b0e81::t_d5c0bdc7f54636 310,314
+  s_fc329da86b0e81::t_81e9bd1715262b 10,12
+src/modules/PunchRecording/useCases/punchRecording/__tests__/startBackgroundCapture.spec.ts
+  s_fc329da86b0e81::t_6d4064a834e09c 52-84
+crates/daw-engine/src/audio_thread.rs
+  s_fc329da86b0e81::t_d32e55fe7a03d5 621
+  s_fc329da86b0e81::t_38efc092385663 1412
+  s_fc329da86b0e81::t_c1db0ee68f74bb 1468-1482
+  s_fc329da86b0e81::t_dfac6376854086 2047
+  s_fc329da86b0e81::t_4f1e83537c2c55 19
+  s_fc329da86b0e81::t_0865ebc65590be 1803
+  s_fc329da86b0e81::t_2f37e769be1a80 2111-2116
+  s_fc329da86b0e81::t_89cfb4e5600bef 2010-2017
+  s_fc329da86b0e81::t_7780c0d421b419 1651-1656
+  s_fc329da86b0e81::t_7ec47446bd2fe8 519-521
+  s_fc329da86b0e81::t_0763dfd39ebc66 1272,1284
+  s_fc329da86b0e81::t_d6f8340e965941 1129,1152-1154,1157
+  s_fc329da86b0e81::t_e3899a4b7232ff 561-562,583
+  s_fc329da86b0e81::t_bcffd0dbe5feba 1683-1688,1711-1716,1721-1726,1747-1752
+  s_fc329da86b0e81::t_7d714a0fc691a8 1246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e1958b55349b74d7e380f63511ca9584b3d66daa",
+  "prompts": {},
+  "sessions": {
+    "s_fc329da86b0e81": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "75b523dd-7b42-4aed-88f3-0fc923fa2dfb",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
