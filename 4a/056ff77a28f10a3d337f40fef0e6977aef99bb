@@ -1,0 +1,21 @@
+src/modules/Arrangement/stores/warpStates.ts
+  s_fabbe41ad743be::t_d0de4ea34d6148 374-376
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  s_fabbe41ad743be::t_5c37802f0acd90 33,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4a056ff77a28f10a3d337f40fef0e6977aef99bb",
+  "prompts": {},
+  "sessions": {
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
