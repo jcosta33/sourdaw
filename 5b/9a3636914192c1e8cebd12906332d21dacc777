@@ -1,0 +1,26 @@
+scripts/checkVitestCollectionScope.ts
+  h_beb54bf43b47b7 50
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1606-1618,2936-3045,3078-3124,3215-3261
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 525-529
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 20,110,120-131,134
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 158-181,299-302
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 160-163,167
+scripts/vitestCollectionPatterns.ts
+  h_beb54bf43b47b7 2-3,5-7,15-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b9a3636914192c1e8cebd12906332d21dacc777",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
