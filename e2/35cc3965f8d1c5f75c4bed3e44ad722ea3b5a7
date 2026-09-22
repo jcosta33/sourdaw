@@ -1,0 +1,33 @@
+scripts/publishReview.ts
+  s_df40b526e33ddb::t_4c4153cd4efa83 18,50,52-64,105-114,268-276,298-300,431-432
+scripts/reviewPublicationBinding.ts
+  s_df40b526e33ddb::t_ddfd3167827848 1-276
+scripts/reviewPublicationRemoteInspection.ts
+  s_5ec678a267c65e::t_51891bc7b7ec01 14-22,144-236
+scripts/trustedGithubWriteBootstrap.ts
+  s_df40b526e33ddb::t_79f024411b94fa 219-220,247-248,279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e235cc3965f8d1c5f75c4bed3e44ad722ea3b5a7",
+  "prompts": {},
+  "sessions": {
+    "s_5ec678a267c65e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a2eef85f-2733-452b-ba90-4ef3b238a112",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
