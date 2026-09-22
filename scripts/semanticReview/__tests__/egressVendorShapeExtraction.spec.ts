@@ -42,51 +42,31 @@ keywords = ["vendor"]
         expect(derived.keyNames).toEqual(['vendor']);
     });
 
-    it('reads the legal TOML string forms and a whitespace-tolerant rule header', () => {
-        // Basic-string and multiline-basic `regex`, a literal single-quoted `id`, single-quoted
-        // `keywords`, and an indented `[[ rules ]]` header are all legal forms the reader must accept
-        // rather than read as absent.
-        const toml = String.raw`  [[ rules ]]
-id = 'single-token'
-description = "A token."
-regex = "acme_[a-z0-9]{20}"
-keywords = ['acme_']
+    it('reads the accepted string and array forms', () => {
+        // The accepted grammar: basic-string id/description, a single-line multi-line-literal regex, a
+        // single-line keyword array, and a four-space-indented multi-line keyword array.
+        const toml = String.raw`[[rules]]
+id = "acme-token"
+description = "An ACME token."
+regex = '''acme_[a-z0-9]{20}'''
+keywords = ["acme_", "acme2_"]
 
 [[rules]]
-id = "multi-token"
-description = "A multiline token."
-regex = """acme2_[a-z0-9]{20}"""
-keywords = ["acme2_"]
+id = "multi-keyword"
+description = "A multi-line keyword list."
+regex = '''(?:vendor)[ \t\w.-]{0,20}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)([a-z0-9]{20})'''
+keywords = [
+    "vendorx",
+    "vendory",
+]
 `;
 
         const derived = deriveEgressVendorShapes(toml);
 
         expect(derived.counts.blockCount).toBe(2);
         expect(derived.counts.totalRules).toBe(2);
-        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_', 'acme2_']);
-        expect(derived.residual).toEqual([]);
-    });
-
-    it('reports a dropped block as raw count exceeding the classified count', () => {
-        // A block whose id is in a form the reader cannot parse is dropped, and the raw block count
-        // must then exceed the classified count so the generator refuses instead of writing a table
-        // that silently loses a family.
-        const toml = String.raw`[[rules]]
-id = "acme-token"
-description = "An ACME token."
-regex = '''acme_[a-z0-9]{20}'''
-
-[[rules]]
-id = unreadable
-description = "An id in a form the reader cannot parse."
-regex = '''other_[a-z0-9]{20}'''
-`;
-
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.counts.blockCount).toBe(2);
-        expect(derived.counts.totalRules).toBe(1);
-        expect(derived.counts.blockCount).toBeGreaterThan(derived.counts.totalRules);
+        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
+        expect(derived.keyNames).toEqual(['vendorx', 'vendory']);
     });
 
     it('records a keyword-proximity rule whose keywords yield no usable key name', () => {
@@ -111,169 +91,24 @@ keywords = ["key"]
         ]);
     });
 
-    it('decodes a basic string and reads a quoted key and tight spacing', () => {
-        // A basic string is TOML-unescaped, so an escaped backslash yields a real `\w` shorthand, an
-        // escaped quote yields a literal quote, and a quoted key or missing space around `=` is read.
+    it('reports a dropped block as raw count exceeding the classified count', () => {
+        // A block with no readable id is dropped, and the raw block count must then exceed the
+        // classified count so the generator refuses instead of writing a table that lost a family.
         const toml = String.raw`[[rules]]
-id = "escaped-basic"
-description = "An escaped basic string."
-regex = "acme_\\w{20}"
-keywords = ["acme_"]
-
-[[rules]]
-id = "quoted-key"
-description = "A quoted key."
-"regex"='''acme_"[a-z0-9]{20}"'''
-keywords = ["acme2_"]
-`;
-
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.counts.blockCount).toBe(2);
-        expect(derived.counts.totalRules).toBe(2);
-        const [basic, quotedKey] = derived.shapes;
-        expect(basic?.parts.join('')).toBe('acme_');
-        expect(basic?.tail).toBe('\\w{20}');
-        expect(quotedKey?.parts.join('')).toBe('acme_');
-        expect(quotedKey?.tail).toBe('"[a-z0-9]{20}"');
-    });
-
-    it('counts a rule header with a trailing comment independently of the splitter', () => {
-        // A trailing comment on a `[[rules]]` header is a legal TOML form; the raw count and the
-        // splitter must both see it, so the rule is not swallowed while the counters agree.
-        const toml = String.raw`[[rules]] # acme rule
 id = "acme-token"
 description = "An ACME token."
 regex = '''acme_[a-z0-9]{20}'''
 
 [[rules]]
-id = "p12-file"
-description = "A PKCS12 file."
-path = '''(?i).+\.p12$'''
-`;
-
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.counts.blockCount).toBe(2);
-        expect(derived.counts.totalRules).toBe(2);
-        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
-        expect(derived.residual.map((rule) => rule.id)).toEqual(['p12-file']);
-    });
-
-    it('decodes a multiline basic string the way TOML does', () => {
-        // A newline immediately after the opening delimiter is trimmed, a line-ending backslash is a
-        // continuation, and a CRLF leaves no stray carriage return, so the derived tail matches what
-        // tomllib would read rather than a pattern beginning with a newline.
-        const toml =
-            '[[rules]]\nid = "multi-basic"\ndescription = "A multiline token."\nregex = """\nzzz_[a-z0-9]{20}"""\n';
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.counts.blockCount).toBe(1);
-        expect(derived.counts.totalRules).toBe(1);
-        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['zzz_']);
-        expect(derived.shapes[0]?.tail).toBe('[a-z0-9]{20}');
-
-        const continued =
-            '[[rules]]\nid = "multi-cont"\ndescription = "A continuation."\nregex = """zzz_[a-z0-9\\\n]{20}"""\n';
-        expect(deriveEgressVendorShapes(continued).shapes[0]?.tail).toBe('[a-z0-9]{20}');
-
-        const crlf =
-            '[[rules]]\r\nid = "multi-crlf"\r\ndescription = "A CRLF token."\r\nregex = """\r\nzzz_[a-z0-9]{20}"""\r\n';
-        expect(deriveEgressVendorShapes(crlf).shapes[0]?.tail).toBe('[a-z0-9]{20}');
-    });
-
-    it('reads quoted and tightly-spaced keys for every scalar field', () => {
-        // `keywords`, `secretGroup` and `entropy` must accept a quoted key and tight spacing exactly as
-        // the string fields do, so a legal form is never read as absent and reported as a false reason.
-        const toml = String.raw`[[rules]]
-id = "proximity"
-description = "A proximity rule."
-regex = '''(?:vendor)[ \t\w.-]{0,20}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)([a-z0-9]{20})'''
-keywords=["vendorx"]
-
-[[rules]]
-id = "quoted-keyword"
-description = "A quoted-keyword rule."
-regex = '''(?:other)[ \t\w.-]{0,20}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)([a-z0-9]{20})'''
-"keywords" = ["vendory"]
-`;
-
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.keyNames).toEqual(['vendorx', 'vendory']);
-        expect(derived.residual).toEqual([]);
-    });
-
-    it('routes secretGroup and entropy through the same key pattern', () => {
-        // A quoted `secretGroup` key must still record the indirection rather than emit a shape, and a
-        // tightly-spaced `entropy` key must still be read as the entropy gate.
-        const toml = String.raw`[[rules]]
-id = "grouped"
-description = "A grouped rule."
-regex = '''acme_[a-z0-9]{20}'''
-"secretGroup" = 2
-
-[[rules]]
-id = "entropy-gated"
-description = "An entropy-gated rule."
+description = "No id."
 regex = '''other_[a-z0-9]{20}'''
-entropy=2.0
-keywords = ["other_"]
 `;
 
         const derived = deriveEgressVendorShapes(toml);
 
-        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['other_']);
-        expect(derived.residual).toEqual([{ id: 'grouped', reason: 'secretGroup indirection' }]);
-    });
-
-    it('recognises a quoted [[rules]] header and refuses a config with no rules', () => {
-        // `[['rules']]` is a legal array-of-tables header; both the counter and the splitter must see
-        // it rather than write an empty table. A config with no rules at all is refused, never written.
-        const toml = String.raw`[['rules']]
-id = "acme-token"
-description = "An ACME token."
-regex = '''acme_[a-z0-9]{20}'''
-`;
-
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.counts.blockCount).toBe(1);
+        expect(derived.counts.blockCount).toBe(2);
         expect(derived.counts.totalRules).toBe(1);
-        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
-
-        expect(() => deriveEgressVendorShapes('no rules here\n')).toThrow(/no readable rule/);
-        expect(() => deriveEgressVendorShapes('')).toThrow(/no readable rule/);
-    });
-
-    it('reads an indented rule whose keys carry leading whitespace', () => {
-        // TOML makes leading whitespace insignificant, so an indented header and indented keys are the
-        // same one rule; the reader must not drop it for the column-zero anchor.
-        const toml = String.raw`  [[ rules ]]
-  id = 'indented'
-  description = "An indented rule."
-  regex = '''acme_[a-z0-9]{20}'''
-`;
-
-        const derived = deriveEgressVendorShapes(toml);
-
-        expect(derived.counts.blockCount).toBe(1);
-        expect(derived.counts.totalRules).toBe(1);
-        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
-    });
-
-    it('refuses a rule whose regex is shadowed inside a multi-line string', () => {
-        // A field-shaped line inside an earlier multi-line string must not shadow the real field, and
-        // the reader refuses rather than deriving a plausible wrong value.
-        const toml = String.raw`[[rules]]
-id = "shadowed"
-description = """a description
-regex = '''zzz_[a-z0-9]{20}'''
-more prose"""
-regex = '''acme_[a-z0-9]{20}'''
-`;
-
-        expect(() => deriveEgressVendorShapes(toml)).toThrow(/field-shaped line/);
+        expect(derived.counts.blockCount).toBeGreaterThan(derived.counts.totalRules);
     });
 
     it('refuses a rule whose key occurs twice', () => {
@@ -287,13 +122,97 @@ regex = '''other_[a-z0-9]{20}'''
         expect(() => deriveEgressVendorShapes(toml)).toThrow(/duplicate top-level field "regex"/);
     });
 
+    it('refuses an indented header or key', () => {
+        expect(() => deriveEgressVendorShapes('  [[rules]]\nid = "x"\n')).toThrow(/line 1/);
+        expect(() =>
+            deriveEgressVendorShapes("[[rules]]\n  id = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}'''\n")
+        ).toThrow(/line 2/);
+    });
+
+    it('refuses a quoted header or key', () => {
+        expect(() => deriveEgressVendorShapes('[[\'rules\']]\nid = "x"\n')).toThrow(/line 1/);
+        expect(() =>
+            deriveEgressVendorShapes(
+                '[[rules]]\n"id" = "x"\ndescription = "d"\nregex = \'\'\'acme_[a-z0-9]{20}\'\'\'\n'
+            )
+        ).toThrow(/line 2/);
+    });
+
+    it('refuses tight spacing around =', () => {
+        const toml = "[[rules]]\nid=\"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}'''\n";
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 2/);
+    });
+
+    it('refuses a trailing comment after a header', () => {
+        const toml = "[[rules]] # acme rule\nid = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}'''\n";
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 1/);
+    });
+
+    it('refuses an inline comment after a value', () => {
+        const toml = "[[rules]]\nid = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}''' # trailing\n";
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 4/);
+    });
+
+    it('refuses a bracket inside a keyword element', () => {
+        const toml =
+            '[[rules]]\nid = "x"\ndescription = "d"\nregex = \'\'\'acme_[a-z0-9]{20}\'\'\'\nkeywords = ["datadog", "other]x"]\n';
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 5/);
+    });
+
+    it('refuses a nested array', () => {
+        const toml =
+            '[[rules]]\nid = "x"\ndescription = "d"\nregex = \'\'\'acme_[a-z0-9]{20}\'\'\'\nkeywords = [["nested"], ["datadog"]]\n';
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 5/);
+    });
+
+    it('refuses a multi-line basic string', () => {
+        const toml = '[[rules]]\nid = "x"\ndescription = "d"\nregex = """acme_[a-z0-9]{20}"""\n';
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 4/);
+    });
+
+    it('refuses a multi-line literal string that spans lines', () => {
+        const toml = "[[rules]]\nid = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}\n'''\n";
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/line 4/);
+    });
+
+    it('refuses a config with no rules', () => {
+        expect(() => deriveEgressVendorShapes('')).toThrow(/no readable rule/);
+        expect(() => deriveEgressVendorShapes('# only a comment\n')).toThrow(/no readable rule/);
+    });
+
     it('refuses when headers are present but no rule is readable', () => {
-        // A header with an unreadable id yields headers but zero rules; the refusal must fire on the
-        // zero-rule condition, not on the zero-header condition.
+        // A header whose block has no readable id yields headers but zero rules; the refusal must fire
+        // on the zero-rule condition, not on the zero-header condition.
+        const toml = "[[rules]]\ndescription = \"No id.\"\nregex = '''acme_[a-z0-9]{20}'''\n";
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/1 \[\[rules\]\] headers but no readable rule/);
+    });
+
+    it('derives the case scope for a leading and an inline flag, independent of the table', () => {
+        // The extraction, not the checked-in table, must reproduce the source's case scope: a leading
+        // `(?i)` makes the whole pattern insensitive (`flags` `iu`), while an inline `(?i)` scopes only
+        // the remainder as a `(?i:…)` tail group and keeps the prefix case-sensitive (`flags` `u`).
         const toml = String.raw`[[rules]]
-id = unreadable
+id = "leading-insensitive"
+description = "A leading flag."
+regex = '''(?i)CLOJARS_[a-z0-9]{60}'''
+
+[[rules]]
+id = "inline-insensitive"
+description = "An inline flag."
+regex = '''FLWPUBK_TEST-(?i)[a-h0-9]{32}-X'''
 `;
 
-        expect(() => deriveEgressVendorShapes(toml)).toThrow(/1 \[\[rules\]\] headers but no readable rule/);
+        const derived = deriveEgressVendorShapes(toml);
+        const [leading, inline] = derived.shapes;
+
+        expect(leading?.parts.join('')).toBe('CLOJARS_');
+        expect(leading?.flags).toBe('iu');
+        expect(leading?.bodyInsensitive).toBe(true);
+        expect(leading?.tail).toBe('[a-z0-9]{60}');
+
+        expect(inline?.parts.join('')).toBe('FLWPUBK_TEST-');
+        expect(inline?.flags).toBe('u');
+        expect(inline?.bodyInsensitive).toBe(true);
+        expect(inline?.tail).toBe('(?i:[a-h0-9]{32}-X)');
     });
 });

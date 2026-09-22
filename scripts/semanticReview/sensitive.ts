@@ -74,18 +74,18 @@ const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
  * would stop matching. The value heuristic separates those names from ordinary identifiers; a bare
  * mixed-case alphabetic value is a reference, not key material.
  *
- * The quoted alternative reads a delimiter *run* on either side — one to three of `'`, `"` or a
- * backtick — because the scanner treats each of those as an independent boundary, so a mismatched
- * pair such as `'…"` is still a credential it flags. The captured run carries no delimiter inside,
- * so a nested delimiter ends the run: `'''…"…'''` stops at the inner `"` and is admitted, exactly as
- * the scanner's capture stops there. An *escaped* delimiter (`\"` inside a double-quoted value) also
- * stops the run, so it stays admitted; a doubled or nested delimiter diverges from the scanner only
- * at the length floor (the scanner's 10-character floor plus entropy gate can see a prefix the
- * screen's 16-character floor does not), which is the accepted, longer-standing divergence.
+ * The quoted alternative reads an opening delimiter run — one to four of `'`, `"` or a backtick, the
+ * scanner's `[\x60'"\s=]{0,5}` ceiling — and a terminator that is any single delimiter, whitespace, a
+ * semicolon, a newline, or end of input, matching the scanner's `(?:[\x60'"\s;]|\\[nr]|$)`. The
+ * captured run stops at the first delimiter, whitespace, or semicolon, so a mismatched pair (`'…"`),
+ * a value closed by end of input, a space, a semicolon, or a four-quote run are all withheld, and a
+ * nested delimiter (`'''…"…'''`) or an escaped delimiter (`\"`) still ends the run and is admitted.
+ * A doubled or nested delimiter diverges from the scanner only at the length floor (the scanner's
+ * 10-character floor plus entropy gate can see a prefix the screen's 16-character floor does not).
  */
 const SECRET_ASSIGNMENT = new RegExp(
     `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:` +
-        `['"\\x60]{1,3}(?<quoted>[^'"\\x60]{16,})['"\\x60]{1,3}` +
+        `['"\\x60]{1,4}(?<quoted>[^'"\\x60\\s;]{16,})(?=['"\\x60\\s;]|$)` +
         `|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );

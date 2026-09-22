@@ -1699,11 +1699,12 @@ describe('the egress screen tells code from credentials', () => {
     it('withholds a secret value under every quoting form the scanner reads', () => {
         // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter,
         // and it treats each delimiter as an independent boundary, so a mismatched pair such as `'…"` is
-        // also flagged. The screen must reach all of them. A nested delimiter ends the run, so
-        // `'''…"…'''` stops at the inner `"` and is admitted; an escaped delimiter also stops the run
-        // and is admitted. That is exact for these cases, but a doubled or nested delimiter diverges at
-        // the length floor — the scanner's 10-character floor plus entropy gate can see a prefix the
-        // screen's 16-character floor does not — so this is not claimed as whole-form parity.
+        // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, a newline, or
+        // end of input, and its opening run is up to four delimiters, so those closings and a four-quote
+        // run are withheld too. A nested delimiter ends the run, so `'''…"…'''` stops at the inner `"`
+        // and is admitted; an escaped delimiter also stops the run and is admitted. A doubled or nested
+        // delimiter diverges at the length floor — the scanner's 10-character floor plus entropy gate
+        // can see a prefix the screen's 16-character floor does not — so this is not whole-form parity.
         const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();
@@ -1711,6 +1712,14 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('client_secret = ', '`', value, '`'))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '"'))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', '"', value, "'"))).toBeDefined();
+        // Closed by the scanner's full terminator set, not only a delimiter.
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, ' '))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, ';'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "''''"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "''''", value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'''''", value))).toBeUndefined();
+        // A nested or escaped delimiter ends the run and is admitted.
         expect(
             sensitiveContentReason(
                 secretFixture('client_secret = ', "'''", 'Ab3dEf7hIj2', '"', 'Qw9Er8Ty7Ui6Op5As4Df3', "'''")
@@ -3457,8 +3466,8 @@ describe('vendor prefix coverage', () => {
             const prefix = shape.parts.join('');
             const fixture = secretFixture(...shape.parts, ...shape.fixture);
             const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
-            // The entry's own pattern matches its own fixture — a masked entry whose tail was replaced
-            // must fail here even though an earlier retained shape still withholds its fixture.
+            // The fixture is generated from the tail, so this self-consistency check cannot fail for
+            // generator output; the digest above is what pins the content against a hand edit.
             expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
             // The screen withholds the shape's own fixture.
             expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();

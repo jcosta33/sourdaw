@@ -16,13 +16,113 @@ export type Rule = {
 
 /**
  * A minimal TOML reader for the Gitleaks config's `[[rules]]` array-of-tables. It is not a general
- * TOML parser: it reads the fields the generator needs and ignores every allowlist sub-table, but it
- * accepts each of TOML's four string forms (basic, literal, and both multiline variants), either
- * quote style for `keywords`, quoted keys, and whitespace-tolerant `=` spacing, so a legal form is
- * never mistaken for an absent field. The config is auto-generated, so its shape is stable across
- * the bumps this script is meant to survive.
+ * TOML parser: it reads exactly the layout the pinned config emits — `[[rules]]` and
+ * `[[rules.allowlists]]` headers at column zero, unindented single-space `key = value` pairs,
+ * single-line basic/literal/multi-line-literal strings, numbers, and quoted arrays (single-line, or
+ * multi-line with four-space-indented elements) — and refuses any other line with its number and
+ * reason, so a legal-but-unexpected form can never be silently mis-read. Inside that accepted
+ * grammar the field scanner below is adequate.
  */
+const KEY_LINE =
+    /^(id|description|regex|path|entropy|secretGroup|keywords|paths|regexes|title|minVersion|stopwords|regexTarget|condition) = (.*)$/;
+const SINGLE_LINE_ARRAY = /^\[(?:"[^"\][]*")(?:\s*,\s*"[^"\][]*")*\]$/;
+
+/** Refuses any line outside the accepted grammar, naming the line and the reason. */
+function validateGrammar(toml: string): void {
+    const lines = toml.split('\n');
+    let inArrayKey: string | null = null;
+    for (let i = 0; i < lines.length; i += 1) {
+        const line = (lines[i] ?? '').replace(/\r$/, '');
+        const n = i + 1;
+        if (inArrayKey !== null) {
+            if (line === ']') {
+                inArrayKey = null;
+                continue;
+            }
+            if (isArrayElement(line, inArrayKey)) {
+                continue;
+            }
+            throw new Error(
+                `line ${n}: expected an indented quoted array element or "]", found ${JSON.stringify(line)}`
+            );
+        }
+        if (line === '' || line.startsWith('#')) {
+            continue;
+        }
+        if (line === '[[rules]]' || line === '[[rules.allowlists]]' || line === '[allowlist]') {
+            continue;
+        }
+        const keyMatch = KEY_LINE.exec(line);
+        if (keyMatch === null) {
+            throw new Error(
+                `line ${n}: expected a header, comment, or "key = value" at column zero, found ${JSON.stringify(line)}`
+            );
+        }
+        const value = keyMatch[2] ?? '';
+        validateValue(n, keyMatch[1] ?? '', value);
+        if (value === '[') {
+            inArrayKey = keyMatch[1] ?? '';
+        }
+    }
+    if (inArrayKey !== null) {
+        throw new Error('unterminated array at end of config');
+    }
+}
+
+/** Validates one value in the accepted grammar. */
+function validateValue(n: number, key: string, value: string): void {
+    if (value === '' || value === '[') {
+        return;
+    }
+    if (value.startsWith('[')) {
+        if (!SINGLE_LINE_ARRAY.test(value)) {
+            throw new Error(
+                `line ${n}: malformed single-line array for field "${key}" (elements must be double-quoted, no bracket inside)`
+            );
+        }
+        return;
+    }
+    if (isStringValue(value)) {
+        return;
+    }
+    if (/^\d+(?:\.\d+)?$/.test(value)) {
+        return;
+    }
+    throw new Error(`line ${n}: unrecognized value for field "${key}": ${JSON.stringify(value)}`);
+}
+
+/** Whether `s` is a single-line basic, literal, or multi-line-literal string that closes on one line. */
+function isStringValue(s: string): boolean {
+    if (s.startsWith("'''")) {
+        return s.endsWith("'''") && s.length >= 7 && !s.slice(3, -3).includes("'''");
+    }
+    if (s.startsWith('"')) {
+        return /^"([^"\\]|\\.)*"$/.test(s);
+    }
+    if (s.startsWith("'")) {
+        return /^'[^']*'$/.test(s);
+    }
+    return false;
+}
+
+/**
+ * Whether a line is an indented array element (one or more comma-separated quoted strings, optional
+ * trailing comma). Keyword words carry no bracket inside; allowlist regex/path strings may carry
+ * brackets and quotes, so only a `'''` delimiter run is excluded there.
+ */
+function isArrayElement(line: string, key: string): boolean {
+    if (!line.startsWith('    ')) {
+        return false;
+    }
+    const body = line.slice(4).trim();
+    if (key === 'keywords') {
+        return /^"[^"[\]]*"(?:\s*,\s*"[^"[\]]*")*,?$/.test(body);
+    }
+    return /^(?:'''(?:(?!''')[^])*'''|"[^"]*")(?:\s*,\s*(?:'''(?:(?!''')[^])*'''|"[^"]*"))*,?$/.test(body);
+}
+
 export function parseRules(toml: string): Rule[] {
+    validateGrammar(toml);
     const blocks: string[][] = [];
     let current: string[] | null = null;
     for (const line of toml.split('\n')) {
@@ -36,21 +136,14 @@ export function parseRules(toml: string): Rule[] {
     return blocks.map(parseRuleBlock).filter((rule): rule is Rule => rule !== null);
 }
 
-/** Whether a line is a legal `[[rules]]` array-of-tables header: bare, single-quoted, or double-quoted. */
-function matchRuleHeader(line: string): boolean {
-    const header = stripInlineComment(line).trim();
-    return /^\[\[\s*(?:rules|'rules'|"rules")\s*\]\]$/.test(header);
-}
-
 /**
- * Counts raw `[[rules]]` headers by scanning every line for a legal header form, independently of
- * the block splitter. A header the splitter drops is therefore visible as a count that exceeds the
- * classified-rule count, and the generator refuses instead of writing a table that lost a family.
+ * Counts raw `[[rules]]` headers; the grammar gate has already guaranteed their exact form, so this
+ * count is independent of the block splitter and any dropped block is visible to the generator.
  */
 export function countRuleBlocks(toml: string): number {
     let count = 0;
     for (const line of toml.split('\n')) {
-        if (matchRuleHeader(line)) {
+        if (isRuleHeader(line)) {
             count += 1;
         }
     }
@@ -58,12 +151,7 @@ export function countRuleBlocks(toml: string): number {
 }
 
 function isRuleHeader(line: string): boolean {
-    return matchRuleHeader(line);
-}
-
-function stripInlineComment(line: string): string {
-    const hash = line.indexOf('#');
-    return hash === -1 ? line : line.slice(0, hash);
+    return line.replace(/\r$/, '') === '[[rules]]';
 }
 
 /** Decodes a TOML basic string's escape sequences; literal strings are left untouched by the caller. */
