@@ -1,0 +1,19 @@
+scripts/__tests__/publishReview.spec.ts
+  s_708a203db71cfe::t_d5e6aa34dbd25b 45,5091-5141,5999,6002,6006-6035,6037-6061,6063-6082
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fc10f394dd3dfc6226476eef40bbfbe9a4f5e51a",
+  "prompts": {},
+  "sessions": {
+    "s_708a203db71cfe": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "b17444e2-853c-4203-896f-7189fe0f06f7",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
