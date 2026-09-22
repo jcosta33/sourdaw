@@ -1,0 +1,22 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_81dbe4232eb727::t_f5f68bf21fea24 46-54
+  s_81dbe4232eb727::t_453d55ff72792c 620-622
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_81dbe4232eb727::t_f438ea34aea443 549-603
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "17e47e84a0106963bbb60e725a3aeff964d280c3",
+  "prompts": {},
+  "sessions": {
+    "s_81dbe4232eb727": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "74be0fcf-ae55-4d77-8c03-673031ec5b89",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
