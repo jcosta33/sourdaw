@@ -1,0 +1,49 @@
+scripts/generateEgressVendorShapes.ts
+  s_752700acee0053::t_39b6306898d80a 63,103-105,109,116
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_df40b526e33ddb::t_156c6d1262ef44 23,84-88,1680-1687,3409-3422,3424,3432-3434,3436-3437
+scripts/semanticReview/egressVendorToml.ts
+  s_79a4735522d528::t_e6a76f2fe02f29 1-138
+scripts/semanticReview/sensitive.ts
+  s_b7f23f55cf13eb::t_18aa44f6d87f59 169-175,177,191,203,208-209,289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cb8cf8dd9780b37696f69bc57a86b85be5dc28dd",
+  "prompts": {},
+  "sessions": {
+    "s_752700acee0053": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "b6e8cad2-b62c-487b-a721-00b42786cf49",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_79a4735522d528": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "df2605c7-64a6-4ac3-806a-20ac0d32372d",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b7f23f55cf13eb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "151f7615-d1d8-4b62-ba66-bda3036325f8",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
