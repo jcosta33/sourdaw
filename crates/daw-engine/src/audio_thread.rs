@@ -1707,14 +1707,13 @@ mod capture_seam_tests {
         let slot = new_input_latency_slot();
         let refusal_slot = new_capture_refusal_slot();
         let (mut feed_tx, _feed_rx) = feed_channel();
-        let (_taken, feed) =
-            attach_capture::<PresentInput>(
-                ENGINE_RATE,
-                error_sink(),
-                Arc::clone(&slot),
-                crate::retrospective::RetrospectiveWriter::inert(),
-            )
-                .expect("a present input device opens");
+        let (_taken, feed) = attach_capture::<PresentInput>(
+            ENGINE_RATE,
+            error_sink(),
+            Arc::clone(&slot),
+            crate::retrospective::RetrospectiveWriter::inert(),
+        )
+        .expect("a present input device opens");
         feed_tx.push(feed).expect("the slot starts empty");
 
         let stream = capture_side(

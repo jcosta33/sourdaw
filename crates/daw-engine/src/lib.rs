@@ -1,7 +1,7 @@
 pub mod audio_thread;
 pub mod capture;
-pub mod retrospective;
 pub(crate) mod device;
+pub mod retrospective;
 /// Why an engine has no capture side. The device seam itself stays internal;
 /// its refusal is the one part of it a host has to be able to name.
 pub use device::InputOpenRefusal;
@@ -356,8 +356,7 @@ impl EngineHandle {
     /// Allocates about sixty seconds of storage on this thread at the running
     /// stream's sample rate. A later arm replaces the previous target.
     pub fn arm_retrospective_capture(&mut self, track_id: usize, channels: usize) {
-        self.retrospective
-            .arm(track_id, self.sample_rate, channels);
+        self.retrospective.arm(track_id, self.sample_rate, channels);
     }
 
     /// Stop retrospective retention. Capture-callback writes keep nothing

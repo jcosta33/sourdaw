@@ -71,7 +71,7 @@ describe('startBackgroundCapture', () => {
         expect(capture).not.toHaveProperty('samples');
         expect(capture).not.toHaveProperty('buffer');
         expect(Object.keys(capture).sort()).toEqual(
-            ['endBeat', 'id', 'punchRegions', 'recording', 'startBeat', 'trackId'].sort(),
+            ['endBeat', 'id', 'punchRegions', 'recording', 'startBeat', 'trackId'].sort()
         );
     });
 

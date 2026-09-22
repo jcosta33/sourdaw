@@ -65,8 +65,7 @@ impl ActiveRing {
         while src < block.len() {
             let space_to_end = capacity - self.write_head;
             let n = (block.len() - src).min(space_to_end);
-            self.buffer[self.write_head..self.write_head + n]
-                .copy_from_slice(&block[src..src + n]);
+            self.buffer[self.write_head..self.write_head + n].copy_from_slice(&block[src..src + n]);
             self.write_head = (self.write_head + n) % capacity;
             src += n;
         }
@@ -379,7 +378,10 @@ mod tests {
             retrospective_capacity_frames(RATE) * CHANNELS,
             "capacity must be exactly sixty seconds at the armed rate"
         );
-        assert_eq!(capacity, (RATE as usize) * RETROSPECTIVE_SECONDS as usize * CHANNELS);
+        assert_eq!(
+            capacity,
+            (RATE as usize) * RETROSPECTIVE_SECONDS as usize * CHANNELS
+        );
 
         // Distinct ramp so the oldest samples are identifiable once wrapped.
         let mut next = 1.0f32;
