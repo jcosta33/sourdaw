@@ -1,0 +1,16 @@
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  h_beb54bf43b47b7 1-163
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  h_beb54bf43b47b7 10-23,30,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "98460fef4672df2ea3486780cb14218aba0a1281",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
