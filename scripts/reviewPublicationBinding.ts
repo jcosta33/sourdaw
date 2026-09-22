@@ -274,3 +274,41 @@ export function recordPublicationBindings(
     }
     port.writeBundleText(dossierPath, serializeReviewDossier(bound));
 }
+
+/**
+ * Acceptance-time accounting gate (#3375, spec #3367 AC-004): the orchestrator may not accept a
+ * head whose dossier records the review round incompletely. When the bundle carries a risk plan,
+ * the dossier must exist, must name the landed publication, and must bind every accepted finding
+ * to exactly one public comment; parsing the record re-validates its whole chain. A legacy bundle
+ * prepared before dossiers existed carries neither file and is accepted exactly as before.
+ */
+export function assertAcceptanceDossierAccounting(number: number, head: string, port: PublishReviewPort): void {
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
+    if (readBundleFile(port, join(bundle, REVIEW_RISK_PLAN_NAME)).present !== true) {
+        if (readBundleGeneratedSet(bundle)?.has(REVIEW_RISK_PLAN_NAME) === true) {
+            fail(
+                `missing review risk plan at ${join(bundle, REVIEW_RISK_PLAN_NAME)}; the bundle manifest records generating it`
+            );
+        }
+        return;
+    }
+    const dossierPath = join(bundle, REVIEW_DOSSIER_NAME);
+    const dossierRead = readBundleFile(port, dossierPath);
+    if (!dossierRead.present) {
+        fail(`acceptance requires the head's review dossier at ${dossierPath}; the bundle carries a risk plan`);
+    }
+    const dossier = parseReviewDossier(dossierRead.value);
+    const reviewId = publishedReviewId(dossier);
+    if (reviewId === undefined) {
+        fail(`acceptance requires the dossier to record its review publication; ${dossierPath} binds none`);
+    }
+    const bound = new Set(publishedFindings(dossier).map((finding) => finding.findingId));
+    const unbound = acceptedFindings(dossier).filter((finding) => !bound.has(finding.findingId));
+    if (unbound.length > 0) {
+        fail(
+            `acceptance requires every accepted finding to bind one public comment; unbound: ${unbound
+                .map((finding) => finding.findingId)
+                .join(', ')}`
+        );
+    }
+}

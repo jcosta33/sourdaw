@@ -50,6 +50,7 @@ import {
 import { readDossierStanceDraws } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import {
+    assertAcceptanceDossierAccounting,
     prepareReviewDossierPublication,
     recordedPublicationReplay,
     recordPublicationBindings,
@@ -307,6 +308,7 @@ function assertAcceptancePreconditions(number: number, head: string, port: Publi
         fail('orchestrator acceptance requires a complete independent review-state reader');
     }
     assertIndependentReviewerApproval(number, port.reviewState(number, head));
+    assertAcceptanceDossierAccounting(number, head, port);
 }
 
 export function publishPreparedReview(

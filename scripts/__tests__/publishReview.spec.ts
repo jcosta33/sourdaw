@@ -42,7 +42,7 @@ import {
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
-import { parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
+import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
@@ -5088,6 +5088,57 @@ describe('fresh reviewer dossier publication', () => {
         };
     }
 
+    function acceptanceDocument() {
+        return {
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'Final contract held.',
+            evidence: approvalEvidence(head),
+        };
+    }
+
+    function acceptanceDependencies(
+        fixture: ReturnType<typeof dossierFixture>,
+        accepted: string[] = []
+    ): AcceptReviewCoordinatorDependencies {
+        const port: PublishReviewPort = {
+            ...fixture.port,
+            reviewState: () => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                orchestratorAcceptedAfterReviewer: false,
+                unresolvedThreads: 0,
+            }),
+            postReview: (review) => {
+                accepted.push(review.body);
+                return {
+                    id: 99,
+                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    login: 'jcosta33',
+                    actorType: 'User',
+                    commitId: head,
+                };
+            },
+        };
+        return {
+            primaryRoot: () => fixture.root,
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            serializeMutation: async (_root, _number, operation) =>
+                operation({
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: () => undefined,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            publish: publishPreparedAcceptance,
+        };
+    }
+
     type PlanDisagreement = {
         label: string;
         plan: ReviewRiskPlan;
@@ -5945,64 +5996,92 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('leaves orchestrator acceptance unaffected by a plan with no dossier', async () => {
-        const acceptanceDocument = {
-            format: 'compact-v1',
-            event: 'APPROVE',
-            body: 'Final contract held.',
-            evidence: approvalEvidence(head),
-        };
+    it('refuses orchestrator acceptance when a plan-carrying bundle has no dossier', async () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
-            document: acceptanceDocument,
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance requires the head's review dossier/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses orchestrator acceptance when the dossier records no publication', async () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(canonical),
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance requires the dossier to record its review publication/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses orchestrator acceptance when an accepted finding lacks its public binding', async () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            recommendation: 'request-changes',
+        });
+        const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance requires every accepted finding to bind one public comment; unbound: comment-0/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('posts orchestrator acceptance when the dossier accounting is complete', async () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: acceptanceDocument(),
             documentName: 'acceptance.json',
         });
         const accepted: string[] = [];
         try {
-            const port: PublishReviewPort = {
-                ...fixture.port,
-                reviewState: () => ({
-                    latestReviewerStateOnHead: 'APPROVED',
-                    orchestratorAcceptedAfterReviewer: false,
-                    unresolvedThreads: 0,
-                }),
-                postReview: (review) => {
-                    accepted.push(review.body);
-                    return {
-                        id: 99,
-                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
-                        login: 'jcosta33',
-                        actorType: 'User',
-                        commitId: head,
-                    };
-                },
-            };
-            const dependencies: AcceptReviewCoordinatorDependencies = {
-                primaryRoot: () => fixture.root,
-                authenticateOrchestrator: async () => ({
-                    minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                    session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
-                }),
-                repositoryName: () => 'jcosta33/sourdaw',
-                reviewPort: () => port,
-                serializeMutation: async (_root, _number, operation) =>
-                    operation({
-                        ownerOid: 'f'.repeat(40),
-                        journalReviewPublication: () => undefined,
-                        markRemoteMutationAttempt: () => undefined,
-                        markDefinitiveNoMutationHttpStatus: () => undefined,
-                        registerSuccessfulCompletion: () => undefined,
-                    }),
-                publish: publishPreparedAcceptance,
-            };
-
-            await coordinateAcceptReview(number, dependencies);
-
+            await coordinateAcceptReview(number, acceptanceDependencies(fixture, accepted));
             expect(accepted).toEqual(['Final contract held.']);
             expect(fixture.writes).toEqual([]);
-            expect(fixture.calls.filter((call) => call.startsWith('read:'))).toEqual([
-                `read:${join(fixture.bundle, 'acceptance.json')}`,
-            ]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
