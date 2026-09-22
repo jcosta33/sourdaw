@@ -1696,15 +1696,15 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
     });
 
-    it('withholds a secret value under every quoting form the scanner reads', () => {
+    it('withholds a secret value under the delimiter and terminator forms it reads, and admits the escaped-newline form', () => {
         // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter,
         // and it treats each delimiter as an independent boundary, so a mismatched pair such as `'…"` is
         // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, a newline, or
         // end of input, and its opening run is up to four delimiters, so those closings and a four-quote
         // run are withheld too. A nested delimiter ends the run, so `'''…"…'''` stops at the inner `"`
-        // and is admitted; an escaped delimiter also stops the run and is admitted. A doubled or nested
-        // delimiter diverges at the length floor — the scanner's 10-character floor plus entropy gate
-        // can see a prefix the screen's 16-character floor does not — so this is not whole-form parity.
+        // and is admitted; an escaped delimiter also stops the run and is admitted. The escaped-newline
+        // terminator is deliberately not modelled (see #4579), so that form is admitted, not withheld;
+        // this case therefore does not claim to cover every form the scanner reads.
         const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();

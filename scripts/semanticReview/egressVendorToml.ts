@@ -32,7 +32,9 @@ function validateGrammar(toml: string): void {
     const lines = toml.split('\n');
     let inArrayKey: string | null = null;
     for (let i = 0; i < lines.length; i += 1) {
-        const line = (lines[i] ?? '').replace(/\r$/, '');
+        // Validate the same unstripped line the block splitter consumes, so a bare carriage return at
+        // a line end is refused rather than absorbed by the gate and silently dropped by the splitter.
+        const line = lines[i] ?? '';
         const n = i + 1;
         if (inArrayKey !== null) {
             if (line === ']') {

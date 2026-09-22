@@ -216,9 +216,9 @@ regex = '''FLWPUBK_TEST-(?i)[a-h0-9]{32}-X'''
         expect(inline?.tail).toBe('(?i:[a-h0-9]{32}-X)');
     });
 
-    it('derives identical rules from an LF config and its CRLF twin', () => {
-        // The reader must consume lines with the carriage return stripped, so a CRLF file derives the
-        // same key names as its LF twin instead of silently re-bucketing the rule.
+    it('derives identical rules from LF, CRLF, no-trailing-newline and mixed endings', () => {
+        // CRLF is folded to LF, and no-trailing-newline and a mixed CRLF/LF file are all legal, so
+        // every form derives the same key names as the LF base.
         const lf = String.raw`[[rules]]
 id = "keyword"
 description = "A keyword rule."
@@ -229,21 +229,25 @@ keywords = [
 ]
 `;
         const crlf = lf.replaceAll('\n', '\r\n');
+        const noTrailing = lf.replace(/\n$/, '');
+        const mixed = lf.replace('\n', '\r\n');
 
-        const fromLf = deriveEgressVendorShapes(lf);
-        const fromCrlf = deriveEgressVendorShapes(crlf);
-
-        expect(fromLf.keyNames).toEqual(['vendorx', 'vendory']);
-        expect(fromCrlf.keyNames).toEqual(['vendorx', 'vendory']);
-        expect(fromCrlf.counts).toEqual(fromLf.counts);
-        expect(fromCrlf.shapes).toEqual(fromLf.shapes);
-        expect(fromCrlf.residual).toEqual(fromLf.residual);
+        for (const form of [lf, crlf, noTrailing, mixed]) {
+            const derived = deriveEgressVendorShapes(form);
+            expect(derived.keyNames, JSON.stringify(form.slice(0, 40))).toEqual(['vendorx', 'vendory']);
+        }
     });
 
-    it('refuses a lone-CR file', () => {
-        // TOML allows LF and CRLF only; a lone-CR ending is outside the emitted grammar and is refused.
+    it('refuses a bare carriage return at a line end', () => {
+        // TOML allows LF and CRLF only; a lone-CR ending is outside the emitted grammar and is refused
+        // by the gate, which must validate the same unstripped line the splitter consumes.
         const lf = "[[rules]]\nid = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}'''\n";
-        const loneCr = lf.replaceAll('\n', '\r');
-        expect(() => deriveEgressVendorShapes(loneCr)).toThrow(/line 1/);
+        // A whole file of lone-CR line endings.
+        expect(() => deriveEgressVendorShapes(lf.replaceAll('\n', '\r'))).toThrow(/line 1/);
+        // A trailing bare CR at the end of the file.
+        expect(() => deriveEgressVendorShapes(lf.replace(/\n$/, '\r'))).toThrow(/line 4/);
+        // A header followed by CR-CR-LF, which would otherwise stop matching and silently drop the rule.
+        const crCrLfHeader = "[[rules]]\r\r\nid = \"x\"\ndescription = \"d\"\nregex = '''acme_[a-z0-9]{20}'''\n";
+        expect(() => deriveEgressVendorShapes(crCrLfHeader)).toThrow(/line 1/);
     });
 });
