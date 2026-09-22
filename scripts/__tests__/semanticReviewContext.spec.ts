@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildRevisionContext, SEMANTIC_POLICY_VERSION, SEMANTIC_REPORT_FORMAT } from '../semanticReview/contracts.ts';
 import { computePolicyDigest, computeRulesDigest } from '../semanticReview/rules.ts';
 import {
+    primaryCheckRunsQuery,
     resolveSemanticReviewContext,
     SEMANTIC_CI_FORMAT,
     type SemanticActionRun,
@@ -20,7 +21,7 @@ const MERGE_BASE = 'b'.repeat(40);
 const TARGET_BASE = 'c'.repeat(40);
 const TRUSTED = 'd'.repeat(40);
 
-const GREEN_CHECK: SemanticCheckRun = { name: 'Semantic review', conclusion: 'success', checkSuiteId: 123 };
+const GREEN_CHECK: SemanticCheckRun = { id: 1, name: 'Semantic review', conclusion: 'success', checkSuiteId: 123 };
 const RUN: SemanticActionRun = { id: 456 };
 const ARTIFACT: SemanticArtifact = {
     id: 789,
@@ -44,12 +45,16 @@ function signal(overrides: Record<string, unknown> = {}): Record<string, unknown
     };
 }
 
-function scanReport(overrides: Record<string, unknown> = {}, headSha: string = HEAD): Record<string, unknown> {
+function scanReport(
+    overrides: Record<string, unknown> = {},
+    headSha: string = HEAD,
+    prNumber = 42
+): Record<string, unknown> {
     const rulesDigest = computeRulesDigest();
     const context = buildRevisionContext({
         repository: 'jcosta33/sourdaw',
         repositoryId: '1',
-        prNumber: 42,
+        prNumber,
         headSha,
         targetBaseSha: TARGET_BASE,
         mergeBaseSha: MERGE_BASE,
@@ -225,6 +230,7 @@ describe('semantic review context', () => {
 
     it('finds the semantic check when it sits beyond the first page of check runs', () => {
         const fillers: SemanticCheckRun[] = Array.from({ length: 40 }, (_, index) => ({
+            id: index + 1,
             name: `other-check-${index}`,
             conclusion: 'success',
             checkSuiteId: index + 1,
@@ -255,7 +261,7 @@ describe('semantic review context', () => {
 
     it('records a red check as no-assessment without downloading its artifact', () => {
         const { port, calls } = makePort({
-            checkRuns: [{ name: 'Semantic review', conclusion: 'failure', checkSuiteId: 123 }],
+            checkRuns: [{ id: 1, name: 'Semantic review', conclusion: 'failure', checkSuiteId: 123 }],
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
             format: SEMANTIC_CI_FORMAT,
@@ -269,7 +275,7 @@ describe('semantic review context', () => {
 
     it('records a skipped check as no-assessment', () => {
         const { port } = makePort({
-            checkRuns: [{ name: 'Semantic review', conclusion: 'skipped', checkSuiteId: 123 }],
+            checkRuns: [{ id: 1, name: 'Semantic review', conclusion: 'skipped', checkSuiteId: 123 }],
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
             state: 'no-assessment',
@@ -279,7 +285,7 @@ describe('semantic review context', () => {
 
     it('records a check that has not completed as no-assessment with reason incomplete', () => {
         const { port } = makePort({
-            checkRuns: [{ name: 'Semantic review', conclusion: null, checkSuiteId: 123 }],
+            checkRuns: [{ id: 1, name: 'Semantic review', conclusion: null, checkSuiteId: 123 }],
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
             format: SEMANTIC_CI_FORMAT,
@@ -388,7 +394,7 @@ describe('semantic review context', () => {
             pr: 42,
             headSha: HEAD,
             state: 'no-assessment',
-            reason: 'absent',
+            reason: 'unreadable',
         });
     });
 
@@ -416,5 +422,119 @@ describe('semantic review context', () => {
             state: 'no-assessment',
             reason: 'forbidden',
         });
+    });
+
+    it('records an actions-runs read failure as unreadable, not absent', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRunsError: new Error('network down'),
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
+            format: SEMANTIC_CI_FORMAT,
+            pr: 42,
+            headSha: HEAD,
+            state: 'no-assessment',
+            reason: 'unreadable',
+        });
+    });
+
+    it('records an artifacts read failure as unreadable, not absent', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifactsError: new Error('network down'),
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
+            format: SEMANTIC_CI_FORMAT,
+            pr: 42,
+            headSha: HEAD,
+            state: 'no-assessment',
+            reason: 'unreadable',
+        });
+    });
+
+    it('selects the newest same-name check run rather than the first', () => {
+        const { port } = makePort({
+            checkRuns: [
+                { id: 1, name: 'Semantic review', conclusion: 'failure', checkSuiteId: 111 },
+                { id: 2, name: 'Semantic review', conclusion: 'success', checkSuiteId: 123 },
+            ],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
+            state: 'assessed',
+            assessedHeadSha: HEAD,
+        });
+    });
+
+    it('refuses an artifact bound to a different pull request', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [{ id: 789, name: 'semantic-review-99-456', expiresAt: '2099-01-01T00:00:00.000Z' }],
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
+            format: SEMANTIC_CI_FORMAT,
+            pr: 42,
+            headSha: HEAD,
+            state: 'no-assessment',
+            reason: 'mismatch',
+        });
+    });
+
+    it('refuses a report bound to a different pull request', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({}, HEAD, 43)) }),
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
+            format: SEMANTIC_CI_FORMAT,
+            pr: 42,
+            headSha: HEAD,
+            state: 'no-assessment',
+            reason: 'mismatch',
+        });
+    });
+
+    it('normalises out-of-vocabulary reasons and out-of-shape paths in scope entries', () => {
+        const prose = 'this change is a security hole';
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: '../etc/passwd', reason: prose }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'probability 0.9 the fix is wrong' }],
+                            truncated: [{ path: 'src/b.ts', reason: 'the model reasoned this is broken' }],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.excluded).toEqual([{ path: '(unrecognized-path)', reason: 'unrecognized-reason' }]);
+        expect(result.scope.unassessed).toEqual([{ path: 'src/a.ts', reason: 'unrecognized-reason' }]);
+        expect(result.scope.truncated).toEqual([{ path: 'src/b.ts', reason: 'unrecognized-reason' }]);
+        expect(JSON.stringify(result)).not.toContain(prose);
+        expect(JSON.stringify(result)).not.toContain('probability');
+    });
+
+    it('names the check and latest filter with a full page in the primary query', () => {
+        const query = primaryCheckRunsQuery('Semantic review');
+        expect(query).toContain('check_name=Semantic%20review');
+        expect(query).toContain('filter=latest');
+        expect(query).toContain('per_page=100');
     });
 });
