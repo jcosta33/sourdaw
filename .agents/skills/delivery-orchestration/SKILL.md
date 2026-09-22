@@ -31,6 +31,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Record a repair, leave open      | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
 | Confirm repairs, resolve         | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
 | Reply `Done` and resolve         | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
+| Rebuild rounds; shadow-compare   | `pnpm review:reconstruct <pr>`                                                                                                                                                                |
 | Squash-merge                     | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery       | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post     | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
@@ -311,6 +312,26 @@ Private reviewer prose belongs nowhere in the record.
 
 Readers of historical review and acceptance documents are unchanged, and
 `review:accept` takes no dossier.
+
+### Publication binding, replay, and reconstruction
+
+After the review POST lands, `review:publish` appends `review-published` (the
+landed review id) and one `finding-published` per posted comment (its public
+comment id, matched to the document positionally after a path/line/side check)
+to the head's dossier; a bundle dossier that already records its publication
+replays — the exact same review must stand live: actor, head, state, body, and
+comments — instead of re-posting, and a recorded publication that no longer
+stands exact fails closed before any write. `review:accept` refuses a
+plan-carrying bundle whose dossier is missing, records no publication, or
+leaves an accepted finding without its public comment binding; a legacy bundle
+without a risk plan publishes and accepts exactly as before.
+
+`pnpm review:reconstruct <pr>` is read-only: it rebuilds every governed round
+from public channels alone — reviews, review comments, and `sourdaw-repair-v1`
+marker replies — and shadow-compares each head's local dossier against the
+reconstruction (recorded review id, recommendation, and every finding's public
+comment binding). Mismatches are logged and counted, never gated; the command
+fails only on unreadable public data or a corrupt local record.
 
 ### APPROVE: compact-v1 evidence
 
