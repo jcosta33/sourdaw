@@ -1,0 +1,33 @@
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_fabbe41ad743be::t_a1ef0f83ff47f4 46-48
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_fabbe41ad743be::t_77cfaf01043b67 72-74
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_fabbe41ad743be::t_c59b9996214850 107
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_fabbe41ad743be::t_77744519118ef0 70-72
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_fabbe41ad743be::t_d2026aaf45e952 39-41
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_fabbe41ad743be::t_2d1886a241c678 40-42
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_fabbe41ad743be::t_ba304502040408 183
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_fabbe41ad743be::t_10c4687c41a5c7 67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d8fba72cf3e63788293b748c2ee7b774af82c83b",
+  "prompts": {},
+  "sessions": {
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
