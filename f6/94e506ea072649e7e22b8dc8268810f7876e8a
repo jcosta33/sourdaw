@@ -1,0 +1,23 @@
+.agents/skills/review-stances/test-validity.md
+  s_336edc4c1b4417::t_a9dd1bf2d08533 139-142
+.agents/skills/review-stances/README.md
+  s_336edc4c1b4417::t_06922444d17d61 28,30-32
+.gitignore
+  s_336edc4c1b4417::t_cc2650b0531e93 30-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f694e506ea072649e7e22b8dc8268810f7876e8a",
+  "prompts": {},
+  "sessions": {
+    "s_336edc4c1b4417": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4dd49e21-5502-4e53-9905-ac5b50330850",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
