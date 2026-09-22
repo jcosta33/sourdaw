@@ -10,7 +10,13 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
-import { createWarpMarker, defaultWarpState, type WarpMarkerOrigin, type WarpState } from '../models/WarpMarker';
+import {
+    createWarpMarker,
+    defaultWarpState,
+    type WarpMarker,
+    type WarpMarkerOrigin,
+    type WarpState,
+} from '../models/WarpMarker';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -140,19 +146,12 @@ const WARP_MARKER_ORIGINS = new Set(['user', 'transient-auto', 'grid-snap']);
 const WARP_MARKER_KEYS = ['id', 'originalBeat', 'warpedBeat', 'origin', 'confidence', 'locked'] as const;
 const WARP_STATE_KEYS = ['enabled', 'markers', 'stretchMode', 'originalTempo'] as const;
 
-function isWarpMarker(value: unknown): value is WarpState['markers'][number] {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
-    }
-    if (!('id' in value) || typeof value.id !== 'string' || value.id.length === 0) {
-        return false;
-    }
-    if (!('originalBeat' in value) || typeof value.originalBeat !== 'number' || !Number.isFinite(value.originalBeat)) {
-        return false;
-    }
-    if (!('warpedBeat' in value) || typeof value.warpedBeat !== 'number' || !Number.isFinite(value.warpedBeat)) {
-        return false;
-    }
+function hasFiniteNumberField(value: object, key: string): boolean {
+    const field = (value as Record<string, unknown>)[key];
+    return typeof field === 'number' && Number.isFinite(field);
+}
+
+function hasValidOptionalWarpMarkerFields(value: object): boolean {
     if (
         'origin' in value &&
         value.origin !== undefined &&
@@ -168,6 +167,22 @@ function isWarpMarker(value: unknown): value is WarpState['markers'][number] {
         return false;
     }
     if ('locked' in value && value.locked !== undefined && typeof value.locked !== 'boolean') {
+        return false;
+    }
+    return true;
+}
+
+function isWarpMarker(value: unknown): value is WarpState['markers'][number] {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    if (!('id' in value) || typeof value.id !== 'string' || value.id.length === 0) {
+        return false;
+    }
+    if (!hasFiniteNumberField(value, 'originalBeat') || !hasFiniteNumberField(value, 'warpedBeat')) {
+        return false;
+    }
+    if (!hasValidOptionalWarpMarkerFields(value)) {
         return false;
     }
     return Object.keys(value).every((key) => (WARP_MARKER_KEYS as readonly string[]).includes(key));
@@ -215,6 +230,25 @@ function isClipWarpStateRecord(value: unknown): value is ClipWarpStateRecord {
     return isWarpState(rest);
 }
 
+/** Copy a marker field by field, omitting undefined optional keys (same shape as `normalizeWarpMarker`). */
+function copySanitizedWarpMarker(marker: WarpMarker): WarpMarker {
+    const copied: WarpMarker = {
+        id: marker.id,
+        originalBeat: marker.originalBeat,
+        warpedBeat: marker.warpedBeat,
+    };
+    if (marker.origin !== undefined) {
+        copied.origin = marker.origin;
+    }
+    if (marker.confidence !== undefined) {
+        copied.confidence = marker.confidence;
+    }
+    if (marker.locked !== undefined) {
+        copied.locked = marker.locked;
+    }
+    return copied;
+}
+
 /**
  * Decode persisted clip warp states from a project file into the store's
  * `clipId`-keyed shape. A row that does not decode, or that is default, is
@@ -232,14 +266,7 @@ export function sanitizeClipWarpStates(value: unknown): Record<string, WarpState
         }
         const state: WarpState = {
             enabled: candidate.enabled,
-            markers: candidate.markers.map((marker) => ({
-                id: marker.id,
-                originalBeat: marker.originalBeat,
-                warpedBeat: marker.warpedBeat,
-                ...(marker.origin !== undefined ? { origin: marker.origin } : {}),
-                ...(marker.confidence !== undefined ? { confidence: marker.confidence } : {}),
-                ...(marker.locked !== undefined ? { locked: marker.locked } : {}),
-            })),
+            markers: candidate.markers.map(copySanitizedWarpMarker),
             stretchMode: candidate.stretchMode,
             originalTempo: candidate.originalTempo,
         };
@@ -306,14 +333,7 @@ function sanitizeWarpStateStoreState(value: unknown): WarpStateStoreState {
         }
         states[clipId] = {
             enabled: candidate.enabled,
-            markers: candidate.markers.map((marker) => ({
-                id: marker.id,
-                originalBeat: marker.originalBeat,
-                warpedBeat: marker.warpedBeat,
-                ...(marker.origin !== undefined ? { origin: marker.origin } : {}),
-                ...(marker.confidence !== undefined ? { confidence: marker.confidence } : {}),
-                ...(marker.locked !== undefined ? { locked: marker.locked } : {}),
-            })),
+            markers: candidate.markers.map(copySanitizedWarpMarker),
             stretchMode: candidate.stretchMode,
             originalTempo: candidate.originalTempo,
         };

@@ -116,12 +116,12 @@ describe('WaveformEditor warp store subscription', () => {
         });
     });
 
-    it('shows a marker added for the open clip by an external write without a clip switch', async () => {
+    it('shows a marker added for the open clip by an external write without a clip switch', () => {
         render(<WaveformEditor clipId="clip-a" audioBufferId="buf-a" />);
 
         expect(screen.getByText('0 markers')).toBeTruthy();
 
-        await act(() => {
+        act(() => {
             addWarpMarker('clip-a', 1, 1.25);
         });
 
