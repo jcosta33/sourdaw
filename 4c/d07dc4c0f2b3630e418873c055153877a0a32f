@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_fabbe41ad743be::t_21b9acc03770d6 1204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4cd07dc4c0f2b3630e418873c055153877a0a32f",
+  "prompts": {},
+  "sessions": {
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
