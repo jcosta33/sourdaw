@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import { composeReviewCommentBody } from '../prContract.ts';
 import {
     coordinatePublishReview,
     parseAcceptanceDocument,
@@ -50,6 +51,7 @@ import {
     publishedFindings,
     publishedReviewId,
 } from '../reviewDossierViews.ts';
+import { recordPublicationBindings } from '../reviewPublicationBinding.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import {
@@ -5355,6 +5357,167 @@ describe('fresh reviewer dossier publication', () => {
             const message = refusalMessage(() => publishReview(number, fixture.port));
             expect(message).toMatch(/review 99 carries 0 public comments, not the document's 1/u);
             expect(fixture.calls).toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses the binding when a landed comment does not match the document positionally', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff,
+            reviewComments: [{ id: 2329000043, path: 'scripts/other.ts', line: 5, side: 'RIGHT', body: 'rendered' }],
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/review 99 comment 0 \(scripts\/other\.ts:5:RIGHT\) does not match the document/u);
+            expect(fixture.calls).toContain('post');
+            // The refusal lands before the binding write, so only the pre-POST canonical record persisted.
+            expect(fixture.writes).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to replay when the landed review drifts from the recorded publication', () => {
+        const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput(), remoteReviews });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+
+            remoteReviews[99] = {
+                id: 99,
+                state: 'APPROVED',
+                body: 'A tampered summary.',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                comments: [],
+            };
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/recorded review publication 99 does not stand live and exact/u);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to replay when the recorded publication leaves an accepted finding unbound', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [{ path: comment.path, line: comment.line, side: comment.side }],
+            recommendation: 'request-changes',
+        });
+        // A chain recording the review but not its finding: exactly one review-published, no finding-published.
+        const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(bound)),
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff,
+            remoteReviews: {
+                99: {
+                    id: 99,
+                    state: 'CHANGES_REQUESTED',
+                    body: 'One blocking finding.',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    comments: [
+                        {
+                            path: comment.path,
+                            line: comment.line,
+                            side: comment.side,
+                            body: composeReviewCommentBody(comment),
+                        },
+                    ],
+                },
+            },
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/lacks public comment bindings for: comment-0/u);
+            expect(fixture.calls).not.toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to bind a dossier that already records a publication', () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 98 },
+        ]);
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: JSON.parse(serializeReviewDossier(bound)) });
+        const document: Parameters<typeof recordPublicationBindings>[2] = {
+            event: 'APPROVE',
+            body: 'Attacked the dossier gate; it held.',
+            comments: [],
+        };
+        try {
+            expect(() => recordPublicationBindings(number, head, document, 99, fixture.port)).toThrow(
+                /review dossier already binds publication 98; refusing to rebind to 99/u
+            );
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
