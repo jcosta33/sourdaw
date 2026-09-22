@@ -1,4 +1,4 @@
-import { addWarpMarker, getWarpState, trackStore, warpStates } from '#/modules/Arrangement/stores';
+import { addWarpMarker, getWarpState, setWarpState, trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
@@ -67,7 +67,7 @@ export function detectTransientsForClip(clipId: string, sensitivity: number): De
     // gate duplicate-beat detection or to count `kept`.
     const preservedSnapshot = existing.markers.filter((m) => (m.origin ?? 'user') !== 'transient-auto');
 
-    warpStates.set(clipId, {
+    setWarpState(clipId, {
         ...existing,
         markers: [...preservedSnapshot].sort((a, b) => a.originalBeat - b.originalBeat),
     });

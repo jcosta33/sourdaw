@@ -117,6 +117,7 @@ export type ProjectData = {
     mixer: ProjectMixer;
     vcaGroups?: ProjectVcaGroup[];
     gainEnvelopes?: ProjectClipGainEnvelope[];
+    warpStates?: ProjectClipWarpState[];
     modulation?: ProjectModulation;
     cvGate?: ProjectCvGate;
     markers: ProjectMarker[];
@@ -434,6 +435,24 @@ export type ProjectClipGainEnvelope = {
     clipId: string;
     points: ProjectGainEnvelopePoint[];
     enabled: boolean;
+};
+
+/** Local mirror of Arrangement's per-clip `WarpState`, keyed by `clipId`. */
+export type ProjectClipWarpState = {
+    clipId: string;
+    enabled: boolean;
+    markers: ProjectWarpMarker[];
+    stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    originalTempo: number | null;
+};
+
+export type ProjectWarpMarker = {
+    id: string;
+    originalBeat: number;
+    warpedBeat: number;
+    origin?: 'user' | 'transient-auto' | 'grid-snap';
+    confidence?: number;
+    locked?: boolean;
 };
 
 export type ProjectModulatorKind = 'lfo' | 'envelope' | 'step';

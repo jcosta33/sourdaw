@@ -15,7 +15,13 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
-import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
+import {
+    defaultTrackState,
+    defaultWarpStateStoreState,
+    getWarpState,
+    trackStore,
+    warpStateStore,
+} from '#/modules/Arrangement/stores';
 import {
     relinkClipAudioSource,
     replaceClipAudioBuffer,
@@ -187,12 +193,15 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     // §195.3 — reactive subscription; component used to read trackStore.value
     // during render and show stale data after clip/track mutations.
     const trackState = useStore(trackStore, defaultTrackState);
+    // Subscribe so undo, collab sync, and external warp writes for the open clip
+    // re-render without a clip switch (mirrors ClipGainEnvelopeSection).
+    useStore(warpStateStore, defaultWarpStateStoreState);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
     const [isDragging, setIsDragging] = useState(false);
     const [bufferVersion, setBufferVersion] = useState(0);
-    const [warpState, setWarpState] = useState<WarpState>(() => getWarpState(clipId));
+    const warpState: WarpState = getWarpState(clipId);
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
@@ -205,32 +214,16 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     const [isDraggingMarker, setIsDraggingMarker] = useState(false);
     const didDragRef = useRef(false);
 
-    // audit M-249: `warpState` is seeded once by the lazy initializer above, but
-    // ClipView renders this editor without a `key`, so switching the selected clip
-    // reuses the instance and leaves the previous clip's warp state on screen and
-    // in the toggle branch. Re-read it during the render that changes `clipId` —
-    // React's previous-props adjustment — so the committed frame and the first
-    // click after a switch both describe the clip actually being edited. Held in
-    // state rather than a ref because reading or writing a ref during render is
-    // impure (`react-hooks/refs`).
-    const [renderedClipId, setRenderedClipId] = useState(clipId);
-    if (renderedClipId !== clipId) {
-        setRenderedClipId(clipId);
-        setWarpState(getWarpState(clipId));
-    }
-
     // audit M-249: `didDragRef` latches on a marker drag and is only cleared by a
     // later pointerdown that lands on a marker, so a drag on the previous clip kept
     // `handleDoubleClick` returning early — swallowing the first double-click that
     // adds or removes a warp marker on the new clip. A clip switch abandons the drag
-    // context, so clear the latch with it. Done in an effect rather than in the
-    // render block above because writing a ref during render is impure
-    // (`react-hooks/refs`); double-clicks arrive from user events, long after flush.
+    // context, so clear the latch with it. Done in an effect rather than during
+    // render because writing a ref during render is impure (`react-hooks/refs`);
+    // double-clicks arrive from user events, long after flush.
     useEffect(() => {
         didDragRef.current = false;
     }, [clipId]);
-
-    const refreshWarp = () => setWarpState(getWarpState(clipId));
 
     const handleToggleWarp = () => {
         if (warpState.enabled) {
@@ -238,12 +231,10 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         } else {
             enableWarp(clipId);
         }
-        refreshWarp();
     };
 
     const handleStretchMode = (mode: WarpState['stretchMode']) => {
         setStretchMode(clipId, mode);
-        refreshWarp();
     };
 
     const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
@@ -369,7 +360,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         if (didDragRef.current) {
             const newBeat = Math.max(0, x / beatWidth);
             moveWarpMarker(clipId, draggingMarkerRef.current.id, newBeat);
-            refreshWarp();
         }
     };
 
@@ -408,7 +398,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
         } else {
             addManualWarpMarker({ clipId, beat });
         }
-        refreshWarp();
     };
 
     const handleWaveContextMenu = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -627,7 +616,6 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                             } else {
                                 enableWarp(clipId);
                             }
-                            refreshWarp();
                         })}
                     >
                         {warpState.enabled ? 'Disable Warp' : 'Enable Warp'}

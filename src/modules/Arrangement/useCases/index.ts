@@ -96,6 +96,7 @@ export { addGainEnvelopePoint } from './clipGainEnvelope/addGainEnvelopePoint';
 export { getClipGainEnvelope } from './clipGainEnvelope/getClipGainEnvelope';
 export { getGainAtBeat } from './clipGainEnvelope/getGainAtBeat';
 export { hydrateClipGainEnvelopes } from './clipGainEnvelope/hydrateClipGainEnvelopes';
+export { hydrateClipWarpStates } from './warp/hydrateClipWarpStates';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';

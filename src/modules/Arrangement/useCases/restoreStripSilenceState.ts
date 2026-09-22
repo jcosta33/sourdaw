@@ -27,8 +27,11 @@ type RestoreStripSilenceStateInput = {
  * above the writes so most of them refuse before anything lands, and the one
  * call that can refuse after the satellites have migrated reverts them on the
  * way out. That rollback carries real weight: the caller answers a rejection
- * by aborting the Automerge transaction, and `warpStates` is a plain
- * module-level `Map` that is not in it.
+ * by aborting the Automerge transaction, and this function's own "leave stores
+ * as found" contract must hold before that abort runs — including warp, which
+ * now shares the CRDT-backed store path with gain envelopes. The explicit
+ * `revert()` restores satellites synchronously so a later retry sees the
+ * pre-flight state without relying solely on the caller's abort.
  */
 export function restoreStripSilenceState({ expected, replacement }: RestoreStripSilenceStateInput): boolean {
     if (expected.trackId !== replacement.trackId) {

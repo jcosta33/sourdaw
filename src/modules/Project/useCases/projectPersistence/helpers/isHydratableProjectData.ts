@@ -72,6 +72,7 @@ export type HydratableProjectData = {
      */
     vcaGroups?: unknown;
     gainEnvelopes?: unknown;
+    warpStates?: unknown;
     modulation?: unknown;
     cvGate?: unknown;
     history?: unknown;

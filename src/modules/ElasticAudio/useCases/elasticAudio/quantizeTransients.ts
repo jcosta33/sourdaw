@@ -1,4 +1,4 @@
-import { getWarpState, trackStore, warpStates } from '#/modules/Arrangement/stores';
+import { getWarpState, setWarpState, trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
@@ -89,15 +89,15 @@ export function quantizeTransients(clipId: string): QuantizeTransientsResult {
         enabled: true,
     };
 
-    warpStates.set(clipId, nextState);
+    setWarpState(clipId, nextState);
 
     pushUndoEntry(
         'Quantize transients',
         () => {
-            warpStates.set(clipId, previousState);
+            setWarpState(clipId, previousState);
         },
         () => {
-            warpStates.set(clipId, nextState);
+            setWarpState(clipId, nextState);
         }
     );
 
