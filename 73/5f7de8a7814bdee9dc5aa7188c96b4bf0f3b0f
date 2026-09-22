@@ -1,0 +1,21 @@
+scripts/deliverPullRequest.ts
+  s_df40b526e33ddb::t_e77a39d857e1c1 1355-1357,1378,1382-1387
+scripts/pullRequestReviewState.ts
+  s_df40b526e33ddb::t_359cec6bfadf21 8,298-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "735f7de8a7814bdee9dc5aa7188c96b4bf0f3b0f",
+  "prompts": {},
+  "sessions": {
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
