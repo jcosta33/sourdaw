@@ -43,6 +43,15 @@ import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 
 const ZOOM_STEP = 4;
 
+// Held keys re-fire keydown with `repeat: true`. Toggles and one-shots must
+// not re-execute, but zoom step commands are meant to keep firing while held.
+const REPEATABLE_ON_HOLD_SHORTCUT_IDS = new Set([
+    'view.zoomIn',
+    'view.zoomOut',
+    'view.zoomTracksVerticalIn',
+    'view.zoomTracksVerticalOut',
+]);
+
 const AI_LEADER_TIMEOUT_MS = 1500;
 
 type AiLeaderState = {
@@ -607,6 +616,9 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 // has no binding, so there is no conflict to gate against.
                 if (def.id.startsWith('loopStation.pad.') && def.id.endsWith('.play') && !loopStationArmed) {
                     continue;
+                }
+                if (repeat && !REPEATABLE_ON_HOLD_SHORTCUT_IDS.has(def.id)) {
+                    return true;
                 }
                 return executeShortcutAction(def.action);
             }
