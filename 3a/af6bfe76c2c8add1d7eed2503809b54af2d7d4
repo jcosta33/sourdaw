@@ -1,0 +1,20 @@
+crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs
+  s_06dc833e4f1d53::t_3335e2ad9c3c3a 294-303,311-313,369-384,386-387,391-392,399-407
+  s_06dc833e4f1d53::t_7cf4c60d547258 408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3aaf6bfe76c2c8add1d7eed2503809b54af2d7d4",
+  "prompts": {},
+  "sessions": {
+    "s_06dc833e4f1d53": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1bbf76e2-c564-4c08-b4c3-9493a129425f",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
