@@ -373,7 +373,9 @@ fn external_key_reaches_the_default_vca_detector() {
     {
         let (default_loud, default_gr) = render_with_external_key(None, true, 0.9);
         let (vca_loud, vca_gr) = render_with_external_key(Some(TOPOLOGY_VCA), true, 0.9);
-        let (_, opto_gr) = render_with_external_key(Some(TOPOLOGY_OPTO), true, 0.9);
+        let (opto_loud, opto_gr) = render_with_external_key(Some(TOPOLOGY_OPTO), true, 0.9);
+        let (fet_loud, _) = render_with_external_key(Some(TOPOLOGY_FET), true, 0.9);
+        let (diode_loud, _) = render_with_external_key(Some(TOPOLOGY_DIODE), true, 0.9);
         assert_eq!(
             default_gr, vca_gr,
             "constructor default must be VCA (GR), but default gr {default_gr} vs VCA gr {vca_gr}"
@@ -388,6 +390,27 @@ fn external_key_reaches_the_default_vca_detector() {
             opto_vs_vca > 0.5,
             "Opto GR must differ from unlabeled VCA GR by more than 0.5 dB on a loud Ext SC key, \
              but Opto gr {opto_gr} vs VCA gr {default_gr} (Δ {opto_vs_vca})"
+        );
+        // Same loud Ext SC key: Opto wet must separate from unlabeled VCA —
+        // a topology write that leaves the wet identical to VCA must fail.
+        let opto_wet_vs_vca = max_delta(&opto_loud, &default_loud);
+        assert!(
+            opto_wet_vs_vca > 1.0e-2,
+            "Opto wet must differ from unlabeled VCA wet on a loud Ext SC key, \
+             but max Δ {opto_wet_vs_vca:e}"
+        );
+        // FET and Diode wet must each separate from unlabeled VCA on that key.
+        let fet_wet_vs_vca = max_delta(&fet_loud, &default_loud);
+        assert!(
+            fet_wet_vs_vca > 1.0e-2,
+            "FET wet must differ from unlabeled VCA wet on a loud Ext SC key, \
+             but max Δ {fet_wet_vs_vca:e}"
+        );
+        let diode_wet_vs_vca = max_delta(&diode_loud, &default_loud);
+        assert!(
+            diode_wet_vs_vca > 1.0e-2,
+            "Diode wet must differ from unlabeled VCA wet on a loud Ext SC key, \
+             but max Δ {diode_wet_vs_vca:e}"
         );
     }
 
