@@ -47,8 +47,8 @@ const mocks = vi.hoisted(() => {
         ensureTrackStrips: vi.fn<() => void>(),
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
-        updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
-        removeClip: vi.fn<(clipId: string) => void>(),
+        commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+        discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
@@ -96,9 +96,9 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
-    updateClip: mocks.updateClip,
+    commitRecording: mocks.commitRecording,
     startRecording: mocks.startRecording,
-    removeClip: mocks.removeClip,
+    discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
@@ -364,12 +364,12 @@ describe('toggleRecording', () => {
 
         await Promise.resolve();
 
-        const clip_update = mocks.updateClip.mock.calls[0]?.[1];
+        const clip_update = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clip_update) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
 
-        expect(clip_update(recording_clip)).toEqual({
+        expect(clip_update).toEqual({
             ...recording_clip,
             audioBufferId: cached_buffer_id,
             startBeat: 10,
@@ -377,7 +377,7 @@ describe('toggleRecording', () => {
         });
 
         // A delivered take is kept: no retirement and no failure notice.
-        expect(mocks.removeClip).not.toHaveBeenCalled();
+        expect(mocks.discardRecording).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
@@ -427,11 +427,11 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 2 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
-        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.8, 9);
+        expect(clipUpdate.startBeat).toBeCloseTo(3.8, 9);
     });
 
     it('places a take stopped inside the hold against the clock at its stop', async () => {
@@ -475,11 +475,11 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 2 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
-        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.86, 9);
+        expect(clipUpdate.startBeat).toBeCloseTo(3.86, 9);
     });
 
     it('places a take engaged mid-play on hardware latency alone, with no roll to wait for', async () => {
@@ -518,11 +518,11 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 2 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
-        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.96, 9);
+        expect(clipUpdate.startBeat).toBeCloseTo(3.96, 9);
     });
 
     it('sizes a take by the active tempo map rather than the base tempo', async () => {
@@ -560,11 +560,11 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 4 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
-        const updated = clipUpdate(recordingClip);
+        const updated = clipUpdate;
         expect(updated.startBeat).toBe(0);
         expect(updated.endBeat).toBe(4);
     });
@@ -609,11 +609,11 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 4 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
-        const updated = clipUpdate(recordingClip);
+        const updated = clipUpdate;
         expect(updated.startBeat).toBe(2);
         expect(updated.endBeat).toBe(7);
         // The span the take covers, integrated through the same map, is the
@@ -670,12 +670,12 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 2 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
-        expect(clipUpdate(recordingClip).startBeat).toBeCloseTo(3.9, 9);
-        expect(clipUpdate(recordingClip).endBeat).toBeCloseTo(5.9, 9);
+        expect(clipUpdate.startBeat).toBeCloseTo(3.9, 9);
+        expect(clipUpdate.endBeat).toBeCloseTo(5.9, 9);
     });
 
     it('tells the musician and retires the provisional take when a capture fails', async () => {
@@ -706,9 +706,9 @@ describe('toggleRecording', () => {
         // clip is retired from the arrangement, and nothing buffer-shaped is
         // cached or written into it.
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
-        expect(mocks.removeClip).toHaveBeenCalledWith('clip-recording');
+        expect(mocks.discardRecording).toHaveBeenCalledWith('clip-recording');
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.updateClip).not.toHaveBeenCalled();
+        expect(mocks.commitRecording).not.toHaveBeenCalled();
     });
 
     it('surfaces a capture failure without retiring when the take clip does not exist yet', async () => {
@@ -736,7 +736,7 @@ describe('toggleRecording', () => {
         recordingCallback({ kind: 'failed', reason: 'flush-timeout' });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
-        expect(mocks.removeClip).not.toHaveBeenCalled();
+        expect(mocks.discardRecording).not.toHaveBeenCalled();
     });
 
     it('does not create recording state when an audio recorder cannot start', async () => {
@@ -964,12 +964,12 @@ describe('toggleRecording', () => {
         captured({ kind: 'completed', buffer: { duration: 2 } });
         await Promise.resolve();
 
-        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        const clipUpdate = mocks.commitRecording.mock.calls[0]?.[0];
         if (!clipUpdate) {
-            throw new Error('Expected recording clip to be updated');
+            throw new Error('Expected the recording clip to be committed');
         }
         // durationBeats = 2 * (120/60) = 4 -> endBeat 14 (not 12 from tempo 60).
-        expect(clipUpdate(recordingClip).endBeat).toBe(14);
+        expect(clipUpdate.endBeat).toBe(14);
     });
 
     describe('recording admission (#3679)', () => {
