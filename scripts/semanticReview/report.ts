@@ -495,12 +495,6 @@ function omittedLine(total: number): string {
 }
 
 /**
- * The one sentence that says how the run went. `unresolved` is a first-class scan disposition and a
- * verify report's `needs_more_evidence` is a coverage gap, so a run in which the model declined every
- * question — or every finding's evidence was withheld — must not read the same as one it answered
- * cleanly. Each mode words its own undecided branch from what that mode actually carries.
- */
-/**
  * An answer at or above this and below its fire threshold came close without reaching it. It is a
  * reading of the reported probabilities, not a disposition: no property is marked undecided, and the
  * summary says what happened instead of leaving a reader to assume the questions were answered.
@@ -535,6 +529,12 @@ function outcomeCounts(report: SemanticReport): { totalAssessments: number; unde
     };
 }
 
+/**
+ * The one sentence that says how the run went. `unresolved` is a first-class scan disposition and a
+ * verify report's `needs_more_evidence` is a coverage gap, so a run in which the model declined every
+ * question — or every finding's evidence was withheld — must not read the same as one it answered
+ * cleanly. Each mode words its own undecided branch from what that mode actually carries.
+ */
 function describeOutcome(input: {
     mode: SemanticMode;
     assessed: number;

@@ -171,13 +171,13 @@ const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
     // The shape keys on the block, not on one line's length. A closing footer identifies a block whose
     // body was reflowed into lines shorter than any single-line floor, and the body may begin on the
     // header's own line rather than after a break, so both are caught. Without a footer the body must
-    // still be a run of real body length: the fixtures pin a forty-character run of a real PKCS#8
-    // prefix, and a twenty-four-character placeholder under a header is a fake block that must not be
-    // withheld.
+    // still be a run of real body length: a PEM body line is sixty-four base64 characters — the length
+    // the pinned scanner's own body requirement uses — and a twenty-four-character placeholder under a
+    // header is a fake block that must not be withheld.
     {
         reason: 'an armored private key',
         pattern: new RegExp(
-            String.raw`${ARMOR_HEADER}(?:[ \t]*\r?\n${ARMOR_ENVELOPE})?(?:(?:${ARMOR_BODY_LINE})+[ \t]*${ARMOR_FOOTER}|[ \t]*[A-Za-z0-9+/=]{40,})`,
+            String.raw`${ARMOR_HEADER}(?:[ \t]*\r?\n${ARMOR_ENVELOPE})?(?:(?:${ARMOR_BODY_LINE})+[ \t]*${ARMOR_FOOTER}|[ \t]*[A-Za-z0-9+/=]{64,})`,
             'u'
         ),
     },

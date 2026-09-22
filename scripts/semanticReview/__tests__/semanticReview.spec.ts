@@ -1655,7 +1655,7 @@ describe('the egress screen tells code from credentials', () => {
         const pkcs8Header = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
         const opensshHeader = secretFixture('-----BEGIN OPENSSH ', 'PRIVATE KEY', '-----');
         const rsaHeader = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
-        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const body = secretFixture('TUlJRXZRSUJBREFO', 'QmdrcWhraUc5dzBC', 'QVFFRkFBU0NCS2N3', 'Z2dTakFnRUFBb0lC');
         const pkcs8 = secretFixture(pkcs8Header, '\n', body);
         const openssh = secretFixture(opensshHeader, '\n', body);
         const rsa = secretFixture(rsaHeader, '\n', body);
@@ -1681,7 +1681,7 @@ describe('the egress screen tells code from credentials', () => {
         // the base64 body on the line after the header, so a real encrypted key passed the screen and
         // its region went to the provider.
         const rsaHeader = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
-        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const body = secretFixture('TUlJRXZRSUJBREFO', 'QmdrcWhraUc5dzBC', 'QVFFRkFBU0NCS2N3', 'Z2dTakFnRUFBb0lC');
         const procType = secretFixture('Proc-Type: 4,', 'ENCRYPTED');
         const dekInfo = secretFixture('DEK-Info: ', 'AES-256-CBC,0123456789ABCDEF');
         const encrypted = secretFixture(rsaHeader, '\n', procType, '\n', dekInfo, '\n', '\n', body);
@@ -3321,7 +3321,7 @@ describe('vendor prefix coverage', () => {
 describe('armored envelopes with arbitrary header lines', () => {
     it('withholds an envelope carrying a Version line between header and body', () => {
         const rsaHeader = secretFixture('-----BEGIN RSA ', 'PRIVATE KEY', '-----');
-        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const body = secretFixture('TUlJRXZRSUJBREFO', 'QmdrcWhraUc5dzBC', 'QVFFRkFBU0NCS2N3', 'Z2dTakFnRUFBb0lC');
         const version = secretFixture('Version: ', 'OpenSSL 1.1.1');
         const versioned = secretFixture(rsaHeader, '\n', version, '\n', body);
         expect(sensitiveContentReason(versioned)).toBe('an armored private key');
