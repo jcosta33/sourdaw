@@ -40,9 +40,14 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   Re-check each hit against the new condition and re-home it in the same change: a guard strands
   every assertion behind it, so a guard keyed on a state the diff changes must be re-homed even when
   no control was renamed, removed, or replaced. When a diff adds text-bearing UI beside an existing
-  text locator, run the affected specs and require them to redden if the locator is now ambiguous —
-  `getByText` matches case-insensitive substrings, so a new sibling makes it a strict-mode violation
-  or makes `.first()` select the wrong element.
+  text locator, the sweep is `tests/e2e/` searched case-insensitively for the existing locator's text
+  and for the added sibling's own text; run every spec those searches return and require each to
+  redden if the locator is now ambiguous — `getByText` matches case-insensitive substrings, so a new
+  sibling makes it a strict-mode violation or makes `.first()` select the wrong element.
+- An either-arm assertion whose arms can hold independently is a standing escape: flag each arm that
+  can be satisfied on its own, and require each arm to be load-bearing by mutating one arm's
+  condition away and confirming the assertion reddens — until then the disjunction can be silently
+  narrowed to a single live arm.
 
 ## Lessons from escapes
 
@@ -57,24 +62,32 @@ composer's `disabled` expression — retiring that state contract, leaving
 `chatComposerTestId.spec.ts`'s `toBeDisabled()` assertion stale, and, because the stale `Command Mode`
 locator sat behind an `isDisabled()` guard, unmasking that five-week-old locator. PR #4473 added a
 track-role `<option value="synth">` above the inspector's `Synth` device card, so `getByText('Synth')`
-resolved to both — a strict-mode violation in one spec and, in `templateAndInspectorFinal.spec.ts`,
-`.first()` resolving to the invisible `<option value="synth">`, whose click timed out at line 63 and
-reddened that spec and its shard. The weak-assertion pass was a separate case:
-`instrumentPanels.spec.ts`'s Toaster case asserted `has_toaster || has_synth`, a disjunction that
-held either way.
+matched both — a strict-mode violation in one spec and, because `getByText` matches case-insensitive
+substrings, `.first()` resolving to the invisible `<option value="synth">`, whose click timed out at
+line 63 and reddened that spec and its shard. A text locator that resolves to the wrong element
+makes its assertion observe something other than the intended control, and when the assertion is a
+disjunction written against that locator, an arm it cannot satisfy is dead: the disjunction
+silently narrows to whichever single arm still holds.
 
 Blind spot: e2e never runs on a pull request, so a control rename, removal, replacement, or state
 change has no check on the reviewing head; a guard keyed on a state the diff changes hides the stale
-locator behind it; and a text locator is treated as stable when a new sibling's text is a
-case-insensitive substring of it.
+locator behind it; a text locator is treated as stable when a new sibling's text is a
+case-insensitive substring of it, so the locator resolves to the wrong element and the assertion
+observes something other than the intended control; and an either-arm assertion whose arms can hold
+independently is accepted as covering both when one arm may be dead.
 
 Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
 `tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
 change; when a diff changes a control's enabled, disabled, or visibility condition, sweep for every
 state read of it — `toBeDisabled`, `toBeEnabled`, `toBeHidden`, `isDisabled()`, `isEnabled()`,
 `isVisible()` — and re-home each in the same change; when a diff adds text-bearing UI beside an
-existing text locator, run the affected specs and require them to redden if the locator is made
-ambiguous, then assert the control through stable handles (test ids, roles) rather than bare text.
+existing text locator, sweep `tests/e2e/` case-insensitively for the existing locator's text and for
+the added sibling's own text, run every spec those searches return, and require each to redden if
+the locator is made ambiguous — `getByText` matches case-insensitive substrings, so a new sibling
+makes it a strict-mode violation or makes `.first()` select the wrong element — then assert the
+control through stable handles (test ids, roles) rather than bare text; and flag every either-arm
+assertion whose arms can hold independently, requiring each arm to be load-bearing by mutating one
+arm's condition away and confirming the assertion reddens before the disjunction counts.
 
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 
