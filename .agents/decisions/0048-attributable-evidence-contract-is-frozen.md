@@ -2,7 +2,7 @@
 type: adr
 id: 0048
 title: The attributable review-evidence contract is frozen
-status: accepted
+status: partially superseded by 0049 (source-attestation channel only)
 date: 2026-09-21
 owner: The Sourdaw team
 sources:
@@ -69,7 +69,9 @@ reader retained.
 - The `sourdaw-*-v1` marker-line records — repair records, confirmation, finding lineage, and the
   source attestation (`sourceAttestation.ts`), which binds every exact commit OID above the
   comparison base and its observed Git authorship to the published head — all framed by the one
-  marker grammar in `canonicalRecord.ts`.
+  marker grammar in `canonicalRecord.ts`. **Retired 2026-09-23 by
+  [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding this item): the
+  comment channel has no live writer, and the authorship gate remains.**
 - Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
   marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
   receipts remain readable.
@@ -108,7 +110,9 @@ paginated reads), `repairReviewFinding.spec.ts` / `confirmReviewRepairs.spec.ts`
 marker refusal, thread and comment pagination), `sourceAttestation.spec.ts` (record round-trip,
 canonical byte form, exact-OID binding, foreign-actor marker refusal, newest authority), and
 `deliverPullRequest.spec.ts` (immutable
-actor identities, wrong-head and wrong-actor approvals ignored, receipt ordering).
+actor identities, wrong-head and wrong-actor approvals ignored, receipt ordering). The source
+attestation and `sourceAttestation.spec.ts` were deleted on 2026-09-23 by
+[0049](0049-retire-the-source-attestation-comment.md); the rest of this verification record stands.
 
 ## Consequences
 

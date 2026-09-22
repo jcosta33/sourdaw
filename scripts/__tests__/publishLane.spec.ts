@@ -17,7 +17,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
-    AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
     ORCHESTRATOR_USER_NODE_ID,
@@ -76,13 +75,6 @@ import {
     type PublishWorktree,
     type RemoteBranchRead,
 } from '../publishLane.ts';
-import {
-    SOURCE_ATTESTATION_MARKER,
-    parseSourceAttestation,
-    sourceAttestationComment,
-    sourceAttestationRecord,
-    type AttestationComment,
-} from '../sourceAttestation.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -194,8 +186,6 @@ type FakeInput = {
     subject?: string | null;
     /** Author emails the publish delta's authorship read answers; defaults to the bot. */
     commitEmails?: string[];
-    /** Issue comments the attestation read answers; defaults to none. */
-    attestationComments?: AttestationComment[];
     /** Object-store rewrites the pre-push read answers; defaults to a clean store. */
     objectStoreRewrites?: { graftsFile?: string; replaceRefs?: number };
     headSha?: string;
@@ -238,7 +228,6 @@ function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const logs: string[] = [];
     const bodies: string[] = [];
-    const attestations: string[] = [];
     const dirty = input.dirty ?? false;
     const subject = input.subject === undefined ? DEFAULT_SUBJECT : (input.subject ?? undefined);
     const currentMetadata = input.currentMetadata ?? { labels: [modelLabelName('glm-5.3')], projectTitles: [] };
@@ -263,14 +252,6 @@ function fakePort(input: FakeInput = {}) {
                 name: 'hplovecraft208[bot]',
                 email,
             }));
-        },
-        attestationComments: (number) => {
-            calls.push(`attestationRead:${number}`);
-            return input.attestationComments ?? [];
-        },
-        addAttestationComment: (number, body) => {
-            calls.push(`attest:${number}`);
-            attestations.push(body);
         },
         objectStoreRewrites: () => ({
             graftsFile: input.objectStoreRewrites?.graftsFile,
@@ -385,7 +366,7 @@ function fakePort(input: FakeInput = {}) {
             return input.guardFailure !== undefined ? input.guardFailure(laneName) : input.guardFailureReceipt;
         },
     };
-    return { port, calls, logs, bodies, attestations };
+    return { port, calls, logs, bodies };
 }
 
 describe('stack publication fencing', () => {
@@ -530,18 +511,6 @@ describe('stack publication fencing', () => {
     });
 });
 
-/** The one attestation a publish must have posted; a test that cannot name it proves nothing. */
-function soleAttestation(attestations: string[]): string {
-    if (attestations.length !== 1) {
-        throw new Error(`expected exactly one posted attestation, found ${attestations.length}`);
-    }
-    const [body] = attestations;
-    if (body === undefined) {
-        throw new Error('posted attestation body is missing');
-    }
-    return body;
-}
-
 /**
  * The whole text of a refusal, so a test can assert what it must *not* say. `toThrow` can only
  * assert presence, and the defect these tests pin is an extra sentence, not a missing one.
@@ -623,7 +592,6 @@ describe('lane publish', () => {
             for (const file of [
                 'trustedGithubWriteBootstrap.ts',
                 'publishLane.ts',
-                'sourceAttestation.ts',
                 'canonicalRecord.ts',
                 'githubAppIdentity.ts',
                 'prContract.ts',
@@ -3741,7 +3709,6 @@ describe('push delta authorship gate', () => {
         baseSha: string;
         port: PublishLanePort;
         session: GhSession;
-        attestations: string[];
     } {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-authorship-'));
         const primary = join(fixtureRoot, 'primary');
@@ -3767,7 +3734,6 @@ describe('push delta authorship gate', () => {
         fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
         fixtureGit(primary, ['config', `branch.${BRANCH}.sourdaw-author-model`, 'glm-5.3']);
         const session = createGhSession('ghs_authorship_marker', { PATH: process.env.PATH });
-        const attestations: string[] = [];
         const port: PublishLanePort = {
             ...shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }),
             issueExists: () => true,
@@ -3776,10 +3742,6 @@ describe('push delta authorship gate', () => {
             updatePullRequest: () => undefined,
             readPullRequestMergeability: () => 'mergeable',
             ensureModelLabel: () => undefined,
-            attestationComments: () => [],
-            addAttestationComment: (_number, body) => {
-                attestations.push(body);
-            },
             readIssueTrackerMetadata: () => trackerMetadataFromIssueRow({}),
             openMilestoneTitles: () => [],
             knownProjectTitles: () => {
@@ -3790,7 +3752,7 @@ describe('push delta authorship gate', () => {
             readPullRequestProjectTitles: () => [],
             applyPullRequestMetadata: () => undefined,
         };
-        return { fixtureRoot, primary, lane, remote, baseSha, port, session, attestations };
+        return { fixtureRoot, primary, lane, remote, baseSha, port, session };
     }
 
     function dispose(fixture: ReturnType<typeof authorshipFixture>): void {
@@ -4401,161 +4363,64 @@ describe('push delta authorship gate', () => {
 
             expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
             expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
-            expect(f.attestations).toEqual([]);
-        } finally {
-            dispose(f);
-        }
-    });
-
-    it('attests every exact commit OID and its observed authorship, bound to the pushed head', () => {
-        const f = authorshipFixture();
-        try {
-            const first = commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
-            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): second bot commit', 'bot');
-
-            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
-
-            const record = parseSourceAttestation(soleAttestation(f.attestations));
-            expect(record?.pr).toBe(88);
-            // The attested head is exactly what the pinned push delivered to the remote.
-            expect(record?.head).toBe(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`]));
-            expect(record?.head).toBe(head);
-            expect(record?.commits.map((entry) => entry.oid)).toEqual([first, head].sort());
-            for (const entry of record?.commits ?? []) {
-                expect(entry.name).toBe('hplovecraft208[bot]');
-                expect(entry.email).toBe(AUTHOR_BOT_COMMIT_EMAIL);
-            }
-        } finally {
-            dispose(f);
-        }
-    });
-
-    it('attests observed authorship truthfully when the remote tip holds pre-gate human commits', () => {
-        const f = authorshipFixture();
-        try {
-            const humanTip = commitInLane(f.lane, 'one.txt', 'feat(gate): human commit', 'human');
-            fixtureGit(f.primary, ['push', f.remote, `${humanTip}:refs/heads/${BRANCH}`]);
-            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): bot commit on top', 'bot');
-
-            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
-
-            // The gate condemned only the delta (bot-authored, so it passed); the attestation
-            // binds the whole lane-authored set above the comparison base and records the human
-            // commit's observed authorship verbatim — the record is evidence, not a verdict.
-            const record = parseSourceAttestation(soleAttestation(f.attestations));
-            expect(record?.head).toBe(head);
-            expect(record?.commits.map((entry) => entry.oid)).toEqual([humanTip, head].sort());
-            expect(record?.commits.find((entry) => entry.oid === humanTip)?.email).toBe(HUMAN_EMAIL);
         } finally {
             dispose(f);
         }
     });
 });
 
-describe('source attestation', () => {
+describe('publication delta gating', () => {
     const HEAD = 'a'.repeat(40);
     const BASE = 'c'.repeat(40);
     const REMOTE_TIP = 'f'.repeat(40);
-    const BOT_COMMIT = { oid: '0'.repeat(40), name: 'hplovecraft208[bot]', email: AUTHOR_BOT_COMMIT_EMAIL };
 
-    it('gates the remote-tip delta while attesting the full set above the comparison base', () => {
-        const { port, calls, attestations } = fakePort({
+    it('gates only the remote-tip delta on a re-publication and pins the pushed head', () => {
+        const { port, calls } = fakePort({
             baseSha: BASE,
             remoteRead: { kind: 'present', sha: REMOTE_TIP },
         });
 
         expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
-        // Both reads bind the pushed head; the attestation reads above the comparison base while
-        // the gate reads only the remote-tip delta — one calculation, two scopes.
-        expect(calls).toContain(`attribution:${BASE}:${BASE}:${HEAD}`);
+        // The gate judges exactly the commits this publication adds above the remote tip, and the
+        // read binds the head the push pins; nothing reads the set above the comparison base.
         expect(calls).toContain(`attribution:${REMOTE_TIP}:${BASE}:${HEAD}`);
         expect(calls).toContain(`pushHead:${HEAD}`);
-        const record = parseSourceAttestation(soleAttestation(attestations));
-        expect(record).toEqual(sourceAttestationRecord(88, HEAD, [BOT_COMMIT]));
+        expect(calls.filter((call) => call.startsWith('attribution:'))).toEqual([
+            `attribution:${REMOTE_TIP}:${BASE}:${HEAD}`,
+        ]);
     });
 
-    it('reads the attestation set once when the first publication makes the delta base the comparison base', () => {
+    it('gates the comparison-base delta once on a first publication', () => {
         const { port, calls } = fakePort({ baseSha: BASE, remoteRead: { kind: 'absent' } });
 
         expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
-        const reads = calls.filter((call) => call.startsWith('attribution:'));
-        expect(reads).toEqual([`attribution:${BASE}:${BASE}:${HEAD}`]);
-        expect(calls).toContain('attest:88');
+        expect(calls.filter((call) => call.startsWith('attribution:'))).toEqual([
+            `attribution:${BASE}:${BASE}:${HEAD}`,
+        ]);
+    });
+});
+
+/**
+ * The source-attestation comment is retired: a publication writes nothing to the pull request's
+ * issue-comment channel. The real port exposes no comment writer, and a conforming publish records
+ * no attestation write, so re-introducing either the port member or the write reddens this.
+ */
+describe('publication attestation retirement', () => {
+    it('publishes a conforming lane without any attestation comment write', () => {
+        const { port, calls } = fakePort();
+
+        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
+
+        expect(calls.filter((call) => /attest|comment/iu.test(call))).toEqual([]);
     });
 
-    it('does not repost an attestation whose canonical marker already stands from the author App', () => {
-        const standing = sourceAttestationComment(sourceAttestationRecord(88, HEAD, [BOT_COMMIT]));
-        const { port, calls } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: standing, authorNodeId: AUTHOR_BOT_NODE_ID }],
-        });
+    it('exposes no attestation comment writer on the real publication port', () => {
+        const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
 
-        expect(publishLane(12, port)).toBe(88);
+        const port = shellPort(session, PRIMARY_ROOT, PRIMARY_ROOT, { git: 'git', gh: 'gh' });
 
-        expect(calls).toContain('attestationRead:88');
-        expect(calls.some((call) => call.startsWith('attest:'))).toBe(false);
-    });
-
-    it('supersedes a standing record that differs under the same head, by posting the recomputed one', () => {
-        const drifted = sourceAttestationComment(
-            sourceAttestationRecord(88, HEAD, [BOT_COMMIT, { ...BOT_COMMIT, oid: `1${'0'.repeat(39)}` }])
-        );
-        const { port, calls } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: drifted, authorNodeId: AUTHOR_BOT_NODE_ID }],
-        });
-
-        expect(publishLane(12, port)).toBe(88);
-
-        expect(calls).toContain('attest:88');
-    });
-
-    it('ignores a foreign-actor marker, even byte-identical to the record it would post', () => {
-        const standing = sourceAttestationComment(sourceAttestationRecord(88, HEAD, [BOT_COMMIT]));
-        const { port, calls } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: standing, authorNodeId: 'BOT_kgDOFORGED' }],
-        });
-
-        expect(publishLane(12, port)).toBe(88);
-
-        expect(calls).toContain('attest:88');
-    });
-
-    it('fails on a malformed author-App marker: corrupt protected-channel evidence is never absent', () => {
-        const { port } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: `${SOURCE_ATTESTATION_MARKER} not json`, authorNodeId: AUTHOR_BOT_NODE_ID }],
-        });
-
-        expect(() => publishLane(12, port)).toThrow(/not valid JSON/);
-    });
-
-    it('attests a legacy lane\u2019s publication to its existing pull request', () => {
-        const legacyTree = worktree({
-            path: LEGACY_LANE,
-            branch: LEGACY_BRANCH,
-            locked: true,
-            lockReason: AUTHOR_LOCK_REASON,
-        });
-        const { port, calls, attestations } = fakePort({
-            trees: [...otherAuthorLanes(), legacyTree],
-            cwd: LEGACY_LANE,
-            existing: 2275,
-            baseSha: BASE,
-        });
-
-        expect(publishLane(undefined, port)).toBe(2275);
-
-        expect(calls).toContain('attest:2275');
-        const record = parseSourceAttestation(soleAttestation(attestations));
-        expect(record?.pr).toBe(2275);
-        expect(record?.head).toBe(HEAD);
+        expect(Object.keys(port).filter((member) => /attest|comment/iu.test(member))).toEqual([]);
     });
 });
