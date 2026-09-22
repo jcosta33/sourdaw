@@ -546,6 +546,61 @@ describe('handleKeydown', () => {
         });
     });
 
+    describe('held-key repeat on matched shortcut definitions', () => {
+        it('does not re-dispatch togglePlayback on a repeated keydown, and still consumes the key', () => {
+            shortcutStoreMock.value.definitions = [
+                {
+                    id: 'transport.togglePlayback',
+                    defaultKeys: ['Space'],
+                    action: { type: 'appAction', action: { type: 'togglePlayback' } },
+                },
+            ];
+
+            const prevent = handleKeydown(descriptor({ key: ' ', repeat: true }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it('still dispatches togglePlayback on the first press', () => {
+            shortcutStoreMock.value.definitions = [
+                {
+                    id: 'transport.togglePlayback',
+                    defaultKeys: ['Space'],
+                    action: { type: 'appAction', action: { type: 'togglePlayback' } },
+                },
+            ];
+
+            const prevent = handleKeydown(descriptor({ key: ' ', repeat: false }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
+        });
+
+        it('still dispatches view.zoomIn on a repeated keydown', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'view.zoomIn', key: '+', callbackId: 'zoomIn' }),
+            ];
+
+            const prevent = handleKeydown(descriptor({ key: '+', repeat: true }));
+
+            expect(prevent).toBe(true);
+            expect(zoomTimeline).toHaveBeenCalledWith(4);
+        });
+
+        it('does not re-dispatch a one-shot such as editing.undo on a repeated keydown', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'editing.undo', key: 'z', callbackId: 'undo' }),
+            ];
+
+            const prevent = handleKeydown(descriptor({ key: 'z', repeat: true }));
+
+            expect(prevent).toBe(true);
+            expect(undo).not.toHaveBeenCalled();
+        });
+    });
+
     describe('executeShortcutAction — appAction dispatch', () => {
         it('dispatches a plain appAction shortcut unchanged', () => {
             shortcutStoreMock.value.definitions = [
