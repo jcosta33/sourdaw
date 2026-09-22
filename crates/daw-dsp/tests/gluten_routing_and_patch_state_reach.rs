@@ -291,8 +291,16 @@ const EXTERNAL_KEY_TOPOLOGIES: [(&str, Option<f32>); 4] = [
     ("diode", Some(TOPOLOGY_DIODE)),
 ];
 
-/// Stereo: a real external key must deepen GR once Ext SC is on, and must be
-/// ignored while the switch is off.
+fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = samples.iter().map(|sample| sample * sample).sum();
+    (sum_sq / samples.len() as f32).sqrt()
+}
+
+/// Stereo: a real external key must deepen GR and quiet the wet once Ext SC is
+/// on, and must be ignored while the switch is off.
 ///
 /// `the_filtered_detector_reaches_every_topology` toggles `ext_sidechain` but
 /// never writes a distinct key buffer on stereo. The Side-mode presence pin
@@ -300,9 +308,9 @@ const EXTERNAL_KEY_TOPOLOGIES: [(&str, Option<f32>); 4] = [
 /// missing ducking proof: program above threshold, silent vs loud key, then
 /// the same silent-versus-loud pair with Ext SC off.
 ///
-/// Returns the captured wet stereo and the instance's final `get_gr_db`. GR
-/// meter depth is the ducking oracle: scaling the captured samples while the
-/// sidechain stays silent would quiet RMS without deepening GR.
+/// Returns the captured wet stereo and the instance's final `get_gr_db`. Both
+/// matter: a meter that deepens while the wet stays unkeyed must fail, and
+/// scaling the capture while the sidechain stays silent must still fail GR.
 fn render_with_external_key(
     topology: Option<f32>,
     ext_sidechain: bool,
@@ -358,18 +366,44 @@ fn render_with_external_key(
 
 #[test]
 fn external_key_reaches_the_default_vca_detector() {
+    // The ("vca", None) row never writes topology. Pin the constructor default
+    // to VCA before that unlabeled render, so a non-VCA default fails here.
+    {
+        let (default_loud, default_gr) = render_with_external_key(None, true, 0.9);
+        let (vca_loud, vca_gr) = render_with_external_key(Some(TOPOLOGY_VCA), true, 0.9);
+        assert_eq!(
+            default_gr, vca_gr,
+            "constructor default must be VCA (GR), but default gr {default_gr} vs VCA gr {vca_gr}"
+        );
+        assert_eq!(
+            max_delta(&default_loud, &vca_loud),
+            0.0,
+            "constructor default must be VCA (wet), but differed from an explicit VCA write"
+        );
+    }
+
     for (label, topology) in EXTERNAL_KEY_TOPOLOGIES {
-        let (_silent_key, silent_gr) = render_with_external_key(topology, true, 0.0);
-        let (_loud_key, loud_gr) = render_with_external_key(topology, true, 0.9);
+        let (silent_key, silent_gr) = render_with_external_key(topology, true, 0.0);
+        let (loud_key, loud_gr) = render_with_external_key(topology, true, 0.9);
         let (silent_key_off, _) = render_with_external_key(topology, false, 0.0);
         let (loud_key_off, _) = render_with_external_key(topology, false, 0.9);
 
-        // Deeper GR (more negative), not merely quieter samples: attenuating the
-        // wet buffer while the sidechain stays silent must fail this case.
+        // Deeper GR (more negative): scaling the wet capture while the
+        // sidechain stays silent must still fail this case.
         assert!(
             loud_gr < silent_gr - 0.5,
             "a loud external key must deepen {label} GR when Ext SC is on, \
              but silent gr {silent_gr} vs loud gr {loud_gr}"
+        );
+
+        // Quieter wet: a meter that deepens while samples stay at the unkeyed
+        // level must fail this case.
+        let silent_rms = rms(&silent_key);
+        let loud_rms = rms(&loud_key);
+        assert!(
+            loud_rms < silent_rms * 0.95,
+            "a loud external key must quiet the {label} program when Ext SC is on \
+             (quieter RMS), but silent rms {silent_rms:e} vs loud rms {loud_rms:e}"
         );
 
         let ignored_delta = max_delta(&silent_key_off, &loud_key_off);
