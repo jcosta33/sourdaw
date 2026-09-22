@@ -19,6 +19,7 @@ import {
 } from '../prepareReview.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
+import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
 
 import type { GhSession } from '../githubAppIdentity.ts';
 
@@ -87,6 +88,13 @@ function fakePort(root: string) {
             Object.assign(files, bundle);
             installBundleAtomically(destination, bundle);
         },
+        semanticCi: (pr, headSha) => ({
+            format: SEMANTIC_CI_FORMAT,
+            pr,
+            headSha,
+            state: 'no-assessment',
+            reason: 'absent',
+        }),
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, files };
@@ -119,7 +127,15 @@ describe('review prepare', () => {
                     'pr.md',
                     'review-size.json',
                     'risk-plan.json',
+                    'semantic-ci.json',
                 ],
+            });
+            expect(JSON.parse(files['semantic-ci.json'] ?? '{}')).toEqual({
+                format: SEMANTIC_CI_FORMAT,
+                pr: 42,
+                headSha: 'headsha',
+                state: 'no-assessment',
+                reason: 'absent',
             });
             expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
                 files: 2,

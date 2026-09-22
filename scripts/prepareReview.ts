@@ -22,6 +22,11 @@ import { fail } from './prContract.ts';
 import { reviewBundlePath } from './reviewBundleLocator.ts';
 import { changedReviewPaths, formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
 import { planReviewRisk } from './reviewRiskPolicy.ts';
+import {
+    resolveSemanticReviewContext,
+    shellSemanticReviewContextPort,
+    type SemanticCiRecord,
+} from './semanticReviewContext.ts';
 
 export type ReviewPullRequest = {
     number: number;
@@ -43,6 +48,7 @@ export type PrepareReviewPort = {
     showFile: (sha: string, path: string) => string;
     listDecisionFiles: (sha: string) => string[];
     installBundle: (destination: string, files: Record<string, string>) => void;
+    semanticCi: (pr: number, headSha: string) => SemanticCiRecord;
     log: (message: string) => void;
 };
 
@@ -156,6 +162,7 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
             4
         )}\n`,
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
+        'semantic-ci.json': `${JSON.stringify(port.semanticCi(pullRequest.number, pullRequest.headRefOid), null, 4)}\n`,
         'contracts/AGENTS.md': agents,
         'contracts/CLAUDE.md': claude,
     };
@@ -342,6 +349,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
             env: session.env,
         });
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    const semantic = shellSemanticReviewContextPort(session, primaryRoot);
     return {
         primaryRoot: () => primaryRoot,
         pullRequest: (number) =>
@@ -394,6 +402,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
             }
         },
         installBundle: installBundleAtomically,
+        semanticCi: (pr, headSha) => resolveSemanticReviewContext(pr, headSha, semantic),
         log: (message) => {
             console.log(message);
         },
