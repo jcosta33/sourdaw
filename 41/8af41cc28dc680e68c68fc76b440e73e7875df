@@ -1,0 +1,26 @@
+src/modules/Gluten/presentations/views/__tests__/glutenDetectorManual.spec.ts
+  s_5ec678a267c65e::t_6f2121ed43e6d8 1-46,49-54
+  s_5ec678a267c65e::t_1fda9e7d0585a9 47-48
+docs/manual/devices/07-gluten.md
+  s_5ec678a267c65e::t_418a4e3ba48e1f 59-60
+  s_5ec678a267c65e::t_9aa742ccc2ea1e 147-152,159-160
+  s_5ec678a267c65e::t_396da6d33b2c5f 199-201
+crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs
+  s_5ec678a267c65e::t_c5b544f26fa568 283-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "418af41cc28dc680e68c68fc76b440e73e7875df",
+  "prompts": {},
+  "sessions": {
+    "s_5ec678a267c65e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a2eef85f-2733-452b-ba90-4ef3b238a112",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
