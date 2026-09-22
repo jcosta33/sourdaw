@@ -1,0 +1,19 @@
+scripts/semanticReview/sensitive.ts
+  s_d0c206f25b887f::t_ecd49f09841599 158-164,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d53ee5098a4a1715ae76fdbbda9141f9e2030daa",
+  "prompts": {},
+  "sessions": {
+    "s_d0c206f25b887f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e610f100-dc09-4213-b770-cfb8861d8780",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
