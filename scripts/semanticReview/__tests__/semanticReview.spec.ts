@@ -1696,6 +1696,20 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
     });
 
+    it('withholds a secret value under every quoting form the scanner reads', () => {
+        // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter;
+        // the screen must reach the same forms. A value that itself carries the delimiter quote is
+        // silent to the scanner and must stay admitted, not over-withheld.
+        const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '"""', value, '"""'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '`', value, '`'))).toBeDefined();
+        expect(
+            sensitiveContentReason(secretFixture('client_secret = ', '"Ab3dEf7hI\\"j2lMn4pQr5tUv6"'))
+        ).toBeUndefined();
+    });
+
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
         // No left boundary: `SOME_TOKEN`, `apiToken`, `dbPassword` and their like are the dominant
         // secret-naming vocabulary and must reach the value heuristic. The value heuristic, not a
