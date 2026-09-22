@@ -17,6 +17,16 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: pushUndoEntryMock,
 }));
 
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { value: null },
+    getTrackEligibility: () => ({ acceptsRecording: false }),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    armRetrospectiveCapture: vi.fn(),
+    disarmRetrospectiveCapture: vi.fn(),
+}));
+
 const mockPunchRecordingStore = vi.hoisted(() => ({
     value: null as PunchRecordingState | null,
     set: vi.fn(),

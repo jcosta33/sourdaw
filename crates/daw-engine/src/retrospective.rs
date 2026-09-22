@@ -190,6 +190,15 @@ impl RetrospectiveControl {
         let _ = self.commands.push(RetrospectiveCommand::Disarm);
     }
 
+    /// Push a disarm without draining the retire ring — test-only, so a full
+    /// retire ring can be observed on the capture callback without the control
+    /// side emptying it first.
+    #[cfg(test)]
+    fn push_disarm_leaving_retired(&mut self) {
+        self.target_track_id = None;
+        let _ = self.commands.push(RetrospectiveCommand::Disarm);
+    }
+
     /// The track id last passed to [`Self::arm`], if still armed from this side.
     pub fn target_track_id(&self) -> Option<usize> {
         self.target_track_id
@@ -307,10 +316,11 @@ impl RetrospectiveWriter {
     #[inline]
     fn retire(&mut self, buffer: Box<[f32]>) {
         if let Err(PushError::Full(buffer)) = self.retired.push(buffer) {
-            // Retire ring full: the control thread is not draining. Dropping
-            // here frees on the capture thread, which is the one failure the
-            // ring capacity is sized to avoid in ordinary use.
-            drop(buffer);
+            // Retire ring full: the control thread is not draining. Freeing
+            // here would run the allocator on the capture callback (ADR 0020).
+            // Forget instead — a leak under a full ring is the degradation the
+            // capacity is sized to make unreachable in ordinary use.
+            std::mem::forget(buffer);
         }
     }
 }
@@ -333,7 +343,7 @@ impl Drop for RetrospectiveWriter {
 #[cfg(test)]
 mod tests {
     use super::{
-        retrospective_capacity_frames, retrospective_capture, RetrospectiveWriter,
+        retrospective_capacity_frames, retrospective_capture, RetrospectiveWriter, RETIRE_CAPACITY,
         RETROSPECTIVE_SECONDS,
     };
 
@@ -454,6 +464,12 @@ mod tests {
             let oversized_channels = CHANNELS + 1;
             let misaligned = vec![0.5f32; CHANNELS * 8 + 1];
 
+            // Re-arm on the control side (may allocate) so the next write
+            // drains an Arm and enters `retire` — a free there must fail this
+            // guard. Without that drain the previous write-only loop never
+            // retired anything and stayed green over a capture-callback free.
+            control.arm(2, RATE, CHANNELS);
+
             assert_no_alloc(|| {
                 writer.write_block(&block, CHANNELS);
                 writer.write_block(&block, oversized_channels);
@@ -465,6 +481,31 @@ mod tests {
 
             assert!(writer.retained_samples() > 0);
             assert!(writer.retained_samples() <= writer.capacity_samples());
+            assert_eq!(writer.target_track_id(), Some(2));
+        }
+
+        #[test]
+        fn a_full_retire_ring_does_not_free_on_the_capture_callback() {
+            let (mut control, mut writer) = retrospective_capture();
+            arm_and_drain(&mut control, &mut writer, 1);
+
+            // Queue enough replace Arms to fill the retire ring exactly when
+            // drained. Command capacity equals retire capacity, so one drain
+            // saturates without overflowing yet.
+            for track_id in 2..=(1 + RETIRE_CAPACITY) {
+                control.arm(track_id, RATE, CHANNELS);
+            }
+            writer.write_block(&[], CHANNELS);
+            assert_eq!(writer.target_track_id(), Some(1 + RETIRE_CAPACITY));
+
+            // Disarm without the control side draining retired first: the
+            // capture callback's retire finds a full ring. Freeing that Box
+            // here fails the guard; forgetting keeps it green.
+            control.push_disarm_leaving_retired();
+            assert_no_alloc(|| {
+                writer.write_block(&[], CHANNELS);
+            });
+            assert!(!writer.is_armed());
         }
     }
 }

@@ -1503,6 +1503,17 @@ impl GraphRegistry {
         self.strips.contains_key(strip_id)
     }
 
+    /// The engine-native track id for a project strip, when that strip is a track.
+    ///
+    /// Buses and unknown ids return `None`. This is the one mapping from the
+    /// project's strip identity onto the `usize` [`daw_engine::EngineHandle`]
+    /// already uses — callers must not invent a parallel space.
+    pub(crate) fn track_native_id(&self, strip_id: &str) -> Option<usize> {
+        self.strips
+            .get(strip_id)
+            .and_then(|entry| (entry.kind == StripKind::Track).then_some(entry.native_id))
+    }
+
     /// The allocators and the revision, for a test pinning what an engine
     /// restart deliberately leaves alone.
     #[cfg(test)]
