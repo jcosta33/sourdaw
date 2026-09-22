@@ -1,0 +1,62 @@
+src/modules/PunchRecording/useCases/punchRecording/togglePunchRecording.ts
+  s_5c54d9bd1b8c82::t_23fdf243e326d1 2-3,7-33,42,52,60
+crates/daw-engine/src/retrospective.rs
+  s_5c54d9bd1b8c82::t_be82ecb5d2c369 319-323
+  s_5c54d9bd1b8c82::t_8fb207e0846baf 467-472,484-493,495-497,499,504-506
+  s_5c54d9bd1b8c82::t_26a7e60a8ab2cd 193-201
+  s_5c54d9bd1b8c82::t_ad9a3f4e207c38 494,498,500-503,507
+  s_5c54d9bd1b8c82::t_b0ed0a1b13635c 346,508
+src/utils/sourdawCommandArguments.ts
+  s_5c54d9bd1b8c82::t_f501973010cdc6 37,60
+crates/sourdaw-native/src/commands/mod.rs
+  s_5c54d9bd1b8c82::t_ec58275476d4f5 7
+electron/commands.ts
+  s_5c54d9bd1b8c82::t_d118a03230a46f 62
+  s_5c54d9bd1b8c82::t_92309f4a9c49a3 85
+src/modules/PunchRecording/useCases/punchRecording/__tests__/togglePunchRecording.spec.ts
+  s_5c54d9bd1b8c82::t_c4a7a7199a83dc 11-20,25-40,55,63-116
+src/modules/PunchRecording/useCases/punchRecording/__tests__/punchRecordingUndo.spec.ts
+  s_5c54d9bd1b8c82::t_e15e71e56322f7 20-29
+crates/daw-engine/src/lib.rs
+  s_5c54d9bd1b8c82::t_c74656eedc2969 1962
+  s_5c54d9bd1b8c82::t_c84cce49b7f9d9 1931-1961,1963-1975
+  s_5c54d9bd1b8c82::t_8e42d87213b13a 358-362,365-367
+src/modules/AudioEngine/useCases/index.ts
+  s_5c54d9bd1b8c82::t_a92c0172bef4bc 190-192
+crates/sourdaw-native/src/commands/graph.rs
+  s_5c54d9bd1b8c82::t_ddc96f883f002f 1506-1516
+crates/sourdaw-native/src/addon/mod.rs
+  s_5c54d9bd1b8c82::t_d5328103605a7f 841-860
+  s_5c54d9bd1b8c82::t_2c4e84a2f88607 861-862
+src/modules/AudioEngine/repositories/retrospectiveCapture/armRetrospectiveCapture.ts
+  s_5c54d9bd1b8c82::t_c58a412b5d6ae0 1-27
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  s_5c54d9bd1b8c82::t_1b5044e42921d1 1-55
+src/modules/AudioEngine/useCases/retrospectiveCapture/armRetrospectiveCapture.ts
+  s_5c54d9bd1b8c82::t_39bc8a337abf33 1-14
+electron/__tests__/commands.spec.ts
+  s_5c54d9bd1b8c82::t_e0c7e65acc6db9 352,375
+evidence/agent-campaign/manifest.json
+  s_5c54d9bd1b8c82::t_aa91831a1b4cee 668
+src/modules/AudioEngine/useCases/retrospectiveCapture/disarmRetrospectiveCapture.ts
+  s_5c54d9bd1b8c82::t_a123dbdb771f41 1-11
+src/modules/AudioEngine/repositories/retrospectiveCapture/disarmRetrospectiveCapture.ts
+  s_5c54d9bd1b8c82::t_f37196376d68e0 1-17,19-22
+  s_5c54d9bd1b8c82::t_d65aff5988cad1 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ce2f08f66f3c6437f40cd7564543bcd1961cd98e",
+  "prompts": {},
+  "sessions": {
+    "s_5c54d9bd1b8c82": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "19d63c0f-c5f3-49b4-8a25-75bcb25892b1",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
