@@ -1,0 +1,19 @@
+.agents/skills/review-stances/test-validity.md
+  s_df40b526e33ddb::t_43929e4d87d8c4 43-50,65-70,74-77,84-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "da2bc0c9a7628e605862501be4918e51bd68af6a",
+  "prompts": {},
+  "sessions": {
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
