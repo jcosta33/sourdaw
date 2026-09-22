@@ -121,6 +121,11 @@ enforcement (#3376) — must ride these channels and rules or introduce a new ad
 version; they may not relax the canonical-byte, redaction, actor-binding, or recovery rules, and
 they may not move evidence onto author-controlled content. Historical v1 artifacts stay readable
 through their explicit adapters; this freeze changes no writer, no CI policy, and no delivery gate.
+**Amended 2026-09-23 by [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding
+the source-attestation item): the retired source attestation is no longer a new evidence kind these
+channels carry, and its already-posted artifacts have no reader and no compatibility path — the one
+exception to the historical-readability sentence above. Every other evidence kind and every freeze
+rule stands unchanged.**
 
 ## Extension — publication binding and adjudication persistence (2026-09-22, #3375)
 

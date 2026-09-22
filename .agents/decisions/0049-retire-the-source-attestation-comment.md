@@ -33,8 +33,10 @@ Three facts made the channel not worth what it cost:
   the record; the full OIDs it bound were never compared against anything.
 - **It was self-attested.** The same author App identity that posted the comment ran the authorship
   gate, so the record added no independent evidence. The gate is the actual control: before any
-  remote write it refuses every commit above the comparison base that the author App did not author,
-  naming each offending commit.
+  remote write it refuses an unattributable commit in the delta this publication adds — the remote
+  tip when the branch already exists remotely, otherwise the comparison head — naming each offending
+  commit. That delta is narrower than the record's comparison-base range, but every published head's
+  delta was gated as it was added, so no commit reached a published head ungated.
 
 ## Decision
 
