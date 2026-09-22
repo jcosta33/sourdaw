@@ -88,11 +88,9 @@ describe('clipSatelliteState', () => {
         ).toBeNull();
     });
 
-    it('reads a default-valued warp entry as no satellite, matching hasNonDefaultWarpState', () => {
-        // `setStretchMode` writes unconditionally, so re-selecting the active
-        // mode leaves a map entry whose value IS `defaultWarpState`.
+    it('reads a default-valued warp write as no satellite (stored as absent)', () => {
         setWarpState('clip-1', { ...defaultWarpState });
-        expect(warpStates.has('clip-1')).toBe(true);
+        expect(warpStates.has('clip-1')).toBe(false);
 
         expect(readClipSatelliteEntry('clip-1')).toEqual({ clipId: 'clip-1', gainEnvelope: null, warpState: null });
     });

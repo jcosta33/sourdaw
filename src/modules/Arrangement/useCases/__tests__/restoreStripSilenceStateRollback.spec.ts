@@ -108,10 +108,10 @@ describe('restoreStripSilenceState satellite rollback', () => {
         mocks.applyClipAutomationLaneTransition.mockReturnValue(false);
         expect(restoreStripSilenceState({ expected: plan!.previous, replacement: plan!.next })).toBe(false);
 
-        // `warpStates` is a plain module-level `Map` and is NOT in the
-        // Automerge transaction the caller aborts on a rejection, so a
-        // migration left standing here survives the abort while the clip it
-        // is keyed to does not.
+        // The satellite stores are back at `previous` via explicit `revert()` —
+        // warp now shares the CRDT-backed path with gain envelopes, but this
+        // function still restores them synchronously so a retry sees the
+        // pre-flight state before the caller's transaction abort runs.
         expect(warpStates.get('clip-1')).toEqual(warpState);
         expect(segmentIds.some((id) => warpStates.has(id))).toBe(false);
         expect(getEnvelope('clip-1')).toEqual(envelope);

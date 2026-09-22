@@ -1,4 +1,4 @@
-import { addWarpMarker, getWarpState, warpStates } from '#/modules/Arrangement/stores';
+import { addWarpMarker, getWarpState, setWarpState } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
 export function addManualMarker(clipId: string, localBeat: number): void {
@@ -13,10 +13,10 @@ export function addManualMarker(clipId: string, localBeat: number): void {
     pushUndoEntry(
         'Add elastic marker',
         () => {
-            warpStates.set(clipId, snapshot);
+            setWarpState(clipId, snapshot);
         },
         () => {
-            warpStates.set(clipId, { ...afterSnapshot, markers: nextMarkers });
+            setWarpState(clipId, { ...afterSnapshot, markers: nextMarkers });
         }
     );
 }
