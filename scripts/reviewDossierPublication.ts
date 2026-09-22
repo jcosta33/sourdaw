@@ -15,7 +15,12 @@ import { join } from 'node:path';
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { assembleReviewDossier, parseReviewDossier, serializeReviewDossier } from './reviewDossier.ts';
+import {
+    REVIEW_DOSSIER_FORMAT,
+    assembleReviewDossier,
+    parseReviewDossier,
+    serializeReviewDossier,
+} from './reviewDossier.ts';
 import { acceptedFindings, completedStances, discardedDispositions } from './reviewDossierViews.ts';
 
 import type { ReviewDossier, ReviewDossierEvent, ReviewDossierStance, ReviewModelTier } from './reviewDossier.ts';
@@ -302,15 +307,19 @@ export function readDossierStanceDraws(
 }
 
 /**
- * The two forms never validate as each other, so a refusal here is the retry/replay detection:
- * `parseReviewDossier` accepts only the canonical record, and caller input is assembled below.
+ * Caller input assembles below; an already-persisted record replays unchanged so a retried
+ * publication is idempotent. The retry check keys on the format field alone: a value claiming the
+ * canonical format must then validate as the canonical record in full, chain digests included — a
+ * tampered record fails closed with its own corruption error instead of being retried as input.
  */
 function tryParsePersistedDossier(raw: unknown): ReviewDossier | undefined {
-    try {
-        return parseReviewDossier(raw);
-    } catch {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
         return undefined;
     }
+    if ((raw as { format?: unknown }).format !== REVIEW_DOSSIER_FORMAT) {
+        return undefined;
+    }
+    return parseReviewDossier(raw);
 }
 
 function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
