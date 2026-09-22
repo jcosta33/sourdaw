@@ -62,13 +62,15 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // workflow-level pin, and no pin read it: `contents: write` on a validation
 // leg would hand every pull request a token that can push. The heavy and
 // nightly files keep their own exact job-level pins (CodeQL, the nightly
-// reporter); these two files must grant nothing at job level.
+// reporter); these files must grant nothing. The semantic-review file is
+// absent because its coverage job carries a deliberate `contents: read`, and
+// `semanticReviewWorkflowContract.ts` pins that job's permissions exactly
+// beside the assessment job's own ban.
 export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'health-gates.yml',
     'validation.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
-    'semantic-review.yml',
 ] as const;
 
 const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
@@ -216,8 +218,10 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Install dependencies',
             'Assess the change',
             'Report the assessment',
+            'Compute the coverage line',
             'Upload the advisory report',
         ],
+        coverage: ['Download the advisory report', 'Publish the withheld paths'],
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
@@ -375,6 +379,12 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         'Resolve the aliases of the deployment',
         'Assert cross-origin isolation on the deployment',
     ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_RUN)),
+    // The coverage line has to be published on a red assessment too, because the
+    // report step's failure is what a red advisory check means: the default
+    // success gate would skip the computing step and leave the coverage job's
+    // name with nothing in it. `!cancelled()` is the pinned condition, not
+    // `always()`, so a cancelled run publishes nothing.
+    pin('semantic-review.yml', 'assess', 'Compute the coverage line', '${{ !cancelled() }}'),
 ];
 
 export type WorkflowSnapshot = Record<string, unknown>;

