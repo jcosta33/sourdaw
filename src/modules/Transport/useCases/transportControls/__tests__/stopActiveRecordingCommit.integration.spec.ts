@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, startRecording } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
@@ -70,6 +70,42 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
+/**
+ * Holds the next `commitRecording` after its transaction has landed, so a test
+ * can prove the stop path waits for the promise it owns rather than resolving
+ * when an incidental microtask drain happens to have covered the commit. The
+ * gate sits on the owning command entry both recording arms dispatch through,
+ * so it needs no deep mock of the Arrangement recording module.
+ */
+const commitGate = vi.hoisted(() => ({
+    pending: null as Promise<void> | null,
+    release: null as (() => void) | null,
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return {
+        ...actual,
+        executeUserAppAction: async (...args: Parameters<typeof actual.executeUserAppAction>) => {
+            await actual.executeUserAppAction(...args);
+            if (args[0].type === 'commitRecording' && commitGate.pending) {
+                await commitGate.pending;
+            }
+        },
+    };
+});
+
+function gateNextCommit(): () => void {
+    let release!: () => void;
+    commitGate.pending = new Promise<void>((resolve) => {
+        release = () => {
+            commitGate.pending = null;
+            resolve();
+        };
+    });
+    return release;
+}
+
 const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
@@ -128,6 +164,10 @@ function takeRefs(): { id: string; clipId: string }[] {
 
 function laneIds(): string[] {
     return (takeLaneStore.value?.lanes ?? []).map((lane) => lane.id);
+}
+
+function findClip(clipId: string): Clip | undefined {
+    return trackStore.value?.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId);
 }
 
 function committedEntryCount(): number {
@@ -250,6 +290,12 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         }
         expect(entry.action.type).toBe('commitRecording');
 
+        // The forward write itself: the live clip carries the capture's media
+        // and placement, not the provisional state `startRecording` left.
+        const committedClip = findClip(provisionalId);
+        expect(committedClip?.audioBufferId).toBeTruthy();
+        expect(committedClip?.endBeat).toBeGreaterThan(4);
+
         await undo();
         flushAutomergeStorageWrites();
         expect(clipIds()).toEqual([]);
@@ -260,6 +306,45 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         flushAutomergeStorageWrites();
         expect(clipIds()).toEqual([provisionalId]);
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisionalId }]);
+    });
+
+    it('does not resolve Stop until the MIDI commit it triggered has landed', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+
+        // Hold the commit after its transaction: only an awaited promise can keep
+        // Stop pending here.
+        const release = gateNextCommit();
+        let settled = false;
+        const stopping = stopActiveRecording().then(() => {
+            settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        release();
+        await stopping;
+        expect(committedEntryCount()).toBe(1);
+    });
+
+    it('does not resolve Stop until the audio commit it owns has landed', async () => {
+        await startAudioRecordingGesture();
+        expect(clipIds()).toHaveLength(1);
+
+        // The audio terminal registers its commit on the recording lifecycle;
+        // untracking it would let Stop resolve while the commit is still held.
+        const release = gateNextCommit();
+        let settled = false;
+        const stopping = stopActiveRecording().then(() => {
+            settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        release();
+        await stopping;
+        expect(committedEntryCount()).toBe(1);
     });
 
     it('retires the provisional MIDI recording and tells the user when its commit fails', async () => {

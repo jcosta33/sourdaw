@@ -2859,6 +2859,13 @@ export type AppAction =
           payload: {
               clip: ClipStateSnapshot;
               retiredTakeLanes: readonly RetiredTakeLaneSnapshot[];
+              /** The clip's MIDI data, which the removal inverse deletes with
+               *  the clip. Mirrors `restoreClip`'s snapshots so a recorded MIDI
+               *  take comes back with its notes, controller, and pitch-bend
+               *  state rather than empty. */
+              midiNotesSnapshot: MidiNotesSnapshot | null;
+              midiCcSnapshot: MidiCcSnapshot | null;
+              midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
           };
       };
 

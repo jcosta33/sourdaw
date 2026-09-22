@@ -5518,8 +5518,11 @@ const schemaDefinitions = [
         properties: {
             clip: 185,
             retiredTakeLanes: 122,
+            midiNotesSnapshot: 115,
+            midiCcSnapshot: 115,
+            midiPitchBendSnapshot: 115,
         },
-        required: ['clip', 'retiredTakeLanes'],
+        required: ['clip', 'retiredTakeLanes', 'midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'],
         additionalProperties: false,
     },
 ] as const satisfies readonly SchemaDefinition[];

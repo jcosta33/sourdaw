@@ -10,6 +10,7 @@ import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { panicYeastRuntime } from '../../transportControls/panicYeastRuntime';
+import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 import { schedulerTimingDiagnostics } from '../schedulerTimingDiagnostics';
@@ -1360,6 +1361,105 @@ describe('startPlayheadScheduler', () => {
             'Punch-in recording failed — the take was discarded. Try recording again.',
             'error'
         );
+    });
+
+    it('commits the punched clip at its finalized span, not the pre-finalization anchor', async () => {
+        trackStoreState.value = {
+            tracks: [
+                { id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0, endBeat: 0 }] },
+            ],
+        };
+        transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        // The real finalizer writes the punch-out end onto the live clip before
+        // it returns; the mock does the same so the commit can observe it.
+        arrangementMocks.stopRecording.mockImplementationOnce((atBeat?: number) => {
+            const tracks = trackStoreState.value?.tracks as { clips: { endBeat: number }[] }[] | undefined;
+            const clip = tracks?.[0]?.clips[0];
+            if (clip && typeof atBeat === 'number') {
+                clip.endBeat = atBeat;
+            }
+        });
+        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
+            _trackId: string,
+            onTerminal: (result: { kind: string; buffer?: unknown }) => void
+        ) => {
+            capturedOnTerminal = onTerminal;
+            return Promise.resolve(true);
+        }) as never);
+        // The punch-out flush runs the capture terminal exactly where the real
+        // one does — before the finalizer in the pre-fix order.
+        audioEngineMocks.stopAudioRecording.mockImplementationOnce(() => {
+            capturedOnTerminal?.({ kind: 'completed', buffer: { duration: 1 } });
+            return Promise.resolve();
+        });
+
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(capturedOnTerminal).not.toBeNull();
+
+        // Roll to the punch-out point and cross it.
+        schedulerSession.accumulatedPosition = 7.9;
+        ctxTime.now = 0.3;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Zero-length payloads here mean the entry captured the pre-finalization
+        // anchor and can overwrite the span the finalizer owns.
+        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 })
+        );
+    });
+
+    it('owns the punched commit on the recording lifecycle so a stop can await it', async () => {
+        trackStoreState.value = {
+            tracks: [
+                { id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1', startBeat: 0, endBeat: 0 }] },
+            ],
+        };
+        transportStoreState.value = playingState({ punchInEnabled: true, punchInBeat: 0, punchOutBeat: 8 });
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
+            _trackId: string,
+            onTerminal: (result: { kind: string; buffer?: unknown }) => void
+        ) => {
+            capturedOnTerminal = onTerminal;
+            return Promise.resolve(true);
+        }) as never);
+
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        let release!: () => void;
+        arrangementMocks.commitRecording.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    release = resolve;
+                })
+        );
+        capturedOnTerminal!({ kind: 'completed', buffer: { duration: 1 } });
+
+        // The scheduler never blocks on the commit, but it must register it so a
+        // user-facing stop can wait for the entry.
+        let settled = false;
+        const waiting = recordingLifecycle.waitForCommits().then(() => {
+            settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        release();
+        await waiting;
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {

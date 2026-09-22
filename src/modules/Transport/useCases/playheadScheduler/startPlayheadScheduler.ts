@@ -557,15 +557,21 @@ export function startPlayheadScheduler(): void {
         }
 
         if (schedulerSession.punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
+            // Finalize BEFORE the flush. The flush runs the capture terminal that
+            // commits the take, and the commit captures the live clip and takes;
+            // running it first would capture the pre-finalization anchor — a
+            // zero-length clip and take. `stopRecording` writes its finalization
+            // synchronously and its returned promise is only the MIDI commit, so
+            // this neither blocks the scheduler nor reorders the audio flush.
+            // Same anchoring as punch-in: the region's own end beat, not the
+            // overshooting tick position and not the stale store playhead.
+            void stopRecording(current.punchOutBeat);
             await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
                 logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
             });
             if (!cancellation.isCurrent()) {
                 return;
             }
-            // Same anchoring as punch-in: the region's own end beat, not the
-            // overshooting tick position and not the stale store playhead.
-            void stopRecording(current.punchOutBeat);
             schedulerSession.punchRecordingActive = false;
             updateTransportState({ isRecording: false });
         }

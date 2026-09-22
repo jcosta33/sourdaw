@@ -707,7 +707,7 @@ describe('playhead scheduler tick', () => {
         expect(scheduleMidiNotes).toHaveBeenCalledTimes(2);
     });
 
-    it('waits for punch-out recorder teardown before finalizing the recording', async () => {
+    it('finalizes the recording before awaiting punch-out recorder teardown, so the capture terminal commits the final span', async () => {
         const order: string[] = [];
         let finishRecordingStop: (() => void) | undefined;
         const recordingFlush = new Promise<void>((resolve) => {
@@ -743,14 +743,17 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.1;
         await fireTick();
 
-        expect(order).toEqual([]);
+        // The finalizer runs while the recorder teardown is still pending: the
+        // flush invokes the capture terminal that commits the take, and that
+        // commit must observe the punch-out span rather than the anchor.
+        expect(order).toEqual(['stopRecording']);
         expect(harness.stop_audio_recording).toHaveBeenCalledOnce();
         const finish = finishRecordingStop;
         if (!finish) {
             throw new Error('Expected punch-out recorder teardown to be pending');
         }
         finish();
-        await vi.waitFor(() => expect(harness.stop_recording).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(schedulerSession.punchRecordingActive).toBe(false));
         expect(order).toEqual(['stopRecording']);
     });
 

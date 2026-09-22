@@ -18,6 +18,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -386,5 +387,66 @@ describe('recording gesture commit (issue #4439)', () => {
         flushAutomergeStorageWrites();
         expect(clipIds()).toContain('clip-later');
         expect(clipIds()).toContain(provisional.id);
+    });
+
+    it('restores a recorded MIDI take with its notes, controller, and pitch-bend state after undo and redo', async () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, clips: [] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [] });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        const notes = [{ id: 'note-1', pitch: 60, startBeat: 4, duration: 1, velocity: 100 }];
+        const cc = [{ id: 'cc-1', controller: 1, value: 64, beat: 4, channel: 1 }];
+        const pitchBend = [{ id: 'pb-1', value: 2048, beat: 4, channel: 1 }];
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { [provisional.id]: notes },
+            ccByClipId: { [provisional.id]: cc },
+            pitchBendByClipId: { [provisional.id]: pitchBend },
+        });
+        flushAutomergeStorageWrites();
+
+        await stopRecording(8);
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+
+        // The removal inverse deletes the clip's MIDI data with the clip, so the
+        // entry's redo has to carry it; a redo that restored clip and takes alone
+        // handed back an empty MIDI take.
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toBeUndefined();
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+        expect(midiStore.value?.ccByClipId[provisional.id]).toEqual(cc);
+        expect(midiStore.value?.pitchBendByClipId[provisional.id]).toEqual(pitchBend);
+    });
+
+    it('restores the recorded clip once when the redo target is already present', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 4, endBeat: 6 });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        flushAutomergeStorageWrites();
+        // A projection re-adds the clip under the same id before the redo.
+        const reappeared = { ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 4, endBeat: 6 } as Clip;
+        updateTrack(TRACK_ID, (track) => ({ ...track, clips: [...track.clips, reappeared] }));
+        flushAutomergeStorageWrites();
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(clipIds().filter((id) => id === provisional.id)).toHaveLength(1);
     });
 });
