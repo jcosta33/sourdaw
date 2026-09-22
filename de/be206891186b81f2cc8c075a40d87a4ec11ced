@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.warpSubscription.spec.tsx
+  s_fabbe41ad743be::t_62677ce6c50cfc 119,124
+src/modules/Arrangement/stores/warpStates.ts
+  s_fabbe41ad743be::t_e69e8dd82393ea 269
+  s_fabbe41ad743be::t_54d805885d233e 149,152-154,172-186
+  s_fabbe41ad743be::t_7e52862bcf709d 336
+  s_fabbe41ad743be::t_8841fbb38d5ad4 13-17,19
+  s_fabbe41ad743be::t_511f46fb8c0ee1 150-151
+  s_fabbe41ad743be::t_4e4f4542e39878 187,233-251
+  s_fabbe41ad743be::t_ace55c80ade74a 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "debe206891186b81f2cc8c075a40d87a4ec11ced",
+  "prompts": {},
+  "sessions": {
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
