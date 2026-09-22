@@ -1,0 +1,48 @@
+.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md
+  h_beb54bf43b47b7 127-144,147-150
+scripts/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 87-94
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 4-10,18,21-25,26,27-28,41,412-465,518-540,541-580,582-583,585-588,647-756,754-756,1396-1397,1399-1405,1409,1411,1415-1441,1612-1624,1648,1650-1652,1658,1664-1670,1677-1683,1684,1685-1691,1691,1882-1974,2160-2199,2201-2203,2206,2209-2213,2220-2233,2236-2241,2243,2250-2252,2419-2485,2482,2483-2485,3035-3108,3109-3161,3162-3197,3230-3276,3324,3348-3377,3414-3458,3459-3475,3476-3477,3620-3621,3649-3660,3664,3677-3688,3692,3702-3703,3722-3729,3732-3733,3744-3749,3752-3753
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 25,83-88,92,97,180-186,184-185,219-223,368,377,384,391-392,394-398,440-443,472-481,523,530,537,543-548,566-569,577
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 15,63,67,76,83
+scripts/semanticReview/gitSource.ts
+  h_beb54bf43b47b7 76-77,82-83,156-160,162-172,177-187,219-220
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 20,101,108,110,113-115,120-131,134,136,142-143,149-155,159-161
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 21,130-140,158,159-173,174-176,177-179,180-181,182-187,188-194,223-226,231,259-261,312-313,314,315,481-482,491
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 148-157,165,167-170,172,173-180,181-183,184-185,186,187,188-189,190
+scripts/semanticReview/requiredEvidence.ts
+  h_beb54bf43b47b7 8-13,20-70,76,82-87,95-99,101
+.agents/decisions/0048-attributable-evidence-contract-is-frozen.md
+  h_beb54bf43b47b7 1-9,11-18,20-65,70-104,108-116
+.agents/decisions/README.md
+  h_beb54bf43b47b7 64
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 12-18
+.gitleaks.toml
+  h_beb54bf43b47b7 45-48,54-57
+scripts/__tests__/canonicalRecord.spec.ts
+  h_beb54bf43b47b7 1-76
+scripts/checkVitestCollectionScope.ts
+  h_beb54bf43b47b7 50
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 504-531,532-537,539,554-556,560-565,566-570,618,646
+scripts/vitestCollectionPatterns.ts
+  h_beb54bf43b47b7 2-3,5-7,15-69,70-73,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9effe3689c72384f30f60971ca40f26a44c0a355",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
