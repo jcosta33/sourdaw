@@ -3617,6 +3617,8 @@ describe('the scope noun follows the mode on every line that names it', () => {
         // unassessed or truncated evidence exists, and the noun cases above rendered only quiet
         // reports, so this line hid the wrong noun twice. Rendering a scope whose unassessed, truncated
         // and limitation sections are all non-empty closes the class: no line may choose its own noun.
+        // The counts are deliberately distinct — two unassessed against three truncated — so a line
+        // that prints the wrong counter fails the exact-string assertion instead of matching on 1.
         const scanBase = await runScan(
             scanPorts(
                 constantProvider(0.02),
@@ -3644,12 +3646,22 @@ describe('the scope noun follows the mode on every line that names it', () => {
             ...quietScan,
             scope: {
                 ...quietScan.scope,
-                unassessed: [{ path: 'src/modules/Project/a.ts', reason: 'no-admissible-evidence' }],
-                truncated: [{ path: 'src/modules/Project/b.ts', reason: 'region-exceeds-per-region-budget (after)' }],
+                assessed: 5,
+                eligible: 7,
+                discovered: 7,
+                unassessed: [
+                    { path: 'src/modules/Project/a.ts', reason: 'no-admissible-evidence' },
+                    { path: 'src/modules/Project/b.ts', reason: 'no-admissible-evidence' },
+                ],
+                truncated: [
+                    { path: 'src/modules/Project/c.ts', reason: 'region-exceeds-per-region-budget (after)' },
+                    { path: 'src/modules/Project/d.ts', reason: 'region-exceeds-per-region-budget (after)' },
+                    { path: 'src/modules/Project/e.ts', reason: 'region-exceeds-per-region-budget (after)' },
+                ],
             },
             limitations: [...quietScan.limitations, 'a limitation'],
         });
-        expect(scanSummary).toContain('Incomplete: 1 unit(s) unassessed and 1 region(s) truncated or withheld.');
+        expect(scanSummary).toContain('Incomplete: 2 unit(s) unassessed and 3 region(s) truncated or withheld.');
         expect(scanSummary).toContain('eligible unit(s)');
         expect(scanSummary).not.toContain('finding(s) unassessed');
         expect(scanSummary).not.toContain('eligible finding(s)');
@@ -3662,12 +3674,22 @@ describe('the scope noun follows the mode on every line that names it', () => {
             ...verifyReport,
             scope: {
                 ...verifyReport.scope,
-                unassessed: [{ path: 'f1', reason: 'no-admissible-evidence' }],
-                truncated: [{ path: 'src/modules/Project/a.ts', reason: 'region-exceeds-per-region-budget (after)' }],
+                assessed: 5,
+                eligible: 7,
+                discovered: 7,
+                unassessed: [
+                    { path: 'f1', reason: 'no-admissible-evidence' },
+                    { path: 'f2', reason: 'no-admissible-evidence' },
+                ],
+                truncated: [
+                    { path: 'src/modules/Project/a.ts', reason: 'region-exceeds-per-region-budget (after)' },
+                    { path: 'src/modules/Project/b.ts', reason: 'region-exceeds-per-region-budget (after)' },
+                    { path: 'src/modules/Project/c.ts', reason: 'region-exceeds-per-region-budget (after)' },
+                ],
             },
             limitations: [...verifyReport.limitations, 'a limitation'],
         });
-        expect(verifySummary).toContain('Incomplete: 1 finding(s) unassessed and 1 region(s) truncated or withheld.');
+        expect(verifySummary).toContain('Incomplete: 2 finding(s) unassessed and 3 region(s) truncated or withheld.');
         expect(verifySummary).toContain('eligible finding(s)');
         expect(verifySummary).not.toContain('unit(s) unassessed');
         expect(verifySummary).not.toContain('eligible unit(s)');
@@ -3677,7 +3699,8 @@ describe('the scope noun follows the mode on every line that names it', () => {
         // The refusal message in `assertExecutionMatchesScope` was the fourth place the scope noun was
         // hardcoded, reached by `validate` on a hand-edited document rather than by `renderSummary`. A
         // report claiming `completed` with a non-empty unassessed list must refuse naming the mode's
-        // noun, in both modes.
+        // noun, in both modes. The count in the refusal is structurally `scope.unassessed.length`, so
+        // naming the number is exact rather than brittle: two entries refuse as "2".
         const scanBase = await runScan(
             scanPorts(
                 constantProvider(0.02),
@@ -3696,13 +3719,18 @@ describe('the scope noun follows the mode on every line that names it', () => {
             execution: 'completed' as const,
             scope: {
                 ...scanBase.report.scope,
-                discovered: scanBase.report.scope.discovered + 1,
-                eligible: scanBase.report.scope.eligible + 1,
-                unassessed: [{ path: 'src/modules/Project/a.ts', reason: 'no-admissible-evidence' }],
+                // Two unassessed entries keep the validator's arithmetic: assessed + 2 === eligible and
+                // eligible + excluded.length === discovered (excluded stays empty).
+                eligible: scanBase.report.scope.assessed + 2,
+                discovered: scanBase.report.scope.assessed + 2,
+                unassessed: [
+                    { path: 'src/modules/Project/a.ts', reason: 'no-admissible-evidence' },
+                    { path: 'src/modules/Project/b.ts', reason: 'no-admissible-evidence' },
+                ],
             },
         };
-        expect(() => validateReport(scanCompleted)).toThrow(/unit\(s\) were unassessed/u);
-        expect(() => validateReport(scanCompleted)).not.toThrow(/finding\(s\) were unassessed/u);
+        expect(() => validateReport(scanCompleted)).toThrow(/2 unit\(s\) were unassessed/u);
+        expect(() => validateReport(scanCompleted)).not.toThrow(/2 finding\(s\) were unassessed/u);
 
         const { report: verifyReport } = await verifyWith({
             provider: decisiveQuietVerifyProvider(),
@@ -3713,13 +3741,16 @@ describe('the scope noun follows the mode on every line that names it', () => {
             execution: 'completed' as const,
             scope: {
                 ...verifyReport.scope,
-                discovered: verifyReport.scope.discovered + 1,
-                eligible: verifyReport.scope.eligible + 1,
-                unassessed: [{ path: 'f1', reason: 'no-admissible-evidence' }],
+                eligible: verifyReport.scope.assessed + 2,
+                discovered: verifyReport.scope.assessed + 2,
+                unassessed: [
+                    { path: 'f1', reason: 'no-admissible-evidence' },
+                    { path: 'f2', reason: 'no-admissible-evidence' },
+                ],
             },
         };
-        expect(() => validateReport(verifyCompleted)).toThrow(/finding\(s\) were unassessed/u);
-        expect(() => validateReport(verifyCompleted)).not.toThrow(/unit\(s\) were unassessed/u);
+        expect(() => validateReport(verifyCompleted)).toThrow(/2 finding\(s\) were unassessed/u);
+        expect(() => validateReport(verifyCompleted)).not.toThrow(/2 unit\(s\) were unassessed/u);
     });
 });
 
