@@ -60,6 +60,7 @@
         "review:confirm": "node scripts/trustedGithubWriteBootstrap.ts review:confirm",
         "review:resolve": "node scripts/trustedGithubWriteBootstrap.ts review:resolve",
         "review:shadow-status": "node scripts/trustedGithubWriteBootstrap.ts review:shadow-status",
+        "review:reconstruct": "node scripts/reconstructReviewRounds.ts",
         "ruleset:harden": "node scripts/trustedGithubWriteBootstrap.ts ruleset:harden",
         "stances:check": "node scripts/checkStancesRecord.ts",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
