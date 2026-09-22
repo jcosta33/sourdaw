@@ -1,0 +1,25 @@
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInput.ts
+  s_7a8418ba06eca3::t_1501e6026b49b9 34
+  s_7a8418ba06eca3::t_b8039d793009a0 42
+  s_7a8418ba06eca3::t_432496d0330a9f 2
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.ts
+  s_7a8418ba06eca3::t_39c4484be1d60f 14,23
+  s_7a8418ba06eca3::t_4c4763e410a7a6 83
+  s_7a8418ba06eca3::t_8934ba48629cbf 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b0c8946b25ef8488ac315c2c9df94351483b177",
+  "prompts": {},
+  "sessions": {
+    "s_7a8418ba06eca3": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a93500a2-1435-4dce-a1df-9c2d9a4b532c",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
