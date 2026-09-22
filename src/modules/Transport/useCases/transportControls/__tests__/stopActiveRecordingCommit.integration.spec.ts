@@ -23,19 +23,50 @@ import {
 import { transportStore } from '#/modules/Transport/stores';
 
 import { stopActiveRecording } from '../stopActiveRecording';
+import { toggleRecording } from '../toggleRecording';
 
-const TRACK_ID = 'track-midi';
+const TRACK_ID = 'track-recording';
 
-const mocks = vi.hoisted(() => ({
-    stopAudioRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-}));
+type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } }) => void;
+
+const mocks = vi.hoisted(() => {
+    const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
+    let capturedAudioTerminal: RecordingTerminal | null = null;
+    return {
+        audioClock,
+        getAudioContext: vi.fn(() => audioClock),
+        getCompensationDelay: vi.fn(() => 0),
+        cacheAudioBuffer: vi.fn(),
+        startPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+        startAudioRecording: vi.fn<(trackId: string, terminal: RecordingTerminal) => Promise<boolean>>(
+            (_trackId, terminal) => {
+                capturedAudioTerminal = terminal;
+                return Promise.resolve(true);
+            }
+        ),
+        // The real flush settles the capture and invokes its terminal; this mock
+        // does the same, so the tracked commit is registered exactly where it is
+        // in production.
+        stopAudioRecording: vi.fn<() => Promise<void>>(() => {
+            const terminal = capturedAudioTerminal;
+            capturedAudioTerminal = null;
+            terminal?.({ kind: 'completed', buffer: { duration: 2 } });
+            return Promise.resolve();
+        }),
+    };
+});
 
 // The Arrangement handler graph imports this barrel too, so the real module is
-// spread and only the audio flush is replaced for the stop path under test.
+// spread and only the recording collaborators are replaced.
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
+    getAudioContext: mocks.getAudioContext,
+    getCompensationDelay: mocks.getCompensationDelay,
+    startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
 }));
+vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -46,11 +77,11 @@ const noActionHistoryMetadataPort = {
 /** Field-identical replica of Arrangement's TrackDummy fixture, as other
  *  modules' specs keep their own copy rather than deep-importing a foreign
  *  `__tests__` helper. */
-function midiTrack(): Track {
+function recordingTrack(kind: 'audio' | 'midi'): Track {
     return {
         id: TRACK_ID,
-        name: 'MIDI',
-        kind: 'midi',
+        name: kind === 'audio' ? 'Audio' : 'MIDI',
+        kind,
         muted: false,
         soloed: false,
         armed: true,
@@ -93,11 +124,44 @@ function takeRefs(): { id: string; clipId: string }[] {
     );
 }
 
+function laneIds(): string[] {
+    return (takeLaneStore.value?.lanes ?? []).map((lane) => lane.id);
+}
+
+function committedEntryCount(): number {
+    return (undoHistoryStore.value?.past ?? []).filter(
+        (entry) => entry.kind === 'action' && entry.action.type === 'commitRecording'
+    ).length;
+}
+
+/** Start a real audio recording through the Record toggle and wait until its
+ *  clip exists, so Stop has a capture to finalize. */
+async function startAudioRecordingGesture(): Promise<void> {
+    trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+    takeLaneStore.set({ lanes: [] });
+    transportStore.set({
+        ...transportStore.value!,
+        isPlaying: false,
+        isRecording: false,
+        countInEnabled: false,
+        punchInEnabled: false,
+        playheadPosition: 4,
+    });
+
+    toggleRecording();
+    await vi.waitFor(() => {
+        expect(clipIds()).toHaveLength(1);
+    });
+    flushAutomergeStorageWrites();
+}
+
 /**
- * Issue #4439: the user-facing Stop must not resolve before the gesture's
- * history entry exists. A caller that awaits Stop and then presses Undo acts on
- * whatever heads the history, so a MIDI commit left in flight would let that
- * undo consume the previous entry instead of this recording's result.
+ * Issue #4439: the user-facing Stop must not resolve before the commits this
+ * gesture started have landed. A caller that awaits Stop and then presses Undo
+ * acts on whatever heads the history, so a commit left in flight would let that
+ * undo consume the previous entry instead of this recording's result. A commit
+ * that fails must retire the provisional recording rather than leave visible
+ * material no entry owns.
  */
 describe('stopActiveRecording commit ordering (issue #4439)', () => {
     beforeEach(() => {
@@ -112,9 +176,11 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
-        trackStore.set({ tracks: [midiTrack()], selectedTrackId: TRACK_ID, ghostClips: [] });
+        trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
+        mocks.startPlayback.mockClear();
+        mocks.audioClock.currentTime = 0;
     });
 
     afterEach(() => {
@@ -128,7 +194,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         removeCrdtDoc('root');
     });
 
-    it('records the gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
+    it('records the MIDI gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional recording clip');
@@ -136,15 +202,14 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         flushAutomergeStorageWrites();
         const recordedTakeId = takeRefs()[0]?.id;
         expect(recordedTakeId).toBeTruthy();
-        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+        expect(committedEntryCount()).toBe(0);
 
         // The user's Stop — not `stopRecording` directly.
         await stopActiveRecording();
 
         // No flush, no wait: awaiting Stop alone must guarantee the entry.
-        const past = undoHistoryStore.value?.past ?? [];
-        expect(past).toHaveLength(1);
-        const entry = past[0];
+        expect(committedEntryCount()).toBe(1);
+        const entry = (undoHistoryStore.value?.past ?? [])[0];
         if (entry?.kind !== 'action') {
             throw new Error('expected the recording commit entry on the history when Stop resolves');
         }
@@ -154,10 +219,74 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         flushAutomergeStorageWrites();
         expect(clipIds()).toEqual([]);
         expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
 
         await redo();
         flushAutomergeStorageWrites();
         expect(clipIds()).toEqual([provisional.id]);
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
+    });
+
+    it('records the audio gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
+        await startAudioRecordingGesture();
+        const provisionalId = clipIds()[0];
+        if (!provisionalId) {
+            throw new Error('expected a provisional recording clip');
+        }
+        const recordedTakeId = takeRefs()[0]?.id;
+        expect(recordedTakeId).toBeTruthy();
+        expect(committedEntryCount()).toBe(0);
+
+        // The user's Stop. The audio terminal runs inside the flush it awaits.
+        await stopActiveRecording();
+
+        expect(committedEntryCount()).toBe(1);
+        const entry = (undoHistoryStore.value?.past ?? [])[0];
+        if (entry?.kind !== 'action') {
+            throw new Error('expected the recording commit entry on the history when Stop resolves');
+        }
+        expect(entry.action.type).toBe('commitRecording');
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(clipIds()).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(clipIds()).toEqual([provisionalId]);
+        expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisionalId }]);
+    });
+
+    it('retires the provisional MIDI recording when its commit fails', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        // Force the commit to reject: with no registered handler,
+        // `executeUserAppAction` refuses the action outright.
+        clearHandlerRegistry();
+
+        await stopActiveRecording();
+
+        expect(committedEntryCount()).toBe(0);
+        expect(clipIds()).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
+    });
+
+    it('retires the provisional audio recording when its commit fails', async () => {
+        await startAudioRecordingGesture();
+        expect(clipIds()).toHaveLength(1);
+        clearHandlerRegistry();
+
+        await stopActiveRecording();
+
+        expect(committedEntryCount()).toBe(0);
+        expect(clipIds()).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
     });
 });

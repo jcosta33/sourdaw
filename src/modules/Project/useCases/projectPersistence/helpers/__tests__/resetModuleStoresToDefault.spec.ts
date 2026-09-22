@@ -27,6 +27,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTake: vi.fn(),
     addTakeLane: vi.fn(),
     commitRecording: vi.fn(),
+    discardRecording: vi.fn(),
     stageRecordingTake: vi.fn(),
     applySoloLogic: vi.fn(),
     clampDeviceParameterValue: vi.fn(),

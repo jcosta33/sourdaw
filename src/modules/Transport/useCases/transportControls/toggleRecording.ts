@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
-import { getTrackStoreState, startRecording, removeClip, commitRecording } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -71,7 +71,7 @@ async function beginActualRecording(
                     );
                     const failedClip = clips.find((context) => context.trackId === track.id);
                     if (failedClip) {
-                        removeClip(failedClip.id);
+                        discardRecording(failedClip.id);
                     }
                     return;
                 }
@@ -102,21 +102,27 @@ async function beginActualRecording(
                     const startSeconds = secondsBetweenBeats(tempoChanges, 0, newStartBeat, defaultTempo);
                     const exactEndBeat = samplesToBeat(tempoChanges, startSeconds + buffer.duration, defaultTempo, 1);
 
-                    void Promise.resolve().then(() => {
-                        // The provisional clip and take the recorder opened are
-                        // committed as ONE history entry here, once the capture has
-                        // completed. A capture that never reaches this branch never
-                        // commits, so no incomplete take becomes replayable.
-                        void commitRecording({
-                            ...recClip,
-                            audioBufferId: bufferId,
-                            startBeat: newStartBeat,
-                            endBeat: exactEndBeat,
-                        }).catch((error: unknown) => {
-                            logger.error(new Error('Recording commit failed', { cause: error }));
-                        });
-                        return null;
-                    });
+                    const recordedClip = {
+                        ...recClip,
+                        audioBufferId: bufferId,
+                        startBeat: newStartBeat,
+                        endBeat: exactEndBeat,
+                    };
+                    // The provisional clip and take the recorder opened are
+                    // committed as ONE history entry here, once the capture has
+                    // completed. A capture that never reaches this branch never
+                    // commits, so no incomplete take becomes replayable. The
+                    // lifecycle owns the promise so the user-facing stop can wait
+                    // for the entry; a commit that fails retires the provisional
+                    // result instead of leaving it visible with no entry (#4439).
+                    recordingLifecycle.trackCommit(
+                        Promise.resolve().then(() =>
+                            commitRecording(recordedClip).catch((error: unknown) => {
+                                logger.error(new Error('Recording commit failed', { cause: error }));
+                                discardRecording(recordedClip.id);
+                            })
+                        )
+                    );
                 }
             },
             track.inputId

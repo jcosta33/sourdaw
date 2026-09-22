@@ -48,7 +48,7 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
-        removeClip: vi.fn<(clipId: string) => void>(),
+        discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
@@ -98,7 +98,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     commitRecording: mocks.commitRecording,
     startRecording: mocks.startRecording,
-    removeClip: mocks.removeClip,
+    discardRecording: mocks.discardRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
@@ -377,7 +377,7 @@ describe('toggleRecording', () => {
         });
 
         // A delivered take is kept: no retirement and no failure notice.
-        expect(mocks.removeClip).not.toHaveBeenCalled();
+        expect(mocks.discardRecording).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
@@ -706,7 +706,7 @@ describe('toggleRecording', () => {
         // clip is retired from the arrangement, and nothing buffer-shaped is
         // cached or written into it.
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
-        expect(mocks.removeClip).toHaveBeenCalledWith('clip-recording');
+        expect(mocks.discardRecording).toHaveBeenCalledWith('clip-recording');
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.commitRecording).not.toHaveBeenCalled();
     });
@@ -736,7 +736,7 @@ describe('toggleRecording', () => {
         recordingCallback({ kind: 'failed', reason: 'flush-timeout' });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Recording failed'), 'error');
-        expect(mocks.removeClip).not.toHaveBeenCalled();
+        expect(mocks.discardRecording).not.toHaveBeenCalled();
     });
 
     it('does not create recording state when an audio recorder cannot start', async () => {

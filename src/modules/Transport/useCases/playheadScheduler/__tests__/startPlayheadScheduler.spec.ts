@@ -107,7 +107,7 @@ const arrangementMocks = {
     stageRecordingTake: vi.fn(),
     commitRecording: vi.fn(() => Promise.resolve()),
     updateClip: vi.fn(),
-    removeClip: vi.fn(),
+    discardRecording: vi.fn(),
     updateTransportState: vi.fn(),
 };
 const notifyUserMock = vi.fn<(message: string, level: string) => void>();
@@ -131,7 +131,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     commitRecording: (...args: unknown[]) =>
         (arrangementMocks.commitRecording as (...a: unknown[]) => unknown)(...args),
     updateClip: (...args: unknown[]) => (arrangementMocks.updateClip as (...a: unknown[]) => unknown)(...args),
-    removeClip: (...args: unknown[]) => (arrangementMocks.removeClip as (...a: unknown[]) => unknown)(...args),
+    discardRecording: (...args: unknown[]) =>
+        (arrangementMocks.discardRecording as (...a: unknown[]) => unknown)(...args),
     updateTransportState: (...args: unknown[]) =>
         (arrangementMocks.updateTransportState as (...a: unknown[]) => unknown)(...args),
 }));
@@ -1319,7 +1320,7 @@ describe('startPlayheadScheduler', () => {
             audioBufferId: expect.any(String),
         });
         // A delivered take is kept: no retirement and no failure notice.
-        expect(arrangementMocks.removeClip).not.toHaveBeenCalled();
+        expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
         expect(notifyUserMock).not.toHaveBeenCalled();
     });
 
@@ -1351,7 +1352,7 @@ describe('startPlayheadScheduler', () => {
         // The failure is surfaced instead of swallowed and the empty
         // provisional clip is retired from the arrangement.
         expect(notifyUserMock).toHaveBeenCalledWith(expect.stringContaining('Punch-in recording failed'), 'error');
-        expect(arrangementMocks.removeClip).toHaveBeenCalledWith('clip-rec-1');
+        expect(arrangementMocks.discardRecording).toHaveBeenCalledWith('clip-rec-1');
         expect(audioEngineMocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(arrangementMocks.updateClip).not.toHaveBeenCalled();
     });

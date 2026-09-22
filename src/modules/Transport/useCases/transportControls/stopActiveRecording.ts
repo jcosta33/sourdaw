@@ -8,17 +8,17 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
- * Stop the recording the user asked to stop, and do not resolve before the MIDI
- * commit `stopRecording` triggers has landed.
+ * Stop the recording the user asked to stop, and do not resolve before the
+ * commits this gesture started have landed.
  *
- * A MIDI recording commits inside `stopRecording`, and the very next Undo acts
- * on whatever heads the history. Returning on the audio flush alone would let a
- * caller observe — and undo — the previous entry while this gesture's commit
- * was still in flight, which is the late-arrival class #4439 forbids. So both
- * promises are awaited here. The audio path's own ordering is untouched: its
- * entry still arrives with the capture terminal the flush resolves around, and
- * the transport state is written synchronously before either is awaited, so no
- * scheduler or audio-thread work is held behind the commit.
+ * Both arms commit from a terminal the audio flush runs around: the MIDI commit
+ * is `stopRecording`'s promise, the audio commit is tracked on the recording
+ * lifecycle by the capture terminal. The very next Undo acts on whatever heads
+ * the history, so resolving on the flush alone would let it consume the previous
+ * entry while this gesture's commit was still in flight — the late-arrival class
+ * #4439 forbids. The transport state is written synchronously before either is
+ * awaited, and the commit is main-thread work, so neither the audio thread nor
+ * the scheduler is held behind it.
  */
 export async function stopActiveRecording(): Promise<void> {
     recordingLifecycle.cancelPendingRecordingStart();
@@ -36,5 +36,9 @@ export async function stopActiveRecording(): Promise<void> {
     }
 
     updateTransportState({ isRecording: false });
-    await Promise.all([recordingFlush, recordingCommit]);
+    await recordingFlush;
+    // The terminal that registers the audio commit runs inside the flush, so
+    // this is where that promise becomes waitable.
+    await recordingLifecycle.waitForCommits();
+    await recordingCommit;
 }

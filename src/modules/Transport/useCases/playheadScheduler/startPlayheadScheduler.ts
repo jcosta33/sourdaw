@@ -4,7 +4,7 @@ import {
     startRecording,
     stopRecording,
     updateClip,
-    removeClip,
+    discardRecording,
     commitRecording,
     stageRecordingTake,
 } from '#/modules/Arrangement/useCases';
@@ -37,6 +37,7 @@ import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
+import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
@@ -509,7 +510,7 @@ export function startPlayheadScheduler(): void {
                                     // arrangement or stay silent about it (#4265).
                                     notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
                                     if (recClip) {
-                                        removeClip(recClip.id);
+                                        discardRecording(recClip.id);
                                     }
                                     return;
                                 }
@@ -525,12 +526,18 @@ export function startPlayheadScheduler(): void {
                                         .flatMap((time) => time.clips)
                                         .find((clip) => clip.id === recClip.id);
                                     const finalizedClip = liveClip ?? recClip;
-                                    void commitRecording({ ...finalizedClip, audioBufferId: bufferId }).catch(
-                                        (error: unknown) => {
+                                    const recordedClip = { ...finalizedClip, audioBufferId: bufferId };
+                                    // The user-facing stop awaits this through the
+                                    // lifecycle; the scheduler itself never blocks on
+                                    // it. A failed commit retires the provisional
+                                    // result rather than leaving it with no entry.
+                                    recordingLifecycle.trackCommit(
+                                        commitRecording(recordedClip).catch((error: unknown) => {
                                             logger.error(
                                                 new Error('Punch-in recording commit failed', { cause: error })
                                             );
-                                        }
+                                            discardRecording(recordedClip.id);
+                                        })
                                     );
                                 }
                             },

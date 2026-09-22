@@ -85,7 +85,7 @@ vi.mock('../startPlayback', () => ({
 }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mocks.stopActiveRecording }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    removeClip: vi.fn(),
+    discardRecording: vi.fn(),
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
     startRecording: mocks.startRecording,

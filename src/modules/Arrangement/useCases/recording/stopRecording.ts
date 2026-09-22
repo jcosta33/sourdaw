@@ -8,6 +8,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
+import { discardRecording } from './discardRecording';
 
 /**
  * Finalise in-flight recording clips.
@@ -85,6 +86,10 @@ export async function stopRecording(atBeat?: number): Promise<void> {
         finalizedMidiClips.map((clip) =>
             commitRecording(clip).catch((error: unknown) => {
                 logger.error(new Error('MIDI recording commit failed', { cause: error }));
+                // A commit that never landed must not leave a visible recording
+                // that no entry owns (#4439): retire the same provisional result
+                // the discard inverse retires.
+                discardRecording(clip.id);
             })
         )
     );
