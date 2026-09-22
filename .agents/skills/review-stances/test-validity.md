@@ -32,32 +32,41 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   incident fixture alone does not discharge the detector's global claim.
 - The e2e matrix never runs on a pull request, so nothing on the reviewing head catches a spec left
   asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
-  name, aria-label, or text and re-home the affected specs in the same change. When a diff adds
-  text-bearing UI beside an existing text locator, run the affected specs and require them to redden
-  if the locator is now ambiguous — `getByText` matches case-insensitive substrings, so a new sibling
-  makes it a strict-mode violation or makes `.first()` select the wrong element.
+  name, aria-label, or text and re-home the affected specs in the same change. A control can also be
+  retired with no rename at all: when a diff changes a control's enabled, disabled, or visibility
+  condition, sweep `tests/e2e/` for that control's state assertions — `toBeDisabled`, `toBeEnabled`,
+  `toBeHidden` — and re-home them in the same change. When a diff adds text-bearing UI beside an
+  existing text locator, run the affected specs and require them to redden if the locator is now
+  ambiguous — `getByText` matches case-insensitive substrings, so a new sibling makes it a
+  strict-mode violation or makes `.first()` select the wrong element.
 
 ## Lessons from escapes
 
 ### 2026-09-22 — renamed controls and an ambiguous text locator left `tests/e2e/` stale (escaped via PRs #4464, #4473, #4479)
 
 The nightly end-to-end train reddened on `main` across six of twelve shards, every failure a spec
-asserting a control the product no longer exposes. PR #4464 and PR #4479 renamed or removed controls
-their e2e specs still asserted (the composer's "Command Mode" button, the prompt bar's inline
-`Confirm actions` / `Cancel actions` controls, the composer's removed disabled contract), and PR
-#4473 added a track-role `<option value="synth">` above the inspector's `Synth` device card, so
-`getByText('Synth')` resolved to both — a strict-mode violation in one spec and, under `.first()`, a
-non-clickable option in another whose case stayed green on an assertion that held either way.
+asserting a control or state the product no longer exposes. The composer's "Command Mode" button was
+removed on 2026-08-15 by commit `bd618a5a79` ("fix(agent): expose governed execution modes"), which
+replaced it with the `Agent execution mode` select; PR #4479 removed the prompt bar's inline
+`Confirm actions` / `Cancel actions` controls; and PR #4464 removed the `isLlmAvailable` term from the
+composer's `disabled` expression — retiring that state contract, leaving
+`chatComposerTestId.spec.ts`'s `toBeDisabled()` assertion stale, and, because the stale `Command Mode`
+locator sat behind an `isDisabled()` guard, unmasking that five-week-old locator. PR #4473 added a
+track-role `<option value="synth">` above the inspector's `Synth` device card, so `getByText('Synth')`
+resolved to both — a strict-mode violation in one spec and, under `.first()`, a non-clickable option
+in another whose case stayed green on an assertion that held either way.
 
-Blind spot: e2e never runs on a pull request, so a control rename, removal, or replacement has no
-check on the reviewing head; and a text locator is treated as stable when a new sibling's text is a
+Blind spot: e2e never runs on a pull request, so a control rename, removal, replacement, or state
+change has no check on the reviewing head; a guard keyed on a state the diff changes hides the stale
+locator behind it; and a text locator is treated as stable when a new sibling's text is a
 case-insensitive substring of it.
 
 Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
 `tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
-change; when a diff adds text-bearing UI beside an existing text locator, run the affected specs and
-require them to redden if the locator is made ambiguous, then assert the control through stable
-handles (test ids, roles) rather than bare text.
+change; when a diff changes a control's enabled, disabled, or visibility condition, sweep for its
+state assertions and re-home them too; when a diff adds text-bearing UI beside an existing text
+locator, run the affected specs and require them to redden if the locator is made ambiguous, then
+assert the control through stable handles (test ids, roles) rather than bare text.
 
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 

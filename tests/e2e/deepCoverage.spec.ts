@@ -270,6 +270,11 @@ test.describe('Prompt bar — preview and execution', () => {
         await expect(awaiting_review).toBeVisible();
         await expect(agent_confirm).toHaveCount(0);
 
+        // The review protects the pre-command state: while the confirmation is
+        // only proposed the destructive command has not run, so the track it
+        // would delete is still present.
+        expect(await track_rows.count()).toBe(rows_before);
+
         await page.getByRole('button', { name: 'Review in Agent' }).click();
         await expect(agent_confirm).toBeVisible({ timeout: 15_000 });
         await agent_confirm.click();
