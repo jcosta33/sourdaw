@@ -1,0 +1,73 @@
+src/modules/Gluten/presentations/views/__tests__/glutenDetectorManual.spec.ts
+  s_5ec678a267c65e::t_6f2121ed43e6d8 1-46,49-54
+  s_5ec678a267c65e::t_1fda9e7d0585a9 47-48
+docs/manual/devices/07-gluten.md
+  s_5ec678a267c65e::t_418a4e3ba48e1f 59-60
+  s_5ec678a267c65e::t_9aa742ccc2ea1e 147-152,159-160
+  s_5ec678a267c65e::t_396da6d33b2c5f 199-201
+crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs
+  s_5ec678a267c65e::t_c5b544f26fa568 304-305,319,324-342,348-362,365-368,416,422,457-458
+  s_43f5a470e59918::t_3b6dd7df85c454 283,288-290,292-301,306-309,314-317,320-323,343-347,417,433-434,435-436,439,441-446,456
+  s_bab44fec62e7ec::t_6ba4a27653b426 284-287,291,310,318,363-364,426-428
+  s_06dc833e4f1d53::t_3335e2ad9c3c3a 294-303,311-313,369-370,373-375,379-387,415-416,418-419,423-424,431-439
+  s_06dc833e4f1d53::t_7cf4c60d547258 440
+  s_826fbbbb63acc6::t_f24ff4623ca00f 371-372,388-393,420-421,447-455
+  s_234778f24d1dc4::t_5441ec488a8e3b 376-378
+  s_234778f24d1dc4::t_0c71518396a721 394-414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4c1d78500fc1fb4bf29d499bc19204be60e1494f",
+  "prompts": {},
+  "sessions": {
+    "s_06dc833e4f1d53": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1bbf76e2-c564-4c08-b4c3-9493a129425f",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_234778f24d1dc4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "58969f20-b984-43f8-8d66-4492a69fbee5",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_43f5a470e59918": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "00302f6b-10f9-48ce-9aaa-613f160b8bb7",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_5ec678a267c65e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a2eef85f-2733-452b-ba90-4ef3b238a112",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_826fbbbb63acc6": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c18263bb-61ad-41eb-b99d-d98b4475bb78",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_bab44fec62e7ec": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9fca5846-ec42-48ed-bb2a-9b6ce759519f",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
