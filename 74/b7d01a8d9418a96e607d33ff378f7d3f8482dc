@@ -1,0 +1,32 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  s_fabbe41ad743be::t_63f42c32564b06 125-146
+  s_fabbe41ad743be::t_69570579eb26f8 3-10,41,56
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  s_fabbe41ad743be::t_6cd53afb6de2da 3,88-107
+  s_fabbe41ad743be::t_e8ad1ede7a849b 1,6,22-24
+  s_234778f24d1dc4::t_82909d90af870f 2,25,108-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "74b7d01a8d9418a96e607d33ff378f7d3f8482dc",
+  "prompts": {},
+  "sessions": {
+    "s_234778f24d1dc4": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "58969f20-b984-43f8-8d66-4492a69fbee5",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
