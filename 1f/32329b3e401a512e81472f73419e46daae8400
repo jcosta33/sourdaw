@@ -1,0 +1,47 @@
+src/modules/Arrangement/handlers/recording/handleDiscardRecording.ts
+  s_df40b526e33ddb::t_6c034fc8eb7363 5,10,21-22,25-26
+src/modules/Arrangement/useCases/recording/discardRecording.ts
+  s_fabbe41ad743be::t_a0bb8f1150b353 1-22
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_df40b526e33ddb::t_a940565eaf0977 11,89-92
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_fabbe41ad743be::t_a92ea35cd238a8 7,40,513,529-535,539-540
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_fabbe41ad743be::t_0ee6a00ee117e7 26,28,30-57,60,63-66,69,80,83-84,127-157,159-164,179,182-183,197,205,211-212,222,229-291
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_fabbe41ad743be::t_95287beefa7f01 11-12,14-21,39-43
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_ff47707d214a6d::t_c79727d772f058 3,74,105-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1f32329b3e401a512e81472f73419e46daae8400",
+  "prompts": {},
+  "sessions": {
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff47707d214a6d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7a960a76-620f-4cbb-8467-544707ede489",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
