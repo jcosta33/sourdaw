@@ -1,0 +1,19 @@
+.agents/skills/review-stances/README.md
+  s_336edc4c1b4417::t_ce061f5ad86b52 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7b928c0575154be385bc66a0031e520bd76de51d",
+  "prompts": {},
+  "sessions": {
+    "s_336edc4c1b4417": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4dd49e21-5502-4e53-9905-ac5b50330850",
+        "model": "composer-2.5-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
