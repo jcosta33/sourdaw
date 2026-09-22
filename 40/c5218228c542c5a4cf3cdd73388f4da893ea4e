@@ -1,0 +1,268 @@
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  h_beb54bf43b47b7 1-6,8-16,18-25,27,29,31,61-62,64-65,70-71,120-129,131-132,135-176,212,219-232,234-235,239-241,243-252,254-260,262-266,269-277,279-284,467
+  s_fabbe41ad743be::t_0ee6a00ee117e7 28,30,32-41,43-60,63,66-69,72,130,133-134,177-180,185-211,213-218,233,236,238,253,261,267-268,278,285-305,312-323,364-378,383-384,386-395,466
+  s_bab44fec62e7ec::t_ca0e848d9b906d 42,73,237,363,379-382,385,396-399
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  h_beb54bf43b47b7 10,13,22-23,30
+  s_fabbe41ad743be::t_95287beefa7f01 11-12,14-21,39-43
+src/modules/Arrangement/handlers/recording/handleDiscardRecording.ts
+  s_df40b526e33ddb::t_6c034fc8eb7363 5,10,21-22,25-26
+src/modules/Arrangement/useCases/recording/discardRecording.ts
+  s_fabbe41ad743be::t_a0bb8f1150b353 1-22
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_df40b526e33ddb::t_a940565eaf0977 12,90-91,95
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_fabbe41ad743be::t_a92ea35cd238a8 6,40,513,529-532,536-537,545-546
+  s_df40b526e33ddb::t_23f32dccdd13f0 560-567
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_ff47707d214a6d::t_c79727d772f058 3,74,105-116,119-122,124-127
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_df40b526e33ddb::t_5a2cfd8f54b028 1328-1365
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_d0c206f25b887f::t_5ece1f7f1ccc72 5521-5523,5525
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_c7361cf35855eb::t_3b5a52586bf6a4 33-35,37-39
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_beb54bf43b47b7 19,64,318-351,754
+.agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
+  h_beb54bf43b47b7 1-221
+.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md
+  h_beb54bf43b47b7 1-157
+.agents/decisions/README.md
+  h_beb54bf43b47b7 62-63
+.agents/decisions/open-decision-docket.md
+  h_beb54bf43b47b7 1171-1179
+.github/workflows/semantic-review.yml
+  h_beb54bf43b47b7 1-181
+.gitignore
+  h_beb54bf43b47b7 30-34
+AGENTS.md
+  h_beb54bf43b47b7 143-161,456-461
+crates/daw-dsp/tests/gluten_routing_and_patch_state_reach.rs
+  h_beb54bf43b47b7 283-458
+docs/manual/devices/07-gluten.md
+  h_beb54bf43b47b7 59-60,147-152,159-160,199-201
+package.json
+  h_beb54bf43b47b7 56,157
+pnpm-lock.yaml
+  h_beb54bf43b47b7 150-152,2608-2611,7935-7936
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 168-169,279,1204,1692-1727,1733,1745,2338-2342
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 7,2243-2335
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 30-37,395,966,977,990,1021,1851-2061
+scripts/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1-99
+scripts/__tests__/sourceAttestation.spec.ts
+  h_beb54bf43b47b7 60-80
+scripts/checkVitestCollectionScope.ts
+  h_beb54bf43b47b7 50-51
+scripts/healthGateWorkflowContract.ts
+  h_beb54bf43b47b7 41,71,210-221
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 540-544,565-567
+scripts/semanticReview.ts
+  h_beb54bf43b47b7 1-630
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1-3932
+scripts/semanticReview/contracts.ts
+  h_beb54bf43b47b7 1-295
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 1-624
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 1-144
+scripts/semanticReview/gitSource.ts
+  h_beb54bf43b47b7 1-420
+scripts/semanticReview/interpret.ts
+  h_beb54bf43b47b7 1-349
+scripts/semanticReview/provider.ts
+  h_beb54bf43b47b7 1-626
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 1-710
+scripts/semanticReview/requiredEvidence.ts
+  h_beb54bf43b47b7 1-130
+scripts/semanticReview/rules.ts
+  h_beb54bf43b47b7 1-719
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 1-751
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 1-234
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 1-656
+scripts/semanticReviewWorkflowContract.ts
+  h_beb54bf43b47b7 1-365
+scripts/sourceAttestation.ts
+  h_beb54bf43b47b7 183-186,193-194
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 199-201,210,213-215,1033,1054
+scripts/vitestCollectionPatterns.ts
+  h_beb54bf43b47b7 1-74
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_beb54bf43b47b7 46-48
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  h_beb54bf43b47b7 39-41
+src/modules/Arrangement/AGENTS.md
+  h_beb54bf43b47b7 7
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  h_beb54bf43b47b7 213-216,218
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  h_beb54bf43b47b7 91,93
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  h_beb54bf43b47b7 1,3,5,7,12-13,15,21,33,38,58-91,100,103,111,115,118
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  h_beb54bf43b47b7 9,108-110,114
+src/modules/Arrangement/stores/index.ts
+  h_beb54bf43b47b7 77-93
+src/modules/Arrangement/stores/warpStates.ts
+  h_beb54bf43b47b7 2-8,10-32,35,71-73,76,80-85,87-94,98,102-107,118,123-405
+src/modules/Arrangement/useCases/__tests__/restoreStripSilenceStateRollback.spec.ts
+  h_beb54bf43b47b7 111-114
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  h_beb54bf43b47b7 472,474-475,477,480,525-527,529
+src/modules/Arrangement/useCases/clipEditing/restoreClipGlueState.ts
+  h_beb54bf43b47b7 40-44
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 99
+src/modules/Arrangement/useCases/restoreStripSilenceState.ts
+  h_beb54bf43b47b7 30-34
+src/modules/Arrangement/useCases/warp/__tests__/hydrateClipWarpStates.spec.ts
+  h_beb54bf43b47b7 1-64
+src/modules/Arrangement/useCases/warp/commitWarpMarkerBeatDrag.ts
+  h_beb54bf43b47b7 3,17,21,43
+src/modules/Arrangement/useCases/warp/disableWarp.ts
+  h_beb54bf43b47b7 1,5
+src/modules/Arrangement/useCases/warp/enableWarp.ts
+  h_beb54bf43b47b7 1,5
+src/modules/Arrangement/useCases/warp/getStretchModeInfo.ts
+  h_beb54bf43b47b7 16-18
+src/modules/Arrangement/useCases/warp/hydrateClipWarpStates.ts
+  h_beb54bf43b47b7 1-13
+src/modules/Arrangement/useCases/warp/removeWarpMarker.ts
+  h_beb54bf43b47b7 1,5
+src/modules/Arrangement/useCases/warp/setStretchMode.ts
+  h_beb54bf43b47b7 2,6
+src/modules/Arrangement/useCases/warp/updateWarpMarkerBeat.ts
+  h_beb54bf43b47b7 1,11,23,26
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 183
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  h_beb54bf43b47b7 70-72
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  h_beb54bf43b47b7 8,94
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 107
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/addManualMarker.spec.ts
+  h_beb54bf43b47b7 49-59
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 53-63
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/quantizeTransients.spec.ts
+  h_beb54bf43b47b7 37-47
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/removeMarker.spec.ts
+  h_beb54bf43b47b7 30-46
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/toggleMarkerLock.spec.ts
+  h_beb54bf43b47b7 30-46
+src/modules/ElasticAudio/useCases/elasticAudio/addManualMarker.ts
+  h_beb54bf43b47b7 1,16,19
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  h_beb54bf43b47b7 1,70
+src/modules/ElasticAudio/useCases/elasticAudio/quantizeTransients.ts
+  h_beb54bf43b47b7 1,92,97,100
+src/modules/ElasticAudio/useCases/elasticAudio/removeMarker.ts
+  h_beb54bf43b47b7 1,5,18,26,31,34
+src/modules/ElasticAudio/useCases/elasticAudio/toggleMarkerLock.ts
+  h_beb54bf43b47b7 1,5,18,26,31,34
+src/modules/Gluten/presentations/views/__tests__/glutenDetectorManual.spec.ts
+  h_beb54bf43b47b7 1-54
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 40-42
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 120,440-457
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  h_beb54bf43b47b7 34
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  h_beb54bf43b47b7 48
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  h_beb54bf43b47b7 3-10,41,56,125-146
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  h_beb54bf43b47b7 9,304-306
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  h_beb54bf43b47b7 15,32,71,199-207,230,235,248
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  h_beb54bf43b47b7 3,33
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 75
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  h_beb54bf43b47b7 18-24,196-198,204,221-223
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_beb54bf43b47b7 72-74
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.warpSubscription.spec.tsx
+  h_beb54bf43b47b7 1-130
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  h_beb54bf43b47b7 67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "40c5218228c542c5a4cf3cdd73388f4da893ea4e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_bab44fec62e7ec": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9fca5846-ec42-48ed-bb2a-9b6ce759519f",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_c7361cf35855eb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3b389940-87d8-4657-9e0d-d879a4d3755e",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d0c206f25b887f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "e610f100-dc09-4213-b770-cfb8861d8780",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fabbe41ad743be": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1a048203-68f8-4cb4-8cb0-120e5b2cb8b6",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff47707d214a6d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7a960a76-620f-4cbb-8467-544707ede489",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
