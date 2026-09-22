@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
+import { GOVERNANCE_TRANSITION_PATHS, parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
 import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 import type { ReviewChangedPath } from '../reviewDiffSummary.ts';
@@ -119,15 +119,26 @@ describe('planReviewRisk', () => {
     });
 
     it('should call a small project-persistence change undo, since it can corrupt saved projects (#3377)', () => {
+        const persistenceWrites = [
+            'src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts',
+            'src/modules/Project/repositories/project/writeProjectJson.ts',
+            'src/modules/Project/repositories/nativeProjectFiles/saveProjectToFile.ts',
+        ];
+
+        for (const path of persistenceWrites) {
+            const result = reviewPlan([handwritten(path, 10, 10)]);
+            expect(result.riskClasses, path).toEqual(['undo']);
+            expect(result.requiredStances, path).toEqual(['correctness', 'project-integrity-undo', 'test-validity']);
+            expect(result.triggers, path).toContain(`undo:${path}`);
+        }
+    });
+
+    it('should not fire the project-persistence trigger on a like-named path outside the Project module', () => {
         const result = reviewPlan([
-            handwritten('src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts', 10, 10),
+            handwritten('src/modules/AgentStudio/presentations/projectPersistencePanel.tsx', 10, 10),
         ]);
 
-        expect(result.riskClasses).toEqual(['undo']);
-        expect(result.requiredStances).toEqual(['correctness', 'project-integrity-undo', 'test-validity']);
-        expect(result.triggers).toContain(
-            'undo:src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts'
-        );
+        expect(result.riskClasses).toEqual(['small']);
     });
 
     it('should call a small privileged-transition script change native-security (#3377)', () => {
@@ -138,10 +149,16 @@ describe('planReviewRisk', () => {
         expect(result.triggers).toContain('native-security:scripts/confirmReviewRepairs.ts');
     });
 
-    it('should classify every trusted GitHub-write closure path native-security, so the list cannot drift', () => {
+    it('should pin the governance-transition list to the closure union as sets, in both directions', () => {
         const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();
 
         expect(closurePaths.length).toBeGreaterThan(0);
+        expect([...GOVERNANCE_TRANSITION_PATHS].sort()).toEqual(closurePaths);
+    });
+
+    it('should classify every trusted GitHub-write closure path native-security, proving the wiring', () => {
+        const closurePaths = [...new Set(Object.values(trustedDependencyGraphs).flat())].sort();
+
         for (const path of closurePaths) {
             const result = reviewPlan([handwritten(path, 1, 1)]);
             expect(result.riskClasses, path).toContain('native-security');

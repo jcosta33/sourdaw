@@ -79,7 +79,7 @@ const NATIVE_SECURITY_PATHS = ['src/utils/desktopBridge.ts'] as const;
  * `trustedGithubWriteBootstrap.ts`, so adding a file to a closure without listing it here reddens
  * that spec.
  */
-const GOVERNANCE_TRANSITION_PATHS = [
+export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/acceptReview.ts',
     'scripts/canonicalRecord.ts',
     'scripts/claimTrackerIssue.ts',
@@ -181,12 +181,22 @@ function nativeSecurityFindings(paths: readonly ReviewChangedPath[]): RiskFindin
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
 }
 
+/**
+ * Saved-project integrity surfaces (#3377 AC-009 calibration, review repair): the persistence use
+ * cases and the Project repositories tree — the layer that actually writes saved projects —
+ * anchored as prefixes so a like-named path outside the Project module earns nothing.
+ */
+const PROJECT_PERSISTENCE_PREFIXES = [
+    'src/modules/project/usecases/projectpersistence/',
+    'src/modules/project/repositories/',
+] as const;
+
 function isUndoPath(path: string): boolean {
     const lower = path.toLowerCase();
     return (
         lower.includes('undo') ||
         lower.includes('crdtdocument') ||
-        lower.includes('projectpersistence') ||
+        PROJECT_PERSISTENCE_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
         lower.endsWith('.sdaw') ||
         (lower.startsWith('src/app/') && lower.includes('bootstrap'))
     );

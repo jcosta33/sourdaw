@@ -157,15 +157,18 @@ behind on a stale head authorizes nothing.
 
 AC-009 calibration closes the demonstrated policy-coverage gap without changing the class or
 stance vocabularies: the path classifier now earns `realtime-audio` for the playback-timing
-surface (`src/modules/Transport/useCases/playheadScheduler/`), `undo` for project-persistence
-paths, and `native-security` for every file in a trusted GitHub-write closure
-(`GOVERNANCE_TRANSITION_PATHS`, pinned to the `trustedDependencyGraphs` union by a spec so a
-closure addition that forgets the listing fails red). Each is a semantic risk that size-based
-classification called `small`; the earned-stance union and the proportionality rule — no class
-contributes a stance outside its own entry, and a plan's `requiredStances` must equal exactly what
-its classes earn — are unchanged. Task-derived stances beyond the heuristic prefixes were already
-representable: `stances.json` and the dossier admit free-form justified names, and the admission
-lines are judged by `stances:check` where the typed-judgment credential is available.
+surface (`src/modules/Transport/useCases/playheadScheduler/`), `undo` for the saved-project
+integrity surfaces (the `useCases/projectPersistence/` prefix and the Project `repositories/`
+tree, anchored so a like-named path outside the Project module earns nothing), and
+`native-security` for every file in a trusted GitHub-write closure
+(`GOVERNANCE_TRANSITION_PATHS`, pinned to the `trustedDependencyGraphs` union as sets in both
+directions by a spec so either list diverging from the other fails red). Each is a semantic risk
+that size-based classification called `small`; the earned-stance union and the proportionality
+rule — no class contributes a stance outside its own entry, and a plan's `requiredStances` must
+equal exactly what its classes earn — are unchanged. Task-derived stances beyond the heuristic
+prefixes were already representable: `stances.json` and the dossier admit free-form justified
+names, and the admission lines are judged by `stances:check` where the typed-judgment credential
+is available.
 
 For the record, the #3376 section above describes the delivery authorization as bound to the live
 orchestrator acceptance review; as reviewed and merged, `deliver` binds both live reviews —
