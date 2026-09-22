@@ -232,7 +232,7 @@ function assertContextIsSelfConsistent(context: SemanticRevisionContext): void {
  * of those cannot both be true of the same run. The exit code branches on the execution state, so a
  * report claiming completion here would have told a consumer that nothing was left unread.
  */
-function assertExecutionMatchesScope(execution: unknown, scope: SemanticScopeReport): void {
+function assertExecutionMatchesScope(execution: unknown, scope: SemanticScopeReport, mode: SemanticMode): void {
     if (execution !== 'completed') {
         return;
     }
@@ -241,7 +241,7 @@ function assertExecutionMatchesScope(execution: unknown, scope: SemanticScopeRep
     }
     refuse(
         'invalid_response',
-        `semantic report claims completed execution while ${String(scope.truncated.length)} region(s) were truncated and ${String(scope.unassessed.length)} unit(s) were unassessed`
+        `semantic report claims completed execution while ${String(scope.truncated.length)} region(s) were truncated and ${String(scope.unassessed.length)} ${assessedNoun(mode)}(s) were unassessed`
     );
 }
 
@@ -280,7 +280,7 @@ export function validateReport(value: unknown): SemanticReport {
         truncated: readExclusions(rawScope.truncated, 'scope.truncated'),
     };
     assertScopeConsistency(scope, 'semantic report');
-    assertExecutionMatchesScope(record.execution, scope);
+    assertExecutionMatchesScope(record.execution, scope, record.mode);
 
     if (typeof record.usage !== 'object' || record.usage === null) {
         refuse('invalid_response', 'semantic report usage must be an object');
@@ -662,7 +662,7 @@ export function renderSummary(report: SemanticReport): string {
     const unresolved = report.scope.unassessed.length + report.scope.truncated.length;
     if (unresolved > 0) {
         claim(
-            `Incomplete: ${String(report.scope.unassessed.length)} unit(s) unassessed and ${String(report.scope.truncated.length)} region(s) truncated or withheld.`
+            `Incomplete: ${String(report.scope.unassessed.length)} ${assessedNoun(report.mode)}(s) unassessed and ${String(report.scope.truncated.length)} region(s) truncated or withheld.`
         );
         for (const entry of report.scope.unassessed.slice(0, MAX_SUMMARY_ITEMS)) {
             lines.push(`  - not assessed: ${entry.path} (${entry.reason})`);

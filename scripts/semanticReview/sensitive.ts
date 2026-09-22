@@ -155,8 +155,15 @@ const ARMOR_FOOTER = String.raw`-{4,5} ?END [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: 
  * Envelope lines between the header and the body: `Proc-Type` and `DEK-Info` on a passphrase-encrypted
  * block, a `Version:` or `Comment:` line, or a blank line. The pinned scanner's private-key rule spans
  * them all, so none may break the match.
+ *
+ * Each line has exactly one whitespace consumer. The optional `Word: value` group's `[^\r\n]*` already
+ * swallows trailing whitespace when it matches, and the leading `[ \t]*` is the only consumer of a
+ * whitespace-only line. A second trailing `[ \t]*` separated from it only by the optional group gave
+ * every blank line one backtracking path per leading space, and the outer `*` multiplied those across
+ * lines, so a lone header followed by whitespace-padded blank lines matched in exponential time over an
+ * input it can never match.
  */
-const ARMOR_ENVELOPE = String.raw`(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?[ \t]*\r?\n)*`;
+const ARMOR_ENVELOPE = String.raw`(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?\r?\n)*`;
 
 /** One base64 body line, possibly indented, so a body reflowed into short lines still matches. */
 const ARMOR_BODY_LINE = String.raw`[ \t]*[A-Za-z0-9+/=]+[ \t]*\r?\n`;

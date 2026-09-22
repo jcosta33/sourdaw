@@ -26,7 +26,7 @@ import {
     type SemanticEvidenceSet,
     type SemanticSourcePort,
 } from '../evidence.ts';
-import { fitUnitEvidence, serializedRegion } from '../fit.ts';
+import { fitUnitEvidence, regionCost, serializedRegion } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
@@ -3328,6 +3328,23 @@ describe('armored envelopes with arbitrary header lines', () => {
     });
 });
 
+describe('the armored envelope matches whitespace-only lines in linear time', () => {
+    it('does not backtrack over whitespace-padded blank lines after a lone header', () => {
+        // The envelope had two whitespace consumers separated only by an optional group, so a
+        // whitespace-only line admitted one backtracking path per leading space and the outer `*`
+        // multiplied those across lines: twelve spaces of padding is thirteen paths per line, and the
+        // reviewer measured roughly thirteen times per added line. A header followed by fifteen such
+        // lines projected to years under the old shape while it can never match — the header alone
+        // carries no key material, so the correct answer is `undefined`. Fifteen lines is far past any
+        // test timeout, so a regression to the ambiguous shape fails by timing out rather than by
+        // returning a wrong value.
+        const pkcs8Header = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
+        const paddedBlankLine = '            \n';
+        const input = secretFixture(pkcs8Header, '\n', paddedBlankLine.repeat(15));
+        expect(sensitiveContentReason(input)).toBeUndefined();
+    });
+});
+
 describe('the armored shape keys on the block, not one line length', () => {
     const pkcs8Header = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
     const footer = secretFixture('-----END ', 'PRIVATE KEY', '-----');
@@ -3525,7 +3542,7 @@ function perQuestionProvider(distributions: Record<string, Record<string, number
     };
 }
 
-describe('the outcome sentence names the scope noun per mode in every branch', () => {
+describe('the scope noun follows the mode on every line that names it', () => {
     const decisiveQuietVerifyProvider = (): SemanticProviderPort =>
         perQuestionProvider({
             support: { supported: 0.05, contradicted: 0.05, insufficient_context: 0.9 },
@@ -3593,6 +3610,116 @@ describe('the outcome sentence names the scope noun per mode in every branch', (
         const empty = renderSummary({ ...report, scope: { ...report.scope, assessed: 0 }, findingAssessments: [] });
         expect(empty).toContain('No finding was assessed');
         expect(empty).not.toContain('No unit was assessed');
+    });
+
+    it('words the Incomplete line with the mode noun when the reduced sections are all non-empty', async () => {
+        // The Incomplete line was the third place the scope noun was hardcoded. It renders only when
+        // unassessed or truncated evidence exists, and the noun cases above rendered only quiet
+        // reports, so this line hid the wrong noun twice. Rendering a scope whose unassessed, truncated
+        // and limitation sections are all non-empty closes the class: no line may choose its own noun.
+        const scanBase = await runScan(
+            scanPorts(
+                constantProvider(0.02),
+                fakeSource({
+                    files: [changedFile('src/modules/AudioEngine/live.ts')],
+                    blobs: {
+                        [`${MERGE_BASE}:src/modules/AudioEngine/live.ts`]: 'const a = 1;\n',
+                        [`${HEAD}:src/modules/AudioEngine/live.ts`]: 'const a = 2;\n',
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        const quietScan = {
+            ...scanBase.report,
+            signals: scanBase.report.signals.map((signal) => ({
+                ...signal,
+                outcome: 'no_signal' as const,
+                disposition: 'no_additional_recommendation' as const,
+                probability: 0.02,
+                missingEvidence: [],
+            })),
+        };
+        const scanSummary = renderSummary({
+            ...quietScan,
+            scope: {
+                ...quietScan.scope,
+                unassessed: [{ path: 'src/modules/Project/a.ts', reason: 'no-admissible-evidence' }],
+                truncated: [{ path: 'src/modules/Project/b.ts', reason: 'region-exceeds-per-region-budget (after)' }],
+            },
+            limitations: [...quietScan.limitations, 'a limitation'],
+        });
+        expect(scanSummary).toContain('Incomplete: 1 unit(s) unassessed and 1 region(s) truncated or withheld.');
+        expect(scanSummary).toContain('eligible unit(s)');
+        expect(scanSummary).not.toContain('finding(s) unassessed');
+        expect(scanSummary).not.toContain('eligible finding(s)');
+
+        const { report: verifyReport } = await verifyWith({
+            provider: decisiveQuietVerifyProvider(),
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+        });
+        const verifySummary = renderSummary({
+            ...verifyReport,
+            scope: {
+                ...verifyReport.scope,
+                unassessed: [{ path: 'f1', reason: 'no-admissible-evidence' }],
+                truncated: [{ path: 'src/modules/Project/a.ts', reason: 'region-exceeds-per-region-budget (after)' }],
+            },
+            limitations: [...verifyReport.limitations, 'a limitation'],
+        });
+        expect(verifySummary).toContain('Incomplete: 1 finding(s) unassessed and 1 region(s) truncated or withheld.');
+        expect(verifySummary).toContain('eligible finding(s)');
+        expect(verifySummary).not.toContain('unit(s) unassessed');
+        expect(verifySummary).not.toContain('eligible unit(s)');
+    });
+
+    it('refuses a completed report with unassessed scope naming the mode noun', async () => {
+        // The refusal message in `assertExecutionMatchesScope` was the fourth place the scope noun was
+        // hardcoded, reached by `validate` on a hand-edited document rather than by `renderSummary`. A
+        // report claiming `completed` with a non-empty unassessed list must refuse naming the mode's
+        // noun, in both modes.
+        const scanBase = await runScan(
+            scanPorts(
+                constantProvider(0.02),
+                fakeSource({
+                    files: [changedFile('src/modules/AudioEngine/live.ts')],
+                    blobs: {
+                        [`${MERGE_BASE}:src/modules/AudioEngine/live.ts`]: 'const a = 1;\n',
+                        [`${HEAD}:src/modules/AudioEngine/live.ts`]: 'const a = 2;\n',
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        const scanCompleted = {
+            ...scanBase.report,
+            execution: 'completed' as const,
+            scope: {
+                ...scanBase.report.scope,
+                discovered: scanBase.report.scope.discovered + 1,
+                eligible: scanBase.report.scope.eligible + 1,
+                unassessed: [{ path: 'src/modules/Project/a.ts', reason: 'no-admissible-evidence' }],
+            },
+        };
+        expect(() => validateReport(scanCompleted)).toThrow(/unit\(s\) were unassessed/u);
+        expect(() => validateReport(scanCompleted)).not.toThrow(/finding\(s\) were unassessed/u);
+
+        const { report: verifyReport } = await verifyWith({
+            provider: decisiveQuietVerifyProvider(),
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+        });
+        const verifyCompleted = {
+            ...verifyReport,
+            execution: 'completed' as const,
+            scope: {
+                ...verifyReport.scope,
+                discovered: verifyReport.scope.discovered + 1,
+                eligible: verifyReport.scope.eligible + 1,
+                unassessed: [{ path: 'f1', reason: 'no-admissible-evidence' }],
+            },
+        };
+        expect(() => validateReport(verifyCompleted)).toThrow(/finding\(s\) were unassessed/u);
+        expect(() => validateReport(verifyCompleted)).not.toThrow(/unit\(s\) were unassessed/u);
     });
 });
 
@@ -3662,6 +3789,73 @@ describe('verify withholds a region over the per-region budget', () => {
         expect(assessment?.disposition).toBe('ready_for_orchestrator_validation');
         expect(assessment?.reasoning).not.toContain('not supplied');
         expect(report.scope.truncated).toHaveLength(0);
+    });
+
+    it('withholds a region whose serialized size exceeds the budget even when its raw size fits', async () => {
+        // The gate measured raw bytes, so a region whose newlines pushed its JSON-serialized size over
+        // the budget was admitted, minted, and sent; the provider then refused the request, recording a
+        // run-wide failure code and an empty truncated scope that hid the region. The gate must cost the
+        // serialized bytes the fitter uses.
+        const region = `const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;`;
+        const rawBytes = Buffer.byteLength(region, 'utf8');
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a region over the serialized budget');
+            },
+        };
+        // The budget admits the raw bytes exactly but refuses the serialized form, so a raw-byte gate
+        // would have admitted the region.
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: region },
+            limits: { maxRegionBytes: rawBytes, maxTotalBytes: 8_192 },
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.findingAssessments).toHaveLength(0);
+        expect(
+            report.scope.truncated.some(
+                (entry) =>
+                    entry.path === 'src/modules/Project/a.ts' &&
+                    entry.reason === 'region-exceeds-per-region-budget (after)'
+            )
+        ).toBe(true);
+        expect(report.failureCode).toBeUndefined();
+        expect(report.scope.unassessed[0]?.reason).toBe('no-admissible-evidence');
+    });
+
+    it('sends and judges a region whose serialized size fits the budget', async () => {
+        // The complementary direction: a region that fits the serialized measure must still be sent, not
+        // withheld by an over-eager gate. The budget is the region's exact serialized cost, so the gate
+        // admits at the serialized boundary.
+        const region = `const a = 1;\nconst b = 2;\nconst c = 3;`;
+        const serializedBytes = regionCost(
+            {
+                evidenceId: 'a1',
+                revisionSha: HEAD,
+                path: 'src/modules/Project/a.ts',
+                side: 'after',
+                startLine: 1,
+                endLine: region.split('\n').length,
+                contentHash: semanticDigest({ region }),
+            },
+            region
+        );
+        const { report } = await verifyWith({
+            provider: perQuestionProvider({
+                support: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                attribution: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                kind: { behavioral_or_contract_issue: 0.9, style_preference: 0.05, undetermined: 0.05 },
+                strongestEvidence: { none: 1 },
+            }),
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: region },
+            limits: { maxRegionBytes: serializedBytes, maxTotalBytes: 8_192 },
+        });
+        const assessment = report.findingAssessments[0];
+        expect(assessment?.disposition).toBe('ready_for_orchestrator_validation');
+        expect(report.scope.truncated).toHaveLength(0);
+        expect(report.failureCode).toBeUndefined();
     });
 });
 

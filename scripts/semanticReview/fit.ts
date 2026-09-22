@@ -38,7 +38,7 @@ export function serializedRegion(reference: EvidenceReference, content: string):
  * file to two bytes, so a raw-byte estimate under-counts by roughly one byte per line and a unit
  * sized by it overruns the request limit.
  */
-function regionCost(reference: EvidenceReference, content: string): number {
+export function regionCost(reference: EvidenceReference, content: string): number {
     return Buffer.byteLength(JSON.stringify({ [reference.evidenceId]: serializedRegion(reference, content) }), 'utf8');
 }
 

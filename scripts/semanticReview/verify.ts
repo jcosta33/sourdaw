@@ -32,6 +32,7 @@ import {
     type SemanticEvidenceSet,
     type SemanticSourcePort,
 } from './evidence.ts';
+import { regionCost } from './fit.ts';
 import { interpretFinding, type FindingAssessment } from './interpret.ts';
 import {
     assessUnit,
@@ -374,11 +375,24 @@ function collectFindingEvidence(input: {
         const startLine = Math.min(Math.max(1, reference.startLine), lastLine);
         const endLine = Math.min(Math.max(startLine, reference.endLine), lastLine);
         const region = lines.slice(startLine - 1, endLine).join('\n');
+        const evidenceId = `${evidenceSidePrefix(reference.side)}${String(ordinal)}`;
+        const evidenceReference: EvidenceReference = {
+            evidenceId,
+            revisionSha: revision,
+            path: reference.path,
+            side: reference.side,
+            startLine,
+            endLine,
+            contentHash: semanticDigest({ region }),
+        };
         // A region is supplied whole or not at all, exactly as the scan path's admission does. Sending
         // it and then naming it truncated made `interpretFinding` read evidence it had been given as
         // missing, while the region still left the machine past the per-region budget the scan path
-        // enforces. An oversized region is withheld and named with the scan path's own reason.
-        if (Buffer.byteLength(region, 'utf8') > input.limits.maxRegionBytes) {
+        // enforces. An oversized region is withheld and named with the scan path's own reason. The gate
+        // costs the serialized bytes the fitter uses, not the raw bytes: JSON escapes every newline, so
+        // a raw-byte estimate admitted a region the provider then refused, recording a run-wide
+        // `budget_exhausted` failure instead of the per-region limitation.
+        if (regionCost(evidenceReference, region) > input.limits.maxRegionBytes) {
             truncated.push({
                 path: reference.path,
                 reason: `region-exceeds-per-region-budget (${reference.side})`,
@@ -388,17 +402,8 @@ function collectFindingEvidence(input: {
             );
             continue;
         }
-        const evidenceId = `${evidenceSidePrefix(reference.side)}${String(ordinal)}`;
         ordinal += 1;
-        references.push({
-            evidenceId,
-            revisionSha: revision,
-            path: reference.path,
-            side: reference.side,
-            startLine,
-            endLine,
-            contentHash: semanticDigest({ region }),
-        });
+        references.push(evidenceReference);
         contents.set(evidenceId, region);
     }
     return {
