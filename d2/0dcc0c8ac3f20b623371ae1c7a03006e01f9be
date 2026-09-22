@@ -1,0 +1,18 @@
+scripts/semanticReview/__tests__/egressVendorShapeExtraction.spec.ts
+  h_beb54bf43b47b7 219-221,232-233,235-238,241-243,245-251
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1699,1705-1707
+scripts/semanticReview/egressVendorToml.ts
+  h_beb54bf43b47b7 35-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d20dcc0c8ac3f20b623371ae1c7a03006e01f9be",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
