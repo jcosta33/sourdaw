@@ -1,0 +1,31 @@
+scripts/__tests__/threeRoleTransitions.spec.ts
+  s_ff47707d214a6d::t_e0d4c6ae866605 1-110
+scripts/prepareReview.ts
+  s_df40b526e33ddb::t_100820a149a5be 22,63
+scripts/reviewDocumentParser.ts
+  s_df40b526e33ddb::t_4614ef8e7b9c76 26-40,63-68,71-76,82,168-179,183-210,212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6a24b08a26d4b283d7513c389f2ab33bb79cc984",
+  "prompts": {},
+  "sessions": {
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ff47707d214a6d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7a960a76-620f-4cbb-8467-544707ede489",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
