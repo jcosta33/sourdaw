@@ -1,0 +1,32 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 253-254,303-306,310-322
+AGENTS.md
+  h_beb54bf43b47b7 167-177,181-183
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 4971
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  h_beb54bf43b47b7 44
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 16,23-28,94,218-273,885-890
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_beb54bf43b47b7 18,24,130,139,148,155-162,271-285,730-770,1079,1147
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 24,26,37,98-103,575-580,602,643,661,695,726
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 6-9,24-55,147-164,170,184-187,203,219-224
+scripts/reviewDossierPublication.ts
+  h_beb54bf43b47b7 24,27-33,60-61,225,367
+scripts/reviewDossierViews.ts
+  h_beb54bf43b47b7 7-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d4b80f34238bc92ad8d5d20b68f1eec97e0da794",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
