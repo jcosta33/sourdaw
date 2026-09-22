@@ -93,11 +93,6 @@ function unescapeBasicString(value: string): string {
     });
 }
 
-/** The key side of a TOML `key = value` pair: bare, single-quoted, or double-quoted, with optional spacing. */
-function keyPattern(key: string): string {
-    return `(?:${key}|"${key}"|'${key}')\\s*=\\s*`;
-}
-
 /** Trims a multiline literal string body: the newline after the delimiter, and any carriage returns. */
 function decodeMultilineLiteralString(value: string): string {
     return value
@@ -122,55 +117,143 @@ function decodeMultilineBasicString(value: string): string {
     return unescapeBasicString(s);
 }
 
-/**
- * Reads a string-valued TOML field in any of the four string forms. The key may be bare, single- or
- * double-quoted, with optional whitespace around `=`, and a basic string is TOML-unescaped so the
- * derived regex is byte-identical to the value the scanner would read.
- */
-function readStringField(block: string, key: string): string | undefined {
-    const kp = keyPattern(key);
-    const literalMulti = block.match(new RegExp(`^${kp}'''([\\s\\S]*?)'''`, 'm'));
-    if (literalMulti !== null) {
-        return decodeMultilineLiteralString(literalMulti[1] ?? '');
+/** The field names this reader consumes; a field-shaped line inside a string would shadow one of them. */
+const FIELD_KEY = /^(?:id|description|regex|path|entropy|secretGroup|keywords)\s*=/;
+
+/** Decodes a string value's raw text (with its delimiters) into the value the scanner would read. */
+function decodeStringValue(raw: string): string | undefined {
+    if (raw.startsWith("'''") && raw.endsWith("'''")) {
+        return decodeMultilineLiteralString(raw.slice(3, -3));
     }
-    const basicMulti = block.match(new RegExp(`^${kp}"""([\\s\\S]*?)"""`, 'm'));
-    if (basicMulti !== null) {
-        return decodeMultilineBasicString(basicMulti[1] ?? '');
+    if (raw.startsWith('"""') && raw.endsWith('"""')) {
+        return decodeMultilineBasicString(raw.slice(3, -3));
     }
-    const basic = block.match(new RegExp(`^${kp}"((?:[^"\\\\]|\\\\.)*)"`, 'm'));
-    if (basic !== null) {
-        return unescapeBasicString(basic[1] ?? '');
+    if (raw.startsWith('"') && raw.endsWith('"')) {
+        return unescapeBasicString(raw.slice(1, -1));
     }
-    const literal = block.match(new RegExp(`^${kp}'([^']*)'`, 'm'));
-    if (literal !== null) {
-        return literal[1];
+    if (raw.startsWith("'") && raw.endsWith("'")) {
+        return raw.slice(1, -1);
     }
     return undefined;
 }
 
+/** Refuses when a multi-line string's content carries a field-shaped line that would shadow the real field. */
+function assertNoFieldLine(content: string, key: string): void {
+    for (const line of content.split('\n')) {
+        if (FIELD_KEY.test(line.trim())) {
+            throw new Error(`a field-shaped line appears inside the "${key}" string value`);
+        }
+    }
+}
+
+/** Consumes one value beginning at `rest` on `startLine`, advancing past multi-line strings and arrays. */
+function consumeValue(
+    lines: string[],
+    startLine: number,
+    key: string,
+    rest: string
+): { readonly value: string; readonly nextLine: number } {
+    if (rest.startsWith("'''") || rest.startsWith('"""')) {
+        const delimiter = rest.slice(0, 3);
+        let content = rest.slice(3);
+        let line = startLine;
+        let closed = false;
+        for (;;) {
+            const closeIdx = content.indexOf(delimiter);
+            if (closeIdx !== -1) {
+                assertNoFieldLine(content.slice(0, closeIdx), key);
+                content = content.slice(0, closeIdx);
+                closed = true;
+                break;
+            }
+            line += 1;
+            if (line >= lines.length) {
+                break;
+            }
+            content += `\n${lines[line] ?? ''}`;
+        }
+        if (!closed) {
+            throw new Error(`unterminated multi-line string for field "${key}"`);
+        }
+        return { value: `${delimiter}${content}${delimiter}`, nextLine: line + 1 };
+    }
+    if (rest.startsWith('[')) {
+        let content = rest;
+        let line = startLine;
+        while (!content.includes(']')) {
+            line += 1;
+            if (line >= lines.length) {
+                throw new Error(`unterminated array for field "${key}"`);
+            }
+            content += `\n${lines[line] ?? ''}`;
+        }
+        return { value: content, nextLine: line + 1 };
+    }
+    return { value: rest, nextLine: startLine + 1 };
+}
+
+/**
+ * Reads each top-level `key = value` pair of a rule block, skipping every line inside a string or
+ * array value and tolerating leading whitespace before a key. A duplicate key or a field-shaped line
+ * inside a string is refused rather than guessed.
+ */
+function readTopLevelEntries(lines: string[]): Map<string, string> {
+    const entries = new Map<string, string>();
+    let i = 0;
+    while (i < lines.length) {
+        const trimmed = (lines[i] ?? '').trim();
+        if (trimmed === '' || trimmed.startsWith('#')) {
+            i += 1;
+            continue;
+        }
+        // A table header (e.g. `[[rules.allowlists]]`) ends the rule's own key region; its fields
+        // belong to the sub-table, not to the rule, so they must not be read as the rule's.
+        if (trimmed.startsWith('[')) {
+            break;
+        }
+        const keyMatch = /^(?:(?:([A-Za-z0-9_-]+)|"([^"]+)"|'([^']+)')\s*=\s*)([\s\S]*)$/.exec(trimmed);
+        if (keyMatch === null) {
+            i += 1;
+            continue;
+        }
+        const key = keyMatch[1] ?? keyMatch[2] ?? keyMatch[3] ?? '';
+        if (entries.has(key)) {
+            throw new Error(`duplicate top-level field "${key}"`);
+        }
+        const consumed = consumeValue(lines, i, key, keyMatch[4] ?? '');
+        entries.set(key, consumed.value);
+        i = consumed.nextLine;
+    }
+    return entries;
+}
+
 function parseRuleBlock(lines: string[]): Rule | null {
-    const block = lines.join('\n');
-    const id = readStringField(block, 'id');
-    if (id === undefined) {
+    const entries = readTopLevelEntries(lines);
+    const id = entries.get('id');
+    const decodedId = id === undefined ? undefined : decodeStringValue(id);
+    if (decodedId === undefined) {
         return null;
     }
-    const description = readStringField(block, 'description') ?? '';
-    const regex = readStringField(block, 'regex');
-    const path = readStringField(block, 'path');
-    const secretGroupMatch = block.match(new RegExp(`^${keyPattern('secretGroup')}(\\d+)`, 'm'));
-    const entropyMatch = block.match(new RegExp(`^${keyPattern('entropy')}([\\d.]+)`, 'm'));
-    const keywordsMatch = block.match(new RegExp(`^${keyPattern('keywords')}\\[([\\s\\S]*?)\\]`, 'm'));
+    const descriptionRaw = entries.get('description');
+    const regexRaw = entries.get('regex');
+    const pathRaw = entries.get('path');
+    const entropyRaw = entries.get('entropy');
+    const secretGroupRaw = entries.get('secretGroup');
+    const keywordsRaw = entries.get('keywords');
     const keywords: string[] = [];
-    if (keywordsMatch !== null) {
-        keywords.push(...Array.from((keywordsMatch[1] ?? '').matchAll(/(["'])([^"']*)\1/g), (m) => m[2] ?? ''));
+    if (keywordsRaw !== undefined) {
+        const arrayMatch = /^\[([\s\S]*)\]$/.exec(keywordsRaw);
+        if (arrayMatch !== null) {
+            keywords.push(...Array.from((arrayMatch[1] ?? '').matchAll(/(["'])([^"']*)\1/g), (m) => m[2] ?? ''));
+        }
     }
     return {
-        id,
-        description,
-        regex,
-        path,
-        entropy: entropyMatch === null ? undefined : Number(entropyMatch[1]),
-        secretGroup: secretGroupMatch === null ? undefined : Number(secretGroupMatch[1]),
+        id: decodedId,
+        description: descriptionRaw === undefined ? '' : (decodeStringValue(descriptionRaw) ?? ''),
+        regex: regexRaw === undefined ? undefined : decodeStringValue(regexRaw),
+        path: pathRaw === undefined ? undefined : decodeStringValue(pathRaw),
+        entropy: entropyRaw === undefined ? undefined : Number(entropyRaw),
+        secretGroup: secretGroupRaw === undefined ? undefined : Number(secretGroupRaw),
         keywords,
     };
 }

@@ -74,19 +74,18 @@ const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
  * would stop matching. The value heuristic separates those names from ordinary identifiers; a bare
  * mixed-case alphabetic value is a reference, not key material.
  *
- * The quoted alternative accepts every delimiter the pinned scanner's generic key rule reads — a
- * single or triple quote on either side, or a backtick — because the scanner flags a credential
- * under any of them and the screen would otherwise let it reach the provider. Each form captures
- * only a run with no delimiter inside, matching the scanner's silence on a value that itself
- * contains the quote.
+ * The quoted alternative reads a delimiter *run* on either side — one to three of `'`, `"` or a
+ * backtick — because the scanner treats each of those as an independent boundary, so a mismatched
+ * pair such as `'…"` is still a credential it flags. The captured run carries no delimiter inside,
+ * so a nested delimiter ends the run: `'''…"…'''` stops at the inner `"` and is admitted, exactly as
+ * the scanner's capture stops there. An *escaped* delimiter (`\"` inside a double-quoted value) also
+ * stops the run, so it stays admitted; a doubled or nested delimiter diverges from the scanner only
+ * at the length floor (the scanner's 10-character floor plus entropy gate can see a prefix the
+ * screen's 16-character floor does not), which is the accepted, longer-standing divergence.
  */
 const SECRET_ASSIGNMENT = new RegExp(
     `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:` +
-        `'''(?<tripleSingle>[^']{16,})'''` +
-        `|"""(?<tripleDouble>[^"]{16,})"""` +
-        `|\\x60(?<backtick>[^\\x60]{16,})\\x60` +
-        `|'(?<single>[^']{16,})'` +
-        `|"(?<double>[^"]{16,})"` +
+        `['"\\x60]{1,3}(?<quoted>[^'"\\x60]{16,})['"\\x60]{1,3}` +
         `|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );
@@ -212,17 +211,11 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
 /** The first secret-named assignment whose value is shaped like a credential, if any. */
 function secretAssignmentReason(text: string): string | undefined {
     for (const match of text.matchAll(SECRET_ASSIGNMENT)) {
-        const quotedValue =
-            match.groups?.tripleSingle ??
-            match.groups?.tripleDouble ??
-            match.groups?.backtick ??
-            match.groups?.single ??
-            match.groups?.double;
-        const value = quotedValue ?? match.groups?.bare;
+        const quoted = match.groups?.quoted !== undefined;
+        const value = match.groups?.quoted ?? match.groups?.bare;
         if (value === undefined) {
             continue;
         }
-        const quoted = quotedValue !== undefined;
         const after = quoted ? '' : (match.groups?.after ?? '');
         if (looksLikeCredentialValue(value, after, quoted)) {
             return 'a secret-named key assigned a credential-shaped value';

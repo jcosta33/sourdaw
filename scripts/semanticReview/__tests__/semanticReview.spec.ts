@@ -1697,14 +1697,25 @@ describe('the egress screen tells code from credentials', () => {
     });
 
     it('withholds a secret value under every quoting form the scanner reads', () => {
-        // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter;
-        // the screen must reach the same forms. A value that itself carries the delimiter quote is
-        // silent to the scanner and must stay admitted, not over-withheld.
+        // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter,
+        // and it treats each delimiter as an independent boundary, so a mismatched pair such as `'…"` is
+        // also flagged. The screen must reach all of them. A nested delimiter ends the run, so
+        // `'''…"…'''` stops at the inner `"` and is admitted; an escaped delimiter also stops the run
+        // and is admitted. That is exact for these cases, but a doubled or nested delimiter diverges at
+        // the length floor — the scanner's 10-character floor plus entropy gate can see a prefix the
+        // screen's 16-character floor does not — so this is not claimed as whole-form parity.
         const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', '"""', value, '"""'))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', '`', value, '`'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '"'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '"', value, "'"))).toBeDefined();
+        expect(
+            sensitiveContentReason(
+                secretFixture('client_secret = ', "'''", 'Ab3dEf7hIj2', '"', 'Qw9Er8Ty7Ui6Op5As4Df3', "'''")
+            )
+        ).toBeUndefined();
         expect(
             sensitiveContentReason(secretFixture('client_secret = ', '"Ab3dEf7hI\\"j2lMn4pQr5tUv6"'))
         ).toBeUndefined();
@@ -3423,10 +3434,14 @@ describe('vendor prefix coverage', () => {
         // The whole table is pinned by a digest that serialises every field the screen depends on —
         // the parts arrays (not their joined prefix), the tail and its case scope, the fixture, the
         // key names, and the residual record — so deleting a key name, merging two fragments, editing a
-        // residual reason, or rewriting a fixture all fail here. Each entry must be withheld by the
-        // screen, and the screen's own prefix case scope must match the source: a whole-insensitive
-        // shape withholds its case-flipped prefix under the same reason, while a case-sensitive prefix
-        // rejects the flipped form. Reason equality, not presence, so a different shape cannot mask.
+        // residual reason, or rewriting a fixture all fail here. The shape, key-name and residual counts
+        // are asserted separately, so a regeneration that drops an entry fails even if the digest line
+        // is edited to match. Each entry's own pattern must match its own fixture, and the screen's own
+        // prefix case scope must match the source: a whole-insensitive shape withholds its case-flipped
+        // prefix under the same reason, while a case-sensitive prefix rejects the flipped form.
+        expect(EGRESS_VENDOR_SHAPES).toHaveLength(100);
+        expect(VENDOR_KEY_NAMES).toHaveLength(85);
+        expect(RESIDUAL_RULES).toHaveLength(39);
         const serialized = [
             ...EGRESS_VENDOR_SHAPES.map(
                 (shape) =>
@@ -3442,6 +3457,9 @@ describe('vendor prefix coverage', () => {
             const prefix = shape.parts.join('');
             const fixture = secretFixture(...shape.parts, ...shape.fixture);
             const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
+            // The entry's own pattern matches its own fixture — a masked entry whose tail was replaced
+            // must fail here even though an earlier retained shape still withholds its fixture.
+            expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
             // The screen withholds the shape's own fixture.
             expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
             // The screen's prefix case scope, observed through the screen rather than the rebuilt
@@ -3459,6 +3477,15 @@ describe('vendor prefix coverage', () => {
             if (shape.bodyInsensitive) {
                 expect(pattern.test(upperBody), `${shape.reason}: body case scope`).toBe(true);
             }
+        }
+    });
+
+    it('fires every derived vendor key name as a secret-named assignment', () => {
+        // Every key name must reach the value heuristic: a keyword-proximity family whose name does not
+        // fire would be reported under coverage while withholding nothing.
+        const opaque = 'a'.repeat(40);
+        for (const name of VENDOR_KEY_NAMES) {
+            expect(sensitiveContentReason(secretFixture(name, '=', opaque)), name).toBeDefined();
         }
     });
 

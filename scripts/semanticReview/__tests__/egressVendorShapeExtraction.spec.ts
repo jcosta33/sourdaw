@@ -245,4 +245,55 @@ regex = '''acme_[a-z0-9]{20}'''
         expect(() => deriveEgressVendorShapes('no rules here\n')).toThrow(/no readable rule/);
         expect(() => deriveEgressVendorShapes('')).toThrow(/no readable rule/);
     });
+
+    it('reads an indented rule whose keys carry leading whitespace', () => {
+        // TOML makes leading whitespace insignificant, so an indented header and indented keys are the
+        // same one rule; the reader must not drop it for the column-zero anchor.
+        const toml = String.raw`  [[ rules ]]
+  id = 'indented'
+  description = "An indented rule."
+  regex = '''acme_[a-z0-9]{20}'''
+`;
+
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.counts.blockCount).toBe(1);
+        expect(derived.counts.totalRules).toBe(1);
+        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
+    });
+
+    it('refuses a rule whose regex is shadowed inside a multi-line string', () => {
+        // A field-shaped line inside an earlier multi-line string must not shadow the real field, and
+        // the reader refuses rather than deriving a plausible wrong value.
+        const toml = String.raw`[[rules]]
+id = "shadowed"
+description = """a description
+regex = '''zzz_[a-z0-9]{20}'''
+more prose"""
+regex = '''acme_[a-z0-9]{20}'''
+`;
+
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/field-shaped line/);
+    });
+
+    it('refuses a rule whose key occurs twice', () => {
+        const toml = String.raw`[[rules]]
+id = "twice"
+description = "A duplicated field."
+regex = '''acme_[a-z0-9]{20}'''
+regex = '''other_[a-z0-9]{20}'''
+`;
+
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/duplicate top-level field "regex"/);
+    });
+
+    it('refuses when headers are present but no rule is readable', () => {
+        // A header with an unreadable id yields headers but zero rules; the refusal must fire on the
+        // zero-rule condition, not on the zero-header condition.
+        const toml = String.raw`[[rules]]
+id = unreadable
+`;
+
+        expect(() => deriveEgressVendorShapes(toml)).toThrow(/1 \[\[rules\]\] headers but no readable rule/);
+    });
 });
