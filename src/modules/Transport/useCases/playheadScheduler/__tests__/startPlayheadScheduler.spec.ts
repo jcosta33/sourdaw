@@ -743,16 +743,22 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // The audio track stages its wrap take; the MIDI track keeps the
-        // history-bearing route.
-        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(1);
-        expect(arrangementMocks.addTakeLane).toHaveBeenCalledWith('rec-b');
-        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(1);
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-b', 'clip-rec-b', 'Take 1', 0, 4, 0);
-        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(1);
+        // Both armed tracks stage their wrap take; neither opens take-lane
+        // history, because the whole recording commits as one entry.
+        expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
+        expect(arrangementMocks.addTake).not.toHaveBeenCalled();
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(2);
         expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
             trackId: 'rec-a',
             clipId: 'clip-rec-a',
+            name: 'Take 1',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-b',
+            clipId: 'clip-rec-b',
             name: 'Take 1',
             startBeat: 0,
             endBeat: 4,

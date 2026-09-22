@@ -8,8 +8,6 @@ const mocks = vi.hoisted(() => {
         getTrackState: vi.fn(),
         setTrackState: vi.fn(),
         transportStoreValue,
-        addTakeLane: vi.fn(),
-        addTake: vi.fn(),
         stageRecordingTake: vi.fn(),
         getTakeLaneForTrack: vi.fn(),
         activeRecordingRef: { current: [] },
@@ -31,14 +29,6 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
             return mocks.transportStoreValue;
         },
     },
-}));
-
-vi.mock('#/modules/Arrangement/useCases/comping/addTakeLane', () => ({
-    addTakeLane: mocks.addTakeLane,
-}));
-
-vi.mock('#/modules/Arrangement/useCases/comping/addTake', () => ({
-    addTake: mocks.addTake,
 }));
 
 vi.mock('../stageRecordingTake', () => ({
@@ -91,8 +81,6 @@ describe('startRecording', () => {
             startBeat: 4,
             endBeat: 4,
         });
-        expect(mocks.addTakeLane).not.toHaveBeenCalled();
-        expect(mocks.addTake).not.toHaveBeenCalled();
         expect(mocks.setTrackState).toHaveBeenCalled();
         expect(mocks.activeRecordingRef.current).toContain(firstClip.id);
     });
@@ -114,7 +102,7 @@ describe('startRecording', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
-    it('keeps the history-bearing take route for an armed midi track with no existing clip', () => {
+    it('stages an armed midi track take without history entries too', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', armed: true, kind: 'midi', clips: [] }],
         });
@@ -125,9 +113,15 @@ describe('startRecording', () => {
 
         expect(newClips).toHaveLength(1);
         expect(newClips[0]).toMatchObject({ trackId: 't1', type: 'midi' });
-        expect(mocks.addTakeLane).toHaveBeenCalledWith('t1');
-        expect(mocks.addTake).toHaveBeenCalledWith('t1', newClips[0]!.id, 'Take 1', 4, 4);
-        expect(mocks.stageRecordingTake).not.toHaveBeenCalled();
+        // The MIDI take joins the clip `stopRecording` commits as one entry, so
+        // it is staged rather than pushed as its own take-lane history.
+        expect(mocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 't1',
+            clipId: newClips[0]!.id,
+            name: 'Take 1',
+            startBeat: 4,
+            endBeat: 4,
+        });
     });
 
     it('excludes an armed dormant VCA before clip, take, or store work', () => {
@@ -138,8 +132,6 @@ describe('startRecording', () => {
 
         expect(startRecording()).toEqual([]);
         expect(mocks.getTakeLaneForTrack).not.toHaveBeenCalled();
-        expect(mocks.addTakeLane).not.toHaveBeenCalled();
-        expect(mocks.addTake).not.toHaveBeenCalled();
         expect(mocks.stageRecordingTake).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });

@@ -14,7 +14,7 @@ export function stopActiveRecording(): Promise<void> {
     // store still holds the beat playback started at (it is written on discrete
     // events only), which would truncate the take back to its own start beat.
     const rolling = getTransportState()?.isPlaying === true;
-    stopRecording(rolling ? playheadPositionRef.current : undefined);
+    void stopRecording(rolling ? playheadPositionRef.current : undefined);
 
     const timerId = recordingLifecycle.countInTimerId;
     if (timerId !== null) {

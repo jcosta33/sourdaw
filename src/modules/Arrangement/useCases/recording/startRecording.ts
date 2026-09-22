@@ -5,8 +5,6 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip } from '../../stores/trackStore';
-import { addTake } from '../comping/addTake';
-import { addTakeLane } from '../comping/addTakeLane';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
 import { stageRecordingTake } from './stageRecordingTake';
@@ -16,11 +14,12 @@ const recordClipId = 1;
 /**
  * Open recording clips on every armed, recording-eligible track.
  *
- * The audio half is provisional: the clip, its take lane, and its takes are
- * staged without history while capture runs, and `commitRecording` turns the
- * whole result into one entry once the capture has completed. An armed MIDI
- * track keeps the history-bearing take route — its notes are committed by their
- * own actions, and a MIDI take is not a capture that can complete later.
+ * Every take a recording opens is provisional: the clip, its take lane, and its
+ * takes are staged without history, and `commitRecording` turns the whole result
+ * into one entry — from the capture terminal for an audio track, and from
+ * `stopRecording` for a MIDI track, whose notes are committed by their own
+ * actions. Pushing the ordinary take-lane entries here would leave the lane and
+ * the take as separate history above a clip no entry covers.
  *
  * `atBeat` anchors the new clips. Callers that record from a moving transport
  * must pass it: the store's `playheadPosition` is written on discrete events
@@ -81,26 +80,16 @@ export function startRecording(atBeat?: number): Clip[] {
         };
         newClips.push(clip);
 
-        if (track.kind === 'midi') {
-            if (!getTakeLaneForTrack(track.id)) {
-                addTakeLane(track.id);
-            }
-            // Take labels count per lane, the way the scheduler's wrap path mints
-            // them, so takes on different lanes never share or duplicate labels.
-            const takeNum = (getTakeLaneForTrack(track.id)?.takes.length ?? 0) + 1;
-            addTake(track.id, clipId, `Take ${takeNum}`, recordBeat, recordBeat);
-        } else {
-            // An audio take is provisional: it joins the clip the capture commits
-            // as one entry, so opening it here must not leave history of its own.
-            const takeNum = (getTakeLaneForTrack(track.id)?.takes.length ?? 0) + 1;
-            stageRecordingTake({
-                trackId: track.id,
-                clipId,
-                name: `Take ${takeNum}`,
-                startBeat: recordBeat,
-                endBeat: recordBeat,
-            });
-        }
+        // Take labels count per lane, the way the scheduler's wrap path mints
+        // them, so takes on different lanes never share or duplicate labels.
+        const takeNum = (getTakeLaneForTrack(track.id)?.takes.length ?? 0) + 1;
+        stageRecordingTake({
+            trackId: track.id,
+            clipId,
+            name: `Take ${takeNum}`,
+            startBeat: recordBeat,
+            endBeat: recordBeat,
+        });
     }
 
     if (newClips.length > 0) {

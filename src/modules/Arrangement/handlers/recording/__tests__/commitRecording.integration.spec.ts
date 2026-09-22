@@ -29,6 +29,7 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 import { commitRecording } from '../../../useCases/recording/commitRecording';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
+import { stopRecording } from '../../../useCases/recording/stopRecording';
 import { updateTrack } from '../../../useCases/updateTrack';
 
 const TRACK_ID = 'track-audio';
@@ -39,8 +40,8 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
-function clipIds(): string[] {
-    return (trackStore.value?.tracks.find((track) => track.id === TRACK_ID)?.clips ?? []).map((clip) => clip.id);
+function clipIds(trackId = TRACK_ID): string[] {
+    return (trackStore.value?.tracks.find((track) => track.id === trackId)?.clips ?? []).map((clip) => clip.id);
 }
 
 function takeRefs(): { id: string; clipId: string }[] {
@@ -251,6 +252,106 @@ describe('recording gesture commit (issue #4439)', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(takeRefs().map((take) => take.id)).toEqual(recordedTakeIds);
+    });
+
+    it('commits an armed MIDI take as exactly one action entry when the recording stops', async () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, clips: [] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [] });
+
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        // A loop wrap stages another take for the same clip inside the same
+        // gesture; the one commit must own both.
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Take 2',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const recordedTakeIds = takeRefs().map((take) => take.id);
+        expect(recordedTakeIds).toHaveLength(2);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+
+        // The takes and the clip commit here. The recorded NOTES stay the MIDI
+        // module's own actions, which this slice leaves alone.
+        await stopRecording(8);
+        flushAutomergeStorageWrites();
+
+        const past = undoHistoryStore.value?.past ?? [];
+        expect(past).toHaveLength(1);
+        const entry = past[0];
+        if (entry?.kind !== 'action') {
+            throw new Error('expected exactly one action history entry');
+        }
+        expect(entry.action.type).toBe('commitRecording');
+        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' });
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(clipIds()).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 8, type: 'midi' });
+        expect(takeRefs().map((take) => take.id)).toEqual(recordedTakeIds);
+    });
+
+    it('commits one entry per armed track result when an audio and a MIDI track are armed together', async () => {
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: TRACK_ID, kind: 'audio', armed: true, clips: [] }),
+                TrackDummy.create({ id: 'track-midi', kind: 'midi', armed: true, clips: [] }),
+            ],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [] });
+
+        const clips = startRecording(4);
+        expect(clips).toHaveLength(2);
+        flushAutomergeStorageWrites();
+        // Neither arm's take callback writes history: one clip each, no entries yet.
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+
+        // The MIDI result commits at stop, the audio result at its capture terminal.
+        await stopRecording(8);
+        flushAutomergeStorageWrites();
+        expect(
+            (undoHistoryStore.value?.past ?? []).map((entry) =>
+                entry.kind === 'action' ? entry.action.type : entry.kind
+            )
+        ).toEqual(['commitRecording']);
+
+        const audioClip = clips.find((clip) => clip.type === 'audio');
+        if (!audioClip) {
+            throw new Error('expected an audio recording clip');
+        }
+        await commitRecording({ ...audioClip, audioBufferId: 'rec-buffer-1', startBeat: 4, endBeat: 6 });
+        flushAutomergeStorageWrites();
+        expect(
+            (undoHistoryStore.value?.past ?? []).map((entry) =>
+                entry.kind === 'action' ? entry.action.type : entry.kind
+            )
+        ).toEqual(['commitRecording', 'commitRecording']);
+
+        await undo();
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(clipIds(TRACK_ID)).toEqual([]);
+        expect(clipIds('track-midi')).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
     });
 
     it('keeps an unrelated clip added after the undo when the recording is redone', async () => {

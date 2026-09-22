@@ -39,7 +39,7 @@ export function stopPlayheadScheduler(): void {
         // `executePlayheadSeek` only assign the new position *after* this call —
         // so the store still holds the beat playback started at, and the ref is
         // the one value that is correct on all three paths.
-        stopRecording(playheadPositionRef.current);
+        void stopRecording(playheadPositionRef.current);
         schedulerSession.punchRecordingActive = false;
     }
     schedulerSession.lastTickTime = 0;

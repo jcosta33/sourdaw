@@ -3,8 +3,6 @@ import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrange
 import {
     startRecording,
     stopRecording,
-    addTakeLane,
-    addTake,
     updateClip,
     removeClip,
     commitRecording,
@@ -326,23 +324,9 @@ export function startPlayheadScheduler(): void {
                     const firstPassLength = startedInsideLoop ? current.loopEnd - recordingClip.startBeat : loopLength;
                     const sourceOffsetBeats =
                         firstPassStart + (passIndex === 0 ? 0 : firstPassLength + (passIndex - 1) * loopLength);
-                    if (track.kind === 'midi') {
-                        if (!lane) {
-                            addTakeLane(track.id);
-                        }
-                        addTake(
-                            track.id,
-                            recordingClip.id,
-                            `Take ${takeNum}`,
-                            current.loopStart,
-                            current.loopEnd,
-                            sourceOffsetBeats
-                        );
-                        continue;
-                    }
-                    // The audio recording's wrap takes are provisional too, so the
-                    // whole capture commits as the one entry its terminal callback
-                    // opens rather than one entry per pass.
+                    // Every wrap take is provisional: the whole recording — audio
+                    // or MIDI — commits as the one entry its terminal callback (or
+                    // `stopRecording`) opens rather than one entry per pass.
                     stageRecordingTake({
                         trackId: track.id,
                         clipId: recordingClip.id,
@@ -568,7 +552,7 @@ export function startPlayheadScheduler(): void {
             }
             // Same anchoring as punch-in: the region's own end beat, not the
             // overshooting tick position and not the stale store playhead.
-            stopRecording(current.punchOutBeat);
+            void stopRecording(current.punchOutBeat);
             schedulerSession.punchRecordingActive = false;
             updateTransportState({ isRecording: false });
         }
