@@ -1,0 +1,64 @@
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 369-376
+crates/sourdaw-native/src/commands/mod.rs
+  h_beb54bf43b47b7 19
+crates/sourdaw-native/src/commands/speech.rs
+  h_beb54bf43b47b7 505
+crates/sourdaw-native/src/commands/store_verified_whisper_model.rs
+  h_beb54bf43b47b7 1-36
+crates/sourdaw-native/src/commands/verified_cached_model.rs
+  h_beb54bf43b47b7 2,134,144-284,428-519
+electron/__tests__/agentWebviewBoundary.spec.ts
+  h_beb54bf43b47b7 72
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 410
+electron/commands.ts
+  h_beb54bf43b47b7 120
+electron/protocol.ts
+  h_beb54bf43b47b7 78-79
+src/modules/AiRuntime/AGENTS.md
+  h_beb54bf43b47b7 13-14
+src/modules/AiRuntime/repositories/voiceInput/__tests__/whisperModelArtifact.spec.ts
+  h_beb54bf43b47b7 1-50
+src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts
+  h_beb54bf43b47b7 1-61
+src/modules/AiRuntime/repositories/voiceNativeAdapter/__tests__/storeVerifiedWhisperModel.spec.ts
+  h_beb54bf43b47b7 1-19
+src/modules/AiRuntime/repositories/voiceNativeAdapter/storeVerifiedWhisperModel.ts
+  h_beb54bf43b47b7 1-11
+src/modules/AiRuntime/stores/index.ts
+  h_beb54bf43b47b7 43-45
+src/modules/AiRuntime/stores/voiceModelSetupStore.ts
+  h_beb54bf43b47b7 1-26
+src/modules/AiRuntime/useCases/index.ts
+  h_beb54bf43b47b7 67
+src/modules/AiRuntime/useCases/voiceInput/__tests__/downloadWhisperModel.spec.ts
+  h_beb54bf43b47b7 1-200
+src/modules/AiRuntime/useCases/voiceInput/__tests__/initializeVoiceInputAvailability.spec.ts
+  h_beb54bf43b47b7 4,9,16-19,23,25,37-44,52-69
+src/modules/AiRuntime/useCases/voiceInput/downloadWhisperModel.ts
+  h_beb54bf43b47b7 1-124
+src/modules/AiRuntime/useCases/voiceInput/initializeVoiceInputAvailability.ts
+  h_beb54bf43b47b7 1-2,4,14-20
+src/modules/WorkspaceShell/presentations/components/Transport/VoiceButton.tsx
+  h_beb54bf43b47b7 1,3,6,10-21,27-101,109-110,113-119
+src/modules/WorkspaceShell/presentations/components/Transport/__tests__/VoiceButton.spec.tsx
+  h_beb54bf43b47b7 6-36,43-44,47,51,69,80,89,95-148
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  h_beb54bf43b47b7 9-10,15,89-97,266-267
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  h_beb54bf43b47b7 18,30,204-205,347-367
+src/utils/sourdawCommandArguments.ts
+  h_beb54bf43b47b7 95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "523c7bb4a4e6a660af768b57392c579f45191ca2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
