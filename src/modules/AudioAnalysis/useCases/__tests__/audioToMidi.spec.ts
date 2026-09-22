@@ -34,6 +34,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { audioToMidi } from '../audioToMidi';
+import { detectOnsets } from '../detectOnsets';
 
 const SAMPLE_RATE = 44100;
 const HOP_SIZE = 512;
@@ -60,6 +61,7 @@ function makeBuffer(length: number, fill: (index: number) => number): AudioBuffe
 describe('audioToMidi track creation routes through the command boundary (Fix 1)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
         mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
     });
@@ -128,6 +130,7 @@ describe('audioToMidi track creation routes through the command boundary (Fix 1)
 describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
         mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
     });
@@ -164,6 +167,7 @@ describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => 
 describe('audioToMidi return value discriminates real conversion from no-op/failure', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.addMidiNote.mockReset();
         mocks.getTransportState.mockReturnValue({ tempo: 120 });
         mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
     });
@@ -218,6 +222,156 @@ describe('audioToMidi return value discriminates real conversion from no-op/fail
         }).not.toThrow();
 
         expect(result).toBe(false);
+    });
+});
+
+describe('audioToMidi converts only the audio a clip plays', () => {
+    const TEMPO = 120;
+    const BEATS_PER_SECOND = TEMPO / 60;
+    const SENSITIVITY = 0.1;
+    const MIN_INTERVAL_BEATS = 0.25;
+    const MIN_INTERVAL_SEC = MIN_INTERVAL_BEATS / BEATS_PER_SECOND;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.addMidiNote.mockReset();
+        mocks.getTransportState.mockReturnValue({ tempo: TEMPO });
+        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
+    });
+
+    function arrangeClip(clip: Record<string, unknown>): void {
+        mocks.getAllTracks.mockReturnValue([{ id: 't1', kind: 'midi', clips: [clip] }]);
+    }
+
+    function stepBuffer(onsetSample: number, length: number, laterOnsetSample?: number): AudioBuffer {
+        return makeBuffer(length, (index) => {
+            if (laterOnsetSample !== undefined && index >= laterOnsetSample) {
+                return 0.95;
+            }
+            return index >= onsetSample ? 0.8 : 0;
+        });
+    }
+
+    function noteStartBeats(): number[] {
+        return mocks.addMidiNote.mock.calls.map((call) => call[2] as number);
+    }
+
+    it('drops an onset before a positive audio offset and shifts a later one earlier by that offset', () => {
+        const offsetHops = 86;
+        const offsetSec = (offsetHops * HOP_SIZE) / SAMPLE_RATE;
+        const offsetBeats = offsetSec * BEATS_PER_SECOND;
+        const headOnsetSample = 8 * HOP_SIZE;
+        const laterOnsetSample = 100 * HOP_SIZE;
+        const length = 180 * HOP_SIZE + FRAME_SIZE;
+        const clip = {
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Drum',
+            audioOffsetBeats: offsetBeats,
+        };
+
+        arrangeClip(clip);
+        mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(headOnsetSample, length));
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(false);
+        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+
+        vi.clearAllMocks();
+        mocks.getTransportState.mockReturnValue({ tempo: TEMPO });
+        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
+        arrangeClip(clip);
+        const laterBuffer = stepBuffer(laterOnsetSample, length);
+        mocks.getCachedAudioBuffer.mockReturnValue(laterBuffer);
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        const rawOnsets = detectOnsets(laterBuffer, SENSITIVITY, MIN_INTERVAL_SEC);
+        expect(rawOnsets.length).toBeGreaterThan(0);
+        const rawStartBeat = rawOnsets[0]!.timeSec * BEATS_PER_SECOND;
+        const written = noteStartBeats();
+        expect(written).toHaveLength(1);
+        expect(written[0]).toBeLessThan(rawStartBeat);
+        expect(written[0]).toBeCloseTo(rawStartBeat - offsetBeats, 1);
+    });
+
+    it('writes no note for an onset past the clip audible end', () => {
+        const onsetSample = 200 * HOP_SIZE;
+        const length = 280 * HOP_SIZE + FRAME_SIZE;
+        const buffer = stepBuffer(onsetSample, length);
+        arrangeClip({ id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        const rawOnsets = detectOnsets(buffer, SENSITIVITY, MIN_INTERVAL_SEC);
+        expect(rawOnsets.length).toBeGreaterThan(0);
+        expect(rawOnsets[0]!.timeSec).toBeGreaterThan(4 / BEATS_PER_SECOND);
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(false);
+        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+    });
+
+    it('repeats an in-loop onset once per iteration and ignores buffer past the loop window', () => {
+        const inLoopSample = 8 * HOP_SIZE;
+        const outsideSample = 60 * HOP_SIZE;
+        const length = 180 * HOP_SIZE + FRAME_SIZE;
+        const buffer = stepBuffer(inLoopSample, length, outsideSample);
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Drum',
+            loopEnabled: true,
+            loopLength: 1,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        const rawOnsets = detectOnsets(buffer, SENSITIVITY, MIN_INTERVAL_SEC);
+        expect(rawOnsets.length).toBeGreaterThanOrEqual(2);
+        const outsideBeat = rawOnsets[1]!.timeSec * BEATS_PER_SECOND;
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        const written = noteStartBeats()
+            .slice()
+            .sort((left, right) => left - right);
+        expect(written).toHaveLength(4);
+        expect(written[1]! - written[0]!).toBeCloseTo(1, 5);
+        expect(written[2]! - written[1]!).toBeCloseTo(1, 5);
+        expect(written[3]! - written[2]!).toBeCloseTo(1, 5);
+        for (const startBeat of written) {
+            expect(startBeat).toBeGreaterThanOrEqual(0);
+            expect(startBeat).toBeLessThan(4);
+            expect(startBeat).not.toBeCloseTo(outsideBeat, 1);
+        }
+    });
+
+    it('places the first audible onset after a negative-offset pre-roll, not at beat 0', () => {
+        const onsetSample = 8 * HOP_SIZE;
+        const length = SAMPLE_RATE;
+        const buffer = stepBuffer(onsetSample, length);
+        const audioOffsetBeats = -2;
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Drum',
+            audioOffsetBeats,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        const rawOnsets = detectOnsets(buffer, SENSITIVITY, MIN_INTERVAL_SEC);
+        expect(rawOnsets.length).toBeGreaterThan(0);
+        const rawStartBeat = rawOnsets[0]!.timeSec * BEATS_PER_SECOND;
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: SENSITIVITY })).toBe(true);
+        const written = noteStartBeats();
+        expect(written.length).toBeGreaterThan(0);
+        const firstBeat = Math.min(...written);
+        expect(firstBeat).not.toBeCloseTo(0, 1);
+        expect(firstBeat).not.toBeCloseTo(rawStartBeat, 1);
+        expect(firstBeat).toBeCloseTo(-audioOffsetBeats + rawStartBeat, 1);
+        expect(firstBeat).toBeGreaterThan(1);
     });
 });
 
