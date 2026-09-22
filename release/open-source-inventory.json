@@ -165,8 +165,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:df7f22dfb518328a0665e7ab55a3b6b1bda29fca0fa62c53c737d81fccd35eed:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:63d05c36244aa58e94ef05bf0f8c351a04b498676be5a5f77cba13ccd6410b6b:release/dependency-license-proofs.json"
+                "sha256:f6b302057826beb4c893da66cf77a9bae8bce443ae585ba1e9a622861aa563b7:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:6af95b3e10a9ea54b8223fb666e6575b1d89586506a98089855c6e785d8fe8b2:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -276,7 +276,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac",
+                "sha256:d272cdc5f0ae88b7e2ad3578cd4d868f95e3d2e5384820c06f2959e60dbcde91",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -1689,12 +1689,48 @@
             "obligations": [
                 "Preserve useful intent without presenting archived plans as current behavior."
             ]
+        },
+        {
+            "id": "semantic-review-egress",
+            "kind": "external-service",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": [
+                "source"
+            ],
+            "paths": [
+                "scripts/semanticReview/**",
+                "scripts/semanticReview.ts"
+            ],
+            "sources": [
+                "https://api.typesafe.ai"
+            ],
+            "revisions": [
+                "TypeSafe System One API v1",
+                "@typesafe-ai/sdk 0.6.0",
+                "model jev-1.13.0"
+            ],
+            "digests": [
+                "not-applicable:remote-service"
+            ],
+            "licenses": [
+                "provider API terms"
+            ],
+            "productSurfaces": [
+                "developer review tooling"
+            ],
+            "evidence": [
+                "Advisory pull-request assessment sends selected repository source regions, bounded and screened, to the provider; it is developer tooling and never part of a shipped artifact."
+            ],
+            "obligations": [
+                "Keep the credential out of the tracked tree, screen every region before egress, and never publish raw request material."
+            ]
         }
     ],
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "c7094cfac354188db2aa83a46644a90614aa07e935bc6b7f36485361e1ac0a6d"
+            "sha256": "9836d68cd4ef8532947bdce5e1d0163aeb3563a7bb1af2a8c0b56c3b9f44f33a"
         },
         {
             "path": "server/package.json",
@@ -1706,7 +1742,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac"
+            "sha256": "d272cdc5f0ae88b7e2ad3578cd4d868f95e3d2e5384820c06f2959e60dbcde91"
         },
         {
             "path": "Cargo.toml",
@@ -2299,6 +2335,11 @@
             "surface": "webllm-qwen-artifacts",
             "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
             "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "semantic-review-egress",
+            "file": "scripts/semanticReview/provider.ts",
+            "value": "https://api.typesafe.ai"
         }
     ],
     "marks": [

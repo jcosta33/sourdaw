@@ -537,6 +537,11 @@ function assertDossierSize(dossier: ReviewDossier): void {
     }
 }
 
+/** The first unsafe shape a value contains, or `undefined`. Shared so a new egress path reuses this list. */
+export function unsafeCredentialReason(value: string): string | undefined {
+    return UNSAFE_VALUE_SHAPES.find(({ pattern }) => pattern.test(value))?.reason;
+}
+
 export function assertPublicationSafeEvidence(label: string, values: readonly string[]): void {
     for (const [index, value] of values.entries()) {
         assertSafeEvidenceValue(label, index, value);
@@ -557,10 +562,9 @@ function assertSafeEvidenceValue(label: string, index: number, value: string): v
     if (bytes > REVIEW_EVIDENCE_FIELD_MAX_BYTES) {
         fail(`${label} value at index ${index} exceeds ${REVIEW_EVIDENCE_FIELD_MAX_BYTES} bytes: ${bytes}`);
     }
-    for (const { reason, pattern } of UNSAFE_VALUE_SHAPES) {
-        if (pattern.test(value)) {
-            fail(`${label} value at index ${index} contains ${reason}`);
-        }
+    const unsafe = unsafeCredentialReason(value);
+    if (unsafe !== undefined) {
+        fail(`${label} value at index ${index} contains ${unsafe}`);
     }
 }
 

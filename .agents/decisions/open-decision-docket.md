@@ -1168,6 +1168,15 @@ do, that table is the record and this list is the pointer.
     declined because no catalog entry carries a digest, so it would break every model install; choosing
     it would really have been choosing to complete the backfill first.
 
+## Review tooling
+
+- ~~**Automatic semantic assessment of every pull request in CI.**~~ — **closed by
+  [ADR 0047](./0047-advisory-semantic-review-also-runs-in-ci.md)**, which adopts option (b): the
+  owner accepted the paid spend, the third-party egress, and the new workflow trust class, and
+  `.github/workflows/semantic-review.yml` runs the same command from the trusted revision with the
+  reviewed head read as Git objects. Residual risk lives in that ADR: spend has no monthly ceiling,
+  and zero-data retention is not assumed.
+
 ## RESOLVED 2026-08-01 by ADR 0016
 
 Four rulings that close a large part of the docket above. Recorded here so the entries are not
