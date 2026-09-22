@@ -56,7 +56,8 @@ are fixed constants inside the FET and Diode stages rather than absent ideas —
 knee and a reduction ceiling, you just cannot set them. **Auto rel** exists only on the VCA. **OS**
 oversamples a nonlinear stage, and only the FET and the Diode have one.
 
-Add the twelve Detector controls to Opto, VCA and FET — see the warning in that section.
+Detector filtering, external sidechain, detection mode, and stereo link act on every topology —
+including the default VCA — see the Detector section.
 
 Stage two reopens any of them. A control the first topology cannot hear goes live again the moment
 **Stage 2** is above zero with a topology behind it that can — Release on Diode with VCA in stage
@@ -143,21 +144,20 @@ The Detector section shapes what the compressor listens to, without changing wha
 The bell is a no-op until **EQ Gain** leaves 0 dB, so **SC EQ** and **EQ Q** go grey until you move
 it — set the gain first, then centre and narrow.
 
-> [!WARNING]
-> **Not yet active off Diode.** All twelve controls in this section — SC HPF, SC LPF, SC EQ, EQ
-> Gain, EQ Q, the HPF, LPF, SC EQ and Ext SC toggles, and the three Thrust chips — shape a detector
-> signal only the **Diode** topology reads. On VCA, Opto, and FET the detector listens to the
-> unfiltered input, so all twelve go grey and say so. VCA is the default topology, so ducking one
-> track under another means selecting Diode first — or running Diode in **Stage two**, which brings
-> the whole section back on any primary.
+> [!NOTE]
+> **Detector filtering is live on every topology.** SC HPF, SC LPF, SC EQ, EQ Gain, EQ Q, the HPF,
+> LPF and SC EQ toggles, Thrust, **Ext SC**, detection mode (RMS · PEAK), and Link all act on the
+> selected topology — including the default VCA. External sidechain reaches that topology's
+> detector once **Ext SC** is on. Two limits stay: **OS** is FET and Diode only, and **Dual mono**
+> forces Link to 0. SC EQ frequency and Q stay grey while EQ Gain is 0 dB.
 
 RMS is the default and the usual choice for glue: it ignores single transients and follows how loud
 the material actually is. Switch to PEAK when you need the compressor to catch the transient itself
 — a slapped bass, a snare crack. The two also change how Attack reads, since peak detection reaches
 the threshold sooner.
 
-To duck a bass under a kick, switch to the Diode topology, route the kick to this track's sidechain
-input, then turn on **Ext SC**.
+To duck a bass under a kick, route the kick to this track's sidechain input, then turn on **Ext SC**
+— on whatever topology is selected.
 
 ## Character
 
@@ -196,9 +196,9 @@ this is where you can see why. The pair defaults to Opto, which means selecting 
 puts the device in exactly that state. A slow topology behind a fast one is the usual pairing: FET
 for transients, then VCA or Opto for the sustained level.
 
-Stage two also reopens controls the first topology cannot hear. A Diode in stage two makes the whole
-Detector section live on any primary; a VCA in stage two brings back Knee, Range and Auto rel. The
-reason text on each greyed control names which topologies would do it.
+Stage two also reopens topology controls the first topology cannot hear. A VCA in stage two brings
+back Knee, Range and Auto rel. The Detector section is already live on every primary; stage two
+does not gate it. The reason text on each greyed control names which topologies would reopen it.
 
 ## Meters and readouts
 

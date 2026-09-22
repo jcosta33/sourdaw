@@ -280,6 +280,182 @@ fn external_sidechain_is_encoded_before_side_only_detection() {
     );
 }
 
+/// Topologies the page says duck from Ext SC once the switch is on. Default
+/// VCA stays constructor-default (`None` — no `topology` write); Opto, FET,
+/// and Diode need an explicit write. A zero-buffer Ext SC toggle alone cannot
+/// prove the key amplitude reaches those detectors.
+const EXTERNAL_KEY_TOPOLOGIES: [(&str, Option<f32>); 4] = [
+    ("vca", None),
+    ("opto", Some(TOPOLOGY_OPTO)),
+    ("fet", Some(TOPOLOGY_FET)),
+    ("diode", Some(TOPOLOGY_DIODE)),
+];
+
+fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = samples.iter().map(|sample| sample * sample).sum();
+    (sum_sq / samples.len() as f32).sqrt()
+}
+
+/// Stereo: a real external key must deepen GR and quiet the wet once Ext SC is
+/// on, and must be ignored while the switch is off.
+///
+/// `the_filtered_detector_reaches_every_topology` toggles `ext_sidechain` but
+/// never writes a distinct key buffer on stereo. The Side-mode presence pin
+/// feeds a key, but only after `stereo_mode` leaves Stereo. This case is the
+/// missing ducking proof: program above threshold, silent vs loud key, then
+/// the same silent-versus-loud pair with Ext SC off.
+///
+/// Returns the captured wet stereo and the instance's final `get_gr_db`. Both
+/// matter: a meter that deepens while the wet stays unkeyed must fail, and
+/// scaling the capture while the sidechain stays silent must still fail GR.
+fn render_with_external_key(
+    topology: Option<f32>,
+    ext_sidechain: bool,
+    key_level: f32,
+) -> (Vec<f32>, f32) {
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    // Default VCA stays constructor-default — do not call set_param("topology", …).
+    if let Some(topology) = topology {
+        instance.set_param("topology", topology);
+    }
+    instance.set_param("ext_sidechain", if ext_sidechain { 1.0 } else { 0.0 });
+    instance.set_param("threshold", -24.0);
+    instance.set_param("ratio", 4.0);
+    instance.set_param("attack", 1.0);
+    instance.set_param("release", 200.0);
+    instance.set_param("mix", 1.0);
+    instance.set_param("auto_makeup", 0.0);
+    instance.set_param("makeup", 0.0);
+    instance.set_param("blend_amount", 0.0);
+
+    let mut captured = Vec::with_capacity(BLOCKS * BLOCK * 2);
+    for block in 0..BLOCKS {
+        let base = block * BLOCK;
+        let left_ptr = instance.get_input_left_ptr();
+        let right_ptr = instance.get_input_right_ptr();
+        let sc_left_ptr = instance.get_sc_left_ptr();
+        let sc_right_ptr = instance.get_sc_right_ptr();
+        for n in 0..BLOCK {
+            let t = (base + n) as f32 / SAMPLE_RATE;
+            // Above the −24 dB threshold (~−9 dBFS): Ext SC off is already
+            // compressing, so a key leak into that detector fails the ignore
+            // bound. With Ext SC on and a silent key the detector is empty, so
+            // the program stays unducked until a loud key arrives.
+            let program = 0.35 * (std::f32::consts::TAU * 220.0 * t).sin();
+            let key = key_level * (std::f32::consts::TAU * 110.0 * t).sin();
+            unsafe {
+                *left_ptr.add(n) = program;
+                *right_ptr.add(n) = program;
+                *sc_left_ptr.add(n) = key;
+                *sc_right_ptr.add(n) = key;
+            }
+        }
+        let out_left = instance.process(BLOCK as u32);
+        let out_right = instance.get_right_ptr();
+        for n in 0..BLOCK {
+            captured.push(unsafe { *out_left.add(n) });
+            captured.push(unsafe { *out_right.add(n) });
+        }
+    }
+    let gr_db = instance.get_gr_db();
+    (captured, gr_db)
+}
+
+#[test]
+fn external_key_reaches_the_default_vca_detector() {
+    // The ("vca", None) row never writes topology. Pin the constructor default
+    // to VCA before that unlabeled render, so a non-VCA default fails here.
+    // On the same loud Ext-SC key, Opto GR must also separate from that
+    // unlabeled VCA GR — a topology write that does nothing fails here.
+    {
+        let (default_loud, default_gr) = render_with_external_key(None, true, 0.9);
+        let (vca_loud, vca_gr) = render_with_external_key(Some(TOPOLOGY_VCA), true, 0.9);
+        let (opto_loud, opto_gr) = render_with_external_key(Some(TOPOLOGY_OPTO), true, 0.9);
+        let (fet_loud, _) = render_with_external_key(Some(TOPOLOGY_FET), true, 0.9);
+        let (diode_loud, _) = render_with_external_key(Some(TOPOLOGY_DIODE), true, 0.9);
+        assert_eq!(
+            default_gr, vca_gr,
+            "constructor default must be VCA (GR), but default gr {default_gr} vs VCA gr {vca_gr}"
+        );
+        assert_eq!(
+            max_delta(&default_loud, &vca_loud),
+            0.0,
+            "constructor default must be VCA (wet), but differed from an explicit VCA write"
+        );
+        let opto_vs_vca = (opto_gr - default_gr).abs();
+        assert!(
+            opto_vs_vca > 0.5,
+            "Opto GR must differ from unlabeled VCA GR by more than 0.5 dB on a loud Ext SC key, \
+             but Opto gr {opto_gr} vs VCA gr {default_gr} (Δ {opto_vs_vca})"
+        );
+        // Same loud Ext SC key: Opto wet must separate from unlabeled VCA —
+        // a topology write that leaves the wet identical to VCA must fail.
+        let opto_wet_vs_vca = max_delta(&opto_loud, &default_loud);
+        assert!(
+            opto_wet_vs_vca > 1.0e-2,
+            "Opto wet must differ from unlabeled VCA wet on a loud Ext SC key, \
+             but max Δ {opto_wet_vs_vca:e}"
+        );
+        // FET and Diode wet must each separate from unlabeled VCA on that key.
+        let fet_wet_vs_vca = max_delta(&fet_loud, &default_loud);
+        assert!(
+            fet_wet_vs_vca > 1.0e-2,
+            "FET wet must differ from unlabeled VCA wet on a loud Ext SC key, \
+             but max Δ {fet_wet_vs_vca:e}"
+        );
+        let diode_wet_vs_vca = max_delta(&diode_loud, &default_loud);
+        assert!(
+            diode_wet_vs_vca > 1.0e-2,
+            "Diode wet must differ from unlabeled VCA wet on a loud Ext SC key, \
+             but max Δ {diode_wet_vs_vca:e}"
+        );
+    }
+
+    for (label, topology) in EXTERNAL_KEY_TOPOLOGIES {
+        let (silent_key, silent_gr) = render_with_external_key(topology, true, 0.0);
+        let (loud_key, loud_gr) = render_with_external_key(topology, true, 0.9);
+        let (silent_key_off, silent_gr_off) = render_with_external_key(topology, false, 0.0);
+        let (loud_key_off, loud_gr_off) = render_with_external_key(topology, false, 0.9);
+
+        // Deeper GR (more negative): scaling the wet capture while the
+        // sidechain stays silent must still fail this case.
+        assert!(
+            loud_gr < silent_gr - 0.5,
+            "a loud external key must deepen {label} GR when Ext SC is on, \
+             but silent gr {silent_gr} vs loud gr {loud_gr}"
+        );
+
+        // Quieter wet: a meter that deepens while samples stay at the unkeyed
+        // level must fail this case.
+        let silent_rms = rms(&silent_key);
+        let loud_rms = rms(&loud_key);
+        assert!(
+            loud_rms < silent_rms * 0.95,
+            "a loud external key must quiet the {label} program when Ext SC is on \
+             (quieter RMS), but silent rms {silent_rms:e} vs loud rms {loud_rms:e}"
+        );
+
+        let ignored_delta = max_delta(&silent_key_off, &loud_key_off);
+        assert!(
+            ignored_delta < 1.0e-6,
+            "the same loud key must be ignored on {label} while Ext SC is off, \
+             but moved by {ignored_delta:e}"
+        );
+
+        // Wet ignore alone is not enough: a loud key that deepens the meter
+        // while samples stay identical must fail here too.
+        let off_gr_delta = (loud_gr_off - silent_gr_off).abs();
+        assert!(
+            off_gr_delta < 0.05,
+            "silent and loud Ext SC-off keys must agree on {label} GR (Δ < 0.05 dB), \
+             but silent gr {silent_gr_off} vs loud gr {loud_gr_off} (Δ {off_gr_delta})"
+        );
+    }
+}
+
 fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
     const FRAMES: usize = 1024;
     let mut instance = GlutenInstance::new(SAMPLE_RATE);
