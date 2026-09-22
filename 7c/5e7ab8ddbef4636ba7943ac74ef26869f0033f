@@ -1,0 +1,14 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 37-58,95-100,103-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7c5e7ab8ddbef4636ba7943ac74ef26869f0033f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
