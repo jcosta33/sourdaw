@@ -34,18 +34,19 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
   name, aria-label, or text and re-home the affected specs in the same change. A control can also be
   retired with no rename at all: when a diff changes a control's enabled, disabled, or visibility
-  condition, the sweep is `tests/e2e/` searched once for each identity form the changed control
-  exposes — its test id, its aria-label or accessible name, and its rendered text, the identity terms
-  the rename sweep above uses — never for assertion names, which select unrelated specs. Search every
-  form the control has, not one of them: one term reaches only the specs that read that form and
-  misses the specs that read another. The population the step acts on is the union of those searches,
-  the specs that read the changed control's own locator through any form it exposes, bounded because
-  a control has only those finitely many forms; inside each returned spec, inspect every state read of
-  that control: `toBeVisible`, `not.toBeVisible`, `toHaveCount`, `toBeDisabled`, `toBeEnabled`,
-  `toBeHidden`, and the `isDisabled()`, `isEnabled()`, `isVisible()` conditional guards — the
-  conditional-admission class the blind spot below names. Re-check each against the new condition and
-  re-home it in the same change: a guard strands every assertion behind it, so a guard keyed on a
-  state the diff changes must be re-homed even when no control was renamed, removed, or replaced.
+  condition, read the changed control's attributes in the product and search `tests/e2e/` for each
+  value it can be located by — its test id, its aria-label or accessible name, its placeholder, its
+  title, and its rendered text — never for assertion names, which select unrelated specs. Those forms
+  are examples of what to search, not a closed set, so also add any spec that reaches the control by
+  role or text alone. Search every form the control has, not one of them: one term reaches only the
+  specs that read that form and misses the specs that read another. The population the step acts on is
+  the union of those searches, the specs whose locators resolve to the changed control; inside each
+  returned spec, inspect every state read of that control: `toBeVisible`, `not.toBeVisible`,
+  `toHaveCount`, `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the `isDisabled()`, `isEnabled()`,
+  `isVisible()` conditional guards — the conditional-admission class the blind spot below names.
+  Re-check each against the new condition and re-home it in the same change: a guard strands every
+  assertion behind it, so a guard keyed on a state the diff changes must be re-homed even when no
+  control was renamed, removed, or replaced.
   When a diff adds text-bearing UI beside an existing text locator, search `tests/e2e/`
   case-insensitively inside the text locators' own arguments — `getByText(...)`,
   `getByRole(..., { name: ... })`, `getByLabel(...)` — for the added sibling's own text, never
@@ -59,8 +60,9 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   holding `getByText('Synth')` — `tests/e2e/instrumentPanels.spec.ts` and
   `tests/e2e/templateAndInspectorFinal.spec.ts` — against the twelve a whole-file text search returns
   and the three a role-blind search returns, the role test removing `tests/e2e/e2eWorkflow.spec.ts`,
-  whose `getByRole('button', { name: /^Bypass Synth/i })` at lines 82 and 86 is a role-scoped locator
-  for `button` that can never resolve to the added `<option>`. Require every spec in that population
+  whose `getByRole('button', { name: /^Bypass Synth/i })` at line 82 and
+  `getByRole('button', { name: /^Enable Synth/i })` at line 86 are role-scoped locators for `button`
+  that can never resolve to the added `<option>`. Require every spec in that population
   to redden if its locator is now ambiguous — `getByText` matches case-insensitive substrings, so a new
   sibling makes it a strict-mode violation or makes `.first()` select the wrong element.
 - An either-arm assertion is a standing escape: select every hit of `expect\([^)]*\|\|` across the
@@ -100,14 +102,15 @@ independently is accepted as covering both when one arm may be dead.
 
 Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
 `tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
-change; when a diff changes a control's enabled, disabled, or visibility condition, search
-`tests/e2e/` once for each identity form the changed control exposes — its test id, its aria-label or
-accessible name, and its rendered text, the identity terms the rename sweep uses — never assertion
-names, and take the union of those searches rather than one term: one term reaches only the specs
-that read that form and misses the specs that read another; the population is that union, the specs
-that read the changed control's own locator through any form it exposes, bounded because a control
-has only those finitely many forms; inside each returned spec, inspect every state read of it —
-`toBeVisible`, `not.toBeVisible`, `toHaveCount`, `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the
+change; when a diff changes a control's enabled, disabled, or visibility condition, read the changed
+control's attributes in the product and search `tests/e2e/` for each value it can be located by —
+its test id, its aria-label or accessible name, its placeholder, its title, and its rendered text —
+never assertion names, and take the union of those searches rather than one term: one term reaches
+only the specs that read that form and misses the specs that read another; those forms are examples
+of what to search, not a closed set, so also add any spec that reaches the control by role or text
+alone; the population is the union of those searches, the specs whose locators resolve to the changed
+control; inside each returned spec, inspect every state read of it — `toBeVisible`,
+`not.toBeVisible`, `toHaveCount`, `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the
 `isDisabled()`, `isEnabled()`, `isVisible()` guards — and re-home each in the same change; when a
 diff adds text-bearing UI beside an existing text locator, search `tests/e2e/` case-insensitively
 inside the text locators' own arguments — `getByText(...)`, `getByRole(..., { name: ... })`,
@@ -122,8 +125,9 @@ resolve to the wrong element; for the recorded `synth` sibling that is the two s
 `getByText('Synth')` — `tests/e2e/instrumentPanels.spec.ts` and
 `tests/e2e/templateAndInspectorFinal.spec.ts` — against the twelve a whole-file text search returns
 and the three a role-blind search returns, the role test removing `tests/e2e/e2eWorkflow.spec.ts`,
-whose `getByRole('button', { name: /^Bypass Synth/i })` at lines 82 and 86 is a role-scoped locator
-for `button` that can never resolve to the added `<option>`; require every spec in that population to
+whose `getByRole('button', { name: /^Bypass Synth/i })` at line 82 and
+`getByRole('button', { name: /^Enable Synth/i })` at line 86 are role-scoped locators for `button`
+that can never resolve to the added `<option>`; require every spec in that population to
 redden if the locator is made ambiguous —
 `getByText` matches case-insensitive substrings, so a new sibling makes it a strict-mode violation or
 makes `.first()` select the wrong element — then assert the control through stable handles (test ids,
