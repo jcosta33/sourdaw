@@ -25,9 +25,11 @@ none covers.
 
 ## Reviewer isolation
 
-A reviewer holds no writable tree. It reads the head with `git show <sha>:<path>` from the primary checkout and the bundle under `.agents/review-bundles/<pr>-<sha>/`. A reviewer never edits, installs, or runs a check in a live lane; when it must execute code, it works in a scratch clone at the head sha with the primary checkout's `node_modules` symlinked in and never runs `pnpm install` there. Findings go to the orchestrator, never to GitHub.
+A reviewer holds no author tree. It reads the head with `git show <sha>:<path>` from the primary checkout and the bundle under `.agents/review-bundles/<pr>-<sha>/`. It never edits, installs, or runs a check in a live lane. Findings go to the orchestrator, never to GitHub.
 
-**Why:** A reviewer that mutates the lane changes the head it is judging and can strand the author's push.
+Create a worktree only when a probe must edit code and run it. Reading the head does not need one. Add it with `git worktree add --detach` at the bundle's head SHA. Path: `.agents/review-worktrees/<pr>-<head>-<draw>/`. That directory is gitignored. Do not put it under `.agents/worktrees/`. Do not check out the lane branch. Detached HEAD is required because Git will not check the lane branch out twice, and a second checkout would move the author's branch. Symlink the primary checkout's `node_modules` into the review worktree. Never run `pnpm install`. Never copy the primary tree; gitignored credentials live only there. Point Vitest and similar caches at a directory inside the review worktree, so they do not write through the `node_modules` symlink into the primary checkout. Do not fetch, gc, commit, or stage from the review worktree. Unstaged edits stay in that worktree. Lock it for the probe with `git worktree lock`. When the probe returns, leave the directory, unlock, and `git worktree remove`. A crash is recovered with `git worktree prune`. Do not use `rm -rf` as the cleanup. Do not take the author lock `active:sourdaw-author`.
+
+**Why:** A scratch clone in the temp directory lands on the internal boot disk and filled it. Editing the live lane changes the head under review and can strand the author's push.
 
 ## Review language
 

@@ -27,6 +27,9 @@ target/
 # Review bundles produced by `pnpm review:prepare`
 .agents/review-bundles/
 
+# Detached review-probe worktrees
+.agents/review-worktrees/
+
 # Native dependent-lane descriptors; kept in the protected primary checkout
 .agents/lane-stacks/
 
