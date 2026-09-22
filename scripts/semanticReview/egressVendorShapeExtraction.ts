@@ -307,15 +307,65 @@ function expandPrefix(atoms: readonly PrefixAtom[]): {
     return { prefixes: sequences.map((seq) => seq.join('')), tailPrefix };
 }
 
-/** Collapses inline case flags into plain groups and Go-only escapes into JavaScript ones. */
-function normalizeTail(tail: string): string {
-    const s = tail
-        .replaceAll(/\(\?i:([^()]*)\)/g, '($1)')
-        .replaceAll(/\(\?-i:([^()]*)\)/g, '($1)')
-        .replaceAll('(?i)', '')
-        .replaceAll('(?-i)', '');
-    // `\-` is valid inside a class (an escaped hyphen) but not outside it, and `\z` is Go's
-    // end-of-string. Convert both only outside `[...]`.
+/**
+ * Rewrites Go-style inline case flags into JavaScript's scoped modifier groups. A bare `(?i)` or
+ * `(?-i)` sets the flag for the remainder of its enclosing group (the whole tail here, since the
+ * prefix parser stops at the first flag), so it becomes `(?i:…)` / `(?-i:…)` over exactly that
+ * remainder; scoped `(?i:…)` / `(?-i:…)` groups are already legal JavaScript and pass through.
+ */
+function rewriteCaseFlags(s: string): string {
+    const groupCloseIndexes: number[] = [];
+    const pendingCloses: number[] = [];
+    const out: string[] = [];
+    let i = 0;
+    while (i < s.length) {
+        const c = s[i] ?? '';
+        if (c === '\\') {
+            out.push(c, s[i + 1] ?? '');
+            i += 2;
+            continue;
+        }
+        if (s.startsWith('(?i)', i) && s[i + 3] !== ':') {
+            out.push('(?i:');
+            pendingCloses.push(groupCloseIndexes.at(-1) ?? s.length);
+            i += 4;
+            continue;
+        }
+        if (s.startsWith('(?-i)', i) && s[i + 4] !== ':') {
+            out.push('(?-i:');
+            pendingCloses.push(groupCloseIndexes.at(-1) ?? s.length);
+            i += 5;
+            continue;
+        }
+        if (c === '(') {
+            const close = matchingParen(s, i);
+            groupCloseIndexes.push(close === -1 ? s.length : close);
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if (c === ')') {
+            while (pendingCloses.length > 0 && pendingCloses[pendingCloses.length - 1] === i) {
+                out.push(')');
+                pendingCloses.pop();
+            }
+            out.push(c);
+            groupCloseIndexes.pop();
+            i += 1;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    while (pendingCloses.length > 0) {
+        out.push(')');
+        pendingCloses.pop();
+    }
+    return out.join('');
+}
+
+/** Converts Go-only escapes to JavaScript ones: `\-` (outside a class) and `\z` (end of string). */
+function normalizeGoEscapes(s: string): string {
     const out: string[] = [];
     let inClass = false;
     for (let i = 0; i < s.length; i += 1) {
@@ -345,53 +395,22 @@ function normalizeTail(tail: string): string {
     return out.join('');
 }
 
-/** Strips a trailing word boundary, anchor, or gitleaks terminator from a tail. */
+/** Rewrites inline case flags into scoped groups, then normalizes Go-only escapes. */
+function normalizeTail(tail: string): string {
+    return normalizeGoEscapes(rewriteCaseFlags(tail));
+}
+
+/** Strips a trailing word boundary, anchor, or gitleaks terminator from a raw tail, before flag rewriting. */
 function cleanTail(tail: string): string {
-    const s = normalizeTail(tail);
-    return s
+    return tail
         .replace(/\(\?:\[\\x60'"\\s;\]\|\\\\\[nr\]\|\$\)$/, '')
         .replace(/\\b$/, '')
         .replace(/\$$/, '');
 }
 
-/**
- * Widens every lowercase range inside a tail into its case-insensitive form. The source rule's
- * inline `(?i)` covers only the body, so the body must be widened while the prefix stays exactly
- * case-sensitive; JavaScript cannot express a scoped flag inline, so the classes carry it instead.
- */
-function widenTailForInsensitive(tail: string): string {
-    const out: string[] = [];
-    let inClass = false;
-    for (let i = 0; i < tail.length; i += 1) {
-        const c = tail[i] ?? '';
-        if (c === '[') {
-            inClass = true;
-            out.push(c);
-            continue;
-        }
-        if (c === ']' && inClass) {
-            inClass = false;
-            out.push(c);
-            continue;
-        }
-        if (c === '\\') {
-            out.push(c, tail[i + 1] ?? '');
-            i += 1;
-            continue;
-        }
-        if (inClass && /[a-z]/.test(c)) {
-            if (tail[i + 1] === '-' && /[a-z]/.test(tail[i + 2] ?? '')) {
-                const end = tail[i + 2] ?? '';
-                out.push(`${c}-${end}${c.toUpperCase()}-${end.toUpperCase()}`);
-                i += 2;
-                continue;
-            }
-            out.push(c, c.toUpperCase());
-            continue;
-        }
-        out.push(c);
-    }
-    return out.join('');
+/** Whether a tail's case-insensitivity spans its whole body: a single `(?i:…)` group covering everything. */
+function isFullyInsensitiveTail(tail: string): boolean {
+    return tail.startsWith('(?i:') && matchingParen(tail, 0) === tail.length - 1;
 }
 
 /** Picks one character that belongs to a character-class body, for the fixture. */
@@ -589,17 +608,15 @@ function extract(rule: Rule): Extraction {
         return { kind: 'residual', reason: 'character class sits inside the prefix' };
     }
     const { prefixes, tailPrefix } = expandPrefix(atoms);
-    const cleanedTail = cleanTail(`${tailPrefix}${tail}`);
     if (prefixes.some((prefix) => prefix.length < MIN_PREFIX_LENGTH)) {
         return { kind: 'residual', reason: 'prefix shorter than four distinctive characters' };
     }
     const reason = deriveReason(rule);
-    const fixture = splitParts(concretizeTail(cleanedTail));
     const leadingInsensitive = hasLeadingInsensitiveFlag(regex);
-    const anyInsensitive = regex.includes('(?i');
     const flags: 'iu' | 'u' = leadingInsensitive ? 'iu' : 'u';
-    const bodyInsensitive = anyInsensitive;
-    const finalTail = anyInsensitive && !leadingInsensitive ? widenTailForInsensitive(cleanedTail) : cleanedTail;
+    const finalTail = normalizeTail(cleanTail(`${tailPrefix}${tail}`));
+    const bodyInsensitive = (flags === 'iu' && !finalTail.includes('(?-i')) || isFullyInsensitiveTail(finalTail);
+    const fixture = splitParts(concretizeTail(finalTail));
     const shapes = prefixes.map((prefix) => ({
         reason,
         parts: splitParts(prefix),
@@ -626,6 +643,12 @@ function deriveKeyNames(keywords: readonly string[]): string[] {
 /** Parses and classifies every rule in the fetched config into the three tables the screen reads. */
 export function deriveEgressVendorShapes(toml: string): DerivedEgressVendorShapes {
     const rules = parseRules(toml);
+    const blockCount = countRuleBlocks(toml);
+    if (rules.length === 0) {
+        throw new Error(
+            `refusing to derive an empty egress table: ${blockCount} [[rules]] headers but no readable rule`
+        );
+    }
     const shapes: EgressVendorShape[] = [];
     const rawKeyNames: string[] = [];
     const residual: ResidualRule[] = [];
@@ -656,7 +679,7 @@ export function deriveEgressVendorShapes(toml: string): DerivedEgressVendorShape
         keyNames: deriveKeyNames(rawKeyNames),
         residual,
         counts: {
-            blockCount: countRuleBlocks(toml),
+            blockCount,
             totalRules: rules.length,
             valueCompleteRules,
             valueCompleteEntropyGated,

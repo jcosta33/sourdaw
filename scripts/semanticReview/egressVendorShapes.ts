@@ -32,8 +32,9 @@
  * scanner's shortest opaque run, so no fragment can carry a keyword adjacent to an opaque value;
  * the screen rejoins them at runtime, which is why the chunking is invisible to matching. A
  * `flags` of `iu` reproduces a leading `(?i)`, which also covers the prefix; an inline `(?i)`
- * after the prefix is reproduced instead by widening the tail's character classes while the prefix
- * stays exactly case-sensitive, which `bodyInsensitive` records.
+ * after the prefix is reproduced instead as a scoped `(?i:…)` group over exactly the source's
+ * remainder, so the prefix stays case-sensitive while the body keeps the source's case scope.
+ * `bodyInsensitive` records that the whole body is case-insensitive.
  */
 /* eslint-disable max-lines -- a generated data table, not hand-written logic. */
 
@@ -123,7 +124,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'an Adobe Client Secret',
         parts: ['p8e-'],
-        tail: '[a-zA-Z0-9]{32}',
+        tail: '(?i:[a-z0-9]{32})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -155,7 +156,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'an Alibaba Cloud AccessKey ID',
         parts: ['LTAI'],
-        tail: '[a-zA-Z0-9]{20}',
+        tail: '(?i:[a-z0-9]{20})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -492,7 +493,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Doppler API token',
         parts: ['dp.p', 't.'],
-        tail: '[a-zA-Z0-9]{43}',
+        tail: '(?i:[a-z0-9]{43})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -500,7 +501,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Duffel API token',
         parts: ['duff', 'el_t', 'est_'],
-        tail: '[a-zA-Z0-9_\\-=]{43}',
+        tail: '(?i:[a-z0-9_\\-=]{43})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -508,7 +509,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Duffel API token',
         parts: ['duff', 'el_l', 'ive_'],
-        tail: '[a-zA-Z0-9_\\-=]{43}',
+        tail: '(?i:[a-z0-9_\\-=]{43})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -516,7 +517,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Dynatrace API token',
         parts: ['dt0c', '01.'],
-        tail: '[a-zA-Z0-9]{24}\\.[a-zA-Z0-9]{64}',
+        tail: '(?i:[a-z0-9]{24}\\.[a-z0-9]{64})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -548,7 +549,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'an EasyPost API token',
         parts: ['EZAK'],
-        tail: '[a-zA-Z0-9]{54}',
+        tail: '(?i:[a-z0-9]{54})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -571,7 +572,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'an EasyPost test API token',
         parts: ['EZTK'],
-        tail: '[a-zA-Z0-9]{54}',
+        tail: '(?i:[a-z0-9]{54})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -594,7 +595,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Flutterwave Encryption Key',
         parts: ['FLWS', 'ECK_', 'TEST', '-'],
-        tail: '[a-hA-H0-9]{12}',
+        tail: '(?i:[a-h0-9]{12})',
         fixture: ['aaaa', 'aaaa', 'aaaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -602,7 +603,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Finicity Public Key',
         parts: ['FLWP', 'UBK_', 'TEST', '-'],
-        tail: '[a-hA-H0-9]{32}-X',
+        tail: '(?i:[a-h0-9]{32}-X)',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', '-X'],
         flags: 'u',
         bodyInsensitive: true,
@@ -610,7 +611,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Flutterwave Secret Key',
         parts: ['FLWS', 'ECK_', 'TEST', '-'],
-        tail: '[a-hA-H0-9]{32}-X',
+        tail: '(?i:[a-h0-9]{32}-X)',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', '-X'],
         flags: 'u',
         bodyInsensitive: true,
@@ -618,7 +619,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Frame.io API token',
         parts: ['fio-', 'u-'],
-        tail: '[a-zA-Z0-9\\-_=]{64}',
+        tail: '(?i:[a-z0-9\\-_=]{64})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -977,7 +978,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Hugging Face Organization API token',
         parts: ['api_', 'org_'],
-        tail: '([a-zA-Z]{34})',
+        tail: '(?i:[a-z]{34})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -993,7 +994,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'an Intra42 client secret',
         parts: ['s-s4', 't2ud', '-'],
-        tail: '[aAbBcCdDeEfF0123456789]{64}',
+        tail: '(?i:[abcdef0123456789]{64})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -1018,7 +1019,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'an Intra42 client secret',
         parts: ['s-s4', 't2af', '-'],
-        tail: '[aAbBcCdDeEfF0123456789]{64}',
+        tail: '(?i:[abcdef0123456789]{64})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -1043,7 +1044,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Linear API Token',
         parts: ['lin_', 'api_'],
-        tail: '[a-zA-Z0-9]{40}',
+        tail: '(?i:[a-z0-9]{40})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
         flags: 'u',
         bodyInsensitive: true,
@@ -1091,7 +1092,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a PlanetScale API token',
         parts: ['psca', 'le_t', 'kn_'],
-        tail: '[\\w=\\.-]{32,64}',
+        tail: '(?i:[\\w=\\.-]{32,64})',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
         flags: 'u',
         bodyInsensitive: true,
@@ -1107,7 +1108,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a PlanetScale password',
         parts: ['psca', 'le_p', 'w_'],
-        tail: '[\\w=\\.-]{32,64}',
+        tail: '(?i:[\\w=\\.-]{32,64})',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
         flags: 'iu',
         bodyInsensitive: true,
@@ -1115,7 +1116,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Postman API token',
         parts: ['PMAK', '-'],
-        tail: '[a-fA-F0-9]{24}-[a-fA-F0-9]{34}',
+        tail: '(?i:[a-f0-9]{24}-[a-f0-9]{34})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -1206,7 +1207,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
     {
         reason: 'a Sendinblue API token',
         parts: ['xkey', 'sib-'],
-        tail: '[a-fA-F0-9]{64}-[a-zA-Z0-9]{16}',
+        tail: '[a-f0-9]{64}-(?i:[a-z0-9]{16})',
         fixture: [
             'aaaa',
             'aaaa',
@@ -1231,7 +1232,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'a',
         ],
         flags: 'u',
-        bodyInsensitive: true,
+        bodyInsensitive: false,
     },
     {
         reason: 'a Sentry.io Organization Token',

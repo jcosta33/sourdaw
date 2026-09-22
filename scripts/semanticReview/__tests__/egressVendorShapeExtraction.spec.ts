@@ -159,4 +159,90 @@ path = '''(?i).+\.p12$'''
         expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
         expect(derived.residual.map((rule) => rule.id)).toEqual(['p12-file']);
     });
+
+    it('decodes a multiline basic string the way TOML does', () => {
+        // A newline immediately after the opening delimiter is trimmed, a line-ending backslash is a
+        // continuation, and a CRLF leaves no stray carriage return, so the derived tail matches what
+        // tomllib would read rather than a pattern beginning with a newline.
+        const toml =
+            '[[rules]]\nid = "multi-basic"\ndescription = "A multiline token."\nregex = """\nzzz_[a-z0-9]{20}"""\n';
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.counts.blockCount).toBe(1);
+        expect(derived.counts.totalRules).toBe(1);
+        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['zzz_']);
+        expect(derived.shapes[0]?.tail).toBe('[a-z0-9]{20}');
+
+        const continued =
+            '[[rules]]\nid = "multi-cont"\ndescription = "A continuation."\nregex = """zzz_[a-z0-9\\\n]{20}"""\n';
+        expect(deriveEgressVendorShapes(continued).shapes[0]?.tail).toBe('[a-z0-9]{20}');
+
+        const crlf =
+            '[[rules]]\r\nid = "multi-crlf"\r\ndescription = "A CRLF token."\r\nregex = """\r\nzzz_[a-z0-9]{20}"""\r\n';
+        expect(deriveEgressVendorShapes(crlf).shapes[0]?.tail).toBe('[a-z0-9]{20}');
+    });
+
+    it('reads quoted and tightly-spaced keys for every scalar field', () => {
+        // `keywords`, `secretGroup` and `entropy` must accept a quoted key and tight spacing exactly as
+        // the string fields do, so a legal form is never read as absent and reported as a false reason.
+        const toml = String.raw`[[rules]]
+id = "proximity"
+description = "A proximity rule."
+regex = '''(?:vendor)[ \t\w.-]{0,20}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)([a-z0-9]{20})'''
+keywords=["vendorx"]
+
+[[rules]]
+id = "quoted-keyword"
+description = "A quoted-keyword rule."
+regex = '''(?:other)[ \t\w.-]{0,20}(?:=|>|:{1,3}=|\|\||:|=>|\?=|,)([a-z0-9]{20})'''
+"keywords" = ["vendory"]
+`;
+
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.keyNames).toEqual(['vendorx', 'vendory']);
+        expect(derived.residual).toEqual([]);
+    });
+
+    it('routes secretGroup and entropy through the same key pattern', () => {
+        // A quoted `secretGroup` key must still record the indirection rather than emit a shape, and a
+        // tightly-spaced `entropy` key must still be read as the entropy gate.
+        const toml = String.raw`[[rules]]
+id = "grouped"
+description = "A grouped rule."
+regex = '''acme_[a-z0-9]{20}'''
+"secretGroup" = 2
+
+[[rules]]
+id = "entropy-gated"
+description = "An entropy-gated rule."
+regex = '''other_[a-z0-9]{20}'''
+entropy=2.0
+keywords = ["other_"]
+`;
+
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['other_']);
+        expect(derived.residual).toEqual([{ id: 'grouped', reason: 'secretGroup indirection' }]);
+    });
+
+    it('recognises a quoted [[rules]] header and refuses a config with no rules', () => {
+        // `[['rules']]` is a legal array-of-tables header; both the counter and the splitter must see
+        // it rather than write an empty table. A config with no rules at all is refused, never written.
+        const toml = String.raw`[['rules']]
+id = "acme-token"
+description = "An ACME token."
+regex = '''acme_[a-z0-9]{20}'''
+`;
+
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.counts.blockCount).toBe(1);
+        expect(derived.counts.totalRules).toBe(1);
+        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
+
+        expect(() => deriveEgressVendorShapes('no rules here\n')).toThrow(/no readable rule/);
+        expect(() => deriveEgressVendorShapes('')).toThrow(/no readable rule/);
+    });
 });

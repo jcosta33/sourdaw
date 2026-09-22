@@ -101,8 +101,9 @@ function renderModule(derived: DerivedEgressVendorShapes, digest: string): strin
  * scanner's shortest opaque run, so no fragment can carry a keyword adjacent to an opaque value;
  * the screen rejoins them at runtime, which is why the chunking is invisible to matching. A
  * \`flags\` of \`iu\` reproduces a leading \`(?i)\`, which also covers the prefix; an inline \`(?i)\`
- * after the prefix is reproduced instead by widening the tail's character classes while the prefix
- * stays exactly case-sensitive, which \`bodyInsensitive\` records.
+ * after the prefix is reproduced instead as a scoped \`(?i:…)\` group over exactly the source's
+ * remainder, so the prefix stays case-sensitive while the body keeps the source's case scope.
+ * \`bodyInsensitive\` records that the whole body is case-insensitive.
  */
 /* eslint-disable max-lines -- a generated data table, not hand-written logic. */
 

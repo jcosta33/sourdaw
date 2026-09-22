@@ -36,12 +36,21 @@ export function parseRules(toml: string): Rule[] {
     return blocks.map(parseRuleBlock).filter((rule): rule is Rule => rule !== null);
 }
 
-/** Counts raw `[[rules]]` headers independently of the splitter, so a header it fails to consume is visible. */
+/** Whether a line is a legal `[[rules]]` array-of-tables header: bare, single-quoted, or double-quoted. */
+function matchRuleHeader(line: string): boolean {
+    const header = stripInlineComment(line).trim();
+    return /^\[\[\s*(?:rules|'rules'|"rules")\s*\]\]$/.test(header);
+}
+
+/**
+ * Counts raw `[[rules]]` headers by scanning every line for a legal header form, independently of
+ * the block splitter. A header the splitter drops is therefore visible as a count that exceeds the
+ * classified-rule count, and the generator refuses instead of writing a table that lost a family.
+ */
 export function countRuleBlocks(toml: string): number {
     let count = 0;
     for (const line of toml.split('\n')) {
-        const header = line.trim().replace(/#.*$/, '').trim();
-        if (/^\[\[\s*rules\s*\]\]$/.test(header)) {
+        if (matchRuleHeader(line)) {
             count += 1;
         }
     }
@@ -49,7 +58,7 @@ export function countRuleBlocks(toml: string): number {
 }
 
 function isRuleHeader(line: string): boolean {
-    return /^\[\[\s*rules\s*\]\]$/.test(stripInlineComment(line).trim());
+    return matchRuleHeader(line);
 }
 
 function stripInlineComment(line: string): string {
@@ -84,26 +93,55 @@ function unescapeBasicString(value: string): string {
     });
 }
 
+/** The key side of a TOML `key = value` pair: bare, single-quoted, or double-quoted, with optional spacing. */
+function keyPattern(key: string): string {
+    return `(?:${key}|"${key}"|'${key}')\\s*=\\s*`;
+}
+
+/** Trims a multiline literal string body: the newline after the delimiter, and any carriage returns. */
+function decodeMultilineLiteralString(value: string): string {
+    return value
+        .replace(/^\r?\n/, '')
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n');
+}
+
+/**
+ * Decodes a TOML multiline basic string body: trims the newline that may immediately follow the
+ * opening delimiter, folds a line-ending backslash continuation, normalizes CRLF, then unescapes.
+ */
+function decodeMultilineBasicString(value: string): string {
+    let s = value;
+    // A newline immediately following the opening delimiter is trimmed (TOML 1.0).
+    s = s.replace(/^\r?\n/, '');
+    // A backslash at the end of a line continues it: the backslash and every following whitespace and
+    // newline up to the next non-whitespace character are trimmed.
+    s = s.replaceAll(/\\[ \t]*(?:\r?\n[ \t]*)+/g, '');
+    // Normalize remaining newlines so a CRLF config leaves no stray carriage return in the regex.
+    s = s.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    return unescapeBasicString(s);
+}
+
 /**
  * Reads a string-valued TOML field in any of the four string forms. The key may be bare, single- or
  * double-quoted, with optional whitespace around `=`, and a basic string is TOML-unescaped so the
  * derived regex is byte-identical to the value the scanner would read.
  */
 function readStringField(block: string, key: string): string | undefined {
-    const keyPattern = `(?:${key}|"${key}"|'${key}')\\s*=\\s*`;
-    const literalMulti = block.match(new RegExp(`^${keyPattern}'''([\\s\\S]*?)'''`, 'm'));
+    const kp = keyPattern(key);
+    const literalMulti = block.match(new RegExp(`^${kp}'''([\\s\\S]*?)'''`, 'm'));
     if (literalMulti !== null) {
-        return literalMulti[1];
+        return decodeMultilineLiteralString(literalMulti[1] ?? '');
     }
-    const basicMulti = block.match(new RegExp(`^${keyPattern}"""([\\s\\S]*?)"""`, 'm'));
+    const basicMulti = block.match(new RegExp(`^${kp}"""([\\s\\S]*?)"""`, 'm'));
     if (basicMulti !== null) {
-        return unescapeBasicString(basicMulti[1] ?? '');
+        return decodeMultilineBasicString(basicMulti[1] ?? '');
     }
-    const basic = block.match(new RegExp(`^${keyPattern}"((?:[^"\\\\]|\\\\.)*)"`, 'm'));
+    const basic = block.match(new RegExp(`^${kp}"((?:[^"\\\\]|\\\\.)*)"`, 'm'));
     if (basic !== null) {
         return unescapeBasicString(basic[1] ?? '');
     }
-    const literal = block.match(new RegExp(`^${keyPattern}'([^']*)'`, 'm'));
+    const literal = block.match(new RegExp(`^${kp}'([^']*)'`, 'm'));
     if (literal !== null) {
         return literal[1];
     }
@@ -119,9 +157,9 @@ function parseRuleBlock(lines: string[]): Rule | null {
     const description = readStringField(block, 'description') ?? '';
     const regex = readStringField(block, 'regex');
     const path = readStringField(block, 'path');
-    const secretGroupMatch = block.match(/^secretGroup = (\d+)/m);
-    const entropyMatch = block.match(/^entropy = ([\d.]+)/m);
-    const keywordsMatch = block.match(/^keywords = \[([\s\S]*?)\]/m);
+    const secretGroupMatch = block.match(new RegExp(`^${keyPattern('secretGroup')}(\\d+)`, 'm'));
+    const entropyMatch = block.match(new RegExp(`^${keyPattern('entropy')}([\\d.]+)`, 'm'));
+    const keywordsMatch = block.match(new RegExp(`^${keyPattern('keywords')}\\[([\\s\\S]*?)\\]`, 'm'));
     const keywords: string[] = [];
     if (keywordsMatch !== null) {
         keywords.push(...Array.from((keywordsMatch[1] ?? '').matchAll(/(["'])([^"']*)\1/g), (m) => m[2] ?? ''));

@@ -3406,36 +3406,80 @@ describe('vendor prefix coverage', () => {
     });
 
     it('withholds a value composed from every generated shape', () => {
-        // The whole table is pinned by a digest that serialises the parts arrays (not their joined
-        // prefix), the key names, and the residual record, so deleting a key name, merging two
-        // fragments, or editing a residual reason each fails here. Every entry must match a fixture
-        // composed from its own parts with its own flags, and the case scope must match the source:
-        // a case-insensitive body matches the uppercased body, and a case-sensitive prefix rejects the
-        // uppercased prefix.
+        // The whole table is pinned by a digest that serialises every field the screen depends on —
+        // the parts arrays (not their joined prefix), the tail and its case scope, the fixture, the
+        // key names, and the residual record — so deleting a key name, merging two fragments, editing a
+        // residual reason, or rewriting a fixture all fail here. Each entry must be withheld by the
+        // screen, and the screen's own prefix case scope must match the source: a whole-insensitive
+        // shape withholds its case-flipped prefix under the same reason, while a case-sensitive prefix
+        // rejects the flipped form. Reason equality, not presence, so a different shape cannot mask.
         const serialized = [
             ...EGRESS_VENDOR_SHAPES.map(
                 (shape) =>
-                    `${shape.reason}\u0000${JSON.stringify(shape.parts)}\u0000${shape.tail}\u0000${shape.flags}\u0000${shape.bodyInsensitive}`
+                    `${shape.reason}\u0000${JSON.stringify(shape.parts)}\u0000${shape.tail}\u0000${shape.flags}\u0000${shape.bodyInsensitive}\u0000${JSON.stringify(shape.fixture)}`
             ),
             ...VENDOR_KEY_NAMES,
             ...RESIDUAL_RULES.map((rule) => `${rule.id}\u0000${rule.reason}`),
         ].join('\n');
         expect(createHash('sha256').update(serialized).digest('hex')).toBe(
-            '9a00e24bafa05b06fa3a6315565ad9fba875fe673438ff6af885a53b28e80e5b'
+            '4534c6f7f6fe72d3ad6e5c62e6e9bed9e6ba522a0a2c37ff5c998c3894dfa517'
         );
         for (const shape of EGRESS_VENDOR_SHAPES) {
             const prefix = shape.parts.join('');
             const fixture = secretFixture(...shape.parts, ...shape.fixture);
             const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
-            expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
+            // The screen withholds the shape's own fixture.
             expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
+            // The screen's prefix case scope, observed through the screen rather than the rebuilt
+            // pattern: the case-flipped prefix reaches the shape exactly when the source's leading flag
+            // covers the prefix. Reason equality, not presence, so a different shape cannot mask.
+            const flippedPrefix = secretFixture(flipCase(prefix), ...shape.fixture);
+            if (shape.flags === 'iu') {
+                expect(sensitiveContentReason(flippedPrefix), `${shape.reason}: prefix case scope`).toBe(shape.reason);
+            } else {
+                expect(sensitiveContentReason(flippedPrefix), `${shape.reason}: prefix case scope`).toBeUndefined();
+            }
+            // The body case scope lives in the tail's scoped groups, which the digest above pins; the
+            // rebuilt pattern over that same tail observes the body's case sensitivity exactly.
             const upperBody = secretFixture(...shape.parts, shape.fixture.map((chunk) => chunk.toUpperCase()).join(''));
             if (shape.bodyInsensitive) {
                 expect(pattern.test(upperBody), `${shape.reason}: body case scope`).toBe(true);
             }
-            const flippedPrefix = secretFixture(flipCase(prefix), ...shape.fixture);
-            expect(pattern.test(flippedPrefix), `${shape.reason}: prefix case scope`).toBe(shape.flags === 'iu');
         }
+    });
+
+    it('scopes Sendinblue case sensitivity to the tail, not the hex field', () => {
+        // Source: `xkeysib-[a-f0-9]{64}\-(?i)[a-z0-9]{16}`. The hex field precedes the flag, so an
+        // uppercase hex run must not be withheld, while the case-insensitive tail must still reach the
+        // screen.
+        const lowerHex = secretFixture('xkeysib-', '0'.repeat(64), '-', 'ABCDEF0123456789');
+        const upperHex = secretFixture('xkeysib-', 'A'.repeat(64), '-', 'abcdef0123456789');
+        expect(sensitiveContentReason(lowerHex)).toBe('a Sendinblue API token');
+        expect(sensitiveContentReason(upperHex)).toBeUndefined();
+    });
+
+    it('scopes Flutterwave case insensitivity over the trailing literal', () => {
+        // Source: `FLWPUBK_TEST-(?i)[a-h0-9]{32}-X`. The flag covers the `-X` literal too, so both
+        // `-X` and `-x` must be withheld.
+        const upperX = secretFixture('FLWPUBK_TEST-', 'a'.repeat(32), '-X');
+        const lowerX = secretFixture('FLWPUBK_TEST-', 'a'.repeat(32), '-x');
+        expect(sensitiveContentReason(upperX)).toBe('a Finicity Public Key');
+        expect(sensitiveContentReason(lowerX)).toBe('a Finicity Public Key');
+    });
+
+    it('reaches a whole-insensitive Clojars prefix in either case', () => {
+        // Source: `(?i)CLOJARS_[a-z0-9]{60}`. The leading flag covers the prefix, so the lowercase
+        // form is withheld by the screen's own flag, not by a widened prefix literal.
+        expect(sensitiveContentReason(secretFixture('CLOJARS_', 'a'.repeat(60)))).toBe('a Clojars API token');
+        expect(sensitiveContentReason(secretFixture('clojars_', 'a'.repeat(60)))).toBe('a Clojars API token');
+    });
+
+    it('keeps an inline-insensitive Alibaba prefix case-sensitive', () => {
+        // Source: `\b(LTAI(?i)[a-z0-9]{20})…`. The flag follows the prefix, so `LTAI` is withheld and
+        // `ltai` is admitted.
+        const body = secretFixture('0123456789', 'abcdefghij');
+        expect(sensitiveContentReason(secretFixture('LTAI', body))).toBe('an Alibaba Cloud AccessKey ID');
+        expect(sensitiveContentReason(secretFixture('ltai', body))).toBeUndefined();
     });
 });
 

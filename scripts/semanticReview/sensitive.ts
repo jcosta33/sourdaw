@@ -73,9 +73,21 @@ const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
  * `SOME_TOKEN`, `apiToken`, `dbPassword` and their like — the dominant secret-naming vocabulary —
  * would stop matching. The value heuristic separates those names from ordinary identifiers; a bare
  * mixed-case alphabetic value is a reference, not key material.
+ *
+ * The quoted alternative accepts every delimiter the pinned scanner's generic key rule reads — a
+ * single or triple quote on either side, or a backtick — because the scanner flags a credential
+ * under any of them and the screen would otherwise let it reach the provider. Each form captures
+ * only a run with no delimiter inside, matching the scanner's silence on a value that itself
+ * contains the quote.
  */
 const SECRET_ASSIGNMENT = new RegExp(
-    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:['"](?<quoted>[^'"]{16,})['"]|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
+    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:` +
+        `'''(?<tripleSingle>[^']{16,})'''` +
+        `|"""(?<tripleDouble>[^"]{16,})"""` +
+        `|\\x60(?<backtick>[^\\x60]{16,})\\x60` +
+        `|'(?<single>[^']{16,})'` +
+        `|"(?<double>[^"]{16,})"` +
+        `|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );
 
@@ -200,11 +212,17 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
 /** The first secret-named assignment whose value is shaped like a credential, if any. */
 function secretAssignmentReason(text: string): string | undefined {
     for (const match of text.matchAll(SECRET_ASSIGNMENT)) {
-        const quoted = match.groups?.quoted !== undefined;
-        const value = match.groups?.quoted ?? match.groups?.bare;
+        const quotedValue =
+            match.groups?.tripleSingle ??
+            match.groups?.tripleDouble ??
+            match.groups?.backtick ??
+            match.groups?.single ??
+            match.groups?.double;
+        const value = quotedValue ?? match.groups?.bare;
         if (value === undefined) {
             continue;
         }
+        const quoted = quotedValue !== undefined;
         const after = quoted ? '' : (match.groups?.after ?? '');
         if (looksLikeCredentialValue(value, after, quoted)) {
             return 'a secret-named key assigned a credential-shaped value';
