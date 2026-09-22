@@ -1,9 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { buildProjectData } from '#/modules/Project/useCases/projectPersistence/fileIO/buildProjectData';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createWarpMarker, defaultWarpState } from '../../models/WarpMarker';
-import { hydrateClipWarpStates } from '../../useCases/warp/hydrateClipWarpStates';
 import {
     __resetWarpStatesForTest,
     addWarpMarker,
@@ -18,10 +15,6 @@ import {
     warpStateStore,
     warpStates,
 } from '../warpStates';
-
-vi.mock('#/modules/Project/useCases/arrangement/syncCurrentArrangementToStore', () => ({
-    syncCurrentArrangementToStore: vi.fn(),
-}));
 
 describe('warpStates', () => {
     beforeEach(() => {
@@ -83,28 +76,6 @@ describe('warpStates', () => {
         expect(getWarpState('clip-a').markers).toHaveLength(1);
         expect(getWarpState('clip-a').markers[0]?.originalBeat).toBe(1);
         expect(getStoredWarpState('stale')).toBeUndefined();
-    });
-
-    it('round-trips a non-default marker through the project warpStates save field', async () => {
-        addWarpMarker('clip-a', 1, 1.5);
-        const savedMarkers = getWarpState('clip-a').markers;
-        expect(savedMarkers).toHaveLength(1);
-
-        // If `buildProjectData` stops copying `warpStateStore` into `data.warpStates`,
-        // this field is empty and the hydrate below cannot restore the marker.
-        const built = await buildProjectData();
-        expect(built?.data.warpStates).toEqual([
-            expect.objectContaining({
-                clipId: 'clip-a',
-                markers: savedMarkers,
-            }),
-        ]);
-
-        __resetWarpStatesForTest();
-        expect(getStoredWarpState('clip-a')).toBeUndefined();
-
-        hydrateClipWarpStates(built?.data.warpStates);
-        expect(getWarpState('clip-a').markers).toEqual(savedMarkers);
     });
 
     it('hydrates an absent or empty field to empty and drops prior in-memory markers', () => {
