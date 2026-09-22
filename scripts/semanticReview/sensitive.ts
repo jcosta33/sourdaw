@@ -64,15 +64,18 @@ const SECRET_KEY_NAME_SOURCE = [
     ...VENDOR_KEY_NAMES,
 ].join('|');
 
-const SECRET_KEY_NAME = new RegExp(`\\b(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
+const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
 
 /**
  * Where a secret-named key is followed by a candidate value: the separator, and then either a quoted
- * string or an unquoted opaque run. The leading `\b` bounds the name on the left so a vendor name
- * such as `linear` cannot match inside `bilinear` or `etsy` inside a `Synth` identifier.
+ * string or an unquoted opaque run. There is deliberately no left boundary: a word boundary would
+ * treat `_` as a word character and the preceding hump letter in camelCase as one too, so
+ * `SOME_TOKEN`, `apiToken`, `dbPassword` and their like — the dominant secret-naming vocabulary —
+ * would stop matching. The value heuristic separates those names from ordinary identifiers; a bare
+ * mixed-case alphabetic value is a reference, not key material.
  */
 const SECRET_ASSIGNMENT = new RegExp(
-    `\\b(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:['"](?<quoted>[^'"]{16,})['"]|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
+    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:['"](?<quoted>[^'"]{16,})['"]|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );
 

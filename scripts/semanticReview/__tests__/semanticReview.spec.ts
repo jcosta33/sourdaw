@@ -1674,14 +1674,38 @@ describe('the egress screen tells code from credentials', () => {
 
     it('withholds a value assigned to a vendor family name', () => {
         // A keyword-proximity family is recognised as a secret key name, so its assignment reaches
-        // the value heuristic instead of passing the screen untouched.
+        // the value heuristic instead of passing the screen untouched, whatever separator its
+        // family's token carries (`_`, `-`).
         const value = 'a'.repeat(40);
         expect(sensitiveContentReason(secretFixture('datadog=', value))).toBeDefined();
-        // The name is token-bounded: it still fires when it is the whole key, whatever separator its
-        // family's token carries (`_`, `-`), but not when it is a substring of a longer identifier.
         expect(sensitiveContentReason(secretFixture('DATADOG_API_KEY=', value))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('datadog_api_key: ', "'", value, "'"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
+    });
+
+    it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
+        // No left boundary: `SOME_TOKEN`, `apiToken`, `dbPassword` and their like are the dominant
+        // secret-naming vocabulary and must reach the value heuristic. The value heuristic, not a
+        // name boundary, separates them from the identifier-valued collisions below.
+        const value = secretFixture('a1b2c3d4', 'e5f6g7h8', 'i9j0k1l2', 'm3n4o5p6');
+        for (const key of [
+            'SOME_TOKEN',
+            'API_TOKEN',
+            'MY_SECRET',
+            'DB_PASSWORD',
+            'SNAKE_CASE_API_KEY',
+            'api_token',
+            'apiToken',
+            'dbPassword',
+            'validToken',
+        ]) {
+            expect(sensitiveContentReason(secretFixture(key, ' = ', value)), key).toBeDefined();
+        }
+        // The collisions the review found stay admitted because their value is a reference, not key
+        // material — a boundary on the name would be the wrong lever and would not be needed.
+        expect(sensitiveContentReason('workletSynthEntry = workletSynthDevice')).toBeUndefined();
+        expect(sensitiveContentReason('bilinearPatch: bilinearPatchMock')).toBeUndefined();
+        expect(sensitiveContentReason('linear_entry: CallbackUndoEntry')).toBeUndefined();
     });
 
     it('admits a filesystem path but withholds a slash-led base64 credential', () => {
