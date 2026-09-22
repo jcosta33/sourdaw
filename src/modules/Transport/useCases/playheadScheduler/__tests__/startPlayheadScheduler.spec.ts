@@ -104,6 +104,8 @@ const arrangementMocks = {
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
+    stageRecordingTake: vi.fn(),
+    commitRecording: vi.fn(() => Promise.resolve()),
     updateClip: vi.fn(),
     removeClip: vi.fn(),
     updateTransportState: vi.fn(),
@@ -124,6 +126,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: (...args: unknown[]) => (arrangementMocks.stopRecording as (...a: unknown[]) => unknown)(...args),
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
     addTake: (...args: unknown[]) => (arrangementMocks.addTake as (...a: unknown[]) => unknown)(...args),
+    stageRecordingTake: (...args: unknown[]) =>
+        (arrangementMocks.stageRecordingTake as (...a: unknown[]) => unknown)(...args),
+    commitRecording: (...args: unknown[]) =>
+        (arrangementMocks.commitRecording as (...a: unknown[]) => unknown)(...args),
     updateClip: (...args: unknown[]) => (arrangementMocks.updateClip as (...a: unknown[]) => unknown)(...args),
     removeClip: (...args: unknown[]) => (arrangementMocks.removeClip as (...a: unknown[]) => unknown)(...args),
     updateTransportState: (...args: unknown[]) =>
@@ -612,13 +618,20 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(arrangementMocks.addTakeLane).toHaveBeenCalledWith('rec-1');
+        expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
         // The take names the clip that is actually recording the pass — the id
         // `startRecording` pushed into activeRecordingRef, not a synthesized
         // string: comp resolution drops a take whose clipId matches no clip.
         // The trailing offset is the pass's position inside the shared
         // recording buffer: the first wrap re-reads the clip origin (pass 1).
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 1', 0, 4, 0);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 1',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
     });
 
     it('skips the take-lane open when the armed track already has a lane on a loop wrap', async () => {
@@ -647,7 +660,14 @@ describe('startPlayheadScheduler', () => {
         // Lane already exists → no new lane created, but a take referencing the
         // recording clip is still added, at the pass's own buffer offset.
         expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 1', 0, 4, 0);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 1',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
     });
 
     it('adds no take and no lane on a loop wrap for an armed track with no actively recording clip', async () => {
@@ -677,6 +697,7 @@ describe('startPlayheadScheduler', () => {
 
         expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
         expect(arrangementMocks.addTake).not.toHaveBeenCalled();
+        expect(arrangementMocks.stageRecordingTake).not.toHaveBeenCalled();
     });
 
     it('pairs each loop-wrap take with the recording clip of its own armed track, not a pre-existing clip or a clip of another track', async () => {
@@ -722,23 +743,21 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(2);
-        const laneCalls = arrangementMocks.addTakeLane.mock.calls as unknown as [string][];
-        // One lane per armed track, in either call order.
-        expect(laneCalls).toContainEqual(['rec-a']);
-        expect(laneCalls).toContainEqual(['rec-b']);
-        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(2);
-        const takeCalls = arrangementMocks.addTake.mock.calls as unknown as [
-            string,
-            string,
-            string,
-            number,
-            number,
-            number,
-        ][];
-        // Exact id-to-track pairing, in either call order.
-        expect(takeCalls).toContainEqual(['rec-a', 'clip-rec-a', 'Take 1', 0, 4, 0]);
-        expect(takeCalls).toContainEqual(['rec-b', 'clip-rec-b', 'Take 1', 0, 4, 0]);
+        // The audio track stages its wrap take; the MIDI track keeps the
+        // history-bearing route.
+        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.addTakeLane).toHaveBeenCalledWith('rec-b');
+        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-b', 'clip-rec-b', 'Take 1', 0, 4, 0);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-a',
+            clipId: 'clip-rec-a',
+            name: 'Take 1',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
     });
 
     it('adds a loop-wrap take lane and take for the armed track only, never for an unarmed track whose clip id sits in the recording ref', async () => {
@@ -770,24 +789,22 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // The armed track alone gets its lane and its take.
-        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(1);
-        expect(arrangementMocks.addTakeLane).toHaveBeenCalledWith('rec-armed');
-        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(1);
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-armed', 'clip-rec-armed', 'Take 1', 0, 4, 0);
-        // The unarmed track is never the subject of either call, even though
-        // its clip id sits in the ref.
-        const laneCalls = arrangementMocks.addTakeLane.mock.calls as unknown as [string][];
-        const takeCalls = arrangementMocks.addTake.mock.calls as unknown as [
-            string,
-            string,
-            string,
-            number,
-            number,
-            number,
-        ][];
-        expect(laneCalls.flat()).not.toContain('rec-unarmed');
-        expect(takeCalls.map((call) => call[0])).not.toContain('rec-unarmed');
+        // The armed track alone gets its staged take; no lane history is opened.
+        expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
+        expect(arrangementMocks.addTake).not.toHaveBeenCalled();
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-armed',
+            clipId: 'clip-rec-armed',
+            name: 'Take 1',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
+        // The unarmed track is never the subject of the call, even though its
+        // clip id sits in the ref.
+        const stagedCalls = arrangementMocks.stageRecordingTake.mock.calls as unknown as { trackId: string }[][];
+        expect(stagedCalls.map((call) => call[0]?.trackId)).not.toContain('rec-unarmed');
     });
 
     it('gives each loop pass its own source offset so wrap takes address distinct segments of the shared recording clip', async () => {
@@ -819,8 +836,15 @@ describe('startPlayheadScheduler', () => {
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
-        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(1);
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 2', 0, 4, 0);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 2',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
 
         // The lane as wrap 1 left it: the initial take plus pass 1's take.
         takeLaneStoreState.value = {
@@ -842,8 +866,15 @@ describe('startPlayheadScheduler', () => {
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
-        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(2);
-        expect(arrangementMocks.addTake).toHaveBeenLastCalledWith('rec-1', 'clip-rec-1', 'Take 3', 0, 4, 4);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(2);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenLastCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 3',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 4,
+        });
     });
 
     it('mints no take for a partial final loop pass', async () => {
@@ -882,6 +913,7 @@ describe('startPlayheadScheduler', () => {
 
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(2.2, 5);
         expect(arrangementMocks.addTake).not.toHaveBeenCalled();
+        expect(arrangementMocks.stageRecordingTake).not.toHaveBeenCalled();
     });
 
     it('counts material recorded before the loop into the first pass take offset', async () => {
@@ -915,7 +947,14 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 2', 2, 6, 1);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 2',
+            startBeat: 2,
+            endBeat: 6,
+            sourceOffsetBeats: 1,
+        });
     });
 
     it('clamps the first pass offset to the clip origin when recording began mid-loop', async () => {
@@ -950,7 +989,14 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 2', 0, 4, 0);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 2',
+            startBeat: 0,
+            endBeat: 4,
+            sourceOffsetBeats: 0,
+        });
     });
 
     it('offsets pass two past the short first pass when recording began mid-loop', async () => {
@@ -995,7 +1041,14 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 3', 8, 16, 4);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            clipId: 'clip-rec-1',
+            name: 'Take 3',
+            startBeat: 8,
+            endBeat: 16,
+            sourceOffsetBeats: 4,
+        });
     });
 
     it('stops playback when a follow action requests a stop', async () => {
@@ -1059,7 +1112,7 @@ describe('startPlayheadScheduler', () => {
 
     it('starts punch-in recording when the playhead crosses punchInBeat with armed audio tracks', async () => {
         trackStoreState.value = {
-            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch' }],
+            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', inputId: 'dev-punch', clips: [] }],
         };
         transportStoreState.value = playingState({
             punchInEnabled: true,
@@ -1087,7 +1140,7 @@ describe('startPlayheadScheduler', () => {
     // clip belongs at the punch point, not at the tick — and least of all at the
     // transport store's playhead, which has not moved since playback started.
     it('anchors the punched clip at punchInBeat when the tick lands past it', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 15.9,
             punchInEnabled: true,
@@ -1113,7 +1166,7 @@ describe('startPlayheadScheduler', () => {
     // at punchInBeat would displace the take backwards by the whole distance
     // already covered and leave the tail of the clip silent.
     it('anchors the punched clip at the entry beat when playback starts inside the region', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 20,
             punchInEnabled: true,
@@ -1138,7 +1191,7 @@ describe('startPlayheadScheduler', () => {
     // same tick satisfies punch-in and punch-out, stamping a full-width clip and
     // take across the region that captured nothing.
     it('does not punch in when playback starts past the punch region', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 30,
             punchInEnabled: true,
@@ -1163,7 +1216,7 @@ describe('startPlayheadScheduler', () => {
     // lead-in. midiOffsetBeats supplies it: the media origin sits at
     // `startBeat - midiOffsetBeats`, leaving the clip start on the punch point.
     it('gives a punched MIDI clip a media lead-in the size of the round-trip latency', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'midi' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'midi', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 15.9,
             punchInEnabled: true,
@@ -1201,7 +1254,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('leaves a punched audio clip without a MIDI lead-in', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 15.9,
             punchInEnabled: true,
@@ -1221,8 +1274,8 @@ describe('startPlayheadScheduler', () => {
         expect(arrangementMocks.updateClip).not.toHaveBeenCalled();
     });
 
-    it('routes the punch-in recording buffer through cacheAudioBuffer + updateClip', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+    it('routes the punch-in recording buffer through cacheAudioBuffer + commitRecording', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             punchInEnabled: true,
             punchInBeat: 0,
@@ -1254,14 +1307,18 @@ describe('startPlayheadScheduler', () => {
             buffer: { duration: 1 },
             bufferId: expect.any(String),
         });
-        expect(arrangementMocks.updateClip).toHaveBeenCalledWith('clip-rec-1', expect.any(Function));
+        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith({
+            trackId: 'rec-1',
+            id: 'clip-rec-1',
+            audioBufferId: expect.any(String),
+        });
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.removeClip).not.toHaveBeenCalled();
         expect(notifyUserMock).not.toHaveBeenCalled();
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             punchInEnabled: true,
             punchInBeat: 0,
@@ -1294,7 +1351,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('stops punch-out recording and clears the flag once the playhead crosses punchOutBeat', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 7.9,
             punchInEnabled: true,
@@ -1419,7 +1476,7 @@ describe('startPlayheadScheduler', () => {
     });
 
     it('aborts after punch-out when the scheduler generation goes stale', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 7.9,
             punchInEnabled: true,

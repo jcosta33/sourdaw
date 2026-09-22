@@ -7,6 +7,8 @@ import {
     addTake,
     updateClip,
     removeClip,
+    commitRecording,
+    stageRecordingTake,
 } from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
@@ -293,10 +295,6 @@ export function startPlayheadScheduler(): void {
                     if (!recordingClip) {
                         continue;
                     }
-                    const laneState = takeLaneStore.value;
-                    if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
-                        addTakeLane(track.id);
-                    }
                     const lane = takeLaneStore.value?.lanes.find((length) => length.trackId === track.id);
                     const takeNum = (lane?.takes.length ?? 0) + 1;
                     // Each pass needs its own identity inside the one
@@ -328,14 +326,31 @@ export function startPlayheadScheduler(): void {
                     const firstPassLength = startedInsideLoop ? current.loopEnd - recordingClip.startBeat : loopLength;
                     const sourceOffsetBeats =
                         firstPassStart + (passIndex === 0 ? 0 : firstPassLength + (passIndex - 1) * loopLength);
-                    addTake(
-                        track.id,
-                        recordingClip.id,
-                        `Take ${takeNum}`,
-                        current.loopStart,
-                        current.loopEnd,
-                        sourceOffsetBeats
-                    );
+                    if (track.kind === 'midi') {
+                        if (!lane) {
+                            addTakeLane(track.id);
+                        }
+                        addTake(
+                            track.id,
+                            recordingClip.id,
+                            `Take ${takeNum}`,
+                            current.loopStart,
+                            current.loopEnd,
+                            sourceOffsetBeats
+                        );
+                        continue;
+                    }
+                    // The audio recording's wrap takes are provisional too, so the
+                    // whole capture commits as the one entry its terminal callback
+                    // opens rather than one entry per pass.
+                    stageRecordingTake({
+                        trackId: track.id,
+                        clipId: recordingClip.id,
+                        name: `Take ${takeNum}`,
+                        startBeat: current.loopStart,
+                        endBeat: current.loopEnd,
+                        sourceOffsetBeats,
+                    });
                 }
             }
 
@@ -518,11 +533,21 @@ export function startPlayheadScheduler(): void {
                                 const bufferId = `rec-${crypto.randomUUID()}`;
                                 cacheAudioBuffer({ buffer, bufferId });
                                 if (recClip) {
-                                    // Route the cross-module write through Arrangement's own
-                                    // use case rather than mutating trackStore directly (audit
-                                    // row 9). updateClip locates the clip across all tracks and
-                                    // applies the updater, preserving the prior behaviour.
-                                    updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
+                                    // The punched clip is finalized by the punch-out
+                                    // `stopRecording`, so the commit carries the live
+                                    // clip with only its media reference attached —
+                                    // and it is the recording's single history entry.
+                                    const liveClip = trackStore.value?.tracks
+                                        .flatMap((time) => time.clips)
+                                        .find((clip) => clip.id === recClip.id);
+                                    const finalizedClip = liveClip ?? recClip;
+                                    void commitRecording({ ...finalizedClip, audioBufferId: bufferId }).catch(
+                                        (error: unknown) => {
+                                            logger.error(
+                                                new Error('Punch-in recording commit failed', { cause: error })
+                                            );
+                                        }
+                                    );
                                 }
                             },
                             track.inputId

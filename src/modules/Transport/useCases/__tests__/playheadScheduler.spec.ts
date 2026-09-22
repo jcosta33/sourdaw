@@ -63,7 +63,9 @@ const harness = vi.hoisted(() => ({
     stop_recording: vi.fn<() => void>(),
     panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
-    track_store: { value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean }[] } },
+    track_store: {
+        value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean; clips: [] }[] },
+    },
     transport_store: {
         value: null as import('../../stores/transportStore').TransportState | null,
         set: vi.fn(),
@@ -72,6 +74,8 @@ const harness = vi.hoisted(() => ({
         value: { changes: [] as TempoMapStoreState['changes'] },
     },
     update_clip: vi.fn<UpdateClipMock>(),
+    commit_recording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+    stage_recording_take: vi.fn(),
 }));
 
 vi.mock('../../stores/transportStore', () => ({
@@ -101,6 +105,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     removeClip: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
+    stageRecordingTake: harness.stage_recording_take,
+    commitRecording: harness.commit_recording,
     startRecording: harness.start_recording,
     stopRecording: harness.stop_recording,
     updateClip: harness.update_clip,
@@ -520,7 +526,7 @@ describe('playhead scheduler tick', () => {
         expect(afterRestart?.generation).toBeGreaterThan(beforeRestartGeneration ?? 0);
     });
 
-    it('should cache punch-in audio completion through the AudioEngine use case and update the recording clip', async () => {
+    it('should cache punch-in audio completion through the AudioEngine use case and commit the recording clip', async () => {
         const random_uuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
         const recording_clip = {
             id: 'rec-clip-1',
@@ -537,7 +543,7 @@ describe('playhead scheduler tick', () => {
             muted: false,
         };
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,
@@ -567,14 +573,8 @@ describe('playhead scheduler tick', () => {
                 buffer,
                 bufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
-            expect(harness.update_clip).toHaveBeenCalledWith('rec-clip-1', expect.any(Function));
-
-            const update_clip_call = harness.update_clip.mock.calls[0]!;
-            const updated_clip = update_clip_call[1]({
-                ...recording_clip,
-                audioBufferId: 'old-buffer',
-            });
-            expect(updated_clip).toEqual({
+            expect(harness.update_clip).not.toHaveBeenCalled();
+            expect(harness.commit_recording).toHaveBeenCalledWith({
                 ...recording_clip,
                 audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
@@ -586,7 +586,7 @@ describe('playhead scheduler tick', () => {
     it('logs when punch-in audio recording fails to start', async () => {
         const recordingError = new Error('microphone unavailable');
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,
@@ -718,7 +718,7 @@ describe('playhead scheduler tick', () => {
             order.push('stopRecording');
         });
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,
@@ -757,7 +757,7 @@ describe('playhead scheduler tick', () => {
     it('reports a recorder rejection during scheduler teardown without leaving the session active', async () => {
         const recordingError = new Error('scheduler recorder stop failed');
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,

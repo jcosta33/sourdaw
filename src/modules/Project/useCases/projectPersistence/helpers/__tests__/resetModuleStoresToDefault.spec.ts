@@ -26,6 +26,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     acceptsExternalPluginAutomationParameter: vi.fn(),
     addTake: vi.fn(),
     addTakeLane: vi.fn(),
+    commitRecording: vi.fn(),
+    stageRecordingTake: vi.fn(),
     applySoloLogic: vi.fn(),
     clampDeviceParameterValue: vi.fn(),
     clampExternalPluginAutomationValue: vi.fn(),

@@ -97,6 +97,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
+    stageRecordingTake: vi.fn(),
+    commitRecording: vi.fn(),
     updateClip: vi.fn(),
     resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
         clips.map((clip) => ({

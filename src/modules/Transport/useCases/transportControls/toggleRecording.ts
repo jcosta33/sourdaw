@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
-import { getTrackStoreState, updateClip, startRecording, removeClip } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, startRecording, removeClip, commitRecording } from '#/modules/Arrangement/useCases';
 import {
     resumeEngine,
     getAudioContext,
@@ -103,12 +103,18 @@ async function beginActualRecording(
                     const exactEndBeat = samplesToBeat(tempoChanges, startSeconds + buffer.duration, defaultTempo, 1);
 
                     void Promise.resolve().then(() => {
-                        updateClip(recClip.id, (context) => ({
-                            ...context,
+                        // The provisional clip and take the recorder opened are
+                        // committed as ONE history entry here, once the capture has
+                        // completed. A capture that never reaches this branch never
+                        // commits, so no incomplete take becomes replayable.
+                        void commitRecording({
+                            ...recClip,
                             audioBufferId: bufferId,
                             startBeat: newStartBeat,
                             endBeat: exactEndBeat,
-                        }));
+                        }).catch((error: unknown) => {
+                            logger.error(new Error('Recording commit failed', { cause: error }));
+                        });
                         return null;
                     });
                 }

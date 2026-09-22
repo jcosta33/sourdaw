@@ -2825,6 +2825,41 @@ export type AppAction =
            */
           type: 'reorderYeastProcessor';
           payload: { processorId: string; toIndex: number; expectedOrder: readonly string[] };
+      }
+    | {
+          /** One completed recording gesture: the recorded clip materialized in
+           *  its track as ONE history entry. The provisional clip, take lane, and
+           *  takes the recorder opens while capture runs carry no history of their
+           *  own, and this action is dispatched only once the capture succeeds, so
+           *  an incomplete capture commits nothing. Its inverse is
+           *  `discardRecording` and its explicit redo is `restoreRecording`, so one
+           *  undo removes the clip together with its take-lane membership and one
+           *  redo puts the same clip identity, placement, and take membership
+           *  back. */
+          type: 'commitRecording';
+          payload: {
+              /** The recorded clip exactly as it must stand after the commit,
+               *  including its final placement and its captured media reference. */
+              clip: ClipStateSnapshot;
+          };
+      }
+    | {
+          /** Inverse of `commitRecording`. Removes the recorded clip and retires
+           *  the takes naming it through the ordinary clip-retirement path,
+           *  leaving pre-existing lanes and unrelated edits in place. */
+          type: 'discardRecording';
+          payload: { clipId: string };
+      }
+    | {
+          /** Explicit redo of `commitRecording`. Carries the clip and the take-lane
+           *  state the removal retired, so the replay restores the same clip
+           *  identity, the same placement, and the same take membership without
+           *  starting another capture. */
+          type: 'restoreRecording';
+          payload: {
+              clip: ClipStateSnapshot;
+              retiredTakeLanes: readonly RetiredTakeLaneSnapshot[];
+          };
       };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';

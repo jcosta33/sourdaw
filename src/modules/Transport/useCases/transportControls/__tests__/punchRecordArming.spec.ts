@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
         startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
+        commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
         startPlayback: vi.fn<() => void>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
@@ -88,6 +89,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
     startRecording: mocks.startRecording,
+    commitRecording: mocks.commitRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: mocks.resumeEngine,
