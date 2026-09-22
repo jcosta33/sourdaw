@@ -13,16 +13,10 @@
 
 import { join } from 'node:path';
 
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import {
-    acceptedFindings,
-    assembleReviewDossier,
-    assertPublicationSafeEvidence,
-    completedStances,
-    discardedDispositions,
-    parseReviewDossier,
-    serializeReviewDossier,
-} from './reviewDossier.ts';
+import { assembleReviewDossier, parseReviewDossier, serializeReviewDossier } from './reviewDossier.ts';
+import { acceptedFindings, completedStances, discardedDispositions } from './reviewDossierViews.ts';
 
 import type { ReviewDossier, ReviewDossierEvent, ReviewDossierStance, ReviewModelTier } from './reviewDossier.ts';
 import type { ReviewerStanceDraw } from './reviewerModelDiversity.ts';

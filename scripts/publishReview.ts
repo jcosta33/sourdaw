@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import {
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
@@ -52,7 +53,6 @@ import {
     type ReviewDocument,
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
-import { assertPublicationSafeEvidence } from './reviewDossier.ts';
 import { buildReviewDossier, readDossierStanceDraws, recordedReviewStances } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';

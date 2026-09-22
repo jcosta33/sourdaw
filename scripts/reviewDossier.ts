@@ -2,25 +2,37 @@
  * Durable, head-bound review-dossier record (#2999, spec #2995 AC-009/AC-010).
  *
  * A dossier binds one reviewed head to the stances its review dispatched, the findings the
- * orchestrator accepted or discarded, and the bounded evidence and limitations it publishes. Events
- * form a hash chain: every record's digest covers its predecessor, and `headDigest` plus the
- * `dossierDigest` over the header, evidence and limitations bind the record's contents. The chain
- * detects partial edits and inconsistent re-links; it is not an external anchor, so a wholesale
- * re-link that recomputes every digest is not detectable here.
+ * orchestrator accepted or discarded, and the bounded evidence and limitations it publishes. After
+ * the review POST lands, the resulting public ids append to the same record (#3375, spec #3367
+ * AC-004): one `review-published` binding the review, and one `finding-published` per accepted
+ * finding binding its public comment id. Events form a hash chain: every record's digest covers
+ * its predecessor, and `headDigest` plus the `dossierDigest` over the header, evidence and
+ * limitations bind the record's contents. The chain detects partial edits and inconsistent
+ * re-links; it is not an external anchor, so a wholesale re-link that recomputes every digest is
+ * not detectable here.
  */
 
-import { createHash } from 'node:crypto';
-
-import { canonicalJson, type JsonValue } from './canonicalRecord.ts';
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
+import {
+    GENESIS_DIGEST,
+    REVIEW_DOSSIER_FORMAT,
+    assertDossierSize,
+    buildDossier,
+    computeDossierDigest,
+    headDigestOf,
+    reviewDossierEventDigest,
+} from './reviewDossierChain.ts';
 
 import type { ReviewRiskClass, ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
-export const REVIEW_DOSSIER_FORMAT = 'dossier-v1';
-export const REVIEW_DOSSIER_MAX_BYTES = 32_768;
-export const REVIEW_EVIDENCE_FIELD_MAX_BYTES = 2_048;
-
-export const GENESIS_DIGEST: string = '0'.repeat(64);
+export {
+    GENESIS_DIGEST,
+    REVIEW_DOSSIER_FORMAT,
+    REVIEW_DOSSIER_MAX_BYTES,
+    reviewDossierEventDigest,
+    serializeReviewDossier,
+} from './reviewDossierChain.ts';
 
 export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
 
@@ -44,7 +56,12 @@ export type CompletedReviewStance = {
 export type ReviewDossierEvent =
     | ({ kind: 'stance-completed' } & CompletedReviewStance)
     | { kind: 'finding-accepted'; findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }
-    | { kind: 'finding-discarded'; findingId: string; stance: ReviewDossierStance; reason: string };
+    | { kind: 'finding-discarded'; findingId: string; stance: ReviewDossierStance; reason: string }
+    // The post-publish bindings (#3375, spec #3367 AC-004): once the review POST lands, its public
+    // ids append to the chain so the record binds not just the dispositions but the exact public
+    // records they produced. Records persisted before these kinds existed carry neither.
+    | { kind: 'review-published'; reviewId: number }
+    | { kind: 'finding-published'; findingId: string; reviewId: number; commentId: number };
 
 export type ReviewDossierEventRecord = ReviewDossierEvent & {
     sequence: number;
@@ -68,9 +85,8 @@ export type ReviewDossier = {
 };
 
 type ReviewEvidence = ReviewDossier['evidence'][number];
-type FieldEntry = readonly [string, JsonValue];
 type ReadEventRecord = { event: ReviewDossierEvent; sequence: unknown; previousDigest: unknown; digest: unknown };
-type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDigest' | 'dossierDigest'> & {
+export type DossierPayload = Omit<ReviewDossier, 'format' | 'events' | 'headDigest' | 'dossierDigest'> & {
     events: ReviewDossierEvent[];
 };
 
@@ -112,38 +128,11 @@ const EVENT_KIND_KEYS: Record<ReviewDossierEvent['kind'], readonly string[]> = {
     'stance-completed': ['kind', 'stance', 'reviewerModel', 'modelTier', 'outcome'],
     'finding-accepted': ['kind', 'findingId', 'path', 'line', 'side'],
     'finding-discarded': ['kind', 'findingId', 'stance', 'reason'],
+    'review-published': ['kind', 'reviewId'],
+    'finding-published': ['kind', 'findingId', 'reviewId', 'commentId'],
 };
 const EVIDENCE_KEYS = ['observable', 'verification', 'observed'] as const;
 const DISCARDED_KEYS = ['finding', 'stance', 'reason'] as const;
-
-/** A bearer credential is a token carrying a digit or non-dot symbol anywhere, or twenty-four characters. */
-const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+(?=[\w.~+/=-]*(?:[0-9_~+/=-]|[\w.~+/=-]{24}))/iu;
-/** The conventional serialized chat roles, matched case-insensitively so a capitalised one is refused. */
-const CHAT_ROLE_PATTERN = /"role"\s*:\s*"(?:assistant|user|system|tool|function|developer)"/iu;
-
-/** Every shape publication refuses, whatever field carries it, with the reason it is refused. */
-const UNSAFE_VALUE_SHAPES: readonly { readonly reason: string; readonly pattern: RegExp }[] = [
-    { reason: 'a GitHub token', pattern: /gh[pousr]_/u },
-    { reason: 'a fine-grained GitHub token', pattern: /github_pat_/u },
-    { reason: 'an AWS access key id', pattern: /A[KS]IA[0-9A-Z]{16}/u },
-    { reason: 'a private key header', pattern: /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}/u },
-    { reason: 'a JSON web token', pattern: /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u },
-    // RFC 6750/7235 auth schemes are case-insensitive, so `bearer` is refused like `Bearer`. The
-    // token shape separates a credential from the word in `bearer token`: a digit or one of `_~+/=-`
-    // anywhere, or twenty-four token characters. A dot never qualifies
-    // on its own and a trailing period is punctuation, so prose stands; an eight-letter word is
-    // indistinguishable from a token.
-    { reason: 'a bearer credential', pattern: BEARER_CREDENTIAL_PATTERN },
-    // A serialized chat role is a transcript turn whichever role it names; the named set is the
-    // conventional serialized roles, so prose that merely mentions a role never matches.
-    { reason: 'a serialized chat turn', pattern: CHAT_ROLE_PATTERN },
-    { reason: 'a transcript role prefix', pattern: /^(?:Human|Assistant|System):/mu },
-    { reason: 'a session transcript marker', pattern: /⏺|<session/u },
-];
-
-function sha256Hex(value: string): string {
-    return createHash('sha256').update(value, 'utf8').digest('hex');
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -259,7 +248,13 @@ function readRequiredStances(value: unknown): ReviewDossierStance[] {
 
 function readEventKind(record: Record<string, unknown>, label: string): ReviewDossierEvent['kind'] {
     const kind = record.kind;
-    if (kind !== 'stance-completed' && kind !== 'finding-accepted' && kind !== 'finding-discarded') {
+    if (
+        kind !== 'stance-completed' &&
+        kind !== 'finding-accepted' &&
+        kind !== 'finding-discarded' &&
+        kind !== 'review-published' &&
+        kind !== 'finding-published'
+    ) {
         fail(`review dossier ${label} kind must be a known event kind, found ${describeValue(kind)}`);
     }
     return kind;
@@ -295,6 +290,17 @@ function readEvent(
             path: readPublicationSafeString(`${label} path`, record.path),
             line: readPositiveInteger(`${label} line`, record.line),
             side: readLiteral(`${label} side`, record.side, isSide, 'LEFT or RIGHT'),
+        };
+    }
+    if (kind === 'review-published') {
+        return { kind, reviewId: readPositiveInteger(`${label} reviewId`, record.reviewId) };
+    }
+    if (kind === 'finding-published') {
+        return {
+            kind,
+            findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
+            reviewId: readPositiveInteger(`${label} reviewId`, record.reviewId),
+            commentId: readPositiveInteger(`${label} commentId`, record.commentId),
         };
     }
     return {
@@ -360,12 +366,63 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
     };
 }
 
+type PublicationBindings = {
+    reviewId: number | undefined;
+    findings: Map<string, Extract<ReviewDossierEvent, { kind: 'finding-published' }>>;
+};
+
+/**
+ * Collects the publication-binding events, refusing the structural violations on sight: at most
+ * one recorded publication, and any finding bound at most once. Binding-to-disposition rules run
+ * in `assertPublicationBindings` after the disposition sets are complete, so the record's own
+ * event order — bindings always append after the dispositions — is not part of the rule.
+ */
+function collectPublicationBindings(events: readonly ReviewDossierEvent[]): PublicationBindings {
+    const bindings: PublicationBindings = { reviewId: undefined, findings: new Map() };
+    for (const event of events) {
+        if (event.kind === 'review-published') {
+            if (bindings.reviewId !== undefined) {
+                fail(`review dossier records more than one publication: ${bindings.reviewId} and ${event.reviewId}`);
+            }
+            bindings.reviewId = event.reviewId;
+        }
+        if (event.kind === 'finding-published') {
+            if (bindings.findings.has(event.findingId)) {
+                fail(`review dossier publishes finding ${event.findingId} more than once`);
+            }
+            bindings.findings.set(event.findingId, event);
+        }
+    }
+    return bindings;
+}
+
+/** Every published finding binds an accepted one, and names the one recorded publication. */
+function assertPublicationBindings(bindings: PublicationBindings, accepted: ReadonlySet<string>): void {
+    for (const event of bindings.findings.values()) {
+        if (!accepted.has(event.findingId)) {
+            fail(`review dossier publishes finding ${event.findingId}, which no accepted finding carries`);
+        }
+        if (bindings.reviewId === undefined) {
+            fail(`review dossier publishes finding ${event.findingId} without recording the publication's review id`);
+        }
+        if (event.reviewId !== bindings.reviewId) {
+            fail(
+                `review dossier finding ${event.findingId} binds review ${event.reviewId}, not the recorded publication ${bindings.reviewId}`
+            );
+        }
+    }
+}
+
 function assertTotalMaps(payload: DossierPayload): void {
     const completedDraws = new Set<string>();
     const completed = new Set<ReviewDossierStance>();
     const accepted = new Set<string>();
     const discarded = new Set<string>();
+    const bindings = collectPublicationBindings(payload.events);
     for (const event of payload.events) {
+        if (event.kind === 'review-published' || event.kind === 'finding-published') {
+            continue;
+        }
         if (event.kind === 'stance-completed') {
             // One stance may carry several draws with distinct reviewer models; only an exact
             // (stance, reviewerModel) repeat records the same draw twice. JSON framing cannot
@@ -394,6 +451,7 @@ function assertTotalMaps(payload: DossierPayload): void {
         }
         own.add(event.findingId);
     }
+    assertPublicationBindings(bindings, accepted);
     for (const stance of payload.requiredStances) {
         if (!completed.has(stance)) {
             fail(`review dossier has no completed record for required stance: ${stance}`);
@@ -408,103 +466,6 @@ function assertEvidenceSafe(evidence: readonly ReviewEvidence[], limitations: re
         }
     }
     assertPublicationSafeEvidence('limitations', limitations);
-}
-
-/** The event's own fields, in canonical order. Key order is fixed here, not by object insertion. */
-function eventFieldEntries(event: ReviewDossierEvent): FieldEntry[] {
-    if (event.kind === 'stance-completed') {
-        const entries: FieldEntry[] = [
-            ['kind', event.kind],
-            ['stance', event.stance],
-            ['reviewerModel', event.reviewerModel],
-            ['modelTier', event.modelTier],
-            ['outcome', event.outcome],
-        ];
-        // Absent, never null: a record persisted before exhaustion existed keeps its exact digest.
-        if (event.exhaustion !== undefined) {
-            entries.push(['exhaustion', event.exhaustion]);
-        }
-        return entries;
-    }
-    if (event.kind === 'finding-accepted') {
-        return [
-            ['kind', event.kind],
-            ['findingId', event.findingId],
-            ['path', event.path],
-            ['line', event.line],
-            ['side', event.side],
-        ];
-    }
-    return [
-        ['kind', event.kind],
-        ['findingId', event.findingId],
-        ['stance', event.stance],
-        ['reason', event.reason],
-    ];
-}
-
-function chainEntries(sequence: number, previousDigest: string): FieldEntry[] {
-    return [
-        ['sequence', sequence],
-        ['previousDigest', previousDigest],
-    ];
-}
-
-export function reviewDossierEventDigest(
-    record: { sequence: number; previousDigest: string } & ReviewDossierEvent
-): string {
-    const entries = [...chainEntries(record.sequence, record.previousDigest), ...eventFieldEntries(record)];
-    return sha256Hex(canonicalJson(Object.fromEntries(entries)));
-}
-
-function chainEvents(events: readonly ReviewDossierEvent[]): ReviewDossierEventRecord[] {
-    let previousDigest = GENESIS_DIGEST;
-    return events.map((event, sequence) => {
-        const digest = reviewDossierEventDigest({ ...event, sequence, previousDigest });
-        const record = { ...event, sequence, previousDigest, digest };
-        previousDigest = digest;
-        return record;
-    });
-}
-
-function headDigestOf(events: readonly ReviewDossierEventRecord[]): string {
-    return events.at(-1)?.digest ?? GENESIS_DIGEST;
-}
-
-function computeDossierDigest(payload: DossierPayload, headDigest: string): string {
-    return sha256Hex(
-        canonicalJson({
-            format: REVIEW_DOSSIER_FORMAT,
-            pr: payload.pr,
-            headSha: payload.headSha,
-            baseSha: payload.baseSha,
-            riskClasses: payload.riskClasses,
-            requiredStances: payload.requiredStances,
-            evidence: payload.evidence,
-            limitations: payload.limitations,
-            recommendation: payload.recommendation,
-            headDigest,
-        })
-    );
-}
-
-function buildDossier(payload: DossierPayload): ReviewDossier {
-    const events = chainEvents(payload.events);
-    const headDigest = headDigestOf(events);
-    return {
-        format: REVIEW_DOSSIER_FORMAT,
-        pr: payload.pr,
-        headSha: payload.headSha,
-        baseSha: payload.baseSha,
-        riskClasses: payload.riskClasses,
-        requiredStances: payload.requiredStances,
-        events,
-        evidence: payload.evidence,
-        limitations: payload.limitations,
-        recommendation: payload.recommendation,
-        headDigest,
-        dossierDigest: computeDossierDigest(payload, headDigest),
-    };
 }
 
 function verifyEventChain(records: readonly ReadEventRecord[]): ReviewDossierEventRecord[] {
@@ -528,67 +489,6 @@ function verifyEventChain(records: readonly ReadEventRecord[]): ReviewDossierEve
         previousDigest = digest;
     }
     return chained;
-}
-
-function assertDossierSize(dossier: ReviewDossier): void {
-    const bytes = Buffer.byteLength(serializeReviewDossier(dossier), 'utf8');
-    if (bytes > REVIEW_DOSSIER_MAX_BYTES) {
-        fail(`review dossier exceeds ${REVIEW_DOSSIER_MAX_BYTES} bytes: ${bytes}`);
-    }
-}
-
-export function assertPublicationSafeEvidence(label: string, values: readonly string[]): void {
-    for (const [index, value] of values.entries()) {
-        assertSafeEvidenceValue(label, index, value);
-    }
-}
-
-function assertSafeEvidenceValue(label: string, index: number, value: string): void {
-    if (value.trim() === '') {
-        fail(`${label} value at index ${index} is blank`);
-    }
-    if (value !== value.trim()) {
-        fail(`${label} value at index ${index} is not edge-trimmed`);
-    }
-    if (/[\r\n\u2028\u2029]/u.test(value)) {
-        fail(`${label} value at index ${index} contains a line separator`);
-    }
-    const bytes = Buffer.byteLength(value, 'utf8');
-    if (bytes > REVIEW_EVIDENCE_FIELD_MAX_BYTES) {
-        fail(`${label} value at index ${index} exceeds ${REVIEW_EVIDENCE_FIELD_MAX_BYTES} bytes: ${bytes}`);
-    }
-    for (const { reason, pattern } of UNSAFE_VALUE_SHAPES) {
-        if (pattern.test(value)) {
-            fail(`${label} value at index ${index} contains ${reason}`);
-        }
-    }
-}
-
-function serializeEventRecord(record: ReviewDossierEventRecord): Record<string, unknown> {
-    const chain: FieldEntry[] = [...chainEntries(record.sequence, record.previousDigest), ['digest', record.digest]];
-    return Object.fromEntries([...chain, ...eventFieldEntries(record)]);
-}
-
-export function serializeReviewDossier(dossier: ReviewDossier): string {
-    const record = {
-        format: dossier.format,
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events: dossier.events.map(serializeEventRecord),
-        evidence: dossier.evidence.map((entry) => ({
-            observable: entry.observable,
-            verification: entry.verification,
-            observed: entry.observed,
-        })),
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-        headDigest: dossier.headDigest,
-        dossierDigest: dossier.dossierDigest,
-    };
-    return `${JSON.stringify(record, null, 4)}\n`;
 }
 
 export function parseReviewDossier(value: unknown): ReviewDossier {
@@ -682,30 +582,35 @@ export function assembleReviewDossier(input: {
     return dossier;
 }
 
-export function completedStances(dossier: ReviewDossier): CompletedReviewStance[] {
-    return dossier.events
-        .filter((event) => event.kind === 'stance-completed')
-        .map((event) => ({
-            stance: event.stance,
-            reviewerModel: event.reviewerModel,
-            modelTier: event.modelTier,
-            outcome: event.outcome,
-            exhaustion: event.exhaustion,
-        }));
-}
-
-export function acceptedFindings(
-    dossier: ReviewDossier
-): { findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }[] {
-    return dossier.events
-        .filter((event) => event.kind === 'finding-accepted')
-        .map((event) => ({ findingId: event.findingId, path: event.path, line: event.line, side: event.side }));
-}
-
-export function discardedDispositions(
-    dossier: ReviewDossier
-): { findingId: string; stance: ReviewDossierStance; reason: string }[] {
-    return dossier.events
-        .filter((event) => event.kind === 'finding-discarded')
-        .map((event) => ({ findingId: event.findingId, stance: event.stance, reason: event.reason }));
+/**
+ * Appends post-publication binding events to a persisted dossier (#3375, spec #3367 AC-004). The
+ * chain is append-only: unchanged events keep their exact digests because each digest covers only
+ * its own payload, sequence, and predecessor, so re-chaining the prefix reproduces it byte for
+ * byte. The result is re-validated end to end, so an appended event that contradicts the
+ * dispositions — an unknown or repeated finding, a second review, a mismatched review id — fails
+ * here rather than persisting.
+ */
+export function appendReviewDossierEvents(
+    dossier: ReviewDossier,
+    appended: readonly ReviewDossierEvent[]
+): ReviewDossier {
+    const appendedEvents = appended.map(
+        (event, index) => readEventRecord(event, `appended event ${index}`, false).event
+    );
+    const payload: DossierPayload = {
+        pr: dossier.pr,
+        headSha: dossier.headSha,
+        baseSha: dossier.baseSha,
+        riskClasses: dossier.riskClasses,
+        requiredStances: dossier.requiredStances,
+        events: [...dossier.events, ...appendedEvents],
+        evidence: dossier.evidence,
+        limitations: dossier.limitations,
+        recommendation: dossier.recommendation,
+    };
+    assertTotalMaps(payload);
+    assertEvidenceSafe(payload.evidence, payload.limitations);
+    const result = buildDossier(payload);
+    assertDossierSize(result);
+    return result;
 }

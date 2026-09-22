@@ -15,8 +15,8 @@
  */
 
 import { canonicalJson, lastMarkerLine, parseMarkerPayload } from './canonicalRecord.ts';
+import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from './reviewDossier.ts';
 
 export const REVIEW_REPAIR_FORMAT = 'repair-v1';
 export const REVIEW_REPAIR_SUMMARY_MAX_BYTES = 512;

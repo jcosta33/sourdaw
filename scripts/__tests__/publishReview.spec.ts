@@ -41,13 +41,9 @@ import {
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
-import {
-    acceptedFindings,
-    discardedDispositions,
-    parseReviewDossier,
-    serializeReviewDossier,
-} from '../reviewDossier.ts';
+import { parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
+import { acceptedFindings, discardedDispositions } from '../reviewDossierViews.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
 import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
