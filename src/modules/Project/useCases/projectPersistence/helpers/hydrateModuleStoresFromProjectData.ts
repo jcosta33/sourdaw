@@ -1,5 +1,6 @@
 import {
     hydrateClipGainEnvelopes,
+    hydrateClipWarpStates,
     hydrateVcaGroups,
     restoreAdjustmentLayerSnapshot,
 } from '#/modules/Arrangement/useCases';
@@ -29,6 +30,7 @@ export function hydrateModuleStoresFromProjectData(data: HydratableProjectData):
     // outgoing project's.
     hydrateVcaGroups(data.vcaGroups);
     hydrateClipGainEnvelopes(data.gainEnvelopes);
+    hydrateClipWarpStates(data.warpStates);
     hydrateModulationState(data.modulation);
     hydrateCvGateState(data.cvGate);
 

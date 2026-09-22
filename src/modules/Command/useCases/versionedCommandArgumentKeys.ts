@@ -5505,6 +5505,26 @@ const schemaDefinitions = [
         required: ['processorId', 'toIndex', 'expectedOrder'],
         additionalProperties: false,
     },
+    {
+        type: 'object',
+        properties: {
+            clip: 185,
+        },
+        required: ['clip'],
+        additionalProperties: false,
+    },
+    {
+        type: 'object',
+        properties: {
+            clip: 185,
+            retiredTakeLanes: 122,
+            midiNotesSnapshot: 115,
+            midiCcSnapshot: 115,
+            midiPitchBendSnapshot: 115,
+        },
+        required: ['clip', 'retiredTakeLanes', 'midiNotesSnapshot', 'midiCcSnapshot', 'midiPitchBendSnapshot'],
+        additionalProperties: false,
+    },
 ] as const satisfies readonly SchemaDefinition[];
 
 const schemaIdByActionType = {
@@ -5853,6 +5873,9 @@ const schemaIdByActionType = {
     addYeastProcessor: 679,
     removeYeastProcessor: 680,
     reorderYeastProcessor: 681,
+    commitRecording: 682,
+    discardRecording: 179,
+    restoreRecording: 683,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

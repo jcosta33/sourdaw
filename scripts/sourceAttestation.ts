@@ -180,15 +180,18 @@ export function attestationMarkerLine(record: SourceAttestation): string {
 
 /**
  * The comment the author App posts: one bounded prose line naming the count and head, then the
- * marker line carrying the full record. The prose never enumerates commits — the marker is the
- * record — so the public body stays bounded regardless of commit count.
+ * marker line carrying the full record collapsed under a neutral summary, so a human reader meets
+ * a sentence instead of a wall of JSON. The prose never enumerates commits — the marker is the
+ * record — so the public body stays bounded regardless of commit count. The marker line itself is
+ * unchanged and still stands alone, so the reader parses the body exactly as it always has.
  */
 export function sourceAttestationComment(record: SourceAttestation): string {
     const noun = record.commits.length === 1 ? 'commit' : 'commits';
     return (
         `**Source attestation** — ${record.commits.length} ${noun} above the comparison base bound to head ` +
         `\`${record.head}\` by the author App at publication; the marker record binds every exact OID with its ` +
-        `observed Git authorship.\n\n${attestationMarkerLine(record)}`
+        `observed Git authorship.\n\n` +
+        `<details>\n<summary>Attestation record</summary>\n\n${attestationMarkerLine(record)}\n\n</details>`
     );
 }
 

@@ -33,6 +33,9 @@ import { handleRenameSection } from '../handlers/marker/handleRenameSection';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
 import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
+import { handleCommitRecording } from '../handlers/recording/handleCommitRecording';
+import { handleDiscardRecording } from '../handlers/recording/handleDiscardRecording';
+import { handleRestoreRecording } from '../handlers/recording/handleRestoreRecording';
 import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
 import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
@@ -195,6 +198,9 @@ export function getArrangementHandlers() {
         savePreset: handleSavePreset,
         restoreTrack: handleRestoreTrack,
         restoreClip: handleRestoreClip,
+        commitRecording: handleCommitRecording,
+        discardRecording: handleDiscardRecording,
+        restoreRecording: handleRestoreRecording,
         addDevice: handleAddDevice,
         loadExternalPlugin: handleLoadExternalPlugin,
         bypassDevice: handleBypassDevice,

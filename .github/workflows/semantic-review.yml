@@ -1,0 +1,181 @@
+name: Jev
+
+# Advisory semantic review of a pull request, run by this repository's own
+# `review:semantic` command ([ADR 0046]). It never approves, requests changes,
+# resolves a thread, waives a check, or merges. Its only product is advice for
+# whoever reads the pull request, and a green result means the assessment was
+# delivered — never that the change is clean.
+#
+# `pull_request_target` is the whole trust boundary, and it is the opposite of
+# the usual advice. This job holds a paid provider key, and on `pull_request`
+# GitHub takes the workflow definition from the head under review, so a change
+# could edit the job that reads the key. `pull_request_target` runs the
+# definition from the base revision instead. This job keeps earning that by
+# treating the head as data only: it checks out the trusted revision, fetches
+# the reviewed head as Git objects, and never checks out, installs from, or
+# executes any file the head supplies. The reviewed change supplies text for
+# the provider to judge, never code to run.
+#
+# GitHub takes `pull_request_target` definitions from the default branch, so
+# this file cannot run against the pull request that adds it. Its first run is
+# the first pull request after it merges, which is also what makes the adoption
+# safe: no version of this job is ever supplied by the change it is reviewing.
+#
+# The `main` ruleset does not require this check and must not: a required
+# context converts an observation into merge authority.
+#
+# [ADR 0046]: .agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to assess.
+        required: true
+
+# The provider key is the only privilege this job needs, and it is not an
+# ambient one: no step here writes to the repository, to a check, or to a pull
+# request. `checks: write` is deliberately absent — the assessment publishes
+# through this job's own check, its step summary, and an artifact.
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  # One in-flight assessment per pull request. A superseded head's advice is
+  # about a revision nobody will merge, and cancelling it is what keeps a lane
+  # of pushes from queueing provider calls.
+  group: semantic-review-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.19.0
+  PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+  # The commit this workflow and the command it runs come from. Recorded in the
+  # report as `trustedExecutionSha`, so the advice names the revision that
+  # produced it rather than the branch tip, which `pull_request_target` lets
+  # advance past the checked-out tree.
+  TRUSTED_SHA: ${{ github.workflow_sha }}
+
+jobs:
+  assess:
+    name: Semantic review
+    # A fork's head is a different trust domain and a different spend decision,
+    # so it is out of scope until the owner admits it deliberately. A draft is
+    # not reviewed yet; `ready_for_review` is a trigger so it is assessed when
+    # it becomes one.
+    #
+    # Only a change proposed to the default branch is assessed, and that is not
+    # a coverage choice. The command refuses to run when its own file does not
+    # match `origin/main`, because a mutated copy of the tool must never produce
+    # a report — and a stack whose base is another lane branch executes that
+    # branch's revision, which is by construction not main. Declaring the scope
+    # says so once; without it every stacked lane would fail the check with a
+    # refusal meant for a tampered checkout.
+    if: ${{ !cancelled() && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false && github.event.pull_request.base.ref == 'main')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout the trusted revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          # The head is never checked out, so no credential is ever left in a
+          # tree a later step could read it from.
+          persist-credentials: false
+
+      - name: Fetch the reviewed head as Git objects
+        # Objects only. `refs/pull/<n>/head` is what makes this identical for a
+        # same-repository branch and for a fork the day forks are admitted, and
+        # a fetch never places a file the head controls on disk.
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/${PR_NUMBER}/head"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        # From the trusted revision's frozen lockfile, with lifecycle scripts
+        # disabled: the provider client is the only dependency the command
+        # needs, and none of it comes from the head.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Assess the change
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.JEV_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        # The key is scoped to this one step rather than the job, so the install
+        # above and the report below never have it in their environment. The
+        # exit status is recorded rather than propagated: an incomplete
+        # assessment still published is worth more to a reader than a step that
+        # dies before saying anything, and the reporting step decides the job's
+        # conclusion from the report's own execution state.
+        run: |
+          set -euo pipefail
+          report_directory="$RUNNER_TEMP/semantic-review"
+          mkdir -p "$report_directory"
+          set +e
+          node scripts/semanticReview.ts scan \
+            --pr "$PR_NUMBER" \
+            --trusted-sha "$TRUSTED_SHA" \
+            --out "$report_directory/scan.json" 2>&1 | tee "$report_directory/run.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$report_directory/exit-code"
+
+      - name: Report the assessment
+        # The report's own execution state decides the conclusion, because an
+        # unavailable provider must never read as a clean review: `completed`
+        # and `partial` delivered advice, anything else delivered none. A
+        # withheld or unassessed region is disclosed in the summary rather than
+        # turned into a failed check, which would make every large change red
+        # and teach its readers to ignore the one signal that means something.
+        run: |
+          set -euo pipefail
+          report_directory="$RUNNER_TEMP/semantic-review"
+          summary="$report_directory/summary.md"
+          {
+            printf '## Jev semantic review (advisory)\n\n'
+            printf 'Advice for this pull request, not a reviewer draw and not a required check. A green result means the assessment was delivered, never that the change is clean.\n\n'
+            if [ -f "$summary" ]; then cat "$summary"; else printf 'No assessment was produced.\n'; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          execution=missing
+          if [ -f "$report_directory/scan.json" ]; then
+            execution=$(jq -r '.execution // "missing"' "$report_directory/scan.json")
+          fi
+          case "$execution" in
+            completed | partial)
+              printf '::notice title=Jev semantic review::Assessment delivered (%s). Advisory only: read the job summary, which states what was assessed and what was withheld.\n' "$execution"
+              exit 0
+              ;;
+            skipped)
+              # No changed path admitted a rule — a documentation- or workflow-only change. Nothing was
+              # eligible, so nothing was missed, and failing the check for that would put a red advisory
+              # mark on the class of change that needs it least.
+              printf '::notice title=Jev semantic review::No changed path admitted a rule, so there was nothing to assess.\n'
+              exit 0
+              ;;
+          esac
+          printf '::error title=Jev semantic review::No assessment was delivered (execution=%s, exit=%s). Treat this pull request as having no semantic coverage.\n' \
+            "$execution" "$(cat "$report_directory/exit-code")"
+          exit 1
+
+      - name: Upload the advisory report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/semantic-review
+          # The report carries repository source regions as evidence ids and
+          # hashes; the content itself stays in the run's own storage and ages
+          # out on its own.
+          retention-days: 7

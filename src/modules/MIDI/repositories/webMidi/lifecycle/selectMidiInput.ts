@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
@@ -30,6 +31,7 @@ async function openNativePort({ deviceId, onMidiMessage }: SelectMidiInputInput)
         const port = (await listNativeMidiInputs()).find((entry) => entry.id === deviceId);
         if (!port) {
             logger.warn('[MIDI] Requested MIDI input is no longer present:', deviceId);
+            notifyUser('MIDI input is no longer available', 'warning');
             return;
         }
 
@@ -37,6 +39,7 @@ async function openNativePort({ deviceId, onMidiMessage }: SelectMidiInputInput)
         setState({ selectedInputId: deviceId }, { persistSelection: true, identityScheme: NATIVE_IDENTITY_SCHEME });
     } catch (error: unknown) {
         logger.warn('[MIDI] Failed to open MIDI input:', error);
+        notifyUser('Could not open MIDI input', 'warning');
     }
 }
 

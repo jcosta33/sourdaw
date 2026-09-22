@@ -4,6 +4,7 @@
     "heavy-gates.yml",
     "nightly.yml",
     "quantum-measurements.yml",
+    "semantic-review.yml",
     "validation.yml",
     "wasm-artifacts.yml"
   ],
@@ -2234,6 +2235,99 @@
               "path": "${{ runner.temp }}/qualified-wasm-artifacts",
               "if-no-files-found": "error",
               "retention-days": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "semantic-review.yml": {
+    "name": "Jev",
+    "on": {
+      "pull_request_target": {
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened",
+          "ready_for_review"
+        ]
+      },
+      "workflow_dispatch": {
+        "inputs": {
+          "pr": {
+            "description": "Pull request number to assess.",
+            "required": true
+          }
+        }
+      }
+    },
+    "permissions": {
+      "contents": "read",
+      "pull-requests": "read"
+    },
+    "concurrency": {
+      "group": "semantic-review-${{ github.event.pull_request.number || inputs.pr }}",
+      "cancel-in-progress": true
+    },
+    "env": {
+      "NODE_VERSION": "24.19.0",
+      "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}",
+      "TRUSTED_SHA": "${{ github.workflow_sha }}"
+    },
+    "jobs": {
+      "assess": {
+        "name": "Semantic review",
+        "if": "${{ !cancelled() && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false && github.event.pull_request.base.ref == 'main')) }}",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 30,
+        "steps": [
+          {
+            "name": "Checkout the trusted revision",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.workflow_sha }}",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Fetch the reviewed head as Git objects",
+            "run": "set -euo pipefail\ngit fetch --no-tags origin \"+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/${PR_NUMBER}/head\"\n"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Assess the change",
+            "env": {
+              "TYPESAFE_API_KEY": "${{ secrets.JEV_KEY }}",
+              "GH_TOKEN": "${{ github.token }}"
+            },
+            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nmkdir -p \"$report_directory\"\nset +e\nnode scripts/semanticReview.ts scan \\\n  --pr \"$PR_NUMBER\" \\\n  --trusted-sha \"$TRUSTED_SHA\" \\\n  --out \"$report_directory/scan.json\" 2>&1 | tee \"$report_directory/run.log\"\nstatus=${PIPESTATUS[0]}\nset -e\nprintf '%s\\n' \"$status\" > \"$report_directory/exit-code\"\n"
+          },
+          {
+            "name": "Report the assessment",
+            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nsummary=\"$report_directory/summary.md\"\n{\n  printf '## Jev semantic review (advisory)\\n\\n'\n  printf 'Advice for this pull request, not a reviewer draw and not a required check. A green result means the assessment was delivered, never that the change is clean.\\n\\n'\n  if [ -f \"$summary\" ]; then cat \"$summary\"; else printf 'No assessment was produced.\\n'; fi\n} >> \"$GITHUB_STEP_SUMMARY\"\n\nexecution=missing\nif [ -f \"$report_directory/scan.json\" ]; then\n  execution=$(jq -r '.execution // \"missing\"' \"$report_directory/scan.json\")\nfi\ncase \"$execution\" in\n  completed | partial)\n    printf '::notice title=Jev semantic review::Assessment delivered (%s). Advisory only: read the job summary, which states what was assessed and what was withheld.\\n' \"$execution\"\n    exit 0\n    ;;\n  skipped)\n    # No changed path admitted a rule — a documentation- or workflow-only change. Nothing was\n    # eligible, so nothing was missed, and failing the check for that would put a red advisory\n    # mark on the class of change that needs it least.\n    printf '::notice title=Jev semantic review::No changed path admitted a rule, so there was nothing to assess.\\n'\n    exit 0\n    ;;\nesac\nprintf '::error title=Jev semantic review::No assessment was delivered (execution=%s, exit=%s). Treat this pull request as having no semantic coverage.\\n' \\\n  \"$execution\" \"$(cat \"$report_directory/exit-code\")\"\nexit 1\n"
+          },
+          {
+            "name": "Upload the advisory report",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}",
+              "path": "${{ runner.temp }}/semantic-review",
+              "retention-days": 7
             }
           }
         ]

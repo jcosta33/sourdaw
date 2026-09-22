@@ -165,8 +165,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:df7f22dfb518328a0665e7ab55a3b6b1bda29fca0fa62c53c737d81fccd35eed:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:63d05c36244aa58e94ef05bf0f8c351a04b498676be5a5f77cba13ccd6410b6b:release/dependency-license-proofs.json"
+                "sha256:f6b302057826beb4c893da66cf77a9bae8bce443ae585ba1e9a622861aa563b7:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:e5dc40fd35dc52c9c6c1ada17f6d2946d9ee00084d285da59fb9cc264095f822:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -276,7 +276,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac",
+                "sha256:d272cdc5f0ae88b7e2ad3578cd4d868f95e3d2e5384820c06f2959e60dbcde91",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -1201,7 +1201,7 @@
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
                 "tracked-set-sha256:8fe1e80d6328473eff08f2071db77a67845c9a803181b67d248b0d0237246376:grand-boule-live-runtime",
-                "tracked-set-sha256:2c3458d483979f82ce226688ac8f99de7da427e3033acab2f29acffb3a7e2f1d:grand-boule-project-state",
+                "tracked-set-sha256:311dd92bf101dcd074cd7c978bcaf537bc90d634e1d2c9b3601dc0e4f610ec50:grand-boule-project-state",
                 "tracked-set-sha256:d57e235550ad746a11808650e7b7bca8b3984f9217bb8d41de243a4e12030d41:grand-boule-offline-composition",
                 "tracked-set-sha256:e65cf347580b7d21da3bfd479b45dc7eead1647435c8c0e24fedcd782ec2f4d9:grand-boule-release-proof"
             ],
@@ -1689,12 +1689,48 @@
             "obligations": [
                 "Preserve useful intent without presenting archived plans as current behavior."
             ]
+        },
+        {
+            "id": "semantic-review-egress",
+            "kind": "external-service",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": [
+                "source"
+            ],
+            "paths": [
+                "scripts/semanticReview/**",
+                "scripts/semanticReview.ts"
+            ],
+            "sources": [
+                "https://api.typesafe.ai"
+            ],
+            "revisions": [
+                "TypeSafe System One API v1",
+                "@typesafe-ai/sdk 0.6.0",
+                "model jev-1.13.0"
+            ],
+            "digests": [
+                "not-applicable:remote-service"
+            ],
+            "licenses": [
+                "provider API terms"
+            ],
+            "productSurfaces": [
+                "developer review tooling"
+            ],
+            "evidence": [
+                "Advisory pull-request assessment sends selected repository source regions, bounded and screened, to the provider; it is developer tooling and never part of a shipped artifact."
+            ],
+            "obligations": [
+                "Keep the credential out of the tracked tree, screen every region before egress, and never publish raw request material."
+            ]
         }
     ],
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "c7094cfac354188db2aa83a46644a90614aa07e935bc6b7f36485361e1ac0a6d"
+            "sha256": "a43653ad440ce1892c36dd5cbcb2de81a7eb4b11813cd2e1aaf69509a2cc1b31"
         },
         {
             "path": "server/package.json",
@@ -1706,7 +1742,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "16413f208fbad9a082f89b17c0a4eaff440557c615be1f5617018288ef0a47ac"
+            "sha256": "d272cdc5f0ae88b7e2ad3578cd4d868f95e3d2e5384820c06f2959e60dbcde91"
         },
         {
             "path": "Cargo.toml",
@@ -2299,6 +2335,11 @@
             "surface": "webllm-qwen-artifacts",
             "file": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.ts",
             "value": "https://raw.githubusercontent.com"
+        },
+        {
+            "surface": "semantic-review-egress",
+            "file": "scripts/semanticReview/provider.ts",
+            "value": "https://api.typesafe.ai"
         }
     ],
     "marks": [

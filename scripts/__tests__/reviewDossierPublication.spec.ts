@@ -1,19 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    acceptedFindings,
-    assembleReviewDossier,
-    completedStances,
-    discardedDispositions,
-    parseReviewDossier,
-    serializeReviewDossier,
-} from '../reviewDossier.ts';
+import { assembleReviewDossier, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
 import {
     REVIEW_DOSSIER_INPUT_FORMAT,
     buildReviewDossier,
     parseReviewDossierInput,
     parseReviewStancesRecord,
 } from '../reviewDossierPublication.ts';
+import { acceptedFindings, completedStances, discardedDispositions } from '../reviewDossierViews.ts';
 
 import type { ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewDossierInput, ReviewDossierStanceInput } from '../reviewDossierPublication.ts';

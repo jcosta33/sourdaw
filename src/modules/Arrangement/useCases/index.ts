@@ -96,6 +96,7 @@ export { addGainEnvelopePoint } from './clipGainEnvelope/addGainEnvelopePoint';
 export { getClipGainEnvelope } from './clipGainEnvelope/getClipGainEnvelope';
 export { getGainAtBeat } from './clipGainEnvelope/getGainAtBeat';
 export { hydrateClipGainEnvelopes } from './clipGainEnvelope/hydrateClipGainEnvelopes';
+export { hydrateClipWarpStates } from './warp/hydrateClipWarpStates';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
@@ -195,6 +196,9 @@ export { deleteUserPreset } from './preset/presetStorage/deleteUserPreset';
 export { saveUserPreset } from './preset/presetStorage/saveUserPreset';
 
 export { armTrack } from './recording/armTrack';
+export { commitRecording } from './recording/commitRecording';
+export { discardRecording } from './recording/discardRecording';
+export { stageRecordingTake } from './recording/stageRecordingTake';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 

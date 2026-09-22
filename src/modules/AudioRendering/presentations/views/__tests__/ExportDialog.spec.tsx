@@ -180,6 +180,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
     getTrackEligibility: vi.fn(),
     gainEnvelopeStore: { value: null },
+    warpStateStore: { value: null },
     markerStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn(),
     updateClipInStore: vi.fn(),

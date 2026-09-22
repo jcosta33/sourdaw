@@ -64,6 +64,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     scratchPadStore: { value: {} },
     takeLaneStore: { value: {} },
     persistDeviceParam: vi.fn(),
+    warpStateStore: { value: null },
 }));
 
 // Mock AudioEngine use cases

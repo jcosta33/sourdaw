@@ -2,11 +2,10 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
     startRecording,
-    stopRecording,
-    addTakeLane,
-    addTake,
     updateClip,
-    removeClip,
+    discardRecording,
+    commitRecording,
+    stageRecordingTake,
 } from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
@@ -36,7 +35,9 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
+import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
@@ -293,10 +294,6 @@ export function startPlayheadScheduler(): void {
                     if (!recordingClip) {
                         continue;
                     }
-                    const laneState = takeLaneStore.value;
-                    if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
-                        addTakeLane(track.id);
-                    }
                     const lane = takeLaneStore.value?.lanes.find((length) => length.trackId === track.id);
                     const takeNum = (lane?.takes.length ?? 0) + 1;
                     // Each pass needs its own identity inside the one
@@ -328,14 +325,17 @@ export function startPlayheadScheduler(): void {
                     const firstPassLength = startedInsideLoop ? current.loopEnd - recordingClip.startBeat : loopLength;
                     const sourceOffsetBeats =
                         firstPassStart + (passIndex === 0 ? 0 : firstPassLength + (passIndex - 1) * loopLength);
-                    addTake(
-                        track.id,
-                        recordingClip.id,
-                        `Take ${takeNum}`,
-                        current.loopStart,
-                        current.loopEnd,
-                        sourceOffsetBeats
-                    );
+                    // Every wrap take is provisional: the whole recording — audio
+                    // or MIDI — commits as the one entry its terminal callback (or
+                    // `stopRecording`) opens rather than one entry per pass.
+                    stageRecordingTake({
+                        trackId: track.id,
+                        clipId: recordingClip.id,
+                        name: `Take ${takeNum}`,
+                        startBeat: current.loopStart,
+                        endBeat: current.loopEnd,
+                        sourceOffsetBeats,
+                    });
                 }
             }
 
@@ -510,7 +510,7 @@ export function startPlayheadScheduler(): void {
                                     // arrangement or stay silent about it (#4265).
                                     notifyUser('Punch-in recording failed — the partial take was discarded.', 'error');
                                     if (recClip) {
-                                        removeClip(recClip.id);
+                                        discardRecording(recClip.id);
                                     }
                                     return;
                                 }
@@ -518,11 +518,33 @@ export function startPlayheadScheduler(): void {
                                 const bufferId = `rec-${crypto.randomUUID()}`;
                                 cacheAudioBuffer({ buffer, bufferId });
                                 if (recClip) {
-                                    // Route the cross-module write through Arrangement's own
-                                    // use case rather than mutating trackStore directly (audit
-                                    // row 9). updateClip locates the clip across all tracks and
-                                    // applies the updater, preserving the prior behaviour.
-                                    updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
+                                    // The punched clip is finalized by the punch-out
+                                    // `stopRecording`, so the commit carries the live
+                                    // clip with only its media reference attached —
+                                    // and it is the recording's single history entry.
+                                    const liveClip = trackStore.value?.tracks
+                                        .flatMap((time) => time.clips)
+                                        .find((clip) => clip.id === recClip.id);
+                                    const finalizedClip = liveClip ?? recClip;
+                                    const recordedClip = { ...finalizedClip, audioBufferId: bufferId };
+                                    // The user-facing stop awaits this through the
+                                    // lifecycle; the scheduler itself never blocks on
+                                    // it. A failed commit retires the provisional
+                                    // result rather than leaving it with no entry,
+                                    // and says so the way the punch capture-failure
+                                    // sibling does.
+                                    recordingLifecycle.trackCommit(
+                                        commitRecording(recordedClip).catch((error: unknown) => {
+                                            logger.error(
+                                                new Error('Punch-in recording commit failed', { cause: error })
+                                            );
+                                            notifyUser(
+                                                'Punch-in recording failed — the take was discarded. Try recording again.',
+                                                'error'
+                                            );
+                                            discardRecording(recordedClip.id);
+                                        })
+                                    );
                                 }
                             },
                             track.inputId
@@ -535,15 +557,21 @@ export function startPlayheadScheduler(): void {
         }
 
         if (schedulerSession.punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
+            // Finalize BEFORE the flush. The flush runs the capture terminal that
+            // commits the take, and the commit captures the live clip and takes;
+            // running it first would capture the pre-finalization anchor — a
+            // zero-length clip and take. `stopRecording` writes its finalization
+            // synchronously and its returned promise is only the MIDI commit, so
+            // this neither blocks the scheduler nor reorders the audio flush.
+            // Same anchoring as punch-in: the region's own end beat, not the
+            // overshooting tick position and not the stale store playhead.
+            finalizeAutomaticRecording(current.punchOutBeat);
             await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
                 logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
             });
             if (!cancellation.isCurrent()) {
                 return;
             }
-            // Same anchoring as punch-in: the region's own end beat, not the
-            // overshooting tick position and not the stale store playhead.
-            stopRecording(current.punchOutBeat);
             schedulerSession.punchRecordingActive = false;
             updateTransportState({ isRecording: false });
         }

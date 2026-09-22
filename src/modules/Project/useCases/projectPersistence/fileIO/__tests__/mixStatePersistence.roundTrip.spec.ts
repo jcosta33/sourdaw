@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { gainEnvelopeStore, vcaGroupStore } from '#/modules/Arrangement/stores';
+import {
+    __resetWarpStatesForTest,
+    addWarpMarker,
+    gainEnvelopeStore,
+    getWarpState,
+    vcaGroupStore,
+    warpStateStore,
+} from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 import { cvGateStore, defaultCvGateState } from '#/modules/CvGate/stores';
 
@@ -31,6 +38,7 @@ async function roundTripLiveProject(): Promise<void> {
 
     vcaGroupStore.set({ groups: [] });
     gainEnvelopeStore.set({ envelopes: {} });
+    __resetWarpStatesForTest();
     modulationStore.set({ modulators: [] });
     cvGateStore.set(defaultCvGateState);
 
@@ -45,6 +53,7 @@ describe('mix state save/load round-trip', () => {
     beforeEach(() => {
         vcaGroupStore.set({ groups: [] });
         gainEnvelopeStore.set({ envelopes: {} });
+        __resetWarpStatesForTest();
         modulationStore.set({ modulators: [] });
         cvGateStore.set(defaultCvGateState);
     });
@@ -111,6 +120,28 @@ describe('mix state save/load round-trip', () => {
                 { id: 'point-b', beatOffset: 4, gainDb: -9.5 },
             ],
         });
+    });
+
+    it('returns a clip warp marker that buildProjectData wrote into the project field', async () => {
+        addWarpMarker('clip-vox', 1, 1.5);
+        const savedMarkers = getWarpState('clip-vox').markers;
+        expect(savedMarkers).toHaveLength(1);
+
+        // Force the save field itself: if `buildProjectData` stops copying
+        // `warpStateStore` into `data.warpStates`, the wipe below leaves the
+        // marker gone after hydrate.
+        const built = await buildProjectData();
+        expect(built?.data.warpStates).toEqual([
+            expect.objectContaining({
+                clipId: 'clip-vox',
+                markers: savedMarkers,
+            }),
+        ]);
+
+        await roundTripLiveProject();
+
+        expect(Object.keys(warpStateStore.value?.states ?? {})).toEqual(['clip-vox']);
+        expect(getWarpState('clip-vox').markers).toEqual(savedMarkers);
     });
 
     it('returns a modulator with its config and mappings', async () => {

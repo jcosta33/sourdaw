@@ -6,7 +6,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
-import { isDefaultWarpState, removeWarpState, setWarpState, warpStates } from './warpStates';
+import { getStoredWarpState, isDefaultWarpState, removeWarpState, setWarpState } from './warpStates';
 
 import type { WarpMarker, WarpState } from '../models/WarpMarker';
 
@@ -105,13 +105,13 @@ function normalizeGainEnvelope(envelope: ClipSatelliteGainEnvelopeSnapshot, clip
  * whose value is `undefined` from whoever wrote the store.
  *
  * A warp entry whose value is `defaultWarpState` reads as no satellite, exactly
- * as `hasNonDefaultWarpState` judges presence: `setStretchMode` and friends
- * write the map unconditionally, so a semantic no-op must not become state an
- * undo guard or a transition plan treats as worth keeping.
+ * as `hasNonDefaultWarpState` / `setWarpState` judge presence: a default value
+ * is stored as absent, so a semantic no-op must not become state an undo guard
+ * or a transition plan treats as worth keeping.
  */
 export function readClipSatelliteEntry(clipId: string): ClipSatelliteEntry {
     const gainEnvelope = getEnvelope(clipId);
-    const warpState = warpStates.get(clipId);
+    const warpState = getStoredWarpState(clipId);
     return {
         clipId,
         gainEnvelope: gainEnvelope ? normalizeGainEnvelope(gainEnvelope, clipId) : null,
