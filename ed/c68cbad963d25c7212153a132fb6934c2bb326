@@ -1,0 +1,16 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 35-41,48-57,59-61,66-69
+tests/e2e/deepCoverage.spec.ts
+  h_beb54bf43b47b7 273-277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "edc68cbad963d25c7212153a132fb6934c2bb326",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
