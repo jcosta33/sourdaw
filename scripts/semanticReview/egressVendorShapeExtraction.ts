@@ -8,6 +8,8 @@
  * size ceilings, not because any of this runs at a different time.
  */
 
+import { countRuleBlocks, parseRules, type Rule } from './egressVendorToml.ts';
+
 /** The minimum number of literal characters a vendor prefix must carry to be distinctive. */
 export const MIN_PREFIX_LENGTH = 4;
 
@@ -31,8 +33,10 @@ export type EgressVendorShape = {
     readonly parts: readonly string[];
     readonly tail: string;
     readonly fixture: readonly string[];
-    /** The JavaScript RegExp flags the screen compiles this shape with, reproducing the source rule's case handling. */
+    /** `iu` when the source rule's leading `(?i)` also covers the prefix; `u` otherwise. */
     readonly flags: 'iu' | 'u';
+    /** Whether the value body (the tail) is case-insensitive in the source rule. */
+    readonly bodyInsensitive: boolean;
 };
 
 export type ResidualRule = {
@@ -54,78 +58,8 @@ export type DerivedEgressVendorShapes = {
     }>;
 };
 
-type Rule = {
-    readonly id: string;
-    readonly description: string;
-    readonly regex?: string;
-    readonly path?: string;
-    readonly entropy?: number;
-    readonly secretGroup?: number;
-    readonly keywords: readonly string[];
-};
-
 const ASSIGNMENT_GLUE = '(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)';
 const PROXIMITY_LEADIN = '[\\w.-]{0,50}?';
-
-/**
- * A minimal TOML reader for the Gitleaks config's `[[rules]]` array-of-tables. It is not a general
- * TOML parser: it reads the fields the generator needs and ignores every allowlist sub-table, but it
- * accepts each of TOML's four string forms (basic, literal, and both multiline variants) and either
- * quote style for `keywords`, so a legal form is never mistaken for an absent field. The config is
- * auto-generated, so its shape is stable across the bumps this script is meant to survive.
- */
-function parseRules(toml: string): Rule[] {
-    const blocks: string[][] = [];
-    let current: string[] | null = null;
-    for (const line of toml.split('\n')) {
-        if (isRuleHeader(line)) {
-            current = [];
-            blocks.push(current);
-        } else if (current !== null) {
-            current.push(line);
-        }
-    }
-    return blocks.map(parseRuleBlock).filter((rule): rule is Rule => rule !== null);
-}
-
-function isRuleHeader(line: string): boolean {
-    return /^\[\[\s*rules\s*\]\]$/.test(line.trim());
-}
-
-/** Reads a string-valued TOML field in any of the four string forms. */
-function readStringField(block: string, key: string): string | undefined {
-    const match = block.match(
-        new RegExp(`^${key} = (?:'''([\\s\\S]*?)'''|"""([\\s\\S]*?)"""|"([^"]*)"|'([^']*)')`, 'm')
-    );
-    return match?.[1] ?? match?.[2] ?? match?.[3] ?? match?.[4];
-}
-
-function parseRuleBlock(lines: string[]): Rule | null {
-    const block = lines.join('\n');
-    const id = readStringField(block, 'id');
-    if (id === undefined) {
-        return null;
-    }
-    const description = readStringField(block, 'description') ?? '';
-    const regex = readStringField(block, 'regex');
-    const path = readStringField(block, 'path');
-    const secretGroupMatch = block.match(/^secretGroup = (\d+)/m);
-    const entropyMatch = block.match(/^entropy = ([\d.]+)/m);
-    const keywordsMatch = block.match(/^keywords = \[([\s\S]*?)\]/m);
-    const keywords: string[] = [];
-    if (keywordsMatch !== null) {
-        keywords.push(...Array.from((keywordsMatch[1] ?? '').matchAll(/(["'])([^"']*)\1/g), (m) => m[2] ?? ''));
-    }
-    return {
-        id,
-        description,
-        regex,
-        path,
-        entropy: entropyMatch === null ? undefined : Number(entropyMatch[1]),
-        secretGroup: secretGroupMatch === null ? undefined : Number(secretGroupMatch[1]),
-        keywords,
-    };
-}
 
 function hasAssignmentGlue(regex: string): boolean {
     return regex.includes(ASSIGNMENT_GLUE);
@@ -420,6 +354,46 @@ function cleanTail(tail: string): string {
         .replace(/\$$/, '');
 }
 
+/**
+ * Widens every lowercase range inside a tail into its case-insensitive form. The source rule's
+ * inline `(?i)` covers only the body, so the body must be widened while the prefix stays exactly
+ * case-sensitive; JavaScript cannot express a scoped flag inline, so the classes carry it instead.
+ */
+function widenTailForInsensitive(tail: string): string {
+    const out: string[] = [];
+    let inClass = false;
+    for (let i = 0; i < tail.length; i += 1) {
+        const c = tail[i] ?? '';
+        if (c === '[') {
+            inClass = true;
+            out.push(c);
+            continue;
+        }
+        if (c === ']' && inClass) {
+            inClass = false;
+            out.push(c);
+            continue;
+        }
+        if (c === '\\') {
+            out.push(c, tail[i + 1] ?? '');
+            i += 1;
+            continue;
+        }
+        if (inClass && /[a-z]/.test(c)) {
+            if (tail[i + 1] === '-' && /[a-z]/.test(tail[i + 2] ?? '')) {
+                const end = tail[i + 2] ?? '';
+                out.push(`${c}-${end}${c.toUpperCase()}-${end.toUpperCase()}`);
+                i += 2;
+                continue;
+            }
+            out.push(c, c.toUpperCase());
+            continue;
+        }
+        out.push(c);
+    }
+    return out.join('');
+}
+
 /** Picks one character that belongs to a character-class body, for the fixture. */
 function pickClassChar(body: string): string {
     if (body.startsWith('[[:')) {
@@ -621,15 +595,24 @@ function extract(rule: Rule): Extraction {
     }
     const reason = deriveReason(rule);
     const fixture = splitParts(concretizeTail(cleanedTail));
-    const flags: 'iu' | 'u' = regex.includes('(?i') ? 'iu' : 'u';
+    const leadingInsensitive = hasLeadingInsensitiveFlag(regex);
+    const anyInsensitive = regex.includes('(?i');
+    const flags: 'iu' | 'u' = leadingInsensitive ? 'iu' : 'u';
+    const bodyInsensitive = anyInsensitive;
+    const finalTail = anyInsensitive && !leadingInsensitive ? widenTailForInsensitive(cleanedTail) : cleanedTail;
     const shapes = prefixes.map((prefix) => ({
         reason,
         parts: splitParts(prefix),
-        tail: cleanedTail,
+        tail: finalTail,
         fixture,
         flags,
+        bodyInsensitive,
     }));
     return { kind: 'shapes', shapes, keywords: [] };
+}
+
+function hasLeadingInsensitiveFlag(regex: string): boolean {
+    return regex.replace(/^\\b/, '').startsWith('(?i)');
 }
 
 /** The vendor key names: keyword-proximity family names, minus the generic bare-`key` class. */
@@ -638,17 +621,6 @@ function deriveKeyNames(keywords: readonly string[]): string[] {
     const nonGeneric = deduped.filter((name) => !GENERIC_KEY_WORDS.has(name));
     const wordLike = nonGeneric.filter((name) => /^[a-z][a-z0-9_-]{2,}$/.test(name));
     return wordLike.filter((name) => !name.includes('__') && !/[-_]$/.test(name)).sort();
-}
-
-/** Counts the raw `[[rules]]` blocks so a dropped block is visible in the summary, not inferred. */
-function countRuleBlocks(toml: string): number {
-    let count = 0;
-    for (const line of toml.split('\n')) {
-        if (isRuleHeader(line)) {
-            count += 1;
-        }
-    }
-    return count;
 }
 
 /** Parses and classifies every rule in the fetched config into the three tables the screen reads. */

@@ -166,14 +166,15 @@ const FILESYSTEM_PATH = /^(?:\/|\.\.?\/|~\/|[A-Za-z]:[\\/])[A-Za-z0-9._-]+(?:[\\
  * carries both letters and digits and no underscore separator is therefore credential-shaped even
  * when uppercase; an all-uppercase run without digits, or with an underscore, remains a name.
  *
- * A bare mixed-case alphabetic value — letters only, no digits, no separator — is treated as a
- * reference to something (an identifier such as `workletSynthDevice` or `CallbackUndoEntry`), not as
- * key material, in the same way a dotted member access already is. This admits the trade that a
- * credential which is mixed-case letters only — no digits and no `+`/`=`/`-`/`_` — stops reaching
- * the general rule; vendor shapes still catch their own families, and roughly one to four percent
- * of letter-class tokens of that length fall in that set.
+ * A *bare* mixed-case alphabetic run — letters only, no digits, no separator — is treated as a
+ * reference (an identifier such as `workletSynthDevice` or `CallbackUndoEntry`), not as key
+ * material, in the same way a dotted member access already is; a quoted run is a value by
+ * construction and is never treated as a reference. The trade is only the bare half: a bare token is
+ * a literal in env, shell, INI and TOML files, and a mixed-case passphrase, so those stop reaching
+ * the general rule. The loss is length-dependent for base64-shaped letter tokens — about 3.6% of
+ * 16-character tokens, 0.7% of 24, 0.13% of 32 — not a flat "one to four percent" of everything.
  */
-function looksLikeCredentialValue(value: string, after: string): boolean {
+function looksLikeCredentialValue(value: string, after: string, quoted: boolean): boolean {
     if (after !== '' && /[\w(.[?:]/.test(after)) {
         // The run was cut short by an expression, a call, an index, or a longer identifier.
         return false;
@@ -187,7 +188,7 @@ function looksLikeCredentialValue(value: string, after: string): boolean {
     if (FILESYSTEM_PATH.test(value)) {
         return false;
     }
-    if (/^[A-Za-z]+$/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value)) {
+    if (!quoted && /^[A-Za-z]+$/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value)) {
         return false;
     }
     if (/^[A-Z][A-Z0-9_]*$/.test(value) && (!/[0-9]/.test(value) || value.includes('_'))) {
@@ -199,12 +200,13 @@ function looksLikeCredentialValue(value: string, after: string): boolean {
 /** The first secret-named assignment whose value is shaped like a credential, if any. */
 function secretAssignmentReason(text: string): string | undefined {
     for (const match of text.matchAll(SECRET_ASSIGNMENT)) {
+        const quoted = match.groups?.quoted !== undefined;
         const value = match.groups?.quoted ?? match.groups?.bare;
         if (value === undefined) {
             continue;
         }
-        const after = match.groups?.quoted === undefined ? (match.groups?.after ?? '') : '';
-        if (looksLikeCredentialValue(value, after)) {
+        const after = quoted ? '' : (match.groups?.after ?? '');
+        if (looksLikeCredentialValue(value, after, quoted)) {
             return 'a secret-named key assigned a credential-shaped value';
         }
     }
@@ -284,7 +286,7 @@ const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
             'iu'
         ),
         validate: (match: RegExpExecArray) =>
-            looksLikeCredentialValue(match.groups?.bare ?? '', match.groups?.after ?? ''),
+            looksLikeCredentialValue(match.groups?.bare ?? '', match.groups?.after ?? '', false),
     },
     ...VENDOR_SHAPES.map(({ reason, parts, tail, flags }) => ({
         reason,

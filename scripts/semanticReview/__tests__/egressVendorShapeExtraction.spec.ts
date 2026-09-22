@@ -110,4 +110,53 @@ keywords = ["key"]
             { id: 'generic-key', reason: 'keyword-proximity rule yields no usable key name' },
         ]);
     });
+
+    it('decodes a basic string and reads a quoted key and tight spacing', () => {
+        // A basic string is TOML-unescaped, so an escaped backslash yields a real `\w` shorthand, an
+        // escaped quote yields a literal quote, and a quoted key or missing space around `=` is read.
+        const toml = String.raw`[[rules]]
+id = "escaped-basic"
+description = "An escaped basic string."
+regex = "acme_\\w{20}"
+keywords = ["acme_"]
+
+[[rules]]
+id = "quoted-key"
+description = "A quoted key."
+"regex"='''acme_"[a-z0-9]{20}"'''
+keywords = ["acme2_"]
+`;
+
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.counts.blockCount).toBe(2);
+        expect(derived.counts.totalRules).toBe(2);
+        const [basic, quotedKey] = derived.shapes;
+        expect(basic?.parts.join('')).toBe('acme_');
+        expect(basic?.tail).toBe('\\w{20}');
+        expect(quotedKey?.parts.join('')).toBe('acme_');
+        expect(quotedKey?.tail).toBe('"[a-z0-9]{20}"');
+    });
+
+    it('counts a rule header with a trailing comment independently of the splitter', () => {
+        // A trailing comment on a `[[rules]]` header is a legal TOML form; the raw count and the
+        // splitter must both see it, so the rule is not swallowed while the counters agree.
+        const toml = String.raw`[[rules]] # acme rule
+id = "acme-token"
+description = "An ACME token."
+regex = '''acme_[a-z0-9]{20}'''
+
+[[rules]]
+id = "p12-file"
+description = "A PKCS12 file."
+path = '''(?i).+\.p12$'''
+`;
+
+        const derived = deriveEgressVendorShapes(toml);
+
+        expect(derived.counts.blockCount).toBe(2);
+        expect(derived.counts.totalRules).toBe(2);
+        expect(derived.shapes.map((shape) => shape.parts.join(''))).toEqual(['acme_']);
+        expect(derived.residual.map((rule) => rule.id)).toEqual(['p12-file']);
+    });
 });

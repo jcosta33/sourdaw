@@ -20,7 +20,7 @@ import {
     type EvidenceSide,
     type SemanticRevisionBase,
 } from '../contracts.ts';
-import { EGRESS_VENDOR_SHAPES } from '../egressVendorShapes.ts';
+import { EGRESS_VENDOR_SHAPES, RESIDUAL_RULES, VENDOR_KEY_NAMES } from '../egressVendorShapes.ts';
 import {
     collectEvidence,
     exclusionReason,
@@ -79,6 +79,11 @@ import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.t
  */
 function secretFixture(...parts: readonly string[]): string {
     return parts.join('');
+}
+
+/** Inverts the case of every letter, so a prefix that is already uppercase still probes case-sensitivity. */
+function flipCase(value: string): string {
+    return value.replaceAll(/[A-Za-z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 }
 
 const HEAD = 'a'.repeat(40);
@@ -1670,6 +1675,14 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('API_KEY=', keyId))).toBeDefined();
         // A name carries no digits or carries an underscore separator, so it stays ordinary.
         expect(sensitiveContentReason(secretFixture('apiKey=', 'TYPESAFE', '_API_KEY'))).toBeUndefined();
+    });
+
+    it('withholds a quoted mixed-case value but admits a bare mixed-case identifier', () => {
+        // A quoted run is a value by construction, so it is never read as a reference; the bare
+        // identifier rejection applies only to an unquoted run.
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '"AbCdEfGhIjKlMnOp"'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('password = ', '"CorrectHorseBatteryStaple"'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', 'AbCdEfGhIjKlMnOp'))).toBeUndefined();
     });
 
     it('withholds a value assigned to a vendor family name', () => {
@@ -3393,15 +3406,22 @@ describe('vendor prefix coverage', () => {
     });
 
     it('withholds a value composed from every generated shape', () => {
-        // The table is pinned against the pinned source by a digest, so deleting or editing an entry
-        // fails here. Every entry must match a fixture composed from its own parts — with its own
-        // compiled flags, not just be withheld by some other shape — and a case-insensitive entry must
-        // also withhold the uppercased body, so the derived tail reproduces the source rule's `(?i)`.
-        const serialized = EGRESS_VENDOR_SHAPES.map(
-            (shape) => `${shape.parts.join('')}\u0000${shape.tail}\u0000${shape.flags}`
-        ).join('\n');
+        // The whole table is pinned by a digest that serialises the parts arrays (not their joined
+        // prefix), the key names, and the residual record, so deleting a key name, merging two
+        // fragments, or editing a residual reason each fails here. Every entry must match a fixture
+        // composed from its own parts with its own flags, and the case scope must match the source:
+        // a case-insensitive body matches the uppercased body, and a case-sensitive prefix rejects the
+        // uppercased prefix.
+        const serialized = [
+            ...EGRESS_VENDOR_SHAPES.map(
+                (shape) =>
+                    `${shape.reason}\u0000${JSON.stringify(shape.parts)}\u0000${shape.tail}\u0000${shape.flags}\u0000${shape.bodyInsensitive}`
+            ),
+            ...VENDOR_KEY_NAMES,
+            ...RESIDUAL_RULES.map((rule) => `${rule.id}\u0000${rule.reason}`),
+        ].join('\n');
         expect(createHash('sha256').update(serialized).digest('hex')).toBe(
-            'f5ddb3429436c1cb3f65fd3432b75c1ee9033a0a2d295eb3ceab0aabf5d18db9'
+            '9a00e24bafa05b06fa3a6315565ad9fba875fe673438ff6af885a53b28e80e5b'
         );
         for (const shape of EGRESS_VENDOR_SHAPES) {
             const prefix = shape.parts.join('');
@@ -3409,14 +3429,12 @@ describe('vendor prefix coverage', () => {
             const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
             expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
             expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
-            if (shape.flags === 'iu') {
-                const upperFixture = secretFixture(
-                    ...shape.parts,
-                    shape.fixture.map((chunk) => chunk.toUpperCase()).join('')
-                );
-                expect(pattern.test(upperFixture), `${shape.reason}: uppercased body does not match`).toBe(true);
-                expect(sensitiveContentReason(upperFixture), `${shape.reason}: uppercased body`).toBeDefined();
+            const upperBody = secretFixture(...shape.parts, shape.fixture.map((chunk) => chunk.toUpperCase()).join(''));
+            if (shape.bodyInsensitive) {
+                expect(pattern.test(upperBody), `${shape.reason}: body case scope`).toBe(true);
             }
+            const flippedPrefix = secretFixture(flipCase(prefix), ...shape.fixture);
+            expect(pattern.test(flippedPrefix), `${shape.reason}: prefix case scope`).toBe(shape.flags === 'iu');
         }
     });
 });

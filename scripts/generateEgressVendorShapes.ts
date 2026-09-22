@@ -60,7 +60,7 @@ function tsStringArray(values: readonly string[]): string {
 function renderModule(derived: DerivedEgressVendorShapes, digest: string): string {
     const shapeLines = derived.shapes.map(
         (shape) =>
-            `    {\n        reason: ${tsString(shape.reason)},\n        parts: ${tsStringArray(shape.parts)},\n        tail: ${tsString(shape.tail)},\n        fixture: ${tsStringArray(shape.fixture)},\n        flags: ${tsString(shape.flags)},\n    },`
+            `    {\n        reason: ${tsString(shape.reason)},\n        parts: ${tsStringArray(shape.parts)},\n        tail: ${tsString(shape.tail)},\n        fixture: ${tsStringArray(shape.fixture)},\n        flags: ${tsString(shape.flags)},\n        bodyInsensitive: ${shape.bodyInsensitive},\n    },`
     );
     const keyLines = derived.keyNames.map((name) => `    ${tsString(name)},`);
     const residualLines = derived.residual.map(
@@ -100,18 +100,20 @@ function renderModule(derived: DerivedEgressVendorShapes, digest: string): strin
  * emitted literal — both the prefix parts and the fixture body — into fragments shorter than the
  * scanner's shortest opaque run, so no fragment can carry a keyword adjacent to an opaque value;
  * the screen rejoins them at runtime, which is why the chunking is invisible to matching. A
- * \`flags\` of \`iu\` reproduces the source rule's inline case-insensitivity, which JavaScript
- * cannot express inline.
+ * \`flags\` of \`iu\` reproduces a leading \`(?i)\`, which also covers the prefix; an inline \`(?i)\`
+ * after the prefix is reproduced instead by widening the tail's character classes while the prefix
+ * stays exactly case-sensitive, which \`bodyInsensitive\` records.
  */
 /* eslint-disable max-lines -- a generated data table, not hand-written logic. */
 
-/** A vendor-shaped key: the parts its prefix is assembled from, the tail that follows, its fixture parts, and its flags. */
+/** A vendor-shaped key: the parts its prefix is assembled from, the tail that follows, its fixture parts, and its case scope. */
 export type EgressVendorShape = {
     readonly reason: string;
     readonly parts: readonly string[];
     readonly tail: string;
     readonly fixture: readonly string[];
     readonly flags: 'iu' | 'u';
+    readonly bodyInsensitive: boolean;
 };
 
 export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
