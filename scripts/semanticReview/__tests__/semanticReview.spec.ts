@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { AuthenticationError, RateLimitError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
@@ -18,6 +20,7 @@ import {
     type EvidenceSide,
     type SemanticRevisionBase,
 } from '../contracts.ts';
+import { EGRESS_VENDOR_SHAPES, RESIDUAL_RULES, VENDOR_KEY_NAMES } from '../egressVendorShapes.ts';
 import {
     collectEvidence,
     exclusionReason,
@@ -76,6 +79,11 @@ import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.t
  */
 function secretFixture(...parts: readonly string[]): string {
     return parts.join('');
+}
+
+/** Inverts the case of every letter, so a prefix that is already uppercase still probes case-sensitivity. */
+function flipCase(value: string): string {
+    return value.replaceAll(/[A-Za-z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
 }
 
 const HEAD = 'a'.repeat(40);
@@ -1609,6 +1617,20 @@ describe('the egress screen tells code from credentials', () => {
             '// A URI with embedded credentials: scheme://user:secret@host',
             'redis://:pass@h',
             'KEYS: Record<ReviewDossierEvent[',
+            // Vendor family names are now secret key names, so a vendor keyword used as an ordinary
+            // identifier, assigned a filesystem path (absolute or relative), or mentioned in a comment
+            // must stay admitted.
+            'linear: usage.actualInputTokens,',
+            'datadog = "/var/lib/datadog",',
+            'datadog = "./metrics/datadog.json",',
+            '// facebook OAuth client integration',
+            // A vendor name must not match inside a longer identifier (`etsy` in `Synth`, `linear` in
+            // `bilinear`), and a bare mixed-case identifier value is a reference, not key material —
+            // so a type-annotation shaped line stays admitted too.
+            'const workletSynthEntry = workletSynthDevice',
+            'bilinearPatch: bilinearPatchMock',
+            'linear_entry: CallbackUndoEntry',
+            'secretGroup: secretGroupMatch === null ? undefined : Number(secretGroupMatch[1]),',
             // A header quoted in documentation with a redaction word where the body belongs is ordinary
             // text, not key material: an eight-character word is not a PEM body line.
             secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----', '\n', 'REDACTED'),
@@ -1644,6 +1666,111 @@ describe('the egress screen tells code from credentials', () => {
         for (const line of credentials) {
             expect(sensitiveContentReason(line), line).toBeDefined();
         }
+    });
+
+    it('withholds an all-uppercase alphanumeric value but not a SCREAMING_SNAKE name', () => {
+        // An opaque all-uppercase run that carries both letters and digits and no underscore is a
+        // value, not an environment-variable name; the name shape must stay admitted.
+        const keyId = secretFixture('ABCDEF', '123456', '7890AB');
+        expect(sensitiveContentReason(secretFixture('API_KEY=', keyId))).toBeDefined();
+        // A name carries no digits or carries an underscore separator, so it stays ordinary.
+        expect(sensitiveContentReason(secretFixture('apiKey=', 'TYPESAFE', '_API_KEY'))).toBeUndefined();
+    });
+
+    it('withholds a quoted mixed-case value but admits a bare mixed-case identifier', () => {
+        // A quoted run is a value by construction, so it is never read as a reference; the bare
+        // identifier rejection applies only to an unquoted run.
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '"AbCdEfGhIjKlMnOp"'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('password = ', '"CorrectHorseBatteryStaple"'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', 'AbCdEfGhIjKlMnOp'))).toBeUndefined();
+    });
+
+    it('withholds a value assigned to a vendor family name', () => {
+        // A keyword-proximity family is recognised as a secret key name, so its assignment reaches
+        // the value heuristic instead of passing the screen untouched, whatever separator its
+        // family's token carries (`_`, `-`).
+        const value = 'a'.repeat(40);
+        expect(sensitiveContentReason(secretFixture('datadog=', value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('DATADOG_API_KEY=', value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('datadog_api_key: ', "'", value, "'"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
+    });
+
+    it('withholds a secret value under the delimiter and terminator forms it reads, and admits the escaped-newline form', () => {
+        // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter,
+        // and it treats each delimiter as an independent boundary, so a mismatched pair such as `'…"` is
+        // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, a newline, or
+        // end of input, and its opening run is up to four delimiters, so those closings and a four-quote
+        // run are withheld too. A nested delimiter ends the run, so `'''…"…'''` stops at the inner `"`
+        // and is admitted; an escaped delimiter also stops the run and is admitted. The escaped-newline
+        // terminator is deliberately not modelled (see #4579), so that form is admitted, not withheld;
+        // this case therefore does not claim to cover every form the scanner reads.
+        const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '"""', value, '"""'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '`', value, '`'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '"'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', '"', value, "'"))).toBeDefined();
+        // Closed by the scanner's full terminator set, not only a delimiter.
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, ' '))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, ';'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "''''"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "''''", value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'''''", value))).toBeUndefined();
+        // The escaped-newline terminator is deliberately not modelled (the scanner pairs it with an
+        // entropy gate and a value allowlist the screen cannot apply), so these stay admitted and the
+        // leak is deferred to #4579.
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\n'))).toBeUndefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\r'))).toBeUndefined();
+        // A nested or escaped delimiter ends the run and is admitted.
+        expect(
+            sensitiveContentReason(
+                secretFixture('client_secret = ', "'''", 'Ab3dEf7hIj2', '"', 'Qw9Er8Ty7Ui6Op5As4Df3', "'''")
+            )
+        ).toBeUndefined();
+        expect(
+            sensitiveContentReason(secretFixture('client_secret = ', '"Ab3dEf7hI\\"j2lMn4pQr5tUv6"'))
+        ).toBeUndefined();
+    });
+
+    it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
+        // No left boundary: `SOME_TOKEN`, `apiToken`, `dbPassword` and their like are the dominant
+        // secret-naming vocabulary and must reach the value heuristic. The value heuristic, not a
+        // name boundary, separates them from the identifier-valued collisions below.
+        const value = secretFixture('a1b2c3d4', 'e5f6g7h8', 'i9j0k1l2', 'm3n4o5p6');
+        for (const key of [
+            'SOME_TOKEN',
+            'API_TOKEN',
+            'MY_SECRET',
+            'DB_PASSWORD',
+            'SNAKE_CASE_API_KEY',
+            'api_token',
+            'apiToken',
+            'dbPassword',
+            'validToken',
+        ]) {
+            expect(sensitiveContentReason(secretFixture(key, ' = ', value)), key).toBeDefined();
+        }
+        // The collisions the review found stay admitted because their value is a reference, not key
+        // material — a boundary on the name would be the wrong lever and would not be needed.
+        expect(sensitiveContentReason('workletSynthEntry = workletSynthDevice')).toBeUndefined();
+        expect(sensitiveContentReason('bilinearPatch: bilinearPatchMock')).toBeUndefined();
+        expect(sensitiveContentReason('linear_entry: CallbackUndoEntry')).toBeUndefined();
+    });
+
+    it('admits a filesystem path but withholds a slash-led base64 credential', () => {
+        // A path is made of short name segments; a base64 credential is one long opaque run. The
+        // leading slash must not make a credential read as a path, and it must not make a path read
+        // as a credential.
+        expect(sensitiveContentReason(secretFixture('datadog=', '/var/lib/datadog'))).toBeUndefined();
+        const slashLedBase64 = secretFixture('/', 'AbCdEfGh', 'IjKlMnOp', 'QrStUvWx', 'Yz012345', '6789AB');
+        expect(sensitiveContentReason(secretFixture('datadog=', slashLedBase64))).toBeDefined();
+        // A base64 credential may also contain an internal slash and `+`; the non-name characters keep
+        // it credential-shaped rather than path-shaped.
+        const base64WithSlashAndPlus = secretFixture('/', 'AbCdEfGh+', 'IjKlMnOp/', 'QrStUvWx', 'Yz012345');
+        expect(sensitiveContentReason(secretFixture('datadog=', base64WithSlashAndPlus))).toBeDefined();
     });
 
     it('withholds an armored private key only with key material, whatever its wrapper', () => {
@@ -3315,6 +3442,102 @@ describe('vendor prefix coverage', () => {
         const restricted = secretFixture('rk_live_', 'a1b2c3d4e5f6g7h8', 'i9j0k1l2');
         expect(sensitiveContentReason(test)).toBe('a Stripe secret key');
         expect(sensitiveContentReason(restricted)).toBe('a Stripe secret key');
+    });
+
+    it('withholds a value composed from every generated shape', () => {
+        // The whole table is pinned by a digest that serialises every field the screen depends on —
+        // the parts arrays (not their joined prefix), the tail and its case scope, the fixture, the
+        // key names, and the residual record — so deleting a key name, merging two fragments, editing a
+        // residual reason, or rewriting a fixture all fail here. The shape, key-name and residual counts
+        // are asserted separately, so a regeneration that drops an entry fails even if the digest line
+        // is edited to match. Each entry's own pattern matches its own fixture, and the screen's own
+        // prefix case scope agrees with the table's `flags`; the standalone literal cases below anchor
+        // the table to the source's scope.
+        expect(EGRESS_VENDOR_SHAPES).toHaveLength(100);
+        expect(VENDOR_KEY_NAMES).toHaveLength(85);
+        expect(RESIDUAL_RULES).toHaveLength(39);
+        const serialized = [
+            ...EGRESS_VENDOR_SHAPES.map(
+                (shape) =>
+                    `${shape.reason}\u0000${JSON.stringify(shape.parts)}\u0000${shape.tail}\u0000${shape.flags}\u0000${shape.bodyInsensitive}\u0000${JSON.stringify(shape.fixture)}`
+            ),
+            ...VENDOR_KEY_NAMES,
+            ...RESIDUAL_RULES.map((rule) => `${rule.id}\u0000${rule.reason}`),
+        ].join('\n');
+        expect(createHash('sha256').update(serialized).digest('hex')).toBe(
+            '4534c6f7f6fe72d3ad6e5c62e6e9bed9e6ba522a0a2c37ff5c998c3894dfa517'
+        );
+        for (const shape of EGRESS_VENDOR_SHAPES) {
+            const prefix = shape.parts.join('');
+            const fixture = secretFixture(...shape.parts, ...shape.fixture);
+            const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
+            // The fixture is concretised from the tail, so this is a fixture-to-tail consistency check:
+            // it fails when the concretiser and the tail disagree. The digest above pins the checked-in
+            // content against a hand edit.
+            expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
+            // The screen withholds the shape's own fixture.
+            expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
+            // The screen's prefix case scope, observed through the screen rather than the rebuilt
+            // pattern. This asserts the table's `flags` agree with the screen's compilation, not the
+            // source's scope — a consistently wrong flag-and-body pair passes once the digest is
+            // restamped; the standalone literal cases below anchor the source's scope. Reason equality,
+            // not presence, so a different shape cannot mask.
+            const flippedPrefix = secretFixture(flipCase(prefix), ...shape.fixture);
+            if (shape.flags === 'iu') {
+                expect(sensitiveContentReason(flippedPrefix), `${shape.reason}: prefix case scope`).toBe(shape.reason);
+            } else {
+                expect(sensitiveContentReason(flippedPrefix), `${shape.reason}: prefix case scope`).toBeUndefined();
+            }
+            // The body case scope lives in the tail's scoped groups, which the digest above pins; the
+            // rebuilt pattern over that same tail observes the body's case sensitivity exactly.
+            const upperBody = secretFixture(...shape.parts, shape.fixture.map((chunk) => chunk.toUpperCase()).join(''));
+            if (shape.bodyInsensitive) {
+                expect(pattern.test(upperBody), `${shape.reason}: body case scope`).toBe(true);
+            }
+        }
+    });
+
+    it('fires every derived vendor key name as a secret-named assignment', () => {
+        // Every key name must reach the value heuristic: a keyword-proximity family whose name does not
+        // fire would be reported under coverage while withholding nothing.
+        const opaque = 'a'.repeat(40);
+        for (const name of VENDOR_KEY_NAMES) {
+            expect(sensitiveContentReason(secretFixture(name, '=', opaque)), name).toBeDefined();
+        }
+    });
+
+    it('scopes Sendinblue case sensitivity to the tail, not the hex field', () => {
+        // Source: `xkeysib-[a-f0-9]{64}\-(?i)[a-z0-9]{16}`. The hex field precedes the flag, so an
+        // uppercase hex run must not be withheld, while the case-insensitive tail must still reach the
+        // screen.
+        const lowerHex = secretFixture('xkeysib-', '0'.repeat(64), '-', 'ABCDEF0123456789');
+        const upperHex = secretFixture('xkeysib-', 'A'.repeat(64), '-', 'abcdef0123456789');
+        expect(sensitiveContentReason(lowerHex)).toBe('a Sendinblue API token');
+        expect(sensitiveContentReason(upperHex)).toBeUndefined();
+    });
+
+    it('scopes Flutterwave case insensitivity over the trailing literal', () => {
+        // Source: `FLWPUBK_TEST-(?i)[a-h0-9]{32}-X`. The flag covers the `-X` literal too, so both
+        // `-X` and `-x` must be withheld.
+        const upperX = secretFixture('FLWPUBK_TEST-', 'a'.repeat(32), '-X');
+        const lowerX = secretFixture('FLWPUBK_TEST-', 'a'.repeat(32), '-x');
+        expect(sensitiveContentReason(upperX)).toBe('a Finicity Public Key');
+        expect(sensitiveContentReason(lowerX)).toBe('a Finicity Public Key');
+    });
+
+    it('reaches a whole-insensitive Clojars prefix in either case', () => {
+        // Source: `(?i)CLOJARS_[a-z0-9]{60}`. The leading flag covers the prefix, so the lowercase
+        // form is withheld by the screen's own flag, not by a widened prefix literal.
+        expect(sensitiveContentReason(secretFixture('CLOJARS_', 'a'.repeat(60)))).toBe('a Clojars API token');
+        expect(sensitiveContentReason(secretFixture('clojars_', 'a'.repeat(60)))).toBe('a Clojars API token');
+    });
+
+    it('keeps an inline-insensitive Alibaba prefix case-sensitive', () => {
+        // Source: `\b(LTAI(?i)[a-z0-9]{20})…`. The flag follows the prefix, so `LTAI` is withheld and
+        // `ltai` is admitted.
+        const body = secretFixture('0123456789', 'abcdefghij');
+        expect(sensitiveContentReason(secretFixture('LTAI', body))).toBe('an Alibaba Cloud AccessKey ID');
+        expect(sensitiveContentReason(secretFixture('ltai', body))).toBeUndefined();
     });
 });
 
