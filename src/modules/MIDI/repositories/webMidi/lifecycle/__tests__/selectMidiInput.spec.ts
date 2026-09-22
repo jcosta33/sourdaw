@@ -11,6 +11,7 @@ const listNativeMidiInputsMock = vi.hoisted(() =>
     vi.fn<() => Promise<{ id: string; name: string; portIndex: number }[]>>()
 );
 const loggerWarnMock = vi.hoisted(() => vi.fn());
+const notifyUserMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../getNativeMode', () => ({ getNativeMode: getNativeModeMock }));
 vi.mock('../../getMidiAccess', () => ({ getMidiAccess: getMidiAccessMock }));
@@ -19,6 +20,7 @@ vi.mock('../helpers', () => ({ attachInput: attachInputMock }));
 vi.mock('../listNativeMidiInputs', () => ({ listNativeMidiInputs: listNativeMidiInputsMock }));
 vi.mock('../selectMidiInputNative', () => ({ selectMidiInputNative: selectMidiInputNativeMock }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: loggerWarnMock, error: vi.fn(), info: vi.fn() } }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
 import { NATIVE_IDENTITY_SCHEME, WEB_MIDI_IDENTITY_SCHEME } from '../../selectedInputIdStorageKeys';
@@ -78,6 +80,7 @@ describe('selectMidiInput', () => {
         // stable id exists to prevent.
         expect(selectMidiInputNativeMock).not.toHaveBeenCalled();
         expect(setStateMock).not.toHaveBeenCalled();
+        expect(notifyUserMock).toHaveBeenCalledWith('MIDI input is no longer available', 'warning');
     });
 
     it('does not persist the selection when opening the native port fails', async () => {
@@ -94,6 +97,7 @@ describe('selectMidiInput', () => {
             '[MIDI] Failed to open MIDI input:',
             expect.objectContaining({ message: 'device not found' })
         );
+        expect(notifyUserMock).toHaveBeenCalledWith('Could not open MIDI input', 'warning');
     });
 
     it('attaches the Web MIDI input and commits the selection in browser mode', () => {
