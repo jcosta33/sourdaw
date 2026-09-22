@@ -1,0 +1,19 @@
+src/modules/PunchRecording/useCases/punchRecording/togglePunchRecording.ts
+  s_6f8a6549430a9b::t_0ee7072255bbfe 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d1c77b0f1af259ea3851f1fbedb087ae7d1c19b3",
+  "prompts": {},
+  "sessions": {
+    "s_6f8a6549430a9b": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "5f60e608-b3cc-46ab-99ac-4173b7a31bb1",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
