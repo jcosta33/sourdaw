@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_df40b526e33ddb::t_18db0dd80bcc1e 1-59
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_df40b526e33ddb::t_2f81e9d2eff263 13,44-47,62,85-95,117,128-130,143,177-183,266-279
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_5ec678a267c65e::t_87dd4b3bb2436d 1-44
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_df40b526e33ddb::t_5ff88dfb3f1cc0 12-13,19-24,84-102
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_5ec678a267c65e::t_4f79fac33933f3 66-68,77-78,108-109,529,546,576-577,589,721,760
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_5ec678a267c65e::t_54f40469842b1c 54,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "064121c57e4c9fc93fc988299144749e25f8243b",
+  "prompts": {},
+  "sessions": {
+    "s_5ec678a267c65e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "a2eef85f-2733-452b-ba90-4ef3b238a112",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
