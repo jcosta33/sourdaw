@@ -1,0 +1,14 @@
+scripts/__tests__/sourceAttestation.spec.ts
+  h_beb54bf43b47b7 69-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "17080a1b48a039bcb7900bd8786941be99739a32",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
