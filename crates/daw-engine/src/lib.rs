@@ -1,5 +1,6 @@
 pub mod audio_thread;
 pub mod capture;
+pub mod retrospective;
 pub(crate) mod device;
 /// Why an engine has no capture side. The device seam itself stays internal;
 /// its refusal is the one part of it a host has to be able to name.
@@ -207,6 +208,9 @@ pub struct EngineHandle {
     /// `audio_thread::new_output_path_frames_slot` and
     /// [`Self::output_path_frames`].
     output_path_frames: Arc<AtomicUsize>,
+    /// Control half of the retrospective ring. The matching writer lives in
+    /// the capture callback and retains input only while this side is armed.
+    retrospective: crate::retrospective::RetrospectiveControl,
 }
 
 impl EngineHandle {
@@ -315,6 +319,7 @@ impl EngineHandle {
             output_stream_fault: spawned.output_stream_fault,
             output_buffer_frames: spawned.output_buffer_frames,
             output_path_frames: spawned.output_path_frames,
+            retrospective: spawned.retrospective,
         })
     }
 
@@ -344,6 +349,27 @@ impl EngineHandle {
     /// rather than compensating a take by zero.
     pub fn input_latency_frames(&self) -> usize {
         self.input_latency_frames.load(Ordering::Relaxed)
+    }
+
+    /// Arm retrospective audio retention for exactly one track.
+    ///
+    /// Allocates about sixty seconds of storage on this thread at the running
+    /// stream's sample rate. A later arm replaces the previous target.
+    pub fn arm_retrospective_capture(&mut self, track_id: usize, channels: usize) {
+        self.retrospective
+            .arm(track_id, self.sample_rate, channels);
+    }
+
+    /// Stop retrospective retention. Capture-callback writes keep nothing
+    /// until the next arm.
+    pub fn disarm_retrospective_capture(&mut self) {
+        self.retrospective.disarm();
+    }
+
+    /// The track id last passed to [`Self::arm_retrospective_capture`], if
+    /// still armed from this side.
+    pub fn retrospective_capture_target(&self) -> Option<usize> {
+        self.retrospective.target_track_id()
     }
 
     /// Frames the output device's most recent callback asked for — a UI poll
@@ -1451,6 +1477,7 @@ fn engine_handle_fixture(
         output_stream_fault,
         output_buffer_frames: audio_thread::new_output_buffer_frames_slot(),
         output_path_frames: audio_thread::new_output_path_frames_slot(),
+        retrospective: crate::retrospective::retrospective_capture().0,
     }
 }
 
