@@ -1,0 +1,28 @@
+src/modules/AudioAnalysis/useCases/audioToMidi.ts
+  s_2c6b813d381971::t_d7b40062afa343 235-236,239-246,248-262,265,298-299
+  s_2c6b813d381971::t_6747a7da0e0ddf 6,8,10
+  s_2c6b813d381971::t_614804d89de768 75-174,179,182
+  s_2c6b813d381971::t_21756d3d2ac9f0 184-185
+  s_2c6b813d381971::t_1f70371822a52f 180-181,183,234,237,290,296-297
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_2c6b813d381971::t_64170b9bf6cff1 37
+  s_2c6b813d381971::t_2c5b2227d6ce92 64,133,170
+  s_2c6b813d381971::t_05e523402d727e 228-236,238-377
+  s_2c6b813d381971::t_b0c9a81769564f 237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "05db93d1c109038a14a2f6fb5288a54cf18bd8da",
+  "prompts": {},
+  "sessions": {
+    "s_2c6b813d381971": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "4679ce8c-a933-4ad0-af51-2f4e8eef6dfd",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
