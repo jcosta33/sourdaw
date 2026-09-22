@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
+import { REVIEW_EVIDENCE_FIELD_MAX_BYTES, assertPublicationSafeEvidence } from '../evidenceSafety.ts';
 import {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
     REVIEW_DOSSIER_MAX_BYTES,
-    REVIEW_EVIDENCE_FIELD_MAX_BYTES,
-    acceptedFindings,
+    appendReviewDossierEvents,
     assembleReviewDossier,
-    assertPublicationSafeEvidence,
-    completedStances,
-    discardedDispositions,
     parseReviewDossier,
     reviewDossierEventDigest,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import {
+    acceptedFindings,
+    completedStances,
+    discardedDispositions,
+    publishedFindings,
+    publishedReviewId,
+} from '../reviewDossierViews.ts';
 
 import type { ReviewDossier, ReviewDossierEvent, ReviewDossierEventRecord } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
@@ -1029,5 +1033,128 @@ describe('assertPublicationSafeEvidence', () => {
 
     it('should pass a bounded safe value', () => {
         expect(() => assertPublicationSafeEvidence('evidence[0].observed', [EVIDENCE_ENTRY.observed])).not.toThrow();
+    });
+});
+
+describe('publication binding events', () => {
+    const REVIEW_ID = 5272945685;
+    const PUBLICATION_EVENTS: readonly ReviewDossierEvent[] = [
+        { kind: 'review-published', reviewId: REVIEW_ID },
+        { kind: 'finding-published', findingId: 'finding-1', reviewId: REVIEW_ID, commentId: 2329000001 },
+    ];
+
+    it('should append publication bindings, keep every prefix digest, and round-trip byte-identically', () => {
+        const dossier = validDossier();
+        const prefixDigests = dossier.events.map((record) => record.digest);
+
+        const bound = appendReviewDossierEvents(dossier, PUBLICATION_EVENTS);
+
+        expect(bound.events.map((record) => record.digest).slice(0, prefixDigests.length)).toEqual(prefixDigests);
+        expect(bound.events).toHaveLength(prefixDigests.length + 2);
+        expect(bound.headDigest).toBe(recordAt(bound, bound.events.length - 1).digest);
+        expect(bound.headDigest).not.toBe(dossier.headDigest);
+        expect(parseReviewDossier(JSON.parse(serializeReviewDossier(bound)))).toEqual(bound);
+    });
+
+    it('should report the recorded publication and its finding bindings', () => {
+        const bound = appendReviewDossierEvents(validDossier(), PUBLICATION_EVENTS);
+
+        expect(publishedReviewId(bound)).toBe(REVIEW_ID);
+        expect(publishedFindings(bound)).toEqual([
+            { findingId: 'finding-1', reviewId: REVIEW_ID, commentId: 2329000001 },
+        ]);
+        expect(publishedReviewId(validDossier())).toBeUndefined();
+        expect(publishedFindings(validDossier())).toEqual([]);
+    });
+
+    it('should refuse appending a binding for a finding no accepted event carries', () => {
+        expect(() =>
+            appendReviewDossierEvents(validDossier(), [
+                { kind: 'review-published', reviewId: REVIEW_ID },
+                { kind: 'finding-published', findingId: 'finding-9', reviewId: REVIEW_ID, commentId: 2329000001 },
+            ])
+        ).toThrow(/finding-9.*no accepted finding/u);
+    });
+
+    it('should refuse appending a binding for a discarded finding', () => {
+        expect(() =>
+            appendReviewDossierEvents(validDossier(), [
+                { kind: 'review-published', reviewId: REVIEW_ID },
+                { kind: 'finding-published', findingId: 'finding-2', reviewId: REVIEW_ID, commentId: 2329000001 },
+            ])
+        ).toThrow(/finding-2.*no accepted finding/u);
+    });
+
+    it('should refuse a second publication record', () => {
+        expect(() =>
+            appendReviewDossierEvents(validDossier(), [
+                { kind: 'review-published', reviewId: REVIEW_ID },
+                { kind: 'review-published', reviewId: REVIEW_ID + 1 },
+            ])
+        ).toThrow(/more than one publication/u);
+    });
+
+    it('should refuse a finding binding without a recorded publication', () => {
+        expect(() =>
+            appendReviewDossierEvents(validDossier(), [
+                { kind: 'finding-published', findingId: 'finding-1', reviewId: REVIEW_ID, commentId: 2329000001 },
+            ])
+        ).toThrow(/without recording the publication's review id/u);
+    });
+
+    it('should refuse a finding binding naming another review', () => {
+        expect(() =>
+            appendReviewDossierEvents(validDossier(), [
+                { kind: 'review-published', reviewId: REVIEW_ID },
+                { kind: 'finding-published', findingId: 'finding-1', reviewId: REVIEW_ID + 1, commentId: 2329000001 },
+            ])
+        ).toThrow(/binds review .*not the recorded publication/u);
+    });
+
+    it('should refuse a repeated finding binding', () => {
+        expect(() =>
+            appendReviewDossierEvents(validDossier(), [
+                ...PUBLICATION_EVENTS,
+                { kind: 'finding-published', findingId: 'finding-1', reviewId: REVIEW_ID, commentId: 2329000002 },
+            ])
+        ).toThrow(/finding-1.*more than once/u);
+    });
+
+    it('should refuse a rebound review id on a dossier that already recorded its publication', () => {
+        const bound = appendReviewDossierEvents(validDossier(), PUBLICATION_EVENTS);
+
+        expect(() => appendReviewDossierEvents(bound, [{ kind: 'review-published', reviewId: REVIEW_ID + 7 }])).toThrow(
+            /more than one publication/u
+        );
+    });
+
+    it('should parse the publication kinds from a persisted record and refuse a missing key', () => {
+        const bound = appendReviewDossierEvents(validDossier(), PUBLICATION_EVENTS);
+        const persisted = JSON.parse(serializeReviewDossier(bound)) as {
+            events: Record<string, unknown>[];
+        };
+        expect(parseReviewDossier(persisted)).toEqual(bound);
+
+        const broken = structuredClone(persisted);
+        const findingRecord = broken.events.find((record) => record.kind === 'finding-published');
+        if (findingRecord === undefined) {
+            throw new Error('expected a finding-published record');
+        }
+        delete findingRecord.commentId;
+        expect(() => parseReviewDossier(broken)).toThrow(/fields must be/u);
+    });
+
+    it('should refuse a tampered publication binding that keeps its recorded digest', () => {
+        const bound = appendReviewDossierEvents(validDossier(), PUBLICATION_EVENTS);
+        const persisted = JSON.parse(serializeReviewDossier(bound)) as {
+            events: { kind: string; commentId?: number }[];
+        };
+        const findingRecord = persisted.events.find((record) => record.kind === 'finding-published');
+        if (findingRecord === undefined) {
+            throw new Error('expected a finding-published record');
+        }
+        findingRecord.commentId = 999999999;
+
+        expect(() => parseReviewDossier(persisted)).toThrow(/digest does not match/u);
     });
 });

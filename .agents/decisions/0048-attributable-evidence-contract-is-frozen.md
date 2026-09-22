@@ -15,6 +15,8 @@ sources:
     - scripts/reviewRepair.ts
     - scripts/findingLineage.ts
     - scripts/pullRequestMutationLock.ts
+    - scripts/reviewPublicationBinding.ts
+    - scripts/reconstructReviewRounds.ts
     - scripts/__tests__/canonicalRecord.spec.ts
     - scripts/__tests__/sourceAttestation.spec.ts
     - scripts/__tests__/reviewDossier.spec.ts
@@ -24,6 +26,7 @@ sources:
     - https://github.com/jcosta33/sourdaw/issues/3367
     - https://github.com/jcosta33/sourdaw/issues/3369
     - https://github.com/jcosta33/sourdaw/issues/3372
+    - https://github.com/jcosta33/sourdaw/issues/3375
 ---
 
 # 0048 - The attributable review-evidence contract is frozen
@@ -114,3 +117,20 @@ enforcement (#3376) — must ride these channels and rules or introduce a new ad
 version; they may not relax the canonical-byte, redaction, actor-binding, or recovery rules, and
 they may not move evidence onto author-controlled content. Historical v1 artifacts stay readable
 through their explicit adapters; this freeze changes no writer, no CI policy, and no delivery gate.
+
+## Extension — publication binding and adjudication persistence (2026-09-22, #3375)
+
+Under the freeze's addition-only rule, `dossier-v1` gains two event kinds: `review-published`
+(binding the landed public review id) and `finding-published` (binding each accepted finding to its
+public comment id within that review). `review:publish` appends them after the POST lands and
+verifies the landed comment shape against the document positionally
+(`reviewPublicationBinding.ts`); a rerun whose dossier already records the publication replays it —
+the exact same review must stand live, actor, head, state, body, and comments — instead of posting
+a duplicate, and a record that no longer stands exact fails closed. A record claiming the canonical
+format whose chain does not validate is corrupt evidence, never fresh input. `review:accept`
+refuses a plan-carrying bundle whose dossier is missing, records no publication, or leaves an
+accepted finding unbound; legacy bundles without a risk plan publish and accept exactly as before.
+`review:reconstruct` rebuilds every governed round from public channels alone — reviews, comments,
+and repair markers — and shadow-compares each local dossier against that reconstruction, recording
+mismatches without gating (`reconstructReviewRounds.ts`). No existing event kind, digest rule, or
+channel assignment changed; dossiers written before this extension parse unchanged.
