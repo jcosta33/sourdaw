@@ -156,22 +156,35 @@ function mergedDroppedSides(
 }
 
 /**
- * The sides the collector withheld from the files that supplied this unit's context. Contract
- * withholdings live in `withheldSides.context`, but the implementation context is assembled from
- * other changed files' surviving after regions, and a withholding of one of those files is keyed to
- * that file in `withheldSides.own`. A unit whose implementation context came from a file with a
- * withheld after hunk saw that implementation only in part, so the owning file's withholding must
- * unsupply the context side exactly as a contract withholding does — or a rule over the partially
- * seen implementation scores a decisive verdict.
+ * The sides the collector withheld from the files that supply this unit's context. Contract
+ * withholdings live in `withheldSides.context`, but the implementation context is assembled from the
+ * other changed files' after regions, and a withholding of one of those files is keyed to that file in
+ * `withheldSides.own`. Reading the owning files from the surviving references misses a file whose
+ * after side was withheld *entirely*: nothing survives to attribute, so its recorded withholding was
+ * never consulted and a second, clean implementation file satisfied the implementation token. The
+ * candidates are therefore read from the withholding map directly — the changed files that are not
+ * collected specs and not the unit's own path — which also subsumes the partial case a previous repair
+ * handled: a file with one surviving hunk and one withheld hunk still unsupplies the side exactly as
+ * that repair established.
+ *
+ * The blast radius is deliberate: one withheld implementation file unsupplies the implementation token
+ * for every unit whose rules need it. That is the same conservative propagation the contract context
+ * already uses, and for a rule that exists to catch a bypassed test an unresolved answer beats a
+ * decisive one built on the wrong file.
  */
 function withheldContextSides(
     set: SemanticEvidenceSet,
-    context: readonly EvidenceReference[]
+    files: readonly SemanticChangedFile[],
+    ownPath: string,
+    needsImplementation: boolean
 ): ReadonlySet<EvidenceSide> {
     const sides = new Set<EvidenceSide>(set.withheldSides.context);
-    for (const reference of context) {
-        for (const changedPath of set.attribution.get(reference.evidenceId) ?? []) {
-            for (const side of set.withheldSides.own.get(changedPath) ?? []) {
+    if (needsImplementation) {
+        for (const candidate of files) {
+            if (candidate.path === ownPath || isCollectedSpec(candidate.path)) {
+                continue;
+            }
+            for (const side of set.withheldSides.own.get(candidate.path) ?? []) {
                 sides.add(side);
             }
         }
@@ -298,7 +311,7 @@ export function planUnits(
                 ownDroppedSides: mergedDroppedSides(fitted.own.droppedSides, set.withheldSides.own.get(file.path)),
                 contextDroppedSides: mergedDroppedSides(
                     fitted.context.droppedSides,
-                    withheldContextSides(set, context)
+                    withheldContextSides(set, files, file.path, needsImplementation)
                 ),
             },
         });

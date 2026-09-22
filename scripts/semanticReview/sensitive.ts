@@ -145,26 +145,41 @@ type EgressShape = {
     readonly validate?: (match: RegExpExecArray) => boolean;
 };
 
+/** The BEGIN header of an armored block, tolerant of the dashes and inner label of every PEM variant. */
+const ARMOR_HEADER = String.raw`-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}`;
+
+/** The matching closing footer: the anchor that proves a reflowed block is a block, not prose. */
+const ARMOR_FOOTER = String.raw`-{4,5} ?END [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}`;
+
+/**
+ * Envelope lines between the header and the body: `Proc-Type` and `DEK-Info` on a passphrase-encrypted
+ * block, a `Version:` or `Comment:` line, or a blank line. The pinned scanner's private-key rule spans
+ * them all, so none may break the match.
+ */
+const ARMOR_ENVELOPE = String.raw`(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?[ \t]*\r?\n)*`;
+
+/** One base64 body line, possibly indented, so a body reflowed into short lines still matches. */
+const ARMOR_BODY_LINE = String.raw`[ \t]*[A-Za-z0-9+/=]+[ \t]*\r?\n`;
+
 const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
     // An armored private key: the BEGIN header of a PEM block, such as a PKCS#8 or OpenSSH private
-    // key block, followed by a line break and a run of base64 key material. `SECRET_KEY_NAME` matches
-    // only a `key = value` assignment, so a block passes untouched and would be submitted to the
-    // provider. Egress requires each shape to carry a value, so the header alone is not enough: a
-    // documentation sentence that quotes the header carries no key material and must not be withheld.
-    // An envelope may carry any header line between the BEGIN line and the body — `Proc-Type` and
-    // `DEK-Info` on a traditional passphrase-encrypted block, or a `Version:` or `Comment:` line —
-    // plus a blank line, and the pinned scanner's private-key rule spans them all, so none of those
-    // lines may break the match. The body, not the closing footer, is what is required, so a block
-    // pasted without its footer is still caught — the pinned Gitleaks rule requires both, and being
-    // stricter than it buys nothing.
-    // The body must be plausible key material, not any short run: a PEM body line is sixty-four
-    // base64 characters, and an eight-character run let documentation that quotes a header and then
-    // writes `REDACTED` be withheld wholesale. Twenty-four characters still admits the first line of
-    // any real block while keeping a redaction word out of the match.
+    // key block, followed by base64 key material and a closing footer. `SECRET_KEY_NAME` matches only
+    // a `key = value` assignment, so a block passes untouched and would be submitted to the provider.
+    // Egress requires each shape to carry a value, so the header alone is not enough: a documentation
+    // sentence that quotes the header carries no key material and must not be withheld.
+    //
+    // The shape keys on the block, not on one line's length. A closing footer identifies a block whose
+    // body was reflowed into lines shorter than any single-line floor, and the body may begin on the
+    // header's own line rather than after a break, so both are caught. Without a footer the body must
+    // still be a run of real body length: the fixtures pin a forty-character run of a real PKCS#8
+    // prefix, and a twenty-four-character placeholder under a header is a fake block that must not be
+    // withheld.
     {
         reason: 'an armored private key',
-        pattern:
-            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?\r?\n)*[ \t]*[A-Za-z0-9+/=]{24,}/u,
+        pattern: new RegExp(
+            String.raw`${ARMOR_HEADER}(?:[ \t]*\r?\n${ARMOR_ENVELOPE})?(?:(?:${ARMOR_BODY_LINE})+[ \t]*${ARMOR_FOOTER}|[ \t]*[A-Za-z0-9+/=]{40,})`,
+            'u'
+        ),
     },
     // A secret in a query parameter: `?password=…`, `&access_token=…`, `&sig=…`.
     {

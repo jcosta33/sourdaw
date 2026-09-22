@@ -1,7 +1,13 @@
 import { AuthenticationError, RateLimitError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
-import { e2eSpecPattern, specFilePattern } from '../../vitestCollectionPatterns.ts';
+import {
+    e2eSpecPattern,
+    isNodeTestCollected,
+    isPlaywrightCollected,
+    isVitestCollected,
+    specFilePattern,
+} from '../../vitestCollectionPatterns.ts';
 import {
     assertAdvisoryWording,
     buildRevisionContext,
@@ -1873,6 +1879,99 @@ describe('verify incomplete attribution', () => {
     });
 });
 
+describe('verify summary wording', () => {
+    it('describes withheld evidence as a coverage gap, not model indecision', async () => {
+        // A verify report whose evidence was withheld carries a decisive support answer and a
+        // `needs_more_evidence` disposition, because `interpretFinding` outranks every threshold when
+        // the referenced evidence was not supplied. The outcome sentence must name that coverage gap
+        // rather than reuse the scan sentence about unresolved answers or near misses.
+        const { runVerify } = await import('../verify.ts');
+        const result = await runVerify({
+            ports: {
+                source: fakeSource({
+                    files: [],
+                    blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+                }),
+                provider: constantProvider(
+                    { supported: 0.95, contradicted: 0.02, insufficient_context: 0.03 },
+                    {
+                        systemOne: async ({ questions }) => {
+                            const distributions: Record<string, Record<string, number>> = {
+                                support: { supported: 0.95, contradicted: 0.02, insufficient_context: 0.03 },
+                                attribution: {
+                                    introduced_by_change: 0.95,
+                                    pre_existing: 0.02,
+                                    undetermined: 0.03,
+                                },
+                                kind: {
+                                    behavioral_or_contract_issue: 0.95,
+                                    style_preference: 0.02,
+                                    undetermined: 0.03,
+                                },
+                                strongestEvidence: { none: 1 },
+                            };
+                            const answers: Record<string, unknown> = {};
+                            for (const key of Object.keys(questions)) {
+                                const probabilities = distributions[key] ?? distributions.support!;
+                                answers[key] = {
+                                    type: 'choice',
+                                    probabilities,
+                                    confidence: 0.95,
+                                    choice: Object.keys(probabilities)[0],
+                                };
+                            }
+                            return {
+                                model: TYPESAFE_MODEL,
+                                answers,
+                                usage: { input_tokens: 5, output_tokens: 0 },
+                            };
+                        },
+                    }
+                ),
+                cache: new MapCache(),
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: () => undefined,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [
+                        {
+                            path: 'src/modules/Project/gone.ts',
+                            side: 'before',
+                            startLine: 1,
+                            endLine: Number.MAX_SAFE_INTEGER,
+                        },
+                        {
+                            path: 'src/modules/Project/a.ts',
+                            side: 'after',
+                            startLine: 1,
+                            endLine: Number.MAX_SAFE_INTEGER,
+                        },
+                    ],
+                },
+            ],
+            runId: 'verify-summary',
+        });
+        const assessment = result.report.findingAssessments[0];
+        expect(assessment?.disposition).toBe('needs_more_evidence');
+        // The support answer is decisive; only the withheld before side blocks the disposition.
+        expect(assessment?.support.outcome).toBe('supported');
+        const summary = renderSummary(result.report);
+        expect(summary).toContain('No finding was decidable');
+        expect(summary).toContain('needed more evidence');
+        expect(summary).not.toContain('unresolved or came close');
+        expect(summary).not.toContain('No question was decidable');
+    });
+});
+
 describe('identity self-verification', () => {
     async function smallScan(profile: typeof SEMANTIC_BUDGET_PROFILES.ci) {
         const base = scanPorts(
@@ -3007,6 +3106,59 @@ describe('collector withholding of an implementation file reaches the consuming 
         ).toBe('insufficient_context');
     });
 
+    it('reports implementation source missing when the changed implementation was withheld in full', () => {
+        // A wholly withheld implementation file leaves no surviving after region to attribute, so the
+        // old attribution walk never consulted its recorded withholding; a second, clean implementation
+        // file then satisfied `after implementation source` over an incomplete candidate set.
+        const testPath = 'src/modules/Project/__tests__/undo.spec.ts';
+        const withheldImplPath = 'src/modules/Project/useCases/undoProject.ts';
+        const cleanImplPath = 'src/modules/Project/useCases/arrange.ts';
+        const aws = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const files = [changedFile(testPath), changedFile(withheldImplPath), changedFile(cleanImplPath)];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${testPath}`]: 'it("before", () => {});\n',
+                    [`${HEAD}:${testPath}`]: 'it("after", () => {});\n',
+                    [`${MERGE_BASE}:${withheldImplPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${withheldImplPath}`]: `const key = '${aws}';\n`,
+                    [`${MERGE_BASE}:${cleanImplPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${cleanImplPath}`]: 'export const after = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path === testPath);
+        expect(unit).toBeDefined();
+        expect(unit?.rules.map((rule) => rule.id)).toContain('production_path_no_longer_reached');
+        // The clean implementation's after side survives in context, but the withheld implementation's
+        // after side is recorded under `withheldSides.own` and must unsupply the context side.
+        expect(unit?.evidence.contextDroppedSides.has('after')).toBe(true);
+        const missing = missingRequiredEvidence(
+            semanticRule('production_path_no_longer_reached'),
+            unit?.evidence.own ?? [],
+            unit?.evidence.context ?? [],
+            'modified',
+            unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+            unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
+        );
+        expect(missing).toContain('after implementation source');
+        expect(
+            interpretScanOutcome({
+                answer: { type: 'noul', noul: 0.05 },
+                rule: semanticRule('production_path_no_longer_reached'),
+                unitId: 'u',
+                path: testPath,
+                missingEvidence: missing,
+            }).outcome
+        ).toBe('insufficient_context');
+    });
+
     it('still scores a unit whose implementation context was delivered whole', () => {
         const testPath = 'src/modules/Project/__tests__/undo.spec.ts';
         const implPath = 'src/modules/Project/useCases/undoProject.ts';
@@ -3176,6 +3328,36 @@ describe('armored envelopes with arbitrary header lines', () => {
     });
 });
 
+describe('the armored shape keys on the block, not one line length', () => {
+    const pkcs8Header = secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----');
+    const footer = secretFixture('-----END ', 'PRIVATE KEY', '-----');
+
+    it('withholds a body reflowed into lines shorter than any single-line floor when a footer is present', () => {
+        // A real PEM whose body was reflowed into lines shorter than the old floor still carries its
+        // closing footer, and the footer — not one line's length — is what identifies the block.
+        const reflowed = secretFixture(pkcs8Header, '\n', 'MIIEvgIBADANBgkq', '\n', 'hkiG9w0BAQEFAASCBK', '\n', footer);
+        expect(sensitiveContentReason(reflowed)).toBe('an armored private key');
+    });
+
+    it('withholds a body that begins on the header own line', () => {
+        const body = secretFixture('TUlJ', 'RXZRSUJBREFO', 'Qmdr', 'a2lod0FBUUVGQUFTQ0JL');
+        const sameLine = secretFixture(pkcs8Header, body, '\n', footer);
+        expect(sensitiveContentReason(sameLine)).toBe('an armored private key');
+    });
+
+    it('still withholds a footerless run of real body length', () => {
+        const longRun = secretFixture(pkcs8Header, '\n', 'A'.repeat(64));
+        expect(sensitiveContentReason(longRun)).toBe('an armored private key');
+    });
+
+    it('does not withhold a long placeholder under a header without a footer', () => {
+        // A fake block showing a twenty-four-character placeholder where the body belongs is
+        // documentation, not key material: only a footer or a run of real body length proves a block.
+        const placeholder = secretFixture(pkcs8Header, '\n', 'AAAAAAAA', 'AAAAAAAA', 'AAAAAAAA');
+        expect(sensitiveContentReason(placeholder)).toBeUndefined();
+    });
+});
+
 describe('the collection predicate matches the runners, not a restated rule', () => {
     it('collects exactly the paths some runner executes', () => {
         expect(isCollectedSpec('src/modules/Project/__tests__/undo.spec.ts')).toBe(true);
@@ -3256,6 +3438,23 @@ describe('each runner collects only its own declared scope', () => {
             deleted: 0,
         });
         expect(exclusionReason(renamedExtension)).toBeUndefined();
+    });
+
+    it('models the dotfile axis each runner actually observes', () => {
+        // Established by planting a `.hidden.spec.ts` and asking each runner to list it:
+        // - Vitest collected `scripts/.hidden.spec.ts` (`vitest list --filesOnly`), so its include
+        //   matches a leading-dot name.
+        // - Playwright collected `tests/e2e/.hidden.spec.ts` (`playwright test --list`), so it too
+        //   collects a leading-dot name.
+        // - node:test did not: the shell glob `__tests__/*.spec.ts` never expands a leading-dot name,
+        //   so `tsx --test` receives nothing for `.hidden.spec.ts`.
+        expect(isVitestCollected('src/.hidden.spec.ts')).toBe(true);
+        expect(isPlaywrightCollected('tests/e2e/.hidden.spec.ts')).toBe(true);
+        expect(isNodeTestCollected('server/__tests__/.hidden.spec.ts')).toBe(false);
+        // The shared predicate mirrors that observed behaviour across all three arms.
+        expect(isCollectedSpec('src/.hidden.spec.ts')).toBe(true);
+        expect(isCollectedSpec('tests/e2e/.hidden.spec.ts')).toBe(true);
+        expect(isCollectedSpec('server/__tests__/.hidden.spec.ts')).toBe(false);
     });
 });
 

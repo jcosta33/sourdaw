@@ -495,8 +495,10 @@ function omittedLine(total: number): string {
 }
 
 /**
- * The one sentence that says how the run went. `unresolved` is a first-class disposition, so a run in
- * which the model declined every question must not read the same as one it answered cleanly.
+ * The one sentence that says how the run went. `unresolved` is a first-class scan disposition and a
+ * verify report's `needs_more_evidence` is a coverage gap, so a run in which the model declined every
+ * question — or every finding's evidence was withheld — must not read the same as one it answered
+ * cleanly. Each mode words its own undecided branch from what that mode actually carries.
  */
 /**
  * An answer at or above this and below its fire threshold came close without reaching it. It is a
@@ -505,7 +507,36 @@ function omittedLine(total: number): string {
  */
 const NEAR_MISS_PROBABILITY = 0.5;
 
+/**
+ * The assessed count and how many of those were not decisive, read per mode. In scan mode an answer
+ * below its fire threshold is simply not flagged, but a run whose answers all sat near the threshold
+ * established nothing, so near misses are counted from the values themselves while
+ * `insufficient_context` stays reserved for evidence the application knows it never sent. In verify
+ * mode `needs_more_evidence` is a coverage gap — evidence never supplied — or a genuinely non-decisive
+ * assessment, never a near miss.
+ */
+function outcomeCounts(report: SemanticReport): { totalAssessments: number; undecided: number } {
+    if (report.mode === 'scan') {
+        return {
+            totalAssessments: report.signals.length,
+            undecided:
+                report.signals.filter((signal) => signal.disposition === 'unresolved').length +
+                report.signals.filter(
+                    (signal) =>
+                        signal.disposition === 'no_additional_recommendation' &&
+                        signal.probability >= NEAR_MISS_PROBABILITY
+                ).length,
+        };
+    }
+    return {
+        totalAssessments: report.findingAssessments.length,
+        undecided: report.findingAssessments.filter((assessment) => assessment.disposition === 'needs_more_evidence')
+            .length,
+    };
+}
+
 function describeOutcome(input: {
+    mode: SemanticMode;
     assessed: number;
     actionableCount: number;
     totalAssessments: number;
@@ -519,9 +550,18 @@ function describeOutcome(input: {
         return `${String(input.actionableCount)} item(s) for the orchestrator to weigh:`;
     }
     if (input.totalAssessments > 0 && input.undecided === input.totalAssessments) {
+        if (input.mode === 'verify') {
+            return `No finding was decidable in ${String(input.assessed)} evaluated finding(s): all ${String(input.totalAssessments)} needed more evidence. No semantic signal was established.`;
+        }
         return `No question was decidable in ${String(input.assessed)} evaluated unit(s): all ${String(input.totalAssessments)} were unresolved or came close to their threshold without reaching it. No semantic signal was established.`;
     }
     if (input.undecided > 0) {
+        if (input.mode === 'verify') {
+            // A verify report's `needs_more_evidence` disposition means the required evidence was not
+            // supplied or was not decisive, not that the model wavered around a threshold. Naming it
+            // "unresolved or close to a threshold" would present withheld evidence as model indecision.
+            return `Assessed without a decisive answer: ${String(input.undecided)} of ${String(input.totalAssessments)} finding(s) needed more evidence in ${String(input.assessed)} evaluated finding(s).`;
+        }
         // `undecided` counts genuine `unresolved` dispositions and near misses together, so the
         // sentence must name both: calling a near miss "unresolved" contradicts the report's own
         // dispositions, where the near miss is a `no_additional_recommendation` answer below its fire
@@ -562,29 +602,7 @@ export function renderSummary(report: SemanticReport): string {
         `questions ${report.rulesDigest.slice(0, 12)} · policy ${report.policyDigest.slice(0, 12)} (${report.policyVersion})`
     );
 
-    // `unresolved` is a first-class disposition, so a run in which the model declined every question
-    // must not render the same sentence as one it answered cleanly.
-    let totalAssessments: number;
-    let undecided: number;
-    if (report.mode === 'scan') {
-        totalAssessments = report.signals.length;
-        // A single fire threshold means an answer below it is simply not flagged — but a run whose
-        // answers all sat near the threshold and never reached it has established nothing, and
-        // printing the same sentence as an affirmatively quiet run would present an undecided
-        // assessment as a clean one. `insufficient_context` stays reserved for evidence the
-        // application knows it never sent; near misses are counted here, from the values themselves.
-        undecided =
-            report.signals.filter((signal) => signal.disposition === 'unresolved').length +
-            report.signals.filter(
-                (signal) =>
-                    signal.disposition === 'no_additional_recommendation' && signal.probability >= NEAR_MISS_PROBABILITY
-            ).length;
-    } else {
-        totalAssessments = report.findingAssessments.length;
-        undecided = report.findingAssessments.filter(
-            (assessment) => assessment.disposition === 'needs_more_evidence'
-        ).length;
-    }
+    const { totalAssessments, undecided } = outcomeCounts(report);
 
     const actionableLines: string[] = [];
     if (report.mode === 'scan') {
@@ -612,6 +630,7 @@ export function renderSummary(report: SemanticReport): string {
 
     claim(
         describeOutcome({
+            mode: report.mode,
             assessed: report.scope.assessed,
             actionableCount,
             totalAssessments,

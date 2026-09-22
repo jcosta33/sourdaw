@@ -67,6 +67,8 @@ export function isNodeTestCollected(path: string): boolean {
         return false;
     }
     const remainder = path.slice(serverTestDirectory.length + 1);
-    // The `__tests__/*.spec.ts` glob is non-recursive: it names direct children only.
-    return !remainder.includes('/') && remainder.endsWith('.spec.ts');
+    // The `__tests__/*.spec.ts` glob is non-recursive and the shell never expands a leading-dot name:
+    // a direct `.spec.ts` child runs, but `.hidden.spec.ts` is not passed to `tsx --test`. Verified by
+    // planting one and watching the shell glob expand only its non-dot sibling.
+    return !remainder.includes('/') && !remainder.startsWith('.') && remainder.endsWith('.spec.ts');
 }
