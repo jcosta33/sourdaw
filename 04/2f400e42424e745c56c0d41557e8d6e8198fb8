@@ -1,0 +1,65 @@
+scripts/semanticReview/__tests__/egressVendorShapeExtraction.spec.ts
+  s_df40b526e33ddb::t_f20db579458f6f 44,48-51,53-54,62-66,70-92
+  h_beb54bf43b47b7 45-47,52,55-61,67-69,94-96,103-104,111,114,116-117,122,125-130,131,132-139,140,141-143,145,146-149,150,151-154,154-155,156-159,161,162-166,167,168-170,172,173-176,176-177,177,178-180,182,184-193,188-189,194,195-202,198-199,203-205,203-204,205-216,207,212,217-218,218,219-221,222-231,230,232-233,235-238,240,241-243,244,245-251,252
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1690-1691,1699,1700-1701,1702-1704,1705-1707,1708-1712,1713-1714,1715-1721,1722-1726,1727,1728-1732,1733-1737,1738-1762,3448-3450,3451-3452,3453-3455,3456-3458,3462,3468,3474-3476,3477,3478,3480,3481-3484,3485-3492,3499,3500-3508,3509-3541
+  s_df40b526e33ddb::t_156c6d1262ef44 23,84-88,1680-1687,3459-3461,3463-3466,3493-3495
+scripts/semanticReview/sensitive.ts
+  h_beb54bf43b47b7 67,71-75,76,77-78,79-85,88,89,90,215-216
+  s_b7f23f55cf13eb::t_18aa44f6d87f59 181-187,189,203,215,220-221,301
+scripts/generateEgressVendorShapes.ts
+  s_752700acee0053::t_39b6306898d80a 63,103,110,117
+  h_beb54bf43b47b7 104-106
+scripts/semanticReview/egressVendorToml.ts
+  s_79a4735522d528::t_e6a76f2fe02f29 1-18,25,134,137-138,140-149,154-155,158-164,166-194,203,206,226,229,232,235-238,329,334-335,342,348-349,356-358
+  h_beb54bf43b47b7 19-24,26-34,35-37,38-125,126-129,130,131,132-133,135-136,139,150,151-152,153,156,157,165,195-218,219-225,227-228,230-231,233-234,239-328,330-333,336-341,343-347,350-355
+scripts/semanticReview/egressVendorShapeExtraction.ts
+  h_beb54bf43b47b7 310-318,320-321,323-325,328-331,334-343,347-353,358-362,367-368,371-372,383-384,388-390,398-415,617-619,646-651,682
+scripts/semanticReview/egressVendorShapes.ts
+  h_beb54bf43b47b7 35-37,127,159,496,504,512,520,552,575,598,606,614,622,981,997,1022,1047,1095,1111,1119,1210,1235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "042f400e42424e745c56c0d41557e8d6e8198fb8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_752700acee0053": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "b6e8cad2-b62c-487b-a721-00b42786cf49",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_79a4735522d528": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "df2605c7-64a6-4ac3-806a-20ac0d32372d",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b7f23f55cf13eb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "151f7615-d1d8-4b62-ba66-bda3036325f8",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_df40b526e33ddb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "495ced60-519f-47d1-88d9-0a16ff36da94",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
