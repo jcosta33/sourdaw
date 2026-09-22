@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_c7361cf35855eb::t_3b5a52586bf6a4 33-35,37-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ff3416133b18f9b37fdcc5297ebf1fb6cfe9258d",
+  "prompts": {},
+  "sessions": {
+    "s_c7361cf35855eb": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3b389940-87d8-4657-9e0d-d879a4d3755e",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
