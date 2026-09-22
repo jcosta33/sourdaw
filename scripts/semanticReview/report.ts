@@ -543,8 +543,9 @@ function describeOutcome(input: {
     undecided: number;
     execution: SemanticExecutionState;
 }): string {
+    const noun = assessedNoun(input.mode);
     if (input.assessed === 0) {
-        return 'No unit was assessed; this report carries no semantic signal.';
+        return `No ${noun} was assessed; this report carries no semantic signal.`;
     }
     if (input.actionableCount > 0) {
         return `${String(input.actionableCount)} item(s) for the orchestrator to weigh:`;
@@ -553,7 +554,7 @@ function describeOutcome(input: {
         if (input.mode === 'verify') {
             return `No finding was decidable in ${String(input.assessed)} evaluated finding(s): all ${String(input.totalAssessments)} needed more evidence. No semantic signal was established.`;
         }
-        return `No question was decidable in ${String(input.assessed)} evaluated unit(s): all ${String(input.totalAssessments)} were unresolved or came close to their threshold without reaching it. No semantic signal was established.`;
+        return `No question was decidable in ${String(input.assessed)} evaluated unit(s): all ${String(input.totalAssessments)} question(s) were unresolved or came close to their threshold without reaching it. No semantic signal was established.`;
     }
     if (input.undecided > 0) {
         if (input.mode === 'verify') {
@@ -571,9 +572,21 @@ function describeOutcome(input: {
     if (input.execution !== 'completed') {
         // A run whose own header reads `partial` must never print the completion sentence, even when
         // every answer it did receive was decisive: the missing evidence is the whole point.
-        return `No additional semantic signals in ${String(input.assessed)} evaluated unit(s), but the run did not supply all its evidence.`;
+        return `No additional semantic signals in ${String(input.assessed)} evaluated ${noun}(s), but the run did not supply all its evidence.`;
     }
-    return `Completed: no additional semantic signals in ${String(input.assessed)} evaluated unit(s).`;
+    return `Completed: no additional semantic signals in ${String(input.assessed)} evaluated ${noun}(s).`;
+}
+
+/**
+ * The noun a mode's summary uses for the assessed scope: scan counts units, verify counts findings.
+ * Every branch of `describeOutcome` reads it, so the two modes cannot word one branch the other
+ * mode's way.
+ */
+function assessedNoun(mode: SemanticMode): string {
+    if (mode === 'verify') {
+        return 'finding';
+    }
+    return 'unit';
 }
 
 export function renderSummary(report: SemanticReport): string {
@@ -595,7 +608,7 @@ export function renderSummary(report: SemanticReport): string {
         `head ${context.headSha.slice(0, 12)} · merge base ${context.mergeBaseSha.slice(0, 12)} · target base ${context.targetBaseSha.slice(0, 12)}`
     );
     lines.push(
-        `scope: ${String(report.scope.assessed)} of ${String(report.scope.eligible)} eligible units assessed (${String(report.scope.discovered)} discovered)`
+        `scope: ${String(report.scope.assessed)} of ${String(report.scope.eligible)} eligible ${assessedNoun(report.mode)}(s) assessed (${String(report.scope.discovered)} discovered)`
     );
     // The policy is named because a replay may apply a different one than produced the answers.
     lines.push(

@@ -365,8 +365,6 @@ function collectFindingEvidence(input: {
             limitations.push(`finding evidence ${reference.path} was withheld: it contains ${unsafe}`);
             continue;
         }
-        const evidenceId = `${evidenceSidePrefix(reference.side)}${String(ordinal)}`;
-        ordinal += 1;
         // The finding named a range, so the range is what leaves the machine. Reading and hashing the
         // whole file sent a scope wider than the one the caller asked about, and reported bounds the
         // request never used. The screen above still judges the whole file, because withholding has to
@@ -376,6 +374,22 @@ function collectFindingEvidence(input: {
         const startLine = Math.min(Math.max(1, reference.startLine), lastLine);
         const endLine = Math.min(Math.max(startLine, reference.endLine), lastLine);
         const region = lines.slice(startLine - 1, endLine).join('\n');
+        // A region is supplied whole or not at all, exactly as the scan path's admission does. Sending
+        // it and then naming it truncated made `interpretFinding` read evidence it had been given as
+        // missing, while the region still left the machine past the per-region budget the scan path
+        // enforces. An oversized region is withheld and named with the scan path's own reason.
+        if (Buffer.byteLength(region, 'utf8') > input.limits.maxRegionBytes) {
+            truncated.push({
+                path: reference.path,
+                reason: `region-exceeds-per-region-budget (${reference.side})`,
+            });
+            limitations.push(
+                `finding evidence ${reference.path} (${reference.side}) was not supplied: it exceeds the per-region budget`
+            );
+            continue;
+        }
+        const evidenceId = `${evidenceSidePrefix(reference.side)}${String(ordinal)}`;
+        ordinal += 1;
         references.push({
             evidenceId,
             revisionSha: revision,
@@ -386,9 +400,6 @@ function collectFindingEvidence(input: {
             contentHash: semanticDigest({ region }),
         });
         contents.set(evidenceId, region);
-        if (Buffer.byteLength(region, 'utf8') > input.limits.maxRegionBytes) {
-            truncated.push({ path: reference.path, reason: 'region-truncated' });
-        }
     }
     return {
         references,
@@ -621,13 +632,15 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
 }
 
 function readSelectedEvidenceId(value: unknown, supplied: ReadonlySet<string>): string {
-    if (typeof value !== 'object' || value === null) {
-        return NO_EVIDENCE_ID;
+    // The scan path refuses a malformed answer rather than defaulting it, and a silent default here
+    // would record "no evidence chosen" for an answer that was never validly given. The other three
+    // answers refuse a non-object through `readChoiceAnswer`, so a missing or non-object
+    // strongest-evidence answer must refuse too rather than read as a deliberate `none`.
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        refuse('invalid_response', 'strongest-evidence answer must be an object');
     }
     const record = value as Record<string, unknown>;
     const choice = record.choice;
-    // The scan path refuses a malformed answer rather than defaulting it, and a silent default here
-    // would record "no evidence chosen" for an answer that was never validly given.
     if (typeof choice !== 'string') {
         refuse('invalid_response', 'strongest-evidence answer must select a supplied evidence id or none');
     }

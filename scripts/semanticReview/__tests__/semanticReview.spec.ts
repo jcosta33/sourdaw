@@ -37,7 +37,7 @@ import {
     TYPESAFE_MODEL,
     type SemanticProviderPort,
 } from '../provider.ts';
-import { renderSummary, validateReport } from '../report.ts';
+import { renderSummary, validateReport, type SemanticVerifyReport } from '../report.ts';
 import { missingRequiredEvidence, RESOLVED_EVIDENCE_TOKENS } from '../requiredEvidence.ts';
 import {
     assertBudgetProfile,
@@ -3469,3 +3469,239 @@ function reference(input: { evidenceId: string; path: string; side?: EvidenceSid
         contentHash: 'hash',
     };
 }
+
+async function verifyWith(input: {
+    provider: SemanticProviderPort;
+    blobs?: Record<string, string>;
+    limits?: { maxRegionBytes: number; maxTotalBytes: number };
+    findings?: CandidateFinding[];
+    runId?: string;
+}): Promise<{ report: SemanticVerifyReport }> {
+    const { runVerify } = await import('../verify.ts');
+    return runVerify({
+        ports: {
+            source: fakeSource({ files: [], blobs: input.blobs ?? {} }),
+            provider: input.provider,
+            cache: new MapCache(),
+            clock: fixedClock(1_000),
+            signal: new AbortController().signal,
+            log: () => undefined,
+        },
+        revision: BASE_REVISION,
+        profile: SEMANTIC_BUDGET_PROFILES.local,
+        limits: input.limits ?? { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        findings: input.findings ?? [
+            {
+                findingId: 'f1',
+                headSha: HEAD,
+                claim: 'a claim',
+                expectedBehavior: 'expected',
+                evidenceReferences: [
+                    {
+                        path: 'src/modules/Project/a.ts',
+                        side: 'after',
+                        startLine: 1,
+                        endLine: Number.MAX_SAFE_INTEGER,
+                    },
+                ],
+            },
+        ],
+        runId: input.runId ?? 'verify-test',
+    });
+}
+
+/** A provider that answers each question with its own distribution, selecting the highest value. */
+function perQuestionProvider(distributions: Record<string, Record<string, number>>): SemanticProviderPort {
+    return {
+        systemOne: async ({ questions }) => {
+            const answers: Record<string, unknown> = {};
+            for (const key of Object.keys(questions)) {
+                const probabilities = distributions[key] ?? {};
+                const choice = Object.entries(probabilities).sort((left, right) => right[1] - left[1])[0]?.[0];
+                answers[key] = { type: 'choice', probabilities, confidence: 0.9, choice };
+            }
+            return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+        },
+    };
+}
+
+describe('the outcome sentence names the scope noun per mode in every branch', () => {
+    const decisiveQuietVerifyProvider = (): SemanticProviderPort =>
+        perQuestionProvider({
+            support: { supported: 0.05, contradicted: 0.05, insufficient_context: 0.9 },
+            attribution: { introduced_by_change: 0.05, pre_existing: 0.9, undetermined: 0.05 },
+            kind: { behavioral_or_contract_issue: 0.5, style_preference: 0.3, undetermined: 0.2 },
+            strongestEvidence: { none: 1 },
+        });
+
+    it('words every scan branch with unit(s), never finding(s)', async () => {
+        const base = await runScan(
+            scanPorts(
+                constantProvider(0.02),
+                fakeSource({
+                    files: [changedFile('src/modules/AudioEngine/live.ts')],
+                    blobs: {
+                        [`${MERGE_BASE}:src/modules/AudioEngine/live.ts`]: 'const a = 1;\n',
+                        [`${HEAD}:src/modules/AudioEngine/live.ts`]: 'const a = 2;\n',
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        const quiet = {
+            ...base.report,
+            signals: base.report.signals.map((signal) => ({
+                ...signal,
+                outcome: 'no_signal' as const,
+                disposition: 'no_additional_recommendation' as const,
+                probability: 0.02,
+                missingEvidence: [],
+            })),
+        };
+
+        const completed = renderSummary(quiet);
+        expect(completed).toContain('eligible unit(s)');
+        expect(completed).not.toContain('eligible finding(s)');
+        expect(completed).toContain('evaluated unit(s)');
+        expect(completed).not.toContain('evaluated finding(s)');
+
+        const partial = renderSummary({ ...quiet, execution: 'partial' as const });
+        expect(partial).toContain('evaluated unit(s)');
+        expect(partial).not.toContain('evaluated finding(s)');
+
+        const empty = renderSummary({ ...quiet, scope: { ...quiet.scope, assessed: 0 }, signals: [] });
+        expect(empty).toContain('No unit was assessed');
+        expect(empty).not.toContain('No finding was assessed');
+    });
+
+    it('words every verify branch with finding(s), never unit(s)', async () => {
+        const { report } = await verifyWith({
+            provider: decisiveQuietVerifyProvider(),
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+        });
+
+        const completed = renderSummary(report);
+        expect(completed).toContain('eligible finding(s)');
+        expect(completed).not.toContain('eligible unit(s)');
+        expect(completed).toContain('evaluated finding(s)');
+        expect(completed).not.toContain('evaluated unit(s)');
+
+        const partial = renderSummary({ ...report, execution: 'partial' as const });
+        expect(partial).toContain('evaluated finding(s)');
+        expect(partial).not.toContain('evaluated unit(s)');
+
+        const empty = renderSummary({ ...report, scope: { ...report.scope, assessed: 0 }, findingAssessments: [] });
+        expect(empty).toContain('No finding was assessed');
+        expect(empty).not.toContain('No unit was assessed');
+    });
+});
+
+describe('the scan all-undecided sentence names the question count', () => {
+    it('pairs one assessed unit with several signals and names question(s)', async () => {
+        const result = await runScan(
+            scanPorts(
+                constantProvider(0.5),
+                fakeSource({
+                    files: [changedFile('src/modules/AudioEngine/live.ts')],
+                    blobs: {
+                        [`${MERGE_BASE}:src/modules/AudioEngine/live.ts`]: 'const a = 1;\n',
+                        [`${HEAD}:src/modules/AudioEngine/live.ts`]: 'const a = 2;\n',
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        expect(result.report.scope.assessed).toBe(1);
+        expect(result.report.signals.length).toBeGreaterThan(1);
+        const summary = renderSummary(result.report);
+        expect(summary).toContain(
+            `all ${String(result.report.signals.length)} question(s) were unresolved or came close`
+        );
+        expect(summary).not.toContain(`all ${String(result.report.signals.length)} were unresolved`);
+    });
+});
+
+describe('verify withholds a region over the per-region budget', () => {
+    it('sends nothing for a finding whose only region exceeds the budget', async () => {
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'const oversized_value = 1;\n'.repeat(8) },
+            limits: { maxRegionBytes: 32, maxTotalBytes: 8_192 },
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.findingAssessments).toHaveLength(0);
+        expect(
+            report.scope.truncated.some(
+                (entry) =>
+                    entry.path === 'src/modules/Project/a.ts' &&
+                    entry.reason === 'region-exceeds-per-region-budget (after)'
+            )
+        ).toBe(true);
+        expect(report.scope.unassessed[0]?.reason).toBe('no-admissible-evidence');
+    });
+
+    it('sends and judges a region that fits the budget', async () => {
+        const { report } = await verifyWith({
+            provider: perQuestionProvider({
+                support: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                attribution: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                kind: { behavioral_or_contract_issue: 0.9, style_preference: 0.05, undetermined: 0.05 },
+                strongestEvidence: { none: 1 },
+            }),
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const assessment = report.findingAssessments[0];
+        expect(assessment?.disposition).toBe('ready_for_orchestrator_validation');
+        expect(assessment?.reasoning).not.toContain('not supplied');
+        expect(report.scope.truncated).toHaveLength(0);
+    });
+});
+
+describe('verify refuses an omitted strongest-evidence answer', () => {
+    it('does not record an omitted answer as a deliberate none', async () => {
+        const provider: SemanticProviderPort = {
+            systemOne: async () => ({
+                model: TYPESAFE_MODEL,
+                answers: {
+                    support: {
+                        type: 'choice',
+                        probabilities: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                        confidence: 0.9,
+                        choice: 'supported',
+                    },
+                    attribution: {
+                        type: 'choice',
+                        probabilities: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                        confidence: 0.9,
+                        choice: 'introduced_by_change',
+                    },
+                    kind: {
+                        type: 'choice',
+                        probabilities: {
+                            behavioral_or_contract_issue: 0.9,
+                            style_preference: 0.05,
+                            undetermined: 0.05,
+                        },
+                        confidence: 0.9,
+                        choice: 'behavioral_or_contract_issue',
+                    },
+                },
+                usage: { input_tokens: 5, output_tokens: 0 },
+            }),
+        };
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
+        });
+        expect(report.findingAssessments).toHaveLength(0);
+        expect(report.scope.unassessed[0]?.reason).toBe('invalid_response');
+    });
+});
