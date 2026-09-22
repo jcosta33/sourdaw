@@ -73,6 +73,24 @@ impl ActiveRing {
         self.filled = (self.filled + block.len()).min(capacity);
     }
 
+    /// Copy a mono block into this wider ring by repeating each sample across
+    /// every armed channel. Writes only inside `buffer` (wrapping at capacity).
+    fn write_mono_upmix(&mut self, mono: &[f32]) {
+        let capacity = self.buffer.len();
+        let out_channels = self.channels;
+        if capacity == 0 || mono.is_empty() || out_channels == 0 {
+            return;
+        }
+
+        for &sample in mono {
+            for _ in 0..out_channels {
+                self.buffer[self.write_head] = sample;
+                self.write_head = (self.write_head + 1) % capacity;
+                self.filled = (self.filled + 1).min(capacity);
+            }
+        }
+    }
+
     /// Oldest-first copy of the retained region into `out`.
     fn copy_retained(&self, out: &mut [f32]) -> usize {
         let n = self.filled.min(out.len());
@@ -166,28 +184,36 @@ impl RetrospectiveControl {
             return;
         }
 
+        // Keep one command slot free so [`Self::disarm`] can always deliver.
+        // Filling the ring with Arms used to drop Disarm while this side still
+        // claimed stopped.
+        if self.commands.slots() < 2 {
+            return;
+        }
+
         let buffer = vec![0.0f32; samples].into_boxed_slice();
-        self.target_track_id = Some(track_id);
-        if self
-            .commands
-            .push(RetrospectiveCommand::Arm {
-                track_id,
-                channels,
-                buffer,
-            })
-            .is_err()
-        {
-            // The capture side has not drained; drop the allocation rather
-            // than blocking the control thread on the audio callback.
-            self.target_track_id = None;
+        match self.commands.push(RetrospectiveCommand::Arm {
+            track_id,
+            channels,
+            buffer,
+        }) {
+            Ok(()) => self.target_track_id = Some(track_id),
+            // Capture side has not drained; drop the allocation rather than
+            // blocking the control thread. Leave any prior target in place —
+            // those Arms are still queued.
+            Err(PushError::Full(_)) => {}
         }
     }
 
     /// Stop retention. Later writes keep nothing.
+    ///
+    /// Clears [`Self::target_track_id`] only when Disarm is queued. A full
+    /// command ring must not claim stopped while the writer may still retain.
     pub fn disarm(&mut self) {
         self.drain_retired();
-        self.target_track_id = None;
-        let _ = self.commands.push(RetrospectiveCommand::Disarm);
+        if self.commands.push(RetrospectiveCommand::Disarm).is_ok() {
+            self.target_track_id = None;
+        }
     }
 
     /// Push a disarm without draining the retire ring — test-only, so a full
@@ -195,8 +221,27 @@ impl RetrospectiveControl {
     /// side emptying it first.
     #[cfg(test)]
     fn push_disarm_leaving_retired(&mut self) {
-        self.target_track_id = None;
-        let _ = self.commands.push(RetrospectiveCommand::Disarm);
+        if self.commands.push(RetrospectiveCommand::Disarm).is_ok() {
+            self.target_track_id = None;
+        }
+    }
+
+    /// Push an Arm without the disarm-slot reserve or retire drain — test-only,
+    /// so a writer drain can fill the retire ring exactly.
+    #[cfg(test)]
+    fn push_arm_leaving_retired(&mut self, track_id: usize, channels: usize, samples: usize) {
+        let buffer = vec![0.0f32; samples.max(1)].into_boxed_slice();
+        if self
+            .commands
+            .push(RetrospectiveCommand::Arm {
+                track_id,
+                channels,
+                buffer,
+            })
+            .is_ok()
+        {
+            self.target_track_id = Some(track_id);
+        }
     }
 
     /// The track id last passed to [`Self::arm`], if still armed from this side.
@@ -233,7 +278,10 @@ impl RetrospectiveWriter {
     /// Install pending arm/disarm commands, then copy `block` when armed.
     ///
     /// No heap allocation and no lock. A disarmed writer returns immediately.
-    /// Channel mismatch refuses the block without retaining any of it.
+    /// Matching channel counts copy as-is. A mono block into a wider armed
+    /// ring is retained by repeating each sample across the armed channels.
+    /// Any other channel mismatch — including a wider input than the armed
+    /// allocation — refuses the block rather than writing past capacity.
     #[inline]
     pub fn write_block(&mut self, block: &[f32], channels: usize) {
         self.drain_commands();
@@ -242,13 +290,25 @@ impl RetrospectiveWriter {
             return;
         };
 
-        if channels != active.channels || block.len() % active.channels != 0 {
+        if channels == 0 || block.len() % channels != 0 {
             return;
         }
 
-        active.write_block(block);
-        self.retained_samples
-            .store(active.filled, Ordering::Relaxed);
+        if channels == active.channels {
+            active.write_block(block);
+            self.retained_samples
+                .store(active.filled, Ordering::Relaxed);
+            return;
+        }
+
+        // Punch arms stereo by convention while the device may deliver mono.
+        // Upmix in-place; never grow the armed allocation.
+        if channels == 1 && active.channels > 1 {
+            active.write_mono_upmix(block);
+            self.retained_samples
+                .store(active.filled, Ordering::Relaxed);
+            return;
+        }
     }
 
     /// Whether the writer currently holds an armed ring.
@@ -343,8 +403,8 @@ impl Drop for RetrospectiveWriter {
 #[cfg(test)]
 mod tests {
     use super::{
-        retrospective_capacity_frames, retrospective_capture, RetrospectiveWriter, RETIRE_CAPACITY,
-        RETROSPECTIVE_SECONDS,
+        retrospective_capacity_frames, retrospective_capture, RetrospectiveWriter,
+        COMMAND_CAPACITY, RETROSPECTIVE_SECONDS,
     };
 
     const RATE: f32 = 100.0;
@@ -375,6 +435,87 @@ mod tests {
         let mut out = [0.0f32; 4];
         assert_eq!(writer.copy_retained(&mut out), 4);
         assert_eq!(out, block);
+    }
+
+    #[test]
+    fn mono_input_is_retained_in_a_stereo_armed_retrospective_ring() {
+        let (mut control, mut writer) = retrospective_capture();
+        // Punch arms stereo (`DEFAULT_RETROSPECTIVE_CHANNELS = 2`) while the
+        // capture callback may deliver mono (`negotiated.channels == 1`).
+        control.arm(1, RATE, 2);
+        writer.write_block(&[], 2);
+        assert!(writer.is_armed());
+        assert_eq!(writer.retained_samples(), 0);
+
+        let mono = [0.5f32, -0.25, 0.125];
+        writer.write_block(&mono, 1);
+
+        assert_eq!(
+            writer.retained_samples(),
+            mono.len() * 2,
+            "mono frames must be retained as stereo-upmixed interleaved samples"
+        );
+        let mut out = [0.0f32; 6];
+        assert_eq!(writer.copy_retained(&mut out), 6);
+        assert_eq!(out, [0.5, 0.5, -0.25, -0.25, 0.125, 0.125]);
+    }
+
+    #[test]
+    fn wider_input_than_armed_channels_is_refused_without_overrun() {
+        let (mut control, mut writer) = retrospective_capture();
+        control.arm(1, RATE, 1);
+        writer.write_block(&[], 1);
+        let capacity = writer.capacity_samples();
+
+        writer.write_block(&[0.1, 0.2, 0.3, 0.4], 2);
+
+        assert_eq!(writer.retained_samples(), 0);
+        assert_eq!(writer.capacity_samples(), capacity);
+    }
+
+    #[test]
+    fn full_command_ring_then_disarm_leaves_writer_not_retaining() {
+        let (mut control, mut writer) = retrospective_capture();
+
+        // Eight undrained Arms used to fill every command slot so Disarm was
+        // dropped while control still cleared its target.
+        for track_id in 0..COMMAND_CAPACITY {
+            control.arm(track_id, RATE, CHANNELS);
+        }
+        control.disarm();
+        writer.write_block(&[], CHANNELS);
+
+        assert!(
+            !writer.is_armed(),
+            "disarm must reach the writer even after a burst of undrained arms"
+        );
+        assert_eq!(writer.retained_samples(), 0);
+        assert_eq!(control.target_track_id(), None);
+    }
+
+    #[test]
+    fn disarm_that_cannot_be_queued_does_not_claim_stopped() {
+        let (mut control, mut writer) = retrospective_capture();
+        arm_and_drain(&mut control, &mut writer, 1);
+
+        // Saturate the command ring, bypassing the disarm-slot reserve.
+        for track_id in 0..COMMAND_CAPACITY {
+            control.push_arm_leaving_retired(10 + track_id, CHANNELS, CHANNELS * 4);
+        }
+        assert_eq!(control.target_track_id(), Some(10 + COMMAND_CAPACITY - 1));
+
+        control.disarm();
+
+        assert_eq!(
+            control.target_track_id(),
+            Some(10 + COMMAND_CAPACITY - 1),
+            "control must not claim stopped when Disarm could not be queued"
+        );
+        writer.write_block(&[], CHANNELS);
+        assert!(
+            writer.is_armed(),
+            "without a delivered Disarm the writer stays armed on the last queued track"
+        );
     }
 
     #[test]
@@ -461,6 +602,7 @@ mod tests {
             arm_and_drain(&mut control, &mut writer, 1);
 
             let block = vec![0.125f32; CHANNELS * 16];
+            let mono = vec![0.25f32; 16];
             let oversized_channels = CHANNELS + 1;
             let misaligned = vec![0.5f32; CHANNELS * 8 + 1];
 
@@ -472,6 +614,7 @@ mod tests {
 
             assert_no_alloc(|| {
                 writer.write_block(&block, CHANNELS);
+                writer.write_block(&mono, 1);
                 writer.write_block(&block, oversized_channels);
                 writer.write_block(&misaligned, CHANNELS);
                 for _ in 0..64 {
@@ -489,14 +632,18 @@ mod tests {
             let (mut control, mut writer) = retrospective_capture();
             arm_and_drain(&mut control, &mut writer, 1);
 
-            // Queue enough replace Arms to fill the retire ring exactly when
-            // drained. Command capacity equals retire capacity, so one drain
-            // saturates without overflowing yet.
-            for track_id in 2..=(1 + RETIRE_CAPACITY) {
+            // Queue replaces up to the disarm-slot reserve, then one more Arm
+            // that skips the reserve so one writer drain fills retire exactly.
+            for track_id in 2..=COMMAND_CAPACITY {
                 control.arm(track_id, RATE, CHANNELS);
             }
+            control.push_arm_leaving_retired(
+                1 + COMMAND_CAPACITY,
+                CHANNELS,
+                retrospective_capacity_frames(RATE) * CHANNELS,
+            );
             writer.write_block(&[], CHANNELS);
-            assert_eq!(writer.target_track_id(), Some(1 + RETIRE_CAPACITY));
+            assert_eq!(writer.target_track_id(), Some(1 + COMMAND_CAPACITY));
 
             // Disarm without the control side draining retired first: the
             // capture callback's retire finds a full ring. Freeing that Box
