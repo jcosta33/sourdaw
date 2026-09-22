@@ -1,0 +1,18 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 40,3472-3703
+scripts/semanticReview/report.ts
+  h_beb54bf43b47b7 546,548,557,575,577-589
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 377-392,635-640
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "16fa3d32bd78c05949339b5e280c04175f168599",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
