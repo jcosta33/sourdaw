@@ -19,9 +19,10 @@ import {
 } from '../prepareReview.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
-import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
 
 import type { GhSession } from '../githubAppIdentity.ts';
+
+const SEMANTIC_CI_TEXT = '{"state":"no-assessment","reason":"absent"}';
 
 /**
  * Fixture teardown. `rmSync` retries because the real-git case's tree can still be settling when the
@@ -88,13 +89,7 @@ function fakePort(root: string) {
             Object.assign(files, bundle);
             installBundleAtomically(destination, bundle);
         },
-        semanticCi: (pr, headSha) => ({
-            format: SEMANTIC_CI_FORMAT,
-            pr,
-            headSha,
-            state: 'no-assessment',
-            reason: 'absent',
-        }),
+        semanticCiJson: () => SEMANTIC_CI_TEXT,
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, files };
@@ -130,13 +125,7 @@ describe('review prepare', () => {
                     'semantic-ci.json',
                 ],
             });
-            expect(JSON.parse(files['semantic-ci.json'] ?? '{}')).toEqual({
-                format: SEMANTIC_CI_FORMAT,
-                pr: 42,
-                headSha: 'headsha',
-                state: 'no-assessment',
-                reason: 'absent',
-            });
+            expect(files['semantic-ci.json']).toBe(`${SEMANTIC_CI_TEXT}\n`);
             expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
                 files: 2,
                 added: 6,
@@ -159,6 +148,18 @@ describe('review prepare', () => {
             expect(calls.some((call) => call.includes('worktree') || call.includes('agent-'))).toBe(false);
             expect(JSON.stringify(files)).not.toContain('ghs_');
             expect(JSON.stringify(files)).not.toContain('BEGIN RSA');
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
+    it('writes semantic-ci.json as the injected text plus exactly one trailing newline', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        port.semanticCiJson = () => '{"custom":"text"}';
+        try {
+            const destination = prepareReview(42, port);
+            expect(readFileSync(join(destination, 'semantic-ci.json'), 'utf8')).toBe('{"custom":"text"}\n');
         } finally {
             removeTempRoot(root);
         }
