@@ -1462,6 +1462,44 @@ describe('startPlayheadScheduler', () => {
         await waiting;
     });
 
+    it('registers the automatic punch-out finalizer on the lifecycle without blocking the tick', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        transportStoreState.value = playingState({
+            playheadPosition: 7.9,
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 8,
+        });
+        schedulerSession.punchRecordingActive = true;
+        // The finalizer's own promise is pending: the tick must still complete,
+        // and the promise must be owned so a user-facing stop can await it.
+        let release!: () => void;
+        arrangementMocks.stopRecording.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    release = resolve;
+                })
+        );
+
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // The tick crossed punch-out and cleared the flag without awaiting.
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+
+        let settled = false;
+        const waiting = recordingLifecycle.waitForCommits().then(() => {
+            settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        release();
+        await waiting;
+    });
+
     it('does not cache or update a punched clip for a failed recording result', async () => {
         trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({

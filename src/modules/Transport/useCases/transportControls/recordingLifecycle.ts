@@ -27,18 +27,16 @@ const pendingCommits = new Set<Promise<void>>();
 
 function trackCommit(commit: Promise<void>): void {
     pendingCommits.add(commit);
-    // Drop a settled commit so one no stop ever waited on — a scheduler
-    // punch-out — cannot be observed by an unrelated later stop.
-    void commit.then(
-        () => pendingCommits.delete(commit),
-        () => pendingCommits.delete(commit)
-    );
 }
 
 async function waitForCommits(): Promise<void> {
-    // Re-check after each settle: a terminal can register while this waits.
+    // Snapshot and clear before awaiting: a commit registered while this waits is
+    // handled by the next pass, and a settle observer is never what decides
+    // whether the loop can end — one that never runs would otherwise spin here.
     while (pendingCommits.size > 0) {
-        await Promise.allSettled([...pendingCommits]);
+        const commits = [...pendingCommits];
+        pendingCommits.clear();
+        await Promise.allSettled(commits);
     }
 }
 

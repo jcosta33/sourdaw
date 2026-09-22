@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { stopRecording } from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
     stopAudioRecording,
@@ -12,6 +11,7 @@ import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
+import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
@@ -39,7 +39,7 @@ export function stopPlayheadScheduler(): void {
         // `executePlayheadSeek` only assign the new position *after* this call —
         // so the store still holds the beat playback started at, and the ref is
         // the one value that is correct on all three paths.
-        void stopRecording(playheadPositionRef.current);
+        finalizeAutomaticRecording(playheadPositionRef.current);
         schedulerSession.punchRecordingActive = false;
     }
     schedulerSession.lastTickTime = 0;

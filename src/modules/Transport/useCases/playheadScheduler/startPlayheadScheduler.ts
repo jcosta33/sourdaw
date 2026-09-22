@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import {
     startRecording,
-    stopRecording,
     updateClip,
     discardRecording,
     commitRecording,
@@ -36,6 +35,7 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
@@ -565,7 +565,7 @@ export function startPlayheadScheduler(): void {
             // this neither blocks the scheduler nor reorders the audio flush.
             // Same anchoring as punch-in: the region's own end beat, not the
             // overshooting tick position and not the stale store playhead.
-            void stopRecording(current.punchOutBeat);
+            finalizeAutomaticRecording(current.punchOutBeat);
             await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
                 logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
             });

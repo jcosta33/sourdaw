@@ -14,6 +14,7 @@ import {
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -22,6 +23,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { toggleRecording } from '../toggleRecording';
 
@@ -86,8 +88,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
         ...actual,
-        executeUserAppAction: async (...args: Parameters<typeof actual.executeUserAppAction>) => {
-            await actual.executeUserAppAction(...args);
+        executeAppAction: async (...args: Parameters<typeof actual.executeAppAction>) => {
+            await actual.executeAppAction(...args);
             if (args[0].type === 'commitRecording' && commitGate.pending) {
                 await commitGate.pending;
             }
@@ -105,6 +107,16 @@ function gateNextCommit(): () => void {
     });
     return release;
 }
+
+const repairRequired = {
+    audioGraphValid: false,
+    detectedRevision: 'repair-revision',
+    inspectionAvailable: true,
+    projectInvariantsValid: false,
+    rawProjectRetained: true as const,
+    repairCandidates: [],
+    status: 'repair-required' as const,
+};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -227,6 +239,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
     });
 
     afterEach(() => {
+        agentProjectRepairStateStore.set(null);
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -375,6 +388,72 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         clearHandlerRegistry();
 
         await stopActiveRecording();
+
+        expect(committedEntryCount()).toBe(0);
+        expect(clipIds()).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the take was discarded. Try recording again.',
+            'error'
+        );
+    });
+
+    it('waits for an automatic punch-out commit before the user-facing stop resolves', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+
+        const release = gateNextCommit();
+        // Exactly what the scheduler's automatic punch-out does: finalize the
+        // take and hand its commit to the recording lifecycle, without awaiting.
+        finalizeAutomaticRecording(8);
+        // The finalizer cleared the active ref, so Stop's own `stopRecording` is
+        // a no-op; only an owned commit can keep Stop pending.
+        let settled = false;
+        const stopping = stopActiveRecording().then(() => {
+            settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        release();
+        await stopping;
+        expect(committedEntryCount()).toBe(1);
+        expect(findClip(provisional.id)?.endBeat).toBe(8);
+    });
+
+    it('retires the provisional MIDI recording when the commit is refused, and tells the user', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        // The project mutation gate refuses `executeAppAction`; the dispatch must
+        // surface that refusal so the retirement and its notice still run.
+        agentProjectRepairStateStore.set(repairRequired);
+
+        await stopActiveRecording();
+        flushAutomergeStorageWrites();
+
+        expect(committedEntryCount()).toBe(0);
+        expect(clipIds()).toEqual([]);
+        expect(takeRefs()).toEqual([]);
+        expect(laneIds()).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the take was discarded. Try recording again.',
+            'error'
+        );
+    });
+
+    it('retires the provisional audio recording when the commit is refused, and tells the user', async () => {
+        await startAudioRecordingGesture();
+        expect(clipIds()).toHaveLength(1);
+        agentProjectRepairStateStore.set(repairRequired);
+
+        await stopActiveRecording();
+        flushAutomergeStorageWrites();
 
         expect(committedEntryCount()).toBe(0);
         expect(clipIds()).toEqual([]);
