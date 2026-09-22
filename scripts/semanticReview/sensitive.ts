@@ -64,19 +64,25 @@ const SECRET_KEY_NAME_SOURCE = [
     ...VENDOR_KEY_NAMES,
 ].join('|');
 
-const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
+const SECRET_KEY_NAME = new RegExp(`\\b(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
 
 /**
  * Where a secret-named key is followed by a candidate value: the separator, and then either a quoted
- * string or an unquoted opaque run.
+ * string or an unquoted opaque run. The leading `\b` bounds the name on the left so a vendor name
+ * such as `linear` cannot match inside `bilinear` or `etsy` inside a `Synth` identifier.
  */
 const SECRET_ASSIGNMENT = new RegExp(
-    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:['"](?<quoted>[^'"]{16,})['"]|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
+    `\\b(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:['"](?<quoted>[^'"]{16,})['"]|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );
 
 /** A vendor-shaped key, given as the parts its prefix is assembled from and the shape that follows. */
-type VendorShape = { readonly reason: string; readonly parts: readonly string[]; readonly tail: string };
+type VendorShape = {
+    readonly reason: string;
+    readonly parts: readonly string[];
+    readonly tail: string;
+    readonly flags: 'iu' | 'u';
+};
 
 /**
  * The value-complete families the pinned scanner cannot express as a mechanical literal prefix, kept
@@ -87,33 +93,40 @@ type VendorShape = { readonly reason: string; readonly parts: readonly string[];
  * length that makes it one.
  */
 const RETAINED_VENDOR_SHAPES: readonly VendorShape[] = [
-    { reason: 'a GitHub token', parts: ['gh', 'p_'], tail: '[A-Za-z0-9]{20,}' },
-    { reason: 'a fine-grained GitHub token', parts: ['github', '_pat_'], tail: '[A-Za-z0-9_]{20,}' },
-    { reason: 'an AWS access key id', parts: ['A', 'K', 'IA'], tail: '[0-9A-Z]{16}' },
-    { reason: 'an AWS access key id', parts: ['A', 'S', 'IA'], tail: '[0-9A-Z]{16}' },
-    { reason: 'an AWS access key id', parts: ['A', 'B', 'IA'], tail: '[0-9A-Z]{16}' },
-    { reason: 'an AWS access key id', parts: ['A', 'C', 'CA'], tail: '[0-9A-Z]{16}' },
-    { reason: 'an AWS access key id', parts: ['A', '3', 'T', '[A-Z0-9]'], tail: '[0-9A-Z]{16}' },
+    { reason: 'a GitHub token', parts: ['gh', 'p_'], tail: '[A-Za-z0-9]{20,}', flags: 'u' },
+    { reason: 'a fine-grained GitHub token', parts: ['github', '_pat_'], tail: '[A-Za-z0-9_]{20,}', flags: 'u' },
+    { reason: 'an AWS access key id', parts: ['A', 'K', 'IA'], tail: '[0-9A-Z]{16}', flags: 'u' },
+    { reason: 'an AWS access key id', parts: ['A', 'S', 'IA'], tail: '[0-9A-Z]{16}', flags: 'u' },
+    { reason: 'an AWS access key id', parts: ['A', 'B', 'IA'], tail: '[0-9A-Z]{16}', flags: 'u' },
+    { reason: 'an AWS access key id', parts: ['A', 'C', 'CA'], tail: '[0-9A-Z]{16}', flags: 'u' },
+    { reason: 'an AWS access key id', parts: ['A', '3', 'T', '[A-Z0-9]'], tail: '[0-9A-Z]{16}', flags: 'u' },
     {
         reason: 'a JSON web token',
         parts: ['ey', 'J'],
         tail: '[A-Za-z0-9_-]*\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+',
+        flags: 'u',
     },
-    { reason: 'an OpenAI-style secret key', parts: ['s', 'k-'], tail: '[A-Za-z0-9_-]{20,}' },
-    { reason: 'an Anthropic-style secret key', parts: ['s', 'k-', 'a', 'nt-'], tail: '[A-Za-z0-9_-]{20,}' },
-    { reason: 'a Google API key', parts: ['AI', 'za'], tail: '[0-9A-Za-z_-]{35}' },
-    { reason: 'a Google OAuth client secret', parts: ['GO', 'CS', 'PX-'], tail: '[A-Za-z0-9_-]{10,}' },
+    { reason: 'an OpenAI-style secret key', parts: ['s', 'k-'], tail: '[A-Za-z0-9_-]{20,}', flags: 'u' },
+    { reason: 'an Anthropic-style secret key', parts: ['s', 'k-', 'a', 'nt-'], tail: '[A-Za-z0-9_-]{20,}', flags: 'u' },
+    { reason: 'a Google API key', parts: ['AI', 'za'], tail: '[0-9A-Za-z_-]{35}', flags: 'u' },
+    { reason: 'a Google OAuth client secret', parts: ['GO', 'CS', 'PX-'], tail: '[A-Za-z0-9_-]{10,}', flags: 'u' },
     {
         reason: 'a Stripe secret key',
         parts: ['(?:s', 'k_|r', 'k_)(?:te', 'st_|li', 've_|pr', 'od_)'],
         tail: '[0-9A-Za-z]{10,}',
+        flags: 'u',
     },
-    { reason: 'a Slack token', parts: ['xo', 'x'], tail: '[baprs]-[0-9A-Za-z-]{10,}' },
-    { reason: 'a Twilio account identifier paired with a secret', parts: ['A', 'C'], tail: '[0-9a-f]{32}\\b' },
-    { reason: 'a SendGrid API key', parts: ['S', 'G\\.'], tail: '[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{20,}' },
-    { reason: 'a GitLab personal access token', parts: ['gl', 'pa', 't-'], tail: '[A-Za-z0-9_-]{20,}' },
-    { reason: 'an npm access token', parts: ['np', 'm_'], tail: '[A-Za-z0-9]{30,}' },
-    { reason: 'a Hugging Face token', parts: ['h', 'f_'], tail: '[A-Za-z0-9]{30,}' },
+    { reason: 'a Slack token', parts: ['xo', 'x'], tail: '[baprs]-[0-9A-Za-z-]{10,}', flags: 'u' },
+    {
+        reason: 'a Twilio account identifier paired with a secret',
+        parts: ['A', 'C'],
+        tail: '[0-9a-f]{32}\\b',
+        flags: 'u',
+    },
+    { reason: 'a SendGrid API key', parts: ['S', 'G\\.'], tail: '[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]{20,}', flags: 'u' },
+    { reason: 'a GitLab personal access token', parts: ['gl', 'pa', 't-'], tail: '[A-Za-z0-9_-]{20,}', flags: 'u' },
+    { reason: 'an npm access token', parts: ['np', 'm_'], tail: '[A-Za-z0-9]{30,}', flags: 'u' },
+    { reason: 'a Hugging Face token', parts: ['h', 'f_'], tail: '[A-Za-z0-9]{30,}', flags: 'u' },
 ];
 
 /** Every vendor shape the screen withholds: the retained families, then the generated table. */
@@ -138,16 +151,24 @@ const FILESYSTEM_PATH = /^(?:\/|\.\.?\/|~\/|[A-Za-z]:[\\/])[A-Za-z0-9._-]+(?:[\\
  *
  * The general rule cannot separate an assigned secret from an assigned identifier by the key's name:
  * `token: usage.actualInputTokens` and `token: "AbCd…"` share a shape. The value separates them. A
- * code expression continues after the run, carries structural punctuation or a member access, or is
- * SCREAMING_SNAKE naming for an environment variable; a sentence or a placeholder is not a
- * credential either. Requiring all of that is what keeps this rule from refusing to send the module
- * that implements it, which is what the previous revision did to thirteen of this change's paths.
+ * code expression continues after the run, carries structural punctuation or a member access, is a
+ * bare mixed-case identifier, or is SCREAMING_SNAKE naming for an environment variable; a sentence
+ * or a placeholder is not a credential either. Requiring all of that is what keeps this rule from
+ * refusing to send the module that implements it, which is what the previous revision did to
+ * thirteen of this change's paths.
  *
  * The SCREAMING_SNAKE rejection must stay for identifiers, but it is what admitted an all-uppercase
- * key id assigned to a secret-named variable: a value such as `ASIAIOSFODNN7EXAMPLE` matched the
- * `[A-Z][A-Z0-9_]*` name shape even though it is an opaque value, not a name. A run that carries
- * both letters and digits and no underscore separator is therefore credential-shaped even when
- * uppercase; an all-uppercase run without digits, or with an underscore, remains a name.
+ * key id assigned to a secret-named variable: an opaque all-uppercase run with letters and digits
+ * matched the `[A-Z][A-Z0-9_]*` name shape even though it is an opaque value, not a name. A run that
+ * carries both letters and digits and no underscore separator is therefore credential-shaped even
+ * when uppercase; an all-uppercase run without digits, or with an underscore, remains a name.
+ *
+ * A bare mixed-case alphabetic value — letters only, no digits, no separator — is treated as a
+ * reference to something (an identifier such as `workletSynthDevice` or `CallbackUndoEntry`), not as
+ * key material, in the same way a dotted member access already is. This admits the trade that a
+ * credential which is mixed-case letters only — no digits and no `+`/`=`/`-`/`_` — stops reaching
+ * the general rule; vendor shapes still catch their own families, and roughly one to four percent
+ * of letter-class tokens of that length fall in that set.
  */
 function looksLikeCredentialValue(value: string, after: string): boolean {
     if (after !== '' && /[\w(.[?:]/.test(after)) {
@@ -161,6 +182,9 @@ function looksLikeCredentialValue(value: string, after: string): boolean {
         return false;
     }
     if (FILESYSTEM_PATH.test(value)) {
+        return false;
+    }
+    if (/^[A-Za-z]+$/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value)) {
         return false;
     }
     if (/^[A-Z][A-Z0-9_]*$/.test(value) && (!/[0-9]/.test(value) || value.includes('_'))) {
@@ -259,9 +283,9 @@ const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
         validate: (match: RegExpExecArray) =>
             looksLikeCredentialValue(match.groups?.bare ?? '', match.groups?.after ?? ''),
     },
-    ...VENDOR_SHAPES.map(({ reason, parts, tail }) => ({
+    ...VENDOR_SHAPES.map(({ reason, parts, tail, flags }) => ({
         reason,
-        pattern: new RegExp(`\\b${parts.join('')}${tail}`, 'u'),
+        pattern: new RegExp(`\\b${parts.join('')}${tail}`, flags),
     })),
 ];
 

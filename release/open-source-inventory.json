@@ -2236,6 +2236,12 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/generateEgressVendorShapes.ts",
+            "value": "https://raw.githubusercontent.com/gitleaks/gitleaks/${slot}/config/gitleaks.toml",
+            "templateSha256": "9c68d728d545ff457028af485cdfaef8276f3dc6ca30d439f5bace4de3924c63"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/test-health-gate-scripts.sh",
             "value": "https://app.sourdaw.studio/"
         },

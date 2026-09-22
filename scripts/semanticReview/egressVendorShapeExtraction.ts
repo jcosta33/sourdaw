@@ -31,6 +31,8 @@ export type EgressVendorShape = {
     readonly parts: readonly string[];
     readonly tail: string;
     readonly fixture: readonly string[];
+    /** The JavaScript RegExp flags the screen compiles this shape with, reproducing the source rule's case handling. */
+    readonly flags: 'iu' | 'u';
 };
 
 export type ResidualRule = {
@@ -67,15 +69,16 @@ const PROXIMITY_LEADIN = '[\\w.-]{0,50}?';
 
 /**
  * A minimal TOML reader for the Gitleaks config's `[[rules]]` array-of-tables. It is not a general
- * TOML parser: it reads the four fields the generator needs and ignores every allowlist sub-table.
- * The config is auto-generated, so its shape is stable across the bumps this script is meant to
- * survive.
+ * TOML parser: it reads the fields the generator needs and ignores every allowlist sub-table, but it
+ * accepts each of TOML's four string forms (basic, literal, and both multiline variants) and either
+ * quote style for `keywords`, so a legal form is never mistaken for an absent field. The config is
+ * auto-generated, so its shape is stable across the bumps this script is meant to survive.
  */
 function parseRules(toml: string): Rule[] {
     const blocks: string[][] = [];
     let current: string[] | null = null;
     for (const line of toml.split('\n')) {
-        if (line.trim() === '[[rules]]') {
+        if (isRuleHeader(line)) {
             current = [];
             blocks.push(current);
         } else if (current !== null) {
@@ -85,20 +88,34 @@ function parseRules(toml: string): Rule[] {
     return blocks.map(parseRuleBlock).filter((rule): rule is Rule => rule !== null);
 }
 
+function isRuleHeader(line: string): boolean {
+    return /^\[\[\s*rules\s*\]\]$/.test(line.trim());
+}
+
+/** Reads a string-valued TOML field in any of the four string forms. */
+function readStringField(block: string, key: string): string | undefined {
+    const match = block.match(
+        new RegExp(`^${key} = (?:'''([\\s\\S]*?)'''|"""([\\s\\S]*?)"""|"([^"]*)"|'([^']*)')`, 'm')
+    );
+    return match?.[1] ?? match?.[2] ?? match?.[3] ?? match?.[4];
+}
+
 function parseRuleBlock(lines: string[]): Rule | null {
     const block = lines.join('\n');
-    const id = block.match(/^id = "([^"]+)"/m)?.[1];
+    const id = readStringField(block, 'id');
     if (id === undefined) {
         return null;
     }
-    const description = block.match(/^description = "([^"]*)"/m)?.[1] ?? '';
-    const regex = block.match(/^regex = '''([\s\S]*?)'''/m)?.[1];
-    const path = block.match(/^path = '''([\s\S]*?)'''/m)?.[1];
+    const description = readStringField(block, 'description') ?? '';
+    const regex = readStringField(block, 'regex');
+    const path = readStringField(block, 'path');
     const secretGroupMatch = block.match(/^secretGroup = (\d+)/m);
     const entropyMatch = block.match(/^entropy = ([\d.]+)/m);
     const keywordsMatch = block.match(/^keywords = \[([\s\S]*?)\]/m);
-    const keywords =
-        keywordsMatch === null ? [] : Array.from((keywordsMatch[1] ?? '').matchAll(/"([^"]+)"/g), (m) => m[1] ?? '');
+    const keywords: string[] = [];
+    if (keywordsMatch !== null) {
+        keywords.push(...Array.from((keywordsMatch[1] ?? '').matchAll(/(["'])([^"']*)\1/g), (m) => m[2] ?? ''));
+    }
     return {
         id,
         description,
@@ -318,21 +335,17 @@ function splitAlternatives(inner: string): string[] {
     return parts;
 }
 
-function branchText(branch: readonly PrefixAtom[]): string {
-    let text = '';
-    for (const atom of branch) {
-        if (atom.kind !== 'alternation') {
-            text += atom.text;
-        }
-    }
-    return text;
-}
-
 function expandAlternation(sequences: readonly string[][], branches: readonly (readonly PrefixAtom[])[]): string[][] {
     const next: string[][] = [];
     for (const seq of sequences) {
         for (const branch of branches) {
-            next.push([...seq, branchText(branch)]);
+            let text = '';
+            for (const atom of branch) {
+                if (atom.kind !== 'alternation') {
+                    text += atom.text;
+                }
+            }
+            next.push([...seq, text]);
         }
     }
     return next;
@@ -517,10 +530,6 @@ function concretizeTail(tail: string): string {
     return out.join('');
 }
 
-function titleCase(text: string): string {
-    return text.replaceAll(/\b\w/g, (c) => c.toUpperCase());
-}
-
 /** A human-readable reason derived from the rule's description, falling back to its id. */
 function deriveReason(rule: Rule): string {
     const noun = /^[A-Z][a-z]+ (?:a|an) (.+?),/
@@ -531,7 +540,7 @@ function deriveReason(rule: Rule): string {
         return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
     }
     const family = rule.id.replace(/-(?:token|key|secret|id|password|credential|cookie)(?:$|-)/u, '');
-    const titled = titleCase(family.replaceAll('-', ' '));
+    const titled = family.replaceAll('-', ' ').replaceAll(/\b\w/g, (c) => c.toUpperCase());
     return `${/^[aeiou]/i.test(titled) ? 'an' : 'a'} ${titled} credential`;
 }
 
@@ -553,16 +562,7 @@ function splitParts(prefix: string): string[] {
 }
 
 function isNotPrefixAnchored(regex: string): boolean {
-    if (/http/.test(regex)) {
-        return true;
-    }
-    if (/PRIVATE KEY/.test(regex)) {
-        return true;
-    }
-    if (/\(\?P</.test(regex)) {
-        return true;
-    }
-    return /=>/.test(regex) || /value=\\?/.test(regex) || /curl/.test(regex);
+    return /http|PRIVATE KEY|\(\?P<|=>|value=\\?|curl/.test(regex);
 }
 
 function atomsHaveClassInAlternation(atoms: readonly PrefixAtom[]): boolean {
@@ -582,9 +582,18 @@ function extract(rule: Rule): Extraction {
     }
     const regex = rule.regex;
     if (regex === undefined) {
-        return { kind: 'residual', reason: 'keys on a filename, and the screen classifies content' };
+        if (rule.path !== undefined) {
+            return { kind: 'residual', reason: 'keys on a filename, and the screen classifies content' };
+        }
+        return { kind: 'residual', reason: 'rule has neither a readable regex nor a path' };
     }
     if (hasAssignmentGlue(regex) || hasProximityLeadin(regex)) {
+        // A keyword-proximity rule is only covered when its keywords survive the name filter; one
+        // whose keywords are all generic or prefix fragments would be reported under coverage while
+        // firing nothing, so it is recorded instead.
+        if (deriveKeyNames(rule.keywords).length === 0) {
+            return { kind: 'residual', reason: 'keyword-proximity rule yields no usable key name' };
+        }
         return { kind: 'keywords', keywords: rule.keywords };
     }
     const stripped = stripOuterCaptures(stripLeadingFlags(regex));
@@ -612,7 +621,14 @@ function extract(rule: Rule): Extraction {
     }
     const reason = deriveReason(rule);
     const fixture = splitParts(concretizeTail(cleanedTail));
-    const shapes = prefixes.map((prefix) => ({ reason, parts: splitParts(prefix), tail: cleanedTail, fixture }));
+    const flags: 'iu' | 'u' = regex.includes('(?i') ? 'iu' : 'u';
+    const shapes = prefixes.map((prefix) => ({
+        reason,
+        parts: splitParts(prefix),
+        tail: cleanedTail,
+        fixture,
+        flags,
+    }));
     return { kind: 'shapes', shapes, keywords: [] };
 }
 
@@ -628,7 +644,7 @@ function deriveKeyNames(keywords: readonly string[]): string[] {
 function countRuleBlocks(toml: string): number {
     let count = 0;
     for (const line of toml.split('\n')) {
-        if (line.trim() === '[[rules]]') {
+        if (isRuleHeader(line)) {
             count += 1;
         }
     }

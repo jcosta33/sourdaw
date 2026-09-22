@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { AuthenticationError, RateLimitError } from '@typesafe-ai/sdk';
 import { describe, expect, it } from 'vitest';
 
@@ -1617,6 +1619,13 @@ describe('the egress screen tells code from credentials', () => {
             'datadog = "/var/lib/datadog",',
             'datadog = "./metrics/datadog.json",',
             '// facebook OAuth client integration',
+            // A vendor name must not match inside a longer identifier (`etsy` in `Synth`, `linear` in
+            // `bilinear`), and a bare mixed-case identifier value is a reference, not key material —
+            // so a type-annotation shaped line stays admitted too.
+            'const workletSynthEntry = workletSynthDevice',
+            'bilinearPatch: bilinearPatchMock',
+            'linear_entry: CallbackUndoEntry',
+            'secretGroup: secretGroupMatch === null ? undefined : Number(secretGroupMatch[1]),',
             // A header quoted in documentation with a redaction word where the body belongs is ordinary
             // text, not key material: an eight-character word is not a PEM body line.
             secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----', '\n', 'REDACTED'),
@@ -1668,6 +1677,11 @@ describe('the egress screen tells code from credentials', () => {
         // the value heuristic instead of passing the screen untouched.
         const value = 'a'.repeat(40);
         expect(sensitiveContentReason(secretFixture('datadog=', value))).toBeDefined();
+        // The name is token-bounded: it still fires when it is the whole key, whatever separator its
+        // family's token carries (`_`, `-`), but not when it is a substring of a longer identifier.
+        expect(sensitiveContentReason(secretFixture('DATADOG_API_KEY=', value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('datadog_api_key: ', "'", value, "'"))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
     });
 
     it('admits a filesystem path but withholds a slash-led base64 credential', () => {
@@ -3355,12 +3369,30 @@ describe('vendor prefix coverage', () => {
     });
 
     it('withholds a value composed from every generated shape', () => {
-        // Every generated entry must be able to match a fixture composed from its own parts, so a
-        // pattern whose parts and tail disagree fails here instead of silently missing a family.
-        expect(EGRESS_VENDOR_SHAPES.length).toBeGreaterThan(0);
+        // The table is pinned against the pinned source by a digest, so deleting or editing an entry
+        // fails here. Every entry must match a fixture composed from its own parts — with its own
+        // compiled flags, not just be withheld by some other shape — and a case-insensitive entry must
+        // also withhold the uppercased body, so the derived tail reproduces the source rule's `(?i)`.
+        const serialized = EGRESS_VENDOR_SHAPES.map(
+            (shape) => `${shape.parts.join('')}\u0000${shape.tail}\u0000${shape.flags}`
+        ).join('\n');
+        expect(createHash('sha256').update(serialized).digest('hex')).toBe(
+            'f5ddb3429436c1cb3f65fd3432b75c1ee9033a0a2d295eb3ceab0aabf5d18db9'
+        );
         for (const shape of EGRESS_VENDOR_SHAPES) {
+            const prefix = shape.parts.join('');
             const fixture = secretFixture(...shape.parts, ...shape.fixture);
+            const pattern = new RegExp(`\\b${prefix}${shape.tail}`, shape.flags);
+            expect(pattern.test(fixture), `${shape.reason}: own pattern does not match its fixture`).toBe(true);
             expect(sensitiveContentReason(fixture), `${shape.reason}: ${fixture.slice(0, 24)}`).toBeDefined();
+            if (shape.flags === 'iu') {
+                const upperFixture = secretFixture(
+                    ...shape.parts,
+                    shape.fixture.map((chunk) => chunk.toUpperCase()).join('')
+                );
+                expect(pattern.test(upperFixture), `${shape.reason}: uppercased body does not match`).toBe(true);
+                expect(sensitiveContentReason(upperFixture), `${shape.reason}: uppercased body`).toBeDefined();
+            }
         }
     });
 });

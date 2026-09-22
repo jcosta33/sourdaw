@@ -22,20 +22,27 @@
  * mid-value or at the end, a URL or armored block, or a prefix too short to be distinctive — is
  * recorded in `RESIDUAL_RULES` rather than silently dropped.
  *
+ * The scanner's `allowlists` are deliberately not derived: they exist to stop the scanner raising
+ * false positives, while a screen errs toward withholding, so carrying them over would only narrow
+ * coverage.
+ *
  * Every shape is composed at runtime from its own parts: the pull-request diff secret scan is a
  * required gate and matches contiguous credential literals in source. The generator chunks every
  * emitted literal — both the prefix parts and the fixture body — into fragments shorter than the
  * scanner's shortest opaque run, so no fragment can carry a keyword adjacent to an opaque value;
- * the screen rejoins them at runtime, which is why the chunking is invisible to matching.
+ * the screen rejoins them at runtime, which is why the chunking is invisible to matching. A
+ * `flags` of `iu` reproduces the source rule's inline case-insensitivity, which JavaScript
+ * cannot express inline.
  */
 /* eslint-disable max-lines -- a generated data table, not hand-written logic. */
 
-/** A vendor-shaped key: the parts its prefix is assembled from, the tail that follows, and its fixture parts. */
+/** A vendor-shaped key: the parts its prefix is assembled from, the tail that follows, its fixture parts, and its flags. */
 export type EgressVendorShape = {
     readonly reason: string;
     readonly parts: readonly string[];
     readonly tail: string;
     readonly fixture: readonly string[];
+    readonly flags: 'iu' | 'u';
 };
 
 export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
@@ -108,12 +115,14 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aa',
         ],
+        flags: 'u',
     },
     {
         reason: 'an Adobe Client Secret',
         parts: ['p8e-'],
         tail: '[a-z0-9]{32}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'iu',
     },
     {
         reason: 'an Age encryption tool secret key',
@@ -136,12 +145,14 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'QQQQ',
             'QQ',
         ],
+        flags: 'u',
     },
     {
         reason: 'an Alibaba Cloud AccessKey ID',
         parts: ['LTAI'],
         tail: '[a-z0-9]{20}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'iu',
     },
     {
         reason: 'an Anthropic Admin API Key',
@@ -173,6 +184,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aAA',
         ],
+        flags: 'u',
     },
     {
         reason: 'an Anthropic API Key',
@@ -204,6 +216,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aAA',
         ],
+        flags: 'u',
     },
     {
         reason: 'an Artifactory api key',
@@ -229,6 +242,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'AAAA',
             'A',
         ],
+        flags: 'u',
     },
     {
         reason: 'an Artifactory reference token',
@@ -251,6 +265,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'AAAA',
             'AAA',
         ],
+        flags: 'u',
     },
     {
         reason: 'a long-lived Amazon Bedrock API keys',
@@ -286,18 +301,21 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'AAAA',
             'A',
         ],
+        flags: 'u',
     },
     {
         reason: 'a short-lived Amazon Bedrock API keys',
         parts: ['bedr', 'ock-', 'api-', 'key-', 'YmVk', 'cm9j', 'ay5h', 'bWF6', 'b25h', 'd3Mu', 'Y29t'],
         tail: '',
         fixture: [],
+        flags: 'u',
     },
     {
         reason: 'a clickhouse cloud API secret key',
         parts: ['4b1d'],
         tail: '[A-Za-z0-9]{38}',
         fixture: ['AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AA'],
+        flags: 'u',
     },
     {
         reason: 'a Clojars API token',
@@ -320,6 +338,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Cloudflare Origin CA Key',
@@ -370,12 +389,14 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Databricks API token',
         parts: ['dapi'],
         tail: '[a-f0-9]{32}(?:-\\d)?',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a DigitalOcean OAuth Access Token',
@@ -399,6 +420,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a DigitalOcean Personal Access Token',
@@ -422,6 +444,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a DigitalOcean OAuth Refresh Token',
@@ -445,24 +468,28 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Doppler API token',
         parts: ['dp.p', 't.'],
         tail: '[a-z0-9]{43}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
+        flags: 'iu',
     },
     {
         reason: 'a Duffel API token',
         parts: ['duff', 'el_t', 'est_'],
         tail: '[a-z0-9_\\-=]{43}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
+        flags: 'iu',
     },
     {
         reason: 'a Duffel API token',
         parts: ['duff', 'el_l', 'ive_'],
         tail: '[a-z0-9_\\-=]{43}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
+        flags: 'iu',
     },
     {
         reason: 'a Dynatrace API token',
@@ -493,6 +520,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'a',
         ],
+        flags: 'iu',
     },
     {
         reason: 'an EasyPost API token',
@@ -514,6 +542,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'an EasyPost test API token',
@@ -535,24 +564,28 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Flutterwave Encryption Key',
         parts: ['FLWS', 'ECK_', 'TEST', '-'],
         tail: '[a-h0-9]{12}',
         fixture: ['aaaa', 'aaaa', 'aaaa'],
+        flags: 'iu',
     },
     {
         reason: 'a Finicity Public Key',
         parts: ['FLWP', 'UBK_', 'TEST', '-'],
         tail: '[a-h0-9]{32}-X',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', '-X'],
+        flags: 'iu',
     },
     {
         reason: 'a Flutterwave Secret Key',
         parts: ['FLWS', 'ECK_', 'TEST', '-'],
         tail: '[a-h0-9]{32}-X',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', '-X'],
+        flags: 'iu',
     },
     {
         reason: 'a Frame.io API token',
@@ -576,24 +609,28 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a GCP API key',
         parts: ['AIza'],
         tail: '[\\w-]{35}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'www'],
+        flags: 'u',
     },
     {
         reason: 'a GitHub App Token',
         parts: ['ghu_'],
         tail: '[0-9a-zA-Z]{36}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitHub App Token',
         parts: ['ghs_'],
         tail: '[0-9a-zA-Z]{36}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitHub Fine-Grained Personal Access Token',
@@ -622,60 +659,70 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a GitHub OAuth Access Token',
         parts: ['gho_'],
         tail: '[0-9a-zA-Z]{36}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitHub Personal Access Token',
         parts: ['ghp_'],
         tail: '[0-9a-zA-Z]{36}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitHub Refresh Token',
         parts: ['ghr_'],
         tail: '[0-9a-zA-Z]{36}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab CI/CD Job Token',
         parts: ['glcb', 't-'],
         tail: '[0-9a-zA-Z]{1,5}_[0-9a-zA-Z_-]{20}',
         fixture: ['0_00', '0000', '0000', '0000', '0000', '00'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Deploy Token',
         parts: ['gldt', '-'],
         tail: '[0-9a-zA-Z_\\-]{20}',
         fixture: ['0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab feature flag client token',
         parts: ['glff', 'ct-'],
         tail: '[0-9a-zA-Z_\\-]{20}',
         fixture: ['0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab feed token',
         parts: ['glft', '-'],
         tail: '[0-9a-zA-Z_\\-]{20}',
         fixture: ['0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab incoming mail token',
         parts: ['glim', 't-'],
         tail: '[0-9a-zA-Z_\\-]{25}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Kubernetes Agent token',
         parts: ['glag', 'ent-'],
         tail: '[0-9a-zA-Z_\\-]{50}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '00'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab OIDC Application Secret',
@@ -699,54 +746,63 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             '0000',
             '0000',
         ],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Personal Access Token',
         parts: ['glpa', 't-'],
         tail: '[\\w-]{20}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Personal Access Token (routable)',
         parts: ['glpa', 't-'],
         tail: '[0-9a-zA-Z_-]{27,300}\\.[0-9a-z]{2}[0-9a-z]{7}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '000.', '0000', '0000', '0'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Pipeline Trigger Token',
         parts: ['glpt', 't-'],
         tail: '[0-9a-f]{40}',
         fixture: ['0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Runner Registration Token',
         parts: ['GR13', '4894', '1'],
         tail: '[\\w-]{20}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Runner Authentication Token',
         parts: ['glrt', '-'],
         tail: '[0-9a-zA-Z_\\-]{20}',
         fixture: ['0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Runner Authentication Token (Routable)',
         parts: ['glrt', '-t'],
         tail: '\\d_[0-9a-zA-Z_\\-]{27,300}\\.[0-9a-z]{2}[0-9a-z]{7}',
         fixture: ['0_00', '0000', '0000', '0000', '0000', '0000', '0000', '0.00', '0000', '000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab SCIM Token',
         parts: ['glso', 'at-'],
         tail: '[0-9a-zA-Z_\\-]{20}',
         fixture: ['0000', '0000', '0000', '0000', '0000'],
+        flags: 'u',
     },
     {
         reason: 'a GitLab Session Cookie',
         parts: ['_git', 'lab_', 'sess', 'ion'],
         tail: '=[0-9a-z]{32}',
         fixture: ['=000', '0000', '0000', '0000', '0000', '0000', '0000', '0000', '0'],
+        flags: 'u',
     },
     {
         reason: 'a Grafana API key',
@@ -772,18 +828,21 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'AAAA',
             'AA',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Grafana cloud API token',
         parts: ['glc_'],
         tail: '[A-Za-z0-9+/]{32,400}={0,3}',
         fixture: ['AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA'],
+        flags: 'iu',
     },
     {
         reason: 'a Grafana service account token',
         parts: ['glsa', '_'],
         tail: '[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}',
         fixture: ['AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', '_AAA', 'AAAA', 'A'],
+        flags: 'iu',
     },
     {
         reason: 'a Harness Access Token (PAT or SAT)',
@@ -808,6 +867,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Harness Access Token (PAT or SAT)',
@@ -832,6 +892,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Heroku API Key',
@@ -854,18 +915,21 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             '0000',
             '00',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Hugging Face Organization API token',
         parts: ['api_', 'org_'],
         tail: '([a-z]{34})',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aa'],
+        flags: 'iu',
     },
     {
         reason: 'an Infracost API Token',
         parts: ['ico-'],
         tail: '[a-zA-Z0-9]{32}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'an Intra42 client secret',
@@ -889,6 +953,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'an Intra42 client secret',
@@ -912,60 +977,70 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Linear API Token',
         parts: ['lin_', 'api_'],
         tail: '[a-z0-9]{40}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'iu',
     },
     {
         reason: 'a Notion Api credential',
         parts: ['ntn_'],
         tail: '[0-9]{11}[A-Za-z0-9]{32}[A-Za-z0-9]{3}',
         fixture: ['0000', '0000', '000A', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AA'],
+        flags: 'u',
     },
     {
         reason: 'a npm access token',
         parts: ['npm_'],
         tail: '[a-z0-9]{36}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'iu',
     },
     {
         reason: 'an Octopus Deploy API key',
         parts: ['API-'],
         tail: '[A-Z0-9]{26}',
         fixture: ['AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AAAA', 'AA'],
+        flags: 'u',
     },
     {
         reason: 'an OpenShift user token',
         parts: ['sha2', '56~'],
         tail: '[\\w-]{43}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'www'],
+        flags: 'u',
     },
     {
         reason: 'a Perplexity API key',
         parts: ['pplx', '-'],
         tail: '[a-zA-Z0-9]{48}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a PlanetScale API token',
         parts: ['psca', 'le_t', 'kn_'],
         tail: '[\\w=\\.-]{32,64}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
+        flags: 'iu',
     },
     {
         reason: 'a PlanetScale OAuth token',
         parts: ['psca', 'le_o', 'auth', '_'],
         tail: '[\\w=\\.-]{32,64}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
+        flags: 'u',
     },
     {
         reason: 'a PlanetScale password',
         parts: ['psca', 'le_p', 'w_'],
         tail: '[\\w=\\.-]{32,64}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
+        flags: 'iu',
     },
     {
         reason: 'a Postman API token',
@@ -988,24 +1063,28 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaa',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Prefect API token',
         parts: ['pnu_'],
         tail: '[a-zA-Z0-9]{36}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Pulumi API token',
         parts: ['pul-'],
         tail: '[a-f0-9]{40}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a PyPI upload token',
         parts: ['pypi', '-AgE', 'IcHl', 'waS5', 'vcmc'],
         tail: '[\\w-]{50,1000}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'ww'],
+        flags: 'u',
     },
     {
         reason: 'a Readme API token',
@@ -1031,18 +1110,21 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Rubygem API token',
         parts: ['ruby', 'gems', '_'],
         tail: '[a-f0-9]{48}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Scalingo API token',
         parts: ['tk-u', 's-'],
         tail: '[\\w-]{48}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'wwww'],
+        flags: 'u',
     },
     {
         reason: 'a Sendinblue API token',
@@ -1071,6 +1153,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'a',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Sentry.io Organization Token',
@@ -1099,6 +1182,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             '.',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Sentry.io User Token',
@@ -1122,72 +1206,84 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'aaaa',
             'aaaa',
         ],
+        flags: 'u',
     },
     {
         reason: 'a Settlemint Application Access credential',
         parts: ['sm_a', 'at_'],
         tail: '[a-zA-Z0-9]{16}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Settlemint Personal Access credential',
         parts: ['sm_p', 'at_'],
         tail: '[a-zA-Z0-9]{16}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Settlemint Service Access credential',
         parts: ['sm_s', 'at_'],
         tail: '[a-zA-Z0-9]{16}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Shippo API token',
         parts: ['ship', 'po_l', 'ive_'],
         tail: '[a-fA-F0-9]{40}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Shippo API token',
         parts: ['ship', 'po_t', 'est_'],
         tail: '[a-fA-F0-9]{40}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Shopify access token',
         parts: ['shpa', 't_'],
         tail: '[a-fA-F0-9]{32}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Shopify custom access token',
         parts: ['shpc', 'a_'],
         tail: '[a-fA-F0-9]{32}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Shopify private app access token',
         parts: ['shpp', 'a_'],
         tail: '[a-fA-F0-9]{32}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Shopify shared secret',
         parts: ['shps', 's_'],
         tail: '[a-fA-F0-9]{32}',
         fixture: ['aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa', 'aaaa'],
+        flags: 'u',
     },
     {
         reason: 'a Slack App-level token',
         parts: ['xapp', '-'],
         tail: '\\d-[A-Z0-9]+-\\d+-[a-z0-9]+',
         fixture: ['0-A-', '0-a'],
+        flags: 'iu',
     },
     {
         reason: 'a Slack Bot token',
         parts: ['xoxb', '-'],
         tail: '[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*',
         fixture: ['0000', '0000', '00-0', '0000', '0000', '0'],
+        flags: 'u',
     },
     {
         reason: 'a Slack Configuration refresh token',
@@ -1232,60 +1328,70 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'AAAA',
             'AAAA',
         ],
+        flags: 'iu',
     },
     {
         reason: 'a Slack Legacy bot token',
         parts: ['xoxb', '-'],
         tail: '[0-9]{8,14}-[a-zA-Z0-9]{18,26}',
         fixture: ['0000', '0000', '-aaa', 'aaaa', 'aaaa', 'aaaa', 'aaa'],
+        flags: 'u',
     },
     {
         reason: 'a Square Access Token',
         parts: ['EAAA'],
         tail: '[\\w-]{22,60}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'ww'],
+        flags: 'u',
     },
     {
         reason: 'a Square Access Token',
         parts: ['sq0a', 'tp-'],
         tail: '[\\w-]{22,60}',
         fixture: ['wwww', 'wwww', 'wwww', 'wwww', 'wwww', 'ww'],
+        flags: 'u',
     },
     {
         reason: 'a Stripe Access Token',
         parts: ['sk_t', 'est_'],
         tail: '[a-zA-Z0-9]{10,99}',
         fixture: ['aaaa', 'aaaa', 'aa'],
+        flags: 'u',
     },
     {
         reason: 'a Stripe Access Token',
         parts: ['sk_l', 'ive_'],
         tail: '[a-zA-Z0-9]{10,99}',
         fixture: ['aaaa', 'aaaa', 'aa'],
+        flags: 'u',
     },
     {
         reason: 'a Stripe Access Token',
         parts: ['sk_p', 'rod_'],
         tail: '[a-zA-Z0-9]{10,99}',
         fixture: ['aaaa', 'aaaa', 'aa'],
+        flags: 'u',
     },
     {
         reason: 'a Stripe Access Token',
         parts: ['rk_t', 'est_'],
         tail: '[a-zA-Z0-9]{10,99}',
         fixture: ['aaaa', 'aaaa', 'aa'],
+        flags: 'u',
     },
     {
         reason: 'a Stripe Access Token',
         parts: ['rk_l', 'ive_'],
         tail: '[a-zA-Z0-9]{10,99}',
         fixture: ['aaaa', 'aaaa', 'aa'],
+        flags: 'u',
     },
     {
         reason: 'a Stripe Access Token',
         parts: ['rk_p', 'rod_'],
         tail: '[a-zA-Z0-9]{10,99}',
         fixture: ['aaaa', 'aaaa', 'aa'],
+        flags: 'u',
     },
     {
         reason: 'a Vault Batch Token',
@@ -1328,6 +1434,7 @@ export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
             'wwww',
             'ww',
         ],
+        flags: 'u',
     },
 ];
 
@@ -1438,18 +1545,23 @@ export const RESIDUAL_RULES: readonly ResidualRule[] = [
     { id: 'facebook-page-access-token', reason: 'prefix shorter than four distinctive characters' },
     { id: 'flyio-access-token', reason: 'pattern is not a literal prefix' },
     { id: 'freemius-secret-key', reason: 'pattern is not a literal prefix' },
+    { id: 'generic-api-key', reason: 'keyword-proximity rule yields no usable key name' },
     { id: 'hashicorp-tf-api-token', reason: 'pattern is not a literal prefix' },
     { id: 'huggingface-access-token', reason: 'prefix shorter than four distinctive characters' },
     { id: 'jwt', reason: 'prefix shorter than four distinctive characters' },
     { id: 'jwt-base64', reason: 'pattern is not a literal prefix' },
     { id: 'kubernetes-secret-yaml', reason: 'pattern is not a literal prefix' },
+    { id: 'lob-api-key', reason: 'keyword-proximity rule yields no usable key name' },
     { id: 'maxmind-license-key', reason: 'pattern is not a literal prefix' },
     { id: 'microsoft-teams-webhook', reason: 'pattern is not a literal prefix' },
+    { id: 'new-relic-browser-api-token', reason: 'keyword-proximity rule yields no usable key name' },
+    { id: 'new-relic-insert-key', reason: 'keyword-proximity rule yields no usable key name' },
     { id: 'nuget-config-password', reason: 'pattern is not a literal prefix' },
     { id: 'openai-api-key', reason: 'alternation reaches into the tail' },
     { id: 'pkcs12-file', reason: 'keys on a filename, and the screen classifies content' },
     { id: 'private-key', reason: 'pattern is not a literal prefix' },
     { id: 'sendgrid-api-token', reason: 'prefix shorter than four distinctive characters' },
+    { id: 'sidekiq-secret', reason: 'keyword-proximity rule yields no usable key name' },
     { id: 'sidekiq-sensitive-url', reason: 'pattern is not a literal prefix' },
     { id: 'slack-config-access-token', reason: 'character class sits inside the prefix' },
     { id: 'slack-legacy-token', reason: 'character class sits inside the prefix' },
@@ -1459,6 +1571,7 @@ export const RESIDUAL_RULES: readonly ResidualRule[] = [
     { id: 'sonar-api-token', reason: 'secretGroup indirection' },
     { id: 'sourcegraph-access-token', reason: 'pattern is not a literal prefix' },
     { id: 'twilio-api-key', reason: 'prefix shorter than four distinctive characters' },
+    { id: 'typeform-api-token', reason: 'keyword-proximity rule yields no usable key name' },
     { id: 'vault-service-token', reason: 'pattern is not a literal prefix' },
 ];
 /* eslint-enable max-lines */

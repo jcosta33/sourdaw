@@ -60,7 +60,7 @@ function tsStringArray(values: readonly string[]): string {
 function renderModule(derived: DerivedEgressVendorShapes, digest: string): string {
     const shapeLines = derived.shapes.map(
         (shape) =>
-            `    {\n        reason: ${tsString(shape.reason)},\n        parts: ${tsStringArray(shape.parts)},\n        tail: ${tsString(shape.tail)},\n        fixture: ${tsStringArray(shape.fixture)},\n    },`
+            `    {\n        reason: ${tsString(shape.reason)},\n        parts: ${tsStringArray(shape.parts)},\n        tail: ${tsString(shape.tail)},\n        fixture: ${tsStringArray(shape.fixture)},\n        flags: ${tsString(shape.flags)},\n    },`
     );
     const keyLines = derived.keyNames.map((name) => `    ${tsString(name)},`);
     const residualLines = derived.residual.map(
@@ -91,20 +91,27 @@ function renderModule(derived: DerivedEgressVendorShapes, digest: string): strin
  * mid-value or at the end, a URL or armored block, or a prefix too short to be distinctive — is
  * recorded in \`RESIDUAL_RULES\` rather than silently dropped.
  *
+ * The scanner's \`allowlists\` are deliberately not derived: they exist to stop the scanner raising
+ * false positives, while a screen errs toward withholding, so carrying them over would only narrow
+ * coverage.
+ *
  * Every shape is composed at runtime from its own parts: the pull-request diff secret scan is a
  * required gate and matches contiguous credential literals in source. The generator chunks every
  * emitted literal — both the prefix parts and the fixture body — into fragments shorter than the
  * scanner's shortest opaque run, so no fragment can carry a keyword adjacent to an opaque value;
- * the screen rejoins them at runtime, which is why the chunking is invisible to matching.
+ * the screen rejoins them at runtime, which is why the chunking is invisible to matching. A
+ * \`flags\` of \`iu\` reproduces the source rule's inline case-insensitivity, which JavaScript
+ * cannot express inline.
  */
 /* eslint-disable max-lines -- a generated data table, not hand-written logic. */
 
-/** A vendor-shaped key: the parts its prefix is assembled from, the tail that follows, and its fixture parts. */
+/** A vendor-shaped key: the parts its prefix is assembled from, the tail that follows, its fixture parts, and its flags. */
 export type EgressVendorShape = {
     readonly reason: string;
     readonly parts: readonly string[];
     readonly tail: string;
     readonly fixture: readonly string[];
+    readonly flags: 'iu' | 'u';
 };
 
 export const EGRESS_VENDOR_SHAPES: readonly EgressVendorShape[] = [
@@ -134,8 +141,14 @@ async function main(): Promise<void> {
     const digest = sha256(body);
     const derived = deriveEgressVendorShapes(body);
 
-    writeFileSync(OUTPUT_PATH, renderModule(derived, digest), 'utf8');
     const { counts } = derived;
+    if (counts.blockCount !== counts.totalRules) {
+        throw new Error(
+            `refusing to write ${OUTPUT_PATH}: ${counts.blockCount} [[rules]] blocks but only ${counts.totalRules} classified rules — a rule is being dropped`
+        );
+    }
+
+    writeFileSync(OUTPUT_PATH, renderModule(derived, digest), 'utf8');
     // eslint-disable-next-line no-console
     console.log(
         `wrote ${OUTPUT_PATH}: ${counts.blockCount} blocks, ${counts.totalRules} rules -> ${counts.valueCompleteRules} value-complete (${derived.shapes.length} shapes, ${counts.valueCompleteEntropyGated} entropy-gated), ${counts.keywordRules} keyword-proximity, ${derived.residual.length} residual (sha256 ${digest})`
