@@ -368,9 +368,12 @@ fn render_with_external_key(
 fn external_key_reaches_the_default_vca_detector() {
     // The ("vca", None) row never writes topology. Pin the constructor default
     // to VCA before that unlabeled render, so a non-VCA default fails here.
+    // On the same loud Ext-SC key, Opto GR must also separate from that
+    // unlabeled VCA GR — a topology write that does nothing fails here.
     {
         let (default_loud, default_gr) = render_with_external_key(None, true, 0.9);
         let (vca_loud, vca_gr) = render_with_external_key(Some(TOPOLOGY_VCA), true, 0.9);
+        let (_, opto_gr) = render_with_external_key(Some(TOPOLOGY_OPTO), true, 0.9);
         assert_eq!(
             default_gr, vca_gr,
             "constructor default must be VCA (GR), but default gr {default_gr} vs VCA gr {vca_gr}"
@@ -380,13 +383,19 @@ fn external_key_reaches_the_default_vca_detector() {
             0.0,
             "constructor default must be VCA (wet), but differed from an explicit VCA write"
         );
+        let opto_vs_vca = (opto_gr - default_gr).abs();
+        assert!(
+            opto_vs_vca > 0.5,
+            "Opto GR must differ from unlabeled VCA GR by more than 0.5 dB on a loud Ext SC key, \
+             but Opto gr {opto_gr} vs VCA gr {default_gr} (Δ {opto_vs_vca})"
+        );
     }
 
     for (label, topology) in EXTERNAL_KEY_TOPOLOGIES {
         let (silent_key, silent_gr) = render_with_external_key(topology, true, 0.0);
         let (loud_key, loud_gr) = render_with_external_key(topology, true, 0.9);
-        let (silent_key_off, _) = render_with_external_key(topology, false, 0.0);
-        let (loud_key_off, _) = render_with_external_key(topology, false, 0.9);
+        let (silent_key_off, silent_gr_off) = render_with_external_key(topology, false, 0.0);
+        let (loud_key_off, loud_gr_off) = render_with_external_key(topology, false, 0.9);
 
         // Deeper GR (more negative): scaling the wet capture while the
         // sidechain stays silent must still fail this case.
@@ -411,6 +420,15 @@ fn external_key_reaches_the_default_vca_detector() {
             ignored_delta < 1.0e-6,
             "the same loud key must be ignored on {label} while Ext SC is off, \
              but moved by {ignored_delta:e}"
+        );
+
+        // Wet ignore alone is not enough: a loud key that deepens the meter
+        // while samples stay identical must fail here too.
+        let off_gr_delta = (loud_gr_off - silent_gr_off).abs();
+        assert!(
+            off_gr_delta < 0.05,
+            "silent and loud Ext SC-off keys must agree on {label} GR (Δ < 0.05 dB), \
+             but silent gr {silent_gr_off} vs loud gr {loud_gr_off} (Δ {off_gr_delta})"
         );
     }
 }
