@@ -47,7 +47,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { e2eSpecPattern, specFilePattern } from './vitestCollectionPatterns.ts';
+import { e2eSpecPattern, serverTestCommand, serverTestDirectory, specFilePattern } from './vitestCollectionPatterns.ts';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -63,10 +63,6 @@ const collectableRoots = ['src', 'scripts', 'electron'] as const;
 
 /** Specs owned by the dedicated server test gate, not root Vitest. */
 const serverRoot = 'server';
-
-/** Exact server runner contract from `server/package.json`. */
-const serverTestCommand = 'tsx --test __tests__/*.spec.ts';
-const serverTestDirectory = `${serverRoot}/__tests__`;
 
 /** The directory the exclusion under test is responsible for. */
 const worktreeRoot = '.agents/worktrees';

@@ -157,10 +157,14 @@ const EGRESS_ONLY_SHAPES: readonly EgressShape[] = [
     // lines may break the match. The body, not the closing footer, is what is required, so a block
     // pasted without its footer is still caught — the pinned Gitleaks rule requires both, and being
     // stricter than it buys nothing.
+    // The body must be plausible key material, not any short run: a PEM body line is sixty-four
+    // base64 characters, and an eight-character run let documentation that quotes a header and then
+    // writes `REDACTED` be withheld wholesale. Twenty-four characters still admits the first line of
+    // any real block while keeping a redaction word out of the match.
     {
         reason: 'an armored private key',
         pattern:
-            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?\r?\n)*[ \t]*[A-Za-z0-9+/=]{8,}/u,
+            /-{4,5} ?BEGIN [A-Z0-9 ]*(?:PRIVATE|SECRET) KEY(?: BLOCK)? ?-{4,5}[ \t]*\r?\n(?:[ \t]*(?:[A-Za-z][A-Za-z0-9-]*:[^\r\n]*)?\r?\n)*[ \t]*[A-Za-z0-9+/=]{24,}/u,
     },
     // A secret in a query parameter: `?password=…`, `&access_token=…`, `&sig=…`.
     {

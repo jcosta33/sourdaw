@@ -156,6 +156,30 @@ function mergedDroppedSides(
 }
 
 /**
+ * The sides the collector withheld from the files that supplied this unit's context. Contract
+ * withholdings live in `withheldSides.context`, but the implementation context is assembled from
+ * other changed files' surviving after regions, and a withholding of one of those files is keyed to
+ * that file in `withheldSides.own`. A unit whose implementation context came from a file with a
+ * withheld after hunk saw that implementation only in part, so the owning file's withholding must
+ * unsupply the context side exactly as a contract withholding does — or a rule over the partially
+ * seen implementation scores a decisive verdict.
+ */
+function withheldContextSides(
+    set: SemanticEvidenceSet,
+    context: readonly EvidenceReference[]
+): ReadonlySet<EvidenceSide> {
+    const sides = new Set<EvidenceSide>(set.withheldSides.context);
+    for (const reference of context) {
+        for (const changedPath of set.attribution.get(reference.evidenceId) ?? []) {
+            for (const side of set.withheldSides.own.get(changedPath) ?? []) {
+                sides.add(side);
+            }
+        }
+    }
+    return sides;
+}
+
+/**
  * Plans one unit per eligible changed file. A unit carries the rules whose applicability predicate
  * admits that path, and the context regions those rules require.
  */
@@ -272,7 +296,10 @@ export function planUnits(
                 truncated: unitTruncated,
                 limitations: unitLimitations,
                 ownDroppedSides: mergedDroppedSides(fitted.own.droppedSides, set.withheldSides.own.get(file.path)),
-                contextDroppedSides: mergedDroppedSides(fitted.context.droppedSides, set.withheldSides.context),
+                contextDroppedSides: mergedDroppedSides(
+                    fitted.context.droppedSides,
+                    withheldContextSides(set, context)
+                ),
             },
         });
     }

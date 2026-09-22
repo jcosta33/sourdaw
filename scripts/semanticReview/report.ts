@@ -522,7 +522,11 @@ function describeOutcome(input: {
         return `No question was decidable in ${String(input.assessed)} evaluated unit(s): all ${String(input.totalAssessments)} were unresolved or came close to their threshold without reaching it. No semantic signal was established.`;
     }
     if (input.undecided > 0) {
-        return `Assessed without a decisive answer: ${String(input.undecided)} of ${String(input.totalAssessments)} question(s) were unresolved in ${String(input.assessed)} evaluated unit(s).`;
+        // `undecided` counts genuine `unresolved` dispositions and near misses together, so the
+        // sentence must name both: calling a near miss "unresolved" contradicts the report's own
+        // dispositions, where the near miss is a `no_additional_recommendation` answer below its fire
+        // threshold.
+        return `Assessed without a decisive answer: ${String(input.undecided)} of ${String(input.totalAssessments)} question(s) were unresolved or came close to their threshold without reaching it in ${String(input.assessed)} evaluated unit(s).`;
     }
     if (input.execution !== 'completed') {
         // A run whose own header reads `partial` must never print the completion sentence, even when

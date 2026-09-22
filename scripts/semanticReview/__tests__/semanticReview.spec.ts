@@ -1603,6 +1603,19 @@ describe('the egress screen tells code from credentials', () => {
             '// A URI with embedded credentials: scheme://user:secret@host',
             'redis://:pass@h',
             'KEYS: Record<ReviewDossierEvent[',
+            // A header quoted in documentation with a redaction word where the body belongs is ordinary
+            // text, not key material: an eight-character word is not a PEM body line.
+            secretFixture('-----BEGIN ', 'PRIVATE KEY', '-----', '\n', 'REDACTED'),
+            secretFixture(
+                '-----BEGIN ',
+                'PRIVATE KEY',
+                '-----',
+                '\n',
+                'Note: ',
+                'the body was redacted',
+                '\n',
+                'REDACTED'
+            ),
         ];
         for (const line of ordinary) {
             expect(sensitiveContentReason(line), line).toBeUndefined();
@@ -2920,6 +2933,116 @@ describe('collector withholding reaches the side accounting', () => {
     });
 });
 
+describe('collector withholding of an implementation file reaches the consuming unit', () => {
+    it('reports implementation source missing when the changed implementation had a withheld after hunk', () => {
+        // The implementation context is assembled from other changed files' surviving after regions,
+        // and the collector's withholding of one of those files' hunks is keyed to that file under
+        // `withheldSides.own` — never merged into the consuming unit. A surviving hunk then satisfied
+        // `after implementation source`, and the rule scored a decisive verdict over an implementation
+        // the model saw only in part.
+        const testPath = 'src/modules/Project/__tests__/undo.spec.ts';
+        const implPath = 'src/modules/Project/useCases/undoProject.ts';
+        const aws = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const files = [changedFile(testPath), changedFile(implPath)];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${testPath}`]: 'it("before", () => {});\n',
+                    [`${HEAD}:${testPath}`]: 'it("after", () => {});\n',
+                    [`${MERGE_BASE}:${implPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${implPath}`]: `export const kept = 1;\nconst key = '${aws}';\n`,
+                },
+                hunks: new Map([
+                    [
+                        testPath,
+                        {
+                            path: testPath,
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [{ startLine: 1, endLine: 1 }],
+                        },
+                    ],
+                    [
+                        implPath,
+                        {
+                            path: implPath,
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 2 },
+                            ],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path === testPath);
+        expect(unit).toBeDefined();
+        expect(unit?.rules.map((rule) => rule.id)).toContain('production_path_no_longer_reached');
+        // The surviving implementation hunk sits in the unit's context, but the withheld hunk names the
+        // same owning file, so the context after side is unsupplied.
+        expect(unit?.evidence.contextDroppedSides.has('after')).toBe(true);
+        const missing = missingRequiredEvidence(
+            semanticRule('production_path_no_longer_reached'),
+            unit?.evidence.own ?? [],
+            unit?.evidence.context ?? [],
+            'modified',
+            unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+            unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
+        );
+        expect(missing).toContain('after implementation source');
+        expect(
+            interpretScanOutcome({
+                answer: { type: 'noul', noul: 0.05 },
+                rule: semanticRule('production_path_no_longer_reached'),
+                unitId: 'u',
+                path: testPath,
+                missingEvidence: missing,
+            }).outcome
+        ).toBe('insufficient_context');
+    });
+
+    it('still scores a unit whose implementation context was delivered whole', () => {
+        const testPath = 'src/modules/Project/__tests__/undo.spec.ts';
+        const implPath = 'src/modules/Project/useCases/undoProject.ts';
+        const files = [changedFile(testPath), changedFile(implPath)];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${testPath}`]: 'it("before", () => {});\n',
+                    [`${HEAD}:${testPath}`]: 'it("after", () => {});\n',
+                    [`${MERGE_BASE}:${implPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${implPath}`]: 'export const after = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.ci.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path === testPath);
+        expect(unit).toBeDefined();
+        expect(unit?.evidence.contextDroppedSides.has('after')).toBe(false);
+        expect(
+            missingRequiredEvidence(
+                semanticRule('production_path_no_longer_reached'),
+                unit?.evidence.own ?? [],
+                unit?.evidence.context ?? [],
+                'modified',
+                unit?.evidence.ownDroppedSides ?? new Set<EvidenceSide>(),
+                unit?.evidence.contextDroppedSides ?? new Set<EvidenceSide>()
+            )
+        ).toEqual([]);
+    });
+});
+
 describe('the outcome line never claims completion for a partial run', () => {
     it('words a partial execution with decisive answers as incomplete', async () => {
         const result = await runScan(
@@ -2949,6 +3072,53 @@ describe('the outcome line never claims completion for a partial run', () => {
         const summary = renderSummary(partial);
         expect(summary).not.toContain('Completed: no additional semantic signals');
         expect(summary).toContain('did not supply all its evidence');
+    });
+});
+
+describe('the undecided sentence names near misses without calling them unresolved', () => {
+    it('accounts for a genuine unresolved answer and a near miss together', async () => {
+        // `undecided` counts genuine `unresolved` dispositions and near misses together, so the
+        // sentence must name both categories: a near miss is a `no_additional_recommendation` answer
+        // below its fire threshold, not an unresolved question.
+        const result = await runScan(
+            scanPorts(
+                constantProvider(0.05),
+                fakeSource({
+                    files: [changedFile('src/modules/AudioEngine/live.ts')],
+                    blobs: {
+                        [`${MERGE_BASE}:src/modules/AudioEngine/live.ts`]: 'const a = 1;\n',
+                        [`${HEAD}:src/modules/AudioEngine/live.ts`]: 'const a = 2;\n',
+                    },
+                }),
+                fixedClock(1_000)
+            )
+        );
+        const base = result.report.signals[0] as (typeof result.report.signals)[number];
+        const decisive = {
+            ...base,
+            outcome: 'no_signal' as const,
+            disposition: 'no_additional_recommendation' as const,
+            probability: 0.02,
+            missingEvidence: [],
+        };
+        const nearMiss = {
+            ...base,
+            outcome: 'no_signal' as const,
+            disposition: 'no_additional_recommendation' as const,
+            probability: 0.6,
+            missingEvidence: [],
+        };
+        const unresolved = {
+            ...base,
+            outcome: 'insufficient_context' as const,
+            disposition: 'unresolved' as const,
+            probability: 0.5,
+            missingEvidence: ['after test source'],
+        };
+        const summary = renderSummary({ ...result.report, signals: [unresolved, nearMiss, decisive] });
+        expect(summary).toContain('2 of 3 question(s)');
+        expect(summary).toContain('unresolved or came close to their threshold');
+        expect(summary).not.toContain('were unresolved in');
     });
 });
 
@@ -3039,6 +3209,53 @@ describe('the collection predicate matches the runners, not a restated rule', ()
         const playwright = 'tests/e2e/audioOwnership.native.spec.ts';
         expect(specFilePattern.test(playwright)).toBe(true);
         expect(isCollectedSpec(playwright)).toBe(true);
+    });
+});
+
+describe('each runner collects only its own declared scope', () => {
+    it('collects the Playwright, node:test, and Vitest boundaries each runner declares', () => {
+        // Vitest (`vite.config.ts`): the shared suffix, minus the e2e exclusion.
+        expect(isCollectedSpec('src/a.spec.ts')).toBe(true);
+        expect(isCollectedSpec('scripts/a.e2e.spec.ts')).toBe(false);
+        // Playwright (`playwright.config.ts`): testDir `tests/e2e`, minus `**/__tests__/**`.
+        expect(isCollectedSpec('tests/e2e/a.spec.ts')).toBe(true);
+        expect(isCollectedSpec('tests/e2e/a.test.ts')).toBe(true);
+        expect(isCollectedSpec('tests/e2e/nested/__tests__/dead.spec.ts')).toBe(false);
+        // node:test (`server/package.json`): the non-recursive `__tests__/*.spec.ts` glob.
+        expect(isCollectedSpec('server/__tests__/a.spec.ts')).toBe(true);
+        expect(isCollectedSpec('server/__tests__/deep/x.spec.ts')).toBe(false);
+        expect(isCollectedSpec('server/__tests__/x.spec.tsx')).toBe(false);
+    });
+
+    it('plans a zero-line rename into a Playwright-ignored __tests__ directory instead of exempting it', () => {
+        // Playwright's `testIgnore: ['**/__tests__/**']` stops it collecting a spec under a nested
+        // `__tests__` inside its own `testDir`, and Vitest excludes `tests/e2e/**` — no runner runs it.
+        const file = changedFile('tests/e2e/nested/__tests__/dead.spec.ts', {
+            kind: 'renamed',
+            previousPath: 'tests/e2e/nested/dead.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(file)).toBeUndefined();
+    });
+
+    it('plans a zero-line rename out of the server non-recursive glob instead of exempting it', () => {
+        // The server command's `__tests__/*.spec.ts` glob is non-recursive and `.spec.ts`-only, so a
+        // nested or renamed-extension spec runs nowhere.
+        const nested = changedFile('server/__tests__/deep/x.spec.ts', {
+            kind: 'renamed',
+            previousPath: 'server/__tests__/x.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(nested)).toBeUndefined();
+        const renamedExtension = changedFile('server/__tests__/x.spec.tsx', {
+            kind: 'renamed',
+            previousPath: 'server/__tests__/x.spec.ts',
+            added: 0,
+            deleted: 0,
+        });
+        expect(exclusionReason(renamedExtension)).toBeUndefined();
     });
 });
 
