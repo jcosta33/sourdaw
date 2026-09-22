@@ -280,6 +280,76 @@ fn external_sidechain_is_encoded_before_side_only_detection() {
     );
 }
 
+/// Default VCA, stereo: a real external key must duck the program once Ext SC
+/// is on, and must be ignored while the switch is off.
+///
+/// `the_filtered_detector_reaches_every_topology` toggles `ext_sidechain` but
+/// never writes a distinct key buffer on stereo VCA. The Side-mode presence
+/// pin feeds a key, but only after `stereo_mode` leaves Stereo. This case is
+/// the missing default-topology ducking proof: quiet program, silent vs loud
+/// key, then the same loud key with Ext SC off.
+fn render_default_vca_with_external_key(ext_sidechain: bool, key_level: f32) -> Vec<f32> {
+    let mut instance = GlutenInstance::new(SAMPLE_RATE);
+    // Default topology is VCA in stereo — do not call set_param("topology", …).
+    instance.set_param("ext_sidechain", if ext_sidechain { 1.0 } else { 0.0 });
+    instance.set_param("threshold", -24.0);
+    instance.set_param("ratio", 4.0);
+    instance.set_param("attack", 1.0);
+    instance.set_param("release", 200.0);
+    instance.set_param("mix", 1.0);
+    instance.set_param("auto_makeup", 0.0);
+    instance.set_param("makeup", 0.0);
+    instance.set_param("blend_amount", 0.0);
+
+    let mut captured = Vec::with_capacity(BLOCKS * BLOCK * 2);
+    for block in 0..BLOCKS {
+        let base = block * BLOCK;
+        let left_ptr = instance.get_input_left_ptr();
+        let right_ptr = instance.get_input_right_ptr();
+        let sc_left_ptr = instance.get_sc_left_ptr();
+        let sc_right_ptr = instance.get_sc_right_ptr();
+        for n in 0..BLOCK {
+            let t = (base + n) as f32 / SAMPLE_RATE;
+            // Quiet program: audible, but below the threshold so only a loud
+            // external key can drive reduction.
+            let program = 0.05 * (std::f32::consts::TAU * 220.0 * t).sin();
+            let key = key_level * (std::f32::consts::TAU * 110.0 * t).sin();
+            unsafe {
+                *left_ptr.add(n) = program;
+                *right_ptr.add(n) = program;
+                *sc_left_ptr.add(n) = key;
+                *sc_right_ptr.add(n) = key;
+            }
+        }
+        let out_left = instance.process(BLOCK as u32);
+        let out_right = instance.get_right_ptr();
+        for n in 0..BLOCK {
+            captured.push(unsafe { *out_left.add(n) });
+            captured.push(unsafe { *out_right.add(n) });
+        }
+    }
+    captured
+}
+
+#[test]
+fn external_key_reaches_the_default_vca_detector() {
+    let silent_key = render_default_vca_with_external_key(true, 0.0);
+    let loud_key = render_default_vca_with_external_key(true, 0.9);
+    let loud_key_ignored = render_default_vca_with_external_key(false, 0.9);
+
+    let duck_delta = max_delta(&silent_key, &loud_key);
+    assert!(
+        duck_delta > 1.0e-4,
+        "a loud external key must duck the default VCA when Ext SC is on, but rendered a max delta of {duck_delta:e}"
+    );
+
+    let ignored_delta = max_delta(&silent_key, &loud_key_ignored);
+    assert!(
+        ignored_delta < 1.0e-6,
+        "the same loud key must be ignored while Ext SC is off, but moved by {ignored_delta:e}"
+    );
+}
+
 fn render_diode_step(lookahead_ms: f32) -> Vec<f32> {
     const FRAMES: usize = 1024;
     let mut instance = GlutenInstance::new(SAMPLE_RATE);
