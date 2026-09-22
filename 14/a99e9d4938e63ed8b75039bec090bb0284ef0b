@@ -1,0 +1,38 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 582-584,1090-1091,1094,1208-1209,1212,1233-1234,1237,1259-1260,1263,1285-1286,1306-1307
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 44,46
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 3,8,14-20,1038-1160
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_beb54bf43b47b7 3,10
+scripts/evidenceSafety.ts
+  h_beb54bf43b47b7 1-64
+scripts/findingLineage.ts
+  h_beb54bf43b47b7 16
+scripts/publishReview.ts
+  h_beb54bf43b47b7 6
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 5-12,15,17-25,29-35,59-64,89,131-132,251-257,295-305,369-415,421,423-425,454,585-615
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 1-170
+scripts/reviewDossierPublication.ts
+  h_beb54bf43b47b7 16,18-19
+scripts/reviewDossierViews.ts
+  h_beb54bf43b47b7 1-49
+scripts/reviewRepair.ts
+  h_beb54bf43b47b7 18
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 212-213,216,238-239,242,265-266,269,292-293,308-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "14a99e9d4938e63ed8b75039bec090bb0284ef0b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
