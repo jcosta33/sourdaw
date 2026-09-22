@@ -1,0 +1,31 @@
+release/dependency-license-proofs.json
+  s_7dc5d09fa83aa8::t_df766feac0c33c 64
+release/open-source-inventory.json
+  s_7dc5d09fa83aa8::t_02184859ba602f 168-169,279,1692-1727,1733,1745,2338-2342
+scripts/evidenceSafety.ts
+  s_826fbbbb63acc6::t_6e8a20adb1f204 53-55,59-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a1dbafbc6b738098efd547ef4ba0d04134062f83",
+  "prompts": {},
+  "sessions": {
+    "s_7dc5d09fa83aa8": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "cd6f66b3-0a72-4fd0-85a3-fac73ff12b07",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_826fbbbb63acc6": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c18263bb-61ad-41eb-b99d-d98b4475bb78",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
