@@ -1324,6 +1324,44 @@ describe('startPlayheadScheduler', () => {
         expect(notifyUserMock).not.toHaveBeenCalled();
     });
 
+    it('retires the punched take and tells the user when the recording commit fails', async () => {
+        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
+        transportStoreState.value = playingState({
+            punchInEnabled: true,
+            punchInBeat: 0,
+            punchOutBeat: 8,
+        });
+        arrangementMocks.startRecording.mockReturnValueOnce([{ trackId: 'rec-1', id: 'clip-rec-1' }]);
+        arrangementMocks.commitRecording.mockImplementationOnce(() => Promise.reject(new Error('commit refused')));
+        let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
+        audioEngineMocks.startAudioRecording.mockImplementationOnce(((
+            _trackId: string,
+            onTerminal: (result: { kind: string; buffer?: unknown }) => void
+        ) => {
+            capturedOnTerminal = onTerminal;
+            return Promise.resolve();
+        }) as never);
+        startPlayheadScheduler();
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        capturedOnTerminal!({ kind: 'completed', buffer: { duration: 1 } });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // A commit that never landed leaves no visible take no entry owns, and
+        // says so the way the punch capture-failure sibling does.
+        expect(arrangementMocks.discardRecording).toHaveBeenCalledWith('clip-rec-1');
+        expect(notifyUserMock).toHaveBeenCalledWith(
+            'Punch-in recording failed — the take was discarded. Try recording again.',
+            'error'
+        );
+    });
+
     it('does not cache or update a punched clip for a failed recording result', async () => {
         trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [] }] };
         transportStoreState.value = playingState({

@@ -530,11 +530,17 @@ export function startPlayheadScheduler(): void {
                                     // The user-facing stop awaits this through the
                                     // lifecycle; the scheduler itself never blocks on
                                     // it. A failed commit retires the provisional
-                                    // result rather than leaving it with no entry.
+                                    // result rather than leaving it with no entry,
+                                    // and says so the way the punch capture-failure
+                                    // sibling does.
                                     recordingLifecycle.trackCommit(
                                         commitRecording(recordedClip).catch((error: unknown) => {
                                             logger.error(
                                                 new Error('Punch-in recording commit failed', { cause: error })
+                                            );
+                                            notifyUser(
+                                                'Punch-in recording failed — the take was discarded. Try recording again.',
+                                                'error'
                                             );
                                             discardRecording(recordedClip.id);
                                         })

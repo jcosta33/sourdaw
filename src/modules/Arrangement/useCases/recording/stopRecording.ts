@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -88,7 +89,9 @@ export async function stopRecording(atBeat?: number): Promise<void> {
                 logger.error(new Error('MIDI recording commit failed', { cause: error }));
                 // A commit that never landed must not leave a visible recording
                 // that no entry owns (#4439): retire the same provisional result
-                // the discard inverse retires.
+                // the discard inverse retires, and tell the user the way the
+                // capture-failure path does.
+                notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
                 discardRecording(clip.id);
             })
         )

@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
+        notifyUser: vi.fn<(message: string, level: string) => void>(),
         startPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
         startAudioRecording: vi.fn<(trackId: string, terminal: RecordingTerminal) => Promise<boolean>>(
             (_trackId, terminal) => {
@@ -67,6 +68,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     stopAudioRecording: mocks.stopAudioRecording,
 }));
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -180,6 +182,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
         mocks.startPlayback.mockClear();
+        mocks.notifyUser.mockClear();
         mocks.audioClock.currentTime = 0;
     });
 
@@ -259,7 +262,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisionalId }]);
     });
 
-    it('retires the provisional MIDI recording when its commit fails', async () => {
+    it('retires the provisional MIDI recording and tells the user when its commit fails', async () => {
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional recording clip');
@@ -275,9 +278,13 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(clipIds()).toEqual([]);
         expect(takeRefs()).toEqual([]);
         expect(laneIds()).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the take was discarded. Try recording again.',
+            'error'
+        );
     });
 
-    it('retires the provisional audio recording when its commit fails', async () => {
+    it('retires the provisional audio recording and tells the user when its commit fails', async () => {
         await startAudioRecordingGesture();
         expect(clipIds()).toHaveLength(1);
         clearHandlerRegistry();
@@ -288,5 +295,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(clipIds()).toEqual([]);
         expect(takeRefs()).toEqual([]);
         expect(laneIds()).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording failed — the take was discarded. Try recording again.',
+            'error'
+        );
     });
 });

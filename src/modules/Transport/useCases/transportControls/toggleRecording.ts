@@ -114,11 +114,13 @@ async function beginActualRecording(
                     // commits, so no incomplete take becomes replayable. The
                     // lifecycle owns the promise so the user-facing stop can wait
                     // for the entry; a commit that fails retires the provisional
-                    // result instead of leaving it visible with no entry (#4439).
+                    // result instead of leaving it visible with no entry (#4439),
+                    // and says so the way the capture-failure sibling does.
                     recordingLifecycle.trackCommit(
                         Promise.resolve().then(() =>
                             commitRecording(recordedClip).catch((error: unknown) => {
                                 logger.error(new Error('Recording commit failed', { cause: error }));
+                                notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
                                 discardRecording(recordedClip.id);
                             })
                         )
