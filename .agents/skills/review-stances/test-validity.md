@@ -136,10 +136,10 @@ the strict `tsc` contracts the pipeline enforces, so a PR adding TypeScript file
 errors no spec-level probe surfaces.
 
 Probe that would have caught it: when a diff adds or edits TypeScript files, compile a narrow `tsc`
-program in /tmp (extend the lane tsconfig with strict options, include the changed files plus the
-ambient types the import closure needs) and require exit 0; reproduce the failure pre-fix when
-validating a posted type finding. (PR #3136's dispatch already carried this probe and produced clean
-heads.)
+program inside the review worktree defined in the Reviewer isolation section (extend the lane
+tsconfig with strict options, include the changed files plus the ambient types the import closure
+needs) and require exit 0; reproduce the failure pre-fix when validating a posted type finding. (PR
+#3136's dispatch already carried this probe and produced clean heads.)
 
 ### 2026-08-30 — a new device type string that is a classified third-party mark (escaped via PR #3127, caught by the release-inventory job)
 
