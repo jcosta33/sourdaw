@@ -16,6 +16,7 @@ import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipSchedu
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
+import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 type FakeWorker = {
     onmessage: ((e: MessageEvent<unknown>) => void) | null;
@@ -60,7 +61,7 @@ const harness = vi.hoisted(() => ({
     start_audio_recording: vi.fn<StartAudioRecordingMock>(() => Promise.resolve(true)),
     start_recording: vi.fn<() => TestRecordingClip[]>(() => []),
     stop_audio_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-    stop_recording: vi.fn<() => void>(),
+    stop_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
     track_store: {
@@ -313,6 +314,40 @@ describe('stopPlayheadScheduler', () => {
         stopPlayheadScheduler();
 
         expect(stopAutomationRecording).toHaveBeenCalled();
+    });
+
+    it('registers the teardown punch-out commit on the recording lifecycle so a following stop awaits it', async () => {
+        // Earlier cases can leave a settled commit tracked; drain them so the
+        // only commit the wait below observes is this teardown's.
+        await recordingLifecycle.waitForCommits();
+
+        let release_commit: (() => void) | undefined;
+        const held_commit = new Promise<void>((resolve) => {
+            release_commit = resolve;
+        });
+        harness.stop_recording.mockImplementationOnce(() => held_commit);
+        schedulerSession.punchRecordingActive = true;
+        playheadPositionRef.current = 1.5;
+
+        stopPlayheadScheduler();
+
+        // The ref, not the store, is the live boundary on every teardown route.
+        expect(harness.stop_recording).toHaveBeenCalledWith(1.5);
+
+        // A following user-facing stop waits on the lifecycle. While the
+        // teardown's commit is held that wait must stay pending, or the stop
+        // resolves early and the next Undo consumes the previous history entry
+        // (#4439).
+        let settled = false;
+        const waiting = recordingLifecycle.waitForCommits().then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        release_commit!();
+        await waiting;
+        expect(settled).toBe(true);
     });
 });
 
@@ -716,6 +751,7 @@ describe('playhead scheduler tick', () => {
         harness.stop_audio_recording.mockReturnValueOnce(recordingFlush);
         harness.stop_recording.mockImplementationOnce(() => {
             order.push('stopRecording');
+            return Promise.resolve();
         });
         harness.track_store.value = {
             tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
