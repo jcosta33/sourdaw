@@ -1,0 +1,16 @@
+.agents/decisions/0048-attributable-evidence-contract-is-frozen.md
+  h_beb54bf43b47b7 124-128
+.agents/decisions/0049-retire-the-source-attestation-comment.md
+  h_beb54bf43b47b7 36-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6c76980fa4a6691b512cf07cb95b616358b74a55",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
