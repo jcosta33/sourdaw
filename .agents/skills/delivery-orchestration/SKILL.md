@@ -163,14 +163,6 @@ otherwise, when no offered rewrite can stay off base-side history, re-create
 the named offending commits. Never a rewrite rooted at the remote tip: it
 would replay base-side commits as the App.
 
-After the push and pull-request write, publication posts one `sourdaw-attestation-v1` marker
-comment as the author App: the source attestation binding every exact commit OID above the
-comparison base, with its observed Git authorship, to the published head. The record is validated
-before any remote write, recomputed from the same commit-set calculation the gate uses, and
-replayed idempotently — a re-publication whose recomputed marker already stands posts nothing,
-while one that differs under the same head supersedes by comment order. Readers trust only
-comments by the author App's immutable node id and fail closed on a malformed App-authored marker.
-
 Labels and milestone are written by the author App. Project membership is not:
 installation tokens cannot reach user-owned Projects v2, so the project listing,
 the issue's and PR's own membership, and the `--add-project` write all go through

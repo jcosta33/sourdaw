@@ -188,8 +188,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'lane:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishLane.ts',
-        'scripts/sourceAttestation.ts',
-        'scripts/canonicalRecord.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
         'scripts/stackedLanes.ts',
@@ -202,8 +200,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/syncParentLane.ts',
         'scripts/publishLane.ts',
-        'scripts/sourceAttestation.ts',
-        'scripts/canonicalRecord.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
         'scripts/stackedLanes.ts',

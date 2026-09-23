@@ -119,7 +119,6 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewShadowStatus.ts',
     'scripts/reviewerModelDiversity.ts',
     'scripts/rulesetHardening.ts',
-    'scripts/sourceAttestation.ts',
     'scripts/stackedLanes.ts',
     'scripts/syncParentLane.ts',
     'scripts/trackerIssueReconciliation.ts',
