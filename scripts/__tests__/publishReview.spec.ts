@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
+import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
 import {
@@ -28,7 +29,6 @@ import {
     type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
 } from '../publishReview.ts';
-import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import {
     type PullRequestMutationLockOwner,
     currentMutationOwnerFence,
