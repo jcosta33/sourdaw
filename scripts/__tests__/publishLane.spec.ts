@@ -4458,7 +4458,7 @@ describe('publication delta gating', () => {
  * can expose is pinned by some shape, so a member with no shape reaching it fails there instead of
  * escaping unobserved.
  *
- * Second, the real port's behaviour. `REAL_PORT_SHAPES` drives the same eight shapes through the
+ * Second, the real port's behaviour. `REAL_PORT_SHAPES` drives the same nine shapes through the
  * unmodified `shellPort` bound to a recording `gh` stub, normalizes every invocation it recorded,
  * and asserts the shape's key set equals a golden allowlist stated beside it. Because the golden
  * set is the whole expectation, an invocation a reintroduction adds fails the shape whatever its
@@ -4466,19 +4466,22 @@ describe('publication delta gating', () => {
  * `--method POST` write to one, or a GraphQL `addComment` mutation each key to something the golden
  * set does not carry. This is the part the member-set pins cannot see: a write inside an
  * already-pinned member, or an optional member added to the port and called on the publication
- * path, changes no member name at all but spawns an invocation this log records. Each shape also
- * asserts the pull-request write it must make, so a shape that recorded nothing cannot pass
- * vacuously, and a companion case holds the real-port table to exactly the shapes the golden sets
- * pin, so a new shape cannot be added to one table without being driven through the other.
+ * path, changes no member name at all but spawns an invocation this log records. Every shape that
+ * makes a pull-request write also asserts it — a create, an update, or the invocations the shape's
+ * own anchor names — so a shape whose run degraded cannot pass vacuously on its write; the
+ * push-only legacy shape, which makes no write, anchors only on a non-empty recorded log. A
+ * companion case holds the real-port table to exactly the shapes the golden sets pin, so a new
+ * shape cannot be added to one table without being driven through the other.
  *
  * The shapes are the publication outcomes `publishLane` can take for this command, each built the
- * way the rest of this spec builds it: a first publication that creates the pull request, a
- * republication that updates it, a stacked child of either kind, a publication reporting a
- * conflicted head, a republication carrying an inherited milestone and board, the legacy pull
- * request this command only pushes to, and a legacy publication that applies metadata under an
- * explicit `--model`. All eight are driven through the real port, so no shape is observed only by
- * member names. The real-port key-name case is narrower still: it proves only that the port exposes
- * no member named for an attestation or comment, which names a surface, never a behaviour.
+ * way the rest of this spec builds it: a first publication that creates the pull request, an
+ * issueless conforming publication that also creates one, a republication that updates it, a
+ * stacked child of either kind, a publication reporting a conflicted head, a republication
+ * carrying an inherited milestone and board, the legacy pull request this command only pushes to,
+ * and a legacy publication that applies metadata under an explicit `--model`. All nine are driven
+ * through the real port, so no shape is observed only by member names. The real-port key-name case
+ * is narrower still: it proves only that the port exposes no member named for an attestation or
+ * comment, which names a surface, never a behaviour.
  */
 describe('publication attestation retirement', () => {
     type PublicationShape = {
@@ -4517,6 +4520,41 @@ describe('publication attestation retirement', () => {
         'readAuthorModel',
         'readIssueProjectTitles',
         'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'worktrees',
+    ];
+
+    /**
+     * An issueless conforming lane's first publication. It makes none of the bound issue's reads
+     * (`issueExists`, `readIssueTrackerMetadata`, `readIssueProjectTitles`) because no issue
+     * constrains it, and reads no pull-request projects because its derived board is resolved from
+     * the live project listing (`knownProjectTitles`) rather than the issue. The type label derived
+     * from the lane subject is one the pull request does not carry yet, so the metadata plan is real
+     * and `applyPullRequestMetadata` is reached — the write an issue-bound first publication with an
+     * already-correct label set skips.
+     */
+    const ISSUELESS_CREATE_MEMBERS = [
+        'aheadBehind',
+        'applyPullRequestMetadata',
+        'baseSha',
+        'commitAttribution',
+        'createPullRequest',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'push',
+        'readAuthorModel',
         'readPullRequestMergeability',
         'readPullRequestMetadata',
         'remoteBranchSha',
@@ -4766,6 +4804,19 @@ describe('publication attestation retirement', () => {
             },
         },
         {
+            shape: 'an issueless conforming publication that creates the pull request',
+            number: 88,
+            members: ISSUELESS_CREATE_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort({
+                    trees: [...otherAuthorLanes(), worktree({ path: CLEANUP_LANE, branch: 'agent/cleanup' })],
+                    cwd: CLEANUP_LANE,
+                });
+                const number = publishLane(undefined, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
             shape: 'a republication that updates the pull request',
             number: 41,
             members: REPUBLICATION_MEMBERS,
@@ -4900,6 +4951,7 @@ describe('publication attestation retirement', () => {
     });
 
     const REAL_PORT_BRANCH = 'agent/12/real-port';
+    const REAL_PORT_CLEANUP_BRANCH = 'agent/cleanup';
     const REAL_PORT_LEGACY_BRANCH = 'fix/collab-sync-state-2039';
     const REAL_PORT_LEGACY_NUMBER = 2275;
     const REAL_PORT_STACK_PARENT = 'agent/11/parent';
@@ -4989,13 +5041,15 @@ process.exit(0);
     /**
      * A real-Git publication fixture whose GitHub side is the recording `gh` above: the port is the
      * real `shellPort`, so every member it invokes spawns a real `gh` invocation into one log, and
-     * `git` stays the real binary. It carries a conforming lane and a lock-shaped off-convention
-     * lane, either of which `portFor` binds as the port's cwd.
+     * `git` stays the real binary. It carries an issue-bound conforming lane, an issueless
+     * conforming lane, and a lock-shaped off-convention lane, any of which `portFor` binds as the
+     * port's cwd.
      */
     function realPortFixture(answers: RealPortAnswers) {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-real-port-'));
         const primary = join(root, 'primary');
         const lane = join(root, 'lane');
+        const cleanupLane = join(root, 'cleanup-lane');
         const legacyLane = join(root, 'legacy-lane');
         const remote = join(root, 'remote.git');
         const ghPath = join(root, 'gh');
@@ -5014,12 +5068,15 @@ process.exit(0);
         const baseSha = fixtureGit(primary, ['rev-parse', 'HEAD']);
         fixtureGit(primary, ['worktree', 'add', '-b', REAL_PORT_BRANCH, lane]);
         fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
+        fixtureGit(primary, ['worktree', 'add', '-b', REAL_PORT_CLEANUP_BRANCH, cleanupLane]);
+        fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, cleanupLane]);
         fixtureGit(primary, ['worktree', 'add', '-b', REAL_PORT_LEGACY_BRANCH, legacyLane]);
         fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, legacyLane]);
         execFileSync(systemGit, ['init', '--bare', remote], { cwd: root, env: fixtureGitEnv(), encoding: 'utf8' });
         fixtureGit(primary, ['push', remote, 'main']);
         fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
         fixtureGit(primary, ['config', `branch.${REAL_PORT_BRANCH}.sourdaw-author-model`, 'glm-5.3']);
+        fixtureGit(primary, ['config', `branch.${REAL_PORT_CLEANUP_BRANCH}.sourdaw-author-model`, 'glm-5.3']);
         writeFileSync(answersPath, JSON.stringify(answers));
         writeFileSync(ghPath, REAL_GH_RECORDER);
         chmodSync(ghPath, 0o700);
@@ -5035,6 +5092,7 @@ process.exit(0);
         return {
             primary,
             lane,
+            cleanupLane,
             legacyLane,
             remote,
             baseSha,
@@ -5102,10 +5160,12 @@ process.exit(0);
     ]);
 
     /**
-     * A token with its volatile segments — full SHAs, numeric ids, and temporary paths — replaced by
-     * stable placeholders. Segment-wise so a numeric path segment (`repos/<owner>/<repo>/issues/12`),
-     * a bare issue number, and a branch suffix (`...-2039`) all normalize, while a model token like
-     * `kimi-k2.5` survives.
+     * A token with its volatile segments — temporary paths, full SHAs, and wholly numeric segments —
+     * replaced by stable placeholders. Replacement is segment-wise on `/`, so a path segment
+     * (`repos/<owner>/<repo>/issues/12`) or a bare issue number normalizes, while a model token like
+     * `kimi-k2.5` survives. Only a segment that is *entirely* numeric is placeholdered: a hyphenated
+     * token such as `fix/collab-sync-state-2039` keeps its digits inside a larger segment and passes
+     * through unchanged.
      */
     function normalizeGhToken(token: string): string {
         return token
@@ -5245,6 +5305,24 @@ process.exit(0);
         'project list --owner --format',
     ];
 
+    /**
+     * The issueless conforming create. It records no bound-issue read — no `api .../issues/<n>`
+     * existence lookup and no `gh issue view` tracker read — because no issue constrains the lane,
+     * and no `pr view --json projectItems` because its derived board comes from `gh project list`
+     * and the live listing names no such project. The metadata edit carries two `--add-label` flags:
+     * the recorded model label plus the type label derived from the lane subject.
+     */
+    const ISSUELESS_CREATE_INVOCATIONS = [
+        'label create glm-5.3 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr create --repo --base --head --title --body',
+        'pr edit <n> --repo --add-label --add-label',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+        'project list --owner --format',
+    ];
+
     const UPDATE_PUBLICATION_INVOCATIONS = [
         'api repos/jcosta33/sourdaw/issues/<n> --jq={number: .number, isPullRequest: (has("pull_request"))}',
         'issue view <n> --repo --json=labels,milestone',
@@ -5327,6 +5405,12 @@ process.exit(0);
         editsPullRequest?: number;
         /** The shape must have resolved a real stack parent, not degraded to a plain publication. */
         stackChild?: boolean;
+        /**
+         * Normalized invocations this shape must record. The golden set is compared as a whole, so
+         * this names the writes that prove the shape ran the publication it claims to, rather than a
+         * degraded path whose allowlist happened to match.
+         */
+        mustRecord?: string[];
         /** Every distinct normalized invocation this shape records, alphabetically. */
         invocations: string[];
         drive: () => string[][];
@@ -5344,6 +5428,21 @@ process.exit(0);
                         commitAsAuthorApp(f.lane, 'one.txt', 'feat(gate): first bot commit');
                     },
                     (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    88
+                ),
+        },
+        {
+            shape: 'an issueless conforming publication that creates the pull request',
+            mustRecord: ['pr create --repo --base --head --title --body', 'pr edit <n> --repo --add-label --add-label'],
+            invocations: ISSUELESS_CREATE_INVOCATIONS,
+            drive: () =>
+                publishThroughRealPort(
+                    {},
+                    (f) => {
+                        commitAsAuthorApp(f.cleanupLane, 'cleanup.txt', DEFAULT_SUBJECT);
+                    },
+                    (f) =>
+                        publishLane(undefined, f.portFor(f.cleanupLane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
                     88
                 ),
         },
@@ -5509,11 +5608,16 @@ process.exit(0);
             }
         }
 
+        const keys = [...new Set(recorded.map(normalizeGhInvocation))].sort();
+        // A shape whose run degraded can still land an allowlist that matches what it recorded;
+        // naming the invocations its own path must emit makes that failure land here.
+        for (const required of shape.mustRecord ?? []) {
+            expect(keys, `required invocation for ${shape.shape}`).toContain(required);
+        }
+
         // The allowlist is the whole observation: any invocation a reintroduction adds — whatever its
         // subcommand, endpoint, or spelling — keys to something this golden set does not carry.
-        expect([...new Set(recorded.map(normalizeGhInvocation))].sort(), `gh invocations for ${shape.shape}`).toEqual(
-            shape.invocations
-        );
+        expect(keys, `gh invocations for ${shape.shape}`).toEqual(shape.invocations);
     });
 
     /**
