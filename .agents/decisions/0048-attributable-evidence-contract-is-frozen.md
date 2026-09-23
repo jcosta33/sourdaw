@@ -74,7 +74,11 @@ reader retained.
   [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding only this
   source-attestation item): the source-attestation comment has no live writer, and the authorship
   gate remains. The repair, confirmation, finding-lineage, and delivery-receipt writers are
-  unchanged and still post to pull-request issue comments.**
+  unchanged, though they never shared one surface: repair (`repairReviewFinding.ts`) and confirmation
+  (`confirmReviewRepairs.ts`) post review-thread replies through the `addPullRequestReviewThreadReply`
+  mutation, a different object on a different endpoint, while finding lineage
+  (`supersedePullRequest.ts`) and delivery receipts (`deliverPullRequest.ts`) are the issue-comment
+  writers.**
 - Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
   marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
   receipts remain readable.

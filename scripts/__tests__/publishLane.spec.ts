@@ -80,6 +80,7 @@ import {
     type RemoteBranchRead,
 } from '../publishLane.ts';
 import { writeLaneStack } from '../stackedLanes.ts';
+import { trustedDependencyPaths } from '../trustedGithubWriteBootstrap.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -4447,6 +4448,88 @@ describe('publication delta gating', () => {
 });
 
 /**
+ * Placeholder for a dynamic operand inside a concatenation, so `'issues/' + n + '/comments'` reads
+ * as the one endpoint it builds. A private-use code point, not a control character, so the pattern
+ * below stays clear of `no-control-regex` and no TypeScript source carries it by accident.
+ */
+const CONCATENATED_COMMAND_PART = '\uE000';
+
+/** The REST issue-comment endpoint in every spelling one module can assemble it from. */
+const ISSUE_COMMENT_ENDPOINT_PATTERN = /issues\/(?:\d+|\$\{[^}]+\}|\uE000)\/comments/u;
+
+/**
+ * Every command-building literal one module carries: each string literal and template, each
+ * consecutive run of literals (an argv array spelled in one stretch), and each string concatenation
+ * with its dynamic operands folded to the placeholder above. Static analysis only — no module is
+ * imported and nothing here observes publication behaviour.
+ */
+function commandLiteralsIn(modulePath: string): {
+    literals: string[];
+    literalRuns: string[][];
+    concatenations: string[];
+} {
+    const sourceFile = ts.createSourceFile(
+        modulePath,
+        readFileSync(join(import.meta.dirname, '..', '..', modulePath), 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+    );
+    const literals: string[] = [];
+    const literalRuns: string[][] = [];
+    const concatenations: string[] = [];
+    const literalText = (node: ts.Node): string | undefined => {
+        if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+            return node.text;
+        }
+        return ts.isTemplateExpression(node) ? node.getText(sourceFile) : undefined;
+    };
+    const plusOperands = (node: ts.Node): ts.Node[] => {
+        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+            return [...plusOperands(node.left), ...plusOperands(node.right)];
+        }
+        return [node];
+    };
+    const visit = (node: ts.Node): void => {
+        const text = literalText(node);
+        if (text !== undefined) {
+            literals.push(text);
+        }
+        if (ts.isArrayLiteralExpression(node)) {
+            // A consecutive run of string literals is an argv: `pr`, `comment` adjacent in one run is
+            // the subcommand pair however the surrounding array is spelled.
+            let run: string[] = [];
+            const flush = (): void => {
+                if (run.length > 1) {
+                    literalRuns.push(run);
+                }
+                run = [];
+            };
+            for (const element of node.elements) {
+                const elementText = literalText(element);
+                if (elementText === undefined) {
+                    flush();
+                } else {
+                    run.push(elementText);
+                }
+            }
+            flush();
+        }
+        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+            const operands = plusOperands(node);
+            if (operands.some((operand) => literalText(operand) !== undefined)) {
+                concatenations.push(
+                    operands.map((operand) => literalText(operand) ?? CONCATENATED_COMMAND_PART).join('')
+                );
+            }
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return { literals, literalRuns, concatenations };
+}
+
+/**
  * The source-attestation comment is retired: no publication writes to a pull request's
  * issue-comment channel. Four observations hold that, and each claims only what it checks.
  *
@@ -4476,11 +4559,12 @@ describe('publication delta gating', () => {
  *
  * Third, and independent of every shape, the source pin. Enumerating publication outcomes chases an
  * open set — five rounds of review each found one the tables did not drive — so
- * `builds no issue-comment invocation in the publication module` reads `scripts/publishLane.ts`
- * itself and fails on any string literal or template in it that constructs an issue-comment
- * invocation, whatever member or path it lives in. It covers command construction in that module
- * alone; a write routed through another module is caught by the trusted-closure pin in
- * `agentDeliveryScripts.spec.ts` instead. Its own comment states the boundary.
+ * `builds no issue-comment invocation anywhere in the lane:publish closure` reads every module in
+ * that trusted closure and fails on any string literal, template, or concatenation in any of them
+ * that constructs an issue-comment invocation, whatever member or path it lives in. It covers
+ * command construction anywhere inside the closure; a write routed through a module outside it would
+ * enter the closure, and the exact-closure pin in `agentDeliveryScripts.spec.ts` refuses that changed
+ * set first. Its own comment states the boundary.
  *
  * The shapes are the publication outcomes `publishLane` can take for this command, each built the
  * way the rest of this spec builds it: a first publication that creates the pull request, an
@@ -5013,83 +5097,53 @@ describe('publication attestation retirement', () => {
      * The shape-independent pin. The tables above enumerate publication outcomes, and outcomes are
      * an open set: a member reachable only on a state no shape drives, or a write inside an
      * already-pinned member, escapes them however carefully they are enumerated. This case drives
-     * nothing. It reads `scripts/publishLane.ts` itself — the one module that builds every `gh` and
-     * `ghRun` argv this publication issues — parses it, and fails when any string literal or template
-     * in it constructs an issue-comment invocation:
+     * nothing. It takes the `lane:publish` trusted closure — the module set `agentDeliveryScripts.spec.ts`
+     * pins exactly, derived here through `trustedDependencyPaths` rather than hand-copied so a closure
+     * change is read without editing this file — reads every module in it, parses it, and fails when
+     * any string literal, template, or string concatenation in it constructs an issue-comment
+     * invocation:
      *
-     * - the REST endpoint `issues/<n>/comments` in an `api` argument, with or without a query string;
+     * - the REST endpoint `issues/<n>/comments` in an `api` argument, with or without a query string,
+     *   spelled whole or assembled from parts around a dynamic operand;
      * - a GraphQL `addComment` mutation;
      * - the `pr comment` or `issue comment` subcommand pair.
      *
      * Because it reads command construction rather than a publication outcome, a reintroduction
-     * fails here whatever the member is named, whichever path fires it, and whether or not any shape
-     * drives that path.
+     * fails here whatever the member is named, whichever closure module or path builds it, and
+     * whether or not any shape drives that path.
      *
-     * It covers command construction inside this module, and only that. A write routed through
-     * another module — this module importing a helper that posts the comment — is not caught here;
-     * the trusted-closure pin in `agentDeliveryScripts.spec.ts` catches it, because a new import
-     * changes the closure `lane:publish` is pinned to. Nor does it judge the number: `issues/<n>/
-     * comments` is refused on any issue, pull request or not.
+     * It covers command construction anywhere inside the `lane:publish` closure, and only there. A
+     * write routed through a module outside that closure would itself enter the closure, and the
+     * exact-closure pin in `agentDeliveryScripts.spec.ts` refuses the widened set before this pin
+     * reads it. Nor does it judge the number: `issues/<n>/comments` is refused on any issue, pull
+     * request or not.
      */
-    it('builds no issue-comment invocation in the publication module', () => {
-        const sourceFile = ts.createSourceFile(
-            'publishLane.ts',
-            readFileSync(join(import.meta.dirname, '../publishLane.ts'), 'utf8'),
-            ts.ScriptTarget.Latest,
-            true,
-            ts.ScriptKind.TS
+    it('builds no issue-comment invocation anywhere in the lane:publish closure', () => {
+        const closure = trustedDependencyPaths('lane:publish');
+        // The exact-closure pin elsewhere owns this set; the guard only refuses a derived list that
+        // emptied and would leave every check below vacuous.
+        expect(closure, 'the lane:publish closure must carry the publication module').toContain(
+            'scripts/publishLane.ts'
         );
-        const literals: string[] = [];
-        const literalRuns: string[][] = [];
-        const literalText = (node: ts.Node): string | undefined => {
-            if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-                return node.text;
-            }
-            return ts.isTemplateExpression(node) ? node.getText(sourceFile) : undefined;
-        };
-        const visit = (node: ts.Node): void => {
-            const text = literalText(node);
-            if (text !== undefined) {
-                literals.push(text);
-            }
-            if (ts.isArrayLiteralExpression(node)) {
-                // A consecutive run of string literals is an argv: `pr`, `comment` adjacent in one
-                // run is the subcommand pair however the surrounding array is spelled.
-                let run: string[] = [];
-                const flush = (): void => {
-                    if (run.length > 1) {
-                        literalRuns.push(run);
-                    }
-                    run = [];
-                };
-                for (const element of node.elements) {
-                    const elementText = literalText(element);
-                    if (elementText === undefined) {
-                        flush();
-                    } else {
-                        run.push(elementText);
-                    }
-                }
-                flush();
-            }
-            ts.forEachChild(node, visit);
-        };
-        visit(sourceFile);
 
-        expect(
-            literals.filter((value) => /issues\/(?:\d+|\$\{[^}]+\})\/comments/u.test(value)),
-            'issue-comment endpoint literals in scripts/publishLane.ts'
-        ).toEqual([]);
-        expect(
-            literals.filter((value) => /\baddComment\b/u.test(value)),
-            'GraphQL addComment literals in scripts/publishLane.ts'
-        ).toEqual([]);
-        expect(
-            literalRuns.filter((run) =>
-                run.some((token, index) => (token === 'pr' || token === 'issue') && run[index + 1] === 'comment')
-            ),
-            'comment subcommand pairs in scripts/publishLane.ts'
-        ).toEqual([]);
+        for (const modulePath of closure) {
+            const { literals, literalRuns, concatenations } = commandLiteralsIn(modulePath);
+
+            expect(
+                [...literals, ...concatenations].filter((value) => ISSUE_COMMENT_ENDPOINT_PATTERN.test(value)),
+                `issue-comment endpoint literals in ${modulePath}`
+            ).toEqual([]);
+            expect(
+                literals.filter((value) => /\baddComment\b/u.test(value)),
+                `GraphQL addComment literals in ${modulePath}`
+            ).toEqual([]);
+            expect(
+                literalRuns.filter((run) =>
+                    run.some((token, index) => (token === 'pr' || token === 'issue') && run[index + 1] === 'comment')
+                ),
+                `comment subcommand pairs in ${modulePath}`
+            ).toEqual([]);
+        }
     });
 
     const REAL_PORT_BRANCH = 'agent/12/real-port';
