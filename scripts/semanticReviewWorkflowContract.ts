@@ -57,6 +57,17 @@ export const SEMANTIC_REVIEW_PERMISSIONS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The workflow environment is executable surface like any other: a `PATH`, a `BASH_ENV`, or any
+ * shadowing variable set here reaches every pinned command in both jobs. It is pinned whole for the
+ * three values the workflow needs, so a fourth entry is refused here rather than only snapshotted.
+ */
+export const SEMANTIC_REVIEW_ENV: Readonly<Record<string, string>> = {
+    NODE_VERSION: '24.19.0',
+    PR_NUMBER: '${{ github.event.pull_request.number || inputs.pr }}',
+    TRUSTED_SHA: '${{ github.workflow_sha }}',
+};
+
+/**
  * The only actions the job may invoke. An added action is an added supply-chain surface inside the
  * one workflow that holds the key, so the set is pinned rather than merely reviewed.
  */
@@ -446,6 +457,25 @@ function assertNoShellOverride(steps: readonly UnknownRecord[], label: string): 
 }
 
 /**
+ * The environment a pinned command runs in is executable surface the command pins cannot see. A
+ * workflow- or job-level `defaults` replaces the shell every `run` step uses, a job or step
+ * `container` re-environments the job that holds the provider key, and a job or step `env` can set
+ * `BASH_ENV` for a command whose text is compared exactly. One step environment is legitimate — the
+ * assessment step's, pinned whole where the key is — and it is the sole exemption.
+ */
+function assertNoExecutableEnvironment(job: UnknownRecord, label: string, exemptStepName?: string): void {
+    for (const forbidden of ['defaults', 'container', 'env']) {
+        requireEqual(job[forbidden], undefined, `${label} without a job ${forbidden} block`);
+    }
+    for (const step of stepsOf(job)) {
+        requireEqual(step.container, undefined, `${label} steps without a step container`);
+        if (step.name !== exemptStepName) {
+            requireEqual(step.env, undefined, `${label} steps without a step environment`);
+        }
+    }
+}
+
+/**
  * The coverage job is a second reader of the same run, and its whole surface is the artifact the
  * assessment job uploaded. It holds no provider key, checks nothing out, and can write nothing, so
  * the only risk left is that it stops publishing the scope while still reporting green: its name,
@@ -461,6 +491,7 @@ function assertCoverageJob(jobs: UnknownRecord): void {
     for (const forbidden of ['continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
     }
+    assertNoExecutableEnvironment(job, 'the coverage job');
     const steps = stepsOf(job);
     assertNoShellOverride(steps, 'every coverage-job step');
     requireEqual(
@@ -503,6 +534,9 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
         'its reviewed activity types'
     );
     requireEqual(workflow.permissions, SEMANTIC_REVIEW_PERMISSIONS, 'read-only repository permissions');
+    // A workflow-level `defaults.run.shell` would replace the shell of every `run` step in both jobs,
+    // which no command pin reads.
+    requireEqual(workflow.defaults, undefined, 'no workflow-level defaults');
     requireEqual(
         workflow.concurrency,
         {
@@ -557,11 +591,19 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
     }
     const coverageStep = stepNamed(stepsOf(job), SEMANTIC_REVIEW_COVERAGE_STEP);
     requireEqual(coverageStep.id, SEMANTIC_REVIEW_COVERAGE_STEP_ID, 'the output id its own output is read from');
-    requireEqual(coverageStep.env, undefined, 'no environment on the coverage step');
 
     assertTrustedCheckout(job);
     assertEveryRunIsPinned(job);
+    // The credential and head assertions run first so their specific refusals win; the environment
+    // refusal then closes what none of them reads. The assessment step's environment is the one
+    // legitimate one and `assertKeyIsScopedToTheAssessment` pins it whole; every other step must carry
+    // none, or a `BASH_ENV` reaches a pinned command.
     assertKeyIsScopedToTheAssessment(workflow, job);
+    // The workflow environment is pinned after the credential count, so a secret smuggled into it is
+    // still refused by the specific message that names the credential, and any other entry is refused
+    // here. A workflow-level `defaults.run.shell` is refused beside the permissions pin above.
+    requireEqual(workflow.env, SEMANTIC_REVIEW_ENV, 'its pinned workflow environment');
     assertHeadIsNeverCheckedOut(workflow, job);
+    assertNoExecutableEnvironment(job, 'the assessment job', SEMANTIC_REVIEW_ASSESS_STEP);
     assertCoverageJob(jobs);
 }

