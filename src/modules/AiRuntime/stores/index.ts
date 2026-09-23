@@ -40,6 +40,9 @@ export type { VoiceStatus } from './voiceStatusStore';
 export { voiceInputAvailabilityStore } from './voiceInputAvailabilityStore';
 export type { VoiceInputAvailability } from './voiceInputAvailabilityStore';
 
+export { voiceModelSetupStore } from './voiceModelSetupStore';
+export type { VoiceModelSetupStatus } from './voiceModelSetupStore';
+
 export { selectAgentRunPendingEffectRecoveries } from './selectAgentRunPendingEffectRecoveries';
 export type { AgentRunPendingEffectRecoveryProjection } from './selectAgentRunPendingEffectRecoveries';
 

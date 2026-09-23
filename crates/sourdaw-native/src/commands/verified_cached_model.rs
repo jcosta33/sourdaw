@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use super::filesystem::APP_DIR_NAME;
@@ -131,11 +131,7 @@ fn read_verified_cached_model_bytes_with_hooks(
     }
     #[cfg(test)]
     after_read();
-    let actual = Sha256::digest(&bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    if actual != model.expected_sha256 {
+    if sha256_hex(&bytes) != model.expected_sha256 {
         return Err(format!(
             "Verified local model {} failed hash validation.",
             model.filename
@@ -143,6 +139,147 @@ fn read_verified_cached_model_bytes_with_hooks(
     }
 
     Ok(bytes)
+}
+
+/// Verify `bytes` against the pinned spec, then install them as the cached
+/// artifact.
+///
+/// This is the write half of the cache boundary, deliberately asymmetric with
+/// the read half: the reader never creates or repairs, while the writer
+/// exists to populate — so it creates the cache directory, and it runs only
+/// behind an explicit, consented renderer download whose bytes it re-verifies
+/// before anything reaches disk. The install is stage-fsync-rename inside the
+/// cache directory, so a concurrent reader observes the old verified file or
+/// the new one, never a partial write.
+pub async fn write_verified_cached_model(
+    model: &'static VerifiedCachedModel,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
+    validate_cached_model_spec(model)?;
+    let directory = cached_model_dir()?;
+    tokio::task::spawn_blocking(move || {
+        write_verified_cached_model_bytes(&directory, model, &bytes)
+    })
+    .await
+    .map_err(|error| format!("Verified model write task failed: {error}"))?
+}
+
+pub(crate) fn write_verified_cached_model_bytes(
+    directory: &Path,
+    model: &VerifiedCachedModel,
+    bytes: &[u8],
+) -> Result<(), String> {
+    verify_model_bytes_for_write(model, bytes)?;
+    std::fs::create_dir_all(directory)
+        .map_err(|error| format!("Failed to create the verified model cache directory: {error}"))?;
+    let target = directory.join(model.filename);
+    refuse_link_target(&target, model)?;
+    // Same-directory staging keeps the rename atomic on one filesystem. The
+    // process id scopes the name to this process, so a leftover from a crashed
+    // attempt is ours and stale by definition, and the staging open replaces
+    // it outright.
+    let staging = directory.join(format!(".{}.stage-{}", model.filename, std::process::id()));
+    let outcome = stage_and_rename(&staging, &target, model, bytes);
+    if outcome.is_err() {
+        let _ = std::fs::remove_file(&staging);
+    }
+    outcome
+}
+
+fn verify_model_bytes_for_write(model: &VerifiedCachedModel, bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() as u64 != model.expected_size_bytes {
+        return Err(format!(
+            "Refusing to store {}: size {} does not match the pinned {} bytes.",
+            model.filename,
+            bytes.len(),
+            model.expected_size_bytes
+        ));
+    }
+    if sha256_hex(bytes) != model.expected_sha256 {
+        return Err(format!(
+            "Refusing to store {}: SHA-256 does not match the pinned digest.",
+            model.filename
+        ));
+    }
+    Ok(())
+}
+
+fn refuse_link_target(target: &Path, model: &VerifiedCachedModel) -> Result<(), String> {
+    let Ok(metadata) = std::fs::symlink_metadata(target) else {
+        return Ok(());
+    };
+    if metadata.file_type().is_symlink() {
+        return Err(format!(
+            "Refusing to replace the symlink named {} with a verified model.",
+            model.filename
+        ));
+    }
+    #[cfg(windows)]
+    if {
+        use std::os::windows::fs::FileTypeExt;
+        metadata.file_type().is_reparse_point()
+    } {
+        return Err(format!(
+            "Refusing to replace the reparse point named {} with a verified model.",
+            model.filename
+        ));
+    }
+    Ok(())
+}
+
+fn stage_and_rename(
+    staging: &Path,
+    target: &Path,
+    model: &VerifiedCachedModel,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let _ = std::fs::remove_file(staging);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(staging)
+        .map_err(|error| {
+            format!(
+                "Failed to stage verified local model {}: {error}",
+                model.filename
+            )
+        })?;
+    file.write_all(bytes).map_err(|error| {
+        format!(
+            "Failed to write verified local model {}: {error}",
+            model.filename
+        )
+    })?;
+    file.sync_all().map_err(|error| {
+        format!(
+            "Failed to persist verified local model {}: {error}",
+            model.filename
+        )
+    })?;
+    drop(file);
+    // Windows refuses to rename over an existing destination, so the previous
+    // verified file is removed first; a failure between the two leaves the
+    // cache merely absent, which the read boundary already reports as a miss
+    // and a consented re-download repairs.
+    if std::fs::symlink_metadata(target).is_ok() {
+        std::fs::remove_file(target).map_err(|error| {
+            format!("Failed to replace cached model {}: {error}", model.filename)
+        })?;
+    }
+    std::fs::rename(staging, target).map_err(|error| {
+        format!(
+            "Failed to install verified local model {}: {error}",
+            model.filename
+        )
+    })?;
+    Ok(())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }
 
 fn validate_cached_model_spec(model: &VerifiedCachedModel) -> Result<(), String> {
@@ -287,5 +424,97 @@ mod tests {
         fs::remove_file(&link).expect("test symlink must be removed");
         fs::remove_file(&target).expect("test target must be removed");
         assert!(error.contains("must not be a symlink"));
+    }
+
+    fn isolated_model_dir(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("sourdaw-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        directory
+    }
+
+    #[test]
+    fn cached_model_writer_stores_bytes_a_verified_read_then_returns() {
+        let directory = isolated_model_dir("writer-happy");
+
+        write_verified_cached_model_bytes(&directory, &SMALL_VERIFIED_MODEL, b"abc")
+            .expect("a spec-conforming artifact must be stored");
+        let bytes = read_verified_cached_model_bytes(
+            &directory.join(SMALL_VERIFIED_MODEL.filename),
+            &SMALL_VERIFIED_MODEL,
+        )
+        .expect("the stored artifact must pass the verified read");
+
+        fs::remove_dir_all(&directory).expect("test cache directory must be removed");
+        assert_eq!(bytes, b"abc");
+    }
+
+    #[test]
+    fn cached_model_writer_refuses_the_wrong_size_without_creating_the_cache() {
+        let directory = isolated_model_dir("writer-wrong-size");
+
+        let error = write_verified_cached_model_bytes(&directory, &SMALL_VERIFIED_MODEL, b"abcd")
+            .expect_err("a size mismatch must be refused");
+
+        assert!(error.contains("does not match the pinned"));
+        assert!(
+            !directory.exists(),
+            "a refused write must not create the cache directory"
+        );
+    }
+
+    #[test]
+    fn cached_model_writer_refuses_the_wrong_hash_without_creating_the_cache() {
+        let directory = isolated_model_dir("writer-wrong-hash");
+
+        let error = write_verified_cached_model_bytes(&directory, &WRONG_HASH_MODEL, b"abc")
+            .expect_err("a hash mismatch must be refused");
+
+        assert!(error.contains("SHA-256"));
+        assert!(
+            !directory.exists(),
+            "a refused write must not create the cache directory"
+        );
+    }
+
+    #[test]
+    fn cached_model_writer_replaces_an_existing_verified_file() {
+        let directory = isolated_model_dir("writer-overwrite");
+        write_verified_cached_model_bytes(&directory, &SMALL_VERIFIED_MODEL, b"abc")
+            .expect("the initial store must succeed");
+
+        write_verified_cached_model_bytes(&directory, &SMALL_VERIFIED_MODEL, b"abc")
+            .expect("storing over an existing verified file must succeed");
+        let bytes = read_verified_cached_model_bytes(
+            &directory.join(SMALL_VERIFIED_MODEL.filename),
+            &SMALL_VERIFIED_MODEL,
+        )
+        .expect("the replaced artifact must pass the verified read");
+
+        fs::remove_dir_all(&directory).expect("test cache directory must be removed");
+        assert_eq!(bytes, b"abc");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_model_writer_refuses_to_replace_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let directory = isolated_model_dir("writer-symlink");
+        fs::create_dir_all(&directory).expect("test cache directory must be creatable");
+        let decoy = directory.join("decoy.bin");
+        fs::write(&decoy, b"abc").expect("test decoy must be writable");
+        let target = directory.join(SMALL_VERIFIED_MODEL.filename);
+        symlink(&decoy, &target).expect("test symlink must be created");
+
+        let error = write_verified_cached_model_bytes(&directory, &SMALL_VERIFIED_MODEL, b"abc")
+            .expect_err("a symlink cache entry must never be replaced by the writer");
+
+        let still_a_link = std::fs::symlink_metadata(&target)
+            .expect("the symlink must still exist")
+            .file_type()
+            .is_symlink();
+        fs::remove_dir_all(&directory).expect("test cache directory must be removed");
+        assert!(error.contains("symlink"));
+        assert!(still_a_link, "the symlink must survive the refused write");
     }
 }
