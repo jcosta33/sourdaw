@@ -224,8 +224,31 @@ type FakeInput = {
     };
 };
 
+/**
+ * Wraps a fake port so every member it invokes is remembered by name, whatever the member is
+ * called. The explicit `calls` ledger above names only the members it was written for, so an
+ * assertion phrased over it cannot see a member added later — the escape that let a retired
+ * attestation write stay green after the port learned to post it again. Comparing the whole
+ * remembered set against the golden set a conforming publication calls closes that hole.
+ */
+function recordingPort(port: PublishLanePort, members: Set<string>): PublishLanePort {
+    return new Proxy(port, {
+        get: (target, property, receiver) => {
+            const value = Reflect.get(target, property, receiver);
+            if (typeof property !== 'string' || typeof value !== 'function') {
+                return value;
+            }
+            return (...args: unknown[]) => {
+                members.add(property);
+                return Reflect.apply(value, target, args);
+            };
+        },
+    });
+}
+
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
+    const members = new Set<string>();
     const logs: string[] = [];
     const bodies: string[] = [];
     const dirty = input.dirty ?? false;
@@ -366,7 +389,7 @@ function fakePort(input: FakeInput = {}) {
             return input.guardFailure !== undefined ? input.guardFailure(laneName) : input.guardFailureReceipt;
         },
     };
-    return { port, calls, logs, bodies };
+    return { port: recordingPort(port, members), calls, logs, bodies, members };
 }
 
 describe('stack publication fencing', () => {
@@ -592,7 +615,6 @@ describe('lane publish', () => {
             for (const file of [
                 'trustedGithubWriteBootstrap.ts',
                 'publishLane.ts',
-                'canonicalRecord.ts',
                 'githubAppIdentity.ts',
                 'prContract.ts',
                 'stackedLanes.ts',
@@ -4404,15 +4426,51 @@ describe('publication delta gating', () => {
 
 /**
  * The source-attestation comment is retired: a publication writes nothing to the pull request's
- * issue-comment channel. The real port exposes no comment writer, and a conforming publish records
- * no attestation write, so re-introducing either the port member or the write reddens this.
+ * issue-comment channel. The real port exposes no comment writer, and a conforming publish calls
+ * exactly this member set, so reintroducing either the port member or the write reddens this
+ * however the reintroduced member is named: the comparison is the golden set below, never a name
+ * pattern, which the old filter let a differently-named member slip past.
+ *
+ * The golden set holds every member this path invokes. The fixture's other members —
+ * `conflictingPaths` (only a real trial merge conflict asks), `pinStackParent` and `reportDiff`
+ * (stack-only), `readPullRequestProjectTitles` (only when a target board exists) — are never
+ * reached here, and a reintroduced attestation write cannot reach them either, because it writes the
+ * issue-comment channel rather than a conflict, stack, or board read.
  */
 describe('publication attestation retirement', () => {
     it('publishes a conforming lane without any attestation comment write', () => {
-        const { port, calls } = fakePort();
+        const { port, calls, members } = fakePort();
 
         expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
+        expect([...members].sort()).toEqual([
+            'aheadBehind',
+            'baseSha',
+            'commitAttribution',
+            'createPullRequest',
+            'cwd',
+            'dirty',
+            'ensureModelLabel',
+            'existingOpenPullRequest',
+            'guardFailure',
+            'headSha',
+            'isAncestor',
+            'issueExists',
+            'knownLabels',
+            'knownProjectTitles',
+            'laneSubject',
+            'log',
+            'objectStoreRewrites',
+            'push',
+            'readAuthorModel',
+            'readIssueProjectTitles',
+            'readIssueTrackerMetadata',
+            'readPullRequestMergeability',
+            'readPullRequestMetadata',
+            'remoteBranchSha',
+            'worktrees',
+        ]);
+        expect(Object.keys(port).filter((member) => /attest|comment/iu.test(member))).toEqual([]);
         expect(calls.filter((call) => /attest|comment/iu.test(call))).toEqual([]);
     });
 

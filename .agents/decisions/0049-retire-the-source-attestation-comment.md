@@ -33,10 +33,11 @@ Three facts made the channel not worth what it cost:
   the record; the full OIDs it bound were never compared against anything.
 - **It was self-attested.** The same author App identity that posted the comment ran the authorship
   gate, so the record added no independent evidence. The gate is the actual control: before any
-  remote write it refuses an unattributable commit in the delta this publication adds — the remote
-  tip when the branch already exists remotely, otherwise the comparison head — naming each offending
-  commit. That delta is narrower than the record's comparison-base range, but every published head's
-  delta was gated as it was added, so no commit reached a published head ungated.
+  remote write it refuses an unattributable commit in the delta this publication adds — the
+  remote-tip range when the branch already exists remotely, otherwise the comparison-base range —
+  naming each offending commit. A commit that reached the branch by a push other than
+  `lane:publish` is neither judged nor surfaced by that publication, nor by any later one; now that
+  the comparison-base record is gone, nothing reads the branch back against it.
 
 ## Decision
 
@@ -57,7 +58,7 @@ compatibility path is added for them.
 
 - **Positive.** Publication no longer grows a per-push comment thread, and the protected-public
   surface loses one channel a reader could distrust. The gate's delta read is the publication's only
-  commit read.
+  commit-attribution read.
 - **Neutral.** A published head no longer carries a self-contained record of its commit set above the
   comparison base. The pull request's own commit list remains public, and the gate refusal remains
   the control; should a future consumer need commit-set evidence, it must be built as a new additive

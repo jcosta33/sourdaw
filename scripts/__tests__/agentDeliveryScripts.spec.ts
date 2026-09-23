@@ -486,10 +486,6 @@ function trustedPublishFixture(root: string, policy: string): void {
     for (const path of stackSummarySources) {
         writeFileSync(join(root, path), 'export {};\n');
     }
-    // The lane:publish closure declares the canonical record module even though the synthetic
-    // publishLane above imports none of it; the snapshot refuses a graph path missing from the
-    // commit.
-    writeFileSync(join(root, 'scripts/canonicalRecord.ts'), 'export {};\n');
     runGit(root, ['init', '-b', 'main']);
     runGit(root, ['config', 'user.name', 'Fixture']);
     runGit(root, ['config', 'user.email', 'fixture@example.com']);
@@ -1394,7 +1390,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/syncParentLane.ts',
                     'scripts/publishLane.ts',
-                    'scripts/canonicalRecord.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                     ...stackSummarySources,
@@ -1513,7 +1508,6 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('lane:publish')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishLane.ts',
-            'scripts/canonicalRecord.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
             ...stackSummarySources,
