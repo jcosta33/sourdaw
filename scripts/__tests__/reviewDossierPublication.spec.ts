@@ -174,6 +174,21 @@ function canonicalRecordWithoutAssessmentImpact(): unknown {
     });
 }
 
+/** A canonical record claiming a publication, authored directly, while omitting the impact. */
+function canonicalPublishedRecordWithoutAssessmentImpact(reviewId = 5272945685): unknown {
+    return buildDossier({
+        pr: PLAN.pr,
+        headSha: PLAN.headSha,
+        baseSha: PLAN.baseSha,
+        riskClasses: PLAN.riskClasses,
+        requiredStances: [...PLAN.requiredStances],
+        events: [...COMPLETED_STANCES, { kind: 'review-published', reviewId }],
+        evidence: EVIDENCE,
+        limitations: [LIMITATION],
+        recommendation: 'request-changes',
+    });
+}
+
 const INPUT_REFUSALS: readonly InputRefusalCase[] = [
     { label: 'a non-object', value: 'not an object', message: /input must be an object/ },
     {
@@ -669,7 +684,7 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
                 comments: [],
                 recommendation: 'request-changes',
             }),
-        message: /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found missing/,
+        message: /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/,
     },
     {
         label: 'an input claiming limitation-only with no limited round',
@@ -714,6 +729,48 @@ describe('parseReviewDossierInput', () => {
 
     it.each(INPUT_REFUSALS)('refuses $label', ({ value, message }) => {
         expect(() => parseReviewDossierInput(value)).toThrow(message);
+    });
+});
+
+describe('recorded replay authentication', () => {
+    it('tolerates an absent impact only when the claimed publication authenticates live', () => {
+        const result = buildReviewDossier({
+            plan: PLAN,
+            raw: canonicalPublishedRecordWithoutAssessmentImpact(),
+            discarded: [],
+            comments: [],
+            recommendation: 'request-changes',
+            recordedPublicationAuthenticated: () => true,
+        });
+
+        expect(result.fromPersisted).toBe(true);
+        expect(result.dossier.assessmentImpact).toBeUndefined();
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(result.canonical)))).toBe(result.canonical);
+    });
+
+    it('refuses an absent impact when the claimed publication does not authenticate live', () => {
+        expect(() =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: canonicalPublishedRecordWithoutAssessmentImpact(),
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+                recordedPublicationAuthenticated: () => false,
+            })
+        ).toThrow(/assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/);
+    });
+
+    it('refuses an absent impact when no authentication is supplied at all', () => {
+        expect(() =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: canonicalPublishedRecordWithoutAssessmentImpact(),
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            })
+        ).toThrow(/assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/);
     });
 });
 

@@ -11,7 +11,12 @@ import {
     reviewDossierEventDigest,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
-import { ASSESSMENT_IMPACTS, buildDossier, readAssessmentImpact } from '../reviewDossierChain.ts';
+import {
+    ASSESSMENT_IMPACT_MEMBERSHIP,
+    ASSESSMENT_IMPACTS,
+    buildDossier,
+    readAssessmentImpact,
+} from '../reviewDossierChain.ts';
 import {
     acceptedFindings,
     assessmentImpact,
@@ -226,13 +231,17 @@ describe('derived views', () => {
 describe('assessment impact', () => {
     it('should pin exactly the four admissible tokens through the admission path', () => {
         expect([...ASSESSMENT_IMPACTS]).toEqual(['none', 'limitation-only', 'stance-changed', 'finding-led']);
-        // The gate itself is observed, not just the array it is declared beside.
+        // The gate's own live key set is observed, not just the array beside it: a run-time widening
+        // (an `Object.assign` the type cannot see) reddens this assertion rather than passing.
+        expect(Object.keys(ASSESSMENT_IMPACT_MEMBERSHIP).sort()).toEqual([...ASSESSMENT_IMPACTS].sort());
         for (const token of ASSESSMENT_IMPACTS) {
             expect(readAssessmentImpact(token)).toBe(token);
         }
-        expect(() => readAssessmentImpact('partially')).toThrow(
-            /assessmentImpact must be none, limitation-only, stance-changed or finding-led/
-        );
+        for (const outside of ['partially', 'ignored', 'NONE', 'limitation_only']) {
+            expect(() => readAssessmentImpact(outside)).toThrow(
+                /assessmentImpact must be none, limitation-only, stance-changed or finding-led/
+            );
+        }
     });
 
     it.each(ASSESSMENT_IMPACTS)('should round-trip the %s token through assembly, serialize and parse', (token) => {
@@ -283,11 +292,11 @@ describe('assessment impact', () => {
     });
 
     /**
-     * The documented rule, pinned beside this half of the spec: the caller input always carries
-     * `assessmentImpact`; only a persisted record replaying an already-published head (the
-     * historical fixture below) may omit it, and a record for a fresh head must carry it.
+     * The read path tolerates an absent field: a record persisted before `assessmentImpact` existed
+     * must keep verifying rather than be refused for a field it never carried. Requiring the field is
+     * the publication boundary's job (`buildReviewDossier`), not `parseReviewDossier`'s.
      */
-    it('should refuse a fresh canonical record with no impact and no recorded publication', () => {
+    it('should read a fresh canonical record with no impact, tolerating its absence on the read path', () => {
         const fresh = buildDossier({
             pr: PLAN.pr,
             headSha: PLAN.headSha,
@@ -300,9 +309,8 @@ describe('assessment impact', () => {
             recommendation: 'request-changes',
         });
 
-        expect(() => parseReviewDossier(fresh)).toThrow(
-            /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found missing/
-        );
+        expect(assessmentImpact(parseReviewDossier(fresh))).toBeUndefined();
+        expect(serializeReviewDossier(parseReviewDossier(fresh))).toBe(serializeReviewDossier(fresh));
     });
 
     it('should refuse limitation-only when the record discloses no limitation', () => {
@@ -890,13 +898,48 @@ describe('parseReviewDossier refusals', () => {
 });
 
 /**
- * A record serialized by the chain before `exhaustion` and `assessmentImpact` existed: no
- * stance-completed event carries `exhaustion`, no top-level key carries `assessmentImpact`, and every
- * digest covers exactly the five base fields. It is an already-published record — it records its own
- * `review-published` event — which is the one shape a missing `assessmentImpact` is tolerated on.
- * Pinned as bytes so any change to the digest preimage — such as including exhaustion or
- * assessmentImpact unconditionally — breaks verification of records the previous chain printed,
- * instead of silently re-keying history.
+ * A record the chain serialized before `exhaustion` and `assessmentImpact` existed, and before its
+ * publication was bound: no stance-completed event carries `exhaustion`, no top-level key carries
+ * `assessmentImpact`, and no `review-published` event is present. Pinned as bytes so any change to
+ * the digest preimage — such as including exhaustion or assessmentImpact unconditionally — breaks
+ * verification of records the previous chain printed, instead of silently re-keying history. The
+ * read path must keep verifying it: most persisted dossiers on disk are this shape.
+ */
+const HISTORICAL_UNPUBLISHED_RECORD = `{
+    "format": "dossier-v1",
+    "pr": 2999,
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "riskClasses": [
+        "small"
+    ],
+    "requiredStances": [
+        "correctness"
+    ],
+    "events": [
+        {
+            "sequence": 0,
+            "previousDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "digest": "4afdab1f7953f72839013972ab241a800e49cf154859b83262f3a3a13e3fb33c",
+            "kind": "stance-completed",
+            "stance": "correctness",
+            "reviewerModel": "model-correctness",
+            "modelTier": "strongest",
+            "outcome": "clean"
+        }
+    ],
+    "evidence": [],
+    "limitations": [],
+    "recommendation": "approve",
+    "headDigest": "4afdab1f7953f72839013972ab241a800e49cf154859b83262f3a3a13e3fb33c",
+    "dossierDigest": "41cbcb3b937c56ba7b48e64f7ed8811f3275f521cb9daca8e1186c616aac6af3"
+}
+`;
+
+/**
+ * The same pre-`exhaustion`, pre-`assessmentImpact` record once its publication was bound: it now
+ * carries a `review-published` event and a longer chain. Pinned as bytes for the same reason, and it
+ * must keep replaying after the live publication authentication.
  */
 const HISTORICAL_PUBLISHED_RECORD = `{
     "format": "dossier-v1",
@@ -937,7 +980,16 @@ const HISTORICAL_PUBLISHED_RECORD = `{
 `;
 
 describe('historical dossier records', () => {
-    it('should verify a record persisted before exhaustion existed, byte-identically', () => {
+    it('should verify an unpublished record persisted before assessmentImpact existed, byte-identically', () => {
+        const historical = JSON.parse(HISTORICAL_UNPUBLISHED_RECORD);
+
+        expect(() => parseReviewDossier(historical)).not.toThrow();
+        expect(serializeReviewDossier(parseReviewDossier(historical))).toBe(HISTORICAL_UNPUBLISHED_RECORD);
+        expect(assessmentImpact(parseReviewDossier(historical))).toBeUndefined();
+        expect(publishedReviewId(parseReviewDossier(historical))).toBeUndefined();
+    });
+
+    it('should verify a published record persisted before exhaustion existed, byte-identically', () => {
         const historical = JSON.parse(HISTORICAL_PUBLISHED_RECORD);
 
         expect(() => parseReviewDossier(historical)).not.toThrow();

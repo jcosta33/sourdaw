@@ -70,6 +70,13 @@ type ReviewDossierBuildInput = {
     comments: readonly ReviewDossierComment[];
     recommendation: ReviewRecommendation;
     recordedStances?: readonly string[];
+    /**
+     * Whether a persisted record's claimed publication stands live and exact on this head. A record
+     * that omits `assessmentImpact` is tolerated only because it claims a publication, and that claim
+     * is granted only when this returns true; absent, the claim is refused exactly as the input form
+     * is. The publish path supplies the same live check the replay path performs.
+     */
+    recordedPublicationAuthenticated?: (dossier: ReviewDossier) => boolean;
 };
 type ReviewDossierPublication = { dossier: ReviewDossier; canonical: string; fromPersisted: boolean };
 
@@ -467,6 +474,26 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
 export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
     const persisted = tryParsePersistedDossier(input.raw);
     const dossier = persisted ?? assembleFromInput(input);
+    assertRecordedReplayAuthenticated(dossier, input);
     assertPublicationAgreement(dossier, input);
     return { dossier, canonical: serializeReviewDossier(dossier), fromPersisted: persisted !== undefined };
+}
+
+/**
+ * A persisted record supplied for a fresh publication must carry `assessmentImpact`. It is tolerated
+ * only when the record is a genuine replay, and that is discriminated by the live publication
+ * authentication rather than by the record's own `review-published` event, which the caller authors:
+ * a claimed publication that does not stand live and exact on this head is refused exactly as the
+ * input form is. The caller-input shape always carries the field, so this only runs on a persisted
+ * record.
+ */
+function assertRecordedReplayAuthenticated(dossier: ReviewDossier, input: ReviewDossierBuildInput): void {
+    if (dossier.assessmentImpact !== undefined) {
+        return;
+    }
+    if (input.recordedPublicationAuthenticated?.(dossier) === true) {
+        return;
+    }
+    // Refused exactly as the input form is: the field's own refusal names it and the four tokens.
+    readAssessmentImpact(undefined);
 }

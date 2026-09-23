@@ -214,7 +214,7 @@ function prepareReviewPublication(
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        prepareReviewDossierPublication({ number, head, bundle, document, port });
+        prepareReviewDossierPublication({ number, head, bundle, document, actorNodeId, port });
     }
     return {
         head,

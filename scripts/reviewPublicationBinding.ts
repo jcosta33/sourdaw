@@ -18,7 +18,7 @@ import {
     type ReviewBundleContext,
 } from './prepareReview.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
-import { appendReviewDossierEvents, parseReviewDossier } from './reviewDossier.ts';
+import { appendReviewDossierEvents, parseReviewDossier, type ReviewDossier } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
 import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
 import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
@@ -111,6 +111,7 @@ export function prepareReviewDossierPublication(input: {
     head: string;
     bundle: string;
     document: ReviewDocument;
+    actorNodeId: string;
     port: PublishReviewPort;
 }): void {
     const planPath = join(input.bundle, REVIEW_RISK_PLAN_NAME);
@@ -148,8 +149,39 @@ export function prepareReviewDossierPublication(input: {
         comments: input.document.comments,
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
         recordedStances,
+        recordedPublicationAuthenticated: (dossier) =>
+            recordedPublicationStandsLive(
+                input.number,
+                input.head,
+                input.document,
+                input.actorNodeId,
+                dossier,
+                input.port
+            ),
     });
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
+}
+
+/**
+ * The live authentication a recorded publication must pass: the named review stands on this head
+ * with the recorded shape. Shared by the replay path and the dossier assembly that tolerates a
+ * record omitting `assessmentImpact` because it claims that publication.
+ */
+function recordedPublicationStandsLive(
+    number: number,
+    head: string,
+    document: ReviewDocument,
+    actorNodeId: string,
+    dossier: ReviewDossier,
+    port: PublishReviewPort
+): boolean {
+    const recorded = publishedReviewId(dossier);
+    if (recorded === undefined || port.remoteReview === undefined) {
+        return false;
+    }
+    const rendered = { ...document, body: renderReviewDocumentBody(document) };
+    const remote = port.remoteReview(number, recorded);
+    return remote !== undefined && exactPublishedReview(remote, rendered, head, actorNodeId);
 }
 
 /**
@@ -192,9 +224,7 @@ export function recordedPublicationReplay(
     if (port.remoteReview === undefined) {
         fail(`review publication ${recorded} is recorded but the port has no review inspector to replay it`);
     }
-    const rendered = { ...document, body: renderReviewDocumentBody(document) };
-    const remote = port.remoteReview(number, recorded);
-    if (remote === undefined || !exactPublishedReview(remote, rendered, head, actorNodeId)) {
+    if (!recordedPublicationStandsLive(number, head, document, actorNodeId, dossier, port)) {
         fail(
             `recorded review publication ${recorded} does not stand live and exact for head ${head}; refusing to post a duplicate`
         );

@@ -33,9 +33,10 @@ export type AssessmentImpact = (typeof ASSESSMENT_IMPACTS)[number];
  * The admission gate, as a total map keyed by the union rather than a set built from the array: a
  * token added to either the array (widening the union) or this map (an excess key) fails to compile,
  * so a widened token cannot reach `readAssessmentImpact` with the guard still returning a value its
- * union does not carry.
+ * union does not carry. Exported so the pin spec asserts its live key set, which catches a run-time
+ * widening the type cannot see (an `Object.assign` onto the map).
  */
-const ASSESSMENT_IMPACT_MEMBERSHIP: Record<AssessmentImpact, true> = {
+export const ASSESSMENT_IMPACT_MEMBERSHIP: Record<AssessmentImpact, true> = {
     none: true,
     'limitation-only': true,
     'stance-changed': true,
@@ -60,19 +61,17 @@ export function readAssessmentImpact(value: unknown, label = 'assessmentImpact')
 }
 
 /**
- * What the record's own contents say about the impact it claims. A fresh record — one carrying no
- * recorded reviewer publication — must declare an impact on every shape, canonical record included;
- * only a genuine replay of an already-published head may lack the field, which is what lets a record
- * persisted before it existed replay unchanged. Two tokens are decided by the record: `limitation-only`
- * claims a disclosed limitation and `finding-led` an accepted finding. `none` and `stance-changed`
- * are not decidable from the record and stay the orchestrator's attestation.
+ * What the record's own contents say about the impact it claims, wherever the field is present: two
+ * tokens are decided by the record — `limitation-only` claims a disclosed limitation and
+ * `finding-led` an accepted finding — while `none` and `stance-changed` are not decidable from the
+ * record and stay the orchestrator's attestation. An absent field is tolerated here unconditionally,
+ * because this runs on the read path too and a record persisted before the field existed must keep
+ * verifying rather than be refused for a field it never carried; requiring it is the publication
+ * boundary's job, not this shared payload assertion's.
  */
-export function assertAssessmentImpactConsistent(payload: DossierPayload, publicationRecorded: boolean): void {
+export function assertAssessmentImpactConsistent(payload: DossierPayload): void {
     const impact = payload.assessmentImpact;
     if (impact === undefined) {
-        if (!publicationRecorded) {
-            fail(`review dossier assessmentImpact must be ${ASSESSMENT_IMPACT_TOKENS}, found missing`);
-        }
         return;
     }
     if (impact === 'limitation-only' && payload.limitations.length === 0) {

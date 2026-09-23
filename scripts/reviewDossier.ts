@@ -97,9 +97,10 @@ export type ReviewDossier = {
     limitations: string[];
     recommendation: 'approve' | 'request-changes';
     /**
-     * Required of input and of every record this chain assembles; absent only from records persisted
-     * before the field existed, which keep verifying rather than being refused for a field they never
-     * carried (the same historical tolerance `exhaustion` gets).
+     * Required of the caller input and of a canonical record supplied for a fresh publication,
+     * enforced at that boundary; the read path tolerates its absence so a record persisted before the
+     * field existed keeps verifying rather than being refused for a field it never carried (the same
+     * historical tolerance `exhaustion` gets). Present, its value must be one of the four tokens.
      */
     assessmentImpact?: AssessmentImpact;
     headDigest: string;
@@ -530,9 +531,9 @@ function assertTotalMaps(payload: DossierPayload): void {
         own.add(event.findingId);
     }
     assertPublicationBindings(bindings, accepted);
-    // The record's own contents decide two of the impact tokens, and a fresh record must declare one:
-    // the impact check runs on every path that assembles or re-reads a payload.
-    assertAssessmentImpactConsistent(payload, bindings.reviewId !== undefined);
+    // Wherever the impact is present, the record's own contents must not contradict it. Absence is
+    // the publication boundary's concern, not this shared payload assertion's.
+    assertAssessmentImpactConsistent(payload);
     for (const stance of payload.requiredStances) {
         if (!completed.has(stance)) {
             fail(`review dossier has no completed record for required stance: ${stance}`);
