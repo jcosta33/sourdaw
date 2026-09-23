@@ -1,0 +1,20 @@
+.agents/decisions/0049-single-approval-review-author-merge.md
+  h_beb54bf43b47b7 55-60
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 378-384
+.github/CODEOWNERS
+  h_beb54bf43b47b7 7-9
+AGENTS.md
+  h_beb54bf43b47b7 87,333,377,530,532,535,541
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "607a5272af20b88d98a4eb68828d98255f419d18",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
