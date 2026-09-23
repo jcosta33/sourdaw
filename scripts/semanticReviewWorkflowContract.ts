@@ -153,16 +153,15 @@ export const SEMANTIC_REVIEW_SCAN_COMMAND = 'node scripts/semanticReview.ts scan
 export const SEMANTIC_REVIEW_COVERAGE_STEP = 'Compute the coverage line';
 export const SEMANTIC_REVIEW_COVERAGE_STEP_ID = 'coverage';
 export const SEMANTIC_REVIEW_COVERAGE_OUTPUT = 'coverage';
-/**
- * Runs after the report step, and after a failed report as well: the report step is what turns an
- * undelivered assessment into a red check, and a skipped computing step would leave `needs.assess`
- * with an empty output — the one case the coverage job's name exists to describe.
- */
-export const SEMANTIC_REVIEW_COVERAGE_STEP_CONDITION = '${{ !cancelled() }}';
 
 /**
  * The whole of the computing step, compared exactly: it reads the report and writes one output, and
  * a pinned command is the only thing that keeps a second command from running beside it.
+ *
+ * The step carries no condition, and that is the property the red path turns on: the default success
+ * gate skips it whenever the report step failed, so the line and the artifact the coverage job reads
+ * always come from one run of the report. A line derived from a report that was never uploaded would
+ * name a scope no reader can open; the fallback in the coverage job's name names that path instead.
  */
 export const SEMANTIC_REVIEW_COVERAGE_COMMAND = [
     'set -euo pipefail',
@@ -171,8 +170,11 @@ export const SEMANTIC_REVIEW_COVERAGE_COMMAND = [
     'if [ -f "$report_directory/scan.json" ]; then',
     '  # A withheld path is one the report counted as unassessed or as a',
     '  # truncated region — together its own definition of an incomplete',
-    '  # assessment, and a completed run carries neither.',
-    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | map(.path | gsub("[\\n\\r\\t]"; " ")) | unique | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
+    '  # assessment, and a completed run carries neither. The count is',
+    '  # taken over the raw paths: two paths differing only by a control',
+    '  # character name two files, and folding them together would drop',
+    '  # one from the tally.',
+    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | map(.path) | unique | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
     '  if [ -n "$computed" ]; then',
     '    coverage=$computed',
     '  fi',
@@ -185,8 +187,13 @@ export const SEMANTIC_REVIEW_COVERAGE_JOB = 'coverage';
 /**
  * The job's whole name, built from the assessment's own output. This is the observable: an agent
  * reading the checks list sees the scope because the name carries it, never because it opened a log.
+ *
+ * The fallback lives in this expression rather than in the assessment job's `outputs`, because a job
+ * that never ran never evaluates its outputs mapping: this is the expression that actually runs on
+ * the red and skipped paths, so it is where naming them can work.
  */
-export const SEMANTIC_REVIEW_COVERAGE_JOB_NAME = 'Jev coverage · ${{ needs.assess.outputs.coverage }}';
+export const SEMANTIC_REVIEW_COVERAGE_JOB_NAME =
+    "Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}";
 export const SEMANTIC_REVIEW_COVERAGE_JOB_CONDITION = '${{ !cancelled() }}';
 /** The job needs nothing from the repository but the run's artifact, so it may hold nothing else. */
 export const SEMANTIC_REVIEW_COVERAGE_JOB_PERMISSIONS: Readonly<Record<string, string>> = { contents: 'read' };
@@ -237,11 +244,12 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     '',
     '# A withheld path is one the report counted as unassessed or as a',
     '# truncated region — together its own definition of an incomplete',
-    '# assessment, and a completed run carries neither. A path or reason',
-    '# carrying a line break or tab is folded to a space first: the report',
-    '# permits one, and a raw newline would break this record apart into an',
-    '# entry of its own.',
-    'if ! jq -r \'[.scope.unassessed[], .scope.truncated[]] | unique_by(.path | gsub("[\\n\\r\\t]"; " ")) | .[] | "\\(.path | gsub("[\\n\\r\\t]"; " "))\\t\\(.reason | gsub("[\\n\\r\\t]"; " "))"\' "$report" > "$withheld_list" 2>/dev/null; then',
+    '# assessment, and a completed run carries neither. Deduplication is on',
+    '# the raw path, so two paths differing only by a control character',
+    '# both survive; a value is folded to one line only as it is emitted,',
+    '# because a raw newline or tab would break this record into an entry',
+    '# of its own.',
+    'if ! jq -r \'[.scope.unassessed[], .scope.truncated[]] | unique_by(.path) | .[] | "\\(.path | gsub("[\\n\\r\\t]"; " "))\\t\\(.reason | gsub("[\\n\\r\\t]"; " "))"\' "$report" > "$withheld_list" 2>/dev/null; then',
     "  printf '::notice title=Jev coverage::No coverage was reported: the assessment report could not be read.\\n'",
     '  exit 0',
     'fi',
@@ -426,6 +434,18 @@ function assertKeyIsScopedToTheAssessment(workflow: UnknownRecord, job: UnknownR
 }
 
 /**
+ * A step's `shell` is executable and, unlike its `run`, is never read by a command pin: appending a
+ * command there leaves the step's `run` byte-identical while the shell runs something else — on the
+ * step that holds the provider key as much as on any other. Both jobs' steps must therefore carry no
+ * shell override at all, which is the one value that can be pinned across a step set this size.
+ */
+function assertNoShellOverride(steps: readonly UnknownRecord[], label: string): void {
+    for (const step of steps) {
+        requireEqual(step.shell, undefined, `${label} without a shell override`);
+    }
+}
+
+/**
  * The coverage job is a second reader of the same run, and its whole surface is the artifact the
  * assessment job uploaded. It holds no provider key, checks nothing out, and can write nothing, so
  * the only risk left is that it stops publishing the scope while still reporting green: its name,
@@ -442,6 +462,7 @@ function assertCoverageJob(jobs: UnknownRecord): void {
         requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
     }
     const steps = stepsOf(job);
+    assertNoShellOverride(steps, 'every coverage-job step');
     requireEqual(
         steps.map((step) => step.name),
         [...SEMANTIC_REVIEW_COVERAGE_STEPS],
@@ -504,12 +525,13 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
     for (const forbidden of ['permissions', 'continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
     }
-    // The one output the coverage job's name is built from, with the fallback that keeps the name
-    // whole on the run where this job was skipped and the computing step never wrote anything.
+    // The one output the coverage job's name is built from, and it is the bare step output: a job
+    // that never ran never evaluates its outputs mapping, so the fallback belongs in the consumer's
+    // name expression, where it is the expression that actually runs on the skipped and red paths.
     requireEqual(
         job.outputs,
         {
-            [SEMANTIC_REVIEW_COVERAGE_OUTPUT]: "${{ steps.coverage.outputs.coverage || 'no assessment delivered' }}",
+            [SEMANTIC_REVIEW_COVERAGE_OUTPUT]: '${{ steps.coverage.outputs.coverage }}',
         },
         'its single coverage output'
     );
@@ -525,11 +547,13 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
         [...SEMANTIC_REVIEW_ACTIONS],
         'its pinned actions and no others'
     );
+    assertNoShellOverride(stepsOf(job), 'every assessment-job step');
     for (const step of stepsOf(job)) {
         requireEqual(step['continue-on-error'], undefined, 'failure propagation');
-        const condition =
-            step.name === SEMANTIC_REVIEW_COVERAGE_STEP ? SEMANTIC_REVIEW_COVERAGE_STEP_CONDITION : undefined;
-        requireEqual(step.if, condition, 'no step condition beyond the job gate');
+        // Every step keeps the default success gate. The computing step in particular must not run
+        // after a failed report: the line it would write would describe a report the upload step
+        // never published, and the coverage job could then only disagree with the name it was given.
+        requireEqual(step.if, undefined, 'no step condition beyond the job gate');
     }
     const coverageStep = stepNamed(stepsOf(job), SEMANTIC_REVIEW_COVERAGE_STEP);
     requireEqual(coverageStep.id, SEMANTIC_REVIEW_COVERAGE_STEP_ID, 'the output id its own output is read from');

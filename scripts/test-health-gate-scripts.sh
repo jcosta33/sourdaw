@@ -1460,7 +1460,6 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
-    ['semantic-review.yml', semanticReview],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         for (const step of job?.steps ?? []) {

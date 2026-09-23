@@ -379,12 +379,6 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
         'Resolve the aliases of the deployment',
         'Assert cross-origin isolation on the deployment',
     ].map((step) => pin('nightly.yml', 'deploy-web', step, DEPLOY_RUN)),
-    // The coverage line has to be published on a red assessment too, because the
-    // report step's failure is what a red advisory check means: the default
-    // success gate would skip the computing step and leave the coverage job's
-    // name with nothing in it. `!cancelled()` is the pinned condition, not
-    // `always()`, so a cancelled run publishes nothing.
-    pin('semantic-review.yml', 'assess', 'Compute the coverage line', '${{ !cancelled() }}'),
 ];
 
 export type WorkflowSnapshot = Record<string, unknown>;

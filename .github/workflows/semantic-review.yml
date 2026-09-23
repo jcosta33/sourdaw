@@ -85,11 +85,12 @@ jobs:
     timeout-minutes: 30
     # The coverage line reaches the `Jev coverage` job below, whose own name is
     # built from it, so a reader learns the scope from the checks list without
-    # opening the summary. The fallback covers the one path that never runs the
-    # computing step — this job skipped entirely on a draft, a fork, or another
-    # base — where an empty output would otherwise leave the name dangling.
+    # opening the summary. The output is the bare step output: a job skipped
+    # entirely never evaluates its own outputs mapping, so the fallback for the
+    # red and skipped paths lives in the consumer's name expression, where it
+    # runs.
     outputs:
-      coverage: ${{ steps.coverage.outputs.coverage || 'no assessment delivered' }}
+      coverage: ${{ steps.coverage.outputs.coverage }}
     steps:
       - name: Checkout the trusted revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -185,11 +186,12 @@ jobs:
 
       - name: Compute the coverage line
         id: coverage
-        # Runs after the report step, and after a failed report as well: a red
-        # check is exactly when a reader most needs the coverage line, and the
-        # default success gate would skip this step and publish nothing. No
-        # provider key is in this environment.
-        if: ${{ !cancelled() }}
+        # Runs after the report step only when that step concluded successfully,
+        # the same gate the upload below answers to: the published line and the
+        # artifact the coverage job reads must come from one run of the report,
+        # and a line derived from a report that was never uploaded would name a
+        # scope the reader cannot open. A red report is named by the coverage
+        # job's own fallback instead. No provider key is in this environment.
         run: |
           set -euo pipefail
           report_directory="$RUNNER_TEMP/semantic-review"
@@ -197,8 +199,11 @@ jobs:
           if [ -f "$report_directory/scan.json" ]; then
             # A withheld path is one the report counted as unassessed or as a
             # truncated region — together its own definition of an incomplete
-            # assessment, and a completed run carries neither.
-            computed=$(jq -r '"\(.execution) · \(.scope.discovered) discovered · \(.scope.eligible) eligible · \(.scope.assessed) assessed · \(([.scope.unassessed[], .scope.truncated[]] | map(.path | gsub("[\n\r\t]"; " ")) | unique | length)) withheld"' "$report_directory/scan.json" 2>/dev/null || true)
+            # assessment, and a completed run carries neither. The count is
+            # taken over the raw paths: two paths differing only by a control
+            # character name two files, and folding them together would drop
+            # one from the tally.
+            computed=$(jq -r '"\(.execution) · \(.scope.discovered) discovered · \(.scope.eligible) eligible · \(.scope.assessed) assessed · \(([.scope.unassessed[], .scope.truncated[]] | map(.path) | unique | length)) withheld"' "$report_directory/scan.json" 2>/dev/null || true)
             if [ -n "$computed" ]; then
               coverage=$computed
             fi
@@ -217,10 +222,13 @@ jobs:
 
   coverage:
     # The coverage line is this check's own name, so an agent reading the checks
-    # list learns the scope without opening the summary. It is a second job
-    # because reading the report back out of the run's artifact belongs in a
-    # step that holds no provider key at all.
-    name: Jev coverage · ${{ needs.assess.outputs.coverage }}
+    # list learns the scope without opening the summary. The fallback lives here
+    # rather than in the assessment job's outputs, because a skipped job never
+    # evaluates its outputs mapping: this is the expression that actually runs
+    # on the red and skipped paths and names them. It is a second job because
+    # reading the report back out of the run's artifact belongs in a step that
+    # holds no provider key at all.
+    name: Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}
     needs: assess
     # Runs even when the assessment concluded red — a coverage gap is exactly
     # what a reader of a red advisory check needs to see — and never on
@@ -279,11 +287,12 @@ jobs:
 
           # A withheld path is one the report counted as unassessed or as a
           # truncated region — together its own definition of an incomplete
-          # assessment, and a completed run carries neither. A path or reason
-          # carrying a line break or tab is folded to a space first: the report
-          # permits one, and a raw newline would break this record apart into an
-          # entry of its own.
-          if ! jq -r '[.scope.unassessed[], .scope.truncated[]] | unique_by(.path | gsub("[\n\r\t]"; " ")) | .[] | "\(.path | gsub("[\n\r\t]"; " "))\t\(.reason | gsub("[\n\r\t]"; " "))"' "$report" > "$withheld_list" 2>/dev/null; then
+          # assessment, and a completed run carries neither. Deduplication is on
+          # the raw path, so two paths differing only by a control character
+          # both survive; a value is folded to one line only as it is emitted,
+          # because a raw newline or tab would break this record into an entry
+          # of its own.
+          if ! jq -r '[.scope.unassessed[], .scope.truncated[]] | unique_by(.path) | .[] | "\(.path | gsub("[\n\r\t]"; " "))\t\(.reason | gsub("[\n\r\t]"; " "))"' "$report" > "$withheld_list" 2>/dev/null; then
             printf '::notice title=Jev coverage::No coverage was reported: the assessment report could not be read.\n'
             exit 0
           fi

