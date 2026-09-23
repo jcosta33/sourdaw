@@ -1,0 +1,16 @@
+.agents/decisions/0049-retire-the-source-attestation-comment.md
+  h_beb54bf43b47b7 36-40,61
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 227-248,251,392,4429-4438,4442,4446-4473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9e4697f0d5badcd65fc4079373c58cc25cbaa9d0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
