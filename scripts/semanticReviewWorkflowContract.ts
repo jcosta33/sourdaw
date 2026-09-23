@@ -86,8 +86,8 @@ export const SEMANTIC_REVIEW_STEPS = [
     'Install dependencies',
     'Assess the change',
     'Report the assessment',
-    'Compute the coverage line',
     'Upload the advisory report',
+    'Compute the coverage line',
 ] as const;
 
 export const SEMANTIC_REVIEW_CHECKOUT_STEP = 'Checkout the trusted revision';
@@ -160,6 +160,21 @@ export const SEMANTIC_REVIEW_HEAD_FETCH_COMMAND = [
 export const SEMANTIC_REVIEW_ASSESS_STEP = 'Assess the change';
 export const SEMANTIC_REVIEW_SCAN_COMMAND = 'node scripts/semanticReview.ts scan';
 
+/**
+ * The one artifact name both sides use. Sharing it is the point: the upload's name and the
+ * download's name are the same string only because both read it here, so an edit that renames one
+ * side cannot leave the other fetching an artifact this run never published.
+ */
+export const SEMANTIC_REVIEW_ARTIFACT_NAME = 'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
+/** The one step that publishes the report the coverage job reads back. */
+export const SEMANTIC_REVIEW_UPLOAD_STEP = 'Upload the advisory report';
+export const SEMANTIC_REVIEW_UPLOAD_ACTION = SEMANTIC_REVIEW_ACTIONS[3];
+export const SEMANTIC_REVIEW_UPLOAD_INPUTS: Readonly<Record<string, string | number>> = {
+    name: SEMANTIC_REVIEW_ARTIFACT_NAME,
+    path: '${{ runner.temp }}/semantic-review',
+    'retention-days': 7,
+};
+
 /** The step that turns the report into the one-line output the coverage job is named from. */
 export const SEMANTIC_REVIEW_COVERAGE_STEP = 'Compute the coverage line';
 export const SEMANTIC_REVIEW_COVERAGE_STEP_ID = 'coverage';
@@ -169,23 +184,24 @@ export const SEMANTIC_REVIEW_COVERAGE_OUTPUT = 'coverage';
  * The whole of the computing step, compared exactly: it reads the report and writes one output, and
  * a pinned command is the only thing that keeps a second command from running beside it.
  *
- * The step carries no condition, and that is the property the red path turns on: the default success
- * gate skips it whenever the report step failed, so the line and the artifact the coverage job reads
- * always come from one run of the report. A line derived from a report that was never uploaded would
- * name a scope no reader can open; the fallback in the coverage job's name names that path instead.
+ * The step carries no condition, and it sits after the upload, which is the property the divergence
+ * turns on: the default success gate skips it whenever the report or the upload failed, so the line
+ * and the artifact the coverage job reads are always one fact. A line derived from a report that was
+ * never uploaded would name a scope no reader can open; the fallback in the coverage job's name
+ * names that path instead.
  */
 export const SEMANTIC_REVIEW_COVERAGE_COMMAND = [
     'set -euo pipefail',
     'report_directory="$RUNNER_TEMP/semantic-review"',
     "coverage='no assessment delivered'",
     'if [ -f "$report_directory/scan.json" ]; then',
-    '  # A withheld path is one the report counted as unassessed or as a',
+    '  # A withheld entry is one the report counted as unassessed or as a',
     '  # truncated region — together its own definition of an incomplete',
-    '  # assessment, and a completed run carries neither. The count is',
-    '  # taken over the raw paths: two paths differing only by a control',
-    '  # character name two files, and folding them together would drop',
-    '  # one from the tally.',
-    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | map(.path) | unique | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
+    '  # assessment, and a completed run carries neither. The count is over',
+    '  # the entries, not distinct paths: one path can carry several',
+    '  # reasons, and each is a withheld entry a reader must be able to see,',
+    '  # so folding or deduplicating them would under-report.',
+    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
     '  if [ -n "$computed" ]; then',
     '    coverage=$computed',
     '  fi',
@@ -210,74 +226,75 @@ export const SEMANTIC_REVIEW_COVERAGE_JOB_CONDITION = '${{ !cancelled() }}';
 export const SEMANTIC_REVIEW_COVERAGE_JOB_PERMISSIONS: Readonly<Record<string, string>> = { contents: 'read' };
 export const SEMANTIC_REVIEW_COVERAGE_STEPS = ['Download the advisory report', 'Publish the withheld paths'] as const;
 export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_STEP = 'Download the advisory report';
+/** The fetch's outcome is published under this id, which is what tells a failed retrieval from a run that never published. */
+export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_STEP_ID = 'download';
 /**
  * A missing artifact is an expected outcome — the assessment job uploads one only when it delivered
  * a report — so the fetch is softened and the annotating step reports the absence. Softening is safe
- * precisely because the fetch proves nothing: the step that reads its result still runs.
+ * precisely because the fetch proves nothing: the step that reads its result still runs, and its id
+ * lets that step say which absence happened.
  */
 export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_ACTION =
     'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
 export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_INPUTS: Readonly<Record<string, string>> = {
-    name: 'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}',
+    name: SEMANTIC_REVIEW_ARTIFACT_NAME,
     path: '${{ runner.temp }}/semantic-review',
 };
 export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_STEP = 'Publish the withheld paths';
+/**
+ * The annotating step's whole environment, and the only step environment in this workflow besides
+ * the assessment step's. The fetch's raw outcome distinguishes a failed retrieval from a run that
+ * never published, and the coverage line — written only after a successful upload — is the fact that
+ * says this run did publish. Both are pinned, so no third variable can join them.
+ */
+export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_ENV: Readonly<Record<string, string>> = {
+    DOWNLOAD_OUTCOME: '${{ steps.download.outcome }}',
+    COVERAGE_LINE: '${{ needs.assess.outputs.coverage }}',
+};
 
 /** The whole of the annotating step, compared exactly: it emits notices from the report and nothing else. */
 export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     'set -euo pipefail',
     'report_directory="$RUNNER_TEMP/semantic-review"',
     'report="$report_directory/scan.json"',
-    'withheld_list="$report_directory/withheld-paths.tsv"',
+    'withheld_list="$report_directory/withheld-notices.txt"',
     'if [ ! -f "$report" ]; then',
+    '  if [ "$DOWNLOAD_OUTCOME" = \'failure\' ] && [ -n "$COVERAGE_LINE" ]; then',
+    "    printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'",
+    '    exit 0',
+    '  fi',
     "  printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'",
     '  exit 0',
     'fi',
     '',
-    '# GitHub reads `%`, a carriage return, and a newline inside an',
-    '# annotation as command syntax, and `:` and `,` inside a property',
-    '# value likewise, so a path or reason carrying one is escaped rather',
-    '# than allowed to start a command of its own.',
-    'escape_data() {',
-    '  local value=$1',
-    "  value=${value//'%'/'%25'}",
-    "  value=${value//$'\\r'/'%0D'}",
-    "  value=${value//$'\\n'/'%0A'}",
-    '  printf \'%s\' "$value"',
-    '}',
-    'escape_property() {',
-    '  local value',
-    '  value=$(escape_data "$1")',
-    "  value=${value//':'/'%3A'}",
-    "  value=${value//','/'%2C'}",
-    '  printf \'%s\' "$value"',
-    '}',
-    '',
-    '# A withheld path is one the report counted as unassessed or as a',
-    '# truncated region — together its own definition of an incomplete',
-    '# assessment, and a completed run carries neither. Deduplication is on',
-    '# the raw path, so two paths differing only by a control character',
-    '# both survive; a value is folded to one line only as it is emitted,',
-    '# because a raw newline or tab would break this record into an entry',
-    '# of its own.',
-    'if ! jq -r \'[.scope.unassessed[], .scope.truncated[]] | unique_by(.path) | .[] | "\\(.path | gsub("[\\n\\r\\t]"; " "))\\t\\(.reason | gsub("[\\n\\r\\t]"; " "))"\' "$report" > "$withheld_list" 2>/dev/null; then',
-    "  printf '::notice title=Jev coverage::No coverage was reported: the assessment report could not be read.\\n'",
+    '# One annotation per withheld entry. The `file=` property is',
+    '# identity-bearing, so it is escaped exactly and never folded: folding',
+    '# a control character into a space would annotate two paths under one',
+    '# name and attribute a reason to the wrong file. The property escapes',
+    '# `%`, a carriage return, a newline, `:`, and `,`; the displayed text',
+    '# escapes `%`, a carriage return, and a newline.',
+    "if ! jq -r '",
+    '  def esc_data: gsub("%"; "%25") | gsub("\\r"; "%0D") | gsub("\\n"; "%0A");',
+    '  def esc_prop: esc_data | gsub(":"; "%3A") | gsub(","; "%2C");',
+    '  [.scope.unassessed[], .scope.truncated[]]',
+    '  | .[]',
+    '  | "::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)"',
+    '\' "$report" > "$withheld_list" 2>/dev/null; then',
+    "  printf '::notice title=Jev coverage::The advisory report could not be read: the assessment published an artifact whose report is not readable.\\n'",
     '  exit 0',
     'fi',
     '',
-    'annotated=0',
+    '# At most ten annotations, one per withheld entry, then one notice',
+    "# counting the rest: a per-path budget would let one of a path's",
+    '# reasons hide the others.',
     'withheld=0',
-    'while IFS= read -r entry; do',
-    '  [ -n "$entry" ] || continue',
+    'annotated=0',
+    'while IFS= read -r notice; do',
     '  withheld=$((withheld + 1))',
-    '  if [ "$annotated" -ge 10 ]; then',
-    '    continue',
+    '  if [ "$annotated" -lt 10 ]; then',
+    '    printf \'%s\\n\' "$notice"',
+    '    annotated=$((annotated + 1))',
     '  fi',
-    "  path=${entry%%$'\\t'*}",
-    "  reason=${entry#*$'\\t'}",
-    "  printf '::notice file=%s,line=1::%s: %s\\n' \\",
-    '    "$(escape_property "$path")" "$(escape_data "$path")" "$(escape_data "$reason")"',
-    '  annotated=$((annotated + 1))',
     'done < "$withheld_list"',
     '',
     'printf \'::notice title=Jev coverage::%s further withheld path(s) were not annotated.\\n\' "$((withheld - annotated))"',
@@ -456,21 +473,50 @@ function assertNoShellOverride(steps: readonly UnknownRecord[], label: string): 
     }
 }
 
+/** An absent declaration, or the empty mapping GitHub treats as the same no-op. */
+function isEmptyDeclaration(value: unknown): boolean {
+    if (value === undefined) {
+        return true;
+    }
+    return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+}
+
+function requireNoDeclaration(value: unknown, label: string): void {
+    if (!isEmptyDeclaration(value)) {
+        throw new Error(`Advisory semantic review workflow must retain ${label}`);
+    }
+}
+
+/** Order-insensitive equality of two string mappings, so a reordered block is not a boundary change. */
+function isSameKeyValueSet(actual: unknown, expected: Readonly<Record<string, string>>): boolean {
+    if (actual === null || typeof actual !== 'object' || Array.isArray(actual)) {
+        return false;
+    }
+    const record = actual as Record<string, unknown>;
+    const keys = Object.keys(record);
+    const expectedKeys = Object.keys(expected);
+    return (
+        keys.length === expectedKeys.length &&
+        expectedKeys.every((key) => keys.includes(key) && record[key] === expected[key])
+    );
+}
+
 /**
  * The environment a pinned command runs in is executable surface the command pins cannot see. A
  * workflow- or job-level `defaults` replaces the shell every `run` step uses, a job or step
  * `container` re-environments the job that holds the provider key, and a job or step `env` can set
- * `BASH_ENV` for a command whose text is compared exactly. One step environment is legitimate — the
- * assessment step's, pinned whole where the key is — and it is the sole exemption.
+ * `BASH_ENV` for a command whose text is compared exactly. The two legitimate step environments —
+ * the assessment step's and the coverage annotating step's — are pinned whole where they live, and
+ * they are the sole exemptions. An absent declaration and an empty mapping are the same no-op.
  */
-function assertNoExecutableEnvironment(job: UnknownRecord, label: string, exemptStepName?: string): void {
+function assertNoExecutableEnvironment(job: UnknownRecord, label: string, envPinnedStepName?: string): void {
     for (const forbidden of ['defaults', 'container', 'env']) {
-        requireEqual(job[forbidden], undefined, `${label} without a job ${forbidden} block`);
+        requireNoDeclaration(job[forbidden], `${label} without a job ${forbidden} block`);
     }
     for (const step of stepsOf(job)) {
-        requireEqual(step.container, undefined, `${label} steps without a step container`);
-        if (step.name !== exemptStepName) {
-            requireEqual(step.env, undefined, `${label} steps without a step environment`);
+        requireNoDeclaration(step.container, `${label} steps without a step container`);
+        if (step.name !== envPinnedStepName) {
+            requireNoDeclaration(step.env, `${label} steps without a step environment`);
         }
     }
 }
@@ -491,7 +537,7 @@ function assertCoverageJob(jobs: UnknownRecord): void {
     for (const forbidden of ['continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
     }
-    assertNoExecutableEnvironment(job, 'the coverage job');
+    assertNoExecutableEnvironment(job, 'the coverage job', SEMANTIC_REVIEW_COVERAGE_ANNOTATE_STEP);
     const steps = stepsOf(job);
     assertNoShellOverride(steps, 'every coverage-job step');
     requireEqual(
@@ -505,12 +551,17 @@ function assertCoverageJob(jobs: UnknownRecord): void {
         'the one pinned action, and no checkout'
     );
     const download = stepNamed(steps, SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_STEP);
+    requireEqual(download.id, SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_STEP_ID, 'the outcome id the annotating step reads');
     requireEqual(download.with, SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_INPUTS, 'the artifact this run uploaded');
     // The fetch is the one step whose failure is expected — the assessment job uploads an artifact
     // only when it delivered a report — so it is softened and the annotating step reports the gap.
     requireEqual(download['continue-on-error'], true, 'the softened artifact fetch');
     requireEqual(download.if, undefined, 'no condition on the artifact fetch');
     const annotate = stepNamed(steps, SEMANTIC_REVIEW_COVERAGE_ANNOTATE_STEP);
+    // The one step environment this job may hold: the fetch's outcome and the coverage line, which
+    // together tell a failed retrieval from a run that never published. Pinned whole, so a third
+    // variable cannot join them.
+    requireEqual(annotate.env, SEMANTIC_REVIEW_COVERAGE_ANNOTATE_ENV, 'the retrieval outcome and coverage line alone');
     requireEqual(
         named(annotate.run, `${SEMANTIC_REVIEW_COVERAGE_ANNOTATE_STEP} run`).trim(),
         SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND,
@@ -536,7 +587,7 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
     requireEqual(workflow.permissions, SEMANTIC_REVIEW_PERMISSIONS, 'read-only repository permissions');
     // A workflow-level `defaults.run.shell` would replace the shell of every `run` step in both jobs,
     // which no command pin reads.
-    requireEqual(workflow.defaults, undefined, 'no workflow-level defaults');
+    requireNoDeclaration(workflow.defaults, 'no workflow-level defaults');
     requireEqual(
         workflow.concurrency,
         {
@@ -581,6 +632,12 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
         [...SEMANTIC_REVIEW_ACTIONS],
         'its pinned actions and no others'
     );
+    // The upload's own inputs are pinned here, and its artifact name is the same constant the
+    // download reads: the two sides cannot drift apart with only the regenerable snapshot catching it.
+    const upload = stepNamed(stepsOf(job), SEMANTIC_REVIEW_UPLOAD_STEP);
+    requireEqual(upload.uses, SEMANTIC_REVIEW_UPLOAD_ACTION, 'the pinned artifact uploader');
+    requireEqual(upload.with, SEMANTIC_REVIEW_UPLOAD_INPUTS, 'the artifact this run publishes');
+    requireEqual(upload.if, undefined, 'no condition on the artifact upload');
     assertNoShellOverride(stepsOf(job), 'every assessment-job step');
     for (const step of stepsOf(job)) {
         requireEqual(step['continue-on-error'], undefined, 'failure propagation');
@@ -595,14 +652,17 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
     assertTrustedCheckout(job);
     assertEveryRunIsPinned(job);
     // The credential and head assertions run first so their specific refusals win; the environment
-    // refusal then closes what none of them reads. The assessment step's environment is the one
-    // legitimate one and `assertKeyIsScopedToTheAssessment` pins it whole; every other step must carry
-    // none, or a `BASH_ENV` reaches a pinned command.
+    // refusal then closes what none of them reads. The assessment step's environment is pinned whole
+    // by `assertKeyIsScopedToTheAssessment`, the coverage annotating step's by `assertCoverageJob`;
+    // every other step must carry none, or a `BASH_ENV` reaches a pinned command.
     assertKeyIsScopedToTheAssessment(workflow, job);
     // The workflow environment is pinned after the credential count, so a secret smuggled into it is
-    // still refused by the specific message that names the credential, and any other entry is refused
-    // here. A workflow-level `defaults.run.shell` is refused beside the permissions pin above.
-    requireEqual(workflow.env, SEMANTIC_REVIEW_ENV, 'its pinned workflow environment');
+    // still refused by the specific message that names the credential, and any other entry set is
+    // refused here. Comparison is order-insensitive: reordering the same three entries changes
+    // nothing, while a fourth entry does. A workflow-level `defaults.run.shell` is refused above.
+    if (!isSameKeyValueSet(workflow.env, SEMANTIC_REVIEW_ENV)) {
+        throw new Error('Advisory semantic review workflow must retain its pinned workflow environment');
+    }
     assertHeadIsNeverCheckedOut(workflow, job);
     assertNoExecutableEnvironment(job, 'the assessment job', SEMANTIC_REVIEW_ASSESS_STEP);
     assertCoverageJob(jobs);

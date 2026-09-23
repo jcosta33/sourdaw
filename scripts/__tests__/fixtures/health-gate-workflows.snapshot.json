@@ -2325,11 +2325,6 @@
             "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nsummary=\"$report_directory/summary.md\"\n{\n  printf '## Jev semantic review (advisory)\\n\\n'\n  printf 'Advice for this pull request, not a reviewer draw and not a required check. A green result means the assessment was delivered, never that the change is clean.\\n\\n'\n  if [ -f \"$summary\" ]; then cat \"$summary\"; else printf 'No assessment was produced.\\n'; fi\n} >> \"$GITHUB_STEP_SUMMARY\"\n\nexecution=missing\nif [ -f \"$report_directory/scan.json\" ]; then\n  execution=$(jq -r '.execution // \"missing\"' \"$report_directory/scan.json\")\nfi\ncase \"$execution\" in\n  completed | partial)\n    printf '::notice title=Jev semantic review::Assessment delivered (%s). Advisory only: read the job summary, which states what was assessed and what was withheld.\\n' \"$execution\"\n    exit 0\n    ;;\n  skipped)\n    # No changed path admitted a rule — a documentation- or workflow-only change. Nothing was\n    # eligible, so nothing was missed, and failing the check for that would put a red advisory\n    # mark on the class of change that needs it least.\n    printf '::notice title=Jev semantic review::No changed path admitted a rule, so there was nothing to assess.\\n'\n    exit 0\n    ;;\nesac\nprintf '::error title=Jev semantic review::No assessment was delivered (execution=%s, exit=%s). Treat this pull request as having no semantic coverage.\\n' \\\n  \"$execution\" \"$(cat \"$report_directory/exit-code\")\"\nexit 1\n"
           },
           {
-            "name": "Compute the coverage line",
-            "id": "coverage",
-            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\ncoverage='no assessment delivered'\nif [ -f \"$report_directory/scan.json\" ]; then\n  # A withheld path is one the report counted as unassessed or as a\n  # truncated region — together its own definition of an incomplete\n  # assessment, and a completed run carries neither. The count is\n  # taken over the raw paths: two paths differing only by a control\n  # character name two files, and folding them together would drop\n  # one from the tally.\n  computed=$(jq -r '\"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | map(.path) | unique | length)) withheld\"' \"$report_directory/scan.json\" 2>/dev/null || true)\n  if [ -n \"$computed\" ]; then\n    coverage=$computed\n  fi\nfi\nprintf 'coverage=%s\\n' \"$coverage\" >> \"$GITHUB_OUTPUT\"\n"
-          },
-          {
             "name": "Upload the advisory report",
             "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "with": {
@@ -2337,6 +2332,11 @@
               "path": "${{ runner.temp }}/semantic-review",
               "retention-days": 7
             }
+          },
+          {
+            "name": "Compute the coverage line",
+            "id": "coverage",
+            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\ncoverage='no assessment delivered'\nif [ -f \"$report_directory/scan.json\" ]; then\n  # A withheld entry is one the report counted as unassessed or as a\n  # truncated region — together its own definition of an incomplete\n  # assessment, and a completed run carries neither. The count is over\n  # the entries, not distinct paths: one path can carry several\n  # reasons, and each is a withheld entry a reader must be able to see,\n  # so folding or deduplicating them would under-report.\n  computed=$(jq -r '\"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | length)) withheld\"' \"$report_directory/scan.json\" 2>/dev/null || true)\n  if [ -n \"$computed\" ]; then\n    coverage=$computed\n  fi\nfi\nprintf 'coverage=%s\\n' \"$coverage\" >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },
@@ -2351,6 +2351,7 @@
         "steps": [
           {
             "name": "Download the advisory report",
+            "id": "download",
             "continue-on-error": true,
             "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
             "with": {
@@ -2360,7 +2361,11 @@
           },
           {
             "name": "Publish the withheld paths",
-            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nreport=\"$report_directory/scan.json\"\nwithheld_list=\"$report_directory/withheld-paths.tsv\"\nif [ ! -f \"$report\" ]; then\n  printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'\n  exit 0\nfi\n\n# GitHub reads `%`, a carriage return, and a newline inside an\n# annotation as command syntax, and `:` and `,` inside a property\n# value likewise, so a path or reason carrying one is escaped rather\n# than allowed to start a command of its own.\nescape_data() {\n  local value=$1\n  value=${value//'%'/'%25'}\n  value=${value//$'\\r'/'%0D'}\n  value=${value//$'\\n'/'%0A'}\n  printf '%s' \"$value\"\n}\nescape_property() {\n  local value\n  value=$(escape_data \"$1\")\n  value=${value//':'/'%3A'}\n  value=${value//','/'%2C'}\n  printf '%s' \"$value\"\n}\n\n# A withheld path is one the report counted as unassessed or as a\n# truncated region — together its own definition of an incomplete\n# assessment, and a completed run carries neither. Deduplication is on\n# the raw path, so two paths differing only by a control character\n# both survive; a value is folded to one line only as it is emitted,\n# because a raw newline or tab would break this record into an entry\n# of its own.\nif ! jq -r '[.scope.unassessed[], .scope.truncated[]] | unique_by(.path) | .[] | \"\\(.path | gsub(\"[\\n\\r\\t]\"; \" \"))\\t\\(.reason | gsub(\"[\\n\\r\\t]\"; \" \"))\"' \"$report\" > \"$withheld_list\" 2>/dev/null; then\n  printf '::notice title=Jev coverage::No coverage was reported: the assessment report could not be read.\\n'\n  exit 0\nfi\n\nannotated=0\nwithheld=0\nwhile IFS= read -r entry; do\n  [ -n \"$entry\" ] || continue\n  withheld=$((withheld + 1))\n  if [ \"$annotated\" -ge 10 ]; then\n    continue\n  fi\n  path=${entry%%$'\\t'*}\n  reason=${entry#*$'\\t'}\n  printf '::notice file=%s,line=1::%s: %s\\n' \\\n    \"$(escape_property \"$path\")\" \"$(escape_data \"$path\")\" \"$(escape_data \"$reason\")\"\n  annotated=$((annotated + 1))\ndone < \"$withheld_list\"\n\nprintf '::notice title=Jev coverage::%s further withheld path(s) were not annotated.\\n' \"$((withheld - annotated))\"\n"
+            "env": {
+              "DOWNLOAD_OUTCOME": "${{ steps.download.outcome }}",
+              "COVERAGE_LINE": "${{ needs.assess.outputs.coverage }}"
+            },
+            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nreport=\"$report_directory/scan.json\"\nwithheld_list=\"$report_directory/withheld-notices.txt\"\nif [ ! -f \"$report\" ]; then\n  if [ \"$DOWNLOAD_OUTCOME\" = 'failure' ] && [ -n \"$COVERAGE_LINE\" ]; then\n    printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'\n    exit 0\n  fi\n  printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'\n  exit 0\nfi\n\n# One annotation per withheld entry. The `file=` property is\n# identity-bearing, so it is escaped exactly and never folded: folding\n# a control character into a space would annotate two paths under one\n# name and attribute a reason to the wrong file. The property escapes\n# `%`, a carriage return, a newline, `:`, and `,`; the displayed text\n# escapes `%`, a carriage return, and a newline.\nif ! jq -r '\n  def esc_data: gsub(\"%\"; \"%25\") | gsub(\"\\r\"; \"%0D\") | gsub(\"\\n\"; \"%0A\");\n  def esc_prop: esc_data | gsub(\":\"; \"%3A\") | gsub(\",\"; \"%2C\");\n  [.scope.unassessed[], .scope.truncated[]]\n  | .[]\n  | \"::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)\"\n' \"$report\" > \"$withheld_list\" 2>/dev/null; then\n  printf '::notice title=Jev coverage::The advisory report could not be read: the assessment published an artifact whose report is not readable.\\n'\n  exit 0\nfi\n\n# At most ten annotations, one per withheld entry, then one notice\n# counting the rest: a per-path budget would let one of a path's\n# reasons hide the others.\nwithheld=0\nannotated=0\nwhile IFS= read -r notice; do\n  withheld=$((withheld + 1))\n  if [ \"$annotated\" -lt 10 ]; then\n    printf '%s\\n' \"$notice\"\n    annotated=$((annotated + 1))\n  fi\ndone < \"$withheld_list\"\n\nprintf '::notice title=Jev coverage::%s further withheld path(s) were not annotated.\\n' \"$((withheld - annotated))\"\n"
           }
         ]
       }

@@ -33,6 +33,7 @@ import {
     SEMANTIC_REVIEW_ASSESS_STEP,
     SEMANTIC_REVIEW_CHECKOUT_STEP,
     SEMANTIC_REVIEW_COVERAGE_JOB,
+    SEMANTIC_REVIEW_ENV,
     SEMANTIC_REVIEW_HEAD_EXPRESSION,
     SEMANTIC_REVIEW_KEY_ENV,
     SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
@@ -911,8 +912,19 @@ function runAddonPresenceGuard(script: string, artifactPresent: boolean): number
     }
 }
 
+/**
+ * Discovered once per run. The parity test reaches this through `assertNativeParityJob` several
+ * times, and re-reading every spec file under `src` on each call put the test past Vitest's default
+ * timeout on a loaded shared volume while the tree it reads cannot change during a run.
+ */
+const addonLoadingSpecCache = new Map<string, readonly string[]>();
+
 function addonLoadingSpecs(directory: string): string[] {
-    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const cached = addonLoadingSpecCache.get(directory);
+    if (cached !== undefined) {
+        return [...cached];
+    }
+    const discovered = readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) {
             return addonLoadingSpecs(path);
@@ -922,6 +934,8 @@ function addonLoadingSpecs(directory: string): string[] {
         }
         return [relative(repositoryRoot, path).split(sep).join('/')];
     });
+    addonLoadingSpecCache.set(directory, discovered);
+    return [...discovered];
 }
 
 function assertNativeParityJob(candidate: UnknownRecord): void {
@@ -1811,15 +1825,22 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
 
 /**
  * Runs the workflow's own computing and annotating commands against a report written into a
- * throwaway runner temp. The shipped scripts are what is observed, so the coverage line's tally and
- * the notices are read back rather than restated, and a report the scripts mishandle is a failure
- * here rather than a claim in a comment.
+ * throwaway runner temp. The shipped scripts are what is observed, so the coverage line's tally, the
+ * notices, and the two absence branches are read back rather than restated, and a report the scripts
+ * mishandle is a failure here rather than a claim in a comment. Omitting `report` is the "this run
+ * published nothing" fixture; `downloadOutcome` and `coverageLine` drive the retrieval branch.
  */
-function runSemanticCoverageLine(report: string): { coverage: string; notices: string; status: number | null } {
+function runSemanticCoverageLine(options: { report?: string; downloadOutcome?: string; coverageLine?: string }): {
+    coverage: string;
+    notices: string;
+    status: number | null;
+} {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-coverage-'));
     const reportDirectory = join(directory, 'semantic-review');
     mkdirSync(reportDirectory, { recursive: true });
-    writeFileSync(join(reportDirectory, 'scan.json'), report);
+    if (options.report !== undefined) {
+        writeFileSync(join(reportDirectory, 'scan.json'), options.report);
+    }
     const outputPath = join(directory, 'github-output');
     writeFileSync(outputPath, '');
     const compute = stepNamed(jobAt(semanticReviewWorkflow, 'assess'), 'Compute the coverage line');
@@ -1832,7 +1853,11 @@ function runSemanticCoverageLine(report: string): { coverage: string; notices: s
     });
     const annotateResult = spawnSync('bash', ['-c', stringAt(annotate, 'run')], {
         encoding: 'utf8',
-        env: environment,
+        env: {
+            ...environment,
+            DOWNLOAD_OUTCOME: options.downloadOutcome ?? 'success',
+            COVERAGE_LINE: options.coverageLine ?? '',
+        },
         shell: false,
     });
     const coverage = readFileSync(outputPath, 'utf8');
@@ -2237,7 +2262,7 @@ describe('health gates workflow contract', () => {
 
         for (const [jobId, stepName] of [
             [SEMANTIC_REVIEW_ASSESS_JOB, 'Report the assessment'],
-            [SEMANTIC_REVIEW_COVERAGE_JOB, 'Publish the withheld paths'],
+            [SEMANTIC_REVIEW_COVERAGE_JOB, 'Download the advisory report'],
         ] as const) {
             const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
             const containerStep = structuredClone(semanticReviewWorkflow);
@@ -2254,6 +2279,55 @@ describe('health gates workflow contract', () => {
                 `a step env on ${jobId} ${stepName} must be refused`
             ).toThrow(`${jobLabel} steps without a step environment`);
         }
+
+        // The annotating step is the one coverage step with a legitimate
+        // environment, and it is pinned whole: a third variable beside the two
+        // it reads is refused.
+        const annotateExtraEnv = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(annotateExtraEnv, 'coverage'), 'Publish the withheld paths'), 'env').BASH_ENV =
+            '/tmp/inject.sh';
+        expect(() => assertSemanticReviewWorkflow(annotateExtraEnv)).toThrow(
+            'the retrieval outcome and coverage line alone'
+        );
+
+        // Reordering the same three workflow environment entries changes nothing,
+        // and an empty mapping is the same no-op as an absent declaration, so
+        // neither is a boundary change.
+        const reorderedEnvironment = structuredClone(semanticReviewWorkflow);
+        reorderedEnvironment.env = {
+            TRUSTED_SHA: SEMANTIC_REVIEW_ENV.TRUSTED_SHA,
+            NODE_VERSION: SEMANTIC_REVIEW_ENV.NODE_VERSION,
+            PR_NUMBER: SEMANTIC_REVIEW_ENV.PR_NUMBER,
+        };
+        expect(() => assertSemanticReviewWorkflow(reorderedEnvironment)).not.toThrow();
+
+        const emptyDeclarations = structuredClone(semanticReviewWorkflow);
+        emptyDeclarations.defaults = {};
+        jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB).defaults = {};
+        jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB).env = {};
+        jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB).defaults = {};
+        jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB).env = {};
+        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB), 'Report the assessment').env = {};
+        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB), 'Report the assessment').container = {};
+        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB), 'Download the advisory report').env = {};
+        expect(() => assertSemanticReviewWorkflow(emptyDeclarations)).not.toThrow();
+
+        // The upload is pinned before the line is computed, and both sides read
+        // one artifact-name constant: an upload that never ran leaves the line
+        // unpublished, and a renamed upload cannot leave the download fetching an
+        // artifact this run never published.
+        const reorderedAssessSteps = structuredClone(semanticReviewWorkflow);
+        swapStepsNamed(
+            jobAt(reorderedAssessSteps, 'assess'),
+            'Upload the advisory report',
+            'Compute the coverage line'
+        );
+        expect(() => assertSemanticReviewWorkflow(reorderedAssessSteps)).toThrow('its complete ordered steps');
+
+        const driftedUploadName = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(driftedUploadName, 'assess'), 'Upload the advisory report'), 'with').name =
+            'semantic-review';
+        expect(() => assertSemanticReviewWorkflow(driftedUploadName)).toThrow('the artifact this run publishes');
 
         // The output is read through the step id, so an id that drifts leaves
         // the job output empty while the step still runs.
@@ -2282,12 +2356,12 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    // Two withheld paths that differ only by a control character name two files. Deduplicating on the
-    // folded display value would merge them — a tab and a newline both fold to one space — dropping
-    // one from the count and pairing the survivor's notice with the wrong reason, so the shipped
-    // commands are executed here on exactly that report: both must be counted and both annotated,
-    // each with its own reason, with the control character folded only where the value is emitted.
-    it('counts and annotates withheld paths that differ only by a control character', () => {
+    // The `file=` property is identity-bearing, so a control character must be
+    // escaped there, never folded: folding a newline into a space would annotate
+    // a control-character sibling under a real space-named path and attribute
+    // its reason to the wrong file. The shipped commands are executed on exactly
+    // that report, and both properties must come back exact.
+    it('keeps the emitted file property exact beside a real space-named path', () => {
         const report = JSON.stringify({
             execution: 'partial',
             scope: {
@@ -2297,20 +2371,74 @@ describe('health gates workflow contract', () => {
                 cacheHits: 0,
                 excluded: [],
                 unassessed: [
-                    { path: 'src/one\ttwo.ts', reason: 'budget-exhausted-before-admission' },
+                    { path: 'src/one two.ts', reason: 'budget-exhausted-before-admission' },
                     { path: 'src/one\ntwo.ts', reason: 'evidence-withheld-sensitive-path' },
                 ],
                 truncated: [],
             },
         });
-        const { coverage, notices, status } = runSemanticCoverageLine(report);
+        const { coverage, notices, status } = runSemanticCoverageLine({ report });
         expect(status).toBe(0);
         expect(coverage).toContain('2 withheld');
         const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
         expect(annotations).toHaveLength(2);
-        expect(annotations.join('\n')).toContain('src/one two.ts: budget-exhausted-before-admission');
-        expect(annotations.join('\n')).toContain('src/one two.ts: evidence-withheld-sensitive-path');
+        expect(annotations.join('\n')).toContain('file=src/one two.ts,line=1::src/one two.ts: ');
+        expect(annotations.join('\n')).toContain('file=src/one%0Atwo.ts,line=1::src/one%0Atwo.ts: ');
+        expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
+        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
         expect(notices).toContain('0 further withheld path(s) were not annotated.');
+    });
+
+    // A path routinely carries more than one reason, so a per-path budget would
+    // let a milder reason hide a sensitive one and then report that nothing
+    // further was withheld. Each path-and-reason entry is annotated, the budget
+    // is spent on entries, and the remainder is counted.
+    it('annotates every reason a withheld path carries within the ten-entry budget', () => {
+        const otherPaths = Array.from({ length: 10 }, (_, index) => ({
+            path: `src/other-${String(index)}.ts`,
+            reason: 'no-admissible-evidence',
+        }));
+        const report = JSON.stringify({
+            execution: 'partial',
+            scope: {
+                discovered: 12,
+                eligible: 12,
+                assessed: 0,
+                cacheHits: 0,
+                excluded: [],
+                unassessed: [
+                    { path: 'src/repeated.ts', reason: 'evidence-withheld-sensitive-path' },
+                    { path: 'src/repeated.ts', reason: 'budget-exhausted-before-admission' },
+                    ...otherPaths,
+                ],
+                truncated: [],
+            },
+        });
+        const { coverage, notices, status } = runSemanticCoverageLine({ report });
+        expect(status).toBe(0);
+        expect(coverage).toContain('12 withheld');
+        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
+        expect(annotations).toHaveLength(10);
+        expect(annotations.join('\n')).toContain('file=src/repeated.ts,line=1::src/repeated.ts: ');
+        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
+        expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
+        expect(notices).toContain('2 further withheld path(s) were not annotated.');
+    });
+
+    // The two absence branches must not read the same. A run that published a
+    // report the fetch could not retrieve is a retrieval failure; a run that
+    // published nothing is the no-coverage case the wording already named.
+    it('tells a failed retrieval apart from a run that published nothing', () => {
+        const retrievalFailure = runSemanticCoverageLine({
+            downloadOutcome: 'failure',
+            coverageLine: 'partial · 1 discovered · 1 eligible · 0 assessed · 1 withheld',
+        });
+        expect(retrievalFailure.notices).toContain('could not be retrieved');
+        expect(retrievalFailure.notices).not.toContain('No coverage was reported');
+
+        const neverPublished = runSemanticCoverageLine({});
+        expect(neverPublished.notices).toContain('No coverage was reported');
+        expect(neverPublished.notices).not.toContain('could not be retrieved');
     });
     afterEach(() => {
         vi.unstubAllGlobals();
