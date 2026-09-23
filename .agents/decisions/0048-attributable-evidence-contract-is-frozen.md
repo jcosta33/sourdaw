@@ -66,12 +66,15 @@ reader retained.
 - `stances.json` — the caller's pre-dispatch stance record; when a bundle carries it, the dossier
   publication gate binds the record's draws to it one-to-one as sets of stance names
   (`reviewDossierPublication.ts`).
-- The `sourdaw-*-v1` marker-line records — repair records, confirmation, finding lineage, and the
-  source attestation (`sourceAttestation.ts`), which binds every exact commit OID above the
-  comparison base and its observed Git authorship to the published head — all framed by the one
-  marker grammar in `canonicalRecord.ts`. **Retired 2026-09-23 by
-  [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding this item): the
-  comment channel has no live writer, and the authorship gate remains.**
+- The `sourdaw-*-v1` marker-line records — repair records, confirmation, and finding lineage — all
+  framed by the one marker grammar in `canonicalRecord.ts`.
+- The source-attestation comment (`sourceAttestation.ts`) — a `sourdaw-attestation-v1` marker line
+  that bound every exact commit OID above the comparison base and its observed Git authorship to the
+  published head. **Retired 2026-09-23 by
+  [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding only this
+  source-attestation item): the source-attestation comment has no live writer, and the authorship
+  gate remains. The repair, confirmation, finding-lineage, and delivery-receipt writers are
+  unchanged and still post to pull-request issue comments.**
 - Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
   marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
   receipts remain readable.
