@@ -2581,6 +2581,8 @@ describe('package scripts and gitignore', () => {
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
                 bundleFileExists: (path: string) => existsSync(path),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
+                publicReviews: () => [],
+                publicReviewComments: () => [],
                 postReview: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),

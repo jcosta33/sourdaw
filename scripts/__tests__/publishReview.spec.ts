@@ -223,6 +223,8 @@ function fakePort(
                 login: input.login ?? 'renamed-reviewer[bot]',
             };
         },
+        publicReviews: () => [],
+        publicReviewComments: () => [],
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, posted };
@@ -348,6 +350,9 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                     }
                     if (command === 'git' && args[0] === 'merge-base') {
                         return 'b'.repeat(40);
+                    }
+                    if (command === 'gh' && args[0] === 'api' && args.includes('--paginate')) {
+                        return '[]';
                     }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
@@ -1059,6 +1064,8 @@ describe('review publish', () => {
                     },
                     bundleFileExists: (path) => existsSync(path),
                     readBundleDiff: () => '',
+                    publicReviews: () => [],
+                    publicReviewComments: () => [],
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
                         if (oid === undefined) {
@@ -5311,6 +5318,98 @@ describe('fresh reviewer dossier publication', () => {
                 action: 'continue',
                 reason: 're-scoped the change and re-dispatched the remaining stances',
             });
+            // The delivery authorization binds the digest of the record minus its post-publication
+            // events (delivery-authorized and review-reassessed), so the writer's recorded digest
+            // equals the recomputed authorized digest — and the production deliver reader recomputes
+            // the same value from the live record.
+            const authorization = deliveryAuthorization(persisted);
+            if (authorization === undefined) {
+                throw new Error('expected a recorded delivery authorization');
+            }
+            expect(authorization.evidenceManifestDigest).toBe(authorizedEvidenceDigest(persisted));
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(binding.dossierDigest).toBe(authorizedEvidenceDigest(persisted));
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the escalation threshold without a reassessment', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays a recorded publication at or above the threshold without a reassessment instead of refusing', () => {
+        const landedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+            remoteReviews: { 99: landedReview },
+        });
+        try {
+            writeFileSync(
+                join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                JSON.stringify({
+                    format: 'reassessment-v1',
+                    pr: number,
+                    headSha: head,
+                    baseSha: base,
+                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    action: 'continue',
+                    reason: 're-scoped the change and re-dispatched the remaining stances',
+                })
+            );
+            // First publication consumes the reassessment and records the publication.
+            expect(publishReview(number, fixture.port)).toBe(99);
+            // The reassessment is gone: a fresh gate would now refuse for the missing file. The
+            // recorded publication instead replays, so the gate never runs.
+            rmSync(join(fixture.bundle, REASSESSMENT_FILE_NAME));
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
