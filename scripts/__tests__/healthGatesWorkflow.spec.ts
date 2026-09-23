@@ -29,6 +29,7 @@ import {
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import {
     assertSemanticReviewWorkflow,
+    SEMANTIC_REVIEW_ARTIFACT_NAME,
     SEMANTIC_REVIEW_ASSESS_JOB,
     SEMANTIC_REVIEW_ASSESS_STEP,
     SEMANTIC_REVIEW_CHECKOUT_STEP,
@@ -2082,11 +2083,14 @@ describe('health gates workflow contract', () => {
             const placed = structuredClone(semanticReviewWorkflow);
             place(placed);
             // A credential spliced into a pinned command breaks the command's own pin before the
-            // mention count is reached; an unpinned action input is caught by the count. Both refuse.
+            // mention count is reached; a pinned action input breaks its own pin; an unpinned one is
+            // caught by the count. Every route refuses.
             expect(
                 () => assertSemanticReviewWorkflow(placed),
                 `a secret reference in ${label} must be refused`
-            ).toThrow(/exactly the pinned command|must mention a repository secret exactly once/u);
+            ).toThrow(
+                /exactly the pinned command|must mention a repository secret exactly once|the Node version the assessment runs on/u
+            );
         }
 
         // The token's name was pinned and its value was not, so a write-capable personal token under
@@ -2329,6 +2333,34 @@ describe('health gates workflow contract', () => {
             'semantic-review';
         expect(() => assertSemanticReviewWorkflow(driftedUploadName)).toThrow('the artifact this run publishes');
 
+        // A re-run reuses the run id, so the artifact name must be scoped to the
+        // attempt: a run-scoped name would collide with the previous attempt's
+        // immutable artifact, fail the new upload, leave the line on its
+        // fallback, and still let the softened download read the superseded
+        // report. The pin itself is asserted to carry the attempt, and the
+        // run-scoped spelling is refused on both sides.
+        expect(SEMANTIC_REVIEW_ARTIFACT_NAME).toContain('${{ github.run_attempt }}');
+        const runScopedArtifact = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(runScopedArtifact, 'assess'), 'Upload the advisory report'), 'with').name =
+            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
+        expect(() => assertSemanticReviewWorkflow(runScopedArtifact)).toThrow('the artifact this run publishes');
+
+        const runScopedDownload = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(runScopedDownload, 'coverage'), 'Download the advisory report'), 'with').name =
+            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
+        expect(() => assertSemanticReviewWorkflow(runScopedDownload)).toThrow('the artifact this run uploaded');
+
+        // The setup actions' inputs decide what the pinned commands run on;
+        // nothing else reads them, so the Node version is pinned by name and not
+        // only by the regenerable snapshot.
+        const driftedNode = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(driftedNode, 'assess'), 'Set up Node'), 'with')['node-version'] = '24.19.1';
+        expect(() => assertSemanticReviewWorkflow(driftedNode)).toThrow('the Node version the assessment runs on');
+
+        const pnpmInputs = structuredClone(semanticReviewWorkflow);
+        stepNamed(jobAt(pnpmInputs, 'assess'), 'Set up pnpm').with = { version: '11' };
+        expect(() => assertSemanticReviewWorkflow(pnpmInputs)).toThrow('no inputs on the pnpm setup step');
+
         // The output is read through the step id, so an id that drifts leaves
         // the job output empty while the step still runs.
         const wrongId = structuredClone(semanticReviewWorkflow);
@@ -2386,14 +2418,14 @@ describe('health gates workflow contract', () => {
         expect(annotations.join('\n')).toContain('file=src/one%0Atwo.ts,line=1::src/one%0Atwo.ts: ');
         expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
         expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further withheld path(s) were not annotated.');
+        expect(notices).toContain('0 further withheld entry(s) were not annotated.');
     });
 
     // A path routinely carries more than one reason, so a per-path budget would
     // let a milder reason hide a sensitive one and then report that nothing
-    // further was withheld. Each path-and-reason entry is annotated, the budget
-    // is spent on entries, and the remainder is counted.
-    it('annotates every reason a withheld path carries within the ten-entry budget', () => {
+    // further was withheld. Each distinct path-and-reason pair is annotated, the
+    // budget is spent on pairs, and the remainder is counted in the same unit.
+    it('annotates every distinct reason a withheld path carries within the ten-entry budget', () => {
         const otherPaths = Array.from({ length: 10 }, (_, index) => ({
             path: `src/other-${String(index)}.ts`,
             reason: 'no-admissible-evidence',
@@ -2422,7 +2454,38 @@ describe('health gates workflow contract', () => {
         expect(annotations.join('\n')).toContain('file=src/repeated.ts,line=1::src/repeated.ts: ');
         expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
         expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
-        expect(notices).toContain('2 further withheld path(s) were not annotated.');
+        expect(notices).toContain('2 further withheld entry(s) were not annotated.');
+    });
+
+    // The producer emits one identical path-and-reason entry per over-budget
+    // region of a file, so twelve over-budget hunks of one file are one notice,
+    // not twelve. Identical pairs collapse, every distinct reason stays, and the
+    // trailing notice counts the pairs it did not annotate.
+    it('collapses identical withheld pairs while keeping a distinct reason', () => {
+        const identicalRegions = Array.from({ length: 12 }, () => ({
+            path: 'src/hunks.ts',
+            reason: 'region-exceeds-per-region-budget (after)',
+        }));
+        const report = JSON.stringify({
+            execution: 'partial',
+            scope: {
+                discovered: 13,
+                eligible: 13,
+                assessed: 0,
+                cacheHits: 0,
+                excluded: [],
+                unassessed: [...identicalRegions, { path: 'src/hunks.ts', reason: 'evidence-withheld-sensitive-path' }],
+                truncated: [],
+            },
+        });
+        const { coverage, notices, status } = runSemanticCoverageLine({ report });
+        expect(status).toBe(0);
+        expect(coverage).toContain('2 withheld');
+        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
+        expect(annotations).toHaveLength(2);
+        expect(annotations.join('\n')).toContain('region-exceeds-per-region-budget (after)');
+        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
+        expect(notices).toContain('0 further withheld entry(s) were not annotated.');
     });
 
     // The two absence branches must not read the same. A run that published a

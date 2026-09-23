@@ -161,11 +161,14 @@ export const SEMANTIC_REVIEW_ASSESS_STEP = 'Assess the change';
 export const SEMANTIC_REVIEW_SCAN_COMMAND = 'node scripts/semanticReview.ts scan';
 
 /**
- * The one artifact name both sides use. Sharing it is the point: the upload's name and the
- * download's name are the same string only because both read it here, so an edit that renames one
- * side cannot leave the other fetching an artifact this run never published.
+ * The one artifact name both sides use, scoped to the run and the attempt. Sharing it is the point:
+ * the upload's name and the download's name are the same string only because both read it here, and
+ * the attempt suffix is what keeps a re-run from colliding with the previous attempt's immutable
+ * artifact — a run-scoped name would fail the new upload while the softened download still read the
+ * superseded report.
  */
-export const SEMANTIC_REVIEW_ARTIFACT_NAME = 'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
+export const SEMANTIC_REVIEW_ARTIFACT_NAME =
+    'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}';
 /** The one step that publishes the report the coverage job reads back. */
 export const SEMANTIC_REVIEW_UPLOAD_STEP = 'Upload the advisory report';
 export const SEMANTIC_REVIEW_UPLOAD_ACTION = SEMANTIC_REVIEW_ACTIONS[3];
@@ -173,6 +176,10 @@ export const SEMANTIC_REVIEW_UPLOAD_INPUTS: Readonly<Record<string, string | num
     name: SEMANTIC_REVIEW_ARTIFACT_NAME,
     path: '${{ runner.temp }}/semantic-review',
     'retention-days': 7,
+};
+/** The Node version the assessment runs on. Pinned as an input as well as through the workflow env. */
+export const SEMANTIC_REVIEW_NODE_SETUP_INPUTS: Readonly<Record<string, string>> = {
+    'node-version': '${{ env.NODE_VERSION }}',
 };
 
 /** The step that turns the report into the one-line output the coverage job is named from. */
@@ -186,9 +193,11 @@ export const SEMANTIC_REVIEW_COVERAGE_OUTPUT = 'coverage';
  *
  * The step carries no condition, and it sits after the upload, which is the property the divergence
  * turns on: the default success gate skips it whenever the report or the upload failed, so the line
- * and the artifact the coverage job reads are always one fact. A line derived from a report that was
- * never uploaded would name a scope no reader can open; the fallback in the coverage job's name
- * names that path instead.
+ * is published only once this attempt uploaded its report, and a line derived from a report that was
+ * never uploaded would name a scope no reader could open; the fallback in the coverage job's name
+ * names that path instead. It does not follow that the reader can always open the report: a
+ * retrieval failure after a successful upload leaves the line standing, and the annotating step
+ * reports that failed fetch rather than an absent report.
  */
 export const SEMANTIC_REVIEW_COVERAGE_COMMAND = [
     'set -euo pipefail',
@@ -198,10 +207,11 @@ export const SEMANTIC_REVIEW_COVERAGE_COMMAND = [
     '  # A withheld entry is one the report counted as unassessed or as a',
     '  # truncated region — together its own definition of an incomplete',
     '  # assessment, and a completed run carries neither. The count is over',
-    '  # the entries, not distinct paths: one path can carry several',
-    '  # reasons, and each is a withheld entry a reader must be able to see,',
-    '  # so folding or deduplicating them would under-report.',
-    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
+    '  # distinct path-and-reason pairs: the producer emits one identical',
+    '  # entry per over-budget region of a file, and counting those repeats',
+    "  # would inflate the line, while dropping the pair's reason would hide",
+    '  # it, so identical pairs collapse and every distinct reason stays.',
+    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | unique_by([.path, .reason]) | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
     '  if [ -n "$computed" ]; then',
     '    coverage=$computed',
     '  fi',
@@ -267,26 +277,36 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     '  exit 0',
     'fi',
     '',
-    '# One annotation per withheld entry. The `file=` property is',
-    '# identity-bearing, so it is escaped exactly and never folded: folding',
-    '# a control character into a space would annotate two paths under one',
-    '# name and attribute a reason to the wrong file. The property escapes',
-    '# `%`, a carriage return, a newline, `:`, and `,`; the displayed text',
-    '# escapes `%`, a carriage return, and a newline.',
+    '# One annotation per distinct withheld path-and-reason pair, in the',
+    '# order the report lists them. The producer emits one identical entry',
+    '# per over-budget region of a file, so the pairs are deduplicated while',
+    '# every distinct reason is kept: emitting the repeats would spend the',
+    '# budget on the same notice and hide a distinct reason, and sorting the',
+    '# survivors would let the ten-entry budget fall on alphabet rather than',
+    "# on the report's own order. The `file=` property is identity-bearing,",
+    '# so it is escaped exactly and never folded: folding a control',
+    '# character into a space would annotate two paths under one name and',
+    '# attribute a reason to the wrong file. The property escapes `%`, a',
+    '# carriage return, a newline, `:`, and `,`; the displayed text escapes',
+    '# `%`, a carriage return, and a newline.',
     "if ! jq -r '",
     '  def esc_data: gsub("%"; "%25") | gsub("\\r"; "%0D") | gsub("\\n"; "%0A");',
     '  def esc_prop: esc_data | gsub(":"; "%3A") | gsub(","; "%2C");',
     '  [.scope.unassessed[], .scope.truncated[]]',
-    '  | .[]',
+    '  | reduce .[] as $entry (',
+    '      { seen: {}, distinct: [] };',
+    '      ($entry | [.path, .reason] | tojson) as $key',
+    '      | if .seen[$key] then . else .seen[$key] = true | .distinct += [$entry] end',
+    '    )',
+    '  | .distinct[]',
     '  | "::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)"',
     '\' "$report" > "$withheld_list" 2>/dev/null; then',
     "  printf '::notice title=Jev coverage::The advisory report could not be read: the assessment published an artifact whose report is not readable.\\n'",
     '  exit 0',
     'fi',
     '',
-    '# At most ten annotations, one per withheld entry, then one notice',
-    "# counting the rest: a per-path budget would let one of a path's",
-    '# reasons hide the others.',
+    '# At most ten annotations, one per distinct pair, then one notice',
+    '# counting the pairs that were not annotated.',
     'withheld=0',
     'annotated=0',
     'while IFS= read -r notice; do',
@@ -297,7 +317,7 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     '  fi',
     'done < "$withheld_list"',
     '',
-    'printf \'::notice title=Jev coverage::%s further withheld path(s) were not annotated.\\n\' "$((withheld - annotated))"',
+    'printf \'::notice title=Jev coverage::%s further withheld entry(s) were not annotated.\\n\' "$((withheld - annotated))"',
 ].join('\n');
 
 /**
@@ -638,6 +658,13 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
     requireEqual(upload.uses, SEMANTIC_REVIEW_UPLOAD_ACTION, 'the pinned artifact uploader');
     requireEqual(upload.with, SEMANTIC_REVIEW_UPLOAD_INPUTS, 'the artifact this run publishes');
     requireEqual(upload.if, undefined, 'no condition on the artifact upload');
+    // The setup actions' inputs decide what the pinned commands run on, and nothing else reads them.
+    requireEqual(
+        stepNamed(stepsOf(job), 'Set up Node').with,
+        SEMANTIC_REVIEW_NODE_SETUP_INPUTS,
+        'the Node version the assessment runs on'
+    );
+    requireEqual(stepNamed(stepsOf(job), 'Set up pnpm').with, undefined, 'no inputs on the pnpm setup step');
     assertNoShellOverride(stepsOf(job), 'every assessment-job step');
     for (const step of stepsOf(job)) {
         requireEqual(step['continue-on-error'], undefined, 'failure propagation');
