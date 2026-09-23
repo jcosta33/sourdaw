@@ -17,11 +17,7 @@ import {
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
-import {
-    assertTrustedExecutingBlobs,
-    collectTrustedExecutingBlobs,
-    TRUSTED_EXECUTING_PATHS,
-} from '../prepareReviewEntry.ts';
+import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
@@ -170,34 +166,41 @@ describe('review prepare', () => {
         }
     });
 
-    it('names the entry, its direct imports, and the resolver imports as the trusted executing set', () => {
-        expect(TRUSTED_EXECUTING_PATHS).toEqual([
-            'scripts/prepareReviewEntry.ts',
+    it('pins the trusted executing closure to the entry local-import graph', () => {
+        const entryFile = join(import.meta.dirname, '..', 'prepareReviewEntry.ts');
+        expect(trustedExecutingPaths(entryFile)).toEqual([
+            'scripts/canonicalRecord.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
             'scripts/prepareReview.ts',
-            'scripts/semanticReviewContext.ts',
+            'scripts/prepareReviewEntry.ts',
+            'scripts/reviewBundleLocator.ts',
+            'scripts/reviewDiffSummary.ts',
+            'scripts/reviewRiskPolicy.ts',
             'scripts/semanticReview/contracts.ts',
+            'scripts/semanticReview/interpret.ts',
             'scripts/semanticReview/report.ts',
+            'scripts/semanticReview/rules.ts',
+            'scripts/semanticReviewContext.ts',
             'scripts/semanticReviewWorkflowContract.ts',
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/vitestCollectionPatterns.ts',
+            'scripts/wasm-artifacts.ts',
+            'scripts/wasmToolchainPins.ts',
+            'scripts/workspaceManifestFingerprint.ts',
         ]);
     });
 
-    it('resolves each asserted path as a repository path, nested paths included', () => {
-        const readPaths: string[] = [];
-        collectTrustedExecutingBlobs(join('/repo', 'scripts', 'prepareReviewEntry.ts'), '/repo', (path) => {
-            readPaths.push(path);
-            return 'source';
-        });
-        expect(readPaths).toEqual([
-            '/repo/scripts/prepareReviewEntry.ts',
-            '/repo/scripts/githubAppIdentity.ts',
-            '/repo/scripts/prContract.ts',
-            '/repo/scripts/prepareReview.ts',
-            '/repo/scripts/semanticReviewContext.ts',
-            '/repo/scripts/semanticReview/contracts.ts',
-            '/repo/scripts/semanticReview/report.ts',
-            '/repo/scripts/semanticReviewWorkflowContract.ts',
+    it('derives nested local imports as repository paths', () => {
+        const sources: Record<string, string> = {
+            '/repo/scripts/prepareReviewEntry.ts': "import './prepareReview.ts';",
+            '/repo/scripts/prepareReview.ts': "import './nested/helper.ts';",
+            '/repo/scripts/nested/helper.ts': '',
+        };
+        expect(trustedExecutingPaths('/repo/scripts/prepareReviewEntry.ts', (path) => sources[path] ?? '')).toEqual([
+            'scripts/nested/helper.ts',
+            'scripts/prepareReview.ts',
+            'scripts/prepareReviewEntry.ts',
         ]);
     });
 
@@ -209,6 +212,12 @@ describe('review prepare', () => {
     it('refuses a drifted asserted module', () => {
         const blobs = [{ path: 'scripts/semanticReviewContext.ts', originBlob: 'origin resolver', source: 'drifted' }];
         expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/does not match origin\/main/);
+    });
+
+    it('refuses an unlisted local import', () => {
+        const source = "import './missing.ts';";
+        const blobs = [{ path: 'scripts/prepareReview.ts', originBlob: source, source }];
+        expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/imports unlisted local dependency/);
     });
 
     it('writes a risk plan for the reviewed head and records it as generated', () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -16,23 +16,39 @@ import {
 import { fail } from './prContract.ts';
 import { parsePrepareReviewArgs, prepareReview, shellPort } from './prepareReview.ts';
 import { resolveSemanticReviewContext, shellSemanticReviewContextPort } from './semanticReviewContext.ts';
+import { snapshotImportSpecifiers } from './trustedGithubWriteBootstrap.ts';
+
+function localImportClosure(entryFile: string, readFile: (path: string) => string): readonly string[] {
+    const closure = new Set<string>();
+    const pending = [entryFile];
+    while (pending.length > 0) {
+        const path = pending.pop();
+        if (path === undefined || closure.has(path)) {
+            continue;
+        }
+        closure.add(path);
+        const source = readFile(path);
+        for (const specifier of snapshotImportSpecifiers(source)) {
+            if (specifier.startsWith('.')) {
+                pending.push(join(dirname(path), specifier));
+            }
+        }
+    }
+    return [...closure].sort();
+}
 
 /**
- * The modules the entry composes at runtime — its own file, its direct local imports, and the
- * resolver's own local imports — resolved as repository paths and asserted against origin/main so a
- * drifted copy of any of them refuses. A path the default branch does not hold is refused too: the
- * assertion must never be vacuous about a module it names.
+ * The repository-relative local-import closure of the entry: the entry, its direct imports, and
+ * every module they import transitively. This is the set asserted against origin/main, so a drifted
+ * copy of any module the entry can execute is refused rather than producing a forged record.
  */
-export const TRUSTED_EXECUTING_PATHS = [
-    'scripts/prepareReviewEntry.ts',
-    'scripts/githubAppIdentity.ts',
-    'scripts/prContract.ts',
-    'scripts/prepareReview.ts',
-    'scripts/semanticReviewContext.ts',
-    'scripts/semanticReview/contracts.ts',
-    'scripts/semanticReview/report.ts',
-    'scripts/semanticReviewWorkflowContract.ts',
-] as const;
+export function trustedExecutingPaths(
+    executingFile: string,
+    readFile: (path: string) => string = (path) => readFileSync(path, 'utf8')
+): readonly string[] {
+    const repositoryRoot = dirname(dirname(executingFile));
+    return localImportClosure(executingFile, readFile).map((path) => relative(repositoryRoot, path));
+}
 
 export type TrustedExecutingBlob = {
     readonly path: string;
@@ -41,11 +57,21 @@ export type TrustedExecutingBlob = {
 };
 
 export function assertTrustedExecutingBlobs(blobs: readonly TrustedExecutingBlob[]): void {
+    const paths = new Set(blobs.map((blob) => blob.path));
     for (const blob of blobs) {
         if (blob.originBlob === undefined) {
             throw new Error(`${blob.path} has no blob on origin/main; refusing to run an unverifiable copy`);
         }
         assertTrustedExecutingBlob(blob.path, blob.path, blob.originBlob, blob.source);
+        for (const specifier of snapshotImportSpecifiers(blob.source)) {
+            if (!specifier.startsWith('.')) {
+                continue;
+            }
+            const resolved = join(dirname(blob.path), specifier);
+            if (!paths.has(resolved)) {
+                throw new Error(`${blob.path} imports unlisted local dependency ${resolved}`);
+            }
+        }
     }
 }
 
@@ -55,7 +81,7 @@ export function collectTrustedExecutingBlobs(
     readFile: (path: string) => string = (path) => readFileSync(path, 'utf8')
 ): readonly TrustedExecutingBlob[] {
     const repositoryRoot = dirname(dirname(executingFile));
-    return TRUSTED_EXECUTING_PATHS.map((path) => ({
+    return trustedExecutingPaths(executingFile, readFile).map((path) => ({
         path,
         originBlob: originMainBlob(path, cwd),
         source: readFile(join(repositoryRoot, path)),
@@ -73,8 +99,8 @@ async function main(): Promise<number> {
     }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();
-    // `review:prepare` runs only the default branch's revision of itself and of the resolver it
-    // composes: a drifted copy of any asserted file must refuse rather than write a forged record.
+    // `review:prepare` runs only the default branch's revision of itself and of every module it can
+    // execute: a drifted copy of any asserted file must refuse rather than write a forged record.
     assertTrustedExecutingBlobs(collectTrustedExecutingBlobs(executingFile, cwd));
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });

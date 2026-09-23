@@ -126,6 +126,7 @@ type PortInput = {
     actionRunsBySuite?: (checkSuiteId: number) => readonly SemanticActionRun[];
     actionRunsError?: Error;
     artifacts?: readonly SemanticArtifact[];
+    artifactsByRun?: (runId: number) => readonly SemanticArtifact[];
     artifactsError?: Error;
     archive?: Buffer;
     archiveError?: Error;
@@ -159,10 +160,13 @@ function makePort(input: PortInput): { port: SemanticReviewContextPort; calls: P
             }
             return input.actionRuns ?? [];
         },
-        artifacts: () => {
+        artifacts: (runId) => {
             calls.artifacts += 1;
             if (input.artifactsError !== undefined) {
                 throw input.artifactsError;
+            }
+            if (input.artifactsByRun !== undefined) {
+                return input.artifactsByRun(runId);
             }
             return input.artifacts ?? [];
         },
@@ -502,8 +506,8 @@ describe('semantic review context', () => {
                 { id: 2, name: 'Semantic review', conclusion: 'success', checkSuiteId: 999 },
             ],
             actionRunsBySuite: (suiteId) =>
-                suiteId === 111 ? [RUN] : [{ id: 456, path: '.github/workflows/other.yml', event: 'pull_request' }],
-            artifacts: [ARTIFACT],
+                suiteId === 111 ? [RUN] : [{ id: 999, path: '.github/workflows/other.yml', event: 'pull_request' }],
+            artifactsByRun: (runId) => (runId === 456 ? [ARTIFACT] : []),
             archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({

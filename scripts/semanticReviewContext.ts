@@ -472,15 +472,14 @@ export function shellSemanticReviewContextPort(session: GhSession, cwd: string):
     return {
         checkRuns: (headSha) => {
             const latest = queryCheckRuns(session, cwd, headSha, primaryCheckRunsQuery(SEMANTIC_REVIEW_CHECK_NAME));
-            if (latest.runs.length > 0) {
+            if (latest.runs.length > 0 && latest.runs.length === latest.totalCount) {
                 return latest.runs;
             }
-            // The by-name query is the primary path: it returns exactly the latest run of this check,
-            // so a head with many check runs cannot truncate it out of the default 30-run page. Fall
-            // back to the full list only when it returns nothing: if the commit still has the check
-            // under a name the filter missed, the resolver's own name search finds it. A page shorter
-            // than the total count cannot prove the check is absent, so it is surfaced as a failed read
-            // rather than letting the resolver report `absent` from a partial list.
+            // The by-name query returns the latest run per check suite, so a head that re-ran the
+            // check many times can fill the page and push the advisory suite out of view. Only a
+            // complete page is trusted; an empty or truncated page falls through to the full list,
+            // which refuses when its own page is shorter than the total count rather than letting the
+            // resolver report `absent` from a partial list.
             const full = queryCheckRuns(session, cwd, headSha, 'filter=all&per_page=100');
             if (full.runs.length < full.totalCount) {
                 throw new Error(
