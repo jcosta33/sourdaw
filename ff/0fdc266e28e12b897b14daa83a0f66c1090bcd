@@ -1,0 +1,16 @@
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 34,38,76,85,4537,4563-4570,4573-4579,5109,5123-5128,5164-5218,6019-6049
+scripts/publishLane.ts
+  h_beb54bf43b47b7 1878-1962,1986-1996,2003-2010,2036-2038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ff0fdc266e28e12b897b14daa83a0f66c1090bcd",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
