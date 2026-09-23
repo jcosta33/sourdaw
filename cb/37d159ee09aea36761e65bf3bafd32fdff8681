@@ -1,0 +1,52 @@
+.agents/decisions/0049-single-approval-review-author-merge.md
+  h_beb54bf43b47b7 63-80
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 254-266,331-333
+AGENTS.md
+  h_beb54bf43b47b7 181-190
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 571-572,581,1077,1099-1101,1107,1214,1235-1237,1243,1268-1270,1275,1300-1302,1308,1335-1338,1341,1363
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 8,23,53,152-191
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 69,71,5030-5031,5090-5091,5245-5318
+scripts/__tests__/repairReviewFinding.spec.ts
+  h_beb54bf43b47b7 28,361-378
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 1161-1216
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  h_beb54bf43b47b7 1-168
+scripts/prepareReview.ts
+  h_beb54bf43b47b7 22-28,32-36,46,58-59,202-231,401,405-406
+scripts/publishReview.ts
+  h_beb54bf43b47b7 35-40,74-75,127-132,205-206,232-235,240,321,465-466
+scripts/reconstructReviewRounds.ts
+  h_beb54bf43b47b7 31,297,332
+scripts/repairReviewFinding.ts
+  h_beb54bf43b47b7 32-37,51,80-82,374-376,646-647
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 26-30,38,82-87,164,296-297,366-368,436,446-451,481-486,518-519
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 76-84,190-217
+scripts/reviewDossierReassessed.ts
+  h_beb54bf43b47b7 1-67
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 20,22-27,33-39,118-151,155-156,164,174,180-182,205,273-277,284-285,331,339-358
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 99,113,121
+scripts/reviewRoundEscalation.ts
+  h_beb54bf43b47b7 1-201
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 163,215-217,223,249-251,256,282-284,290,318-321,324,341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cb37d159ee09aea36761e65bf3bafd32fdff8681",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
