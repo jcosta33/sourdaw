@@ -1,0 +1,24 @@
+.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md
+  h_beb54bf43b47b7 90-96
+.github/workflows/semantic-review.yml
+  h_beb54bf43b47b7 187-196,199-204,210,212-216,242,246-248,257,259,261-267,272,274-277,282-295,299-301,303-304,306-308
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 2335-2339,2354,2364-2368
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 36,915-921,923-927,937-938,1828-1831,1833-1837,1841-1843,1856-1860,2265,2283-2331,2359-2364,2374,2380,2385-2388,2391-2442
+scripts/healthGateWorkflowContract.ts
+  h_beb54bf43b47b7 222
+scripts/semanticReviewWorkflowContract.ts
+  h_beb54bf43b47b7 90,163-177,187-191,198,200-204,229-230,234-235,240,244-253,260,262-265,270-283,287-289,291-292,294-296,476-503,508-510,512,514,517-519,540,554,561-564,590,635-640,655-657,660-665
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "082648b3a9734839ab50e14daa98b75ceb42af1b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
