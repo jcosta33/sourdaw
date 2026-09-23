@@ -5,10 +5,11 @@
  * orchestrator can see what the assessment looked at and what it withheld without reading the
  * assessment's own findings. A green check means the assessment was delivered, never that the change
  * is clean; an incomplete or red check, a missing artifact, an expired artifact, an unreadable
- * archive, a malformed report, a forbidden read, or a pull-request mismatch are all recorded as
- * `no-assessment` with their reason, and none of them throws.
+ * archive, a malformed artifact or report, a forbidden read, or a pull-request or revision mismatch
+ * are all recorded as `no-assessment` with their reason, and none of them throws.
  *
- * `absent` names only a check that genuinely never ran (absent or skipped). A read that fails is
+ * `absent` names an assessment that was never produced: no `Semantic review` check ran, it was
+ * skipped, or its suite yielded no advisory workflow run or artifact. A read that fails is
  * `unreadable` and a read that is denied is `forbidden`, so a broken transport can never masquerade
  * as a check that was not produced. A consumer reads `execution` and the scope counts rather than
  * `state` alone: a `skipped` execution with a zero scope is a complete assessment of an empty scope,
@@ -33,13 +34,17 @@ import {
     trustedChildExecutable,
     type GhSession,
 } from './githubAppIdentity.ts';
-import { isSemanticFailureCode } from './semanticReview/contracts.ts';
+import { EVIDENCE_SIDES, isSemanticFailureCode } from './semanticReview/contracts.ts';
 import { parseReportJson, type SemanticReport } from './semanticReview/report.ts';
-import { SEMANTIC_REVIEW_CHECK_NAME } from './semanticReviewWorkflowContract.ts';
+import { SEMANTIC_REVIEW_CHECK_NAME, SEMANTIC_REVIEW_WORKFLOW_FILE } from './semanticReviewWorkflowContract.ts';
 
 export const SEMANTIC_CI_FORMAT = 'semantic-ci-v1';
 
 export const SEMANTIC_REVIEW_ARTIFACT_PREFIX = 'semantic-review-';
+
+/** The advisory workflow's path and trigger, which a resolved run must match before its artifact is adopted. */
+export const ADVISORY_WORKFLOW_PATH = `.github/workflows/${SEMANTIC_REVIEW_WORKFLOW_FILE}`;
+export const ADVISORY_WORKFLOW_EVENT = 'pull_request_target';
 
 export type SemanticCiExclusion = {
     readonly path: string;
@@ -98,6 +103,8 @@ export type SemanticCheckRun = {
 
 export type SemanticActionRun = {
     readonly id: number;
+    readonly path: string;
+    readonly event: string;
 };
 
 export type SemanticArtifact = {
@@ -169,11 +176,21 @@ const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'total-evidence-budget-exhausted',
 ];
 
-function normalizeExclusionReason(reason: string): string {
-    if (SCOPE_REASON_CODES.has(reason) || isSemanticFailureCode(reason)) {
-        return reason;
+/** The closed qualifier labels the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
+const PARAMETERIZED_REASON_QUALIFIERS: ReadonlySet<string> = new Set([...EVIDENCE_SIDES, 'contract']);
+
+function isParameterizedReason(reason: string): boolean {
+    for (const prefix of PARAMETERIZED_REASON_PREFIXES) {
+        const start = `${prefix} (`;
+        if (reason.startsWith(start) && reason.endsWith(')')) {
+            return PARAMETERIZED_REASON_QUALIFIERS.has(reason.slice(start.length, -1));
+        }
     }
-    if (PARAMETERIZED_REASON_PREFIXES.some((prefix) => reason.startsWith(`${prefix} (`) && reason.endsWith(')'))) {
+    return false;
+}
+
+function normalizeExclusionReason(reason: string): string {
+    if (SCOPE_REASON_CODES.has(reason) || isSemanticFailureCode(reason) || isParameterizedReason(reason)) {
         return reason;
     }
     return UNRECOGNIZED_REASON;
@@ -317,7 +334,9 @@ export function resolveSemanticReviewContext(
     } catch (error) {
         return noAssessment(pr, headSha, readFailureReason(error));
     }
-    const run = actionRuns[0];
+    const run = actionRuns.find(
+        (candidate) => candidate.path === ADVISORY_WORKFLOW_PATH && candidate.event === ADVISORY_WORKFLOW_EVENT
+    );
     if (run === undefined) {
         return noAssessment(pr, headSha, 'absent');
     }
@@ -352,7 +371,7 @@ export function resolveSemanticReviewContext(
         return noAssessment(pr, headSha, 'unreadable');
     }
     if (scanJsonBytes === undefined) {
-        return noAssessment(pr, headSha, 'absent');
+        return noAssessment(pr, headSha, 'malformed');
     }
 
     let report: SemanticReport;
@@ -362,7 +381,7 @@ export function resolveSemanticReviewContext(
         return noAssessment(pr, headSha, 'malformed');
     }
     if (report.context.headSha !== headSha) {
-        return noAssessment(pr, headSha, 'absent');
+        return noAssessment(pr, headSha, 'mismatch');
     }
     if (report.context.prNumber !== undefined && report.context.prNumber !== pr) {
         return noAssessment(pr, headSha, 'mismatch');
@@ -476,7 +495,7 @@ export function shellSemanticReviewContextPort(session: GhSession, cwd: string):
                     'api',
                     `repos/${REQUIRED_REPOSITORY}/actions/runs?check_suite_id=${String(checkSuiteId)}`,
                     '--jq',
-                    '[.workflow_runs[] | {id}]',
+                    '[.workflow_runs[] | {id, path, event}]',
                 ],
                 'actions runs'
             ),

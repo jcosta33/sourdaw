@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { buildRevisionContext, SEMANTIC_POLICY_VERSION, SEMANTIC_REPORT_FORMAT } from '../semanticReview/contracts.ts';
 import { computePolicyDigest, computeRulesDigest } from '../semanticReview/rules.ts';
 import {
+    ADVISORY_WORKFLOW_EVENT,
+    ADVISORY_WORKFLOW_PATH,
     primaryCheckRunsQuery,
     resolveSemanticReviewContext,
     SEMANTIC_CI_FORMAT,
@@ -22,7 +24,7 @@ const TARGET_BASE = 'c'.repeat(40);
 const TRUSTED = 'd'.repeat(40);
 
 const GREEN_CHECK: SemanticCheckRun = { id: 1, name: 'Semantic review', conclusion: 'success', checkSuiteId: 123 };
-const RUN: SemanticActionRun = { id: 456 };
+const RUN: SemanticActionRun = { id: 456, path: ADVISORY_WORKFLOW_PATH, event: ADVISORY_WORKFLOW_EVENT };
 const ARTIFACT: SemanticArtifact = {
     id: 789,
     name: 'semantic-review-42-456',
@@ -335,7 +337,7 @@ describe('semantic review context', () => {
         });
     });
 
-    it('records an archive without scan.json as no-assessment', () => {
+    it('records an archive without scan.json as no-assessment with reason malformed', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
             actionRuns: [RUN],
@@ -344,7 +346,7 @@ describe('semantic review context', () => {
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
             state: 'no-assessment',
-            reason: 'absent',
+            reason: 'malformed',
         });
     });
 
@@ -374,7 +376,7 @@ describe('semantic review context', () => {
         });
     });
 
-    it('records a report bound to a different head as no-assessment', () => {
+    it('records a report bound to a different head as no-assessment with reason mismatch', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
             actionRuns: [RUN],
@@ -383,7 +385,7 @@ describe('semantic review context', () => {
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
             state: 'no-assessment',
-            reason: 'absent',
+            reason: 'mismatch',
         });
     });
 
@@ -469,6 +471,23 @@ describe('semantic review context', () => {
         });
     });
 
+    it('does not adopt a newer same-name check whose suite maps to a different workflow', () => {
+        const { port } = makePort({
+            checkRuns: [
+                { id: 1, name: 'Semantic review', conclusion: 'success', checkSuiteId: 111 },
+                { id: 2, name: 'Semantic review', conclusion: 'success', checkSuiteId: 999 },
+            ],
+            actionRuns: [{ id: 456, path: '.github/workflows/other.yml', event: 'pull_request' }],
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
+            format: SEMANTIC_CI_FORMAT,
+            pr: 42,
+            headSha: HEAD,
+            state: 'no-assessment',
+            reason: 'absent',
+        });
+    });
+
     it('refuses an artifact bound to a different pull request', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
@@ -529,6 +548,34 @@ describe('semantic review context', () => {
         expect(result.scope.truncated).toEqual([{ path: 'src/b.ts', reason: 'unrecognized-reason' }]);
         expect(JSON.stringify(result)).not.toContain(prose);
         expect(JSON.stringify(result)).not.toContain('probability');
+    });
+
+    it('normalises a parameterised reason whose qualifier is not a producer label', () => {
+        const prose = 'the change is unsafe';
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [{ path: 'src/b.ts', reason: `region-exceeds-per-region-budget (${prose})` }],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([{ path: 'src/b.ts', reason: 'unrecognized-reason' }]);
+        expect(JSON.stringify(result)).not.toContain(prose);
     });
 
     it('names the check and latest filter with a full page in the primary query', () => {

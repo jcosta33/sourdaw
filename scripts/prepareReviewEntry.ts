@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -19,6 +19,35 @@ import { resolveSemanticReviewContext, shellSemanticReviewContextPort } from './
 
 const ENTRY_PATH = 'scripts/prepareReviewEntry.ts';
 const PREPARE_REVIEW_PATH = 'scripts/prepareReview.ts';
+const RESOLVER_PATH = 'scripts/semanticReviewContext.ts';
+
+/** Every file the entry composes at runtime, asserted against origin/main so a drifted copy refuses. */
+export const TRUSTED_EXECUTING_PATHS = [ENTRY_PATH, PREPARE_REVIEW_PATH, RESOLVER_PATH] as const;
+
+export type TrustedExecutingBlob = {
+    readonly path: string;
+    readonly originBlob: string | undefined;
+    readonly source: string;
+};
+
+export function assertTrustedExecutingBlobs(blobs: readonly TrustedExecutingBlob[]): void {
+    for (const blob of blobs) {
+        assertTrustedExecutingBlob(blob.path, blob.path, blob.originBlob, blob.source);
+    }
+}
+
+export function collectTrustedExecutingBlobs(
+    executingFile: string,
+    cwd: string,
+    readFile: (path: string) => string = (path) => readFileSync(path, 'utf8')
+): readonly TrustedExecutingBlob[] {
+    const directory = dirname(executingFile);
+    return TRUSTED_EXECUTING_PATHS.map((path) => ({
+        path,
+        originBlob: originMainBlob(path, cwd),
+        source: readFile(join(directory, basename(path))),
+    }));
+}
 
 async function main(): Promise<number> {
     const parsed = parsePrepareReviewArgs(process.argv.slice(2));
@@ -31,15 +60,9 @@ async function main(): Promise<number> {
     }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();
-    // `review:prepare` runs only the default branch's revision of itself: a mutated copy of either
-    // the entry or the library it composes must refuse rather than read a head with unverified code.
-    assertTrustedExecutingBlob(ENTRY_PATH, executingFile, originMainBlob(ENTRY_PATH, cwd));
-    assertTrustedExecutingBlob(
-        PREPARE_REVIEW_PATH,
-        executingFile,
-        originMainBlob(PREPARE_REVIEW_PATH, cwd),
-        readFileSync(join(dirname(executingFile), 'prepareReview.ts'), 'utf8')
-    );
+    // `review:prepare` runs only the default branch's revision of itself and of the resolver it
+    // composes: a drifted copy of any asserted file must refuse rather than write a forged record.
+    assertTrustedExecutingBlobs(collectTrustedExecutingBlobs(executingFile, cwd));
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
     try {

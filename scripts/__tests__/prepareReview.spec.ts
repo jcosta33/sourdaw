@@ -17,6 +17,11 @@ import {
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
+import {
+    assertTrustedExecutingBlobs,
+    collectTrustedExecutingBlobs,
+    TRUSTED_EXECUTING_PATHS,
+} from '../prepareReviewEntry.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
@@ -163,6 +168,29 @@ describe('review prepare', () => {
         } finally {
             removeTempRoot(root);
         }
+    });
+
+    it('names the entry, library, and resolver as the trusted executing set', () => {
+        const blobs = collectTrustedExecutingBlobs(
+            join(tmpdir(), 'scripts', 'prepareReviewEntry.ts'),
+            tmpdir(),
+            (path) => `source:${path}`
+        );
+        expect(TRUSTED_EXECUTING_PATHS).toEqual([
+            'scripts/prepareReviewEntry.ts',
+            'scripts/prepareReview.ts',
+            'scripts/semanticReviewContext.ts',
+        ]);
+        expect(blobs.map((blob) => blob.path)).toEqual([...TRUSTED_EXECUTING_PATHS]);
+    });
+
+    it('refuses a drifted resolver', () => {
+        const blobs = [
+            { path: 'scripts/prepareReviewEntry.ts', originBlob: undefined, source: 'entry' },
+            { path: 'scripts/prepareReview.ts', originBlob: undefined, source: 'prepare' },
+            { path: 'scripts/semanticReviewContext.ts', originBlob: 'origin resolver', source: 'drifted resolver' },
+        ];
+        expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/does not match origin\/main/);
     });
 
     it('writes a risk plan for the reviewed head and records it as generated', () => {
