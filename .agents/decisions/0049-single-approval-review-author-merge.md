@@ -78,3 +78,22 @@ recomputed from the public history at each publication, so a fresh `REQUEST_CHAN
 advances the count, and the reassessment the next publication consumes is a new one. `review:repair`
 is never blocked — unresolved threads must stay resolvable — so it logs the escalation flag and
 never refuses on it.
+
+## Extension — cutover order, canary acceptance, and rollback
+
+A change that moves the authorizing writer has an order it must respect. Land and apply the trusted
+ruleset change that targets the approving-review count BEFORE the delivery and review change that
+records the authorization. Once a fresh reviewer publication writes the authorization, `review:accept`
+refuses the duplicate, so a head still governed by a two-approval ruleset cannot obtain its second
+approval through any sanctioned command: the code change would deadlock the delivery of its own head.
+
+A ruleset change that moves a required configuration value earns live acceptance evidence, not only
+focused specs: a head with no approval blocked while every required check is green; a red required
+`Gate` blocking merge until the head is repaired; one reviewer approval merging as the author App; a
+push after that approval dismissing it and re-blocking delivery; and an approval with unresolved
+threads blocked until they are resolved.
+
+Rollback is not a routine re-run. The trusted command captures the live ruleset's canonical bytes in
+its receipt before writing, but it moves one approved target only, so restoring a different
+approving-review count is a deliberate change to that command's approved target — an ADR-level
+decision with its own canary — never an operator improvisation.
