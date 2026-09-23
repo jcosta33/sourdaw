@@ -286,6 +286,11 @@ src/utils/handlerContract.ts
   "git_ai_version": "1.7.4",
   "base_commit_sha": "72048cf94dabad39904d0493ec5df102a597abf5",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_336edc4c1b4417": {
       "agent_id": {
