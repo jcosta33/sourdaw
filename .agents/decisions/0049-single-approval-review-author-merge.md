@@ -81,11 +81,14 @@ never refuses on it.
 
 ## Extension — cutover order, canary acceptance, and rollback
 
-A change that moves the authorizing writer has an order it must respect. Land and apply the trusted
-ruleset change that targets the approving-review count BEFORE the delivery and review change that
-records the authorization. Once a fresh reviewer publication writes the authorization, `review:accept`
-refuses the duplicate, so a head still governed by a two-approval ruleset cannot obtain its second
-approval through any sanctioned command: the code change would deadlock the delivery of its own head.
+A change that moves the authorizing writer must respect both order and direction. Lowering the
+approving-review count applies the trusted ruleset change FIRST, before the delivery and review change
+that records the authorization: that change's own head still delivers, because the trusted launcher
+reviews it under the revision that predates it, but every head reviewed after it lands while the count
+is still higher than one is refused. Raising the count, or restoring the acceptance writer, lands the
+code first instead: once a fresh reviewer publication writes the authorization, `review:accept` refuses
+the duplicate, so such a head cannot obtain the second approval a higher count demands through any
+sanctioned command.
 
 A ruleset change that moves a required configuration value earns live acceptance evidence, not only
 focused specs: a head with no approval blocked while every required check is green; a red required
