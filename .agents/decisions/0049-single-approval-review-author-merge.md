@@ -81,15 +81,13 @@ never refuses on it.
 
 ## Extension — cutover order, canary acceptance, and rollback
 
-A change that moves the authorizing writer must respect both order and direction. Lowering the
-approving-review count applies the trusted ruleset change FIRST, before the delivery and review change
-that records the authorization: that change's own head still delivers, because the trusted launcher
-reviews it under the revision that predates it, but every head reviewed after it lands while the count
-is still higher than one is refused. The reverse direction is not symmetric. An approved-target edit
-that raises the count must not be applied until the same landing restores a sanctioned second-approval
-writer, because a live count above one while the reviewer publication still records the authorization
-refuses every head its second approval — `review:accept` refuses the duplicate — and leaves no
-sanctioned route back to a landing count.
+A change that moves the authorizing writer must respect both order and direction, and only the direction
+this repository took is decided here. Lowering the approving-review count applies the trusted ruleset
+change FIRST, before the delivery and review change that records the authorization: that change's own
+head still delivers, because the trusted launcher reviews it under the revision that predates it, but
+every head reviewed after it lands while the count is still higher than one is refused. The reverse move
+is not symmetric and is not decided here; it needs its own record, because a higher count alongside the
+reviewer-recorded authorization leaves no second approval any sanctioned command can supply.
 
 A ruleset change that moves a required configuration value earns live acceptance evidence, not only
 focused specs: a head with no approval blocked while every required check is green; a red required
