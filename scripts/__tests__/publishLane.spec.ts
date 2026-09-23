@@ -4425,51 +4425,436 @@ describe('publication delta gating', () => {
 });
 
 /**
- * The source-attestation comment is retired: a publication writes nothing to the pull request's
- * issue-comment channel. The real port exposes no comment writer, and a conforming publish calls
- * exactly this member set, so reintroducing either the port member or the write reddens this
- * however the reintroduced member is named: the comparison is the golden set below, never a name
- * pattern, which the old filter let a differently-named member slip past.
+ * The source-attestation comment is retired: no publication writes to a pull request's
+ * issue-comment channel. The real port exposes no comment writer, and every shape a publication can
+ * take invokes exactly the member set pinned for that shape below, so reintroducing either the port
+ * member or the write reddens this whichever path it rides, whatever its member is named: each
+ * comparison is one whole golden set, never a name pattern, which the old filter let a
+ * differently-named member slip past.
  *
- * The golden set holds every member this path invokes. The fixture's other members —
- * `conflictingPaths` (only a real trial merge conflict asks), `pinStackParent` and `reportDiff`
- * (stack-only), `readPullRequestProjectTitles` (only when a target board exists) — are never
- * reached here, and a reintroduced attestation write cannot reach them either, because it writes the
- * issue-comment channel rather than a conflict, stack, or board read.
+ * One shape's set cannot stand for the others — that was the hole this pins shut. A write that
+ * fires only when the pull request already exists rides the republication path, whose members the
+ * create-path fixture never calls, so the old single case stayed green while the write ran. Each
+ * shape therefore carries its own set, complete for that path rather than a superset every path is
+ * expected to satisfy: the stack members appear only on the stack shapes, and the legacy shapes call
+ * no create, update, title, or issue member at all.
+ *
+ * The shapes are the publication outcomes `publishLane` can take for this command, each built the
+ * way the rest of this spec builds it: a first publication that creates the pull request, a
+ * republication that updates it, a stacked child of either kind, a publication reporting a
+ * conflicted head, a republication carrying an inherited milestone and board, the legacy pull
+ * request this command only pushes to, and a legacy publication that applies metadata under an
+ * explicit `--model`. Together they invoke every member the fixture can expose on a publication
+ * path, so no branch a reintroduced write could ride is left without a golden set observing it; the
+ * completeness case below holds that true as the port grows.
  */
 describe('publication attestation retirement', () => {
-    it('publishes a conforming lane without any attestation comment write', () => {
-        const { port, calls, members } = fakePort();
+    type PublicationShape = {
+        /** Names the path this fixture drives in the case title. */
+        shape: string;
+        /** The pull request number this publication resolves to. */
+        number: number;
+        /** Runs one publication of this shape and reports the port members it invoked. */
+        publish: () => { members: Set<string>; number: number };
+        /** Every member this shape's path may invoke, alphabetically, compared as one set. */
+        members: string[];
+    };
+
+    const STACK_BRANCH = 'agent/11/parent';
+    const STACK_HEAD = 'a'.repeat(40);
+
+    const FIRST_PUBLICATION_MEMBERS = [
+        'aheadBehind',
+        'baseSha',
+        'commitAttribution',
+        'createPullRequest',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'issueExists',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'push',
+        'readAuthorModel',
+        'readIssueProjectTitles',
+        'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'worktrees',
+    ];
+
+    const REPUBLICATION_MEMBERS = [
+        'aheadBehind',
+        'baseSha',
+        'commitAttribution',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'issueExists',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'push',
+        'readAuthorModel',
+        'readIssueProjectTitles',
+        'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'updatePullRequest',
+        'worktrees',
+    ];
+
+    const STACK_CREATE_MEMBERS = [
+        'aheadBehind',
+        'baseSha',
+        'commitAttribution',
+        'createPullRequest',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'issueExists',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'pinStackParent',
+        'push',
+        'readAuthorModel',
+        'readIssueProjectTitles',
+        'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'reportDiff',
+        'stackBase',
+        'worktrees',
+    ];
+
+    const STACK_UPDATE_MEMBERS = [
+        'aheadBehind',
+        'baseSha',
+        'commitAttribution',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'issueExists',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'pinStackParent',
+        'push',
+        'readAuthorModel',
+        'readIssueProjectTitles',
+        'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'reportDiff',
+        'stackBase',
+        'updatePullRequest',
+        'worktrees',
+    ];
+
+    const CONFLICT_REPORT_MEMBERS = [
+        'aheadBehind',
+        'baseSha',
+        'commitAttribution',
+        'conflictingPaths',
+        'createPullRequest',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'issueExists',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'push',
+        'readAuthorModel',
+        'readIssueProjectTitles',
+        'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'worktrees',
+    ];
+
+    const INHERITED_BOARD_MEMBERS = [
+        'aheadBehind',
+        'applyPullRequestMetadata',
+        'baseSha',
+        'commitAttribution',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'issueExists',
+        'knownLabels',
+        'knownProjectTitles',
+        'laneSubject',
+        'log',
+        'objectStoreRewrites',
+        'openMilestoneTitles',
+        'push',
+        'readAuthorModel',
+        'readIssueProjectTitles',
+        'readIssueTrackerMetadata',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'readPullRequestProjectTitles',
+        'remoteBranchSha',
+        'updatePullRequest',
+        'worktrees',
+    ];
+
+    const LEGACY_PUSH_ONLY_MEMBERS = [
+        'aheadBehind',
+        'baseSha',
+        'commitAttribution',
+        'cwd',
+        'dirty',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'log',
+        'objectStoreRewrites',
+        'push',
+        'readPullRequestMergeability',
+        'remoteBranchSha',
+        'worktrees',
+    ];
+
+    const LEGACY_METADATA_MEMBERS = [
+        'aheadBehind',
+        'applyPullRequestMetadata',
+        'baseSha',
+        'commitAttribution',
+        'cwd',
+        'dirty',
+        'ensureModelLabel',
+        'existingOpenPullRequest',
+        'guardFailure',
+        'headSha',
+        'isAncestor',
+        'knownLabels',
+        'log',
+        'objectStoreRewrites',
+        'push',
+        'readPullRequestMergeability',
+        'readPullRequestMetadata',
+        'remoteBranchSha',
+        'saveAuthorModel',
+        'worktrees',
+    ];
+
+    /** The off-convention, correctly locked worktree a legacy publication resolves. */
+    function legacyLane(): PublishWorktree {
+        return worktree({ path: LEGACY_LANE, branch: LEGACY_BRANCH });
+    }
+
+    /**
+     * A registered stack child's fixture: the optional stack members its path reaches, plus the
+     * post-mutation fence's read, which re-proves the child it just published. `mode` selects the
+     * write that child takes — a create when no pull request exists yet, an update when one does.
+     */
+    function stackedChild(mode: 'create' | 'update'): { members: Set<string>; port: PublishLanePort } {
+        const { port, members } = fakePort();
+        const number = mode === 'update' ? 41 : 88;
+        let published = mode === 'update';
+        port.stackBase = () => ({
+            branch: STACK_BRANCH,
+            head: 'base',
+            parentNumber: 11,
+            parentState: 'OPEN',
+            parentHead: 'base',
+        });
+        port.pinStackParent = () => undefined;
+        port.reportDiff = () => undefined;
+        port.createPullRequest = () => {
+            published = true;
+            return number;
+        };
+        port.existingOpenPullRequest = () =>
+            published
+                ? {
+                      number,
+                      title: DEFAULT_SUBJECT,
+                      body: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+                      baseRefName: STACK_BRANCH,
+                      headRefOid: STACK_HEAD,
+                  }
+                : undefined;
+        return { members, port };
+    }
+
+    const PUBLICATION_SHAPES: PublicationShape[] = [
+        {
+            shape: 'a first publication that creates the pull request',
+            number: 88,
+            members: FIRST_PUBLICATION_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort();
+                const number = publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a republication that updates the pull request',
+            number: 41,
+            members: REPUBLICATION_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort({ existing: 41 });
+                const number = publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a stacked child that creates its pull request',
+            number: 88,
+            members: STACK_CREATE_MEMBERS,
+            publish: () => {
+                const { port, members } = stackedChild('create');
+                const number = publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a stacked child that updates its pull request',
+            number: 41,
+            members: STACK_UPDATE_MEMBERS,
+            publish: () => {
+                const { port, members } = stackedChild('update');
+                const number = publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a first publication that reports a conflicted head',
+            number: 88,
+            members: CONFLICT_REPORT_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort({
+                    mergeability: 'conflicting',
+                    conflictingPaths: ['src/modules/audio/engine.ts'],
+                });
+                const number = publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a republication carrying its issue inherited milestone and board',
+            number: 41,
+            members: INHERITED_BOARD_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort({
+                    existing: 41,
+                    issueTracker: { milestone: { title: 'v1.2' }, projectItems: [{ title: 'Roadmap' }] },
+                    openMilestoneTitles: ['v1.2'],
+                    currentMetadata: { labels: [], projectTitles: [] },
+                });
+                const number = publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a legacy pull request that is pushed to only',
+            number: 2275,
+            members: LEGACY_PUSH_ONLY_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort({
+                    trees: [...otherAuthorLanes(), legacyLane()],
+                    cwd: LEGACY_LANE,
+                    existing: 2275,
+                });
+                const number = publishLane(undefined, port);
+                return { members, number };
+            },
+        },
+        {
+            shape: 'a legacy republication that applies metadata under an explicit --model',
+            number: 2275,
+            members: LEGACY_METADATA_MEMBERS,
+            publish: () => {
+                const { port, members } = fakePort({
+                    trees: [...otherAuthorLanes(), legacyLane()],
+                    cwd: LEGACY_LANE,
+                    existing: 2275,
+                    currentMetadata: { labels: [], projectTitles: [] },
+                });
+                const number = publishLane(undefined, port, undefined, undefined, undefined, undefined, {
+                    model: 'kimi-k2.5',
+                });
+                return { members, number };
+            },
+        },
+    ];
+
+    it.each(PUBLICATION_SHAPES)('invokes exactly its pinned port member set: $shape', (shape) => {
+        const published = shape.publish();
+
+        expect(published.number).toBe(shape.number);
+        expect([...published.members].sort()).toEqual(shape.members);
+    });
+
+    /**
+     * The shape table stays complete only while every member the fixture can expose on a
+     * publication path is pinned by some shape. A member added to the port that no shape here
+     * reaches would widen the fixture with no golden set observing it — the same escape the shapes
+     * close one path at a time — so this fails until a shape that invokes it is pinned too.
+     */
+    it('pins every member the fixture can expose, so no reachable path is unobserved', () => {
+        const reachable = new Set([
+            ...Object.keys(fakePort().port),
+            // Optional members the stack shapes assign; the bare fixture carries no stack context.
+            'pinStackParent',
+            'reportDiff',
+            'stackBase',
+        ]);
+        const pinned = new Set(PUBLICATION_SHAPES.flatMap((shape) => shape.members));
+
+        expect([...reachable].sort()).toEqual([...pinned].sort());
+    });
+
+    it('names no attestation or comment member in the conforming fixture or its call ledger', () => {
+        const { port, calls } = fakePort();
 
         expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
 
-        expect([...members].sort()).toEqual([
-            'aheadBehind',
-            'baseSha',
-            'commitAttribution',
-            'createPullRequest',
-            'cwd',
-            'dirty',
-            'ensureModelLabel',
-            'existingOpenPullRequest',
-            'guardFailure',
-            'headSha',
-            'isAncestor',
-            'issueExists',
-            'knownLabels',
-            'knownProjectTitles',
-            'laneSubject',
-            'log',
-            'objectStoreRewrites',
-            'push',
-            'readAuthorModel',
-            'readIssueProjectTitles',
-            'readIssueTrackerMetadata',
-            'readPullRequestMergeability',
-            'readPullRequestMetadata',
-            'remoteBranchSha',
-            'worktrees',
-        ]);
         expect(Object.keys(port).filter((member) => /attest|comment/iu.test(member))).toEqual([]);
         expect(calls.filter((call) => /attest|comment/iu.test(call))).toEqual([]);
     });
