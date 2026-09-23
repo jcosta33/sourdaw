@@ -85,10 +85,11 @@ A change that moves the authorizing writer must respect both order and direction
 approving-review count applies the trusted ruleset change FIRST, before the delivery and review change
 that records the authorization: that change's own head still delivers, because the trusted launcher
 reviews it under the revision that predates it, but every head reviewed after it lands while the count
-is still higher than one is refused. Raising the count, or restoring the acceptance writer, lands the
-code first instead: once a fresh reviewer publication writes the authorization, `review:accept` refuses
-the duplicate, so such a head cannot obtain the second approval a higher count demands through any
-sanctioned command.
+is still higher than one is refused. The reverse direction is not symmetric. An approved-target edit
+that raises the count must not be applied until the same landing restores a sanctioned second-approval
+writer, because a live count above one while the reviewer publication still records the authorization
+refuses every head its second approval — `review:accept` refuses the duplicate — and leaves no
+sanctioned route back to a landing count.
 
 A ruleset change that moves a required configuration value earns live acceptance evidence, not only
 focused specs: a head with no approval blocked while every required check is green; a red required
