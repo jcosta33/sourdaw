@@ -30,6 +30,7 @@ import { AUTHOR_MODEL_PATTERN as OPEN_LANE_MODEL_PATTERN, AUTHOR_MODEL_RULE } fr
 import { TRUSTED_GH_PATH_ENV, composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     AUTHOR_MODEL_PATTERN,
+    ISSUE_LOOKUP_JQ,
     addPullRequestProjectsArgs,
     applyPullRequestMetadataArgs,
     canonicalLabelName,
@@ -4458,15 +4459,17 @@ describe('publication delta gating', () => {
  * escaping unobserved.
  *
  * Second, the real port's behaviour. `REAL_PORT_SHAPES` drives the same eight shapes through the
- * unmodified `shellPort` bound to a recording `gh` stub, and asserts that no invocation it recorded
- * names a pull request's issue-comment endpoint (`issues/<n>/comments`) or POSTs to one
- * (`--method POST`, `--method=POST`, `-X POST`, or a `gh api` body field flag). This is the part
- * the member-set pins cannot see: an issue-comment write inside an already-pinned member, or an
- * optional member added to the port and called on the publication path, changes no member name at
- * all but spawns an invocation this log records. Each shape also asserts the pull-request write it
- * must make, so a shape that recorded nothing cannot pass vacuously, and a companion case holds the
- * real-port table to exactly the shapes the golden sets pin, so a new shape cannot be added to one
- * table without being driven through the other.
+ * unmodified `shellPort` bound to a recording `gh` stub, normalizes every invocation it recorded,
+ * and asserts the shape's key set equals a golden allowlist stated beside it. Because the golden
+ * set is the whole expectation, an invocation a reintroduction adds fails the shape whatever its
+ * spelling, subcommand, or endpoint — a `pr comment`, an `api` read of `issues/<n>/comments`, a
+ * `--method POST` write to one, or a GraphQL `addComment` mutation each key to something the golden
+ * set does not carry. This is the part the member-set pins cannot see: a write inside an
+ * already-pinned member, or an optional member added to the port and called on the publication
+ * path, changes no member name at all but spawns an invocation this log records. Each shape also
+ * asserts the pull-request write it must make, so a shape that recorded nothing cannot pass
+ * vacuously, and a companion case holds the real-port table to exactly the shapes the golden sets
+ * pin, so a new shape cannot be added to one table without being driven through the other.
  *
  * The shapes are the publication outcomes `publishLane` can take for this command, each built the
  * way the rest of this spec builds it: a first publication that creates the pull request, a
@@ -5051,25 +5054,101 @@ process.exit(0);
 
     type RealPortFixture = ReturnType<typeof realPortFixture>;
 
+    /** `gh` flags whose next token is the flag's value, so a value is never read as a subcommand. */
+    const GH_VALUE_FLAGS = new Set([
+        '-F',
+        '-X',
+        '-f',
+        '--add-label',
+        '--add-project',
+        '--base',
+        '--body',
+        '--color',
+        '--description',
+        '--field',
+        '--format',
+        '--head',
+        '--input',
+        '--jq',
+        '--json',
+        '--limit',
+        '--method',
+        '--milestone',
+        '--owner',
+        '--raw-field',
+        '--remove-label',
+        '--repo',
+        '--state',
+        '--title',
+    ]);
+
     /**
-     * One `gh` argv that writes a pull request's issue-comment channel. Naming the endpoint at all
-     * counts — no conforming publication reads or writes it — and the POST check catches the write
-     * spelled through an issue path with `--method POST`, `--method=POST`, `-X POST`, or a body
-     * field flag, every spelling `gh api` accepts.
+     * Flags whose value names what the invocation addresses: the fields a read projects, the method
+     * and payload a write carries. Those values stay in the key, so a reintroduced read of a
+     * different field (`--json comments`) or a write under a different method cannot key onto an
+     * invocation the golden set already carries. Every other flag's value is content — a title, a
+     * label, a body — and changing one is not a new invocation.
      */
-    function postsIssueComment(args: string[]): boolean {
-        if (args.some((arg) => /(?:^|\/)issues\/\d+\/comments(?:\/|$)/u.test(arg))) {
-            return true;
+    const GH_ADDRESS_FLAGS = new Set([
+        '-F',
+        '-X',
+        '-f',
+        '--field',
+        '--input',
+        '--jq',
+        '--json',
+        '--method',
+        '--raw-field',
+    ]);
+
+    /**
+     * A token with its volatile segments — full SHAs, numeric ids, and temporary paths — replaced by
+     * stable placeholders. Segment-wise so a numeric path segment (`repos/<owner>/<repo>/issues/12`),
+     * a bare issue number, and a branch suffix (`...-2039`) all normalize, while a model token like
+     * `kimi-k2.5` survives.
+     */
+    function normalizeGhToken(token: string): string {
+        return token
+            .replaceAll(/(?:\/private)?\/var\/folders\/\S*|\/tmp\/\S*/gu, '<path>')
+            .split('/')
+            .map((segment) => {
+                if (/^[0-9a-f]{40}$/iu.test(segment)) {
+                    return '<sha>';
+                }
+                return /^\d+$/u.test(segment) ? '<n>' : segment;
+            })
+            .join('/');
+    }
+
+    /**
+     * One recorded `gh` invocation as a stable key: its subcommand tokens, and for an `api` call its
+     * path with the query string stripped and every volatile segment placeholdered. Flag names stay
+     * in the key, and the flags that name what the invocation addresses keep their values too. The
+     * golden sets below compare this key, so an invocation no golden set carries — whatever its
+     * spelling, subcommand, or endpoint — reddens the shape that recorded it.
+     */
+    function normalizeGhInvocation(args: string[]): string {
+        const parts: string[] = [];
+        for (let index = 0; index < args.length;) {
+            const token = args[index] ?? '';
+            if (!token.startsWith('-')) {
+                const [positional] = token.split('?');
+                parts.push(normalizeGhToken(positional ?? token));
+                index += 1;
+                continue;
+            }
+            const separator = token.indexOf('=');
+            const flag = separator === -1 ? token : token.slice(0, separator);
+            const inline = separator === -1 ? undefined : token.slice(separator + 1);
+            if (GH_ADDRESS_FLAGS.has(flag)) {
+                parts.push(`${flag}=${normalizeGhToken(inline ?? args[index + 1] ?? '')}`);
+                index += inline === undefined ? 2 : 1;
+                continue;
+            }
+            parts.push(flag);
+            index += inline === undefined && GH_VALUE_FLAGS.has(flag) ? 2 : 1;
         }
-        const methodFlag = args.findIndex((arg) => arg === '--method' || arg === '-X');
-        const method =
-            args.find((arg) => arg.startsWith('--method='))?.slice('--method='.length) ??
-            (methodFlag === -1 ? undefined : args[methodFlag + 1]);
-        const implicitPost = args.some((arg) => /^(?:-f|-F|--field|--raw-field|--input)(?:=|$)/u.test(arg));
-        return (
-            (method?.toUpperCase() === 'POST' || implicitPost) &&
-            args.some((arg) => /(?:^|\/)issues\/\d+(?:\/|$)/u.test(arg))
-        );
+        return parts.join(' ');
     }
 
     /** A pull request row the recording `gh` answers for the conforming branch. */
@@ -5145,6 +5224,102 @@ process.exit(0);
         }
     }
 
+    /**
+     * The golden allowlist of normalized invocations each real-port shape must record. It is stated
+     * per shape rather than derived from a run, so a reintroduced invocation fails the shape instead
+     * of being absorbed into its own expectation. Shapes whose publications differ only in values a
+     * key drops — a conflicted first publication records exactly what a clean one does — share one
+     * list deliberately.
+     */
+    const CREATE_PUBLICATION_INVOCATIONS = [
+        'api repos/jcosta33/sourdaw/issues/<n> --jq={number: .number, isPullRequest: (has("pull_request"))}',
+        'issue view <n> --repo --json=labels,milestone',
+        'issue view <n> --repo --json=projectItems',
+        'label create glm-5.3 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr create --repo --base --head --title --body',
+        'pr edit <n> --repo --add-label',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+        'project list --owner --format',
+    ];
+
+    const UPDATE_PUBLICATION_INVOCATIONS = [
+        'api repos/jcosta33/sourdaw/issues/<n> --jq={number: .number, isPullRequest: (has("pull_request"))}',
+        'issue view <n> --repo --json=labels,milestone',
+        'issue view <n> --repo --json=projectItems',
+        'label create glm-5.3 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr edit <n> --repo --add-label',
+        'pr edit <n> --repo --body',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+        'project list --owner --format',
+    ];
+
+    const STACK_CREATE_INVOCATIONS = [
+        'api --paginate --slurp repos/jcosta33/sourdaw/pulls',
+        'api repos/jcosta33/sourdaw/issues/<n> --jq={number: .number, isPullRequest: (has("pull_request"))}',
+        'issue view <n> --repo --json=labels,milestone',
+        'issue view <n> --repo --json=projectItems',
+        'label create glm-5.3 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr create --repo --base --head --title --body',
+        'pr edit <n> --repo --add-label',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+        'project list --owner --format',
+    ];
+
+    const STACK_UPDATE_INVOCATIONS = [
+        'api --paginate --slurp repos/jcosta33/sourdaw/pulls',
+        'api repos/jcosta33/sourdaw/issues/<n> --jq={number: .number, isPullRequest: (has("pull_request"))}',
+        'issue view <n> --repo --json=labels,milestone',
+        'issue view <n> --repo --json=projectItems',
+        'label create glm-5.3 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr edit <n> --repo --add-label',
+        'pr edit <n> --repo --body',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+        'project list --owner --format',
+    ];
+
+    const INHERITED_BOARD_INVOCATIONS = [
+        'api repos/jcosta33/sourdaw/issues/<n> --jq={number: .number, isPullRequest: (has("pull_request"))}',
+        'api repos/jcosta33/sourdaw/milestones',
+        'issue view <n> --repo --json=labels,milestone',
+        'issue view <n> --repo --json=projectItems',
+        'label create glm-5.3 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr edit <n> --repo --add-label --add-label --milestone',
+        'pr edit <n> --repo --add-project',
+        'pr edit <n> --repo --body',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+        'pr view <n> --repo --json=projectItems',
+        'project list --owner --format',
+    ];
+
+    const LEGACY_PUSH_ONLY_INVOCATIONS = [
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=mergeable',
+    ];
+
+    const LEGACY_METADATA_INVOCATIONS = [
+        'label create kimi-k2.5 --color --description --force',
+        'label list --limit --json=name,description',
+        'pr edit <n> --repo --add-label',
+        'pr list --repo --head --state --json=number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid',
+        'pr view <n> --repo --json=labels,milestone',
+        'pr view <n> --repo --json=mergeable',
+    ];
+
     type RealPortShape = {
         shape: string;
         /** The pull-request write the shape must record, so the observation cannot pass vacuously. */
@@ -5152,6 +5327,8 @@ process.exit(0);
         editsPullRequest?: number;
         /** The shape must have resolved a real stack parent, not degraded to a plain publication. */
         stackChild?: boolean;
+        /** Every distinct normalized invocation this shape records, alphabetically. */
+        invocations: string[];
         drive: () => string[][];
     };
 
@@ -5159,6 +5336,7 @@ process.exit(0);
         {
             shape: 'a first publication that creates the pull request',
             createsPullRequest: true,
+            invocations: CREATE_PUBLICATION_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     { openPullRequests: [] },
@@ -5172,6 +5350,7 @@ process.exit(0);
         {
             shape: 'a republication that updates the pull request',
             editsPullRequest: 41,
+            invocations: UPDATE_PUBLICATION_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     { openPullRequests: [] },
@@ -5188,6 +5367,7 @@ process.exit(0);
             shape: 'a stacked child that creates its pull request',
             createsPullRequest: true,
             stackChild: true,
+            invocations: STACK_CREATE_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     {},
@@ -5208,6 +5388,7 @@ process.exit(0);
             shape: 'a stacked child that updates its pull request',
             editsPullRequest: 41,
             stackChild: true,
+            invocations: STACK_UPDATE_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     {},
@@ -5227,6 +5408,7 @@ process.exit(0);
         {
             shape: 'a first publication that reports a conflicted head',
             createsPullRequest: true,
+            invocations: CREATE_PUBLICATION_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     { openPullRequests: [], mergeable: 'CONFLICTING' },
@@ -5244,6 +5426,7 @@ process.exit(0);
         {
             shape: 'a republication carrying its issue inherited milestone and board',
             editsPullRequest: 41,
+            invocations: INHERITED_BOARD_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     {},
@@ -5265,6 +5448,7 @@ process.exit(0);
         },
         {
             shape: 'a legacy pull request that is pushed to only',
+            invocations: LEGACY_PUSH_ONLY_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     {},
@@ -5280,6 +5464,7 @@ process.exit(0);
         {
             shape: 'a legacy republication that applies metadata under an explicit --model',
             editsPullRequest: REAL_PORT_LEGACY_NUMBER,
+            invocations: LEGACY_METADATA_INVOCATIONS,
             drive: () =>
                 publishThroughRealPort(
                     {},
@@ -5297,7 +5482,7 @@ process.exit(0);
         },
     ];
 
-    it.each(REAL_PORT_SHAPES)('records no issue-comment write through the real port: $shape', (shape) => {
+    it.each(REAL_PORT_SHAPES)('records exactly its pinned gh invocation keys: $shape', (shape) => {
         const recorded = shape.drive();
 
         // A shape that recorded nothing proved nothing; these pin the write that must appear.
@@ -5324,13 +5509,90 @@ process.exit(0);
             }
         }
 
-        expect(recorded.filter(postsIssueComment), `issue-comment writes recorded for ${shape.shape}`).toEqual([]);
+        // The allowlist is the whole observation: any invocation a reintroduction adds — whatever its
+        // subcommand, endpoint, or spelling — keys to something this golden set does not carry.
+        expect([...new Set(recorded.map(normalizeGhInvocation))].sort(), `gh invocations for ${shape.shape}`).toEqual(
+            shape.invocations
+        );
+    });
+
+    /**
+     * An allowlist is only as good as its key: if the normalizer collapsed two different invocations,
+     * a reintroduced write could ride an existing key past the shape cases. Every pair below differs
+     * in subcommand, endpoint, or an identifying flag value and must key apart; the pairs after them
+     * differ only in a volatile segment and must key alike.
+     */
+    it('keys distinct invocations apart and volatile spellings alike', () => {
+        const distinct = [
+            [
+                'pr',
+                'create',
+                '--repo',
+                REQUIRED_REPOSITORY,
+                '--base',
+                'main',
+                '--head',
+                'agent/12/x',
+                '--title',
+                't',
+                '--body',
+                'b',
+            ],
+            ['pr', 'edit', '41', '--repo', REQUIRED_REPOSITORY, '--body', 'b'],
+            ['pr', 'edit', '41', '--repo', REQUIRED_REPOSITORY, '--add-label', 'glm-5.3'],
+            ['pr', 'comment', '41', '--body', 'x'],
+            [
+                'pr',
+                'list',
+                '--repo',
+                REQUIRED_REPOSITORY,
+                '--head',
+                'agent/12/x',
+                '--state',
+                'open',
+                '--json',
+                'number',
+            ],
+            ['pr', 'view', '41', '--repo', REQUIRED_REPOSITORY, '--json', 'mergeable'],
+            ['issue', 'view', '12', '--repo', REQUIRED_REPOSITORY, '--json', 'labels,milestone'],
+            ['issue', 'view', '12', '--repo', REQUIRED_REPOSITORY, '--json', 'comments'],
+            ['label', 'create', 'glm-5.3', '--color', '8250df', '--description', 'Authored by glm-5.3', '--force'],
+            ['project', 'list', '--owner', 'jcosta33', '--format', 'json'],
+            ['api', `repos/${REQUIRED_REPOSITORY}/issues/12`, '--jq', ISSUE_LOOKUP_JQ],
+            ['api', `repos/${REQUIRED_REPOSITORY}/issues/12/comments`, '--paginate'],
+            ['api', `repos/${REQUIRED_REPOSITORY}/issues/12/comments`, '--method', 'POST', '-f', 'body=x'],
+            ['api', `repos/${REQUIRED_REPOSITORY}/pulls?state=all&head=x&per_page=100`, '--paginate', '--slurp'],
+            ['api', 'graphql', '-f', 'query=mutation { addComment(input: {subjectId: "x", body: "y"}) { id } }'],
+        ];
+
+        const keys = distinct.map(normalizeGhInvocation);
+
+        expect(new Set(keys).size).toBe(distinct.length);
+        expect(normalizeGhInvocation(['pr', 'edit', '41', '--repo', REQUIRED_REPOSITORY, '--body', 'a'])).toBe(
+            normalizeGhInvocation(['pr', 'edit', '2275', '--repo', REQUIRED_REPOSITORY, '--body', 'b'])
+        );
+        expect(normalizeGhInvocation(['api', `repos/${REQUIRED_REPOSITORY}/issues/12/comments?per_page=100`])).toBe(
+            normalizeGhInvocation(['api', `repos/${REQUIRED_REPOSITORY}/issues/99/comments`])
+        );
+    });
+
+    /**
+     * The golden sets have to distinguish the shapes they pin, or one collapsed list could stand for
+     * every publication and the allowlist would stop observing which path ran. The legacy push-only
+     * shape is the sharpest contrast: it addresses the pull request without an issue, a model label,
+     * or a created pull request at all.
+     */
+    it('pins golden invocation sets that differ across the shapes', () => {
+        expect(new Set(REAL_PORT_SHAPES.map((shape) => shape.invocations.join('\n'))).size).toBeGreaterThan(1);
+        expect(LEGACY_PUSH_ONLY_INVOCATIONS).not.toEqual(CREATE_PUBLICATION_INVOCATIONS);
+        expect(UPDATE_PUBLICATION_INVOCATIONS).not.toEqual(STACK_UPDATE_INVOCATIONS);
     });
 
     /**
      * The two shape tables are one obligation split by what each can observe: the golden sets pin
-     * member names on the double, the real-port cases record `gh` invocations. A shape added to only
-     * one table would leave the other blind to it, so this fails until both carry the same shapes.
+     * member names on the double, the real-port cases compare `gh` invocations against their own
+     * golden allowlist. A shape added to only one table would leave the other blind to it, so this
+     * fails until both carry the same shapes.
      */
     it('drives every shape the golden sets pin through the real port too', () => {
         expect(REAL_PORT_SHAPES.map((shape) => shape.shape).sort()).toEqual(
