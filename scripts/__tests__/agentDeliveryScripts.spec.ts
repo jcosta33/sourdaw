@@ -812,7 +812,7 @@ describe('package scripts and gitignore', () => {
         const final = pullRequestSnapshot({
             state: 'MERGED',
             mergeable: 'UNKNOWN',
-            mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+            mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
         });
         const dependentBefore: StackedPullRequest = {
             number: 2601,
@@ -860,9 +860,7 @@ describe('package scripts and gitignore', () => {
             headCheckRuns: () => [],
             requiredStatusCheckContexts: () => ['Gate'],
             reviewState: () => ({
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,
             }),
@@ -2473,10 +2471,6 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
-            }),
             authenticateAuthor: async () => {
                 entered.push('authenticate');
                 throw new Error('authentication should not start');
@@ -2596,10 +2590,6 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
-            }),
             authenticateAuthor: async () => {
                 entered.push('authenticate');
                 throw new Error('authentication should not start');
@@ -2910,10 +2900,6 @@ describe('package scripts and gitignore', () => {
                 const dependencies: DeliveryCoordinatorDependencies = {
                     primaryRoot: () => root,
                     serializeDelivery: withPullRequestDeliveryLock,
-                    authenticateOrchestrator: async () => ({
-                        minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                        session: { env: {}, configDir: '/unused', dispose: () => undefined },
-                    }),
                     authenticateAuthor: async () => authentication,
                     authenticateTracker: async () => authentication,
                     repositoryName: () => 'jcosta33/sourdaw',
@@ -2977,10 +2963,6 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
-            }),
             authenticateAuthor: async () => authentication,
             authenticateTracker: async () => authentication,
             repositoryName: () => 'jcosta33/sourdaw',
@@ -3416,7 +3398,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('routes only merge mutation through the user runner and preserves author receipt writes', () => {
+    it('routes merge and receipt writes through author-role runners', () => {
         const calls: Array<{ actor: string; args: string[] }> = [];
         const port = shellPort(
             'jcosta33/sourdaw',
@@ -3452,7 +3434,7 @@ describe('package scripts and gitignore', () => {
             },
             {
                 mergeCapture: (_command, args) => {
-                    calls.push({ actor: 'orchestrator', args });
+                    calls.push({ actor: 'author-merge', args });
                     expect(args).toEqual([
                         'api',
                         '--method',
@@ -3469,7 +3451,7 @@ describe('package scripts and gitignore', () => {
         );
         expect(port.addDeliveryReceipt(2495, 'receipt').authorNodeId).toBe(AUTHOR_BOT_NODE_ID);
         port.merge(2495, 'head', false);
-        expect(calls.map((call) => call.actor)).toEqual(['author', 'author', 'orchestrator']);
+        expect(calls.map((call) => call.actor)).toEqual(['author', 'author', 'author-merge']);
     });
 
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
@@ -3507,11 +3489,6 @@ describe('package scripts and gitignore', () => {
             clearDeliveryReceiptAuthority: () => undefined,
             log: () => undefined,
         };
-        const orchestratorSession = {
-            env: { GH_TOKEN: 'user-merge-sentinel' },
-            configDir: '/orchestrator-only',
-            dispose: () => undefined,
-        };
         const seen: string[] = [];
         const adapterRequests: Array<{ args: string[]; token: string }> = [];
         let trackerPort: ReconcileTrackerIssuePort | undefined;
@@ -3529,19 +3506,13 @@ describe('package scripts and gitignore', () => {
                     seen.push(`lock:${number}:release`);
                 }
             },
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: orchestratorSession,
-            }),
             authenticateAuthor: async () => author,
             authenticateTracker: async () => tracker,
             repositoryName: (session) => {
                 seen.push(`repository:${session.env.GH_TOKEN ?? ''}`);
                 return 'jcosta33/sourdaw';
             },
-            deliveryPort: (_repository, auth, _root, _markAttempt, mergeSession) => {
-                expect(mergeSession).toBe(orchestratorSession);
-                expect(mergeSession).not.toBe(auth.session);
+            deliveryPort: (_repository, auth, _root, _markAttempt) => {
                 seen.push(`delivery:${auth.session.env.GH_TOKEN ?? ''}`);
                 return deliveryPort;
             },

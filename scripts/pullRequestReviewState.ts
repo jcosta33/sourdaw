@@ -1,13 +1,11 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import { REVIEWER_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID, parseJson } from './githubAppIdentity.ts';
+import { REVIEWER_BOT_NODE_ID, parseJson } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 
 export type ReviewState = {
     latestReviewerStateOnHead: string | null;
     latestReviewerReviewDatabaseId: number | null;
-    orchestratorAcceptedAfterReviewer: boolean;
-    orchestratorAcceptanceReviewDatabaseId: number | null;
     unresolvedThreads: number;
 };
 
@@ -279,27 +277,11 @@ export function readPullRequestReviewState(
             review.author?.__typename === 'Bot' &&
             review.author.id === REVIEWER_BOT_NODE_ID
     );
-    const acceptanceIndex = second.reviews.findLastIndex(
-        (review) =>
-            review.state !== 'PENDING' &&
-            review.author?.__typename === 'User' &&
-            review.author.id === ORCHESTRATOR_USER_NODE_ID
-    );
     const reviewer = second.reviews[reviewerIndex];
-    const acceptance = second.reviews[acceptanceIndex];
-    const orchestratorAcceptedAfterReviewer =
-        reviewer?.state === 'APPROVED' &&
-        reviewer.commitOid === expectedHead &&
-        acceptance?.state === 'APPROVED' &&
-        acceptance.commitOid === expectedHead &&
-        acceptanceIndex > reviewerIndex;
     return {
         latestReviewerStateOnHead: reviewer?.commitOid === expectedHead ? reviewer.state : null,
         latestReviewerReviewDatabaseId:
             reviewer?.commitOid === expectedHead && reviewer.state === 'APPROVED' ? reviewer.databaseId : null,
-        orchestratorAcceptedAfterReviewer,
-        orchestratorAcceptanceReviewDatabaseId:
-            orchestratorAcceptedAfterReviewer && acceptance !== undefined ? acceptance.databaseId : null,
         unresolvedThreads: second.reviewThreads.filter((thread) => !thread.isResolved).length,
     };
 }
