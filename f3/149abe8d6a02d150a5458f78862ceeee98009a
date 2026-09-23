@@ -1,0 +1,22 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 243-247,326-332
+AGENTS.md
+  h_beb54bf43b47b7 178-181,187-189
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 14,227,229-235,285-289
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_beb54bf43b47b7 10,705-714
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 32-43,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f3149abe8d6a02d150a5458f78862ceeee98009a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
