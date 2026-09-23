@@ -31,7 +31,8 @@ import { AUTHOR_MODEL_PATTERN as OPEN_LANE_MODEL_PATTERN, AUTHOR_MODEL_RULE } fr
 import { TRUSTED_GH_PATH_ENV, composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     AUTHOR_MODEL_PATTERN,
-    ISSUE_COMMENT_COMMAND_RULE,
+    PERMITTED_GH_INVOCATIONS,
+    PUBLICATION_COMMAND_RULE,
     ISSUE_LOOKUP_JQ,
     addPullRequestProjectsArgs,
     applyPullRequestMetadataArgs,
@@ -67,13 +68,13 @@ import {
     issueLookupArgs,
     laneIssueNumber,
     matchingOpenPullRequest,
+    matchesPermittedGhInvocation,
     mergeabilityFromPullRequestRow,
     parsePublishLaneArgs,
     parsePublishWorktrees,
     publishLane,
     resolveAuthorLane,
     shellPort,
-    targetsIssueComment,
     type LabelRow,
     type PullRequestLabelMetadata,
     type PullRequestMergeability,
@@ -4560,11 +4561,19 @@ function commandLiteralsIn(modulePath: string): {
  * companion case holds the real-port table to exactly the shapes the golden sets pin, so a new
  * shape cannot be added to one table without being driven through the other.
  *
- * Third, and the enforcement, the command boundary. `shellPort`'s `gh` runners refuse an
- * issue-comment endpoint or an `addComment` mutation on the fully assembled argv before spawning
- * `gh`, so any reintroduction fails at runtime whatever its spelling, module, member, or publication
- * path — including a path no shape drives. The boundary case below pins the refusal on every
- * spelling, and the undriven-path case drives a publication the ten shapes never reach.
+ * Third, and the enforcement, the command boundary. The rule is default-deny: `lane:publish` may
+ * issue only the `gh` commands its own call sites assemble, enumerated in
+ * `PERMITTED_GH_INVOCATIONS`, and `shellPort`'s `gh` runners refuse every argv that matches no
+ * permitted shape before spawning `gh`. The boundary therefore reads the fully assembled argv at
+ * the one place every spelling materialises, and it needs no blocklist to be complete: an
+ * unenumerated verb, subcommand, endpoint, or flag cannot match, whether it was spelled whole,
+ * assembled from a hoisted constant, gated on a path no shape drives, or carried a flag the old
+ * blocklist's value-flag set never knew. The boundary case below pins the refusal on every refused
+ * spelling, and the legitimate-arg-builder case beside it drives each argument builder the port
+ * uses, so the allowlist cannot silently break a real call. The real-port shapes add the live half:
+ * having refused nothing, they assert every invocation they recorded matches a permitted shape.
+ * The undriven-path case drives a publication the ten shapes never reach, and the boundary refuses
+ * the write it injects there with the rule's message.
  *
  * Fourth, and now only an earlier, cheaper signal, the source pin. Enumerating publication outcomes
  * chases an open set — five rounds of review each found one the tables did not drive — so
@@ -4572,9 +4581,9 @@ function commandLiteralsIn(modulePath: string): {
  * that trusted closure and fails on any string literal, template, or concatenation in any of them
  * that constructs an issue-comment invocation, whatever member or path it lives in. It matches
  * literal constructions only, so a spelling assembled beyond the literals it enumerates can escape
- * it — the boundary refusal above does not depend on it, which is why the boundary is where the
- * invariant is enforced. It covers command construction anywhere inside the closure; a write routed
- * through a module outside it would enter the closure, and the exact-closure pin in
+ * it — the boundary's default-deny rule is what enforces the invariant, which is why the boundary
+ * is where the rule lives. It covers command construction anywhere inside the closure; a write
+ * routed through a module outside it would enter the closure, and the exact-closure pin in
  * `agentDeliveryScripts.spec.ts` refuses that changed set first. Its own comment states the
  * boundary.
  *
@@ -5163,33 +5172,73 @@ describe('publication attestation retirement', () => {
 
     /**
      * The enforcement, pinned on the argv every `shellPort` `gh` runner passes through before it
-     * spawns. Unlike the source pin above, the boundary sees only the assembled argv, so a segment
-     * hoisted into a constant and one whole literal arrive here as the same value — which is why a
-     * reintroduction cannot hide behind how its endpoint was spelled. The legitimate invocations
-     * beside them are the publication's own `gh` argv, built by the exported arg builders the real
-     * port calls; every one must stay allowed, which is what keeps the refusal from widening into
-     * refusing the publication itself.
+     * spawns. The rule is default-deny: only the shapes `PERMITTED_GH_INVOCATIONS` enumerates are
+     * allowed, so what this case proves is that the refused spellings match none of them. Unlike the
+     * source pin above, the boundary sees only the assembled argv, so a segment hoisted into a
+     * constant and one whole literal arrive here as the same value — which is why a reintroduction
+     * cannot hide behind how its endpoint was spelled. Each refused argv is a write the deleted
+     * attestation path made, or one a reintroduction could take: the issue-comment collection
+     * (`POST`), the standing comment (`PATCH` and `DELETE` on `issues/comments/<id>`), the GraphQL
+     * `addComment` mutation, and a refused endpoint carrying the `-p/--preview` flag. Only the first
+     * of the six was refused by the pre-repair blocklist; the standing comment's two endpoints and
+     * the `--preview` argv are the spellings it let through.
      */
-    it('refuses an issue-comment write at the gh command boundary however it was assembled', () => {
+    it('refuses every unenumerated gh command at the boundary, however it was assembled', () => {
         const number = 41;
         const RESOURCE = 'comments';
         const refused = [
-            // The deleted attestation write, spelled whole.
+            // The deleted whole-literal create endpoint.
             ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/issues/${number}/comments`, '-f', 'body=x'],
             // The same endpoint with its last segment hoisted into a constant.
             ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/issues/${number}/${RESOURCE}`, '-f', 'body=x'],
-            // A read carrying a query string.
-            ['api', `repos/${REQUIRED_REPOSITORY}/issues/${number}/comments?per_page=100`, '--paginate'],
+            // The standing comment's own update endpoint.
+            ['api', '--method', 'PATCH', `repos/${REQUIRED_REPOSITORY}/issues/comments/${number}`, '-f', 'body=x'],
+            // Its delete endpoint.
+            ['api', '--method', 'DELETE', `repos/${REQUIRED_REPOSITORY}/issues/comments/${number}`],
             // GraphQL, whose mutation text is a field value rather than the endpoint.
             ['api', 'graphql', '-f', 'query=mutation { addComment(input: {subjectId: "x", body: "y"}) { id } }'],
-            ['pr', 'comment', String(number), '--body', 'x'],
-            ['issue', 'comment', '12', '--body', 'x'],
+            // `--preview` takes a value, so an argv carrying it misreads the endpoint it addresses.
+            [
+                'api',
+                '--preview',
+                'squirrel-girl',
+                '--method',
+                'PATCH',
+                `repos/${REQUIRED_REPOSITORY}/issues/comments/${number}`,
+                '-f',
+                'body=x',
+            ],
         ];
         for (const argv of refused) {
-            expect(() => assertGhCommandAllowed(argv), argv.join(' ')).toThrow(ISSUE_COMMENT_COMMAND_RULE);
+            expect(() => assertGhCommandAllowed(argv), argv.join(' ')).toThrow(PUBLICATION_COMMAND_RULE);
+            expect(matchesPermittedGhInvocation(argv), argv.join(' ')).toBe(false);
         }
+    });
 
-        const allowed = [
+    /**
+     * Every argument builder the real port calls must stay permitted, or the default-deny rule would
+     * refuse the publication itself. This is the builders' half of the rule. The permit table is
+     * deliberately not derived from these calls — that would let a builder's own change move the rule
+     * — so the two meet here instead: every entry below is driven through the boundary, and the
+     * permit table is read to prove no two of its shapes collapse to one signature. The variants
+     * after the builders cover flag multiplicities and combinations a single call cannot express:
+     * two `--add-label` flags, an added and a removed label beside a milestone, and an address flag
+     * written with `=`.
+     */
+    it('permits every legitimate argument builder the publication port calls', () => {
+        const signatures = PERMITTED_GH_INVOCATIONS.map((shape) =>
+            shape.command === 'api'
+                ? `api ${shape.endpoint.source} ${shape.flags
+                      .map((flag) => flag.name)
+                      .sort()
+                      .join(',')}`
+                : `${shape.command} ${shape.subcommand} ${shape.positionals} ${shape.flags
+                      .map((flag) => `${flag.name}=${typeof flag.value === 'string' ? flag.value : ''}`)
+                      .join(' ')}`
+        );
+        expect(new Set(signatures).size, 'permit shapes that collapse to one signature').toBe(signatures.length);
+
+        const builders = [
             issueLookupArgs(12),
             existingOpenPullRequestArgs('agent/12/x'),
             updatePullRequestArgs(41, 'closes #12'),
@@ -5210,9 +5259,22 @@ describe('publication attestation retirement', () => {
             addPullRequestProjectsArgs(41, ['Roadmap']),
             stackParentQuery('agent/11/parent'),
         ];
-        for (const argv of allowed) {
+        for (const argv of builders) {
             expect(() => assertGhCommandAllowed(argv), argv.join(' ')).not.toThrow();
-            expect(targetsIssueComment(argv), argv.join(' ')).toBe(false);
+            expect(matchesPermittedGhInvocation(argv), argv.join(' ')).toBe(true);
+        }
+
+        const variants = [
+            // Two authorship and type labels on one edit.
+            ['pr', 'edit', '41', '--repo', REQUIRED_REPOSITORY, '--add-label', 'glm-5.3', '--add-label', 'bug'],
+            // A superseded fence removal and an inherited milestone on one edit.
+            ['pr', 'edit', '41', '--repo', REQUIRED_REPOSITORY, '--remove-label', 'gpt-5', '--milestone', 'v1.2'],
+            // A pull-request metadata read whose field list is written with `=`.
+            ['pr', 'view', '41', `--repo=${REQUIRED_REPOSITORY}`, '--json=projectItems'],
+        ];
+        for (const argv of variants) {
+            expect(() => assertGhCommandAllowed(argv), argv.join(' ')).not.toThrow();
+            expect(matchesPermittedGhInvocation(argv), argv.join(' ')).toBe(true);
         }
     });
 
@@ -5928,6 +5990,16 @@ process.exit(0);
             expect(keys, `required invocation for ${shape.shape}`).toContain(required);
         }
 
+        // Every invocation the unmodified real port actually issued — recorded as the argv it handed
+        // `gh`, not as the key above — matches a shape `PERMITTED_GH_INVOCATIONS` enumerates. A
+        // legitimate call the enumeration missed would be refused here rather than silently breaking
+        // a publication, and a call the golden set does not carry reddens above with the rule's own
+        // boundary message because the publication itself refused it.
+        for (const args of recorded) {
+            expect(() => assertGhCommandAllowed(args), args.join(' ')).not.toThrow();
+            expect(matchesPermittedGhInvocation(args), args.join(' ')).toBe(true);
+        }
+
         // The allowlist is the whole observation: any invocation a reintroduction adds — whatever its
         // subcommand, endpoint, or spelling — keys to something this golden set does not carry.
         expect(keys, `gh invocations for ${shape.shape}`).toEqual(shape.invocations);
@@ -6021,13 +6093,15 @@ process.exit(0);
      * The refusal, driven on a real publication path none of the ten shapes reaches. Every shape
      * above publishes with a flagless relationship, so the `--relates` body section — the real,
      * undriven condition — fires only here: gate a reintroduced comment write on the `--relates`
-     * relationship inside any existing member and this is the only case that can observe it. On the
+     * relationship inside any existing member and this is the only case that can observe it. The
+     * write is injected into a real documented member's call rather than assembled by the module, so
+     * the source pin above stays green while the boundary still has to refuse at runtime. On the
      * clean tree the boundary refuses nothing and the publication succeeds; with such a write
      * reintroduced the assembled argv reaches `assertGhCommandAllowed`, the publication fails with
-     * `ISSUE_COMMENT_COMMAND_RULE`, and this case reddens carrying that message. Restoring the tree
+     * `PUBLICATION_COMMAND_RULE`, and this case reddens carrying that message. Restoring the tree
      * byte-identically returns it to green.
      */
-    it('publishes the undriven --relates path with no issue-comment invocation', () => {
+    it('publishes the undriven --relates path and refuses an issue-comment write injected there', () => {
         const recorded = publishThroughRealPort(
             { openPullRequests: [] },
             (fixture) => {
@@ -6042,9 +6116,43 @@ process.exit(0);
         const create = recorded.find((args) => args[0] === 'pr' && args[1] === 'create') ?? [];
         expect(create[create.indexOf('--body') + 1]).toContain('Related #12');
 
-        // The invocation set is the create path's whole golden set, and nothing in it is an
-        // issue-comment write the boundary would refuse.
-        expect([...new Set(recorded.map(normalizeGhInvocation))].sort()).toEqual(CREATE_PUBLICATION_INVOCATIONS);
-        expect(recorded.filter(targetsIssueComment)).toEqual([]);
+        // The invocation set is the create path's whole golden set, and the default-deny rule
+        // permits every one of them.
+        const keys = [...new Set(recorded.map(normalizeGhInvocation))].sort();
+        expect(keys).toEqual(CREATE_PUBLICATION_INVOCATIONS);
+        for (const args of recorded) {
+            expect(() => assertGhCommandAllowed(args), args.join(' ')).not.toThrow();
+        }
+
+        // The same real port, with one already-observed read replaced by a comment write carrying
+        // the `--relates` condition: the write is refused by the rule, not by the source pin.
+        const fixture = realPortFixture({ openPullRequests: [] });
+        try {
+            commitAsAuthorApp(fixture.lane, 'one.txt', 'feat(gate): first bot commit');
+            const port = fixture.portFor(fixture.lane);
+            port.existingOpenPullRequest = () => {
+                assertGhCommandAllowed([
+                    'api',
+                    '--method',
+                    'POST',
+                    `repos/${REQUIRED_REPOSITORY}/issues/12/comments`,
+                    '-f',
+                    'body=related',
+                ]);
+                return undefined;
+            };
+            const thrown = (() => {
+                try {
+                    publishLane(12, port, 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                    return undefined;
+                } catch (error) {
+                    return error;
+                }
+            })();
+            expect(thrown, 'the injected write must be refused before gh spawns').toBeInstanceOf(Error);
+            expect((thrown as Error).message).toContain(PUBLICATION_COMMAND_RULE);
+        } finally {
+            fixture.dispose();
+        }
     });
 });

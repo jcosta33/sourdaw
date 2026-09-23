@@ -1876,87 +1876,337 @@ export function operatorSessionAccess(
 }
 
 /**
- * The issue-comment boundary. `lane:publish` writes no pull request issue comment. A source-level
- * pin over the closure's command literals matches literal constructions only, so an endpoint hoisted
- * into a constant, split across a template and a concatenation, or assembled through a helper the
- * pin never enumerates reaches `gh` carrying no matched spelling. The refusal therefore lives where
- * every spelling materialises — the argv handed to the port's `gh` runners — so a reintroduced write
- * fails at runtime whatever module, member, or publication path built it, whether or not any
- * publication shape drives that path.
+ * The command boundary. This publication issues only its own enumerated `gh` commands: nothing else
+ * reaches the process. A blocklist of refused spellings is the wrong shape for that invariant — it
+ * enumerates the way round the closed set, so every round of review can only add the spelling the
+ * last one missed, and the standing comment's own update and delete endpoints sit beside the create
+ * endpoint it refused. The set of commands the publication may issue is finite and known, so it is
+ * stated here and everything outside it is refused, whatever verb, subcommand, endpoint, flag, or
+ * source module assembled the argv.
  */
-export const ISSUE_COMMENT_COMMAND_RULE =
-    'lane:publish writes no pull request issue comment; the gh command boundary refuses an issue-comment endpoint or a GraphQL issue-comment mutation';
+export const PUBLICATION_COMMAND_RULE =
+    'lane:publish issues only its own enumerated gh commands; the gh command boundary refuses every invocation no permitted shape matches';
 
 /**
- * The assembled REST endpoint on an `api` call: `issues/<n>/comments`, with or without a query
- * string and whatever path segments precede it. The number is materialised by the time the argv
- * reaches the boundary, so the pattern reads the value `gh` receives rather than the source that
- * assembled it.
+ * One flag of a permitted invocation, read by what its `value` says about the operand it takes:
+ *
+ * - property absent — a switch, carrying no operand (`--force`);
+ * - a string — the operand's literal value, pinned (`--json labels,milestone`);
+ * - `VOLATILE` — an operand whose value the publication materialises and this shape does not pin (a
+ *   branch name, an issue number, a pull request body).
+ *
+ * `repeats` marks a flag a call site passes once per item — `--add-label` for each label the
+ * metadata plan adds — so its operand runs may repeat after every single-occurrence flag. Every
+ * flag before the first repeating one must appear exactly once and in the shape's order; a
+ * repeating flag may appear any number of times, and every one of its runs must be named here.
  */
-const ISSUE_COMMENT_ENDPOINT_PATTERN = /(?:^|\/)issues\/\d+\/comments?(?:[?#/]|$)/u;
+type GhFlag = {
+    readonly name: string;
+    readonly value?: string | typeof VOLATILE;
+    readonly repeats?: true;
+};
 
-/** The GraphQL mutation that adds an issue comment, wherever its query text sits in the argv. */
-const GRAPHQL_ADD_COMMENT_PATTERN = /\baddComment\b/u;
+/** Marks a flag operand the shape accepts but does not pin to one value. */
+const VOLATILE = Symbol('volatile flag operand');
 
 /**
- * `gh api` flags whose following token is the flag's value, so a value such as the `POST` of
- * `--method POST` is never read as the endpoint the invocation addresses.
+ * One `gh api` invocation. The endpoint is a pattern over the value `gh` receives, so an endpoint
+ * hoisted into a constant and one whole literal are the same shape here. Every `api` flag in the
+ * permitted set takes an operand, so each entry's `value` is declared.
  */
-const GH_API_VALUE_FLAGS = new Set([
-    '-F',
-    '-H',
-    '-X',
-    '-f',
-    '-q',
-    '-t',
-    '--cache',
-    '--field',
-    '--header',
-    '--hostname',
-    '--input',
-    '--jq',
-    '--method',
-    '--raw-field',
-    '--template',
-]);
+type GhApiShape = {
+    readonly command: 'api';
+    readonly endpoint: RegExp;
+    /** Every `api` flag the invocation may carry, by exact name; `--method` is never among them. */
+    readonly flags: readonly GhFlag[];
+};
 
-/** The endpoint an `api` invocation addresses: its first positional argument after `api`. */
-function apiEndpointOf(args: string[]): string | undefined {
-    for (let index = 1; index < args.length; index += 1) {
+/**
+ * One `gh <command> <subcommand>` invocation. The flag sequence is positional and closed: a flag the
+ * shape does not name, an extra value, or a different subcommand leaves the invocation unmatched.
+ * `positionals` counts the volatile operands between the subcommand and the flags — a pull request
+ * number, an issue number, or the authored model token `gh label create` names.
+ */
+type GhCommandShape = {
+    readonly command: 'pr' | 'issue' | 'label' | 'project';
+    readonly subcommand: string;
+    readonly positionals: number;
+    readonly flags: readonly GhFlag[];
+};
+
+type GhShape = GhApiShape | GhCommandShape;
+
+/** One recorded pull request or issue number; volatile between publications, so it is not pinned. */
+const NUMBER = String.raw`\d+`;
+const PORT = String.raw`repos/${REQUIRED_REPOSITORY}`;
+/** The flags every `pr` and `issue` invocation addresses the repository and its number with. */
+const REPOSITORY: GhFlag = { name: '--repo', value: undefined };
+
+/**
+ * Every `gh` invocation `lane:publish` can assemble, derived by walking each `gh(...)`, `ghRun(...)`,
+ * `operatorGh(...)`, and `operatorGhRun(...)` call site in `shellPort` and the argument builders each
+ * one passes. The comment on each shape names its call site; together they are the whole set:
+ *
+ * - `repos/<repo>/issues/<n>` with `--jq` — `issueExists`'s `issueLookupArgs`, the only `spawnSync` to
+ *   `gh`.
+ * - `repos/<repo>/milestones?state=open` — `openMilestoneTitles`' `openMilestoneTitlesArgs`.
+ * - `repos/<repo>/pulls?state=all&head=…&per_page=100` with `--paginate --slurp` —
+ *   `stackBase`'s `stackParentQuery`.
+ * - `pr list` without a number — `existingOpenPullRequest`'s `existingOpenPullRequestArgs`.
+ * - `pr view <n>` with `--json labels,milestone` — `readPullRequestMetadata`'
+ *   `pullRequestMetadataArgs`.
+ * - `pr view <n>` with `--json mergeable` — `readPullRequestMergeability`'
+ *   `pullRequestMergeabilityArgs`.
+ * - `pr view <n>` with `--json projectItems` — `readPullRequestProjectTitles`'
+ *   `pullRequestProjectItemsArgs`.
+ * - `pr edit <n>` with `--body` — `updatePullRequest`'s `updatePullRequestArgs`.
+ * - `pr edit <n>` with `--add-label`/`--remove-label`/`--milestone` — `applyPullRequestMetadata`'s
+ *   `applyPullRequestMetadataArgs`.
+ * - `pr edit <n>` with `--add-project` — `applyPullRequestMetadata`'s `addPullRequestProjectsArgs`.
+ * - `pr create` — the `createPullRequest` member's own literal argv.
+ * - `issue view <n>` with `--json labels,milestone` — `readIssueTrackerMetadata`'
+ *   `issueTrackerMetadataArgs`.
+ * - `issue view <n>` with `--json projectItems` — `readIssueProjectTitles`' `issueProjectItemsArgs`.
+ * - `label list` — `knownLabels`' `labelListArgs`.
+ * - `label create` — `ensureModelLabel`'s `ensureModelLabelArgs`.
+ * - `project list` — `knownProjectTitles`' `projectListArgs`.
+ *
+ * No shape carries `--method`: every `api` call above is a read, and `gh` defaults an unflagged call
+ * to GET. `gh project item-list`, `gh pr comment`, `gh issue comment`, and any write to
+ * `repos/<repo>/issues/comments[/<id>]` therefore match nothing here and cannot be assembled into a
+ * spawned process without this table changing first.
+ */
+export const PERMITTED_GH_INVOCATIONS: readonly GhShape[] = [
+    {
+        command: 'api',
+        endpoint: new RegExp(String.raw`^${PORT}/issues/${NUMBER}(?:\?.*)?$`, 'u'),
+        flags: [{ name: '--jq', value: VOLATILE }],
+    },
+    {
+        command: 'api',
+        endpoint: new RegExp(String.raw`^${PORT}/milestones\?state=open$`, 'u'),
+        flags: [],
+    },
+    {
+        command: 'api',
+        endpoint: new RegExp(
+            // The head selector rides `head=<owner>%3A<branch>` URL-encoded, so the branch's slashes
+            // arrive as `%2F`; the shape pins the endpoint and its pagination, and leaves the encoded
+            // selector to the argument builder that materialises it.
+            String.raw`^${PORT}/pulls\?state=all&head=[^&]*&per_page=${NUMBER}$`,
+            'u'
+        ),
+        flags: [{ name: '--paginate' }, { name: '--slurp' }],
+    },
+    {
+        command: 'pr',
+        subcommand: 'list',
+        positionals: 0,
+        flags: [
+            REPOSITORY,
+            { name: '--head', value: VOLATILE },
+            { name: '--state', value: VOLATILE },
+            { name: '--json', value: 'number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid' },
+        ],
+    },
+    {
+        command: 'pr',
+        subcommand: 'view',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--json', value: 'labels,milestone' }],
+    },
+    {
+        command: 'pr',
+        subcommand: 'view',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--json', value: 'mergeable' }],
+    },
+    {
+        command: 'pr',
+        subcommand: 'view',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--json', value: 'projectItems' }],
+    },
+    {
+        command: 'pr',
+        subcommand: 'edit',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--body', value: VOLATILE }],
+    },
+    {
+        command: 'pr',
+        subcommand: 'edit',
+        positionals: 1,
+        flags: [
+            REPOSITORY,
+            { name: '--add-label', value: VOLATILE, repeats: true },
+            { name: '--remove-label', value: VOLATILE, repeats: true },
+            { name: '--milestone', value: VOLATILE, repeats: true },
+        ],
+    },
+    {
+        command: 'pr',
+        subcommand: 'edit',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--add-project', value: VOLATILE }],
+    },
+    {
+        command: 'pr',
+        subcommand: 'create',
+        positionals: 0,
+        flags: [
+            REPOSITORY,
+            { name: '--base', value: VOLATILE },
+            { name: '--head', value: VOLATILE },
+            { name: '--title', value: VOLATILE },
+            { name: '--body', value: VOLATILE },
+        ],
+    },
+    {
+        command: 'issue',
+        subcommand: 'view',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--json', value: 'labels,milestone' }],
+    },
+    {
+        command: 'issue',
+        subcommand: 'view',
+        positionals: 1,
+        flags: [REPOSITORY, { name: '--json', value: 'projectItems' }],
+    },
+    {
+        command: 'label',
+        subcommand: 'list',
+        positionals: 0,
+        flags: [
+            { name: '--limit', value: VOLATILE },
+            { name: '--json', value: 'name,description' },
+        ],
+    },
+    {
+        command: 'label',
+        subcommand: 'create',
+        positionals: 1,
+        flags: [{ name: '--color', value: VOLATILE }, { name: '--description', value: VOLATILE }, { name: '--force' }],
+    },
+    {
+        command: 'project',
+        subcommand: 'list',
+        positionals: 0,
+        flags: [
+            { name: '--owner', value: VOLATILE },
+            { name: '--format', value: VOLATILE },
+        ],
+    },
+];
+
+/** The volatile operands a shape declares must be present, and must not be flags. */
+function matchesVolatileOperands(args: readonly string[], count: number, start: number): boolean {
+    for (let index = start; index < start + count; index += 1) {
+        const token = args[index];
+        if (token === undefined || token.startsWith('-')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Matches one shape's flag sequence. The single-occurrence flags are positional — a missing, extra,
+ * or renamed one fails — and the repeating ones after them may appear any number of times in any
+ * order, each consuming exactly one operand. Anything left over fails the match, so an unlisted flag
+ * is refused wherever it is spliced in.
+ */
+function matchesShapeFlags(args: readonly string[], start: number, flags: readonly GhFlag[]): boolean {
+    const firstRepeating = flags.findIndex((flag) => flag.repeats === true);
+    const ordered = firstRepeating === -1 ? flags : flags.slice(0, firstRepeating);
+    const repeating = firstRepeating === -1 ? [] : flags.slice(firstRepeating);
+    let index = start;
+    for (const flag of ordered) {
+        const consumed = matchesFlagAt(args, index, flag);
+        if (consumed === 0) {
+            return false;
+        }
+        index += consumed;
+    }
+    while (index < args.length) {
         const token = args[index] ?? '';
-        if (!token.startsWith('-')) {
-            return token;
+        const separator = token.indexOf('=');
+        const name = separator === -1 ? token : token.slice(0, separator);
+        const flag = repeating.find((candidate) => candidate.name === name);
+        if (flag === undefined) {
+            return false;
         }
-        if (!token.includes('=') && GH_API_VALUE_FLAGS.has(token)) {
-            index += 1;
+        const consumed = matchesFlagAt(args, index, flag);
+        if (consumed === 0) {
+            return false;
         }
+        index += consumed;
     }
-    return undefined;
+    return true;
 }
 
-/** Whether an assembled `gh` argv writes a pull request issue comment. */
-export function targetsIssueComment(args: string[]): boolean {
-    const [command, subcommand] = args;
-    if ((command === 'pr' || command === 'issue') && subcommand === 'comment') {
-        return true;
+/**
+ * The tokens one flag occupies at `start`: 0 when the flag is not there, or its operand is missing,
+ * a flag-shaped token, or a different literal; otherwise 1 for a switch or `--flag=value` and 2 for a
+ * separate operand.
+ */
+function matchesFlagAt(args: readonly string[], start: number, flag: GhFlag): number {
+    const token = args[start];
+    if (token === undefined) {
+        return 0;
     }
-    if (command !== 'api') {
-        return false;
+    const separator = token.indexOf('=');
+    if (separator === -1 ? token !== flag.name : token.slice(0, separator) !== flag.name) {
+        return 0;
     }
-    const endpoint = apiEndpointOf(args);
-    if (endpoint === undefined) {
-        return false;
+    if (!Object.hasOwn(flag, 'value')) {
+        return 1;
     }
-    if (ISSUE_COMMENT_ENDPOINT_PATTERN.test(endpoint)) {
-        return true;
+    const inline = separator === -1 ? undefined : token.slice(separator + 1);
+    const operand = inline ?? args[start + 1];
+    if (operand === undefined || operand.startsWith('-')) {
+        return 0;
     }
-    return endpoint === 'graphql' && args.some((token) => GRAPHQL_ADD_COMMENT_PATTERN.test(token));
+    if (typeof flag.value === 'string' && operand !== flag.value) {
+        return 0;
+    }
+    return inline === undefined ? 2 : 1;
 }
 
-/** Refuses an issue-comment write before it reaches `gh`, naming the rule it would break. */
+/** Matches one shape against an assembled argv; `false` for a different verb or a refused invocation. */
+function matchesShape(args: readonly string[], shape: GhShape): boolean {
+    if (shape.command === 'api') {
+        if (args[0] !== 'api') {
+            return false;
+        }
+        const endpoint = args.find((token, index) => index > 0 && !token.startsWith('-'));
+        if (endpoint === undefined || !shape.endpoint.test(endpoint)) {
+            return false;
+        }
+        const flags = args.filter((token) => token.startsWith('-'));
+        return flags.length === shape.flags.length && shape.flags.every((flag) => flags.includes(flag.name));
+    }
+    if (args[0] !== shape.command || args[1] !== shape.subcommand) {
+        return false;
+    }
+    // The volatile operands sit between the subcommand and the flags; their values are not pinned,
+    // but each must be present and be an operand rather than another flag.
+    return (
+        matchesVolatileOperands(args, shape.positionals, 2) &&
+        matchesShapeFlags(args, 2 + shape.positionals, shape.flags)
+    );
+}
+
+/** Whether the assembled argv is one of the commands this publication enumerates. */
+export function matchesPermittedGhInvocation(args: readonly string[]): boolean {
+    return PERMITTED_GH_INVOCATIONS.some((shape) => matchesShape(args, shape));
+}
+
+/** Refuses any invocation the permitted set does not carry, naming the rule it would break. */
 export function assertGhCommandAllowed(args: string[]): void {
-    if (targetsIssueComment(args)) {
-        fail(`${ISSUE_COMMENT_COMMAND_RULE}: gh ${args.join(' ')}`);
+    if (!matchesPermittedGhInvocation(args)) {
+        fail(`${PUBLICATION_COMMAND_RULE}: gh ${args.join(' ')}`);
     }
 }
 
@@ -1984,8 +2234,9 @@ export function shellPort(
             env: session.env,
         });
     // Every `gh` this port spawns — both credentials' captures and runs, and the issue-existence
-    // lookup below — passes the boundary refusal on its fully assembled argv, so no spelling of an
-    // issue-comment write can reach the process whatever closure member or path assembled it.
+    // lookup below — passes the default-deny boundary on its fully assembled argv, so an invocation
+    // outside `PERMITTED_GH_INVOCATIONS` cannot reach the process whatever closure member or path
+    // assembled it.
     const gh = (args: string[]) => {
         assertGhCommandAllowed(args);
         return spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
