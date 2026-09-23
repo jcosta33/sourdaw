@@ -2,12 +2,11 @@
 type: adr
 id: 0048
 title: The attributable review-evidence contract is frozen
-status: partially superseded by 0049 (source-attestation channel only)
+status: accepted
 date: 2026-09-21
 owner: The Sourdaw team
 sources:
     - scripts/canonicalRecord.ts
-    - scripts/sourceAttestation.ts
     - scripts/reviewDossier.ts
     - scripts/reviewDossierPublication.ts
     - scripts/reviewApprovalFormat.ts
@@ -18,7 +17,6 @@ sources:
     - scripts/reviewPublicationBinding.ts
     - scripts/reconstructReviewRounds.ts
     - scripts/__tests__/canonicalRecord.spec.ts
-    - scripts/__tests__/sourceAttestation.spec.ts
     - scripts/__tests__/reviewDossier.spec.ts
     - scripts/__tests__/reviewDossierPublication.spec.ts
     - scripts/__tests__/publishReview.spec.ts
@@ -68,17 +66,6 @@ reader retained.
   (`reviewDossierPublication.ts`).
 - The `sourdaw-*-v1` marker-line records — repair records, confirmation, and finding lineage — all
   framed by the one marker grammar in `canonicalRecord.ts`.
-- The source-attestation comment (`sourceAttestation.ts`) — a `sourdaw-attestation-v1` marker line
-  that bound every exact commit OID above the comparison base and its observed Git authorship to the
-  published head. **Retired 2026-09-23 by
-  [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding only this
-  source-attestation item): the source-attestation comment has no live writer, and the authorship
-  gate remains. The repair, confirmation, finding-lineage, and delivery-receipt writers are
-  unchanged, though they never shared one surface: repair (`repairReviewFinding.ts`) and confirmation
-  (`confirmReviewRepairs.ts`) post review-thread replies through the `addPullRequestReviewThreadReply`
-  mutation, a different object on a different endpoint, while finding lineage
-  (`supersedePullRequest.ts`) and delivery receipts (`deliverPullRequest.ts`) are the issue-comment
-  writers.**
 - Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
   marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
   receipts remain readable.
@@ -114,12 +101,8 @@ forgery, predecessor-digest, redaction, size bounds, head rebinding), `reviewDos
 .spec.ts` (input assembly, replay idempotence, stance-record correspondence),
 `publishReview.spec.ts` (live-head binding, recovery journal across crash, legacy adapters,
 paginated reads), `repairReviewFinding.spec.ts` / `confirmReviewRepairs.spec.ts` (foreign-actor
-marker refusal, thread and comment pagination), `sourceAttestation.spec.ts` (record round-trip,
-canonical byte form, exact-OID binding, foreign-actor marker refusal, newest authority), and
-`deliverPullRequest.spec.ts` (immutable
-actor identities, wrong-head and wrong-actor approvals ignored, receipt ordering). The source
-attestation and `sourceAttestation.spec.ts` were deleted on 2026-09-23 by
-[0049](0049-retire-the-source-attestation-comment.md); the rest of this verification record stands.
+marker refusal, thread and comment pagination), and `deliverPullRequest.spec.ts` (immutable
+actor identities, wrong-head and wrong-actor approvals ignored, receipt ordering).
 
 ## Consequences
 
@@ -128,11 +111,6 @@ enforcement (#3376) — must ride these channels and rules or introduce a new ad
 version; they may not relax the canonical-byte, redaction, actor-binding, or recovery rules, and
 they may not move evidence onto author-controlled content. Historical v1 artifacts stay readable
 through their explicit adapters; this freeze changes no writer, no CI policy, and no delivery gate.
-**Amended 2026-09-23 by [0049](0049-retire-the-source-attestation-comment.md) (accepted, superseding
-the source-attestation item): the retired source attestation is no longer a new evidence kind these
-channels carry, and its already-posted artifacts have no reader and no compatibility path — the one
-exception to the historical-readability sentence above. Every other evidence kind and every freeze
-rule stands unchanged.**
 
 ## Extension — publication binding and adjudication persistence (2026-09-22, #3375)
 

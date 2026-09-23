@@ -148,9 +148,8 @@ already exists there at an ancestor of the head, otherwise the same base the
 title derives from — always excluding what the resolved bases reach, both
 origin/main and any stack parent head, because commits they already carry are
 not the lane's to author. Every remaining commit, merges included, must carry
-the author App's commit identity; a refusal names up to eight offending commits
-and counts the remainder, plus each offending email. Publication also refuses
-outright while the lane repository's shared
+the author App's commit identity; a refusal names each offending commit and
+email. Publication also refuses outright while the lane repository's shared
 object store carries rewrites a push bypasses — an `info/grafts` file in the
 common dir or any `refs/replace/*` ref — because `git log` follows the graft
 file even with `--no-replace-objects` and the replace-refs disable applies to

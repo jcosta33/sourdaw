@@ -526,13 +526,9 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
     ];
 }
 
-/**
- * One commit as the publication read observed it: the full 40-hex OID (the authorship gate refuses
- * abbreviations, never accepting them as identity) and the author name and email Git recorded.
- */
-export type CommitAttribution = {
-    oid: string;
-    name: string;
+/** One commit the authorship gate read named: its short sha and the email it is authored as. */
+export type CommitAuthorEmail = {
+    sha: string;
     email: string;
 };
 
@@ -568,17 +564,16 @@ export type PublishLanePort = {
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
     /**
-     * Observed author identity of every commit reachable from `headSha` but from neither
-     * `deltaBaseSha` nor any `excludedBaseSha`, merges included, read in the lane itself without
-     * replacement objects, so the gate sees exactly the objects a push would send. The authorship
-     * gate consumes the delta read (`remote tip..head` when the branch exists remotely).
+     * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
+     * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
+     * the gate sees exactly the objects a push would send.
      */
-    commitAttribution: (
+    commitAuthorEmails: (
         lane: string,
         deltaBaseSha: string,
         excludedBaseShas: string[],
         headSha: string
-    ) => CommitAttribution[];
+    ) => CommitAuthorEmail[];
     /**
      * The lane repository's object-store rewrites, resolved in the lane itself before any remote
      * write: a graft file or replace ref lets the object store show one history to a traversal and
@@ -980,56 +975,32 @@ export const NO_LANE_SUBJECT_FAILURE =
  * everything the resolved bases (origin/main and any stack parent head) reach, because base-side
  * commits a lane merged are not the lane's to author; the bases' own publications gate them. Every
  * remaining commit, merges included, must carry the author App's commit email — the identity lane
- * worktrees are stamped with at open — and the refusal names up to eight offending commits, counting
- * the rest. Its remedy cannot rewrite base-side history: the offered rebase is gated on its root
- * dominating every excluded base, and when no such rewrite exists — as under an open parent head
- * that does not contain the main commits the lane merged, or a merged parent's pre-squash head that
- * squash semantics keep off main forever — the refusal prescribes re-creating the named commits.
- */
-/**
- * The commit-set calculation a publication runs for the authorship gate. `deltaBase` is the gate's
- * narrow base: the remote tip when the branch already exists remotely (its commits were gated at
- * their own publication), otherwise the comparison head of a first publication. `excludedBaseShas`
- * are the resolved bases — origin/main and any stack parent head — whose reachable commits are
- * never the lane's to author and whose own publications gate them.
- */
-export type PublicationRanges = {
-    deltaBase: string;
-    excludedBaseShas: string[];
-};
-
-export function publicationRanges(
-    remoteRead: RemoteBranchRead,
-    comparisonHead: string,
-    baseSha: string,
-    stackParentHead: string | undefined
-): PublicationRanges {
-    // The publication read the remote before this calculation and already refused an unreadable
-    // listing, so the read here is `present` or `absent`: a present remote tip is the delta base
-    // exactly as the undefined-vs-remote-tip split always worked, and an absent branch is a first
-    // publication whose delta base is the comparison head.
-    return {
-        deltaBase: remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead,
-        excludedBaseShas: Array.from(
-            new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
-        ),
-    };
-}
-
-/**
- * The authorship gate: every commit in the delta this publication adds must be authored with the
- * lane-stamped author-App identity. The caller computed the delta over the shared publication
- * ranges; this gate only judges it.
+ * worktrees are stamped with at open — and the refusal names each offending commit. Its remedy
+ * cannot rewrite base-side history: the offered rebase is gated on its root dominating every
+ * excluded base, and when no such rewrite exists — as under an open parent head that does not
+ * contain the main commits the lane merged, or a merged parent's pre-squash head that squash
+ * semantics keep off main forever — the refusal prescribes re-creating the named commits.
  */
 function assertBotAuthoredDelta(
     lane: ResolvedLane,
-    delta: CommitAttribution[],
-    ranges: PublicationRanges,
     remoteRead: RemoteBranchRead,
     comparisonHead: string,
+    baseSha: string,
+    stackParentHead: string | undefined,
+    headSha: string,
     port: PublishLanePort
 ): void {
-    const offending = delta.filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
+    // The publication read the remote before this gate and already refused an unreadable listing,
+    // so the read here is `present` or `absent`: a present remote tip is the delta base exactly as
+    // the undefined-vs-remote-tip split always worked, and an absent branch is a first publication
+    // whose delta base is the comparison head.
+    const deltaBase = remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead;
+    const excludedBaseShas = Array.from(
+        new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
+    );
+    const offending = port
+        .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
+        .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
     if (offending.length === 0) {
         return;
     }
@@ -1043,22 +1014,21 @@ function assertBotAuthoredDelta(
     // stamped identity.
     const offersRebase =
         remoteRead.kind === 'absent' &&
-        ranges.excludedBaseShas
+        excludedBaseShas
             .filter((sha) => sha !== comparisonHead)
             .every((sha) => port.isAncestor(sha, comparisonHead, lane.path));
-    fail(authorshipRefusal(lane.branch, ranges.deltaBase, comparisonHead, offending, offersRebase));
+    fail(authorshipRefusal(lane.branch, deltaBase, comparisonHead, offending, offersRebase));
 }
 
 /** At most this many offending commits are named one by one before the refusal counts the rest. */
 const MAX_NAMED_OFFENDING_COMMITS = 8;
 
 /**
- * The refusal names up to eight offending commits one by one and counts the rest, names each distinct
- * offending email, states the base-side exclusion, and prescribes only remedies that cannot replace
- * history the lane does not own: the rebase is rooted at the comparison base and offered exactly when
- * the remote branch holds none of the lane's commits and that base dominates every excluded one, so
- * the rewritten range carries no base-side commit; otherwise, and with a pushed lane history, the
- * named commits must be re-created.
+ * The refusal names each offending commit and each distinct offending email, states the base-side
+ * exclusion, and prescribes only remedies that cannot replace history the lane does not own: the
+ * rebase is rooted at the comparison base and offered exactly when the remote branch holds none of
+ * the lane's commits and that base dominates every excluded one, so the rewritten range carries no
+ * base-side commit; otherwise, and with a pushed lane history, the named commits must be re-created.
  * A rewrite rooted at the remote tip would replay base-side commits the lane merged and re-author
  * them as the App, so the remote tip never roots one.
  */
@@ -1066,17 +1036,15 @@ function authorshipRefusal(
     branch: string,
     deltaBase: string,
     comparisonHead: string,
-    offending: CommitAttribution[],
+    offending: CommitAuthorEmail[],
     offersRebase: boolean
 ): string {
     const distinctEmails = Array.from(new Set(offending.map((commit) => commit.email)))
         .map(displayCommitAuthorEmail)
         .join(', ');
-    const namedCommits = offending.slice(0, MAX_NAMED_OFFENDING_COMMITS).map(
-        // The refusal is human-facing remediation, so it names commits abbreviated as `%h` always
-        // did; the gate judges the email, and the abbreviation only has to point at the commit.
-        (commit) => `${commit.oid.slice(0, 7)} ${displayCommitAuthorEmail(commit.email)}`
-    );
+    const namedCommits = offending
+        .slice(0, MAX_NAMED_OFFENDING_COMMITS)
+        .map((commit) => `${commit.sha} ${displayCommitAuthorEmail(commit.email)}`);
     const more = offending.length - namedCommits.length;
     if (more > 0) {
         namedCommits.push(`+${more} more`);
@@ -1320,17 +1288,12 @@ export function publishLane(
     // the remote tip..head when the branch exists remotely, and the lane-subject range otherwise.
     // These run before every remote write, with the rest of the pre-push refusal set: first the
     // object store must carry no rewrite that could split the gate's read from the push, and only
-    // then can a read over that store decide the authorship gate. The gate's set is read in that
-    // pre-push window: the push below pins `headSha`, and baseSha and the stack context are
-    // re-proven around it, so the gated set is exactly the pushed set and any commit-set drift
-    // invalidates the run before the push.
+    // then can a read over that store decide the authorship gate.
     const rewrites = port.objectStoreRewrites(lane.path);
     if (rewrites.graftsFile !== undefined || rewrites.replaceRefs > 0) {
         fail(objectStoreRewritesRefusal(lane.branch, rewrites));
     }
-    const ranges = publicationRanges(remoteRead, comparisonHead, baseSha, stack?.parentHead);
-    const deltaCommits = port.commitAttribution(lane.path, ranges.deltaBase, ranges.excludedBaseShas, headSha);
-    assertBotAuthoredDelta(lane, deltaCommits, ranges, remoteRead, comparisonHead, port);
+    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, baseSha, stack?.parentHead, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1759,58 +1722,44 @@ function laneSubjectArgs(baseSha: string, headSha: string): string[] {
 }
 
 /**
- * The publication's commit-set read: every commit, merges included, between the base and the head,
+ * The authorship gate's read: every commit, merges included, between the delta base and the head,
  * excluding everything the resolved bases reach — base-side commits are not the lane's to author,
- * and the bases' own publications gate them. The format carries the full OID and the observed
- * author name and email separated by unit separators; `--no-replace-objects` leads the argv
- * because `git log` honors `refs/replace/*` while `git push` packs the original objects, so a read
- * that honors replacements could pass a bot-authored clone while the remote receives the human
- * original.
+ * and the bases' own publications gate them. `--no-replace-objects` leads the argv because `git
+ * log` honors `refs/replace/*` while `git push` packs the original objects, so a read that honors
+ * replacements could pass a bot-authored clone while the remote receives the human original.
  */
-function commitAttributionArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
+function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
     return [
         '--no-replace-objects',
         'log',
-        '--format=%H%x1f%an%x1f%ae',
+        '--format=%h %ae',
         `${deltaBaseSha}..${headSha}`,
         ...excludedBaseShas.map((sha) => `^${sha}`),
     ];
 }
 
-function readCommitAttribution(
+function readCommitAuthorEmails(
     lane: string,
     deltaBaseSha: string,
     excludedBaseShas: string[],
     headSha: string,
     capture: (args: string[], cwd: string) => string
-): CommitAttribution[] {
-    const lines = capture(commitAttributionArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
+): CommitAuthorEmail[] {
+    const lines = capture(commitAuthorEmailArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
     // The capture ends in exactly one blank line; strip only that one, so a commit whose author
     // email is genuinely empty survives as an offending value instead of vanishing with a filter.
     if (lines[lines.length - 1] === '') {
         lines.pop();
     }
-    return lines.map(parseCommitAttribution);
+    return lines.map(parseCommitAuthorEmail);
 }
 
-/**
- * `%H%x1f%an%x1f%ae` splits on the unit separator into exactly three fields; a name carrying the
- * separator yields a different count and fails closed rather than attributing fields by guess.
- * The OID must be full 40-hex: the gate compares exact identities, and abbreviated or corrupt
- * output is a read defect, not data.
- */
-function parseCommitAttribution(line: string): CommitAttribution {
-    const [oid, name, email, ...rest] = line.split('\x1F');
-    if (
-        rest.length > 0 ||
-        oid === undefined ||
-        name === undefined ||
-        email === undefined ||
-        !/^[0-9a-f]{40}$/u.test(oid)
-    ) {
-        fail(`commit attribution read returned an unparseable line: ${JSON.stringify(line)}`);
-    }
-    return { oid, name, email };
+/** `%h %ae` splits on the first space; a genuinely empty email leaves the email part empty. */
+function parseCommitAuthorEmail(line: string): CommitAuthorEmail {
+    const separator = line.indexOf(' ');
+    return separator === -1
+        ? { sha: line, email: '' }
+        : { sha: line.slice(0, separator), email: line.slice(separator + 1) };
 }
 
 /**
@@ -1875,371 +1824,13 @@ export function operatorSessionAccess(
     };
 }
 
-/**
- * The command boundary. This publication issues only its own enumerated `gh` commands: nothing else
- * reaches the process. A blocklist of refused spellings is the wrong shape for that invariant — it
- * enumerates the way round the closed set, so every round of review can only add the spelling the
- * last one missed, and the standing comment's own update and delete endpoints sit beside the create
- * endpoint it refused. The set of commands the publication may issue is finite and known, so it is
- * stated here and everything outside it is refused, whatever verb, subcommand, endpoint, flag, or
- * source module assembled the argv.
- */
-export const PUBLICATION_COMMAND_RULE =
-    'lane:publish issues only its own enumerated gh commands; the gh command boundary refuses every invocation no permitted shape matches';
-
-/**
- * One flag of a permitted invocation, read by what its `value` says about the operand it takes:
- *
- * - property absent — a switch, carrying no operand (`--force`);
- * - a string — the operand's literal value, pinned (`--json labels,milestone`);
- * - `VOLATILE` — an operand whose value the publication materialises and this shape does not pin (a
- *   branch name, an issue number, a pull request body).
- *
- * `repeats` marks a flag a call site passes once per item — `--add-label` for each label the
- * metadata plan adds — so its operand runs may repeat after every single-occurrence flag. Every
- * flag before the first repeating one must appear exactly once and in the shape's order; a
- * repeating flag may appear any number of times, and every one of its runs must be named here.
- */
-type GhFlag = {
-    readonly name: string;
-    readonly value?: string | typeof VOLATILE;
-    readonly repeats?: true;
-};
-
-/** Marks a flag operand the shape accepts but does not pin to one value. */
-const VOLATILE = Symbol('volatile flag operand');
-
-/**
- * One `gh api` invocation. The endpoint is a pattern over the value `gh` receives, so an endpoint
- * hoisted into a constant and one whole literal are the same shape here. The api matcher reads flag
- * names only, so `value` pins an operand where the shape declares one and is absent for a switch:
- * the pagination shape's `--paginate` and `--slurp` are switches.
- */
-type GhApiShape = {
-    readonly command: 'api';
-    readonly endpoint: RegExp;
-    /** Every `api` flag the invocation may carry, by exact name; `--method` is never among them. */
-    readonly flags: readonly GhFlag[];
-};
-
-/**
- * One `gh <command> <subcommand>` invocation. The flag sequence is positional and closed: a flag the
- * shape does not name, an extra value, or a different subcommand leaves the invocation unmatched.
- * `positionals` counts the volatile operands between the subcommand and the flags — a pull request
- * number, an issue number, or the authored model token `gh label create` names.
- */
-type GhCommandShape = {
-    readonly command: 'pr' | 'issue' | 'label' | 'project' | 'repo';
-    readonly subcommand: string;
-    readonly positionals: number;
-    readonly flags: readonly GhFlag[];
-};
-
-type GhShape = GhApiShape | GhCommandShape;
-
-/** One recorded pull request or issue number; volatile between publications, so it is not pinned. */
-const NUMBER = String.raw`\d+`;
-const PORT = String.raw`repos/${REQUIRED_REPOSITORY}`;
-/** The flags every `pr` and `issue` invocation addresses the repository and its number with. */
-const REPOSITORY: GhFlag = { name: '--repo', value: undefined };
-
-/**
- * Every `gh` invocation `lane:publish` can assemble, derived by walking each `gh(...)`, `ghRun(...)`,
- * `operatorGh(...)`, and `operatorGhRun(...)` call site in `shellPort` and the argument builders each
- * one passes, plus the CLI's own repository resolution, which spawns through the port's exposed `gh`
- * runner. The comment on each shape names its call site; together they are the whole set:
- *
- * - `repos/<repo>/issues/<n>` with `--jq` — `issueExists`'s `issueLookupArgs`, the only `spawnSync` to
- *   `gh`.
- * - `repos/<repo>/milestones?state=open` — `openMilestoneTitles`' `openMilestoneTitlesArgs`.
- * - `repos/<repo>/pulls?state=all&head=…&per_page=100` with `--paginate --slurp` —
- *   `stackBase`'s `stackParentQuery`.
- * - `pr list` without a number — `existingOpenPullRequest`'s `existingOpenPullRequestArgs`.
- * - `pr view <n>` with `--json labels,milestone` — `readPullRequestMetadata`'
- *   `pullRequestMetadataArgs`.
- * - `pr view <n>` with `--json mergeable` — `readPullRequestMergeability`'
- *   `pullRequestMergeabilityArgs`.
- * - `pr view <n>` with `--json projectItems` — `readPullRequestProjectTitles`'
- *   `pullRequestProjectItemsArgs`.
- * - `pr edit <n>` with `--body` — `updatePullRequest`'s `updatePullRequestArgs`.
- * - `pr edit <n>` with `--add-label`/`--remove-label`/`--milestone` — `applyPullRequestMetadata`'s
- *   `applyPullRequestMetadataArgs`.
- * - `pr edit <n>` with `--add-project` — `applyPullRequestMetadata`'s `addPullRequestProjectsArgs`.
- * - `pr create` — the `createPullRequest` member's own literal argv.
- * - `issue view <n>` with `--json labels,milestone` — `readIssueTrackerMetadata`'
- *   `issueTrackerMetadataArgs`.
- * - `issue view <n>` with `--json projectItems` — `readIssueProjectTitles`' `issueProjectItemsArgs`.
- * - `label list` — `knownLabels`' `labelListArgs`.
- * - `label create` — `ensureModelLabel`'s `ensureModelLabelArgs`.
- * - `project list` — `knownProjectTitles`' `projectListArgs`.
- * - `repo view` with `--json nameWithOwner` and `--jq .nameWithOwner` — `runPublishLaneCli`'s
- *   `repositoryNameWithOwnerArgs`, spawned through the `gh` runner the port exposes.
- *
- * No shape carries `--method`: every `api` call above is a read, and `gh` defaults an unflagged call
- * to GET. `gh project item-list`, `gh pr comment`, `gh issue comment`, and any write to
- * `repos/<repo>/issues/comments[/<id>]` therefore match nothing here and cannot be assembled into a
- * spawned process without this table changing first.
- */
-export const PERMITTED_GH_INVOCATIONS: readonly GhShape[] = [
-    {
-        command: 'api',
-        endpoint: new RegExp(String.raw`^${PORT}/issues/${NUMBER}(?:\?.*)?$`, 'u'),
-        flags: [{ name: '--jq', value: VOLATILE }],
-    },
-    {
-        command: 'api',
-        endpoint: new RegExp(String.raw`^${PORT}/milestones\?state=open$`, 'u'),
-        flags: [],
-    },
-    {
-        command: 'api',
-        endpoint: new RegExp(
-            // The head selector rides `head=<owner>%3A<branch>` URL-encoded, so the branch's slashes
-            // arrive as `%2F`; the shape pins the endpoint and its pagination, and leaves the encoded
-            // selector to the argument builder that materialises it.
-            String.raw`^${PORT}/pulls\?state=all&head=[^&]*&per_page=${NUMBER}$`,
-            'u'
-        ),
-        flags: [{ name: '--paginate' }, { name: '--slurp' }],
-    },
-    {
-        command: 'pr',
-        subcommand: 'list',
-        positionals: 0,
-        flags: [
-            REPOSITORY,
-            { name: '--head', value: VOLATILE },
-            { name: '--state', value: VOLATILE },
-            { name: '--json', value: 'number,headRefName,isCrossRepository,title,body,baseRefName,headRefOid' },
-        ],
-    },
-    {
-        command: 'pr',
-        subcommand: 'view',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--json', value: 'labels,milestone' }],
-    },
-    {
-        command: 'pr',
-        subcommand: 'view',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--json', value: 'mergeable' }],
-    },
-    {
-        command: 'pr',
-        subcommand: 'view',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--json', value: 'projectItems' }],
-    },
-    {
-        command: 'pr',
-        subcommand: 'edit',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--body', value: VOLATILE }],
-    },
-    {
-        command: 'pr',
-        subcommand: 'edit',
-        positionals: 1,
-        flags: [
-            REPOSITORY,
-            { name: '--add-label', value: VOLATILE, repeats: true },
-            { name: '--remove-label', value: VOLATILE, repeats: true },
-            { name: '--milestone', value: VOLATILE, repeats: true },
-        ],
-    },
-    {
-        command: 'pr',
-        subcommand: 'edit',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--add-project', value: VOLATILE }],
-    },
-    {
-        command: 'pr',
-        subcommand: 'create',
-        positionals: 0,
-        flags: [
-            REPOSITORY,
-            { name: '--base', value: VOLATILE },
-            { name: '--head', value: VOLATILE },
-            { name: '--title', value: VOLATILE },
-            { name: '--body', value: VOLATILE },
-        ],
-    },
-    {
-        command: 'issue',
-        subcommand: 'view',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--json', value: 'labels,milestone' }],
-    },
-    {
-        command: 'issue',
-        subcommand: 'view',
-        positionals: 1,
-        flags: [REPOSITORY, { name: '--json', value: 'projectItems' }],
-    },
-    {
-        command: 'label',
-        subcommand: 'list',
-        positionals: 0,
-        flags: [
-            { name: '--limit', value: VOLATILE },
-            { name: '--json', value: 'name,description' },
-        ],
-    },
-    {
-        command: 'label',
-        subcommand: 'create',
-        positionals: 1,
-        flags: [{ name: '--color', value: VOLATILE }, { name: '--description', value: VOLATILE }, { name: '--force' }],
-    },
-    {
-        command: 'project',
-        subcommand: 'list',
-        positionals: 0,
-        flags: [
-            { name: '--owner', value: VOLATILE },
-            { name: '--format', value: VOLATILE },
-        ],
-    },
-    {
-        command: 'repo',
-        subcommand: 'view',
-        positionals: 0,
-        flags: [
-            { name: '--json', value: 'nameWithOwner' },
-            { name: '--jq', value: '.nameWithOwner' },
-        ],
-    },
-];
-
-/** The volatile operands a shape declares must be present, and must not be flags. */
-function matchesVolatileOperands(args: readonly string[], count: number, start: number): boolean {
-    for (let index = start; index < start + count; index += 1) {
-        const token = args[index];
-        if (token === undefined || token.startsWith('-')) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
- * Matches one shape's flag sequence. The single-occurrence flags are positional — a missing, extra,
- * or renamed one fails — and the repeating ones after them may appear any number of times in any
- * order, each consuming exactly one operand. Anything left over fails the match, so an unlisted flag
- * is refused wherever it is spliced in.
- */
-function matchesShapeFlags(args: readonly string[], start: number, flags: readonly GhFlag[]): boolean {
-    const firstRepeating = flags.findIndex((flag) => flag.repeats === true);
-    const ordered = firstRepeating === -1 ? flags : flags.slice(0, firstRepeating);
-    const repeating = firstRepeating === -1 ? [] : flags.slice(firstRepeating);
-    let index = start;
-    for (const flag of ordered) {
-        const consumed = matchesFlagAt(args, index, flag);
-        if (consumed === 0) {
-            return false;
-        }
-        index += consumed;
-    }
-    while (index < args.length) {
-        const token = args[index] ?? '';
-        const separator = token.indexOf('=');
-        const name = separator === -1 ? token : token.slice(0, separator);
-        const flag = repeating.find((candidate) => candidate.name === name);
-        if (flag === undefined) {
-            return false;
-        }
-        const consumed = matchesFlagAt(args, index, flag);
-        if (consumed === 0) {
-            return false;
-        }
-        index += consumed;
-    }
-    return true;
-}
-
-/**
- * The tokens one flag occupies at `start`: 0 when the flag is not there, or its operand is missing,
- * a flag-shaped token, or a different literal; otherwise 1 for a switch or `--flag=value` and 2 for a
- * separate operand.
- */
-function matchesFlagAt(args: readonly string[], start: number, flag: GhFlag): number {
-    const token = args[start];
-    if (token === undefined) {
-        return 0;
-    }
-    const separator = token.indexOf('=');
-    if (separator === -1 ? token !== flag.name : token.slice(0, separator) !== flag.name) {
-        return 0;
-    }
-    if (!Object.hasOwn(flag, 'value')) {
-        return 1;
-    }
-    const inline = separator === -1 ? undefined : token.slice(separator + 1);
-    const operand = inline ?? args[start + 1];
-    if (operand === undefined || operand.startsWith('-')) {
-        return 0;
-    }
-    if (typeof flag.value === 'string' && operand !== flag.value) {
-        return 0;
-    }
-    return inline === undefined ? 2 : 1;
-}
-
-/** Matches one shape against an assembled argv; `false` for a different verb or a refused invocation. */
-function matchesShape(args: readonly string[], shape: GhShape): boolean {
-    if (shape.command === 'api') {
-        if (args[0] !== 'api') {
-            return false;
-        }
-        const endpoint = args.find((token, index) => index > 0 && !token.startsWith('-'));
-        if (endpoint === undefined || !shape.endpoint.test(endpoint)) {
-            return false;
-        }
-        const flags = args.filter((token) => token.startsWith('-'));
-        return flags.length === shape.flags.length && shape.flags.every((flag) => flags.includes(flag.name));
-    }
-    if (args[0] !== shape.command || args[1] !== shape.subcommand) {
-        return false;
-    }
-    // The volatile operands sit between the subcommand and the flags; their values are not pinned,
-    // but each must be present and be an operand rather than another flag.
-    return (
-        matchesVolatileOperands(args, shape.positionals, 2) &&
-        matchesShapeFlags(args, 2 + shape.positionals, shape.flags)
-    );
-}
-
-/** Whether the assembled argv is one of the commands this publication enumerates. */
-export function matchesPermittedGhInvocation(args: readonly string[]): boolean {
-    return PERMITTED_GH_INVOCATIONS.some((shape) => matchesShape(args, shape));
-}
-
-/** Refuses any invocation the permitted set does not carry, naming the rule it would break. */
-export function assertGhCommandAllowed(args: string[]): void {
-    if (!matchesPermittedGhInvocation(args)) {
-        fail(`${PUBLICATION_COMMAND_RULE}: gh ${args.join(' ')}`);
-    }
-}
-
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
     resolvedPrimaryRoot?: string,
     executables: { git: string; gh: string } = { git: 'git', gh: 'gh' },
     operator?: OperatorSessionAccess
-): PublishLanePort & {
-    /**
-     * The port's own boundary-guarded `gh` spawns. Every `gh` this port runs goes through them, and
-     * each asserts its fully assembled argv against `PERMITTED_GH_INVOCATIONS` before spawning, so a
-     * caller outside the closure reaches `gh` under the same default-deny rule as every semantic
-     * member. The CLI resolves the repository through `gh`, and the publication specs drive both to
-     * observe the guards themselves rather than the rule they call.
-     */
-    gh: (args: string[]) => string;
-    ghRun: (args: string[]) => void;
-} {
+): PublishLanePort {
     const primaryRoot =
         resolvedPrimaryRoot ??
         resolvePrimaryRoot(
@@ -2256,33 +1847,16 @@ export function shellPort(
             cwd: directory,
             env: session.env,
         });
-    // Every `gh` this port spawns — both credentials' captures and runs, and the issue-existence
-    // lookup below — passes the default-deny boundary on its fully assembled argv, so an invocation
-    // outside `PERMITTED_GH_INVOCATIONS` cannot reach the process whatever closure member or path
-    // assembled it. The capture and run runners are returned below, so a caller holding the port
-    // reaches `gh` under the same rule rather than around it.
-    const gh = (args: string[]) => {
-        assertGhCommandAllowed(args);
-        return spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
-    };
-    const ghRun = (args: string[]) => {
-        assertGhCommandAllowed(args);
-        return spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
-    };
+    const gh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
+    const ghRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
     const operatorEnv = () => {
         if (operator === undefined) {
             fail('project membership needs the verified operator credential, which this port was built without');
         }
         return operator.session().env;
     };
-    const operatorGh = (args: string[]) => {
-        assertGhCommandAllowed(args);
-        return spawnCapture(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
-    };
-    const operatorGhRun = (args: string[]) => {
-        assertGhCommandAllowed(args);
-        return spawnRun(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
-    };
+    const operatorGh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
+    const operatorGhRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
     return {
         baseSha: () => {
             spawnRun(
@@ -2308,9 +1882,7 @@ export function shellPort(
             ),
         cwd: () => cwd,
         issueExists: (issue) => {
-            const args = issueLookupArgs(issue);
-            assertGhCommandAllowed(args);
-            const result = spawnSync(executables.gh, args, {
+            const result = spawnSync(executables.gh, issueLookupArgs(issue), {
                 cwd: primaryRoot,
                 env: session.env,
                 encoding: 'utf8',
@@ -2346,8 +1918,8 @@ export function shellPort(
         laneSubject: (lane, baseSha, headSha) =>
             spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
             undefined,
-        commitAttribution: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
-            readCommitAttribution(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
+        commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
+            readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
                 // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
                 // empty author email line survives the read instead of vanishing into the trim.
                 spawnCapture(executables.git, args, { cwd, env: session.env, trim: false })
@@ -2551,8 +2123,6 @@ export function shellPort(
             console.log(message);
         },
         guardFailure: (laneName) => readGuardFailureReceipt(primaryRoot, laneName),
-        gh,
-        ghRun,
     };
 }
 
@@ -2656,14 +2226,6 @@ export function pullRequestMergeabilityArgs(number: number): string[] {
 
 export function pullRequestProjectItemsArgs(number: number): string[] {
     return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'projectItems'];
-}
-
-/**
- * The repository the authenticated App is publishing into. It is the CLI's own prerequisite read,
- * spawned through the port's guarded `gh` runner before any publication authority is granted.
- */
-export function repositoryNameWithOwnerArgs(): string[] {
-    return ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'];
 }
 
 export type OpenPullRequestRow = {
@@ -2797,23 +2359,21 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     // authorization env.
     const operator = operatorSessionAccess(authorizationEnv);
     try {
-        // Built before the repository resolution so that read spawns through the port's own
-        // boundary-guarded `gh` runner, the same one the publication it authorizes uses.
-        const port = shellPort(
-            auth.session,
-            selectionPath,
-            primaryRoot,
-            { git: runtime.gitPath, gh: runtime.ghPath },
-            operator
+        const repository = spawnCapture(
+            runtime.ghPath,
+            ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
+            {
+                env: auth.session.env,
+                cwd: primaryRoot,
+            }
         );
-        const repository = port.gh(repositoryNameWithOwnerArgs());
         assertRequiredRepository(repository);
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
         publishLane(
             parsed.issue,
-            port,
+            shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }, operator),
             parsed.relationship,
             parsed.testInstructions,
             parsed.summary,
