@@ -1,0 +1,38 @@
+.agents/decisions/0049-single-approval-review-author-merge.md
+  h_beb54bf43b47b7 1-54
+.agents/decisions/README.md
+  h_beb54bf43b47b7 62-63,65
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 22-43,116-124,128-129,366-376,380-382,436-437,439-440,475,478-481
+.github/CODEOWNERS
+  h_beb54bf43b47b7 7-9
+AGENTS.md
+  h_beb54bf43b47b7 32-34,96-99,133,198-201,428-430,446,449-450,491,496-505,573-576
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 815,3401,3437,3454,3515
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 1055,1573,1587,1597-1604,1609-1610,1613-1614,1651,1657,1755,1774,1794,1805,1821-1838,1850,1873,1895,1953,1955,2022,2024,2083,2085,2171,2173,2178,2676,2678,2739-2740,2762-2763,2815,2819,2902-2903,2944-2945,3005-3006,3919,5007,5011,5524,5526,5571,5574,5629,5631,6296-6305,6310,6560,6571,6614,6629-6648,6650,6652-6654,6656-6658,8188
+scripts/__tests__/orchestratorReviewState.spec.ts
+  h_beb54bf43b47b7 6-12,48-50,52-53,56,64-65,67,81
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 46-51,5076-5080,5212-5213,5217-5223,5228-5229,5231,5265-5272,5346-5347,6384-6386,6390,6413
+scripts/__tests__/threeRoleTransitions.spec.ts
+  h_beb54bf43b47b7 2-9,59,66-67,75-79,82-93
+scripts/deliverPullRequest.ts
+  h_beb54bf43b47b7 134-137,1348-1352,1363,1371,2742-2743,3688,4395,4418,4439,4494
+scripts/pullRequestReviewState.ts
+  h_beb54bf43b47b7 3
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 21,217-222,274-292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1bbc5f9ef5c2ffc424c0e2fe1cc1026f46bd0302",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
