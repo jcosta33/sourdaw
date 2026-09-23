@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 /**
- * Canonicalise and harden the live `main` branch ruleset, inside one approved pair (#3002).
+ * Canonicalise and harden the live `main` branch ruleset, inside one approved triple (#3002, #4584).
  *
  * The ruleset is repository configuration: it decides which status contexts are required and how a
  * pull request may merge. This command therefore treats it as a security boundary rather than as an
- * editable document. It names exactly the two approved head-discipline fields — stale-review
- * dismissal and last-push approval — and walks the decoded JSON to refuse any difference outside
- * that pair, so a bug in the copy, a widened allowlist, or a server that answers with something
- * else cannot smuggle a change through underneath the pair. In particular a status context becoming
- * required is a distinct refusal that names the added context, because a required shadow status
- * would turn the reviewer's non-authoritative shadow into merge authority (AC-018).
+ * editable document. It names exactly the three approved head-discipline fields — stale-review
+ * dismissal, last-push approval, and the approving-review count — and walks the decoded JSON to
+ * refuse any difference outside that set, so a bug in the copy, a widened allowlist, or a server
+ * that answers with something else cannot smuggle a change through underneath the set. In
+ * particular a status context becoming required is a distinct refusal that names the added context,
+ * because a required shadow status would turn the reviewer's non-authoritative shadow into merge
+ * authority (AC-018).
+ *
+ * The approving-review count targets 1 for the single-approval review policy: the reviewer App's
+ * approval of the current head is the one independent approval GitHub requires before merge.
  *
  * The write happens only through the verified orchestrator User, only after the rollback bytes are
- * captured, and only after both guards pass. When both approved fields already hold, nothing is
+ * captured, and only after every guard passes. When every approved field already holds, nothing is
  * written and the receipt says so. Reading back and holding the result to the guards is what proves
  * the write landed as planned rather than merely that a request was sent.
  */
@@ -34,13 +38,20 @@ import { fail } from './prContract.ts';
 export const RULESET_HARDENING_USAGE = 'usage: pnpm ruleset:harden [--apply]';
 
 /**
- * The approved pair, and nothing else. A ruleset change touching any other path — including any
- * `required_status_checks` entry — is refused by name, so widening this tuple is the one edit that
- * would open the boundary.
+ * The approved target set, and nothing else. A ruleset change touching any other path — including
+ * any `required_status_checks` entry — is refused by name, so widening this list is the one edit
+ * that would open the boundary. `required_approving_review_count` targets 1 for the single-approval
+ * review policy: the reviewer App's approval of the current head is the one independent approval
+ * GitHub requires before merge.
  */
-export const HARDENING_FIELDS = ['dismiss_stale_reviews_on_push', 'require_last_push_approval'] as const;
+export const HARDENING_TARGETS = [
+    { field: 'dismiss_stale_reviews_on_push', to: true },
+    { field: 'require_last_push_approval', to: true },
+    { field: 'required_approving_review_count', to: 1 },
+] as const;
 
-export type HardeningField = (typeof HARDENING_FIELDS)[number];
+export type HardeningTarget = (typeof HARDENING_TARGETS)[number];
+export type HardeningField = HardeningTarget['field'];
 
 /** A decoded ruleset (or any nested object) as GitHub returns it: plain JSON, never a class. */
 export type RulesetDocument = { [key: string]: JsonValue };
@@ -115,7 +126,7 @@ export type HardeningFieldPlan = {
     path: string;
     satisfied: boolean;
     from: JsonValue | undefined;
-    to: true;
+    to: HardeningTarget['to'];
 };
 
 export type HardeningPlan = {
@@ -124,18 +135,18 @@ export type HardeningPlan = {
     changes: HardeningFieldPlan[];
 };
 
-/** What the two approved controls are and what would change. Pure: it reads and returns only. */
+/** What the approved controls are and what would change. Pure: it reads and returns only. */
 export function planHardening(ruleset: RulesetDocument): HardeningPlan {
     const { index, rule } = findPullRequestRule(ruleset);
     const parameters = pullRequestParameters(rule, index);
-    const changes = HARDENING_FIELDS.map((field) => {
-        const from = parameters[field];
+    const changes = HARDENING_TARGETS.map((target) => {
+        const from = parameters[target.field];
         return {
-            field,
-            path: `rules[${String(index)}].parameters.${field}`,
-            satisfied: from === true,
+            field: target.field,
+            path: `rules[${String(index)}].parameters.${target.field}`,
+            satisfied: from === target.to,
             from,
-            to: true as const,
+            to: target.to,
         };
     });
     return { ruleIndex: index, satisfied: changes.every((change) => change.satisfied), changes };
@@ -159,18 +170,18 @@ function cloneRuleset(ruleset: RulesetDocument): RulesetDocument {
     return clone;
 }
 
-/** The approved fields set true, as a fresh object so no caller shares it. */
-function approvedFieldsEnabled(): RulesetDocument {
-    const enabled: RulesetDocument = {};
-    for (const field of HARDENING_FIELDS) {
-        enabled[field] = true;
+/** The approved fields set to their targets, as a fresh object so no caller shares it. */
+function approvedTargetsApplied(): RulesetDocument {
+    const applied: RulesetDocument = {};
+    for (const target of HARDENING_TARGETS) {
+        applied[target.field] = target.to;
     }
-    return enabled;
+    return applied;
 }
 
 /**
- * A deep copy with both approved fields true and nothing else altered: same rule order, same other
- * parameters, same conditions, same bypass actors. The input is never mutated.
+ * A deep copy with every approved field at its target and nothing else altered: same rule order,
+ * same other parameters, same conditions, same bypass actors. The input is never mutated.
  */
 export function buildHardenedRuleset(ruleset: RulesetDocument): RulesetDocument {
     const { index } = findPullRequestRule(ruleset);
@@ -181,7 +192,7 @@ export function buildHardenedRuleset(ruleset: RulesetDocument): RulesetDocument 
         }
         const rule = asRulesetObject(entry, `rules[${String(entryIndex)}]`);
         const parameters = pullRequestParameters(rule, entryIndex);
-        return { ...rule, parameters: { ...parameters, ...approvedFieldsEnabled() } };
+        return { ...rule, parameters: { ...parameters, ...approvedTargetsApplied() } };
     });
     return { ...cloned, rules };
 }
@@ -233,21 +244,41 @@ export function rulesetDifferences(before: RulesetDocument, after: RulesetDocume
 }
 
 /**
- * Refuses any before/after pair differing anywhere outside the two approved paths of the `before`
+ * Refuses any before/after pair differing anywhere outside the approved paths of the `before`
  * ruleset's `pull_request` rule, naming the first disallowed JSON path. Every difference is filtered
  * rather than the first returned, because a pair that changes an approved field *and* something else
  * would otherwise pass on the approved difference alone.
  */
 export function assertOnlyApprovedFieldsChanged(before: RulesetDocument, after: RulesetDocument): void {
     const { index } = findPullRequestRule(before);
-    const approved = new Set<string>(HARDENING_FIELDS.map((field) => `rules[${String(index)}].parameters.${field}`));
+    const approved = new Set<string>(
+        HARDENING_TARGETS.map((target) => `rules[${String(index)}].parameters.${target.field}`)
+    );
     const disallowed = rulesetDifferences(before, after).filter((path) => !approved.has(path));
     if (disallowed.length > 0) {
         fail(
-            `refusing ruleset change outside the approved pair ${HARDENING_FIELDS.join(', ')}: ` +
+            `refusing ruleset change outside the approved set ${HARDENING_TARGETS.map((target) => target.field).join(', ')}: ` +
                 `${String(disallowed.length)} disallowed difference(s), first at ${describePath(disallowed[0])}`
         );
     }
+}
+
+/**
+ * Refuses a ruleset that leaves any approved field short of its target, naming that field's path.
+ * The path-based guard above cannot see a wrong value on an approved path — a candidate that sets
+ * the review count to 2 passes `assertOnlyApprovedFieldsChanged` because the path is approved — so
+ * this is the value check that turns it into a refusal before any write, and the readback check
+ * that proves the server stored every target.
+ */
+export function assertTargetsSatisfied(ruleset: RulesetDocument): void {
+    const firstUnsatisfied = planHardening(ruleset).changes.find((change) => !change.satisfied);
+    if (firstUnsatisfied === undefined) {
+        return;
+    }
+    fail(
+        `refusing ruleset change that leaves ${firstUnsatisfied.field} at ${describeValue(firstUnsatisfied.from)} ` +
+            `instead of ${describeValue(firstUnsatisfied.to)} (${firstUnsatisfied.path})`
+    );
 }
 
 /**
@@ -349,11 +380,12 @@ export type RulesetHardeningPort = {
 export type HardenedRulesetBuilder = (ruleset: RulesetDocument) => RulesetDocument;
 
 /**
- * The whole operation against a port. Reading, planning and the rollback capture come first; both
- * guards then run against the candidate write, so a candidate touching anything outside the pair or
- * adding a required context is refused before the port is asked to write. With `apply` false the
- * plan is reported and nothing is written. On apply, the write is followed by a fresh read and the
- * same guards over the writable projection, which is what proves the server stored the plan.
+ * The whole operation against a port. Reading, planning and the rollback capture come first; every
+ * guard then runs against the candidate write, so a candidate touching anything outside the
+ * approved set, adding a required context, or leaving a field short of its target is refused before
+ * the port is asked to write. With `apply` false the plan is reported and nothing is written. On
+ * apply, the write is followed by a fresh read and the same guards over the writable projection,
+ * which is what proves the server stored the plan.
  */
 export function hardenRuleset(
     apply: boolean,
@@ -379,6 +411,7 @@ export function hardenRuleset(
     // that rather than as a generic difference somewhere in the rules.
     assertNoRequiredContextAdded(live, candidate);
     assertOnlyApprovedFieldsChanged(live, candidate);
+    assertTargetsSatisfied(candidate);
     const changed = plan.changes.filter((change) => !change.satisfied).map((change) => change.field);
     if (!apply) {
         for (const line of renderHardeningPlan(plan)) {
@@ -393,9 +426,7 @@ export function hardenRuleset(
     const readback = port.readRuleset(rulesetId);
     assertNoRequiredContextAdded(live, readback);
     assertOnlyApprovedFieldsChanged(writableRuleset(live), writableRuleset(readback));
-    if (!planHardening(readback).satisfied) {
-        fail(`ruleset ${String(rulesetId)} readback does not show both approved fields enabled`);
-    }
+    assertTargetsSatisfied(readback);
     const receipt: RulesetHardeningReceipt = { rulesetId, outcome: 'applied', changed, rollback };
     port.log(renderHardeningReceipt(receipt));
     return receipt;
