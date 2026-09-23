@@ -1,0 +1,14 @@
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f27b1e53bb3b77344512f2a387997749569a3d8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
