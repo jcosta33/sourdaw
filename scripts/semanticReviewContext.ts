@@ -5,15 +5,15 @@
  * orchestrator can see what the assessment looked at and what it withheld without reading the
  * assessment's own findings. A green check means the assessment was delivered, never that the change
  * is clean; an incomplete or red check, a missing artifact, an expired artifact, an unreadable
- * archive, a malformed artifact or report, a forbidden read, or a pull-request or revision mismatch
- * are all recorded as `no-assessment` with their reason, and none of them throws.
+ * archive, a malformed report, a forbidden read, or a pull-request or revision mismatch are all
+ * recorded as `no-assessment` with their reason, and none of them throws.
  *
  * `absent` names an assessment that was never produced: no `Semantic review` check ran, it was
- * skipped, or its suite yielded no advisory workflow run or artifact. A read that fails is
- * `unreadable` and a read that is denied is `forbidden`, so a broken transport can never masquerade
- * as a check that was not produced. A consumer reads `execution` and the scope counts rather than
- * `state` alone: a `skipped` execution with a zero scope is a complete assessment of an empty scope,
- * not a missing one.
+ * skipped, its suite yielded no advisory workflow run, or the artifact carried no report. A read
+ * that fails is `unreadable` and a read that is denied is `forbidden`, so a broken transport can
+ * never masquerade as a check that was not produced. A consumer reads `execution` and the scope
+ * counts rather than `state` alone: a `skipped` execution with a zero scope is a complete
+ * assessment of an empty scope, not a missing one.
  *
  * The projection is coverage-only. The report's signals, findings, reasoning, question text, and
  * probabilities never reach the bundle, and each scope entry's `reason` is validated against the
@@ -245,18 +245,18 @@ function archiveScanJson(archive: Buffer): Buffer | undefined {
     return Buffer.from(entry);
 }
 
-/** The newest run of the semantic check, by run id, so a stale failure cannot outrank a fresh success. */
-function newestNamedCheckRun(checkRuns: readonly SemanticCheckRun[]): SemanticCheckRun | undefined {
-    let newest: SemanticCheckRun | undefined;
-    for (const candidate of checkRuns) {
-        if (candidate.name !== SEMANTIC_REVIEW_CHECK_NAME) {
-            continue;
-        }
-        if (newest === undefined || candidate.id > newest.id) {
-            newest = candidate;
-        }
-    }
-    return newest;
+/** The advisory workflow run among a suite's runs, matched by its path and `pull_request_target` event. */
+function advisoryWorkflowRun(actionRuns: readonly SemanticActionRun[]): SemanticActionRun | undefined {
+    return actionRuns.find(
+        (candidate) => candidate.path === ADVISORY_WORKFLOW_PATH && candidate.event === ADVISORY_WORKFLOW_EVENT
+    );
+}
+
+/** Same-name check runs, newest first, so a decoy from another workflow cannot hide a genuine advisory run. */
+function sameNameChecksNewestFirst(checkRuns: readonly SemanticCheckRun[]): readonly SemanticCheckRun[] {
+    return checkRuns
+        .filter((candidate) => candidate.name === SEMANTIC_REVIEW_CHECK_NAME)
+        .sort((left, right) => right.id - left.id);
 }
 
 /** The pull-request and run identity the producer encodes in an artifact name: `semantic-review-<pr>-<runId>`. */
@@ -279,43 +279,50 @@ function artifactIdentity(name: string): ArtifactIdentity | undefined {
 }
 
 function selectAssessmentArtifact(
-    artifacts: readonly SemanticArtifact[]
+    artifacts: readonly SemanticArtifact[],
+    pr: number,
+    runId: number
 ): { readonly artifact: SemanticArtifact; readonly identity: ArtifactIdentity } | undefined {
     for (const candidate of artifacts) {
         const identity = artifactIdentity(candidate.name);
-        if (identity !== undefined) {
+        if (identity !== undefined && identity.pr === pr && identity.runId === runId) {
             return { artifact: candidate, identity };
         }
     }
     return undefined;
 }
 
-type SemanticCheckResolution = { readonly checkSuiteId: number } | { readonly reason: SemanticCiNoAssessmentReason };
+function hasAssessmentArtifact(artifacts: readonly SemanticArtifact[]): boolean {
+    return artifacts.some((candidate) => artifactIdentity(candidate.name) !== undefined);
+}
 
-function resolveSemanticCheck(headSha: string, port: SemanticReviewContextPort): SemanticCheckResolution {
+type AdvisoryCheckResolution =
+    | { readonly check: SemanticCheckRun; readonly run: SemanticActionRun }
+    | { readonly reason: SemanticCiNoAssessmentReason };
+
+function resolveAdvisoryCheck(headSha: string, port: SemanticReviewContextPort): AdvisoryCheckResolution {
     let checkRuns: readonly SemanticCheckRun[];
     try {
         checkRuns = port.checkRuns(headSha);
     } catch (error) {
         return { reason: readFailureReason(error) };
     }
-    const check = newestNamedCheckRun(checkRuns);
-    if (check === undefined) {
-        return { reason: 'absent' };
-    }
-    if (check.conclusion !== 'success') {
-        if (check.conclusion === null) {
-            return { reason: 'incomplete' };
+    for (const check of sameNameChecksNewestFirst(checkRuns)) {
+        if (check.checkSuiteId === null) {
+            continue;
         }
-        if (check.conclusion === 'skipped') {
-            return { reason: 'absent' };
+        let actionRuns: readonly SemanticActionRun[];
+        try {
+            actionRuns = port.actionRuns(check.checkSuiteId);
+        } catch (error) {
+            return { reason: readFailureReason(error) };
         }
-        return { reason: 'red-check' };
+        const run = advisoryWorkflowRun(actionRuns);
+        if (run !== undefined) {
+            return { check, run };
+        }
     }
-    if (check.checkSuiteId === null) {
-        return { reason: 'absent' };
-    }
-    return { checkSuiteId: check.checkSuiteId };
+    return { reason: 'absent' };
 }
 
 export function resolveSemanticReviewContext(
@@ -323,22 +330,20 @@ export function resolveSemanticReviewContext(
     headSha: string,
     port: SemanticReviewContextPort
 ): SemanticCiRecord {
-    const checkResolution = resolveSemanticCheck(headSha, port);
-    if ('reason' in checkResolution) {
-        return noAssessment(pr, headSha, checkResolution.reason);
+    const resolution = resolveAdvisoryCheck(headSha, port);
+    if ('reason' in resolution) {
+        return noAssessment(pr, headSha, resolution.reason);
     }
+    const { check, run } = resolution;
 
-    let actionRuns: readonly SemanticActionRun[];
-    try {
-        actionRuns = port.actionRuns(checkResolution.checkSuiteId);
-    } catch (error) {
-        return noAssessment(pr, headSha, readFailureReason(error));
-    }
-    const run = actionRuns.find(
-        (candidate) => candidate.path === ADVISORY_WORKFLOW_PATH && candidate.event === ADVISORY_WORKFLOW_EVENT
-    );
-    if (run === undefined) {
-        return noAssessment(pr, headSha, 'absent');
+    if (check.conclusion !== 'success') {
+        if (check.conclusion === null) {
+            return noAssessment(pr, headSha, 'incomplete');
+        }
+        if (check.conclusion === 'skipped') {
+            return noAssessment(pr, headSha, 'absent');
+        }
+        return noAssessment(pr, headSha, 'red-check');
     }
 
     let artifacts: readonly SemanticArtifact[];
@@ -347,12 +352,9 @@ export function resolveSemanticReviewContext(
     } catch (error) {
         return noAssessment(pr, headSha, readFailureReason(error));
     }
-    const selected = selectAssessmentArtifact(artifacts);
+    const selected = selectAssessmentArtifact(artifacts, pr, run.id);
     if (selected === undefined) {
-        return noAssessment(pr, headSha, 'absent');
-    }
-    if (selected.identity.pr !== pr || selected.identity.runId !== run.id) {
-        return noAssessment(pr, headSha, 'mismatch');
+        return noAssessment(pr, headSha, hasAssessmentArtifact(artifacts) ? 'mismatch' : 'absent');
     }
     if (Date.parse(selected.artifact.expiresAt) <= port.now()) {
         return noAssessment(pr, headSha, 'expired');
@@ -371,7 +373,7 @@ export function resolveSemanticReviewContext(
         return noAssessment(pr, headSha, 'unreadable');
     }
     if (scanJsonBytes === undefined) {
-        return noAssessment(pr, headSha, 'malformed');
+        return noAssessment(pr, headSha, 'absent');
     }
 
     let report: SemanticReport;

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -17,12 +17,22 @@ import { fail } from './prContract.ts';
 import { parsePrepareReviewArgs, prepareReview, shellPort } from './prepareReview.ts';
 import { resolveSemanticReviewContext, shellSemanticReviewContextPort } from './semanticReviewContext.ts';
 
-const ENTRY_PATH = 'scripts/prepareReviewEntry.ts';
-const PREPARE_REVIEW_PATH = 'scripts/prepareReview.ts';
-const RESOLVER_PATH = 'scripts/semanticReviewContext.ts';
-
-/** Every file the entry composes at runtime, asserted against origin/main so a drifted copy refuses. */
-export const TRUSTED_EXECUTING_PATHS = [ENTRY_PATH, PREPARE_REVIEW_PATH, RESOLVER_PATH] as const;
+/**
+ * The modules the entry composes at runtime — its own file, its direct local imports, and the
+ * resolver's own local imports — resolved as repository paths and asserted against origin/main so a
+ * drifted copy of any of them refuses. A path the default branch does not hold is refused too: the
+ * assertion must never be vacuous about a module it names.
+ */
+export const TRUSTED_EXECUTING_PATHS = [
+    'scripts/prepareReviewEntry.ts',
+    'scripts/githubAppIdentity.ts',
+    'scripts/prContract.ts',
+    'scripts/prepareReview.ts',
+    'scripts/semanticReviewContext.ts',
+    'scripts/semanticReview/contracts.ts',
+    'scripts/semanticReview/report.ts',
+    'scripts/semanticReviewWorkflowContract.ts',
+] as const;
 
 export type TrustedExecutingBlob = {
     readonly path: string;
@@ -32,6 +42,9 @@ export type TrustedExecutingBlob = {
 
 export function assertTrustedExecutingBlobs(blobs: readonly TrustedExecutingBlob[]): void {
     for (const blob of blobs) {
+        if (blob.originBlob === undefined) {
+            throw new Error(`${blob.path} has no blob on origin/main; refusing to run an unverifiable copy`);
+        }
         assertTrustedExecutingBlob(blob.path, blob.path, blob.originBlob, blob.source);
     }
 }
@@ -41,11 +54,11 @@ export function collectTrustedExecutingBlobs(
     cwd: string,
     readFile: (path: string) => string = (path) => readFileSync(path, 'utf8')
 ): readonly TrustedExecutingBlob[] {
-    const directory = dirname(executingFile);
+    const repositoryRoot = dirname(dirname(executingFile));
     return TRUSTED_EXECUTING_PATHS.map((path) => ({
         path,
         originBlob: originMainBlob(path, cwd),
-        source: readFile(join(directory, basename(path))),
+        source: readFile(join(repositoryRoot, path)),
     }));
 }
 

@@ -170,26 +170,44 @@ describe('review prepare', () => {
         }
     });
 
-    it('names the entry, library, and resolver as the trusted executing set', () => {
-        const blobs = collectTrustedExecutingBlobs(
-            join(tmpdir(), 'scripts', 'prepareReviewEntry.ts'),
-            tmpdir(),
-            (path) => `source:${path}`
-        );
+    it('names the entry, its direct imports, and the resolver imports as the trusted executing set', () => {
         expect(TRUSTED_EXECUTING_PATHS).toEqual([
             'scripts/prepareReviewEntry.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
             'scripts/prepareReview.ts',
             'scripts/semanticReviewContext.ts',
+            'scripts/semanticReview/contracts.ts',
+            'scripts/semanticReview/report.ts',
+            'scripts/semanticReviewWorkflowContract.ts',
         ]);
-        expect(blobs.map((blob) => blob.path)).toEqual([...TRUSTED_EXECUTING_PATHS]);
     });
 
-    it('refuses a drifted resolver', () => {
-        const blobs = [
-            { path: 'scripts/prepareReviewEntry.ts', originBlob: undefined, source: 'entry' },
-            { path: 'scripts/prepareReview.ts', originBlob: undefined, source: 'prepare' },
-            { path: 'scripts/semanticReviewContext.ts', originBlob: 'origin resolver', source: 'drifted resolver' },
-        ];
+    it('resolves each asserted path as a repository path, nested paths included', () => {
+        const readPaths: string[] = [];
+        collectTrustedExecutingBlobs(join('/repo', 'scripts', 'prepareReviewEntry.ts'), '/repo', (path) => {
+            readPaths.push(path);
+            return 'source';
+        });
+        expect(readPaths).toEqual([
+            '/repo/scripts/prepareReviewEntry.ts',
+            '/repo/scripts/githubAppIdentity.ts',
+            '/repo/scripts/prContract.ts',
+            '/repo/scripts/prepareReview.ts',
+            '/repo/scripts/semanticReviewContext.ts',
+            '/repo/scripts/semanticReview/contracts.ts',
+            '/repo/scripts/semanticReview/report.ts',
+            '/repo/scripts/semanticReviewWorkflowContract.ts',
+        ]);
+    });
+
+    it('refuses when an asserted path has no blob on origin/main', () => {
+        const blobs = [{ path: 'scripts/prepareReviewEntry.ts', originBlob: undefined, source: 'entry' }];
+        expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/no blob on origin\/main/);
+    });
+
+    it('refuses a drifted asserted module', () => {
+        const blobs = [{ path: 'scripts/semanticReviewContext.ts', originBlob: 'origin resolver', source: 'drifted' }];
         expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/does not match origin\/main/);
     });
 
