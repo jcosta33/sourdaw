@@ -30,8 +30,110 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   the population actually has — an ordering normalizer, an encoding change, a dropped field — and
   require a case in each that reverting the detector's invariant check fails. A suite green on the
   incident fixture alone does not discharge the detector's global claim.
+- The e2e matrix never runs on a pull request, so nothing on the reviewing head catches a spec left
+  asserting a control the diff renamed, removed, or replaced: sweep `tests/e2e/` for the old control
+  name, aria-label, or text and re-home the affected specs in the same change. A control can also be
+  retired with no rename at all: when a diff changes a control's enabled, disabled, or visibility
+  condition, read the changed control's attributes in the product and search `tests/e2e/` for each
+  value it can be located by — its test id, its aria-label or accessible name, its placeholder, its
+  title, and its rendered text — never for assertion names, which select unrelated specs. Those forms
+  are examples of what to search, not a closed set, so also add any spec that reaches the control by
+  role or text alone. Search every form the control has, not one of them: one term reaches only the
+  specs that read that form and misses the specs that read another. The population the step acts on is
+  the union of those searches, the specs whose locators resolve to the changed control; inside each
+  returned spec, inspect every state read of that control: `toBeVisible`, `not.toBeVisible`,
+  `toHaveCount`, `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the `isDisabled()`, `isEnabled()`,
+  `isVisible()` conditional guards — the conditional-admission class the blind spot below names.
+  Re-check each against the new condition and re-home it in the same change: a guard strands every
+  assertion behind it, so a guard keyed on a state the diff changes must be re-homed even when no
+  control was renamed, removed, or replaced.
+  When a diff adds text-bearing UI beside an existing text locator, search `tests/e2e/`
+  case-insensitively inside the text locators' own arguments — `getByText(...)`,
+  `getByRole(..., { name: ... })`, `getByLabel(...)` — for the added sibling's own text, never
+  whole-file text, which returns every spec that merely mentions it; that search finds the candidate
+  arguments, but the judge runs the other way: a text locator becomes ambiguous when its argument is a
+  case-insensitive substring of the added element's text, so an argument that contains the sibling's
+  text, such as `getByText('Synth panel')`, would not match the option at all; keep only the candidates
+  whose kind or role can select the added element, because a role-scoped locator for a different role
+  cannot; the population is the specs holding such a locator, bounded because only a matching locator
+  argument can resolve to the wrong element; for the recorded `synth` sibling that is the two specs
+  holding `getByText('Synth')` — `tests/e2e/instrumentPanels.spec.ts` and
+  `tests/e2e/templateAndInspectorFinal.spec.ts` — against the twelve a whole-file text search returns
+  and the three a role-blind search returns, the role test removing `tests/e2e/e2eWorkflow.spec.ts`,
+  whose `getByRole('button', { name: /^Bypass Synth/i })` at line 82 and
+  `getByRole('button', { name: /^Enable Synth/i })` at line 86 are role-scoped locators for `button`
+  that can never resolve to the added `<option>`. Require every spec in that population
+  to redden if its locator is now ambiguous — `getByText` matches case-insensitive substrings, so a new
+  sibling makes it a strict-mode violation or makes `.first()` select the wrong element.
+- An either-arm assertion is a standing escape: select every hit of `expect\([^)]*\|\|` across the
+  specs under review, with no qualifier about whether its arms can hold independently, and require
+  each arm to be load-bearing by mutating that arm's condition away and confirming the assertion
+  reddens — that mutation is how a dead arm is exposed, and until both arms are proven the
+  disjunction can be silently narrowed to a single live arm.
 
 ## Lessons from escapes
+
+### 2026-09-22 — renamed controls and an ambiguous text locator left `tests/e2e/` stale (escaped via PRs #4464, #4473, #4479)
+
+The nightly end-to-end train reddened on `main` across six of twelve shards: the `Command Mode`,
+`Confirm actions`/`Cancel actions` and `toBeDisabled` failures came from a spec asserting a control
+or state the product no longer exposes, while the two Synth failures came from a newly added sibling
+that made an existing text locator ambiguous. The composer's "Command Mode" button was
+removed on 2026-08-15 by commit `bd618a5a79` ("fix(agent): expose governed execution modes"), which
+replaced it with the `Agent execution mode` select; PR #4479 removed the prompt bar's inline
+`Confirm actions` / `Cancel actions` controls; and PR #4464 removed the `isLlmAvailable` term from the
+composer's `disabled` expression — retiring that state contract, leaving
+`chatComposerTestId.spec.ts`'s `toBeDisabled()` assertion stale, and, because the stale `Command Mode`
+locator sat behind an `isDisabled()` guard, unmasking that five-week-old locator. PR #4473 added a
+track-role `<option value="synth">` above the inspector's `Synth` device card, so `getByText('Synth')`
+matched both — a strict-mode violation in one spec and, because `getByText` matches case-insensitive
+substrings, `.first()` resolving to the invisible `<option value="synth">`, whose click timed out at
+line 63 and reddened that spec and its shard. A text locator that resolves to the wrong element
+makes its assertion observe something other than the intended control, and when the assertion is a
+disjunction written against that locator, an arm it cannot satisfy is dead: the disjunction
+silently narrows to whichever single arm still holds.
+
+Blind spot: e2e never runs on a pull request, so a control rename, removal, replacement, or state
+change has no check on the reviewing head; a guard keyed on a state the diff changes hides the stale
+locator behind it; a text locator is treated as stable when a new sibling's text is a
+case-insensitive substring of it, so the locator resolves to the wrong element and the assertion
+observes something other than the intended control; and an either-arm assertion whose arms can hold
+independently is accepted as covering both when one arm may be dead.
+
+Probe that would have caught it: when a diff renames, removes, or replaces a control, sweep
+`tests/e2e/` for the old control name, aria-label, or text and re-home every stale spec in the same
+change; when a diff changes a control's enabled, disabled, or visibility condition, read the changed
+control's attributes in the product and search `tests/e2e/` for each value it can be located by —
+its test id, its aria-label or accessible name, its placeholder, its title, and its rendered text —
+never assertion names, and take the union of those searches rather than one term: one term reaches
+only the specs that read that form and misses the specs that read another; those forms are examples
+of what to search, not a closed set, so also add any spec that reaches the control by role or text
+alone; the population is the union of those searches, the specs whose locators resolve to the changed
+control; inside each returned spec, inspect every state read of it — `toBeVisible`,
+`not.toBeVisible`, `toHaveCount`, `toBeDisabled`, `toBeEnabled`, `toBeHidden`, and the
+`isDisabled()`, `isEnabled()`, `isVisible()` guards — and re-home each in the same change; when a
+diff adds text-bearing UI beside an existing text locator, search `tests/e2e/` case-insensitively
+inside the text locators' own arguments — `getByText(...)`, `getByRole(..., { name: ... })`,
+`getByLabel(...)` — for the added sibling's own text, never whole-file text, which returns every
+spec that merely mentions it; that search finds the candidate arguments, but the judge runs the
+other way: a text locator becomes ambiguous when its argument is a case-insensitive substring of the
+added element's text, so an argument that contains the sibling's text, such as
+`getByText('Synth panel')`, would not match the option at all; keep only the candidates whose kind
+or role can select the added element, because a role-scoped locator for a different role cannot; the
+population is the specs holding such a locator, bounded because only a matching locator argument can
+resolve to the wrong element; for the recorded `synth` sibling that is the two specs holding
+`getByText('Synth')` — `tests/e2e/instrumentPanels.spec.ts` and
+`tests/e2e/templateAndInspectorFinal.spec.ts` — against the twelve a whole-file text search returns
+and the three a role-blind search returns, the role test removing `tests/e2e/e2eWorkflow.spec.ts`,
+whose `getByRole('button', { name: /^Bypass Synth/i })` at line 82 and
+`getByRole('button', { name: /^Enable Synth/i })` at line 86 are role-scoped locators for `button`
+that can never resolve to the added `<option>`; require every spec in that population to
+redden if the locator is made ambiguous —
+`getByText` matches case-insensitive substrings, so a new sibling makes it a strict-mode violation or
+makes `.first()` select the wrong element — then assert the control through stable handles (test ids,
+roles) rather than bare text; and select every hit of `expect\([^)]*\|\|` across the specs under
+review, requiring each arm to be load-bearing by mutating that arm's condition away and confirming
+the assertion reddens before the disjunction counts.
 
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 
