@@ -108,7 +108,7 @@ mutation, then run the named spec; remaining green fails the round. Each draw re
 baseline probe — the spec it ran, the mutation it applied, the observed result — and its
 exhaustion when it fell back to an authoring model, and the orchestrator records these in
 `stances.json` beside the stances. The orchestrator validates or the
-author repairs in the change's existing lane; reviewers have no writable tree.
+author repairs in the change's existing lane; reviewers have no writable tree. Reviewers create a probe worktree and report a probe they cannot run as the probe-isolation rules in `.agents/skills/review-stances/README.md` prescribe.
 
 Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
 whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without
