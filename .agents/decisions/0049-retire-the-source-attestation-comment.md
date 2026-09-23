@@ -35,9 +35,9 @@ Three facts made the channel not worth what it cost:
   gate, so the record added no independent evidence. The gate is the actual control: before any
   remote write it refuses an unattributable commit in the delta this publication adds — the
   remote-tip range when the branch already exists remotely, otherwise the comparison-base range —
-  naming each offending commit. A commit that reached the branch by a push other than
-  `lane:publish` is neither judged nor surfaced by that publication, nor by any later one; now that
-  the comparison-base record is gone, nothing reads the branch back against it.
+  naming up to eight offending commits and counting the remainder. A commit that reached the branch
+  by a push other than `lane:publish` is neither judged nor surfaced by that publication, nor by any
+  later one; now that the comparison-base record is gone, nothing reads the branch back against it.
 
 ## Decision
 

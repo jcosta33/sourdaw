@@ -980,11 +980,11 @@ export const NO_LANE_SUBJECT_FAILURE =
  * everything the resolved bases (origin/main and any stack parent head) reach, because base-side
  * commits a lane merged are not the lane's to author; the bases' own publications gate them. Every
  * remaining commit, merges included, must carry the author App's commit email — the identity lane
- * worktrees are stamped with at open — and the refusal names each offending commit. Its remedy
- * cannot rewrite base-side history: the offered rebase is gated on its root dominating every
- * excluded base, and when no such rewrite exists — as under an open parent head that does not
- * contain the main commits the lane merged, or a merged parent's pre-squash head that squash
- * semantics keep off main forever — the refusal prescribes re-creating the named commits.
+ * worktrees are stamped with at open — and the refusal names up to eight offending commits, counting
+ * the rest. Its remedy cannot rewrite base-side history: the offered rebase is gated on its root
+ * dominating every excluded base, and when no such rewrite exists — as under an open parent head
+ * that does not contain the main commits the lane merged, or a merged parent's pre-squash head that
+ * squash semantics keep off main forever — the refusal prescribes re-creating the named commits.
  */
 /**
  * The commit-set calculation a publication runs for the authorship gate. `deltaBase` is the gate's
@@ -1053,11 +1053,12 @@ function assertBotAuthoredDelta(
 const MAX_NAMED_OFFENDING_COMMITS = 8;
 
 /**
- * The refusal names each offending commit and each distinct offending email, states the base-side
- * exclusion, and prescribes only remedies that cannot replace history the lane does not own: the
- * rebase is rooted at the comparison base and offered exactly when the remote branch holds none of
- * the lane's commits and that base dominates every excluded one, so the rewritten range carries no
- * base-side commit; otherwise, and with a pushed lane history, the named commits must be re-created.
+ * The refusal names up to eight offending commits one by one and counts the rest, names each distinct
+ * offending email, states the base-side exclusion, and prescribes only remedies that cannot replace
+ * history the lane does not own: the rebase is rooted at the comparison base and offered exactly when
+ * the remote branch holds none of the lane's commits and that base dominates every excluded one, so
+ * the rewritten range carries no base-side commit; otherwise, and with a pushed lane history, the
+ * named commits must be re-created.
  * A rewrite rooted at the remote tip would replay base-side commits the lane merged and re-author
  * them as the App, so the remote tip never roots one.
  */
