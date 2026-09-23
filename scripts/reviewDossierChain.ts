@@ -73,6 +73,15 @@ function eventFieldEntries(event: ReviewDossierEvent): FieldEntry[] {
             ['intent', event.intent],
         ];
     }
+    if (event.kind === 'review-reassessed') {
+        return [
+            ['kind', event.kind],
+            ['roundsObserved', event.roundsObserved],
+            ['threshold', event.threshold],
+            ['action', event.action],
+            ['reason', event.reason],
+        ];
+    }
     return [
         ['kind', event.kind],
         ['findingId', event.findingId],
@@ -177,4 +186,32 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
         dossierDigest: dossier.dossierDigest,
     };
     return `${JSON.stringify(record, null, 4)}\n`;
+}
+
+/**
+ * The digest the reviewer publication authorized (#3376, spec #3367 AC-005; #4584): the dossier
+ * exactly as it stood when delivery was authorized, before the post-publication
+ * `delivery-authorized` and `review-reassessed` events were appended in the same write. Rebuilding
+ * without those events reproduces the authorization-time digest byte for byte because the chain is
+ * deterministic, which is what lets delivery prove the authorized evidence is the evidence this
+ * head still carries.
+ */
+export function authorizedEvidenceDigest(dossier: ReviewDossier): string {
+    const events = dossier.events.filter(
+        (event) => event.kind !== 'delivery-authorized' && event.kind !== 'review-reassessed'
+    );
+    if (events.length === dossier.events.length) {
+        return dossier.dossierDigest;
+    }
+    return buildDossier({
+        pr: dossier.pr,
+        headSha: dossier.headSha,
+        baseSha: dossier.baseSha,
+        riskClasses: dossier.riskClasses,
+        requiredStances: dossier.requiredStances,
+        events,
+        evidence: dossier.evidence,
+        limitations: dossier.limitations,
+        recommendation: dossier.recommendation,
+    }).dossierDigest;
 }

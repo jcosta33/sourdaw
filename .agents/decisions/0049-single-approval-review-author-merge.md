@@ -60,3 +60,21 @@ records the old orchestrator acceptance authorization (`deliver` refuses its ids
 bind the live reviewer approval) or records an old-flow APPROVE with no authorization at all
 (`deliver` refuses for want of one). Bundles with no `risk-plan.json` stay exempt and still merge.
 Such a stuck head needs a new commit and a fresh review round.
+
+## Extension — bounded review rounds
+
+A repair loop can also run unbounded in the other direction: a pull request that keeps coming back
+`REQUEST_CHANGES` round after round costs fresh reviewer publications without end. Campaign #4584
+bounds it. Once a pull request's public review history holds the reviewer change-request escalation
+threshold — the constant `REVIEW_ROUND_ESCALATION_THRESHOLD` in
+`scripts/reviewRoundEscalation.ts`, a single value changed in one line — the next fresh reviewer
+publication is refused before any remote write until the orchestrator records an explicit
+reassessment for that head in the bundle's `reassessment.json`, bound to the observed count, the
+head, and the base, with one action from `split`, `respec`, and `continue` and a one-line,
+evidence-safe reason. The consumed reassessment is persisted as one addition-only
+`review-reassessed` dossier event in the same write as the publication bindings and the delivery
+authorization. Past the threshold every further round needs its own reassessment: the count is
+recomputed from the public history at each publication, so a fresh `REQUEST_CHANGES` round itself
+advances the count, and the reassessment the next publication consumes is a new one. `review:repair`
+is never blocked — unresolved threads must stay resolvable — so it logs the escalation flag and
+never refuses on it.

@@ -251,6 +251,19 @@ carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
 Re-publication of the same head replays that persisted record unchanged rather
 than minting a second one.
 
+`review:prepare` logs `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`
+reconstructed from the pull request's public review history; once `<n>` reaches the
+escalation threshold it also names the bundle's `reassessment.json` as the action
+required before the next publication. The threshold is the single constant
+`REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts`. A fresh
+reviewer publication at or above it refuses before any remote write until the caller
+writes `reassessment.json` beside `dossier.json`, `format: 'reassessment-v1'`, carrying
+`pr`, `headSha`, `baseSha`, `roundsObserved`, `threshold`, `action` of
+`split` | `respec` | `continue`, and a single-line, trimmed, bounded, evidence-safe
+`reason`. The consumed reassessment is recorded as one addition-only
+`review-reassessed` dossier event; `review:repair` logs the same flag and is never
+blocked, so unresolved threads always stay resolvable.
+
 Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
 publishes exactly as before.
 
@@ -315,7 +328,9 @@ Readers of historical review and acceptance documents are unchanged, and
 After the review POST lands, `review:publish` appends `review-published` (the
 landed review id) and one `finding-published` per posted comment (its public
 comment id, matched to the document positionally after a path/line/side check)
-to the head's dossier; a bundle dossier that already records its publication
+to the head's dossier; when the escalation gate consumed a reassessment it also
+appends one `review-reassessed` event recording its observed count, threshold,
+action and reason in that same write; a bundle dossier that already records its publication
 replays — the exact same review must stand live: actor, head, state, body, and
 comments — instead of re-posting, and a recorded publication that no longer
 stands exact fails closed before any write. `review:accept` refuses a

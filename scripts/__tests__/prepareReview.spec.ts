@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     installBundleAtomically,
     isProcessAlive,
@@ -19,8 +20,7 @@ import {
 } from '../prepareReview.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
-
-import type { GhSession } from '../githubAppIdentity.ts';
+import { REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 /**
  * Fixture teardown. `rmSync` retries because the real-git case's tree can still be settling when the
@@ -50,6 +50,7 @@ function pullRequest(overrides: Partial<ReviewPullRequest> = {}): ReviewPullRequ
         baseRefOid: 'basesha',
         headRefName: 'agent/12/work',
         baseRefName: 'main',
+        state: 'OPEN',
         ...overrides,
     };
 }
@@ -143,6 +144,46 @@ describe('review prepare', () => {
             expect(calls.some((call) => call.includes('worktree') || call.includes('agent-'))).toBe(false);
             expect(JSON.stringify(files)).not.toContain('ghs_');
             expect(JSON.stringify(files)).not.toContain('BEGIN RSA');
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
+    it('logs the escalation flag and the required reassessment once the request-changes rounds meet the threshold', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port, logs } = fakePort(root);
+        port.reviews = () => [
+            {
+                id: 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            },
+            {
+                id: 2,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            },
+            {
+                id: 3,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            },
+        ];
+        port.reviewComments = () => [];
+        try {
+            const destination = prepareReview(42, port);
+            expect(logs).toContain(
+                `review-round-escalation:42:request-changes=${REVIEW_ROUND_ESCALATION_THRESHOLD}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+            expect(logs).toContain(
+                `review-round-escalation:42:write ${join(destination, 'reassessment.json')} before the next publication`
+            );
         } finally {
             removeTempRoot(root);
         }

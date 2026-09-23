@@ -178,6 +178,16 @@ when its accepted findings do not match the document's comments one-to-one; or w
 recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head; re-publishing
 the same head replays that record unchanged rather than minting a second one.
 
+A pull request that has taken the reviewer change-request escalation threshold — the constant
+`REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer
+`REQUEST_CHANGES` rounds refuses the next fresh reviewer publication until the orchestrator records an
+explicit reassessment for that head in the bundle's `reassessment.json` beside the other caller
+documents. The observed count is reconstructed from the pull request's public review history and
+flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; at or above the threshold
+the same log names the reassessment duty. The consumed reassessment enters the durable record as one
+addition-only `review-reassessed` dossier event. `review:repair` is never blocked by this: unresolved
+threads must stay resolvable, so it logs the flag and never refuses on it.
+
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a
 bearer token, or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
