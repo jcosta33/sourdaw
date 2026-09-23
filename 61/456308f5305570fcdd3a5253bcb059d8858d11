@@ -1,0 +1,18 @@
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 30,31-32,33,34-35,36,37-38,40
+vite.config.ts
+  h_beb54bf43b47b7 129-134
+AGENTS.md
+  h_beb54bf43b47b7 111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "61456308f5305570fcdd3a5253bcb059d8858d11",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
