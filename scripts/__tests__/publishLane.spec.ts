@@ -31,9 +31,11 @@ import { AUTHOR_MODEL_PATTERN as OPEN_LANE_MODEL_PATTERN, AUTHOR_MODEL_RULE } fr
 import { TRUSTED_GH_PATH_ENV, composePublishBody, type GuardFailureReceipt } from '../prContract.ts';
 import {
     AUTHOR_MODEL_PATTERN,
+    ISSUE_COMMENT_COMMAND_RULE,
     ISSUE_LOOKUP_JQ,
     addPullRequestProjectsArgs,
     applyPullRequestMetadataArgs,
+    assertGhCommandAllowed,
     canonicalLabelName,
     canonicalMilestoneTitle,
     canonicalProjectTitle,
@@ -71,6 +73,7 @@ import {
     publishLane,
     resolveAuthorLane,
     shellPort,
+    targetsIssueComment,
     type LabelRow,
     type PullRequestLabelMetadata,
     type PullRequestMergeability,
@@ -79,7 +82,7 @@ import {
     type PublishWorktree,
     type RemoteBranchRead,
 } from '../publishLane.ts';
-import { writeLaneStack } from '../stackedLanes.ts';
+import { stackParentQuery, writeLaneStack } from '../stackedLanes.ts';
 import { trustedDependencyPaths } from '../trustedGithubWriteBootstrap.ts';
 
 const PRIMARY_ROOT = '/repo';
@@ -4531,7 +4534,7 @@ function commandLiteralsIn(modulePath: string): {
 
 /**
  * The source-attestation comment is retired: no publication writes to a pull request's
- * issue-comment channel. Four observations hold that, and each claims only what it checks.
+ * issue-comment channel. Five observations hold that, and each claims only what it checks.
  *
  * First, the recording double. Every shape below pins the whole member set its path invokes on the
  * proxied fixture, compared as one golden set rather than a name pattern, so a member reached by a
@@ -4557,14 +4560,23 @@ function commandLiteralsIn(modulePath: string): {
  * companion case holds the real-port table to exactly the shapes the golden sets pin, so a new
  * shape cannot be added to one table without being driven through the other.
  *
- * Third, and independent of every shape, the source pin. Enumerating publication outcomes chases an
- * open set — five rounds of review each found one the tables did not drive — so
+ * Third, and the enforcement, the command boundary. `shellPort`'s `gh` runners refuse an
+ * issue-comment endpoint or an `addComment` mutation on the fully assembled argv before spawning
+ * `gh`, so any reintroduction fails at runtime whatever its spelling, module, member, or publication
+ * path — including a path no shape drives. The boundary case below pins the refusal on every
+ * spelling, and the undriven-path case drives a publication the ten shapes never reach.
+ *
+ * Fourth, and now only an earlier, cheaper signal, the source pin. Enumerating publication outcomes
+ * chases an open set — five rounds of review each found one the tables did not drive — so
  * `builds no issue-comment invocation anywhere in the lane:publish closure` reads every module in
  * that trusted closure and fails on any string literal, template, or concatenation in any of them
- * that constructs an issue-comment invocation, whatever member or path it lives in. It covers
- * command construction anywhere inside the closure; a write routed through a module outside it would
- * enter the closure, and the exact-closure pin in `agentDeliveryScripts.spec.ts` refuses that changed
- * set first. Its own comment states the boundary.
+ * that constructs an issue-comment invocation, whatever member or path it lives in. It matches
+ * literal constructions only, so a spelling assembled beyond the literals it enumerates can escape
+ * it — the boundary refusal above does not depend on it, which is why the boundary is where the
+ * invariant is enforced. It covers command construction anywhere inside the closure; a write routed
+ * through a module outside it would enter the closure, and the exact-closure pin in
+ * `agentDeliveryScripts.spec.ts` refuses that changed set first. Its own comment states the
+ * boundary.
  *
  * The shapes are the publication outcomes `publishLane` can take for this command, each built the
  * way the rest of this spec builds it: a first publication that creates the pull request, an
@@ -5094,7 +5106,7 @@ describe('publication attestation retirement', () => {
     });
 
     /**
-     * The shape-independent pin. The tables above enumerate publication outcomes, and outcomes are
+     * The cheaper, earlier signal. The tables above enumerate publication outcomes, and outcomes are
      * an open set: a member reachable only on a state no shape drives, or a write inside an
      * already-pinned member, escapes them however carefully they are enumerated. This case drives
      * nothing. It takes the `lane:publish` trusted closure — the module set `agentDeliveryScripts.spec.ts`
@@ -5108,9 +5120,12 @@ describe('publication attestation retirement', () => {
      * - a GraphQL `addComment` mutation;
      * - the `pr comment` or `issue comment` subcommand pair.
      *
-     * Because it reads command construction rather than a publication outcome, a reintroduction
-     * fails here whatever the member is named, whichever closure module or path builds it, and
-     * whether or not any shape drives that path.
+     * It matches literal constructions only. An endpoint hoisted into a constant and referenced by a
+     * template, or any other spelling that leaves the literals it enumerates, is not something this
+     * source read can see, so it can name a reintroduction only early and cheaply, never completely.
+     * The enforcement is the boundary refusal in `shellPort`: it reads the fully assembled argv at
+     * the one place every spelling materialises, so a reintroduction still fails at runtime whatever
+     * this pin misses.
      *
      * It covers command construction anywhere inside the `lane:publish` closure, and only there. A
      * write routed through a module outside that closure would itself enter the closure, and the
@@ -5143,6 +5158,61 @@ describe('publication attestation retirement', () => {
                 ),
                 `comment subcommand pairs in ${modulePath}`
             ).toEqual([]);
+        }
+    });
+
+    /**
+     * The enforcement, pinned on the argv every `shellPort` `gh` runner passes through before it
+     * spawns. Unlike the source pin above, the boundary sees only the assembled argv, so a segment
+     * hoisted into a constant and one whole literal arrive here as the same value — which is why a
+     * reintroduction cannot hide behind how its endpoint was spelled. The legitimate invocations
+     * beside them are the publication's own `gh` argv, built by the exported arg builders the real
+     * port calls; every one must stay allowed, which is what keeps the refusal from widening into
+     * refusing the publication itself.
+     */
+    it('refuses an issue-comment write at the gh command boundary however it was assembled', () => {
+        const number = 41;
+        const RESOURCE = 'comments';
+        const refused = [
+            // The deleted attestation write, spelled whole.
+            ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/issues/${number}/comments`, '-f', 'body=x'],
+            // The same endpoint with its last segment hoisted into a constant.
+            ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/issues/${number}/${RESOURCE}`, '-f', 'body=x'],
+            // A read carrying a query string.
+            ['api', `repos/${REQUIRED_REPOSITORY}/issues/${number}/comments?per_page=100`, '--paginate'],
+            // GraphQL, whose mutation text is a field value rather than the endpoint.
+            ['api', 'graphql', '-f', 'query=mutation { addComment(input: {subjectId: "x", body: "y"}) { id } }'],
+            ['pr', 'comment', String(number), '--body', 'x'],
+            ['issue', 'comment', '12', '--body', 'x'],
+        ];
+        for (const argv of refused) {
+            expect(() => assertGhCommandAllowed(argv), argv.join(' ')).toThrow(ISSUE_COMMENT_COMMAND_RULE);
+        }
+
+        const allowed = [
+            issueLookupArgs(12),
+            existingOpenPullRequestArgs('agent/12/x'),
+            updatePullRequestArgs(41, 'closes #12'),
+            issueTrackerMetadataArgs(12),
+            issueProjectItemsArgs(12),
+            openMilestoneTitlesArgs(),
+            projectListArgs('jcosta33'),
+            pullRequestMetadataArgs(41),
+            pullRequestMergeabilityArgs(41),
+            pullRequestProjectItemsArgs(41),
+            labelListArgs(),
+            ensureModelLabelArgs('glm-5.3'),
+            applyPullRequestMetadataArgs(41, {
+                addLabels: ['glm-5.3'],
+                removeLabels: [],
+                addProjectTitles: [],
+            }),
+            addPullRequestProjectsArgs(41, ['Roadmap']),
+            stackParentQuery('agent/11/parent'),
+        ];
+        for (const argv of allowed) {
+            expect(() => assertGhCommandAllowed(argv), argv.join(' ')).not.toThrow();
+            expect(targetsIssueComment(argv), argv.join(' ')).toBe(false);
         }
     });
 
@@ -5945,5 +6015,36 @@ process.exit(0);
         expect(REAL_PORT_SHAPES.map((shape) => shape.shape).sort()).toEqual(
             PUBLICATION_SHAPES.map((shape) => shape.shape).sort()
         );
+    });
+
+    /**
+     * The refusal, driven on a real publication path none of the ten shapes reaches. Every shape
+     * above publishes with a flagless relationship, so the `--relates` body section — the real,
+     * undriven condition — fires only here: gate a reintroduced comment write on the `--relates`
+     * relationship inside any existing member and this is the only case that can observe it. On the
+     * clean tree the boundary refuses nothing and the publication succeeds; with such a write
+     * reintroduced the assembled argv reaches `assertGhCommandAllowed`, the publication fails with
+     * `ISSUE_COMMENT_COMMAND_RULE`, and this case reddens carrying that message. Restoring the tree
+     * byte-identically returns it to green.
+     */
+    it('publishes the undriven --relates path with no issue-comment invocation', () => {
+        const recorded = publishThroughRealPort(
+            { openPullRequests: [] },
+            (fixture) => {
+                commitAsAuthorApp(fixture.lane, 'one.txt', 'feat(gate): first bot commit');
+            },
+            (fixture) => publishLane(12, fixture.portFor(fixture.lane), 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+            88
+        );
+
+        // The undriven condition really ran: the created body carries the relates section rather
+        // than the closes one every shape writes.
+        const create = recorded.find((args) => args[0] === 'pr' && args[1] === 'create') ?? [];
+        expect(create[create.indexOf('--body') + 1]).toContain('Related #12');
+
+        // The invocation set is the create path's whole golden set, and nothing in it is an
+        // issue-comment write the boundary would refuse.
+        expect([...new Set(recorded.map(normalizeGhInvocation))].sort()).toEqual(CREATE_PUBLICATION_INVOCATIONS);
+        expect(recorded.filter(targetsIssueComment)).toEqual([]);
     });
 });

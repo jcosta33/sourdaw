@@ -1875,6 +1875,91 @@ export function operatorSessionAccess(
     };
 }
 
+/**
+ * The issue-comment boundary. `lane:publish` writes no pull request issue comment. A source-level
+ * pin over the closure's command literals matches literal constructions only, so an endpoint hoisted
+ * into a constant, split across a template and a concatenation, or assembled through a helper the
+ * pin never enumerates reaches `gh` carrying no matched spelling. The refusal therefore lives where
+ * every spelling materialises — the argv handed to the port's `gh` runners — so a reintroduced write
+ * fails at runtime whatever module, member, or publication path built it, whether or not any
+ * publication shape drives that path.
+ */
+export const ISSUE_COMMENT_COMMAND_RULE =
+    'lane:publish writes no pull request issue comment; the gh command boundary refuses an issue-comment endpoint or a GraphQL issue-comment mutation';
+
+/**
+ * The assembled REST endpoint on an `api` call: `issues/<n>/comments`, with or without a query
+ * string and whatever path segments precede it. The number is materialised by the time the argv
+ * reaches the boundary, so the pattern reads the value `gh` receives rather than the source that
+ * assembled it.
+ */
+const ISSUE_COMMENT_ENDPOINT_PATTERN = /(?:^|\/)issues\/\d+\/comments?(?:[?#/]|$)/u;
+
+/** The GraphQL mutation that adds an issue comment, wherever its query text sits in the argv. */
+const GRAPHQL_ADD_COMMENT_PATTERN = /\baddComment\b/u;
+
+/**
+ * `gh api` flags whose following token is the flag's value, so a value such as the `POST` of
+ * `--method POST` is never read as the endpoint the invocation addresses.
+ */
+const GH_API_VALUE_FLAGS = new Set([
+    '-F',
+    '-H',
+    '-X',
+    '-f',
+    '-q',
+    '-t',
+    '--cache',
+    '--field',
+    '--header',
+    '--hostname',
+    '--input',
+    '--jq',
+    '--method',
+    '--raw-field',
+    '--template',
+]);
+
+/** The endpoint an `api` invocation addresses: its first positional argument after `api`. */
+function apiEndpointOf(args: string[]): string | undefined {
+    for (let index = 1; index < args.length; index += 1) {
+        const token = args[index] ?? '';
+        if (!token.startsWith('-')) {
+            return token;
+        }
+        if (!token.includes('=') && GH_API_VALUE_FLAGS.has(token)) {
+            index += 1;
+        }
+    }
+    return undefined;
+}
+
+/** Whether an assembled `gh` argv writes a pull request issue comment. */
+export function targetsIssueComment(args: string[]): boolean {
+    const [command, subcommand] = args;
+    if ((command === 'pr' || command === 'issue') && subcommand === 'comment') {
+        return true;
+    }
+    if (command !== 'api') {
+        return false;
+    }
+    const endpoint = apiEndpointOf(args);
+    if (endpoint === undefined) {
+        return false;
+    }
+    if (ISSUE_COMMENT_ENDPOINT_PATTERN.test(endpoint)) {
+        return true;
+    }
+    return endpoint === 'graphql' && args.some((token) => GRAPHQL_ADD_COMMENT_PATTERN.test(token));
+}
+
+/** Refuses an issue-comment write before it reaches `gh`, naming the rule it would break. */
+export function assertGhCommandAllowed(args: string[]): void {
+    if (targetsIssueComment(args)) {
+        fail(`${ISSUE_COMMENT_COMMAND_RULE}: gh ${args.join(' ')}`);
+    }
+}
+
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
@@ -1898,16 +1983,31 @@ export function shellPort(
             cwd: directory,
             env: session.env,
         });
-    const gh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
-    const ghRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
+    // Every `gh` this port spawns — both credentials' captures and runs, and the issue-existence
+    // lookup below — passes the boundary refusal on its fully assembled argv, so no spelling of an
+    // issue-comment write can reach the process whatever closure member or path assembled it.
+    const gh = (args: string[]) => {
+        assertGhCommandAllowed(args);
+        return spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
+    };
+    const ghRun = (args: string[]) => {
+        assertGhCommandAllowed(args);
+        return spawnRun(executables.gh, args, { cwd: primaryRoot, env: session.env });
+    };
     const operatorEnv = () => {
         if (operator === undefined) {
             fail('project membership needs the verified operator credential, which this port was built without');
         }
         return operator.session().env;
     };
-    const operatorGh = (args: string[]) => spawnCapture(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
-    const operatorGhRun = (args: string[]) => spawnRun(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
+    const operatorGh = (args: string[]) => {
+        assertGhCommandAllowed(args);
+        return spawnCapture(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
+    };
+    const operatorGhRun = (args: string[]) => {
+        assertGhCommandAllowed(args);
+        return spawnRun(executables.gh, args, { cwd: primaryRoot, env: operatorEnv() });
+    };
     return {
         baseSha: () => {
             spawnRun(
@@ -1933,7 +2033,9 @@ export function shellPort(
             ),
         cwd: () => cwd,
         issueExists: (issue) => {
-            const result = spawnSync(executables.gh, issueLookupArgs(issue), {
+            const args = issueLookupArgs(issue);
+            assertGhCommandAllowed(args);
+            const result = spawnSync(executables.gh, args, {
                 cwd: primaryRoot,
                 env: session.env,
                 encoding: 'utf8',
