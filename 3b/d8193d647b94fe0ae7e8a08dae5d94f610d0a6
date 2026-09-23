@@ -1,0 +1,14 @@
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 20,24,80,163-179,4449,4451-4469,4476-4478,4898-5339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3bd8193d647b94fe0ae7e8a08dae5d94f610d0a6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
