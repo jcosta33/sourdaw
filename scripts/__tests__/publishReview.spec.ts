@@ -43,7 +43,12 @@ import {
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
-import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
+import {
+    appendReviewDossierEvents,
+    authorizedEvidenceDigest,
+    parseReviewDossier,
+    serializeReviewDossier,
+} from '../reviewDossier.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
@@ -4758,9 +4763,7 @@ describe('orchestrator acceptance', () => {
             reviewState: () => ({
                 latestReviewerStateOnHead:
                     input.missingReviewer || (inFence && input.revokeAtFence) ? null : 'APPROVED',
-                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: input.unresolved ? 1 : 0,
             }),
             postReview: (review) => ({
@@ -5070,6 +5073,11 @@ describe('fresh reviewer dossier publication', () => {
                 calls.push(`reviewComments:${reviewId}`);
                 return input.reviewComments ?? [];
             },
+            reviewState: (_publishedNumber, _expectedHead) => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: 99,
+                unresolvedThreads: 0,
+            }),
             remoteReview: (_publishedNumber, reviewId) => {
                 calls.push(`remoteReview:${reviewId}`);
                 return input.remoteReviews?.[reviewId];
@@ -5110,9 +5118,7 @@ describe('fresh reviewer dossier publication', () => {
             ...fixture.port,
             reviewState: () => ({
                 latestReviewerStateOnHead: 'APPROVED',
-                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: 0,
             }),
             postReview: (review) => {
@@ -5203,17 +5209,26 @@ describe('fresh reviewer dossier publication', () => {
             expect(persisted.baseSha).toBe(base);
             expect(persisted.recommendation).toBe('approve');
             expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
-            // An APPROVE carries no inline comments, so it accepts no findings and binds only the review.
+            // An APPROVE carries no inline comments, so it accepts no findings and binds only the
+            // review, plus the delivery authorization the reviewer publication itself records.
             expect(acceptedFindings(persisted)).toEqual([]);
             expect(publishedReviewId(persisted)).toBe(99);
             expect(publishedFindings(persisted)).toEqual([]);
+            expect(deliveryAuthorization(persisted)).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                evidenceManifestDigest: authorizedEvidenceDigest(persisted),
+            });
             expect(discardedDispositions(persisted)).toEqual([
                 { findingId: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' },
             ]);
             expect(fixture.writes[1]?.contents).toBe(serializeReviewDossier(persisted));
-            // The pre-POST write is the same record without its publication events.
+            // The pre-POST write is the same record without its post-publication events: the landed
+            // review binding and the delivery authorization it carries.
             expect(parseReviewDossier(JSON.parse(fixture.writes[0]!.contents)).events.length).toBe(
-                persisted.events.length - 1
+                persisted.events.length - 2
             );
         } finally {
             removeTemporaryDirectory(fixture.root);
@@ -5247,6 +5262,14 @@ describe('fresh reviewer dossier publication', () => {
             expect(parseReviewDossier(fixture.readDossier()).dossierDigest).toBe(
                 parseReviewDossier(first).dossierDigest
             );
+            // The replay keeps the single delivery authorization the first APPROVE recorded.
+            expect(deliveryAuthorization(parseReviewDossier(fixture.readDossier()))).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                evidenceManifestDigest: authorizedEvidenceDigest(parseReviewDossier(first)),
+            });
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5320,6 +5343,8 @@ describe('fresh reviewer dossier publication', () => {
             expect(publishedFindings(persisted)).toEqual([
                 { findingId: 'comment-0', reviewId: 99, commentId: 2329000042 },
             ]);
+            // REQUEST_CHANGES records no delivery authorization: only the reviewer APPROVE does.
+            expect(deliveryAuthorization(persisted)).toBeUndefined();
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -6356,10 +6381,13 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses a duplicate delivery authorization already recorded in the dossier', async () => {
         const { withPublication } = acceptanceWithAuthorization();
+        // The reviewer publication itself records the delivery authorization on APPROVE: reviewId and
+        // approvalReviewId both bind the just-posted reviewer review (99). Acceptance must refuse to
+        // mint a second one.
         const alreadyAuthorized = appendReviewDossierEvents(withPublication, [
             {
                 kind: 'delivery-authorized',
-                reviewId: 98,
+                reviewId: 99,
                 approvalReviewId: 99,
                 evidenceManifestDigest: withPublication.dossierDigest,
                 unresolvedThreads: 0,
@@ -6382,7 +6410,7 @@ describe('fresh reviewer dossier publication', () => {
         });
         try {
             await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
-                /already records delivery authorization 98; refusing a duplicate authorization/u
+                /already records delivery authorization 99; refusing a duplicate authorization/u
             );
         } finally {
             removeTemporaryDirectory(fixture.root);

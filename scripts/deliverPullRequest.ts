@@ -6,13 +6,10 @@ import { join, resolve } from 'node:path';
 
 import {
     AUTHOR_BOT_NODE_ID,
-    ORCHESTRATOR_USER_NODE_ID,
-    authenticateOrchestrator,
     isOrchestratorUserNodeId,
     isHistoricalMergerActor,
     assertRequiredRepository,
     authenticateRole,
-    type GhSession,
     authenticateTrackerAuthor,
     gitAuthenticatedArgs,
     GITHUB_HTTPS_REMOTE,
@@ -134,10 +131,10 @@ export type DeliveryPort = CheckEvidencePort & {
 };
 
 /**
- * What the head's review bundle says about delivery authorization (#3376, spec #3367 AC-005). A bundle
- * without a risk plan predates the attributable-evidence contract and is exempt (`legacy`); a planned
- * bundle must record exactly one delivery authorization, and delivery binds it against the live
- * orchestrator acceptance review and the acceptance-time dossier digest — the dossier as it stood
+ * What the head's review bundle says about delivery authorization (#4584, #3376, spec #3367 AC-005).
+ * A bundle without a risk plan predates the attributable-evidence contract and is exempt (`legacy`);
+ * a planned bundle must record exactly one delivery authorization, and delivery binds it against the
+ * live reviewer approval review and the publication-time dossier digest — the dossier as it stood
  * before the authorization event itself was appended.
  */
 export type DeliveryAuthorizationBinding =
@@ -1345,18 +1342,14 @@ function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | und
 
 function validateReview(number: number, review: ReviewState): void {
     assertIndependentReviewerApproval(number, review);
-    if (!review.orchestratorAcceptedAfterReviewer) {
-        fail(`PR #${number} requires orchestrator acceptance after the independent reviewer on the current head`);
-    }
 }
 
 /**
- * The merge consumes the authorization the orchestrator's acceptance recorded into the head's dossier
- * (#3376, spec #3367 AC-005): it must bind the live orchestrator acceptance review and the live
- * reviewer approval it accepted, so a stale or replayed acceptance cannot unlock delivery, and the
- * acceptance-time dossier digest, so the
- * authorized evidence is exactly the evidence this head carries. `parseReviewDossier` has already
- * proven the persisted chain when the port read the record.
+ * The merge consumes the authorization the reviewer's APPROVE publication recorded into the head's
+ * dossier (#4584, #3376, spec #3367 AC-005): it must bind the live reviewer approval review id, and
+ * the publication-time dossier digest, so a stale or replayed authorization cannot unlock delivery,
+ * and the authorized evidence is exactly the evidence this head carries. `parseReviewDossier` has
+ * already proven the persisted chain when the port read the record.
  */
 function validateDeliveryAuthorization(number: number, head: string, review: ReviewState, port: DeliveryPort): void {
     const binding = port.reviewBundleDeliveryAuthorization(number, head);
@@ -1367,20 +1360,15 @@ function validateDeliveryAuthorization(number: number, head: string, review: Rev
     if (authorization === undefined) {
         fail(
             `PR #${number} carries no recorded delivery authorization on ${head}; ` +
-                `obtain orchestrator acceptance through review:accept before delivering`
+                `obtain the reviewer approval on the current head before delivering`
         );
     }
     if (authorization.evidenceManifestDigest !== binding.dossierDigest) {
         fail(`PR #${number} delivery authorization does not bind the dossier digest the head carries`);
     }
     if (
-        review.orchestratorAcceptanceReviewDatabaseId === null ||
-        authorization.reviewId !== review.orchestratorAcceptanceReviewDatabaseId
-    ) {
-        fail(`PR #${number} delivery authorization does not bind the live orchestrator acceptance review`);
-    }
-    if (
         review.latestReviewerReviewDatabaseId === null ||
+        authorization.reviewId !== review.latestReviewerReviewDatabaseId ||
         authorization.approvalReviewId !== review.latestReviewerReviewDatabaseId
     ) {
         fail(`PR #${number} delivery authorization does not bind the live reviewer approval review`);
@@ -2751,8 +2739,8 @@ function completeIssueAfterMerge(
 }
 
 function validateFreshMerger(pullRequest: PullRequestSnapshot): void {
-    if (!isOrchestratorUserNodeId(pullRequest.mergedByActorNodeId)) {
-        fail(`PR #${pullRequest.number} fresh merge was not performed by the orchestrator user`);
+    if (!isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
+        fail(`PR #${pullRequest.number} fresh merge was not performed by the author App`);
     }
 }
 
@@ -3697,7 +3685,7 @@ export function shellPort(
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
-            const mergeCapture = options.mergeCapture ?? fail('orchestrator-authenticated merge runner is required');
+            const mergeCapture = options.mergeCapture ?? fail('author-authenticated merge runner is required');
             options.markRemoteMutationAttempt?.();
             const mergeArgs = [
                 'api',
@@ -4398,15 +4386,13 @@ export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
-    authenticateOrchestrator: () => Promise<{ minted: { actorNodeId: string }; session: GhSession }>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
     deliveryPort: (
         repository: string,
         authentication: DeliveryAuthentication,
         primaryRoot: string,
-        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
-        orchestratorSession: GhSession
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
     ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
@@ -4423,14 +4409,13 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
         primaryRoot: () => resolvePrimaryRoot(),
         serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
-        authenticateOrchestrator,
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt, orchestratorSession) => {
+        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
                     spawnCapture(command, args, {
@@ -4451,7 +4436,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             };
             return shellPort(repository, shell, {
                 mergeCapture: (command, args) =>
-                    spawnCapture(command, args, { env: orchestratorSession.env, cwd: primaryRoot }),
+                    spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
                 primaryRoot,
@@ -4492,15 +4477,9 @@ export async function coordinateDelivery(
         async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
             const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
             let trackerAuth: DeliveryAuthentication | undefined;
-            let orchestratorSession: GhSession | undefined;
             try {
                 if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
                     fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
-                }
-                const orchestrator = await dependencies.authenticateOrchestrator();
-                orchestratorSession = orchestrator.session;
-                if (!isOrchestratorUserNodeId(orchestrator.minted.actorNodeId)) {
-                    fail(`authenticated merge actor is not ${ORCHESTRATOR_USER_NODE_ID}`);
                 }
                 const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
                 assertRequiredRepository(repository);
@@ -4512,13 +4491,7 @@ export async function coordinateDelivery(
                 );
                 dependencies.deliver(
                     number,
-                    dependencies.deliveryPort(
-                        repository,
-                        authorAuth,
-                        primaryRoot,
-                        markRemoteMutationAttempt,
-                        orchestratorSession
-                    ),
+                    dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
                     {
                         complete: (issueNumber) =>
                             dependencies.completeIssue(
@@ -4530,7 +4503,6 @@ export async function coordinateDelivery(
                     markRemoteMutationKnownAbsent
                 );
             } finally {
-                orchestratorSession?.dispose();
                 trackerAuth?.session.dispose();
                 authorAuth.session.dispose();
             }

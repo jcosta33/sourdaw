@@ -1002,9 +1002,7 @@ function fakePort(input: FakeInput = {}) {
                 reviewStateAfterReceipt ??
                 reviewStates.shift() ??
                 input.review ?? {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 }
@@ -1054,7 +1052,7 @@ function fakePort(input: FakeInput = {}) {
                 state: 'MERGED',
                 mergedByActorNodeId:
                     input.mergedByActorNodeIdAfterMerge === undefined
-                        ? ORCHESTRATOR_USER_NODE_ID
+                        ? AUTHOR_BOT_NODE_ID
                         : input.mergedByActorNodeIdAfterMerge,
                 ...input.mergedPrimaryAfterMerge,
             };
@@ -1572,9 +1570,7 @@ describe('pull-request delivery', () => {
             dependentSets: [[]],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
-            /fresh merge was not performed by the orchestrator user/
-        );
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/fresh merge was not performed by the author App/);
         expect(receipts.map((receipt) => receipt.body)).toEqual([
             visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
         ]);
@@ -1588,7 +1584,7 @@ describe('pull-request delivery', () => {
     });
 
     it.each([false, true])(
-        'refuses an author-bot merge during initial UNKNOWN refresh, recoveryWork=%s',
+        'accepts an author-App merge during initial UNKNOWN refresh, recoveryWork=%s',
         (recoveryWork) => {
             const body = relationshipBody(recoveryWork ? 'Closes #2372' : 'None.');
             const { port, calls, tracker } = fakePort({
@@ -1598,18 +1594,24 @@ describe('pull-request delivery', () => {
                 ],
                 dependentSets: recoveryWork ? [[stacked()], [stacked()]] : [[], []],
             });
-            expect(() => deliverPullRequest(42, port, tracker)).toThrow(
-                'fresh merge was not performed by the orchestrator user'
-            );
-            expect(calls).toEqual(['fetch']);
+            deliverPullRequest(42, port, tracker);
+            expect(calls.some((call) => call.startsWith('merge:'))).toBe(false);
+            if (recoveryWork) {
+                expect(calls).toContain('retarget:43:main');
+                expect(calls).toContain('complete:2372');
+            } else {
+                expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+            }
         }
     );
 
     it.each([
-        { initialState: 'OPEN', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: false },
-        { initialState: 'OPEN', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: true },
+        { initialState: 'OPEN', merger: AUTHOR_BOT_NODE_ID, recoveryWork: false },
+        { initialState: 'OPEN', merger: AUTHOR_BOT_NODE_ID, recoveryWork: true },
         { initialState: 'MERGED', merger: AUTHOR_BOT_NODE_ID, recoveryWork: false },
         { initialState: 'MERGED', merger: AUTHOR_BOT_NODE_ID, recoveryWork: true },
+        { initialState: 'MERGED', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: false },
+        { initialState: 'MERGED', merger: ORCHESTRATOR_USER_NODE_ID, recoveryWork: true },
     ])(
         'accepts $merger from initial $initialState, recoveryWork=$recoveryWork',
         ({ initialState, merger, recoveryWork }) => {
@@ -1646,13 +1648,13 @@ describe('pull-request delivery', () => {
         }
     );
 
-    it('recovers a stable final orchestrator-user merge without re-reviewing or merging again', () => {
+    it('recovers a stable final author-App merge without re-reviewing or merging again', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
             ],
             dependentSets: [[child], [child]],
         });
@@ -1750,7 +1752,7 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
     });
 
-    it('fails closed when an UNKNOWN initial refresh becomes a merged orchestrator-user head with no persisted receipt authority', () => {
+    it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const seededReceipt: DeliveryReceiptComment = {
@@ -1769,7 +1771,7 @@ describe('pull-request delivery', () => {
                     state: 'MERGED',
                     mergeable: 'UNKNOWN',
                     body: closes,
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[child]],
@@ -1789,7 +1791,7 @@ describe('pull-request delivery', () => {
         expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
     });
 
-    it('recovers a final UNKNOWN refresh that becomes a merged orchestrator-user head without re-reviewing', () => {
+    it('recovers a final UNKNOWN refresh that becomes a merged author-App head without re-reviewing', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
@@ -1800,7 +1802,7 @@ describe('pull-request delivery', () => {
                     state: 'MERGED',
                     mergeable: 'UNKNOWN',
                     body: closes,
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[child], [child]],
@@ -1816,8 +1818,24 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
     });
 
-    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
-        'refuses a raced bot merge %s before recovery effects',
+    it('accepts a raced author-App merge before recovery effects', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[child], [child]],
+        });
+        deliverPullRequest(42, port, tracker);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it.each([REVIEWER_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID])(
+        'refuses a raced %s merge before recovery effects',
         (actor) => {
             const closes = relationshipBody('Closes #2372');
             const child = stacked();
@@ -1829,7 +1847,7 @@ describe('pull-request delivery', () => {
                 dependentSets: [[child], [child]],
             });
             expect(() => deliverPullRequest(42, port, tracker)).toThrow(
-                'fresh merge was not performed by the orchestrator user'
+                'fresh merge was not performed by the author App'
             );
             expect(
                 calls.some(
@@ -1852,7 +1870,7 @@ describe('pull-request delivery', () => {
                 pullRequest({
                     state: 'MERGED',
                     body: closesY,
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[]],
@@ -1874,7 +1892,7 @@ describe('pull-request delivery', () => {
                 pullRequest({
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[]],
@@ -1932,9 +1950,9 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: bodyX }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -2001,9 +2019,9 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: bodyX }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -2062,9 +2080,9 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -2150,14 +2168,14 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: bodyX }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -2655,9 +2673,9 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyX }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: bodyX }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -2718,8 +2736,8 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: bodyX }),
                 pullRequest({ body: bodyX }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyY }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: bodyY }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: bodyY }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: bodyY }),
             ],
             dependentSets: [[], []],
         });
@@ -2741,8 +2759,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -2794,11 +2812,11 @@ describe('pull-request delivery', () => {
             const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
                 primary: [
                     pullRequest({ body: closes }),
-                    pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                    pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
                     pullRequest({
                         state: 'MERGED',
                         body: closes,
-                        mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                         ...mergedPrimaryAfterRecovery,
                     }),
                 ],
@@ -2881,8 +2899,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
             ],
             dependentSets: [[], []],
         });
@@ -2923,8 +2941,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closesY }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closesX }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closesX }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closesX }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closesX }),
             ],
             dependentSets: [[]],
             persistedReceiptAuthority: {
@@ -2984,8 +3002,8 @@ describe('pull-request delivery', () => {
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
             primary: [
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -3898,7 +3916,7 @@ describe('pull-request delivery', () => {
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: closes,
                 }),
@@ -4986,11 +5004,11 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ state: 'CLOSED', body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({
                     state: 'MERGED',
                     body: closes,
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                 }),
             ],
             dependentSets: [[], [], []],
@@ -5503,9 +5521,9 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -5550,37 +5568,29 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
             ],
             reviewStates: [
                 {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                     unresolvedThreads: 0,
                 },
@@ -5616,9 +5626,9 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED', body: closes }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED', body: closes }),
                 pullRequest({
-                    mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
                     state: 'MERGED',
                     body: relationshipBody('None.'),
                 }),
@@ -6283,33 +6293,27 @@ describe('pull-request delivery', () => {
         expect(calls).toEqual(expect.arrayContaining(['merge:42:head', 'retarget:43:main']));
     });
 
-    it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
-        'refuses tracker completion when a fresh merge names bot %s',
+    it('accepts a fresh author-App merge', () => {
+        const { port, calls } = fakePort({ mergedByActorNodeIdAfterMerge: AUTHOR_BOT_NODE_ID });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it.each([REVIEWER_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID])(
+        'refuses tracker completion when a fresh merge names actor %s',
         (actor) => {
             const { port, calls, tracker } = fakePort({ mergedByActorNodeIdAfterMerge: actor });
 
             expect(() => deliverPullRequest(42, port, tracker)).toThrow(
-                /fresh merge was not performed by the orchestrator user/
+                /fresh merge was not performed by the author App/
             );
 
             expect(calls).toContain('merge:42:head');
             expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
         }
     );
-
-    it.each([false, true])('requires acceptance at both validation points, later=%s', (later) => {
-        const approved = {
-            latestReviewerStateOnHead: 'APPROVED',
-            orchestratorAcceptedAfterReviewer: true,
-            latestReviewerReviewDatabaseId: null,
-            orchestratorAcceptanceReviewDatabaseId: null,
-            unresolvedThreads: 0,
-        };
-        const absent = { ...approved, orchestratorAcceptedAfterReviewer: false };
-        const { port, calls, tracker } = fakePort({ reviewStates: later ? [approved, absent] : [absent] });
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow('requires orchestrator acceptance');
-        expect(calls.some((call) => call.startsWith('merge:') || call.startsWith('complete:'))).toBe(false);
-    });
 
     it('rejects head drift during delivery', () => {
         const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest({ headRefOid: 'moved' })] });
@@ -6474,9 +6478,7 @@ describe('pull-request delivery', () => {
     it('rejects unresolved review before merge', () => {
         const { port, calls } = fakePort({
             review: {
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 1,
             },
@@ -6489,9 +6491,7 @@ describe('pull-request delivery', () => {
     it('rejects missing reviewer approval on the current head', () => {
         const { port, calls } = fakePort({
             review: {
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: null,
                 unresolvedThreads: 0,
             },
@@ -6505,16 +6505,12 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             reviewStates: [
                 {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: 'APPROVED',
                     unresolvedThreads: 0,
                 },
                 {
-                    orchestratorAcceptedAfterReviewer: true,
                     latestReviewerReviewDatabaseId: null,
-                    orchestratorAcceptanceReviewDatabaseId: null,
                     latestReviewerStateOnHead: null,
                     unresolvedThreads: 0,
                 },
@@ -6528,9 +6524,7 @@ describe('pull-request delivery', () => {
     it('rejects a review thread opened during receipt I/O at the post-receipt review check', () => {
         const { port, calls } = fakePort({
             reviewStateOnReceiptRead: {
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 1,
             },
@@ -6553,9 +6547,7 @@ describe('pull-request delivery', () => {
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
         const { port, calls } = fakePort({
             review: {
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: state,
                 unresolvedThreads: 0,
             },
@@ -6565,20 +6557,18 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('merges when the recorded delivery authorization binds the live acceptance and reviewer approval', () => {
+    it('merges when the recorded delivery authorization binds the live reviewer approval', () => {
         const digest = 'd'.repeat(64);
         const { port, calls } = fakePort({
             review: {
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: 777,
-                orchestratorAcceptanceReviewDatabaseId: 770,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,
             },
             deliveryAuthorization: {
                 kind: 'required',
                 authorization: {
-                    reviewId: 770,
+                    reviewId: 777,
                     approvalReviewId: 777,
                     evidenceManifestDigest: digest,
                     unresolvedThreads: 0,
@@ -6614,16 +6604,14 @@ describe('pull-request delivery', () => {
     it('rejects a delivery authorization bound to a different dossier digest', () => {
         const { port, calls } = fakePort({
             review: {
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: 777,
-                orchestratorAcceptanceReviewDatabaseId: 770,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,
             },
             deliveryAuthorization: {
                 kind: 'required',
                 authorization: {
-                    reviewId: 770,
+                    reviewId: 777,
                     approvalReviewId: 777,
                     evidenceManifestDigest: 'd'.repeat(64),
                     unresolvedThreads: 0,
@@ -6638,70 +6626,36 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        ['a stale acceptance review', 778, 770],
-        ['no identifiable live acceptance review', 770, null],
-    ])(
-        'rejects a delivery authorization bound to %s',
-        (_label, authorizationReviewId: number, liveAcceptanceId: number | null) => {
-            const digest = 'd'.repeat(64);
-            const { port, calls } = fakePort({
-                review: {
-                    orchestratorAcceptedAfterReviewer: true,
-                    latestReviewerReviewDatabaseId: 777,
-                    orchestratorAcceptanceReviewDatabaseId: liveAcceptanceId,
-                    latestReviewerStateOnHead: 'APPROVED',
+        ['a stale reviewer approval review id', { reviewId: 778, approvalReviewId: 777, liveReviewerId: 777 }],
+        ['a mismatched approval review id', { reviewId: 777, approvalReviewId: 778, liveReviewerId: 777 }],
+        [
+            'no identifiable live reviewer approval review',
+            { reviewId: 777, approvalReviewId: 777, liveReviewerId: null },
+        ],
+    ])('rejects a delivery authorization bound to %s', (_label, { reviewId, approvalReviewId, liveReviewerId }) => {
+        const digest = 'd'.repeat(64);
+        const { port, calls } = fakePort({
+            review: {
+                latestReviewerReviewDatabaseId: liveReviewerId,
+                latestReviewerStateOnHead: 'APPROVED',
+                unresolvedThreads: 0,
+            },
+            deliveryAuthorization: {
+                kind: 'required',
+                authorization: {
+                    reviewId,
+                    approvalReviewId,
+                    evidenceManifestDigest: digest,
                     unresolvedThreads: 0,
+                    intent: 'deliver',
                 },
-                deliveryAuthorization: {
-                    kind: 'required',
-                    authorization: {
-                        reviewId: authorizationReviewId,
-                        approvalReviewId: 777,
-                        evidenceManifestDigest: digest,
-                        unresolvedThreads: 0,
-                        intent: 'deliver',
-                    },
-                    dossierDigest: digest,
-                },
-            });
+                dossierDigest: digest,
+            },
+        });
 
-            expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live orchestrator acceptance review/);
-            expect(calls).not.toContain('merge:42:head');
-        }
-    );
-
-    it.each([
-        ['a stale reviewer approval review', 778, 777],
-        ['no identifiable live reviewer approval review', 777, null],
-    ])(
-        'rejects a delivery authorization bound to %s',
-        (_label, authorizationApprovalReviewId: number, liveReviewerId: number | null) => {
-            const digest = 'd'.repeat(64);
-            const { port, calls } = fakePort({
-                review: {
-                    orchestratorAcceptedAfterReviewer: true,
-                    latestReviewerReviewDatabaseId: liveReviewerId,
-                    orchestratorAcceptanceReviewDatabaseId: 770,
-                    latestReviewerStateOnHead: 'APPROVED',
-                    unresolvedThreads: 0,
-                },
-                deliveryAuthorization: {
-                    kind: 'required',
-                    authorization: {
-                        reviewId: 770,
-                        approvalReviewId: authorizationApprovalReviewId,
-                        evidenceManifestDigest: digest,
-                        unresolvedThreads: 0,
-                        intent: 'deliver',
-                    },
-                    dossierDigest: digest,
-                },
-            });
-
-            expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live reviewer approval review/);
-            expect(calls).not.toContain('merge:42:head');
-        }
-    );
+        expect(() => deliverPullRequest(42, port)).toThrow(/does not bind the live reviewer approval review/);
+        expect(calls).not.toContain('merge:42:head');
+    });
 
     it('merges when the local working tree is unrelated to the pull-request head', () => {
         const { port, calls } = fakePort();
@@ -8231,7 +8185,7 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest(),
                 pullRequest(),
-                pullRequest({ mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID, state: 'MERGED' }),
+                pullRequest({ mergedByActorNodeId: AUTHOR_BOT_NODE_ID, state: 'MERGED' }),
             ],
             dependentSets: [[child, sibling], [child, sibling], [sibling]],
             failRetargetOnce: 44,
@@ -11710,9 +11664,7 @@ describe('delivery shell boundary', () => {
         const port = shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture });
 
         expect(port.reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: true,
             latestReviewerReviewDatabaseId: 1,
-            orchestratorAcceptanceReviewDatabaseId: 1,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
@@ -12182,9 +12134,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: false,
             latestReviewerReviewDatabaseId: null,
-            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -12263,9 +12213,7 @@ describe('delivery shell boundary', () => {
             expect(
                 shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
             ).toEqual({
-                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'CHANGES_REQUESTED',
                 unresolvedThreads: 0,
             });
@@ -12324,9 +12272,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: false,
             latestReviewerReviewDatabaseId: 1,
-            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -12375,9 +12321,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: false,
             latestReviewerReviewDatabaseId: 1,
-            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
@@ -12630,9 +12574,7 @@ describe('delivery shell boundary', () => {
         };
 
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: false,
             latestReviewerReviewDatabaseId: null,
-            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
@@ -12735,9 +12677,7 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: false,
             latestReviewerReviewDatabaseId: 1,
-            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
@@ -12785,9 +12725,7 @@ describe('delivery shell boundary', () => {
             run: () => undefined,
         };
         expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            orchestratorAcceptedAfterReviewer: false,
             latestReviewerReviewDatabaseId: null,
-            orchestratorAcceptanceReviewDatabaseId: null,
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });

@@ -18,7 +18,7 @@ import {
     type ReviewBundleContext,
 } from './prepareReview.ts';
 import { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
-import { appendReviewDossierEvents, parseReviewDossier } from './reviewDossier.ts';
+import { appendReviewDossierEvents, authorizedEvidenceDigest, parseReviewDossier } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
 import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
 import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
@@ -214,9 +214,12 @@ export function recordedPublicationReplay(
 /**
  * Appends the landed publication's public ids to the head's dossier (#3375, spec #3367 AC-004):
  * one `review-published` and one `finding-published` per posted comment, matched to the review
- * document positionally after a path/line/side correspondence check. The record was persisted
- * before the POST; this binding is the record's only post-write step, and it re-validates the
- * whole chain before persisting. Legacy bundles carry no dossier and bind nothing.
+ * document positionally after a path/line/side correspondence check. An APPROVE for a plan-carrying
+ * bundle then appends one `delivery-authorized` event in the same write, binding the just-posted
+ * reviewer review to the dossier digest and the unresolved-thread count observed at publication —
+ * the reviewer publication is the delivery authorization (#4584). The record was persisted before
+ * the POST; this binding is the record's only post-write step, and it re-validates the whole chain
+ * before persisting. Legacy bundles carry no dossier and bind nothing.
  */
 export function recordPublicationBindings(
     number: number,
@@ -268,7 +271,25 @@ export function recordPublicationBindings(
         }
         return { kind: 'finding-published' as const, findingId: `comment-${index}`, reviewId, commentId: comment.id };
     });
-    const bound = appendReviewDossierEvents(dossier, [{ kind: 'review-published', reviewId }, ...bindings]);
+    let bound = appendReviewDossierEvents(dossier, [{ kind: 'review-published', reviewId }, ...bindings]);
+    if (document.event === 'APPROVE') {
+        if (port.reviewState === undefined) {
+            fail(
+                `review ${reviewId} approved a plan-carrying bundle but the port has no review-state reader to bind its delivery authorization`
+            );
+        }
+        const state = port.reviewState(number, head);
+        bound = appendReviewDossierEvents(bound, [
+            {
+                kind: 'delivery-authorized',
+                reviewId,
+                approvalReviewId: reviewId,
+                unresolvedThreads: state.unresolvedThreads,
+                evidenceManifestDigest: authorizedEvidenceDigest(bound),
+                intent: 'deliver',
+            },
+        ]);
+    }
     if (port.writeBundleText === undefined) {
         fail(`review publication cannot write ${dossierPath}: the port has no bundle writer`);
     }
