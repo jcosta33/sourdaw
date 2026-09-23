@@ -117,6 +117,22 @@ function persistCanonicalReviewDossier(
 }
 
 /**
+ * The bundle base the escalation reassessment must bind, read from the bundle manifest. A
+ * post-threshold head whose manifest carries no readable base refuses with the escalation contract
+ * message — naming the missing field, the observed count, the threshold, and the reassessment route
+ * — rather than a raw manifest read error: an unverifiable base can never satisfy the gate.
+ */
+function readEscalationBaseSha(bundle: string, observedCount: number): string {
+    try {
+        return readReviewBundleContext(bundle).baseSha;
+    } catch {
+        return fail(
+            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} has no readable baseSha; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound to an unverifiable base`
+        );
+    }
+}
+
+/**
  * Counts the reviewer REQUEST_CHANGES rounds in the pull request's public history and runs the
  * escalation gate (#4584), returning the consumed reassessment when the threshold is met and the
  * caller authored one, or `undefined` below the threshold. Reads only public channels and fails
@@ -143,7 +159,7 @@ function readReviewRoundEscalation(
     if (observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return undefined;
     }
-    const baseSha = readReviewBundleContext(bundle).baseSha;
+    const baseSha = readEscalationBaseSha(bundle, observedCount);
     return gateReviewRoundEscalation({
         observedCount,
         pr: number,

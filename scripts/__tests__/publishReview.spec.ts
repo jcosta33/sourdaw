@@ -5368,6 +5368,54 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('refuses a plan-less bundle at or above the threshold whose manifest lacks baseSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(
+                `observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+            expect(message).toMatch(/manifest\.json has no readable baseSha/);
+            expect(message).toMatch(/reassessment\.json/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold with a missing manifest, not a raw ENOENT', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            rmSync(join(fixture.bundle, 'manifest.json'));
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/manifest\.json has no readable baseSha/);
+            expect(message).toMatch(/reassessment\.json/);
+            expect(message).not.toMatch(/ENOENT/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('replays a recorded publication at or above the threshold without a reassessment instead of refusing', () => {
         const landedReview = {
             id: 99,
