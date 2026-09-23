@@ -1,0 +1,14 @@
+vite.config.ts
+  h_beb54bf43b47b7 129-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d64945f68b83483f7a0e61089f7d3d049bcdca2a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
