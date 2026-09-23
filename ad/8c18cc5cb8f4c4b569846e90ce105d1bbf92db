@@ -1,0 +1,30 @@
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 47,5270-5346
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  h_beb54bf43b47b7 14,306-340
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 14-19,234-236,240-244,295-297,299,312-313,901-942,983-992
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_beb54bf43b47b7 177-191,687,735-776
+scripts/publishReview.ts
+  h_beb54bf43b47b7 217
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 100-103,534-536
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 36-37,39,64-70,72
+scripts/reviewDossierPublication.ts
+  h_beb54bf43b47b7 73-79,477,481-499
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 21,114,152-160,165-186,227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ad8c18cc5cb8f4c4b569846e90ce105d1bbf92db",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
