@@ -1911,8 +1911,9 @@ const VOLATILE = Symbol('volatile flag operand');
 
 /**
  * One `gh api` invocation. The endpoint is a pattern over the value `gh` receives, so an endpoint
- * hoisted into a constant and one whole literal are the same shape here. Every `api` flag in the
- * permitted set takes an operand, so each entry's `value` is declared.
+ * hoisted into a constant and one whole literal are the same shape here. The api matcher reads flag
+ * names only, so `value` pins an operand where the shape declares one and is absent for a switch:
+ * the pagination shape's `--paginate` and `--slurp` are switches.
  */
 type GhApiShape = {
     readonly command: 'api';
@@ -1928,7 +1929,7 @@ type GhApiShape = {
  * number, an issue number, or the authored model token `gh label create` names.
  */
 type GhCommandShape = {
-    readonly command: 'pr' | 'issue' | 'label' | 'project';
+    readonly command: 'pr' | 'issue' | 'label' | 'project' | 'repo';
     readonly subcommand: string;
     readonly positionals: number;
     readonly flags: readonly GhFlag[];
@@ -1945,7 +1946,8 @@ const REPOSITORY: GhFlag = { name: '--repo', value: undefined };
 /**
  * Every `gh` invocation `lane:publish` can assemble, derived by walking each `gh(...)`, `ghRun(...)`,
  * `operatorGh(...)`, and `operatorGhRun(...)` call site in `shellPort` and the argument builders each
- * one passes. The comment on each shape names its call site; together they are the whole set:
+ * one passes, plus the CLI's own repository resolution, which spawns through the port's exposed `gh`
+ * runner. The comment on each shape names its call site; together they are the whole set:
  *
  * - `repos/<repo>/issues/<n>` with `--jq` — `issueExists`'s `issueLookupArgs`, the only `spawnSync` to
  *   `gh`.
@@ -1970,6 +1972,8 @@ const REPOSITORY: GhFlag = { name: '--repo', value: undefined };
  * - `label list` — `knownLabels`' `labelListArgs`.
  * - `label create` — `ensureModelLabel`'s `ensureModelLabelArgs`.
  * - `project list` — `knownProjectTitles`' `projectListArgs`.
+ * - `repo view` with `--json nameWithOwner` and `--jq .nameWithOwner` — `runPublishLaneCli`'s
+ *   `repositoryNameWithOwnerArgs`, spawned through the `gh` runner the port exposes.
  *
  * No shape carries `--method`: every `api` call above is a read, and `gh` defaults an unflagged call
  * to GET. `gh project item-list`, `gh pr comment`, `gh issue comment`, and any write to
@@ -2098,6 +2102,15 @@ export const PERMITTED_GH_INVOCATIONS: readonly GhShape[] = [
             { name: '--format', value: VOLATILE },
         ],
     },
+    {
+        command: 'repo',
+        subcommand: 'view',
+        positionals: 0,
+        flags: [
+            { name: '--json', value: 'nameWithOwner' },
+            { name: '--jq', value: '.nameWithOwner' },
+        ],
+    },
 ];
 
 /** The volatile operands a shape declares must be present, and must not be flags. */
@@ -2216,7 +2229,17 @@ export function shellPort(
     resolvedPrimaryRoot?: string,
     executables: { git: string; gh: string } = { git: 'git', gh: 'gh' },
     operator?: OperatorSessionAccess
-): PublishLanePort {
+): PublishLanePort & {
+    /**
+     * The port's own boundary-guarded `gh` spawns. Every `gh` this port runs goes through them, and
+     * each asserts its fully assembled argv against `PERMITTED_GH_INVOCATIONS` before spawning, so a
+     * caller outside the closure reaches `gh` under the same default-deny rule as every semantic
+     * member. The CLI resolves the repository through `gh`, and the publication specs drive both to
+     * observe the guards themselves rather than the rule they call.
+     */
+    gh: (args: string[]) => string;
+    ghRun: (args: string[]) => void;
+} {
     const primaryRoot =
         resolvedPrimaryRoot ??
         resolvePrimaryRoot(
@@ -2236,7 +2259,8 @@ export function shellPort(
     // Every `gh` this port spawns — both credentials' captures and runs, and the issue-existence
     // lookup below — passes the default-deny boundary on its fully assembled argv, so an invocation
     // outside `PERMITTED_GH_INVOCATIONS` cannot reach the process whatever closure member or path
-    // assembled it.
+    // assembled it. The capture and run runners are returned below, so a caller holding the port
+    // reaches `gh` under the same rule rather than around it.
     const gh = (args: string[]) => {
         assertGhCommandAllowed(args);
         return spawnCapture(executables.gh, args, { cwd: primaryRoot, env: session.env });
@@ -2527,6 +2551,8 @@ export function shellPort(
             console.log(message);
         },
         guardFailure: (laneName) => readGuardFailureReceipt(primaryRoot, laneName),
+        gh,
+        ghRun,
     };
 }
 
@@ -2630,6 +2656,14 @@ export function pullRequestMergeabilityArgs(number: number): string[] {
 
 export function pullRequestProjectItemsArgs(number: number): string[] {
     return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'projectItems'];
+}
+
+/**
+ * The repository the authenticated App is publishing into. It is the CLI's own prerequisite read,
+ * spawned through the port's guarded `gh` runner before any publication authority is granted.
+ */
+export function repositoryNameWithOwnerArgs(): string[] {
+    return ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'];
 }
 
 export type OpenPullRequestRow = {
@@ -2763,21 +2797,23 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     // authorization env.
     const operator = operatorSessionAccess(authorizationEnv);
     try {
-        const repository = spawnCapture(
-            runtime.ghPath,
-            ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
-            {
-                env: auth.session.env,
-                cwd: primaryRoot,
-            }
+        // Built before the repository resolution so that read spawns through the port's own
+        // boundary-guarded `gh` runner, the same one the publication it authorizes uses.
+        const port = shellPort(
+            auth.session,
+            selectionPath,
+            primaryRoot,
+            { git: runtime.gitPath, gh: runtime.ghPath },
+            operator
         );
+        const repository = port.gh(repositoryNameWithOwnerArgs());
         assertRequiredRepository(repository);
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
         publishLane(
             parsed.issue,
-            shellPort(auth.session, selectionPath, primaryRoot, { git: runtime.gitPath, gh: runtime.ghPath }, operator),
+            port,
             parsed.relationship,
             parsed.testInstructions,
             parsed.summary,

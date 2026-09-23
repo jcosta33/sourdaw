@@ -62,6 +62,7 @@ import {
     pullRequestMetadataArgs,
     pullRequestLabelMetadataFromRow,
     pullRequestProjectItemsArgs,
+    repositoryNameWithOwnerArgs,
     trackerMetadataFromIssueRow,
     updatePullRequestArgs,
     issueExistsFromLookup,
@@ -4573,7 +4574,10 @@ function commandLiteralsIn(modulePath: string): {
  * uses, so the allowlist cannot silently break a real call. The real-port shapes add the live half:
  * having refused nothing, they assert every invocation they recorded matches a permitted shape.
  * The undriven-path case drives a publication the ten shapes never reach, and the boundary refuses
- * the write it injects there with the rule's message.
+ * the write it injects there with the rule's message. The runner case then drives that same write
+ * through the port's own `gh`/`ghRun` runners, which is what observes the five guards themselves:
+ * deleting them lets the write spawn, while the injected-write case above — which calls the rule
+ * directly — would have stayed green.
  *
  * Fourth, and now only an earlier, cheaper signal, the source pin. Enumerating publication outcomes
  * chases an open set — five rounds of review each found one the tables did not drive — so
@@ -5216,14 +5220,14 @@ describe('publication attestation retirement', () => {
     });
 
     /**
-     * Every argument builder the real port calls must stay permitted, or the default-deny rule would
-     * refuse the publication itself. This is the builders' half of the rule. The permit table is
-     * deliberately not derived from these calls — that would let a builder's own change move the rule
-     * — so the two meet here instead: every entry below is driven through the boundary, and the
-     * permit table is read to prove no two of its shapes collapse to one signature. The variants
-     * after the builders cover flag multiplicities and combinations a single call cannot express:
-     * two `--add-label` flags, an added and a removed label beside a milestone, and an address flag
-     * written with `=`.
+     * Every argument builder the real port or its CLI drives must stay permitted, or the default-deny
+     * rule would refuse the publication or its repository resolution itself. This is the builders'
+     * half of the rule. The permit table is deliberately not derived from these calls — that would
+     * let a builder's own change move the rule — so the two meet here instead: every entry below is
+     * driven through the boundary, and the permit table is read to prove no two of its shapes
+     * collapse to one signature. The variants after the builders cover flag multiplicities and
+     * combinations a single call cannot express: two `--add-label` flags, an added and a removed
+     * label beside a milestone, and an address flag written with `=`.
      */
     it('permits every legitimate argument builder the publication port calls', () => {
         const signatures = PERMITTED_GH_INVOCATIONS.map((shape) =>
@@ -5258,6 +5262,7 @@ describe('publication attestation retirement', () => {
             }),
             addPullRequestProjectsArgs(41, ['Roadmap']),
             stackParentQuery('agent/11/parent'),
+            repositoryNameWithOwnerArgs(),
         ];
         for (const argv of builders) {
             expect(() => assertGhCommandAllowed(argv), argv.join(' ')).not.toThrow();
@@ -6090,16 +6095,18 @@ process.exit(0);
     });
 
     /**
-     * The refusal, driven on a real publication path none of the ten shapes reaches. Every shape
-     * above publishes with a flagless relationship, so the `--relates` body section — the real,
-     * undriven condition — fires only here: gate a reintroduced comment write on the `--relates`
-     * relationship inside any existing member and this is the only case that can observe it. The
-     * write is injected into a real documented member's call rather than assembled by the module, so
-     * the source pin above stays green while the boundary still has to refuse at runtime. On the
-     * clean tree the boundary refuses nothing and the publication succeeds; with such a write
-     * reintroduced the assembled argv reaches `assertGhCommandAllowed`, the publication fails with
-     * `PUBLICATION_COMMAND_RULE`, and this case reddens carrying that message. Restoring the tree
-     * byte-identically returns it to green.
+     * The rule's refusal of the deleted attestation path's write, driven on a real publication path
+     * none of the ten shapes reaches. Every shape above publishes with a flagless relationship, so
+     * the `--relates` body section — the real, undriven condition — fires only here: gate the
+     * refusal on the `--relates` relationship inside any existing member and this is the only case
+     * that can observe it. The write is injected into a real documented member's call rather than
+     * assembled by the module, so the source pin above stays green while the rule still refuses it.
+     * The injection calls `assertGhCommandAllowed` itself, so this case observes the rule and not
+     * `shellPort`'s guards; the runner case after it drives the same write through the port so those
+     * guards are observed too. On the clean tree the boundary refuses nothing and the publication
+     * succeeds; with such a write reintroduced the assembled argv reaches `assertGhCommandAllowed`,
+     * the publication fails with `PUBLICATION_COMMAND_RULE`, and this case reddens carrying that
+     * message. Restoring the tree byte-identically returns it to green.
      */
     it('publishes the undriven --relates path and refuses an issue-comment write injected there', () => {
         const recorded = publishThroughRealPort(
@@ -6155,4 +6162,64 @@ process.exit(0);
             fixture.dispose();
         }
     });
+
+    /**
+     * The boundary's wiring, driven on the port's own runners. The case above proves the rule refuses
+     * a comment write, but the injection calls the exported `assertGhCommandAllowed` itself: delete
+     * the five calls that guard `shellPort`'s spawns and it stays green, which is exactly the escape
+     * a review round observed. Here a documented port member is replaced by one that drives each
+     * runner the port exposes with the deleted attestation path's write, on a real publication path,
+     * so the argv reaches the closure the five calls live in. `PERMITTED_GH_INVOCATIONS` carries no
+     * `api` write, so the runner must refuse it with `PUBLICATION_COMMAND_RULE` before spawning, and
+     * the recording `gh` log proves no spawn followed. With a guard deleted the write spawns instead,
+     * the publication no longer fails with the rule, and the case reddens; restoring the guard
+     * returns it to green.
+     */
+    it.each(['gh', 'ghRun'] as const)(
+        "refuses an unpermitted argv driven through the port's own %s runner before spawning",
+        (runner) => {
+            const commentWrite = [
+                'api',
+                '--method',
+                'POST',
+                `repos/${REQUIRED_REPOSITORY}/issues/12/comments`,
+                '-f',
+                'body=related',
+            ];
+            const fixture = realPortFixture({ openPullRequests: [] });
+            try {
+                commitAsAuthorApp(fixture.lane, 'one.txt', 'feat(gate): first bot commit');
+                const port = fixture.portFor(fixture.lane);
+                const spawn = port[runner];
+                // The port's own runner is captured before the member is replaced, so the override
+                // spawns through `shellPort`'s closure rather than around it. The argv is assembled
+                // here rather than by the module, so the source pin stays green while the boundary
+                // still has to refuse it.
+                port.existingOpenPullRequest = () => {
+                    spawn(commentWrite);
+                    return undefined;
+                };
+                const thrown = (() => {
+                    try {
+                        publishLane(12, port, 'relates', TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+                        return undefined;
+                    } catch (error) {
+                        return error;
+                    }
+                })();
+                const message = thrown instanceof Error ? thrown.message : `not an Error: ${String(thrown)}`;
+                expect(
+                    message,
+                    `the port's own ${runner} runner must refuse the write with the rule's message`
+                ).toContain(PUBLICATION_COMMAND_RULE);
+                expect(thrown, `the port's own ${runner} runner must refuse the write`).toBeInstanceOf(Error);
+                expect(
+                    fixture.recorded().filter((args) => args.includes('--method')),
+                    `the refused write must never reach ${runner}`
+                ).toEqual([]);
+            } finally {
+                fixture.dispose();
+            }
+        }
+    );
 });
