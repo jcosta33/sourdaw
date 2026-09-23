@@ -53,8 +53,10 @@ This decision supersedes the two-identity approval and merge clauses of ADR 0048
 acceptance and the orchestrator merge — while leaving ADR 0048's evidence, provenance, receipt,
 adjudication, and repair targets standing.
 
-A pre-policy plan-carrying head whose dossier already recorded the orchestrator acceptance
-authorization, or an old-flow APPROVE with no authorization at all, is not deliverable and cannot be
-re-authorized in place: re-publication replays the recorded publication rather than minting a new
-authorization, and `review:accept` refuses the duplicate. Such a head needs a new commit and a fresh
-review round.
+A pre-policy plan-carrying head is not deliverable and cannot be re-authorized in place:
+re-publication replays the recorded publication rather than posting a fresh reviewer APPROVE, so no
+reviewer-bound `delivery-authorized` event is ever recorded. This holds whether the dossier already
+records the old orchestrator acceptance authorization (`deliver` refuses its ids, which do not both
+bind the live reviewer approval) or records an old-flow APPROVE with no authorization at all
+(`deliver` refuses for want of one). Bundles with no `risk-plan.json` stay exempt and still merge.
+Such a stuck head needs a new commit and a fresh review round.

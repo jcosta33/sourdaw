@@ -449,9 +449,10 @@ login selects it, and an isolated API session must verify actor type `User` and 
 workers; receipt and tracker writes retain their author App identities, and the merge itself runs
 as the author App. Lock, recovery, and receipt procedure: [delivery-orchestration].
 
-Run `lane:publish`, `review:accept`, `deliver`, `issue:claim`, and `issue:reconcile` through the
-protected primary checkout's package route; lane files are data, never executable delivery code.
-Launcher snapshot mechanics: [delivery-orchestration].
+Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+protected primary checkout's package route; `review:accept` remains only for legacy pre-policy heads.
+Lane files are data, never executable delivery code. Launcher snapshot mechanics:
+[delivery-orchestration].
 
 Workflow separation is a security boundary. Owner-required `Gate` must pass on the PR head;
 GitHub accepts `skipped` required checks and prefers the newest same-name run, so an event that

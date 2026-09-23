@@ -28,6 +28,7 @@ import {
     type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
 } from '../publishReview.ts';
+import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import {
     type PullRequestMutationLockOwner,
     currentMutationOwnerFence,
@@ -5230,6 +5231,61 @@ describe('fresh reviewer dossier publication', () => {
             expect(parseReviewDossier(JSON.parse(fixture.writes[0]!.contents)).events.length).toBe(
                 persisted.events.length - 2
             );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('binds the deliver reader to the authorized dossier digest the writer recorded', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const authorization = deliveryAuthorization(persisted);
+            if (authorization === undefined) {
+                throw new Error('expected a recorded delivery authorization');
+            }
+
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            expect(binding.kind).toBe('required');
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            // The production reader recomputes authorizedEvidenceDigest, matching the digest the
+            // writer recorded as the authorization's evidence manifest.
+            expect(binding.dossierDigest).toBe(authorization.evidenceManifestDigest);
+
+            // A later appended dossier event changes the recomputed digest: the reader derives it
+            // from the live record rather than a stored or cached value.
+            const appended = appendReviewDossierEvents(persisted, [
+                {
+                    kind: 'finding-accepted',
+                    findingId: 'later-finding',
+                    path: 'scripts/target.ts',
+                    line: 1,
+                    side: 'RIGHT',
+                },
+            ]);
+            writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(appended));
+
+            const rebinding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (rebinding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(rebinding.dossierDigest).not.toBe(binding.dossierDigest);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

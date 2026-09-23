@@ -359,7 +359,7 @@ short conclusion; the structured evidence never leaves the bundle.
 ### Stack children
 
 A stack child may receive `REQUEST_CHANGES` while its verified parent branch is
-its base. Fresh APPROVE publication and acceptance require base `main`; for a
+its base. Fresh APPROVE publication requires base `main`; for a
 registered child they also require the bundle's live context and proof that
 reconciliation contains the recorded parent's landed commit.
 
@@ -375,12 +375,15 @@ plan-carrying head whose dossier already carries that reviewer-recorded
 authorization — refusing the duplicate — and keeps working for legacy bundles
 without a risk plan. New deliveries never call it.
 
-A pre-policy plan-carrying head whose dossier already recorded the orchestrator
-acceptance authorization, or an old-flow APPROVE with no authorization at all,
-cannot be delivered and cannot be re-authorized in place: re-publication replays
-the recorded publication rather than minting a new authorization, and
-`review:accept` refuses the duplicate. Such a head needs a new commit and a
-fresh review round.
+A pre-policy plan-carrying head is not deliverable and cannot be re-authorized
+in place: re-publication replays the recorded publication rather than posting a
+fresh reviewer APPROVE, so no reviewer-bound `delivery-authorized` event is ever
+recorded. This holds whether the dossier already records the old orchestrator
+acceptance authorization (`deliver` refuses its ids, which do not both bind the
+live reviewer approval) or records an old-flow APPROVE with no authorization at
+all (`deliver` refuses for want of one). Bundles with no `risk-plan.json` stay
+exempt and still merge. Such a stuck head needs a new commit and a fresh review
+round.
 
 `deliver` consumes the record: a plan-carrying head bundle with no recorded
 authorization, an authorization whose digest is not the
@@ -523,8 +526,9 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `review:accept`, `deliver`, `issue:claim`, and
-`issue:reconcile` through the protected primary checkout's package route. This
+Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+protected primary checkout's package route; `review:accept` remains only for
+legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure
 must match one pinned `origin/main` commit and come only from the primary
 repository. Lane files are data, never executable delivery code. Lanes
