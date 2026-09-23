@@ -1,0 +1,52 @@
+.agents/decisions/0049-single-approval-review-author-merge.md
+  h_beb54bf43b47b7 63-80
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 254-266,331-333
+AGENTS.md
+  h_beb54bf43b47b7 181-190
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 571-572,581,1077,1099-1101,1107,1214,1235-1237,1243,1268-1270,1275,1300-1302,1308,1335-1338,1341,1363,2584-2585
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 8,23,53,152-191
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 69,71,226-227,354-356,1067-1068,5037-5038,5097-5098,5252-5320,5321-5370,5371-5418,5419-5460,5461-5465
+scripts/__tests__/repairReviewFinding.spec.ts
+  h_beb54bf43b47b7 28,361-378
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 1161-1216
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  h_beb54bf43b47b7 1-168
+scripts/prepareReview.ts
+  h_beb54bf43b47b7 22-28,32-36,46,58-59,202-231,401,405-406
+scripts/publishReview.ts
+  h_beb54bf43b47b7 35-40,74-75,127-132,205-206,232-235,240,321,465-466
+scripts/reconstructReviewRounds.ts
+  h_beb54bf43b47b7 31,297,332
+scripts/repairReviewFinding.ts
+  h_beb54bf43b47b7 32-37,51,80-82,374-376,646-647
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 26-30,38,82-87,164,296-297,366-368,436,446-451,481-486,518-519
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 76-84,190-217
+scripts/reviewDossierReassessed.ts
+  h_beb54bf43b47b7 1-67
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 20,22,23,24-28,34-40,119-134,135-138,139-141,142-145,146-151,152-153,154,155-158,159-161,162,163-172,173-194,198-199,207,210-215,216,218,221-229,254,322-326,333-334,380,388-407
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 99,113,121
+scripts/reviewRoundEscalation.ts
+  h_beb54bf43b47b7 1-201
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 163,215-217,223,249-251,256,282-284,290,318-321,324,341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "93dbaf0ebae4b6b79f8844749148a09ce784dceb",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
