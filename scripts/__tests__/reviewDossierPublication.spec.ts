@@ -7,6 +7,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import { buildDossier } from '../reviewDossierChain.ts';
 import {
     REVIEW_DOSSIER_INPUT_FORMAT,
     buildReviewDossier,
@@ -156,6 +157,21 @@ type InputRefusalCase = { label: string; value: unknown; message: RegExp };
 function inputWithoutAssessmentImpact(): Record<string, unknown> {
     const { assessmentImpact: _omitted, ...rest } = INPUT;
     return rest;
+}
+
+/** A fresh canonical record, authored directly, that omits the impact the input form requires. */
+function canonicalRecordWithoutAssessmentImpact(): unknown {
+    return buildDossier({
+        pr: PLAN.pr,
+        headSha: PLAN.headSha,
+        baseSha: PLAN.baseSha,
+        riskClasses: PLAN.riskClasses,
+        requiredStances: [...PLAN.requiredStances],
+        events: [...COMPLETED_STANCES],
+        evidence: EVIDENCE,
+        limitations: [LIMITATION],
+        recommendation: 'request-changes',
+    });
 }
 
 const ASSESSMENT_IMPACTS: readonly AssessmentImpact[] = ['none', 'limitation-only', 'stance-changed', 'finding-led'];
@@ -645,6 +661,42 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
             }),
         message: /review dossier input format must be dossier-input-v1/,
     },
+    {
+        label: 'a hand-authored canonical record for a fresh head with no assessment impact',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: canonicalRecordWithoutAssessmentImpact(),
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            }),
+        message: /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found missing/,
+    },
+    {
+        label: 'an input claiming limitation-only with no limited round',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentImpact: 'limitation-only', limitations: [] },
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            }),
+        message: /assessmentImpact limitation-only contradicts limitations: the round discloses none/,
+    },
+    {
+        label: 'an input claiming finding-led with no accepted finding',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentImpact: 'finding-led' },
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            }),
+        message: /assessmentImpact finding-led contradicts accepted findings: the round carries none/,
+    },
 ];
 
 describe('parseReviewDossierInput', () => {
@@ -734,7 +786,7 @@ describe('buildReviewDossier', () => {
                 plan: PLAN,
                 raw: { ...INPUT, assessmentImpact: token },
                 discarded: [],
-                comments: [],
+                comments: [COMMENT],
                 recommendation: 'request-changes',
             });
 
@@ -749,7 +801,7 @@ describe('buildReviewDossier', () => {
                 plan: PLAN,
                 raw: { ...INPUT, assessmentImpact },
                 discarded: [],
-                comments: [],
+                comments: [COMMENT],
                 recommendation: 'request-changes',
             });
 
@@ -761,7 +813,7 @@ describe('buildReviewDossier', () => {
             plan: PLAN,
             raw: JSON.parse(findingLed.canonical),
             discarded: [],
-            comments: [],
+            comments: [COMMENT],
             recommendation: 'request-changes',
         });
         expect(replayed.fromPersisted).toBe(true);

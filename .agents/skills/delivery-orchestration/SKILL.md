@@ -240,7 +240,10 @@ can neither widen nor narrow its own review.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. Fresh reviewer publication also carries the head-bound dossier and
 refuses before any remote write when the plan or dossier is missing, malformed,
-or rebound from the head/base/pr it must bind; when the bundle carries
+or rebound from the head/base/pr it must bind; when a head that records no prior
+reviewer publication carries no `assessmentImpact` or a value outside the four
+tokens, or when its recorded impact contradicts the round's own limitations or
+accepted findings; when the bundle carries
 `stances.json` and the dossier's `stances` entries do not correspond to that
 record as sets of stance names — every draw names a recorded stance and every
 recorded stance carries at least one draw, so several draws on one stance share
@@ -315,11 +318,17 @@ enumeration, `limitation-only` when it produced a disclosed limitation without
 changing the round, and `none` when it had no effect. It records influence,
 never agreement: it is not a verdict, an approval, or merge authority. Any other
 value, a missing value, or a non-string is refused with the field and the four
-tokens named. The
-field is folded into the canonical record beside `recommendation` and covered by
-`dossierDigest`, so two records differing only in it have different digests.
-Historical records persisted before the field existed carry none and keep
-verifying unchanged.
+tokens named, and a spec pins the vocabulary to exactly those four. The record
+decides two of the tokens: `limitation-only` is refused when the round discloses
+no limitation and `finding-led` when it accepts no finding. `none` and
+`stance-changed` are the orchestrator's attestation, which the record cannot
+decide for or against. The field is required on both shapes — the caller input
+and a fresh canonical record — for a head that records no prior reviewer
+publication, and is folded into the canonical record beside `recommendation` and
+covered by `dossierDigest`, so two records differing only in it have different
+digests. A record persisted before the field existed verifies without it only as
+a genuine replay of an already-published head — one that records its
+`review-published` event — and those keep replaying byte-identically.
 
 Dossier evidence, limitations, and approval-claim values must be single-line,
 trimmed and bounded, and are refused when they carry a credential-shaped value,

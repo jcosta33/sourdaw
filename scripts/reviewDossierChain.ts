@@ -22,23 +22,18 @@ export const REVIEW_DOSSIER_MAX_BYTES = 32_768;
 export const GENESIS_DIGEST: string = '0'.repeat(64);
 
 /**
- * How the round's advisory semantic assessment influenced it (ADR 0047): the orchestrator's honest
- * record of what the advice did to this round, chosen from exactly four outcomes. It records
- * influence, never agreement — a token here is not a verdict, an approval, or merge authority.
+ * The four outcomes, in their canonical order. This array is the vocabulary's definition: the type
+ * is derived from it and a spec pins its exact contents, so widening it reddens a test rather than
+ * passing silently.
  */
-export type AssessmentImpact = 'none' | 'limitation-only' | 'stance-changed' | 'finding-led';
+export const ASSESSMENT_IMPACTS = ['none', 'limitation-only', 'stance-changed', 'finding-led'] as const;
+export type AssessmentImpact = (typeof ASSESSMENT_IMPACTS)[number];
 
-const ASSESSMENT_IMPACT_MEMBERSHIP: Record<AssessmentImpact, true> = {
-    none: true,
-    'limitation-only': true,
-    'stance-changed': true,
-    'finding-led': true,
-};
+const ASSESSMENT_IMPACT_MEMBERSHIP: ReadonlySet<string> = new Set(ASSESSMENT_IMPACTS);
 const ASSESSMENT_IMPACT_TOKENS = 'none, limitation-only, stance-changed or finding-led';
 
-/** A total map behind the predicate, so a widened union fails to compile rather than at run time. */
 function isAssessmentImpact(value: string): value is AssessmentImpact {
-    return Object.hasOwn(ASSESSMENT_IMPACT_MEMBERSHIP, value);
+    return ASSESSMENT_IMPACT_MEMBERSHIP.has(value);
 }
 
 /**
@@ -51,6 +46,30 @@ export function readAssessmentImpact(value: unknown, label = 'assessmentImpact')
         fail(`${label} must be ${ASSESSMENT_IMPACT_TOKENS}, found ${JSON.stringify(value) ?? typeof value}`);
     }
     return value;
+}
+
+/**
+ * What the record's own contents say about the impact it claims. A fresh record — one carrying no
+ * recorded reviewer publication — must declare an impact on every shape, canonical record included;
+ * only a genuine replay of an already-published head may lack the field, which is what lets a record
+ * persisted before it existed replay unchanged. Two tokens are decided by the record: `limitation-only`
+ * claims a disclosed limitation and `finding-led` an accepted finding. `none` and `stance-changed`
+ * are not decidable from the record and stay the orchestrator's attestation.
+ */
+export function assertAssessmentImpactConsistent(payload: DossierPayload, publicationRecorded: boolean): void {
+    const impact = payload.assessmentImpact;
+    if (impact === undefined) {
+        if (!publicationRecorded) {
+            fail(`review dossier assessmentImpact must be ${ASSESSMENT_IMPACT_TOKENS}, found missing`);
+        }
+        return;
+    }
+    if (impact === 'limitation-only' && payload.limitations.length === 0) {
+        fail('review dossier assessmentImpact limitation-only contradicts limitations: the round discloses none');
+    }
+    if (impact === 'finding-led' && !payload.events.some((event) => event.kind === 'finding-accepted')) {
+        fail('review dossier assessmentImpact finding-led contradicts accepted findings: the round carries none');
+    }
 }
 
 type FieldEntry = readonly [string, JsonValue];

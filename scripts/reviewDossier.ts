@@ -17,6 +17,7 @@ import { fail } from './prContract.ts';
 import {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
+    assertAssessmentImpactConsistent,
     assertDossierSize,
     buildDossier,
     computeDossierDigest,
@@ -529,6 +530,9 @@ function assertTotalMaps(payload: DossierPayload): void {
         own.add(event.findingId);
     }
     assertPublicationBindings(bindings, accepted);
+    // The record's own contents decide two of the impact tokens, and a fresh record must declare one:
+    // the impact check runs on every path that assembles or re-reads a payload.
+    assertAssessmentImpactConsistent(payload, bindings.reviewId !== undefined);
     for (const stance of payload.requiredStances) {
         if (!completed.has(stance)) {
             fail(`review dossier has no completed record for required stance: ${stance}`);
@@ -668,6 +672,25 @@ export function assembleReviewDossier(input: {
 }
 
 /**
+ * The payload a persisted dossier's own fields rebuild against a given event list. The append and
+ * acceptance-digest paths both need exactly this projection, so it lives in one place.
+ */
+function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEvent[]): DossierPayload {
+    return {
+        pr: dossier.pr,
+        headSha: dossier.headSha,
+        baseSha: dossier.baseSha,
+        riskClasses: dossier.riskClasses,
+        requiredStances: dossier.requiredStances,
+        events,
+        evidence: dossier.evidence,
+        limitations: dossier.limitations,
+        recommendation: dossier.recommendation,
+        assessmentImpact: dossier.assessmentImpact,
+    };
+}
+
+/**
  * Appends post-publication binding events to a persisted dossier (#3375, spec #3367 AC-004). The
  * chain is append-only: unchanged events keep their exact digests because each digest covers only
  * its own payload, sequence, and predecessor, so re-chaining the prefix reproduces it byte for
@@ -682,18 +705,7 @@ export function appendReviewDossierEvents(
     const appendedEvents = appended.map(
         (event, index) => readEventRecord(event, `appended event ${index}`, false).event
     );
-    const payload: DossierPayload = {
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events: [...dossier.events, ...appendedEvents],
-        evidence: dossier.evidence,
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-        assessmentImpact: dossier.assessmentImpact,
-    };
+    const payload = dossierPayload(dossier, [...dossier.events, ...appendedEvents]);
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
     const result = buildDossier(payload);
@@ -713,16 +725,5 @@ export function authorizedEvidenceDigest(dossier: ReviewDossier): string {
     if (events.length === dossier.events.length) {
         return dossier.dossierDigest;
     }
-    return buildDossier({
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events,
-        evidence: dossier.evidence,
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-        assessmentImpact: dossier.assessmentImpact,
-    }).dossierDigest;
+    return buildDossier(dossierPayload(dossier, events)).dossierDigest;
 }

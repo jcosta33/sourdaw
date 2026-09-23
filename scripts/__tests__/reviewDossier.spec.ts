@@ -11,6 +11,7 @@ import {
     reviewDossierEventDigest,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import { ASSESSMENT_IMPACTS, buildDossier } from '../reviewDossierChain.ts';
 import {
     acceptedFindings,
     assessmentImpact,
@@ -222,9 +223,11 @@ describe('derived views', () => {
     });
 });
 
-const ASSESSMENT_IMPACTS: readonly AssessmentImpact[] = ['none', 'limitation-only', 'stance-changed', 'finding-led'];
-
 describe('assessment impact', () => {
+    it('should pin exactly the four admissible tokens, so widening the vocabulary reddens this test', () => {
+        expect([...ASSESSMENT_IMPACTS]).toEqual(['none', 'limitation-only', 'stance-changed', 'finding-led']);
+    });
+
     it.each(ASSESSMENT_IMPACTS)('should round-trip the %s token through assembly, serialize and parse', (token) => {
         const dossier = assembleWith({ assessmentImpact: token });
 
@@ -270,6 +273,51 @@ describe('assessment impact', () => {
         mutated.assessmentImpact = null;
 
         expect(() => parseReviewDossier(mutated)).toThrow(/assessmentImpact must be none/);
+    });
+
+    it('should refuse a fresh canonical record with no impact and no recorded publication', () => {
+        const fresh = buildDossier({
+            pr: PLAN.pr,
+            headSha: PLAN.headSha,
+            baseSha: PLAN.baseSha,
+            riskClasses: PLAN.riskClasses,
+            requiredStances: ['correctness', 'test-validity'],
+            events: [...BASE_EVENTS],
+            evidence: [EVIDENCE_ENTRY],
+            limitations: [LIMITATION],
+            recommendation: 'request-changes',
+        });
+
+        expect(() => parseReviewDossier(fresh)).toThrow(
+            /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found missing/
+        );
+    });
+
+    it('should refuse limitation-only when the record discloses no limitation', () => {
+        expect(() => assembleWith({ assessmentImpact: 'limitation-only', limitations: [] })).toThrow(
+            /assessmentImpact limitation-only contradicts limitations: the round discloses none/
+        );
+    });
+
+    it('should refuse finding-led when the record accepts no finding', () => {
+        const noAcceptedFinding = BASE_EVENTS.filter((event) => event.kind !== 'finding-accepted');
+
+        expect(() => assembleWith({ assessmentImpact: 'finding-led', events: noAcceptedFinding })).toThrow(
+            /assessmentImpact finding-led contradicts accepted findings: the round carries none/
+        );
+    });
+
+    it('should keep none and stance-changed as attestations the record cannot contradict', () => {
+        const noAcceptedFinding = BASE_EVENTS.filter((event) => event.kind !== 'finding-accepted');
+
+        expect(
+            assessmentImpact(assembleWith({ assessmentImpact: 'none', limitations: [], events: noAcceptedFinding }))
+        ).toBe('none');
+        expect(
+            assessmentImpact(
+                assembleWith({ assessmentImpact: 'stance-changed', limitations: [], events: noAcceptedFinding })
+            )
+        ).toBe('stance-changed');
     });
 });
 
@@ -830,12 +878,15 @@ describe('parseReviewDossier refusals', () => {
 });
 
 /**
- * A record serialized by the chain before `exhaustion` existed: no stance-completed event carries
- * the key, and every digest covers exactly the five base fields. Pinned as bytes so any change to
- * the digest preimage — such as including exhaustion unconditionally — breaks verification of
- * records the previous chain printed, instead of silently re-keying history.
+ * A record serialized by the chain before `exhaustion` and `assessmentImpact` existed: no
+ * stance-completed event carries `exhaustion`, no top-level key carries `assessmentImpact`, and every
+ * digest covers exactly the five base fields. It is an already-published record — it records its own
+ * `review-published` event — which is the one shape a missing `assessmentImpact` is tolerated on.
+ * Pinned as bytes so any change to the digest preimage — such as including exhaustion or
+ * assessmentImpact unconditionally — breaks verification of records the previous chain printed,
+ * instead of silently re-keying history.
  */
-const HISTORICAL_SINGLE_DRAW_RECORD = `{
+const HISTORICAL_PUBLISHED_RECORD = `{
     "format": "dossier-v1",
     "pr": 2999,
     "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -856,26 +907,33 @@ const HISTORICAL_SINGLE_DRAW_RECORD = `{
             "reviewerModel": "model-correctness",
             "modelTier": "strongest",
             "outcome": "clean"
+        },
+        {
+            "sequence": 1,
+            "previousDigest": "4afdab1f7953f72839013972ab241a800e49cf154859b83262f3a3a13e3fb33c",
+            "digest": "6c3c254b99308975d5140dd54c653a406a8cc2aecfc995593f01e15c1bcf3be6",
+            "kind": "review-published",
+            "reviewId": 5272945685
         }
     ],
     "evidence": [],
     "limitations": [],
     "recommendation": "approve",
-    "headDigest": "4afdab1f7953f72839013972ab241a800e49cf154859b83262f3a3a13e3fb33c",
-    "dossierDigest": "41cbcb3b937c56ba7b48e64f7ed8811f3275f521cb9daca8e1186c616aac6af3"
+    "headDigest": "6c3c254b99308975d5140dd54c653a406a8cc2aecfc995593f01e15c1bcf3be6",
+    "dossierDigest": "958088c65c8962cccc9d12c6545a4411be3641e32564bf42f7eaa4b12f58a83e"
 }
 `;
 
 describe('historical dossier records', () => {
     it('should verify a record persisted before exhaustion existed, byte-identically', () => {
-        const historical = JSON.parse(HISTORICAL_SINGLE_DRAW_RECORD);
+        const historical = JSON.parse(HISTORICAL_PUBLISHED_RECORD);
 
         expect(() => parseReviewDossier(historical)).not.toThrow();
-        expect(serializeReviewDossier(parseReviewDossier(historical))).toBe(HISTORICAL_SINGLE_DRAW_RECORD);
+        expect(serializeReviewDossier(parseReviewDossier(historical))).toBe(HISTORICAL_PUBLISHED_RECORD);
     });
 
     it('should read a historical completed stance with no exhaustion', () => {
-        const [only] = completedStances(parseReviewDossier(JSON.parse(HISTORICAL_SINGLE_DRAW_RECORD)));
+        const [only] = completedStances(parseReviewDossier(JSON.parse(HISTORICAL_PUBLISHED_RECORD)));
         if (only === undefined) {
             throw new Error('fixture must carry one completed stance');
         }
@@ -883,9 +941,10 @@ describe('historical dossier records', () => {
         expect(only.exhaustion).toBeUndefined();
     });
 
-    it('should read a record persisted before assessmentImpact existed with no recorded impact', () => {
-        const parsed = parseReviewDossier(JSON.parse(HISTORICAL_SINGLE_DRAW_RECORD));
+    it('should replay a published record persisted before assessmentImpact existed with no recorded impact', () => {
+        const parsed = parseReviewDossier(JSON.parse(HISTORICAL_PUBLISHED_RECORD));
 
+        expect(publishedReviewId(parsed)).toBe(5272945685);
         expect(assessmentImpact(parsed)).toBeUndefined();
     });
 });
