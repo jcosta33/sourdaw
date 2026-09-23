@@ -52,3 +52,9 @@ only the trusted ruleset change, `issue:claim`, and `lane:publish` project membe
 This decision supersedes the two-identity approval and merge clauses of ADR 0048 — the orchestrator
 acceptance and the orchestrator merge — while leaving ADR 0048's evidence, provenance, receipt,
 adjudication, and repair targets standing.
+
+A pre-policy plan-carrying head whose dossier already recorded the orchestrator acceptance
+authorization, or an old-flow APPROVE with no authorization at all, is not deliverable and cannot be
+re-authorized in place: re-publication replays the recorded publication rather than minting a new
+authorization, and `review:accept` refuses the duplicate. Such a head needs a new commit and a fresh
+review round.

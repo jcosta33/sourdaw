@@ -84,7 +84,7 @@ set in the bundle's `stances.json` before dispatch, one line per stance naming t
 that admits it — the input or state that breaks — never the path the diff touches; as each draw
 reports, its baseline probe and its exhaustion when it fell back are recorded beside its stance.
 The caller writes it, no script generates it, and the orchestrator confirms its presence and
-substance before acceptance. `pnpm stances:check <bundle>` tests each admission line with a typed
+substance before publication. `pnpm stances:check <bundle>` tests each admission line with a typed
 judgment and fails lines that name touched paths instead of failure modes. Run it before dispatch
 when the TypeSafe credential and service are available, and repair the lines it fails when it runs;
 its inability to run — a missing key, an unavailable or degraded service, or a malformed response —
@@ -330,7 +330,7 @@ Detail: [conventions](./docs/07-conventions.md).
 
 One change, one lane, one PR. Edit tracked files only in your lane under `.agents/worktrees/`, never
 the shared primary checkout holding credentials and other lanes. Its gitignored operational paths
-are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds review and acceptance documents,
+are exceptions: `review:prepare` writes `.agents/review-bundles/` there, the caller adds review documents,
 and `.env.sourdaw-*` credentials live there.
 
 `pnpm lane:open [issue] [slug]` fetches and branches from `origin/main`, locks the lane
@@ -374,7 +374,7 @@ first, then the exact parent squash commit, then fetched current `main`, preserv
 child history while retaining later main edits and reversions. Resolve a conflict at any merge in
 the child, commit normally, and rerun synchronization. Never rebase,
 reset, force-push, cascade to siblings, or silently adopt a replacement parent. Deliver remains
-bottom-up and main-only; sync the child, then publish and obtain fresh Gate, review, and acceptance.
+bottom-up and main-only; sync the child, then publish and obtain fresh Gate and review.
 Keep earlier slices related with `--relates` until closure is warranted, and verify the original
 end-to-end outcome on the final combined head.
 
@@ -527,18 +527,18 @@ Approve when the change improves the system, even if imperfect — never when it
 style-guide and code-craft violations block, personal style does not. An approval is never empty:
 its body states what the reviewer attacked and what held.
 
-Give reviewers the bundle and neutral acceptance conditions from the request or governing
+Give reviewers the bundle and neutral review conditions from the request or governing
 contract, never author transcripts or conclusions; preserve blind dispatch and independently
-inspect the final head before accepting it. Bundle, publication, acceptance, and thread
+inspect the final head before the reviewer approval is published. Bundle, publication, and thread
 procedure: [delivery-orchestration].
 
-Never fill approvals, acceptance, delivery summaries, or closing comments with routine
+Never fill approvals, delivery summaries, or closing comments with routine
 successful-CI narration, passed-check inventories, or links repeating required-check status;
 always disclose material failed, skipped, or incomplete verification, keep discriminating checks
 in structured evidence, and report the outcome and material exceptions; do not add a closing
 comment that only repeats the merged state.
 
-Write every approval, acceptance, and review body as a human reviewer would: what the change
+Write every approval and review body as a human reviewer would: what the change
 does, what was attacked, what held, and any remaining concerns. Never announce your role,
 identity, or authority chain — the posting identity already carries it. Never cite check
 counts, hash footers, or tool-generated provenance artifacts in the body. The reader is a

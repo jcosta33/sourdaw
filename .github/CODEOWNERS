@@ -4,8 +4,9 @@
 #
 # Only a user, a team, or an account email may own a path, and the owner must hold write access.
 # `jcosta33-reviewer[bot]` is a GitHub App and therefore cannot be listed here. The reviewer bot's
-# single current-head APPROVE is enforced by `pnpm deliver`, which records that approval as the
-# delivery authorization and then squash-merges as the immutable author App. This file routes the
+# single current-head APPROVE is posted by `review:publish`, which records that approval as the
+# delivery authorization; `pnpm deliver` validates the recorded authorization and then squash-merges
+# as the immutable author App. This file routes the
 # owner request; it approves nothing and merges nothing.
 #
 # Do not reintroduce a per-module owner map. `jcosta33/sourdaw` is a personal repository, so the

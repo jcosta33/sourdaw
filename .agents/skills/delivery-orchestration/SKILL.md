@@ -375,6 +375,13 @@ plan-carrying head whose dossier already carries that reviewer-recorded
 authorization — refusing the duplicate — and keeps working for legacy bundles
 without a risk plan. New deliveries never call it.
 
+A pre-policy plan-carrying head whose dossier already recorded the orchestrator
+acceptance authorization, or an old-flow APPROVE with no authorization at all,
+cannot be delivered and cannot be re-authorized in place: re-publication replays
+the recorded publication rather than minting a new authorization, and
+`review:accept` refuses the duplicate. Such a head needs a new commit and a
+fresh review round.
+
 `deliver` consumes the record: a plan-carrying head bundle with no recorded
 authorization, an authorization whose digest is not the
 dossier-minus-authorization digest, or one whose `reviewId`/`approvalReviewId`
