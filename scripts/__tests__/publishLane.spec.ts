@@ -17,9 +17,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
+    AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
     ORCHESTRATOR_USER_NODE_ID,
+    REQUIRED_REPOSITORY,
     createGhSession,
     resolvePrimaryRoot,
     type GhSession,
@@ -75,6 +77,7 @@ import {
     type PublishWorktree,
     type RemoteBranchRead,
 } from '../publishLane.ts';
+import { writeLaneStack } from '../stackedLanes.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -154,6 +157,23 @@ function addLockedLane(primary: string, lane: string, branch: string, changedPat
         encoding: 'utf8',
     });
     fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
+    return fixtureGit(lane, ['rev-parse', 'HEAD']);
+}
+
+/** Commits one file in a fixture lane as the author App, the identity the publication gate admits. */
+function commitAsAuthorApp(lane: string, filename: string, message: string): string {
+    writeFileSync(join(lane, filename), `${filename}\n`);
+    fixtureGit(lane, ['add', '--', filename]);
+    execFileSync('git', ['commit', '--no-gpg-sign', '-m', message], {
+        cwd: lane,
+        env: fixtureGitEnv({
+            GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+            GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+            GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+            GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+        }),
+        encoding: 'utf8',
+    });
     return fixtureGit(lane, ['rev-parse', 'HEAD']);
 }
 
@@ -4426,27 +4446,36 @@ describe('publication delta gating', () => {
 
 /**
  * The source-attestation comment is retired: no publication writes to a pull request's
- * issue-comment channel. The real port exposes no comment writer, and every shape a publication can
- * take invokes exactly the member set pinned for that shape below, so reintroducing either the port
- * member or the write reddens this whichever path it rides, whatever its member is named: each
- * comparison is one whole golden set, never a name pattern, which the old filter let a
- * differently-named member slip past.
+ * issue-comment channel. Three observations hold that, and each claims only what it checks.
  *
- * One shape's set cannot stand for the others — that was the hole this pins shut. A write that
- * fires only when the pull request already exists rides the republication path, whose members the
- * create-path fixture never calls, so the old single case stayed green while the write ran. Each
- * shape therefore carries its own set, complete for that path rather than a superset every path is
- * expected to satisfy: the stack members appear only on the stack shapes, and the legacy shapes call
- * no create, update, title, or issue member at all.
+ * First, the recording double. Every shape below pins the whole member set its path invokes on the
+ * proxied fixture, compared as one golden set rather than a name pattern, so a member reached by a
+ * shape reddens that shape's pin however it is named. One shape's set cannot stand for the others —
+ * a write that fires only when the pull request already exists rides the republication path, whose
+ * members the create-path fixture never calls — so each shape carries its own set. The
+ * fixture-surface completeness case beside them holds the table complete: every member the fixture
+ * can expose is pinned by some shape, so a member with no shape reaching it fails there instead of
+ * escaping unobserved.
+ *
+ * Second, the real port's behaviour. `REAL_PORT_SHAPES` drives the same eight shapes through the
+ * unmodified `shellPort` bound to a recording `gh` stub, and asserts that no invocation it recorded
+ * names a pull request's issue-comment endpoint (`issues/<n>/comments`) or POSTs to one
+ * (`--method POST`, `--method=POST`, `-X POST`, or a `gh api` body field flag). This is the part
+ * the member-set pins cannot see: an issue-comment write inside an already-pinned member, or an
+ * optional member added to the port and called on the publication path, changes no member name at
+ * all but spawns an invocation this log records. Each shape also asserts the pull-request write it
+ * must make, so a shape that recorded nothing cannot pass vacuously, and a companion case holds the
+ * real-port table to exactly the shapes the golden sets pin, so a new shape cannot be added to one
+ * table without being driven through the other.
  *
  * The shapes are the publication outcomes `publishLane` can take for this command, each built the
  * way the rest of this spec builds it: a first publication that creates the pull request, a
  * republication that updates it, a stacked child of either kind, a publication reporting a
  * conflicted head, a republication carrying an inherited milestone and board, the legacy pull
  * request this command only pushes to, and a legacy publication that applies metadata under an
- * explicit `--model`. Together they invoke every member the fixture can expose on a publication
- * path, so no branch a reintroduced write could ride is left without a golden set observing it; the
- * completeness case below holds that true as the port grows.
+ * explicit `--model`. All eight are driven through the real port, so no shape is observed only by
+ * member names. The real-port key-name case is narrower still: it proves only that the port exposes
+ * no member named for an attestation or comment, which names a surface, never a behaviour.
  */
 describe('publication attestation retirement', () => {
     type PublicationShape = {
@@ -4865,5 +4894,447 @@ describe('publication attestation retirement', () => {
         const port = shellPort(session, PRIMARY_ROOT, PRIMARY_ROOT, { git: 'git', gh: 'gh' });
 
         expect(Object.keys(port).filter((member) => /attest|comment/iu.test(member))).toEqual([]);
+    });
+
+    const REAL_PORT_BRANCH = 'agent/12/real-port';
+    const REAL_PORT_LEGACY_BRANCH = 'fix/collab-sync-state-2039';
+    const REAL_PORT_LEGACY_NUMBER = 2275;
+    const REAL_PORT_STACK_PARENT = 'agent/11/parent';
+    const REAL_PORT_STACK_PARENT_NUMBER = 11;
+
+    /**
+     * The recording `gh` the real port is bound to. It appends its argv, one JSON array per line, to
+     * `TEST_GH_LOG` before answering the reads the driven shapes need from `TEST_GH_ANSWERS`. A
+     * `TEST_GH_CREATED` marker makes `pr list` answer the created pull request only after a
+     * `pr create` ran, which is what the stack post-mutation fence reads. Every command it does not
+     * recognize exits 0 silently, exactly as a write with no output does.
+     */
+    const REAL_GH_RECORDER = String.raw`#!/usr/bin/env node
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+
+const args = process.argv.slice(2);
+appendFileSync(process.env.TEST_GH_LOG, JSON.stringify(args) + '\n');
+const answers = JSON.parse(readFileSync(process.env.TEST_GH_ANSWERS, 'utf8'));
+const valueAfter = (flag) => args[args.indexOf(flag) + 1];
+const print = (value) => {
+    if (value !== undefined) {
+        process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value));
+    }
+};
+const rows = (titles) => (titles === undefined ? [] : titles.map((title) => ({ title })));
+
+if (args[0] === 'api') {
+    const target = args.find((arg) => arg.indexOf('repos/') === 0) || '';
+    if (/\/issues\/\d+$/.test(target)) {
+        print({ number: Number(target.split('/').pop()), isPullRequest: false });
+    } else if (target.indexOf('/milestones') !== -1) {
+        print(answers.openMilestones || []);
+    } else if (args.indexOf('--paginate') !== -1) {
+        print(answers.stackParents || [[]]);
+    }
+} else if (args[0] === 'pr' && args[1] === 'list') {
+    print(
+        existsSync(process.env.TEST_GH_CREATED) && answers.pullRequestAfterCreate !== undefined
+            ? [answers.pullRequestAfterCreate]
+            : answers.openPullRequests || []
+    );
+} else if (args[0] === 'pr' && args[1] === 'create') {
+    writeFileSync(process.env.TEST_GH_CREATED, '');
+    print(answers.pullRequestUrl || 'https://github.com/jcosta33/sourdaw/pull/88');
+} else if (args[0] === 'pr' && args[1] === 'view') {
+    const json = valueAfter('--json');
+    if (json === 'mergeable') {
+        print({ mergeable: answers.mergeable || 'MERGEABLE' });
+    } else if (json === 'projectItems') {
+        print({ projectItems: rows(answers.pullRequestProjectTitles) });
+    } else {
+        print({ labels: answers.pullRequestLabels || [], milestone: answers.pullRequestMilestone || null });
+    }
+} else if (args[0] === 'issue' && args[1] === 'view') {
+    const json = valueAfter('--json');
+    if (json === 'projectItems') {
+        print({ projectItems: rows(answers.issueProjectTitles) });
+    } else {
+        print({ labels: answers.issueLabels || [], milestone: answers.issueMilestone || null });
+    }
+} else if (args[0] === 'label' && args[1] === 'list') {
+    print(answers.repositoryLabels || []);
+} else if (args[0] === 'project' && args[1] === 'list') {
+    const titles = answers.knownProjects || [];
+    print({ projects: rows(titles), totalCount: titles.length });
+}
+process.exit(0);
+`;
+
+    /** The reads the recording `gh` answers; a field left out answers the shape's benign default. */
+    type RealPortAnswers = {
+        openPullRequests?: unknown[];
+        pullRequestAfterCreate?: unknown;
+        mergeable?: string;
+        stackParents?: unknown[];
+        issueLabels?: unknown[];
+        issueMilestone?: unknown;
+        openMilestones?: unknown[];
+        knownProjects?: string[];
+        issueProjectTitles?: string[];
+        pullRequestProjectTitles?: string[];
+        repositoryLabels?: unknown[];
+        pullRequestLabels?: unknown[];
+        pullRequestUrl?: string;
+    };
+
+    /**
+     * A real-Git publication fixture whose GitHub side is the recording `gh` above: the port is the
+     * real `shellPort`, so every member it invokes spawns a real `gh` invocation into one log, and
+     * `git` stays the real binary. It carries a conforming lane and a lock-shaped off-convention
+     * lane, either of which `portFor` binds as the port's cwd.
+     */
+    function realPortFixture(answers: RealPortAnswers) {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-real-port-'));
+        const primary = join(root, 'primary');
+        const lane = join(root, 'lane');
+        const legacyLane = join(root, 'legacy-lane');
+        const remote = join(root, 'remote.git');
+        const ghPath = join(root, 'gh');
+        const answersPath = join(root, 'gh-answers.json');
+        const createdMarker = join(root, 'gh-created');
+        const log = join(root, 'gh.log');
+        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+
+        mkdirSync(primary, { recursive: true });
+        fixtureGit(primary, ['init', '-b', 'main']);
+        fixtureGit(primary, ['config', 'user.name', 'Fixture']);
+        fixtureGit(primary, ['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(primary, 'base.txt'), 'base\n');
+        fixtureGit(primary, ['add', 'base.txt']);
+        fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'chore: real-port fixture base']);
+        const baseSha = fixtureGit(primary, ['rev-parse', 'HEAD']);
+        fixtureGit(primary, ['worktree', 'add', '-b', REAL_PORT_BRANCH, lane]);
+        fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
+        fixtureGit(primary, ['worktree', 'add', '-b', REAL_PORT_LEGACY_BRANCH, legacyLane]);
+        fixtureGit(primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, legacyLane]);
+        execFileSync(systemGit, ['init', '--bare', remote], { cwd: root, env: fixtureGitEnv(), encoding: 'utf8' });
+        fixtureGit(primary, ['push', remote, 'main']);
+        fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
+        fixtureGit(primary, ['config', `branch.${REAL_PORT_BRANCH}.sourdaw-author-model`, 'glm-5.3']);
+        writeFileSync(answersPath, JSON.stringify(answers));
+        writeFileSync(ghPath, REAL_GH_RECORDER);
+        chmodSync(ghPath, 0o700);
+        const session = createGhSession('ghs_real_port_marker', {
+            PATH: process.env.PATH,
+            TEST_GH_LOG: log,
+            TEST_GH_ANSWERS: answersPath,
+            TEST_GH_CREATED: createdMarker,
+        });
+        // Project reads are the operator credential's; the recording stub answers for both roles.
+        const operator = operatorSessionAccess({}, () => ({ session }));
+
+        return {
+            primary,
+            lane,
+            legacyLane,
+            remote,
+            baseSha,
+            writeAnswers: (next: RealPortAnswers) => writeFileSync(answersPath, JSON.stringify(next)),
+            portFor: (cwd: string) => shellPort(session, cwd, primary, { git: systemGit, gh: ghPath }, operator),
+            recorded: () =>
+                readFileSync(log, 'utf8')
+                    .split('\n')
+                    .filter((line) => line !== '')
+                    .map((line) => JSON.parse(line) as string[]),
+            dispose: () => {
+                session.dispose();
+                rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            },
+        };
+    }
+
+    type RealPortFixture = ReturnType<typeof realPortFixture>;
+
+    /**
+     * One `gh` argv that writes a pull request's issue-comment channel. Naming the endpoint at all
+     * counts — no conforming publication reads or writes it — and the POST check catches the write
+     * spelled through an issue path with `--method POST`, `--method=POST`, `-X POST`, or a body
+     * field flag, every spelling `gh api` accepts.
+     */
+    function postsIssueComment(args: string[]): boolean {
+        if (args.some((arg) => /(?:^|\/)issues\/\d+\/comments(?:\/|$)/u.test(arg))) {
+            return true;
+        }
+        const methodFlag = args.findIndex((arg) => arg === '--method' || arg === '-X');
+        const method =
+            args.find((arg) => arg.startsWith('--method='))?.slice('--method='.length) ??
+            (methodFlag === -1 ? undefined : args[methodFlag + 1]);
+        const implicitPost = args.some((arg) => /^(?:-f|-F|--field|--raw-field|--input)(?:=|$)/u.test(arg));
+        return (
+            (method?.toUpperCase() === 'POST' || implicitPost) &&
+            args.some((arg) => /(?:^|\/)issues\/\d+(?:\/|$)/u.test(arg))
+        );
+    }
+
+    /** A pull request row the recording `gh` answers for the conforming branch. */
+    function conformingRow(
+        number: number,
+        head: string,
+        overrides: Partial<OpenPullRequestRow> = {}
+    ): OpenPullRequestRow {
+        return {
+            number,
+            headRefName: REAL_PORT_BRANCH,
+            isCrossRepository: false,
+            title: DEFAULT_SUBJECT,
+            body: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+            baseRefName: 'main',
+            headRefOid: head,
+            ...overrides,
+        };
+    }
+
+    /** The off-convention pull request row a legacy publication only pushes beneath. */
+    function legacyRow(): OpenPullRequestRow {
+        return {
+            number: REAL_PORT_LEGACY_NUMBER,
+            headRefName: REAL_PORT_LEGACY_BRANCH,
+            isCrossRepository: false,
+            title: 'fix(collab): keep sync state',
+            body: '',
+        };
+    }
+
+    /** One `--paginate --slurp` page holding the open stack-parent pull request at `parentHead`. */
+    function stackParentPages(parentHead: string): Record<string, unknown>[][] {
+        return [
+            [
+                {
+                    number: REAL_PORT_STACK_PARENT_NUMBER,
+                    state: 'open',
+                    merged_at: null,
+                    head: { ref: REAL_PORT_STACK_PARENT, sha: parentHead, repo: { full_name: REQUIRED_REPOSITORY } },
+                    user: { node_id: AUTHOR_BOT_NODE_ID },
+                },
+            ],
+        ];
+    }
+
+    /** Records the child's stack lineage the real `stackBase` member reads from disk. */
+    function registerStackChild(fixture: RealPortFixture): void {
+        writeLaneStack(fixture.primary, {
+            version: 1,
+            childBranch: REAL_PORT_BRANCH,
+            parentBranch: REAL_PORT_STACK_PARENT,
+            forkHead: fixture.baseSha,
+            parentHead: fixture.baseSha,
+        });
+        fixtureGit(fixture.primary, ['config', `branch.${REAL_PORT_BRANCH}.sourdaw-stack-fork`, fixture.baseSha]);
+    }
+
+    /** Runs one publication through the real port and hands back every `gh` argv it recorded. */
+    function publishThroughRealPort(
+        answers: RealPortAnswers,
+        prepare: (fixture: RealPortFixture) => void,
+        publish: (fixture: RealPortFixture) => number,
+        expected: number
+    ): string[][] {
+        const fixture = realPortFixture(answers);
+        try {
+            prepare(fixture);
+            expect(publish(fixture)).toBe(expected);
+            return fixture.recorded();
+        } finally {
+            fixture.dispose();
+        }
+    }
+
+    type RealPortShape = {
+        shape: string;
+        /** The pull-request write the shape must record, so the observation cannot pass vacuously. */
+        createsPullRequest?: boolean;
+        editsPullRequest?: number;
+        /** The shape must have resolved a real stack parent, not degraded to a plain publication. */
+        stackChild?: boolean;
+        drive: () => string[][];
+    };
+
+    const REAL_PORT_SHAPES: RealPortShape[] = [
+        {
+            shape: 'a first publication that creates the pull request',
+            createsPullRequest: true,
+            drive: () =>
+                publishThroughRealPort(
+                    { openPullRequests: [] },
+                    (f) => {
+                        commitAsAuthorApp(f.lane, 'one.txt', 'feat(gate): first bot commit');
+                    },
+                    (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    88
+                ),
+        },
+        {
+            shape: 'a republication that updates the pull request',
+            editsPullRequest: 41,
+            drive: () =>
+                publishThroughRealPort(
+                    { openPullRequests: [] },
+                    (f) => {
+                        const head = commitAsAuthorApp(f.lane, 'one.txt', 'feat(gate): first bot commit');
+                        fixtureGit(f.primary, ['push', f.remote, `${head}:refs/heads/${REAL_PORT_BRANCH}`]);
+                        f.writeAnswers({ openPullRequests: [conformingRow(41, head)] });
+                    },
+                    (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    41
+                ),
+        },
+        {
+            shape: 'a stacked child that creates its pull request',
+            createsPullRequest: true,
+            stackChild: true,
+            drive: () =>
+                publishThroughRealPort(
+                    {},
+                    (f) => {
+                        const head = commitAsAuthorApp(f.lane, 'one.txt', 'feat(gate): first bot commit');
+                        registerStackChild(f);
+                        f.writeAnswers({
+                            openPullRequests: [],
+                            pullRequestAfterCreate: conformingRow(88, head, { baseRefName: REAL_PORT_STACK_PARENT }),
+                            stackParents: stackParentPages(f.baseSha),
+                        });
+                    },
+                    (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    88
+                ),
+        },
+        {
+            shape: 'a stacked child that updates its pull request',
+            editsPullRequest: 41,
+            stackChild: true,
+            drive: () =>
+                publishThroughRealPort(
+                    {},
+                    (f) => {
+                        const head = commitAsAuthorApp(f.lane, 'one.txt', 'feat(gate): first bot commit');
+                        fixtureGit(f.primary, ['push', f.remote, `${head}:refs/heads/${REAL_PORT_BRANCH}`]);
+                        registerStackChild(f);
+                        f.writeAnswers({
+                            openPullRequests: [conformingRow(41, head, { baseRefName: REAL_PORT_STACK_PARENT })],
+                            stackParents: stackParentPages(f.baseSha),
+                        });
+                    },
+                    (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    41
+                ),
+        },
+        {
+            shape: 'a first publication that reports a conflicted head',
+            createsPullRequest: true,
+            drive: () =>
+                publishThroughRealPort(
+                    { openPullRequests: [], mergeable: 'CONFLICTING' },
+                    (f) => {
+                        commitAsAuthorApp(f.lane, 'base.txt', 'feat(gate): lane rewrites base');
+                        writeFileSync(join(f.primary, 'base.txt'), 'main\n');
+                        fixtureGit(f.primary, ['add', 'base.txt']);
+                        fixtureGit(f.primary, ['commit', '--no-gpg-sign', '-m', 'fix(fixture): main rewrites base']);
+                        fixtureGit(f.primary, ['push', f.remote, 'main']);
+                    },
+                    (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    88
+                ),
+        },
+        {
+            shape: 'a republication carrying its issue inherited milestone and board',
+            editsPullRequest: 41,
+            drive: () =>
+                publishThroughRealPort(
+                    {},
+                    (f) => {
+                        const head = commitAsAuthorApp(f.lane, 'one.txt', 'feat(gate): first bot commit');
+                        fixtureGit(f.primary, ['push', f.remote, `${head}:refs/heads/${REAL_PORT_BRANCH}`]);
+                        f.writeAnswers({
+                            openPullRequests: [conformingRow(41, head)],
+                            issueLabels: [{ name: 'bug', description: 'Something is broken' }],
+                            issueMilestone: { title: 'v1.2' },
+                            openMilestones: [{ title: 'v1.2' }],
+                            knownProjects: ['Roadmap'],
+                            issueProjectTitles: ['Roadmap'],
+                        });
+                    },
+                    (f) => publishLane(12, f.portFor(f.lane), undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY),
+                    41
+                ),
+        },
+        {
+            shape: 'a legacy pull request that is pushed to only',
+            drive: () =>
+                publishThroughRealPort(
+                    {},
+                    (f) => {
+                        const head = commitAsAuthorApp(f.legacyLane, 'legacy.txt', 'fix(collab): keep sync state');
+                        fixtureGit(f.primary, ['push', f.remote, `${head}:refs/heads/${REAL_PORT_LEGACY_BRANCH}`]);
+                        f.writeAnswers({ openPullRequests: [legacyRow()] });
+                    },
+                    (f) => publishLane(undefined, f.portFor(f.legacyLane)),
+                    REAL_PORT_LEGACY_NUMBER
+                ),
+        },
+        {
+            shape: 'a legacy republication that applies metadata under an explicit --model',
+            editsPullRequest: REAL_PORT_LEGACY_NUMBER,
+            drive: () =>
+                publishThroughRealPort(
+                    {},
+                    (f) => {
+                        const head = commitAsAuthorApp(f.legacyLane, 'legacy.txt', 'fix(collab): keep sync state');
+                        fixtureGit(f.primary, ['push', f.remote, `${head}:refs/heads/${REAL_PORT_LEGACY_BRANCH}`]);
+                        f.writeAnswers({ openPullRequests: [legacyRow()] });
+                    },
+                    (f) =>
+                        publishLane(undefined, f.portFor(f.legacyLane), undefined, undefined, undefined, undefined, {
+                            model: 'kimi-k2.5',
+                        }),
+                    REAL_PORT_LEGACY_NUMBER
+                ),
+        },
+    ];
+
+    it.each(REAL_PORT_SHAPES)('records no issue-comment write through the real port: $shape', (shape) => {
+        const recorded = shape.drive();
+
+        // A shape that recorded nothing proved nothing; these pin the write that must appear.
+        expect(recorded.length).toBeGreaterThan(0);
+        if (shape.createsPullRequest === true) {
+            expect(recorded.some((args) => args[0] === 'pr' && args[1] === 'create')).toBe(true);
+        }
+        if (shape.editsPullRequest !== undefined) {
+            expect(
+                recorded.some(
+                    (args) => args[0] === 'pr' && args[1] === 'edit' && args[2] === String(shape.editsPullRequest)
+                )
+            ).toBe(true);
+        }
+        if (shape.stackChild === true) {
+            // The real `stackBase` resolves the parent through gh; without it the shape would be a
+            // plain publication under a stack name and its recorded invocations would prove less.
+            expect(recorded.some((args) => args[0] === 'api' && args.includes('--paginate'))).toBe(true);
+            if (shape.createsPullRequest === true) {
+                const create = recorded.find((args) => args[0] === 'pr' && args[1] === 'create') ?? [];
+                const baseIndex = create.indexOf('--base');
+                expect(baseIndex).toBeGreaterThanOrEqual(0);
+                expect(create[baseIndex + 1]).toBe(REAL_PORT_STACK_PARENT);
+            }
+        }
+
+        expect(recorded.filter(postsIssueComment), `issue-comment writes recorded for ${shape.shape}`).toEqual([]);
+    });
+
+    /**
+     * The two shape tables are one obligation split by what each can observe: the golden sets pin
+     * member names on the double, the real-port cases record `gh` invocations. A shape added to only
+     * one table would leave the other blind to it, so this fails until both carry the same shapes.
+     */
+    it('drives every shape the golden sets pin through the real port too', () => {
+        expect(REAL_PORT_SHAPES.map((shape) => shape.shape).sort()).toEqual(
+            PUBLICATION_SHAPES.map((shape) => shape.shape).sort()
+        );
     });
 });
