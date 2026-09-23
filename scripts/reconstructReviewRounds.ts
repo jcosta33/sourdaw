@@ -28,7 +28,7 @@ import {
     spawnCapture,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
-import { reviewBundlePath } from './prepareReview.ts';
+import { reviewBundlePath } from './reviewBundleLocator.ts';
 import { parseReviewDossier } from './reviewDossier.ts';
 import { acceptedFindings, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
 import { parseReviewRepairReply, type ReviewRepairRecord } from './reviewRepair.ts';
@@ -294,7 +294,7 @@ function flattenedGhPages(value: unknown, label: string): unknown[] {
     return fail(`${label} are unreadable`);
 }
 
-function readPublicReviews(gh: (args: string[]) => string, number: number): PublicReview[] {
+export function readPublicReviews(gh: (args: string[]) => string, number: number): PublicReview[] {
     const pages = flattenedGhPages(
         parseJson<unknown>(
             gh(['api', '--paginate', '--slurp', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews?per_page=100`]),
@@ -329,7 +329,7 @@ function readPublicReviews(gh: (args: string[]) => string, number: number): Publ
     return reviews;
 }
 
-function readPublicReviewComments(gh: (args: string[]) => string, number: number): PublicReviewComment[] {
+export function readPublicReviewComments(gh: (args: string[]) => string, number: number): PublicReviewComment[] {
     const pages = flattenedGhPages(
         parseJson<unknown>(
             gh(['api', '--paginate', '--slurp', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/comments?per_page=100`]),

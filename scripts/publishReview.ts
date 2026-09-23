@@ -33,6 +33,12 @@ import {
     type ReviewState,
 } from './pullRequestReviewState.ts';
 import {
+    readPublicReviewComments,
+    readPublicReviews,
+    type PublicReview,
+    type PublicReviewComment,
+} from './reconstructReviewRounds.ts';
+import {
     assertSameApprovalContext,
     publicationApprovalContext,
     readLiveApprovalContext,
@@ -64,6 +70,8 @@ import {
     type PublishedReviewComment,
     type RemotePublishedReview,
 } from './reviewPublicationRemoteInspection.ts';
+
+import type { ReviewReassessment } from './reviewRoundEscalation.ts';
 
 export type { PublishedReviewComment } from './reviewPublicationRemoteInspection.ts';
 
@@ -116,6 +124,12 @@ export type PublishReviewPort = {
      * bundle dossier records a publication and the run must replay it instead of re-posting.
      */
     remoteReview?: (number: number, reviewId: number) => RemotePublishedReview | undefined;
+    /**
+     * The pull request's whole public review history and review comments, needed to count reviewer
+     * request-changes rounds for the escalation gate (#4584).
+     */
+    publicReviews?: (number: number) => PublicReview[];
+    publicReviewComments?: (number: number) => PublicReviewComment[];
     log: (message: string) => void;
 };
 
@@ -188,6 +202,8 @@ export type PreparedReviewPublication = {
     document: ReviewDocument;
     payloadDigest: string;
     approvalContext?: ReviewBundleContext;
+    /** The escalation reassessment the dossier gate consumed, when the round threshold required one. */
+    reviewReassessment?: ReviewReassessment;
 };
 
 function prepareReviewPublication(
@@ -213,13 +229,15 @@ function prepareReviewPublication(
     assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
-    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        prepareReviewDossierPublication({ number, head, bundle, document, port });
-    }
+    const reviewReassessment =
+        actorNodeId !== ORCHESTRATOR_USER_NODE_ID
+            ? prepareReviewDossierPublication({ number, head, bundle, document, port })
+            : undefined;
     return {
         head,
         document,
         approvalContext,
+        reviewReassessment,
         payloadDigest: reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: head,
@@ -300,7 +318,7 @@ function publishPreparedReviewForActor(
         fail('orchestrator acceptance response does not match the User actor and prepared head');
     }
     if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        recordPublicationBindings(number, prepared.head, document, posted.id, port);
+        recordPublicationBindings(number, prepared.head, document, posted.id, port, prepared.reviewReassessment);
     } else {
         recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
     }
@@ -444,6 +462,8 @@ export function shellPort(
         },
         reviewComments: (number, reviewId) => readReviewComments(gh, number, reviewId),
         remoteReview: (number, reviewId) => readRemoteReview(gh, number, reviewId),
+        publicReviews: (number) => readPublicReviews(gh, number),
+        publicReviewComments: (number) => readPublicReviewComments(gh, number),
         log: (message) => {
             console.log(message);
         },

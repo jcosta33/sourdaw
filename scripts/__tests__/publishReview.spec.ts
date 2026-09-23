@@ -66,7 +66,9 @@ import {
     inspectReviewPublicationRemote,
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
+import { REASSESSMENT_FILE_NAME, REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
 
+import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const validComment = {
@@ -5025,6 +5027,8 @@ describe('fresh reviewer dossier publication', () => {
             writable?: boolean;
             reviewComments?: PublishedReviewComment[];
             remoteReviews?: Record<number, RemotePublishedReview | undefined>;
+            publicReviews?: PublicReview[];
+            publicReviewComments?: PublicReviewComment[];
             diff?: string;
         } = {}
     ) {
@@ -5083,6 +5087,8 @@ describe('fresh reviewer dossier publication', () => {
                 calls.push(`remoteReview:${reviewId}`);
                 return input.remoteReviews?.[reviewId];
             },
+            publicReviews: () => input.publicReviews ?? [],
+            publicReviewComments: () => input.publicReviewComments ?? [],
             log: () => undefined,
         };
         if (input.writable !== false) {
@@ -5231,6 +5237,80 @@ describe('fresh reviewer dossier publication', () => {
             expect(parseReviewDossier(JSON.parse(fixture.writes[0]!.contents)).events.length).toBe(
                 persisted.events.length - 2
             );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes below the escalation threshold without recording a review-reassessed event', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses at or above the escalation threshold without a reassessment, before any POST or write', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes with a valid reassessment and records exactly one review-reassessed event', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            writeFileSync(
+                join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                JSON.stringify({
+                    format: 'reassessment-v1',
+                    pr: number,
+                    headSha: head,
+                    baseSha: base,
+                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    action: 'continue',
+                    reason: 're-scoped the change and re-dispatched the remaining stances',
+                })
+            );
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const reassessments = persisted.events.filter((event) => event.kind === 'review-reassessed');
+            expect(reassessments).toHaveLength(1);
+            expect(reassessments[0]).toMatchObject({
+                kind: 'review-reassessed',
+                roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                action: 'continue',
+                reason: 're-scoped the change and re-dispatched the remaining stances',
+            });
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

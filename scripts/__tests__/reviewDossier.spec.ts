@@ -1158,3 +1158,59 @@ describe('publication binding events', () => {
         expect(() => parseReviewDossier(persisted)).toThrow(/digest does not match/u);
     });
 });
+
+describe('review-reassessed event', () => {
+    const REASSESSMENT_EVENT: ReviewDossierEvent = {
+        kind: 'review-reassessed',
+        roundsObserved: 3,
+        threshold: 3,
+        action: 'continue',
+        reason: 're-scoped the change and re-dispatched the remaining stances',
+    };
+
+    it('should append one reassessment event, round-trip it, and cover its fields in the digest', () => {
+        const bound = appendReviewDossierEvents(validDossier(), [REASSESSMENT_EVENT]);
+
+        expect(bound.events.at(-1)).toMatchObject(REASSESSMENT_EVENT);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(bound)));
+        expect(reparsed.events.at(-1)).toMatchObject(REASSESSMENT_EVENT);
+
+        const baseline = reviewDossierEventDigest({
+            ...REASSESSMENT_EVENT,
+            sequence: 0,
+            previousDigest: GENESIS_DIGEST,
+        });
+        expect(
+            reviewDossierEventDigest({
+                ...REASSESSMENT_EVENT,
+                roundsObserved: 4,
+                sequence: 0,
+                previousDigest: GENESIS_DIGEST,
+            })
+        ).not.toBe(baseline);
+        expect(
+            reviewDossierEventDigest({
+                ...REASSESSMENT_EVENT,
+                action: 'respec',
+                sequence: 0,
+                previousDigest: GENESIS_DIGEST,
+            })
+        ).not.toBe(baseline);
+        expect(
+            reviewDossierEventDigest({
+                ...REASSESSMENT_EVENT,
+                reason: 'another reason',
+                sequence: 0,
+                previousDigest: GENESIS_DIGEST,
+            })
+        ).not.toBe(baseline);
+    });
+
+    it('should refuse a second reassessment event', () => {
+        const bound = appendReviewDossierEvents(validDossier(), [REASSESSMENT_EVENT]);
+
+        expect(() => appendReviewDossierEvents(bound, [REASSESSMENT_EVENT])).toThrow(
+            /more than one round reassessment/u
+        );
+    });
+});
