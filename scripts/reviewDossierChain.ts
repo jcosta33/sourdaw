@@ -29,11 +29,22 @@ export const GENESIS_DIGEST: string = '0'.repeat(64);
 export const ASSESSMENT_IMPACTS = ['none', 'limitation-only', 'stance-changed', 'finding-led'] as const;
 export type AssessmentImpact = (typeof ASSESSMENT_IMPACTS)[number];
 
-const ASSESSMENT_IMPACT_MEMBERSHIP: ReadonlySet<string> = new Set(ASSESSMENT_IMPACTS);
+/**
+ * The admission gate, as a total map keyed by the union rather than a set built from the array: a
+ * token added to either the array (widening the union) or this map (an excess key) fails to compile,
+ * so a widened token cannot reach `readAssessmentImpact` with the guard still returning a value its
+ * union does not carry.
+ */
+const ASSESSMENT_IMPACT_MEMBERSHIP: Record<AssessmentImpact, true> = {
+    none: true,
+    'limitation-only': true,
+    'stance-changed': true,
+    'finding-led': true,
+};
 const ASSESSMENT_IMPACT_TOKENS = 'none, limitation-only, stance-changed or finding-led';
 
 function isAssessmentImpact(value: string): value is AssessmentImpact {
-    return ASSESSMENT_IMPACT_MEMBERSHIP.has(value);
+    return Object.hasOwn(ASSESSMENT_IMPACT_MEMBERSHIP, value);
 }
 
 /**

@@ -7,7 +7,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
-import { buildDossier } from '../reviewDossierChain.ts';
+import { ASSESSMENT_IMPACTS, buildDossier } from '../reviewDossierChain.ts';
 import {
     REVIEW_DOSSIER_INPUT_FORMAT,
     buildReviewDossier,
@@ -173,8 +173,6 @@ function canonicalRecordWithoutAssessmentImpact(): unknown {
         recommendation: 'request-changes',
     });
 }
-
-const ASSESSMENT_IMPACTS: readonly AssessmentImpact[] = ['none', 'limitation-only', 'stance-changed', 'finding-led'];
 
 const INPUT_REFUSALS: readonly InputRefusalCase[] = [
     { label: 'a non-object', value: 'not an object', message: /input must be an object/ },
@@ -702,6 +700,16 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
 describe('parseReviewDossierInput', () => {
     it('accepts the caller-authored input form', () => {
         expect(parseReviewDossierInput(INPUT)).toEqual(INPUT);
+    });
+
+    /**
+     * The documented rule, pinned beside the spec that enforces it: the caller input always carries
+     * `assessmentImpact`; only a persisted record replaying an already-published head may omit it.
+     */
+    it('requires the impact on the caller input unconditionally, even for an already-published head', () => {
+        expect(() => parseReviewDossierInput(inputWithoutAssessmentImpact())).toThrow(
+            /input assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/
+        );
     });
 
     it.each(INPUT_REFUSALS)('refuses $label', ({ value, message }) => {

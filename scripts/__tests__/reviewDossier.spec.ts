@@ -11,7 +11,7 @@ import {
     reviewDossierEventDigest,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
-import { ASSESSMENT_IMPACTS, buildDossier } from '../reviewDossierChain.ts';
+import { ASSESSMENT_IMPACTS, buildDossier, readAssessmentImpact } from '../reviewDossierChain.ts';
 import {
     acceptedFindings,
     assessmentImpact,
@@ -224,8 +224,15 @@ describe('derived views', () => {
 });
 
 describe('assessment impact', () => {
-    it('should pin exactly the four admissible tokens, so widening the vocabulary reddens this test', () => {
+    it('should pin exactly the four admissible tokens through the admission path', () => {
         expect([...ASSESSMENT_IMPACTS]).toEqual(['none', 'limitation-only', 'stance-changed', 'finding-led']);
+        // The gate itself is observed, not just the array it is declared beside.
+        for (const token of ASSESSMENT_IMPACTS) {
+            expect(readAssessmentImpact(token)).toBe(token);
+        }
+        expect(() => readAssessmentImpact('partially')).toThrow(
+            /assessmentImpact must be none, limitation-only, stance-changed or finding-led/
+        );
     });
 
     it.each(ASSESSMENT_IMPACTS)('should round-trip the %s token through assembly, serialize and parse', (token) => {
@@ -275,6 +282,11 @@ describe('assessment impact', () => {
         expect(() => parseReviewDossier(mutated)).toThrow(/assessmentImpact must be none/);
     });
 
+    /**
+     * The documented rule, pinned beside this half of the spec: the caller input always carries
+     * `assessmentImpact`; only a persisted record replaying an already-published head (the
+     * historical fixture below) may omit it, and a record for a fresh head must carry it.
+     */
     it('should refuse a fresh canonical record with no impact and no recorded publication', () => {
         const fresh = buildDossier({
             pr: PLAN.pr,
