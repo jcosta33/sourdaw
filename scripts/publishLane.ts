@@ -1331,8 +1331,14 @@ export function publishLane(
     // while every fresh create and explicit rewrite teaches an observable step when the change is
     // product scope. The classification read follows the object-store verification, so no rewrite
     // can split what it reads from what the push packs, and it still lands before any remote write,
-    // so a refusal leaves nothing pushed.
-    if (testInstructions !== undefined) {
+    // so a refusal leaves nothing pushed. A legacy lane is exempt outright, before the classifier
+    // ever sees `testInstructions`: `pullRequestWrite` already writes no body for it (see its
+    // legacy contract above), so there is no body this gate could be protecting, and a legacy
+    // `--test` is free text the operator chose for some unrelated purpose. Judging it anyway would
+    // refuse a push-only publish over text it discards, and would hand the classifier's regex work
+    // an unbounded value nothing has capped — this check must short-circuit on `lane.legacy` before
+    // reading `testInstructions` at all, not merely skip acting on the result.
+    if (!lane.legacy && testInstructions !== undefined) {
         const changedPaths = port.changedPaths(lane.path, comparisonHead, headSha);
         if (isProductScopeChange(changedPaths)) {
             assertObservableTestInstructions(testInstructions);
@@ -1661,6 +1667,11 @@ type PullRequestWrite = {
  * and a body this script is about to write; a legacy lane writes neither, so the port is never asked
  * and none of those rules can fire. A legacy lane carrying only merges above `origin/main` therefore
  * still publishes, because pushing is the whole of what publishing it means.
+ *
+ * The product-scope how-to-test gate in `publishLane` is exempted the same way but not by this
+ * function: `testInstructions` reaches that gate directly, never through the `write` this function
+ * returns, so returning `undefined` here does not by itself protect it. That gate carries its own
+ * `lane.legacy` check for exactly this reason.
  */
 function pullRequestWrite(
     issue: number | undefined,

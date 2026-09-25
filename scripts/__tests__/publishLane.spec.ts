@@ -535,6 +535,31 @@ describe('stack publication fencing', () => {
         );
         expect(retarget.calls.some((call) => call.startsWith('push:'))).toBe(false);
     });
+
+    it('classifies the how-to-test gate from the stack parent head, not origin/main', () => {
+        // Product scope shows up only in the parent-head..head range; a gate that read base..head
+        // (origin/main) instead would see no paths at all and never refuse. Only a gate reading the
+        // resolved comparisonHead (the parent head here) can tell the two ranges apart.
+        const { port, calls } = fakePort({ existing: 41 });
+        port.stackBase = () => ({
+            branch: 'agent/parent',
+            head: 'parent-head',
+            parentNumber: 11,
+            parentState: 'OPEN',
+            parentHead: 'parent-head',
+        });
+        port.changedPaths = (lane, base, head) => {
+            calls.push(`changedPaths:${lane}:${base}:${head}`);
+            return base === 'parent-head' ? [PRODUCT_SCOPE_PATH] : [];
+        };
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
+            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+        );
+
+        expect(calls).toContain(`changedPaths:${ISSUE_LANE}:parent-head:abc`);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+    });
 });
 
 /**
@@ -2852,6 +2877,28 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('readModel:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('prMeta:'))).toBe(false);
+        });
+
+        it('never judges a legacy lane by the product-scope how-to-test gate, even with a command-only --test', () => {
+            // A legacy lane writes no body (the contract above), so a command-only --test here is
+            // free text the operator chose for some other purpose, not a How-to-test section this
+            // gate could be protecting. The gate must not merely decline to act on it: it must
+            // never read the lane's diff at all, so it stays a push-only publish exactly as before
+            // this gate existed, regardless of --test content or product-scope paths.
+            const { port, calls, bodies } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+                changedPaths: [PRODUCT_SCOPE_PATH],
+            });
+
+            expect(publishLane(undefined, port, undefined, COMMAND_ONLY_TEST)).toBe(2275);
+
+            expect(calls).toContain(`push:${LEGACY_BRANCH}`);
+            expect(calls.some((call) => call.startsWith('changedPaths:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(bodies).toEqual([]);
         });
 
         it('applies metadata to a legacy pull request only when --model is explicit', () => {
