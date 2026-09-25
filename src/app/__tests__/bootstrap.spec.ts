@@ -163,6 +163,8 @@ const {
     registerReleasedStripReportSinkMock,
     configureDurableAudioBufferOwnershipMock,
     collectDurableOwnedAudioBufferIdsMock,
+    clearAgentMeasurementArtifactsMock,
+    setAgentMeasurementArtifactsClearerMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -234,6 +236,11 @@ const {
         setTrackPanMock: vi.fn(),
         configureDurableAudioBufferOwnershipMock: vi.fn(),
         collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
+        // Distinguishable from the shared noop for the same reason as the
+        // durable audio ownership provider above: the assertion pins this
+        // exact reference, so rewiring or dropping the registration fails here.
+        clearAgentMeasurementArtifactsMock: vi.fn(),
+        setAgentMeasurementArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -373,7 +380,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     stageAudioBufferAsset: vi.fn(),
-    clearAgentMeasurementArtifacts: vi.fn(),
+    clearAgentMeasurementArtifacts: clearAgentMeasurementArtifactsMock,
 
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -554,7 +561,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
-    setAgentMeasurementArtifactsClearer: noop,
+    setAgentMeasurementArtifactsClearer: setAgentMeasurementArtifactsClearerMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
@@ -978,6 +985,20 @@ describe('bootstrap', () => {
     it('wires the durable audio ownership provider to the persisted-project enumeration', () => {
         expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
             collectDurableOwnedAudioBufferIdsMock
+        );
+    });
+
+    /**
+     * `resetModuleStoresToDefault` calls Project's stored clearer at every
+     * project load, new project, and discard; the composition root is the
+     * only place that binds it to AudioRendering's use case. Pinned by
+     * reference like the durable ownership provider above: dropping the
+     * registration, or handing Project some other function, leaves a closed
+     * project's agent measurement renders retained with nothing reporting it.
+     */
+    it('wires the agent measurement artifact clearer to the AudioRendering use case', () => {
+        expect(setAgentMeasurementArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
+            clearAgentMeasurementArtifactsMock
         );
     });
 
