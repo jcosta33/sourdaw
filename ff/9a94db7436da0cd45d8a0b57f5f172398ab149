@@ -1,0 +1,35 @@
+src/modules/Arrangement/handlers/track/__tests__/flattenTrack.spec.ts
+  s_9e15f5b7ec3308::t_dcd91a0e5c954d 3,10,23-26,109,178-228
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracks.spec.ts
+  s_9e15f5b7ec3308::t_35abb81417f8fe 11,26-29,158,244-317
+src/modules/Arrangement/handlers/track/flattenTrack.ts
+  s_2bfd55a4393d7c::t_66b28cdb7927f2 4,7,46-53,55,70-74
+src/modules/Arrangement/handlers/track/handleConsolidateAllTracks.ts
+  s_9e15f5b7ec3308::t_b03d693077fcba 6,8,40-54,69,77,86-88,91-94,114-117
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  s_9e15f5b7ec3308::t_5f2d5ae29e66bb 52-56,58-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ff9a94db7436da0cd45d8a0b57f5f172398ab149",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
