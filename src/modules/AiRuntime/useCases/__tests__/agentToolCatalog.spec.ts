@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -10,6 +11,7 @@ import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     getAgentToolCatalogSchemas,
+    RECIPE_DISCOVERY_TOOL_NAME,
 } from '../agentToolCatalog';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
@@ -167,6 +169,30 @@ describe('agent tool catalog', () => {
         expect(declineSchema?.function.parameters.properties).not.toHaveProperty('list');
     });
 
+    it('publishes a recipe-discovery contract whose role enum matches the mixing recipe catalog', () => {
+        const roles = getMixRecipeCatalog().roles;
+        const recipeSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === RECIPE_DISCOVERY_TOOL_NAME
+        );
+
+        expect(recipeSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                descriptors: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 4,
+                    items: { type: 'string', minLength: 1, maxLength: 48 },
+                },
+                targetId: { type: 'string', minLength: 1, maxLength: 256 },
+                role: { type: 'string', enum: [...roles] },
+                limit: { type: 'integer', minimum: 1, maximum: 8 },
+            },
+            required: ['descriptors'],
+            additionalProperties: false,
+        });
+    });
+
     it('publishes the complete semantic-list grammar from the public versioned contract', () => {
         const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
             (schema: ToolSchema) => schema.function.name === 'command.batch.propose'
@@ -216,6 +242,7 @@ describe('agent tool catalog', () => {
             'command.history',
             'render.request',
             'analysis.request',
+            'recipe.discover',
         ]);
 
         vi.mocked(generateToolPlanningOutcome)

@@ -1,5 +1,6 @@
 import {
     MIX_RECIPE_CATALOG_VERSION,
+    MIX_RECIPE_DESCRIPTOR_TERMS,
     MIX_RECIPE_DESCRIPTORS,
     MIX_RECIPE_ROLES,
     type MixRecipeCatalog,
@@ -25,6 +26,7 @@ export function buildMixRecipeCatalog(): MixRecipeCatalog {
         version: MIX_RECIPE_CATALOG_VERSION,
         descriptors: MIX_RECIPE_DESCRIPTORS,
         roles: MIX_RECIPE_ROLES,
+        descriptorTerms: MIX_RECIPE_DESCRIPTOR_TERMS,
         recipes: [
             ...vocalMixRecipes,
             ...drumsMixRecipes,

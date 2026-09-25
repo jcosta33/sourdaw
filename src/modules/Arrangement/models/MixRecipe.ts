@@ -40,6 +40,31 @@ export const MIX_RECIPE_DESCRIPTORS = [
 
 export type MixRecipeDescriptor = (typeof MIX_RECIPE_DESCRIPTORS)[number];
 
+/**
+ * The perceptual-request vocabulary that resolves to each descriptor.
+ *
+ * Every term is a whole lowercase phrase, trimmed and single-spaced, and every
+ * descriptor's own id is one of its terms. A "less X" phrase maps to the
+ * descriptor whose recipe produces that change — "less bright" resolves to
+ * `dark`, not to a negated `bright` — so a planner reading a request never
+ * inverts a recipe by reading the surface word instead of the intended move.
+ */
+export const MIX_RECIPE_DESCRIPTOR_TERMS: Readonly<Record<MixRecipeDescriptor, readonly string[]>> = {
+    warm: ['warm', 'warmer', 'warmth'],
+    bright: ['bright', 'brighter', 'brightness', 'crisp', 'crisper', 'less dark'],
+    tight: ['tight', 'tighter', 'tighten'],
+    punchy: ['punchy', 'punchier', 'punch', 'more punch'],
+    wide: ['wide', 'wider', 'width', 'spread', 'more width'],
+    intimate: ['intimate', 'more intimate', 'closer', 'up close'],
+    dark: ['dark', 'darker', 'less bright', 'mellow', 'mellower'],
+    airy: ['airy', 'airier', 'air', 'more air'],
+    muddy: ['muddy', 'less muddy', 'mud', 'muddiness'],
+    thin: ['thin', 'less thin', 'fuller', 'thicker'],
+    glued: ['glued', 'glue', 'cohesive'],
+    'lo-fi': ['lo-fi', 'lofi', 'lo fi'],
+    vintage: ['vintage', 'retro'],
+};
+
 /** The kind of source a recipe was authored against. */
 export const MIX_RECIPE_ROLES = ['vocal', 'drums', 'bass', 'guitar', 'keys', 'bus', 'master'] as const;
 
@@ -137,11 +162,12 @@ export type MixRecipe = {
  * A reader that does not recognise the version must decline the catalog rather
  * than guess at the shape behind it.
  */
-export const MIX_RECIPE_CATALOG_VERSION = 1;
+export const MIX_RECIPE_CATALOG_VERSION = 2;
 
 export type MixRecipeCatalog = {
     version: typeof MIX_RECIPE_CATALOG_VERSION;
     descriptors: readonly MixRecipeDescriptor[];
     roles: readonly MixRecipeRole[];
+    descriptorTerms: Readonly<Record<MixRecipeDescriptor, readonly string[]>>;
     recipes: readonly MixRecipe[];
 };

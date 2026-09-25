@@ -1263,10 +1263,12 @@ describe('generateToolPlanningOutcome', () => {
                 'automateSendRanges',
                 'renderProjectSections',
                 CREATIVE_INTERPRETATION_TOOL_NAME,
-                'project.discover',
+                'command.history',
             ])
         );
-        // The free slot goes to the first non-mandatory catalog tool; agent.capabilities is not it.
+        // The free slot goes to the highest-scoring non-mandatory catalog tool for this prompt;
+        // command.history matches the prompt term "command", so it outranks the other read-only
+        // catalog tools once the pool crosses the WebLLM selection cap. agent.capabilities is not it.
         expect(advertisedNames).not.toContain('agent.capabilities');
     });
 
