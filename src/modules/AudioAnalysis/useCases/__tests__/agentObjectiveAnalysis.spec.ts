@@ -781,10 +781,6 @@ describe('analyzeAgentRenderReceipt — receipt shape', () => {
         const tone = sineChannel(-23, SAMPLE_RATE * 2);
         const receipt = analyze([tone, tone]);
 
-        expect(entry(receipt, 'lowFrequencyStereoContent')).toEqual({
-            status: 'unavailable',
-            reason: 'not-implemented',
-        });
         expect(entry(receipt, 'phasePolarity')).toEqual({ status: 'unavailable', reason: 'needs-multitrack' });
         expect(entry(receipt, 'interTrackMasking')).toEqual({ status: 'unavailable', reason: 'needs-multitrack' });
         expect(entry(receipt, 'busHeadroom')).toEqual({ status: 'unavailable', reason: 'needs-project-state' });
@@ -792,5 +788,63 @@ describe('analyzeAgentRenderReceipt — receipt shape', () => {
             status: 'unavailable',
             reason: 'needs-project-state',
         });
+    });
+});
+
+describe('analyzeAgentRenderReceipt — low-frequency stereo content', () => {
+    // The spec's own bass-mono crossover under test sits at 120 Hz, so 60 Hz
+    // stays in the low band and 5 kHz stays firmly above it.
+    const LOW_TONE_HZ = 60;
+    const HIGH_TONE_HZ = 5000;
+    // 20 * log10(0.5): the dBFS peak that makes `sineChannel`'s amplitude 0.5.
+    const AMPLITUDE_HALF_DBFS = 20 * Math.log10(0.5);
+    const length = SAMPLE_RATE * 2;
+
+    it('reads no low-band side energy when both channels carry the same bass tone', () => {
+        const bass = sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ);
+        const receipt = analyze([bass, bass]);
+
+        expect(metric(receipt, 'lowFrequencyStereoContent')).toBeLessThan(1e-6);
+    });
+
+    it('reads full low-band side energy when the bass tone is polarity-inverted', () => {
+        const bass = sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ);
+        const receipt = analyze([bass, invert(bass)]);
+
+        expect(metric(receipt, 'lowFrequencyStereoContent')).toBeGreaterThan(0.99);
+    });
+
+    it('isolates the crossover: an inverted high tone widens the broadband fraction but not the low band', () => {
+        // Low band identical (mono bass) under a high tone inverted between
+        // channels: the broadband meter sees the wide high tone, but a
+        // crossover that actually filters reports almost none of it.
+        const bass = sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ);
+        const highTone = sineChannel(AMPLITUDE_HALF_DBFS, length, HIGH_TONE_HZ);
+        const receipt = analyze([mixChannels(bass, highTone), mixChannels(bass, invert(highTone))]);
+
+        expect(metric(receipt, 'lowFrequencyStereoContent')).toBeLessThan(0.01);
+        expect(metric(receipt, 'sideEnergyFraction')).toBeGreaterThan(0.3);
+    });
+
+    it('splits the low band evenly between mid and side for a 90 degree bass pair', () => {
+        const sine = sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ);
+        const cosine = sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ, Math.PI / 2);
+        const receipt = analyze([sine, cosine]);
+
+        expect(metric(receipt, 'lowFrequencyStereoContent')).toBeGreaterThan(0.48);
+        expect(metric(receipt, 'lowFrequencyStereoContent')).toBeLessThan(0.52);
+    });
+
+    it('has no low-band stereo relationship to report for a mono render', () => {
+        const receipt = analyze([sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ)]);
+
+        expect(entry(receipt, 'lowFrequencyStereoContent')).toEqual({ status: 'unavailable', reason: 'mono' });
+    });
+
+    it('has no low-band stereo relationship to report for a silent render', () => {
+        const silence = new Float32Array(length);
+        const receipt = analyze([silence, silence]);
+
+        expect(entry(receipt, 'lowFrequencyStereoContent')).toEqual({ status: 'unavailable', reason: 'silent' });
     });
 });
