@@ -366,11 +366,11 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
         };
     }
 
-    async function render(lanes: StoredAutomationLane[]) {
+    async function render(lanes: StoredAutomationLane[], automationMode: 'read' | 'off' = 'read') {
         const frames = 480;
         const { transport, commands } = capturingTransport(frames);
         automationStore.set({ lanes });
-        const audio = createTrack({ id: 'audio-1', name: 'Glued', automationMode: 'read', devices: [gluten] });
+        const audio = createTrack({ id: 'audio-1', name: 'Glued', automationMode, devices: [gluten] });
         const result = await renderOfflineWithNativeEngine({
             transport,
             sampleRate: 48_000,
@@ -443,6 +443,13 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
                 'render cannot carry',
         });
         expect(commands).toEqual([]);
+    });
+
+    it('renders a strip reading no automation natively, whatever its device lanes name', async () => {
+        const { result, deviceWrites } = await render([deviceLane('glue-1:notOnTheDevice', 3)], 'off');
+
+        expect(result.outcome).toBe('rendered');
+        expect(deviceWrites.filter((command) => command.target.deviceId === 'glue-1')).toEqual([]);
     });
 
     it('writes nothing for an orphan lane whose device has left the chain, as the web render does', async () => {
