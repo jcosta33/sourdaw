@@ -1,0 +1,29 @@
+src/app/main.tsx
+  s_a33c5368acef99::t_96e68df5756e07 37,39,41-43
+  s_a33c5368acef99::t_c73cc4d1e96f54 38,40
+src/app/__tests__/mainRetrospectiveCaptureStartup.spec.tsx
+  s_a33c5368acef99::t_008c718ae2b384 22-25
+  s_a33c5368acef99::t_84f201a58786b3 1-21,26-81
+src/app/__tests__/main.spec.tsx
+  s_a33c5368acef99::t_96e68df5756e07 8,72-75,258-263,284,309
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_a33c5368acef99::t_f8e08da5c0b614 113
+src/app/clearInheritedRetrospectiveCaptureArm.ts
+  s_a33c5368acef99::t_1a5d28d7d80a60 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b2b9eef4ef7354f0bea27c42004d49149f30728e",
+  "prompts": {},
+  "sessions": {
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
