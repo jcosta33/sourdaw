@@ -4,7 +4,10 @@ import { type ActionCommandGraph } from '../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext } from '../models/ProjectContext';
-import { type SemanticCommandListEntity } from '../models/SemanticCommandList';
+import {
+    collectSemanticCommandListCandidates,
+    resolveSemanticCommandListSelector,
+} from '../services/semanticCommandListCandidates';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import {
@@ -16,23 +19,11 @@ import {
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
+import { CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
 import {
     type ArbitraryCommandListEvidence,
     type ArbitraryCommandListSelectorEvidence,
 } from './compileArbitraryCommandList';
-
-type Candidate = {
-    id: string;
-    entity: SemanticCommandListEntity;
-    name?: string;
-    kind?: string;
-    type?: string;
-    trackId?: string;
-    muted?: boolean;
-    locked?: boolean;
-    bypassed?: boolean;
-    enabled?: boolean;
-};
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -51,52 +42,6 @@ export type CompilerResolvedTargetOverride =
           capability: string;
           cardinality: 'one';
       };
-
-function collectCandidates(context: ProjectContext): Candidate[] {
-    const tracks = context.tracks.map((track) => ({
-        id: track.id,
-        entity: 'track' as const,
-        name: track.name,
-        kind: track.kind,
-        muted: track.muted,
-    }));
-    const clips = context.tracks.flatMap((track) =>
-        track.clips.map((clip) => ({
-            id: clip.id,
-            entity: 'clip' as const,
-            name: clip.name,
-            type: clip.type,
-            trackId: track.id,
-            muted: clip.muted,
-            locked: clip.locked,
-        }))
-    );
-    const devices = context.tracks.flatMap((track) =>
-        track.devices.map((device) => ({
-            id: device.id,
-            entity: 'device' as const,
-            name: device.name,
-            type: device.type,
-            trackId: track.id,
-            bypassed: device.bypassed,
-        }))
-    );
-    const lanes = (context.automationLanes ?? []).map((lane) => ({
-        id: lane.id,
-        entity: 'automation-lane' as const,
-        name: lane.name,
-        trackId: lane.trackId,
-        enabled: lane.enabled,
-    }));
-    const adjustmentLayers = (context.adjustmentLayers ?? []).map((layer) => ({
-        id: layer.id,
-        entity: 'adjustment-layer' as const,
-        name: layer.name,
-        type: layer.effectType,
-        enabled: layer.enabled,
-    }));
-    return [...tracks, ...clips, ...devices, ...lanes, ...adjustmentLayers];
-}
 
 function sameToolCalls(left: readonly ToolCallResult[], right: readonly ToolCallResult[]): boolean {
     return (
@@ -194,7 +139,11 @@ export function validateArbitraryCommandListEvidence(input: {
             reason: 'Structured command compiler evidence does not exactly match the command batch.',
         };
     }
-    const candidatesById = new Map(collectCandidates(input.context).map((candidate) => [candidate.id, candidate]));
+    const candidates = collectSemanticCommandListCandidates({
+        context: input.context,
+        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
+    });
+    const candidatesById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
     const selectorByItemId = new Map<string, ArbitraryCommandListSelectorEvidence>();
     for (const selector of evidence.selectors) {
         if (selectorByItemId.has(selector.itemId) || selector.stableIds.length === 0) {
@@ -219,6 +168,28 @@ export function validateArbitraryCommandListEvidence(input: {
             new Set(selector.excludedIds).size !== selector.excludedIds.length
         ) {
             return { status: 'rejected', reason: 'Structured command compiler evidence preconditions no longer hold.' };
+        }
+        // A `match` selector's precondition is the resolved id set, not any one candidate's
+        // fingerprint: a track the compiled predicate never saw can start matching without
+        // changing a single already-resolved candidate. Re-running the same resolver against this
+        // validation's own context is the only way to catch that a table row above cannot.
+        if (selector.predicate !== undefined) {
+            const replayed = resolveSemanticCommandListSelector({
+                candidates,
+                context: input.context,
+                itemId: selector.itemId,
+                roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
+                selector: selector.predicate,
+            });
+            if (
+                replayed.status !== 'accepted' ||
+                JSON.stringify(replayed.stableIds) !== JSON.stringify(selector.stableIds)
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command compiler evidence preconditions no longer hold.',
+                };
+            }
         }
         selectorByItemId.set(selector.itemId, selector);
     }
