@@ -229,6 +229,7 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
                 ],
                 [
                     "Lowering this while the stage is engaged trades reduced CPU cost for more audible aliasing from the harmonic generator, since fewer oversampled points separate the shaping curve's harmonics from the Nyquist fold.",
+                    'Inside this window only 2, 4, and 8 are legal positions the cascade can build; requesting another value here, such as 5, 6, or 7, is refused on a live parameter write that checks the legal set, or floored down to the nearest legal step below it (4, for 5-7) on a route that does not.',
                 ],
                 noExternalModulation
             ),
