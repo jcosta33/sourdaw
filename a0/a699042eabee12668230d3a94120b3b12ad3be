@@ -1,0 +1,14 @@
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 5524-5565
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a0a699042eabee12668230d3a94120b3b12ad3be",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
