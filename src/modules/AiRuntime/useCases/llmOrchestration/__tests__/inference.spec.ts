@@ -22,6 +22,7 @@ import {
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { PROJECT_DISCOVERY_TOOL_NAME, RECIPE_DISCOVERY_TOOL_NAME } from '../../agentToolCatalog';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProviderRouteView } from '../../getProviderRouteView';
@@ -1263,13 +1264,61 @@ describe('generateToolPlanningOutcome', () => {
                 'automateSendRanges',
                 'renderProjectSections',
                 CREATIVE_INTERPRETATION_TOOL_NAME,
-                'command.history',
+                'project.discover',
             ])
         );
-        // The free slot goes to the highest-scoring non-mandatory catalog tool for this prompt;
-        // command.history matches the prompt term "command", so it outranks the other read-only
-        // catalog tools once the pool crosses the WebLLM selection cap. agent.capabilities is not it.
+        // The free slot goes to the first non-mandatory catalog tool; agent.capabilities is not it.
         expect(advertisedNames).not.toContain('agent.capabilities');
+    });
+
+    it.each([
+        'add an eq device to the vocals',
+        'find a warm reverb preset for the vocal and load it',
+        'show the command history',
+        'the bass is muddy, clean it up',
+    ])('never advertises recipe.discover to WebLLM for "%s"', async (prompt) => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+
+        const schemas = getPlanningProviderToolSchemas();
+        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+
+        await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
+            status: 'complete',
+        });
+
+        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+        const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+
+        // recipe.discover must never cost the local tier the planning tools it had before it existed:
+        // the advertised list stays identical to the pre-recipe.discover contract for every prompt.
+        expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+        expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
+        expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
+    });
+
+    it('still advertises recipe.discover to a hosted cloud backend', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [],
+            strictToolSchemas: false,
+            usage: null,
+        });
+
+        const schemas = getPlanningProviderToolSchemas();
+        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'find a warm reverb preset for the vocal and load it',
+                productionSchemas
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        const sentTools = mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? [];
+        expect(sentTools.map((tool: ToolSchema) => tool.function.name)).toContain(RECIPE_DISCOVERY_TOOL_NAME);
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(
