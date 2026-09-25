@@ -1,0 +1,41 @@
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinAutomation.ts
+  s_9b530f08172a54::t_f27b1e43347354 1-121
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_9b530f08172a54::t_867e9f7203c254 52-56,71-72,213-214
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_9b530f08172a54::t_3bdc1296f4d581 35-37,52-54,57,74,77,110-113,117-118,137-139,141,143,145-146,151,230-232,261
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_9b530f08172a54::t_7aa44c20030a38 3-6,12,23,333-368,370-372,374-447,481-487
+src/modules/AudioEngine/useCases/offlineRender/__tests__/selectOfflineRenderEngine.spec.ts
+  s_9b530f08172a54::t_f8ab10e59e5995 27,40,138,145,222,242,257,294-298,319-323,336,348,360,376,390,405-485
+src/modules/AudioEngine/useCases/offlineRender/deviceParameterLanes.ts
+  s_9b530f08172a54::t_b7204c61d8b80f 1-46
+src/modules/AudioEngine/useCases/offlineRender/laneAddressesDevice.ts
+  s_9b530f08172a54::t_b01726e1684cee 1-27
+src/modules/AudioEngine/useCases/offlineRender/nativeRefusedDeviceLane.ts
+  s_9b530f08172a54::t_654fc5c7a98968 1-66
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_9b530f08172a54::t_1f0232f1612edc 27-32,102,143-145,148-152,177-180
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_9b530f08172a54::t_7df64ff8c241b6 14-22,80,87-88,98,101-105,164-170,244-252,310-325,334,351-352,357
+src/modules/AudioEngine/useCases/offlineRender/selectOfflineRenderEngine.ts
+  s_9b530f08172a54::t_07add265a2775c 20-33,63,65,81-83,86-87,94-109,113,118-120
+src/modules/AudioEngine/useCases/offlineRender/tryNativeOfflineRender.ts
+  s_9b530f08172a54::t_46f9616cf0472d 34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dcbdb4f483311d82f4843ad937b84d10ddceccfd",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
