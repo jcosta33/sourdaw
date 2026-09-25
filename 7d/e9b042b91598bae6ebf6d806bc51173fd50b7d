@@ -1,0 +1,62 @@
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_9e15f5b7ec3308::t_73069247c82322 1,18
+  s_9e15f5b7ec3308::t_8e0e26bb2658a8 43
+  s_9e15f5b7ec3308::t_67efa60b88ca68 182-201
+  s_9e15f5b7ec3308::t_cbf1f5f0599003 349
+src/modules/Arrangement/models/MixRecipe.ts
+  s_9e15f5b7ec3308::t_ece59e3e020891 165,171
+  s_9e15f5b7ec3308::t_ec93983a49621c 43-67
+src/modules/Arrangement/repositories/__tests__/mixingRecipeCatalog.spec.ts
+  s_9e15f5b7ec3308::t_c2cfbe31c11bee 55,59-79,82-83,85-86
+  s_9e15f5b7ec3308::t_2b1d2931e0084b 7
+  s_9e15f5b7ec3308::t_9c6b658aecf13b 80-81,84
+  s_9e15f5b7ec3308::t_55eb238654159d 177-178,183-187,189-190
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_9e15f5b7ec3308::t_699f9180ae7bdc 1272
+  s_9e15f5b7ec3308::t_a00ee2ae964106 743-791
+  s_9e15f5b7ec3308::t_50229e5ff33d7d 50,53,55
+  s_9e15f5b7ec3308::t_92074f9bba2cb8 1
+  s_9e15f5b7ec3308::t_681d02d6d72e26 809-810
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_798871f75e69c4 1266,1269-1271
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_9e15f5b7ec3308::t_2c39335909aee6 375
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_9e15f5b7ec3308::t_18bcc4d6bf6c87 19
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_9e15f5b7ec3308::t_c20357f96d2e4d 245
+  s_9e15f5b7ec3308::t_96097dd0ea402e 3,14
+  s_9e15f5b7ec3308::t_d617602a88a6fe 172-195
+src/modules/AiRuntime/useCases/parseRecipeDiscoveryInput.ts
+  s_9e15f5b7ec3308::t_f954dfbe703caf 1-100
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_9e15f5b7ec3308::t_21f2b060728896 1-274
+  s_9e15f5b7ec3308::t_ae4c53cbf08a72 275-288
+src/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog.ts
+  s_9e15f5b7ec3308::t_9ecbf9c4f67937 29
+  s_9e15f5b7ec3308::t_cf0a15bd96f9e3 3
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_9e15f5b7ec3308::t_bec6b2c23b64e7 1-87,89,91-108,115,117-119,121-122,130-214,218,220-282
+  s_9e15f5b7ec3308::t_0df301560d2d54 90
+  s_9e15f5b7ec3308::t_83a3ea28f11fdf 88
+  s_9e15f5b7ec3308::t_6c8f0918f5ab8f 109-114,116,120,123-129
+  s_9e15f5b7ec3308::t_6a0d02173fb023 215-217,219
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_7a2b671160ab4b 15,19,23,43,77,81,85,89,374,527,942,946,950,954
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7de9b042b91598bae6ebf6d806bc51173fd50b7d",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
