@@ -685,6 +685,38 @@ describe('semantic review context', () => {
         ]);
     });
 
+    it('keeps a withheld contract-carrying path named as such, apart from an anonymous bulk trim', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                { path: 'scripts/reviewDossier.ts', reason: 'contract-evidence-withheld (after)' },
+                                { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'contract-evidence-withheld (after)' },
+            { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
     it('pins the advisory workflow path and event literals from the captured run', () => {
         expect(ADVISORY_WORKFLOW_PATH).toBe('.github/workflows/semantic-review.yml');
         expect(ADVISORY_WORKFLOW_EVENT).toBe('pull_request_target');

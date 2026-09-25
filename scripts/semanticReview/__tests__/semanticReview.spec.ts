@@ -24,6 +24,7 @@ import { EGRESS_VENDOR_SHAPES, RESIDUAL_RULES, VENDOR_KEY_NAMES } from '../egres
 import {
     collectEvidence,
     exclusionReason,
+    isContractCarryingPath,
     type PathHunks,
     type SemanticChangedFile,
     type SemanticEvidenceSet,
@@ -311,6 +312,85 @@ describe('evidence collection', () => {
         const after = set.references[1] as EvidenceReference;
         expect(after.endLine).toBeGreaterThanOrEqual(after.startLine);
         expect(after.startLine).toBe(1);
+    });
+});
+
+describe('contract-carrying admission', () => {
+    it('admits a trusted-closure path before bulk material that would otherwise exhaust the budget', () => {
+        // #4771: the total evidence budget was spent in file order, so bulk files consumed it and the
+        // trusted-closure path that sorted last was the one withheld. Contract-carrying paths are now
+        // admitted first, so the closure survives and the bulk file is trimmed.
+        const bulk = 'const bulk = 1;\n'.repeat(40);
+        const bulkBytes = Buffer.byteLength(bulk, 'utf8');
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/bulk.ts'), changedFile('scripts/reviewDossier.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/bulk.ts`]: bulk,
+                    [`${HEAD}:aaa/bulk.ts`]: bulk,
+                    [`${MERGE_BASE}:scripts/reviewDossier.ts`]: 'const contract = 1;\n',
+                    [`${HEAD}:scripts/reviewDossier.ts`]: 'const contract = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            // Exactly enough for the bulk file's two whole-file sides and nothing else: file order would
+            // have admitted the bulk file and withheld the closure path.
+            limits: { maxRegionBytes: bulkBytes, maxTotalBytes: bulkBytes * 2 },
+        });
+        expect(set.references.some((reference) => reference.path === 'scripts/reviewDossier.ts')).toBe(true);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/bulk.ts')).toBe(true);
+    });
+
+    it('names a withheld contract-carrying path instead of counting it as an anonymous trim', () => {
+        const before = 'const contract = 1;\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('scripts/reviewDossier.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/reviewDossier.ts`]: before,
+                    [`${HEAD}:scripts/reviewDossier.ts`]: 'const contract = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: Buffer.byteLength(before, 'utf8') },
+        });
+        expect(set.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'contract-evidence-withheld (after)' },
+        ]);
+    });
+
+    it('leaves a bulk path trimmed by the total budget anonymously named', () => {
+        const before = 'const a = 1;\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('src/modules/Project/a.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/a.ts`]: before,
+                    [`${HEAD}:src/modules/Project/a.ts`]: 'const a = 2;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: Buffer.byteLength(before, 'utf8') },
+        });
+        expect(set.truncated).toEqual([
+            { path: 'src/modules/Project/a.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('derives contract-carrying from the closure, the contract documents, and closure-pinning specs', () => {
+        expect(isContractCarryingPath('scripts/trustedGithubWriteBootstrap.ts')).toBe(true);
+        expect(isContractCarryingPath('AGENTS.md')).toBe(true);
+        expect(isContractCarryingPath('.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md')).toBe(true);
+        expect(isContractCarryingPath('.agents/skills/delivery-orchestration/SKILL.md')).toBe(true);
+        expect(isContractCarryingPath('scripts/__tests__/reviewDossier.spec.ts')).toBe(true);
+        expect(isContractCarryingPath('scripts/__tests__/checkReleaseInventory.spec.ts')).toBe(false);
+        expect(isContractCarryingPath('src/modules/Project/undo.ts')).toBe(false);
     });
 });
 

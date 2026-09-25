@@ -10,7 +10,14 @@
  * The default review unit is one changed file's before/after content plus a bounded set of related
  * context. The whole repository is never sent. When a region is dropped, truncated, or unavailable,
  * that is recorded as a limitation: an omitted region is not evidence that the region is safe.
+ *
+ * Admission is ranked so a contract-carrying path — a trusted GitHub-write closure member, a contract
+ * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), or a collected spec whose sibling
+ * source is a closure member — is admitted before bulk or generated material and named when a budget
+ * withholds it, so the same budget is spent where the contract lives.
  */
+
+import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 import {
     assertLineRange,
@@ -139,6 +146,30 @@ export function isContractPath(path: string): boolean {
 function baseName(path: string): string {
     const parts = path.split('/');
     return parts[parts.length - 1] ?? path;
+}
+
+/**
+ * The trusted GitHub-write dependency closure, whose members execute with a role identity; a change to
+ * one can move a privileged transition, so these paths are contract-carrying.
+ */
+const TRUSTED_CLOSURE_PATHS: ReadonlySet<string> = new Set(Object.values(trustedDependencyGraphs).flat());
+
+/** A collected spec whose sibling source — the `scripts/<stem>.ts` its basename names — is a closure member. */
+function isTrustedClosureSpec(path: string): boolean {
+    if (!path.startsWith('scripts/__tests__/') || !isCollectedSpec(path)) {
+        return false;
+    }
+    const stem = baseName(path).replace(/\.(?:spec|test)\.[^.]+$/u, '');
+    return TRUSTED_CLOSURE_PATHS.has(`scripts/${stem}.ts`);
+}
+
+/**
+ * Contract-carrying paths are the trusted GitHub-write closure, the contract documents (`AGENTS.md`,
+ * `.agents/decisions/`, `.agents/skills/`), and the collected specs whose sibling source is a closure
+ * member; they are admitted before bulk material and named when a budget withholds them.
+ */
+export function isContractCarryingPath(path: string): boolean {
+    return isContractPath(path) || TRUSTED_CLOSURE_PATHS.has(path) || isTrustedClosureSpec(path);
 }
 
 /** The rule ids a path admits, sorted so two sets can be compared for equality. */
@@ -350,6 +381,18 @@ function admitSide(
 }
 
 /**
+ * The reason a budget withholds one region. A contract-carrying changed file is named as such, so the
+ * coverage record can tell a trimmed bulk file from a contract that was not read; contract-context
+ * regions (label `contract`) are already named by their qualifier.
+ */
+function withheldReason(request: RegionRequest, label: string, budget: 'region' | 'total'): string {
+    const base = budget === 'region' ? 'region-exceeds-per-region-budget' : 'total-evidence-budget-exhausted';
+    const contractCarrying =
+        label !== 'contract' && request.changedPath !== undefined && isContractCarryingPath(request.changedPath);
+    return contractCarrying ? `contract-evidence-withheld (${label})` : `${base} (${label})`;
+}
+
+/**
  * Admission for one change's regions: the content screen, the two byte budgets, and the identifiers.
  *
  * It is a factory rather than part of the collector because the collector's job is deciding *which*
@@ -417,7 +460,7 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
             return;
         }
         if (!regionFits(raw, limits.maxRegionBytes)) {
-            truncated.push({ path: request.path, reason: `region-exceeds-per-region-budget (${label})` });
+            truncated.push({ path: request.path, reason: withheldReason(request, label, 'region') });
             limitations.push(
                 `evidence for ${request.path} (${label}) was not supplied: it exceeds the per-region budget`
             );
@@ -426,7 +469,7 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
         }
         const bytes = Buffer.byteLength(raw, 'utf8');
         if (totalBytes + bytes > limits.maxTotalBytes) {
-            truncated.push({ path: request.path, reason: `total-evidence-budget-exhausted (${label})` });
+            truncated.push({ path: request.path, reason: withheldReason(request, label, 'total') });
             limitations.push(
                 `evidence for ${request.path} (${label}) was omitted: the total evidence budget was exhausted`
             );
@@ -492,7 +535,13 @@ export function collectEvidence(input: {
     limits: SemanticEvidenceLimits;
     contractPaths?: readonly string[];
 }): SemanticEvidenceSet {
-    const files = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)].sort(compareByPath);
+    // Contract-carrying paths are admitted before bulk or generated material, so a tight total budget
+    // is spent where the contract lives rather than in file order.
+    const files = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)].sort((left, right) => {
+        const leftRank = isContractCarryingPath(left.path) ? 0 : 1;
+        const rightRank = isContractCarryingPath(right.path) ? 0 : 1;
+        return leftRank - rightRank || compareByPath(left, right);
+    });
     // Read once for the whole change: one `git diff` answers for every path, and an empty map means
     // the hunks were unavailable and each changed file is supplied whole.
     let hunksByPath: ReadonlyMap<string, PathHunks>;

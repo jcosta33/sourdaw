@@ -174,6 +174,7 @@ const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'hunk-beyond-file',
     'region-exceeds-per-region-budget',
     'total-evidence-budget-exhausted',
+    'contract-evidence-withheld',
 ];
 
 /** The closed qualifier labels the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
