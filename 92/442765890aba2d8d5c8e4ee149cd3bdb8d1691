@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_9e15f5b7ec3308::t_83b5762d775f18 53
+  s_9e15f5b7ec3308::t_67b916d840ca11 440-443,452-453
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_106c148e4a8e1b 25
+  s_9e15f5b7ec3308::t_27b229b3412ee2 1267,1270,1274-1322
+  s_9e15f5b7ec3308::t_54360637216237 1323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92442765890aba2d8d5c8e4ee149cd3bdb8d1691",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
