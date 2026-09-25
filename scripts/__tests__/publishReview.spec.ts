@@ -5023,6 +5023,19 @@ describe('fresh reviewer dossier publication', () => {
         throw new Error('expected the publication to refuse');
     }
 
+    /**
+     * The escalation refusal is the operator's diagnostic wherever it is reached, and the same text
+     * serves every state that reaches it, so the cases that reach it pin its exact contract text: any
+     * rewording that changes what it blames fails them. Phrase-level negatives could not hold that
+     * claim, because a synonym for the same field walked past them. In production this refusal is
+     * reachable for a request-changes publication: a fresh approval publication reads its approval
+     * context first and surfaces the raw manifest error there (#4754), so these cases pin the
+     * refusal's contract through the publication port rather than the approval path.
+     */
+    function expectedEscalationRefusal(bundle: string, observedCount: number): string {
+        return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
+    }
+
     function dossierFixture(
         input: {
             plan?: unknown;
@@ -5383,11 +5396,7 @@ describe('fresh reviewer dossier publication', () => {
         });
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(
-                `observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}`
-            );
-            expect(message).toMatch(/manifest\.json has no readable baseSha/);
-            expect(message).toMatch(/reassessment\.json/);
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
@@ -5395,7 +5404,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a plan-less bundle at or above the threshold with a missing manifest, not a raw ENOENT', () => {
+    it('refuses a plan-less bundle at or above the threshold with a missing manifest', () => {
         const fixture = dossierFixture({
             publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
                 id: index + 1,
@@ -5408,9 +5417,353 @@ describe('fresh reviewer dossier publication', () => {
         try {
             rmSync(join(fixture.bundle, 'manifest.json'));
             const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/manifest\.json has no readable baseSha/);
-            expect(message).toMatch(/reassessment\.json/);
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
             expect(message).not.toMatch(/ENOENT/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in a field other than baseSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in pr', () => {
+        const fixture = dossierFixture({
+            manifest: { baseRefName: 'main', baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in headSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', baseSha: base },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid field', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: '', baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid pr', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number + 0.5, baseRefName: 'main', baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid baseSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', baseSha: 42, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid headSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', baseSha: base, headSha: 42 },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid baseRefName', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 42, baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest cannot be parsed', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            writeFileSync(join(fixture.bundle, 'manifest.json'), '{ not json');
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a request-changes publication at or above the threshold when the manifest supplies no usable context', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff,
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries a blank baseSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', baseSha: '', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries a blank headSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', baseSha: base, headSha: '' },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('names the round count it observed when the head has taken more rounds than the threshold', () => {
+        const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 4;
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: observed }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, observed));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('names only the reviewer request-changes rounds when the history carries others', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: [
+                ...Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                    id: index + 1,
+                    state: 'CHANGES_REQUESTED',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    body: 'round',
+                })),
+                {
+                    id: 90,
+                    state: 'APPROVED',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    body: 'approval',
+                },
+                {
+                    id: 91,
+                    state: 'APPROVED',
+                    commitId: head,
+                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    body: 'acceptance',
+                },
+                {
+                    id: 92,
+                    state: 'CHANGES_REQUESTED',
+                    commitId: head,
+                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    body: 'rejection',
+                },
+            ],
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
