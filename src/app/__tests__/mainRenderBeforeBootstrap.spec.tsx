@@ -110,6 +110,7 @@ vi.mock('#/modules/Project/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeAudioEngine: vi.fn().mockResolvedValue(undefined),
+    disarmRetrospectiveCapture: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     setMasterGainValue: vi.fn(),
     resumeEngine: vi.fn(),

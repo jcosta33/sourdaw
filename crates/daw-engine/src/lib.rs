@@ -1,6 +1,7 @@
 pub mod audio_thread;
 pub mod capture;
 pub(crate) mod device;
+pub mod retrospective;
 /// Why an engine has no capture side. The device seam itself stays internal;
 /// its refusal is the one part of it a host has to be able to name.
 pub use device::InputOpenRefusal;
@@ -207,6 +208,9 @@ pub struct EngineHandle {
     /// `audio_thread::new_output_path_frames_slot` and
     /// [`Self::output_path_frames`].
     output_path_frames: Arc<AtomicUsize>,
+    /// Control half of the retrospective ring. The matching writer lives in
+    /// the capture callback and retains input only while this side is armed.
+    retrospective: crate::retrospective::RetrospectiveControl,
 }
 
 impl EngineHandle {
@@ -315,6 +319,7 @@ impl EngineHandle {
             output_stream_fault: spawned.output_stream_fault,
             output_buffer_frames: spawned.output_buffer_frames,
             output_path_frames: spawned.output_path_frames,
+            retrospective: spawned.retrospective,
         })
     }
 
@@ -344,6 +349,36 @@ impl EngineHandle {
     /// rather than compensating a take by zero.
     pub fn input_latency_frames(&self) -> usize {
         self.input_latency_frames.load(Ordering::Relaxed)
+    }
+
+    /// Arm retrospective audio retention for exactly one track.
+    ///
+    /// Allocates about sixty seconds of storage on this thread at the running
+    /// stream's sample rate. A later arm replaces the previous target. A
+    /// `channels` outside
+    /// [`crate::retrospective::RETROSPECTIVE_CHANNEL_RANGE`] disarms instead.
+    ///
+    /// Opens the input after a successful arm so the capture callback runs —
+    /// and fills the ring — before any record consumer registers. Without
+    /// this open, pre-record audio never reaches
+    /// [`crate::retrospective::RetrospectiveWriter::write_block`].
+    pub fn arm_retrospective_capture(&mut self, track_id: usize, channels: usize) {
+        self.retrospective.arm(track_id, self.sample_rate, channels);
+        if self.retrospective.target_track_id().is_some() {
+            self.audio_thread.request_capture_open();
+        }
+    }
+
+    /// Stop retrospective retention. Capture-callback writes keep nothing
+    /// until the next arm.
+    pub fn disarm_retrospective_capture(&mut self) {
+        self.retrospective.disarm();
+    }
+
+    /// The track id last passed to [`Self::arm_retrospective_capture`], if
+    /// still armed from this side.
+    pub fn retrospective_capture_target(&self) -> Option<usize> {
+        self.retrospective.target_track_id()
     }
 
     /// Frames the output device's most recent callback asked for — a UI poll
@@ -1451,6 +1486,7 @@ fn engine_handle_fixture(
         output_stream_fault,
         output_buffer_frames: audio_thread::new_output_buffer_frames_slot(),
         output_path_frames: audio_thread::new_output_path_frames_slot(),
+        retrospective: crate::retrospective::retrospective_capture().0,
     }
 }
 
@@ -1891,6 +1927,51 @@ mod tests {
         assert!(
             owner_rx.try_recv().is_err(),
             "a refused registration asks for no input device"
+        );
+    }
+
+    /// Arming retrospective capture must open the input even when no record
+    /// consumer is on the bus: otherwise the capture callback never runs and
+    /// pre-record audio never reaches the ring.
+    #[test]
+    fn arming_retrospective_capture_opens_input_without_a_capture_consumer() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner_rx) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+
+        assert!(
+            engine.capture_consumers.is_empty(),
+            "this arm must not depend on a registered capture consumer"
+        );
+
+        engine.arm_retrospective_capture(3, 2);
+
+        assert_eq!(engine.retrospective_capture_target(), Some(3));
+        assert!(matches!(owner_rx.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        assert!(
+            engine.capture_consumers.is_empty(),
+            "arming must not invent a capture consumer"
+        );
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "one successful arm asks exactly once"
+        );
+    }
+
+    /// A failed arm (zero channels) leaves the ring disarmed and must not
+    /// open the input on behalf of a target that was never installed.
+    #[test]
+    fn a_failed_retrospective_capture_arm_asks_the_owner_thread_for_nothing() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner_rx) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+
+        engine.arm_retrospective_capture(3, 0);
+
+        assert_eq!(engine.retrospective_capture_target(), None);
+        assert!(
+            owner_rx.try_recv().is_err(),
+            "a refused arm asks for no input device"
         );
     }
 
