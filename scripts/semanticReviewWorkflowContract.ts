@@ -161,19 +161,23 @@ export const SEMANTIC_REVIEW_ASSESS_STEP = 'Assess the change';
 export const SEMANTIC_REVIEW_SCAN_COMMAND = 'node scripts/semanticReview.ts scan';
 
 /**
- * The one artifact name both sides use, scoped to the run and the attempt. Sharing it is the point:
- * the upload's name and the download's name are the same string only because both read it here, and
- * the attempt suffix is what keeps a re-run from colliding with the previous attempt's immutable
- * artifact — a run-scoped name would fail the new upload while the softened download still read the
- * superseded report.
+ * The artifact-name prefix both sides share. The attempt is appended separately on each side because
+ * the two sides do not necessarily share one attempt: a re-run of only the failed jobs does not
+ * re-run the producer, so the consumer must name the artifact from the producer's attempt (carried
+ * as the `attempt` job output) rather than its own `github.run_attempt`.
  */
-export const SEMANTIC_REVIEW_ARTIFACT_NAME =
-    'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}';
+export const SEMANTIC_REVIEW_ARTIFACT_PREFIX = 'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
+/** The producer's attempt, carried to the consumer as this job output. */
+export const SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT = 'attempt';
+export const SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT_VALUE = '${{ github.run_attempt }}';
+/** What the producer names its upload, and what the consumer names its download. */
+export const SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME = `${SEMANTIC_REVIEW_ARTIFACT_PREFIX}-\${{ github.run_attempt }}`;
+export const SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME = `${SEMANTIC_REVIEW_ARTIFACT_PREFIX}-\${{ needs.assess.outputs.${SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT} }}`;
 /** The one step that publishes the report the coverage job reads back. */
 export const SEMANTIC_REVIEW_UPLOAD_STEP = 'Upload the advisory report';
 export const SEMANTIC_REVIEW_UPLOAD_ACTION = SEMANTIC_REVIEW_ACTIONS[3];
 export const SEMANTIC_REVIEW_UPLOAD_INPUTS: Readonly<Record<string, string | number>> = {
-    name: SEMANTIC_REVIEW_ARTIFACT_NAME,
+    name: SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME,
     path: '${{ runner.temp }}/semantic-review',
     'retention-days': 7,
 };
@@ -204,14 +208,12 @@ export const SEMANTIC_REVIEW_COVERAGE_COMMAND = [
     'report_directory="$RUNNER_TEMP/semantic-review"',
     "coverage='no assessment delivered'",
     'if [ -f "$report_directory/scan.json" ]; then',
-    '  # A withheld entry is one the report counted as unassessed or as a',
-    '  # truncated region — together its own definition of an incomplete',
-    '  # assessment, and a completed run carries neither. The count is over',
-    '  # distinct path-and-reason pairs: the producer emits one identical',
-    '  # entry per over-budget region of a file, and counting those repeats',
-    "  # would inflate the line, while dropping the pair's reason would hide",
-    '  # it, so identical pairs collapse and every distinct reason stays.',
-    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | unique_by([.path, .reason]) | length)) withheld"\' "$report_directory/scan.json" 2>/dev/null || true)',
+    '  # The figure is labelled as distinct path-and-reason pairs because',
+    '  # that is what it counts: the report counts regions, and its producer',
+    '  # emits one identical entry per over-budget region of a file. Counting',
+    '  # those repeats as withheld would contradict the annotations, which',
+    "  # collapse them, and dropping the pair's reason would hide it.",
+    '  computed=$(jq -r \'"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | unique_by([.path, .reason]) | length)) distinct path-and-reason pairs"\' "$report_directory/scan.json" 2>/dev/null || true)',
     '  if [ -n "$computed" ]; then',
     '    coverage=$computed',
     '  fi',
@@ -247,7 +249,7 @@ export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_STEP_ID = 'download';
 export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_ACTION =
     'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
 export const SEMANTIC_REVIEW_COVERAGE_DOWNLOAD_INPUTS: Readonly<Record<string, string>> = {
-    name: SEMANTIC_REVIEW_ARTIFACT_NAME,
+    name: SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME,
     path: '${{ runner.temp }}/semantic-review',
 };
 export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_STEP = 'Publish the withheld paths';
@@ -268,12 +270,21 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     'report_directory="$RUNNER_TEMP/semantic-review"',
     'report="$report_directory/scan.json"',
     'withheld_list="$report_directory/withheld-notices.txt"',
-    'if [ ! -f "$report" ]; then',
-    '  if [ "$DOWNLOAD_OUTCOME" = \'failure\' ] && [ -n "$COVERAGE_LINE" ]; then',
-    "    printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'",
+    '# Three absences, told apart by what the fetch proved. A missing or',
+    '# empty report with a failed fetch is either a retrieval failure (the',
+    '# line exists, so this run published one) or a run that published',
+    '# nothing; a missing or empty report with a successful fetch disproves',
+    '# "published nothing" and is a report that cannot be read.',
+    'if [ ! -s "$report" ]; then',
+    '  if [ "$DOWNLOAD_OUTCOME" = \'failure\' ]; then',
+    '    if [ -n "$COVERAGE_LINE" ]; then',
+    "      printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'",
+    '    else',
+    "      printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'",
+    '    fi',
     '    exit 0',
     '  fi',
-    "  printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'",
+    "  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'",
     '  exit 0',
     'fi',
     '',
@@ -282,7 +293,7 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     '# per over-budget region of a file, so the pairs are deduplicated while',
     '# every distinct reason is kept: emitting the repeats would spend the',
     '# budget on the same notice and hide a distinct reason, and sorting the',
-    '# survivors would let the ten-entry budget fall on alphabet rather than',
+    '# survivors would let the ten-pair budget fall on alphabet rather than',
     "# on the report's own order. The `file=` property is identity-bearing,",
     '# so it is escaped exactly and never folded: folding a control',
     '# character into a space would annotate two paths under one name and',
@@ -301,7 +312,7 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     '  | .distinct[]',
     '  | "::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)"',
     '\' "$report" > "$withheld_list" 2>/dev/null; then',
-    "  printf '::notice title=Jev coverage::The advisory report could not be read: the assessment published an artifact whose report is not readable.\\n'",
+    "  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'",
     '  exit 0',
     'fi',
     '',
@@ -317,7 +328,7 @@ export const SEMANTIC_REVIEW_COVERAGE_ANNOTATE_COMMAND = [
     '  fi',
     'done < "$withheld_list"',
     '',
-    'printf \'::notice title=Jev coverage::%s further withheld entry(s) were not annotated.\\n\' "$((withheld - annotated))"',
+    'printf \'::notice title=Jev coverage::%s further distinct path-and-reason pairs were not annotated.\\n\' "$((withheld - annotated))"',
 ].join('\n');
 
 /**
@@ -630,15 +641,18 @@ export function assertSemanticReviewWorkflow(value: unknown): void {
     for (const forbidden of ['permissions', 'continue-on-error', 'environment', 'uses', 'secrets']) {
         requireEqual(job[forbidden], undefined, `no job ${forbidden}`);
     }
-    // The one output the coverage job's name is built from, and it is the bare step output: a job
-    // that never ran never evaluates its outputs mapping, so the fallback belongs in the consumer's
-    // name expression, where it is the expression that actually runs on the skipped and red paths.
+    // The coverage line the consumer's name is built from — the bare step output, because a job that
+    // never ran never evaluates its outputs mapping, so the fallback belongs in the consumer's name
+    // expression — and the producer's attempt, which the consumer names the artifact from. A re-run of
+    // only the failed jobs does not re-run this job, so `github.run_attempt` evaluated in the consumer
+    // would name an artifact no job uploaded.
     requireEqual(
         job.outputs,
         {
             [SEMANTIC_REVIEW_COVERAGE_OUTPUT]: '${{ steps.coverage.outputs.coverage }}',
+            [SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT]: SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT_VALUE,
         },
-        'its single coverage output'
+        'its coverage and producer-attempt outputs'
     );
     requireEqual(
         stepsOf(job).map((step) => step.name),

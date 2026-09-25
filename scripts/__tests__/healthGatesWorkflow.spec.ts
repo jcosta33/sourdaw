@@ -29,15 +29,17 @@ import {
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import {
     assertSemanticReviewWorkflow,
-    SEMANTIC_REVIEW_ARTIFACT_NAME,
+    SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT,
     SEMANTIC_REVIEW_ASSESS_JOB,
     SEMANTIC_REVIEW_ASSESS_STEP,
     SEMANTIC_REVIEW_CHECKOUT_STEP,
     SEMANTIC_REVIEW_COVERAGE_JOB,
+    SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME,
     SEMANTIC_REVIEW_ENV,
     SEMANTIC_REVIEW_HEAD_EXPRESSION,
     SEMANTIC_REVIEW_KEY_ENV,
     SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
+    SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME,
 } from '../semanticReviewWorkflowContract';
 
 type UnknownRecord = Record<string, unknown>;
@@ -1827,9 +1829,9 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
 /**
  * Runs the workflow's own computing and annotating commands against a report written into a
  * throwaway runner temp. The shipped scripts are what is observed, so the coverage line's tally, the
- * notices, and the two absence branches are read back rather than restated, and a report the scripts
- * mishandle is a failure here rather than a claim in a comment. Omitting `report` is the "this run
- * published nothing" fixture; `downloadOutcome` and `coverageLine` drive the retrieval branch.
+ * notices, and each absence branch are read back rather than restated, and a report the scripts
+ * mishandle is a failure here rather than a claim in a comment. Omitting `report` writes none; an
+ * empty `report` writes a zero-byte one; `downloadOutcome` and `coverageLine` select the branch.
  */
 function runSemanticCoverageLine(options: { report?: string; downloadOutcome?: string; coverageLine?: string }): {
     coverage: string;
@@ -2186,7 +2188,14 @@ describe('health gates workflow contract', () => {
 
         const outputless = structuredClone(semanticReviewWorkflow);
         delete jobAt(outputless, 'assess').outputs;
-        expect(() => assertSemanticReviewWorkflow(outputless)).toThrow('its single coverage output');
+        expect(() => assertSemanticReviewWorkflow(outputless)).toThrow('its coverage and producer-attempt outputs');
+
+        // The producer's attempt is what the consumer names the artifact from, so
+        // dropping it leaves the download naming an artifact no job uploaded on a
+        // re-run of only the failed jobs.
+        const attemptless = structuredClone(semanticReviewWorkflow);
+        delete recordAt(jobAt(attemptless, 'assess'), 'outputs')[SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT];
+        expect(() => assertSemanticReviewWorkflow(attemptless)).toThrow('its coverage and producer-attempt outputs');
 
         // The computing step keeps the default success gate. A condition that
         // would let it run after a failed report publishes a line derived from a
@@ -2211,7 +2220,9 @@ describe('health gates workflow contract', () => {
         const fallbackInProducer = structuredClone(semanticReviewWorkflow);
         recordAt(jobAt(fallbackInProducer, 'assess'), 'outputs').coverage =
             "${{ steps.coverage.outputs.coverage || 'no assessment delivered' }}";
-        expect(() => assertSemanticReviewWorkflow(fallbackInProducer)).toThrow('its single coverage output');
+        expect(() => assertSemanticReviewWorkflow(fallbackInProducer)).toThrow(
+            'its coverage and producer-attempt outputs'
+        );
 
         const fallbacklessName = structuredClone(semanticReviewWorkflow);
         jobAt(fallbacklessName, 'coverage').name = 'Jev coverage · ${{ needs.assess.outputs.coverage }}';
@@ -2337,9 +2348,15 @@ describe('health gates workflow contract', () => {
         // attempt: a run-scoped name would collide with the previous attempt's
         // immutable artifact, fail the new upload, leave the line on its
         // fallback, and still let the softened download read the superseded
-        // report. The pin itself is asserted to carry the attempt, and the
-        // run-scoped spelling is refused on both sides.
-        expect(SEMANTIC_REVIEW_ARTIFACT_NAME).toContain('${{ github.run_attempt }}');
+        // report. The producer's attempt is carried as a job output, and the
+        // consumer names the artifact from it: a re-run of only the failed jobs
+        // does not re-run `assess`, so the consumer's own `github.run_attempt`
+        // would name an artifact no job uploaded. All three spellings are
+        // refused, and the pins are asserted to carry the right attempt.
+        expect(SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME).toContain('${{ github.run_attempt }}');
+        expect(SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME).toContain(
+            `\${{ needs.assess.outputs.${SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT} }}`
+        );
         const runScopedArtifact = structuredClone(semanticReviewWorkflow);
         recordAt(stepNamed(jobAt(runScopedArtifact, 'assess'), 'Upload the advisory report'), 'with').name =
             'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
@@ -2349,6 +2366,11 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(runScopedDownload, 'coverage'), 'Download the advisory report'), 'with').name =
             'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
         expect(() => assertSemanticReviewWorkflow(runScopedDownload)).toThrow('the artifact this run uploaded');
+
+        const consumerAttemptDownload = structuredClone(semanticReviewWorkflow);
+        recordAt(stepNamed(jobAt(consumerAttemptDownload, 'coverage'), 'Download the advisory report'), 'with').name =
+            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}';
+        expect(() => assertSemanticReviewWorkflow(consumerAttemptDownload)).toThrow('the artifact this run uploaded');
 
         // The setup actions' inputs decide what the pinned commands run on;
         // nothing else reads them, so the Node version is pinned by name and not
@@ -2411,14 +2433,14 @@ describe('health gates workflow contract', () => {
         });
         const { coverage, notices, status } = runSemanticCoverageLine({ report });
         expect(status).toBe(0);
-        expect(coverage).toContain('2 withheld');
+        expect(coverage).toContain('2 distinct path-and-reason pairs');
         const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
         expect(annotations).toHaveLength(2);
         expect(annotations.join('\n')).toContain('file=src/one two.ts,line=1::src/one two.ts: ');
         expect(annotations.join('\n')).toContain('file=src/one%0Atwo.ts,line=1::src/one%0Atwo.ts: ');
         expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
         expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further withheld entry(s) were not annotated.');
+        expect(notices).toContain('0 further distinct path-and-reason pairs were not annotated.');
     });
 
     // A path routinely carries more than one reason, so a per-path budget would
@@ -2448,13 +2470,13 @@ describe('health gates workflow contract', () => {
         });
         const { coverage, notices, status } = runSemanticCoverageLine({ report });
         expect(status).toBe(0);
-        expect(coverage).toContain('12 withheld');
+        expect(coverage).toContain('12 distinct path-and-reason pairs');
         const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
         expect(annotations).toHaveLength(10);
         expect(annotations.join('\n')).toContain('file=src/repeated.ts,line=1::src/repeated.ts: ');
         expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
         expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
-        expect(notices).toContain('2 further withheld entry(s) were not annotated.');
+        expect(notices).toContain('2 further distinct path-and-reason pairs were not annotated.');
     });
 
     // The producer emits one identical path-and-reason entry per over-budget
@@ -2480,28 +2502,42 @@ describe('health gates workflow contract', () => {
         });
         const { coverage, notices, status } = runSemanticCoverageLine({ report });
         expect(status).toBe(0);
-        expect(coverage).toContain('2 withheld');
+        expect(coverage).toContain('2 distinct path-and-reason pairs');
         const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
         expect(annotations).toHaveLength(2);
         expect(annotations.join('\n')).toContain('region-exceeds-per-region-budget (after)');
         expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further withheld entry(s) were not annotated.');
+        expect(notices).toContain('0 further distinct path-and-reason pairs were not annotated.');
     });
 
-    // The two absence branches must not read the same. A run that published a
-    // report the fetch could not retrieve is a retrieval failure; a run that
-    // published nothing is the no-coverage case the wording already named.
-    it('tells a failed retrieval apart from a run that published nothing', () => {
+    // Three absences that must not read the same. A failed fetch with a line is
+    // a report this run published but could not retrieve; a failed fetch with no
+    // line is a run that published nothing at all; a successful fetch with no
+    // readable report disproves "published nothing" and is its own case. The
+    // never-published branch is exercised with a failed fetch and an empty line,
+    // because a successful download would prove it wrong.
+    it('tells a failed retrieval, a never-published run, and an unreadable report apart', () => {
         const retrievalFailure = runSemanticCoverageLine({
             downloadOutcome: 'failure',
-            coverageLine: 'partial · 1 discovered · 1 eligible · 0 assessed · 1 withheld',
+            coverageLine: 'partial · 1 discovered · 1 eligible · 0 assessed · 1 distinct path-and-reason pair',
         });
         expect(retrievalFailure.notices).toContain('could not be retrieved');
         expect(retrievalFailure.notices).not.toContain('No coverage was reported');
+        expect(retrievalFailure.notices).not.toContain('could not be read');
 
-        const neverPublished = runSemanticCoverageLine({});
+        const neverPublished = runSemanticCoverageLine({ downloadOutcome: 'failure', coverageLine: '' });
         expect(neverPublished.notices).toContain('No coverage was reported');
         expect(neverPublished.notices).not.toContain('could not be retrieved');
+        expect(neverPublished.notices).not.toContain('could not be read');
+
+        const emptyArtifact = runSemanticCoverageLine({ downloadOutcome: 'success' });
+        expect(emptyArtifact.notices).toContain('could not be read');
+        expect(emptyArtifact.notices).not.toContain('No coverage was reported');
+        expect(emptyArtifact.notices).not.toContain('could not be retrieved');
+
+        const emptyReport = runSemanticCoverageLine({ report: '', downloadOutcome: 'success' });
+        expect(emptyReport.notices).toContain('could not be read');
+        expect(emptyReport.notices).not.toContain('No coverage was reported');
     });
     afterEach(() => {
         vi.unstubAllGlobals();
