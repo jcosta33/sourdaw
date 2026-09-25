@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
@@ -60,6 +60,10 @@ export const handleSplitClip = createHandler<'splitClip'>({
             actualBeat === action.payload.beat
                 ? `Split clip "${plan.previous.leftClip.name}" (${action.payload.clipId}) at beat ${String(actualBeat)}`
                 : `Split clip "${plan.previous.leftClip.name}" (${action.payload.clipId}) near requested beat ${String(action.payload.beat)} at beat ${String(actualBeat)}`;
+        // Filled in place by the undo leg's `execute()` and read by the redo:
+        // a take naming the right half can land after the split, so only the
+        // undo can capture what filtering the right clip out retires.
+        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
         return {
             label,
             inverseAction: {
@@ -69,6 +73,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     rightClipId: plan.rightClipId,
                     expected: plan.next,
                     replacement: plan.previous,
+                    retiredTakeLanes,
                 },
             },
             redoAction: {
@@ -78,6 +83,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     rightClipId: plan.rightClipId,
                     expected: plan.previous,
                     replacement: plan.next,
+                    retiredTakeLanes,
                 },
             },
         };

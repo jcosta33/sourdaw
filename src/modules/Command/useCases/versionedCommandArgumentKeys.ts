@@ -1560,6 +1560,7 @@ const schemaDefinitions = [
             rightClipId: 0,
             expected: 197,
             replacement: 197,
+            retiredTakeLanes: 122,
         },
         required: ['clipId', 'rightClipId', 'expected', 'replacement'],
         additionalProperties: false,
