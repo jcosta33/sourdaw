@@ -1052,6 +1052,11 @@ function namesSendOrMaster(clause: PromptClause, context: ProjectContext): boole
     return /\bmaster\b/iu.test(maskProjectReferences(clause.text, nonMasterContext));
 }
 
+/** Whether a clause states a level the track fader action never moves: a send's or the master's. */
+function namesLevelOutsideTrackFader(actionName: string, clause: PromptClause, context: ProjectContext): boolean {
+    return actionName === 'setTrackGain' && namesSendOrMaster(clause, context);
+}
+
 /**
  * A clause that only adds one more reference and its decibel figure to the level change before it:
  * "and the Snare at -9 dB". The figure's connector states its form, and the action must declare it.
@@ -1197,7 +1202,7 @@ function resolveActionPromptScope({
                 ) {
                     continue;
                 }
-                if (actionName === 'setTrackGain' && namesSendOrMaster(clause, context)) {
+                if (namesLevelOutsideTrackFader(actionName, clause, context)) {
                     continue;
                 }
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
@@ -1206,7 +1211,12 @@ function resolveActionPromptScope({
             continue;
         }
         const previousScope = matchingScopes.at(-1);
-        if (continuesScope && previousScope && isLevelContinuationClause(clause.masked, decibelLevelForms)) {
+        if (
+            continuesScope &&
+            previousScope &&
+            isLevelContinuationClause(clause.masked, decibelLevelForms) &&
+            !namesLevelOutsideTrackFader(actionName, clause, context)
+        ) {
             matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
                 previousScope,
                 clause,

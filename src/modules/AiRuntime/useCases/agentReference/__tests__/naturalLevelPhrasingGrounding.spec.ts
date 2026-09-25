@@ -287,6 +287,16 @@ describe('natural level phrasing grounds the call its words ask for', () => {
         ]);
     });
 
+    it('grounds the track change of a level list whose continuation names the master', () => {
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -3 } }],
+            'Turn the Kick down 3 dB and the Master up 2 dB.'
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-kick', deltaDb: -3 } }]);
+    });
+
     it('grounds a bus whose proposed name sits between the article and the noun', () => {
         const result = bridge(
             [
@@ -408,6 +418,50 @@ describe('natural level phrasing refuses what its words do not reach', () => {
 
         expect(kick.actions).toEqual([]);
         expect(masterTrack.actions).toEqual([]);
+    });
+
+    it('refuses a track fader change on the master carried by a level continuation', () => {
+        const result = bridge(
+            [
+                { name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -3 } },
+                { name: 'setTrackGain', arguments: { trackId: 'master', deltaDb: 2 } },
+            ],
+            'Turn the Kick down 3 dB and the Master up 2 dB.'
+        );
+
+        expect(result.actions).not.toContainEqual({
+            type: 'setTrackGain',
+            payload: { trackId: 'master', deltaDb: 2 },
+        });
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 1,
+                name: 'setTrackGain',
+                reason: 'Provider action is not grounded in the user request',
+            })
+        );
+    });
+
+    it('refuses a track fader change on a send carried by a level continuation', () => {
+        const result = bridge(
+            [
+                { name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -3 } },
+                { name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -2 } },
+            ],
+            'Turn the Kick down 3 dB and the Kick send down 2 dB.'
+        );
+
+        expect(result.actions).not.toContainEqual({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-kick', deltaDb: -2 },
+        });
+        expect(result.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 1,
+                name: 'setTrackGain',
+                reason: 'Provider action is not grounded in the user request',
+            })
+        );
     });
 
     it('refuses a split verb whose gap holds more than one reference', () => {
