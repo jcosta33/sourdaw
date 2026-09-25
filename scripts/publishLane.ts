@@ -103,7 +103,7 @@ export const PRODUCT_SCOPE_PREFIXES = ['src/modules/', 'src/components/', 'elect
  * The `--test` contract the usage line has no room to state, printed under it by `--help`. Usage
  * stays one line because refusals embed it verbatim; the rule rides beside it.
  */
-export const PUBLISH_LANE_TEST_GUIDANCE = `--test teaches how a reviewer verifies the change; for product-scope changes (${PRODUCT_SCOPE_PREFIXES.join(', ')}) it must give user/reviewer-observable steps and their expected result, and CI or author checks do not substitute.`;
+export const PUBLISH_LANE_TEST_GUIDANCE = `--test teaches how a reviewer verifies the change; for product-scope changes (${PRODUCT_SCOPE_PREFIXES.join(', ')}) it must give only user/reviewer-observable steps and their expected result, with no command, spec, or CI check narration beside them.`;
 
 /**
  * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the

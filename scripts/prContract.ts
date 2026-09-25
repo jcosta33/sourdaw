@@ -45,12 +45,7 @@ export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
-/**
- * The headings a body must carry to merge. Screenshots is deliberately not among them: its
- * canonical content is the literal `None.` that `composePublishBody` writes into every body, and a
- * section whose required content states that it has nothing to say gates nothing. It remains in the
- * template and is still offered and written — it is simply not a merge gate.
- */
+/** The headings a body must carry to merge: every heading the template defines. */
 export const REQUIRED_BODY_HEADINGS = [
     '### 🎯 What does this PR do?',
     '### 🧪 How to test',
@@ -58,18 +53,19 @@ export const REQUIRED_BODY_HEADINGS = [
 ] as const;
 
 /**
- * Every heading the template defines, in template order. This bounds where a section's content
- * *ends*, which is a different question from which headings a body must carry. An offered heading
- * still terminates the section above it: without that, dropping Screenshots from the required list
- * would silently fold its block into the How-to-test span, and an empty How-to-test section
- * followed by `### 🖼️ Screenshots\nNone.` would read as full and pass the emptiness check.
+ * The Screenshots heading every body carried before the template dropped it. Agents never attached
+ * one, so it only ever held `None.`; it is no longer composed, but bodies published before the drop
+ * still carry it and a later `lane:publish` reads their sections back.
  */
-const TEMPLATE_BODY_HEADINGS = [
-    '### 🎯 What does this PR do?',
-    '### 🧪 How to test',
-    '### 🖼️ Screenshots',
-    '### 📌 Related issues & additional notes',
-] as const;
+const RETIRED_SCREENSHOTS_HEADING = '### 🖼️ Screenshots';
+
+/**
+ * Every heading that ends the section above it: the template's own plus the retired Screenshots
+ * one. Without the retired heading, an older body's How-to-test span would run on into
+ * `### 🖼️ Screenshots\nNone.`, so an empty How-to-test section would read as full and pass the
+ * emptiness check, and the section read back for re-composition would carry the retired block.
+ */
+const SECTION_BOUNDARY_HEADINGS = [...REQUIRED_BODY_HEADINGS, RETIRED_SCREENSHOTS_HEADING] as const;
 
 export const PULL_REQUEST_BODY_BYTE_LIMIT = 4_000;
 
@@ -93,11 +89,11 @@ function locateRequiredSections(body: string): LocatedSection[] {
 }
 
 /**
- * Where a section's content stops: the next template heading that actually appears after it,
- * required or merely offered, or the end of the body when none does.
+ * Where a section's content stops: the next boundary heading that actually appears after it, or
+ * the end of the body when none does.
  */
 function sectionContentEnd(body: string, contentStart: number): number {
-    const boundaries = TEMPLATE_BODY_HEADINGS.map((heading) => body.indexOf(heading, contentStart)).filter(
+    const boundaries = SECTION_BOUNDARY_HEADINGS.map((heading) => body.indexOf(heading, contentStart)).filter(
         (index) => index >= 0
     );
     return boundaries.length === 0 ? body.length : Math.min(...boundaries);
@@ -537,9 +533,6 @@ ${what}
 
 ### 🧪 How to test
 ${howToTest}
-
-### 🖼️ Screenshots
-None.
 
 ### 📌 Related issues & additional notes
 ${relatedTickets}

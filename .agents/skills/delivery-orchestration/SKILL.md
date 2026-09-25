@@ -141,10 +141,11 @@ follows [`.github/pull_request_template.md`](../../../.github/pull_request_templ
 the script controls format and rejects malformed bodies. New PRs require
 explicit `--summary` and `--test`; later supplied flags replace their section,
 omitted flags preserve it. A product-scope change — any handwritten path under
-`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` whose
-every segment narrates a command; it must teach user/reviewer-observable steps
-and their expected result, while a body preserved from an existing pull request
-is not re-judged. Publishing neither enables auto-merge nor posts
+`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` in
+which any sentence, clause, or line narrates a command or names specs, suites,
+or CI; it must teach only user/reviewer-observable steps and their expected
+result, with an app launch folded into the step that uses it, while a body
+preserved from an existing pull request is not re-judged. Publishing neither enables auto-merge nor posts
 reviews.
 
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
@@ -189,10 +190,15 @@ refuses if the PR is no longer open when the push lands.
 ### PR body
 
 Write for a teammate outside the session. Under template headings explain what
-changed and why, without repeating the title, and how to test. Product changes
-require user/reviewer-observable steps and expected results, not substituted
-author/CI checks; internal or developer work may name its actual validation
-interface. Exclude session diaries, unpublished rounds, and mutation tables.
+changed and why, without repeating the title, and how to test. How to test is
+the reviewer's script in the app: what to open, click, play, or export, and what
+they should see or hear. Product changes carry only those steps — unit, E2E,
+typecheck, lint, and CI runs do not belong beside them, because the reviewer does
+not re-run them and the checks list already shows them. Internal or developer
+work with no app surface exercises the tool an operator runs and what it prints
+or refuses, not the specs covering it; only a test-only change names its specs.
+The template has no Screenshots section; agents never attach one. Exclude
+session diaries, unpublished rounds, mutation tables, and test-run inventories.
 
 ## Review bundles and publication
 

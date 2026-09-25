@@ -1,21 +1,23 @@
 /**
  * The How-to-test classifier behind the product-scope `--test` gate: whether a pull request's test
- * instructions are nothing but command narration (the checks an author or CI already ran) or teach
- * a reviewer a step they can perform in the app. `publishLane` refuses the former for a
- * product-scope change; everything here is pure text judgment with no I/O.
+ * instructions narrate checks (commands an author or CI already ran, or the test suite that covers
+ * the change) instead of teaching only steps a reviewer performs in the app. `publishLane` refuses
+ * the former for a product-scope change; everything here is pure text judgment with no I/O.
  */
 import { fail } from './prContract.ts';
 
 /**
- * The refusal for a product-scope publish whose `--test` is nothing but command narration. Reviewers
- * verify a product change in the app, so the section has to teach steps they can perform and the
- * result they should observe; the checks an author or CI already ran prove nothing a reviewer can see.
+ * The refusal for a product-scope publish whose `--test` narrates checks anywhere. Reviewers verify
+ * a product change in the app, so the section has to teach steps they can perform and the result
+ * they should observe; the checks an author or CI already ran prove nothing a reviewer can see, and
+ * a list of them beside the steps is padding a reader has to skip.
  * Exported so the specs can pin against the literal without owning a copy: rewording it reddens every
  * refusal pin in one place, exactly like the head inventory's export-for-pin treatment.
  */
-export const COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL =
-    'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
-    'expected result; automated author or CI check narration is not a substitute';
+export const CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL =
+    'pull-request --test for a product-scope change must teach only user/reviewer-observable steps and ' +
+    'their expected result; drop every line that narrates a command, spec, or CI check, and fold an app ' +
+    'launch into the step that uses it';
 
 /**
  * The filler words that may precede or join command tokens without making a segment anything but
@@ -635,8 +637,8 @@ function isCommandNarration(segment: string): boolean {
  * never split a command into a launch-less fragment; empty pieces from separators and blank lines
  * drop. List markers leave the line before that split, because a numbered marker's own dot would
  * otherwise be read as a sentence boundary and strand a bare `1` segment that no command list
- * deserves. The segments-length guard in `commandOnlyTestInstructions` is load-bearing: empty
- * input reaches it, and `composePublishBody`'s emptiness refusal runs after the gate.
+ * deserves. Empty input yields no segment and so narrates nothing; `composePublishBody`'s emptiness
+ * refusal runs after the gate.
  */
 function testInstructionSegments(text: string): string[] {
     const marked = text.split(/\r?\n/).map((line) => stripRepeated(line.trim(), LEADING_LIST_MARKER));
@@ -677,26 +679,39 @@ function splitOutsideQuotedSpans(line: string): string[] {
 }
 
 /**
- * Whether every segment of `text` narrates a command. A segment is narration only when, after the
- * command material drops out (heads, their argument runs, paths, flags, quoted spans, cue-free
- * parentheticals), its prose remainder is pure annotation: no observation cue, and no word outside
- * the annotation vocabulary. "Run `pnpm dev` and confirm the transport play button toggles" teaches
- * a step and passes; "pnpm wasm:verify" keeps its verify stem inside the dropped command token and
- * refuses. Deliberately fail-open at the margins: any prose segment — "Open the app and …", "No
- * user-visible change; …", even `None.` — makes this false.
+ * Test-suite vocabulary no reviewer step in the app ever needs: spec files, the suites that hold
+ * them, and CI. A segment naming any of them is describing coverage — "the census spec fails if …",
+ * "run the focused publisher specs" — whatever prose surrounds it. `CI` is matched case-sensitively
+ * so the letters inside ordinary words and lower-case abbreviations stay out of it.
  */
-export function commandOnlyTestInstructions(text: string): boolean {
-    const segments = testInstructionSegments(text);
-    return segments.length > 0 && segments.every(isCommandNarration);
+const TEST_SUITE_WORDS =
+    /\b(?:specs?|unit[- ]tests?|test suites?|e2e|end-to-end tests?)\b|\.spec\.[cm]?[jt]sx?\b|__tests__\//i;
+const CI_WORD = /\bCI\b/;
+
+function namesTestSuite(segment: string): boolean {
+    return TEST_SUITE_WORDS.test(segment) || CI_WORD.test(segment);
 }
 
 /**
- * The contract gate for a product-scope change's How-to-test section: a value that only recites
- * commands the author or CI already ran is refused, because it teaches a reviewer nothing they can
- * perform in the app. One prose sentence anywhere in the value satisfies it.
+ * Whether any segment of `text` narrates a check: it reads as a command invocation once its command
+ * material drops out (heads, their argument runs, paths, flags, quoted spans, cue-free
+ * parentheticals, leaving no observation cue and no word outside the annotation vocabulary), or it
+ * names the test suite. "Run `pnpm dev` and confirm the transport play button toggles" teaches a
+ * step and passes; "pnpm wasm:verify" keeps its verify stem inside the dropped command token and
+ * refuses. One narrating segment refuses the whole value: a prose sentence beside a command list
+ * does not turn the list into a step, it only hides the list from a looser reading.
+ */
+export function testInstructionsNarrateChecks(text: string): boolean {
+    return testInstructionSegments(text).some((segment) => isCommandNarration(segment) || namesTestSuite(segment));
+}
+
+/**
+ * The contract gate for a product-scope change's How-to-test section: a value that recites commands
+ * the author or CI already ran, or the specs that cover the change, is refused, because those lines
+ * teach a reviewer nothing they can perform in the app.
  */
 export function assertObservableTestInstructions(text: string): void {
-    if (commandOnlyTestInstructions(text)) {
-        fail(COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL);
+    if (testInstructionsNarrateChecks(text)) {
+        fail(CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL);
     }
 }
