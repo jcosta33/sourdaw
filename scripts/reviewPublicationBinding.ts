@@ -118,16 +118,18 @@ function persistCanonicalReviewDossier(
 
 /**
  * The bundle base the escalation reassessment must bind, read from the bundle manifest. A
- * post-threshold head whose manifest carries no readable base refuses with the escalation contract
- * message — naming the missing field, the observed count, the threshold, and the reassessment route
- * — rather than a raw manifest read error: an unverifiable base can never satisfy the gate.
+ * post-threshold head whose manifest supplies no readable base refuses with the escalation contract
+ * message — naming the observed count, the threshold, and the reassessment route — rather than a raw
+ * manifest read error: an unverifiable base can never satisfy the gate. The bundle reader reports an
+ * absent, malformed, or field-incomplete manifest as one failure, so the message names both possible
+ * causes instead of asserting the baseSha is missing when the manifest itself is at fault.
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
         return readReviewBundleContext(bundle).baseSha;
     } catch {
         return fail(
-            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} has no readable baseSha; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound to an unverifiable base`
+            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} supplies no readable base to bind — its baseSha or the manifest itself is missing or unreadable; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound to an unverifiable base`
         );
     }
 }
