@@ -1215,6 +1215,10 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 publishedNode = loadedNode;
                 publishedResult = result;
                 applyRuntimeFailure();
+                if (runtimeFailureHandled) {
+                    return;
+                }
+                getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
             .catch((error) => {

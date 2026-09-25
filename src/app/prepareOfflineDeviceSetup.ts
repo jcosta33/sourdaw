@@ -1,4 +1,5 @@
 import { type Device } from '#/modules/Arrangement/stores';
+import { prepareOfflineBacteria, captureOfflineBacteria } from '#/modules/Bacteria/useCases';
 import { prepareCrumbsEngine, captureCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { prepareOfflineGrandBoule, captureOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
 import { prepareOfflineLevain, captureOfflineLevain } from '#/modules/Levain/useCases';
@@ -12,6 +13,7 @@ type CapturedOfflineDeviceSetup =
     | { kind: 'proof'; value: ReturnType<typeof captureOfflineProof> }
     | { kind: 'toaster'; value: ReturnType<typeof captureOfflineToaster> }
     | { kind: 'grand-boule'; value: ReturnType<typeof captureOfflineGrandBoule> }
+    | { kind: 'bacteria'; value: ReturnType<typeof captureOfflineBacteria> }
     | { kind: 'none' };
 
 type OfflineDeviceProjectSource = {
@@ -57,6 +59,8 @@ export function captureOfflineDeviceSetup(
             }
             return { kind: 'grand-boule', value: captureOfflineGrandBoule(input) };
         }
+        case 'bacteria':
+            return { kind: 'bacteria', value: captureOfflineBacteria({ deviceState }) };
         default:
             return { kind: 'none' };
     }
@@ -170,7 +174,18 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // state is read-only telemetry, and the true-peak hold is a UI affordance,
     // so there is nothing an export needs that a flat map of numbers misses.
     crust: null,
-    bacteria: null,
+    // Its modulation-routing table is a variable-length list of rows, not a fixed
+    // set of numeric leaves, so it rides `deviceState` rather than `parameterValues`
+    // — the same chunk the live load subscriber re-applies. Without this arm an
+    // export replayed every band and knob but silently dropped every LFO, envelope
+    // and macro routing the project held.
+    bacteria: ({ deviceState, port, captured }) => {
+        const input: Parameters<typeof prepareOfflineBacteria>[0] = { deviceState, port };
+        if (captured?.kind === 'bacteria') {
+            input.captured = captured.value;
+        }
+        return prepareOfflineBacteria(input);
+    },
     grinder: null,
     // Its module order is persisted as `chain_order_N` params the worklet ignores;
     // only a `reorder` message moves the chain, and nothing offline sent one, so

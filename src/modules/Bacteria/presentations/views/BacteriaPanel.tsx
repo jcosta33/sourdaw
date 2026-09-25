@@ -1797,13 +1797,13 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
     // mount and on every relevant project change, so commands, undo, and
     // collaborator writes that bypass this panel's setter still arrive.
     const trackState = useStore(trackStore, defaultTrackState);
-    const projectParameterValues = trackState.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.parameterValues;
+    const projectDevice = trackState.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
+    const projectParameterValues = projectDevice?.parameterValues;
+    const projectDeviceState = projectDevice?.deviceState;
 
     useEffect(() => {
         hydrateBacteriaPatchFromProject(deviceId);
-    }, [deviceId, projectParameterValues]);
+    }, [deviceId, projectParameterValues, projectDeviceState]);
 
     const [presetQuery, setPresetQuery] = useState('');
     const [presetCategory, setPresetCategory] = useState('All');
