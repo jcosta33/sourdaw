@@ -75,8 +75,8 @@ export const APP_TITLE = 'Sourdaw';
  *   over IPC, a transport no CSP directive governs. Application validation
  *   admits only `localhost` and `127.0.0.1` for loopback HTTP, the same two
  *   spellings this policy carries, so no admitted base URL is refused here.
- * - Hugging Face and its CDN redirect hosts, for Kokoro and WebLLM model
- *   artifacts.
+ * - Hugging Face and its CDN redirect hosts, for Kokoro, WebLLM and Whisper
+ *   model artifacts.
  * - `raw.githubusercontent.com`, for the MLC wasm runtime. It is as
  *   multi-tenant as any public bucket host and is admitted only because
  *   `webLlmArtifactAdmission` pins every artifact it serves by sha256.

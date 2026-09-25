@@ -37,11 +37,11 @@ export function restoreClipGlueState({ expected, replacement }: RestoreClipGlueS
     // an earlier call committed, so every rejection below the satellite
     // `apply()` reverts it first. The division of labour is what makes that
     // necessary: the caller answers a rejection by aborting the Automerge
-    // transaction, which rewinds the MIDI, track, gain-envelope and
-    // automation stores — but `warpStates` is a plain module-level `Map` that
-    // is not in that transaction and nothing else can put it back. Without
-    // the revert, warp markers stay attached to the id this call was
-    // migrating them to while every other store rewinds around them.
+    // transaction, which rewinds MIDI, track, gain-envelope, warp, and
+    // automation stores — but this function's own "leave stores as found"
+    // contract must hold before that abort runs. Without the explicit
+    // `revert()`, a later retry would see migrated satellites while every
+    // other store still matches `expected`.
     const clipSatellitePreparation = prepareClipSatelliteStateRestore({
         version: 1,
         expected: { version: 1, entries: expected.clipSatellites },

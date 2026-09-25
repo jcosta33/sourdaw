@@ -1,5 +1,6 @@
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -7,6 +8,8 @@ import { updateClip } from '../../repositories/track/updateClip';
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClip } from '../clip/removeClip';
+import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
+import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { splitClip } from './splitClip';
 
@@ -62,9 +65,15 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const leftSatelliteAfter = readClipSatelliteEntry(clipId);
     const rightSatelliteAfter = readClipSatelliteEntry(rightClipId);
 
+    // What removing the right half retires, captured by the undo closure before it
+    // runs `removeClip` — a take recorded on the right half after the split exists
+    // by then, and the redo re-creates that same id, so it must be put back there.
+    let retiredTakeLanes: readonly RetiredTakeLaneSnapshot[] = [];
+
     pushUndoEntry(
         'Split clip',
         () => {
+            retiredTakeLanes = captureRetiredTakeLanes([rightClipId]);
             removeClip(rightClipId);
             updateClip(clipId, (context) => ({
                 ...context,
@@ -110,6 +119,8 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
             // the MIDI snapshot pattern above.
             writeClipSatelliteEntry(leftSatelliteAfter);
             writeClipSatelliteEntry(rightSatelliteAfter);
+            // Put back the takes the undo's `removeClip` retired from the right half.
+            restoreTakesForClip(retiredTakeLanes);
             return newRightClipId;
         }
     );

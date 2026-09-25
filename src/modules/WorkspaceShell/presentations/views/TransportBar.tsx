@@ -6,12 +6,13 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
-import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
+import { voiceInputAvailabilityStore, voiceModelSetupStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
+import { downloadWhisperModel, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
 import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -85,6 +86,15 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
     const voiceInputAvailable = useStore(voiceInputAvailabilityStore, {
         hasVerifiedLocalModel: false,
     }).hasVerifiedLocalModel;
+    const voiceSetupStatus = useStore(voiceModelSetupStore, { state: 'missing' });
+    // The enable-voice affordance exists only on the desktop runtime, where a
+    // verified download is possible; everywhere else an unavailable voice
+    // input renders nothing, as before.
+    const enableVoiceSetupStatus = isDesktopRuntime() ? voiceSetupStatus : null;
+    const handleEnableVoice = (): void => {
+        // The confirmation click in the setup popover IS the consent gesture.
+        void downloadWhisperModel({ downloadConsent: true });
+    };
     const anyTrackArmed = tracks.some((time) => time.armed);
     const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 
@@ -253,6 +263,8 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
                         isListening={voice.isListening}
                         isTranscribing={voice.transcribing}
                         onToggle={toggleVoiceInput}
+                        setupStatus={enableVoiceSetupStatus}
+                        onEnableVoice={handleEnableVoice}
                     />
                 </Row>
 

@@ -104,6 +104,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: mocks.adjustmentLayerStore,
     persistDeviceParam: mocks.persistDeviceParam,
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
+    warpStateStore: { value: null },
 }));
 
 vi.mock('../../../stores/crustStore', () => ({

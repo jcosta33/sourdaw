@@ -1,8 +1,10 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -24,6 +26,9 @@ type RippleDeleteClipsOutput = {
     /** Clip-scoped automation lanes the removed clips carried, captured
      *  before retirement so undo can restore them verbatim. */
     clipAutomationLanes: readonly ReturnType<typeof readClipScopedAutomationLanes>[number][];
+    /** Take lanes the removed clips lost, captured before retirement so undo
+     *  can restore them verbatim. */
+    retiredTakeLanes: readonly RetiredTakeLaneSnapshot[];
 } | null;
 
 export function rippleDeleteClips({ trackId, clipIds }: RippleDeleteClipsInput): RippleDeleteClipsOutput {
@@ -68,10 +73,16 @@ export function rippleDeleteClips({ trackId, clipIds }: RippleDeleteClipsInput):
     // an orphaned lane pins every later global time operation (ledger #2108).
     removeClipSatelliteData(removedClipIds);
 
+    // Takes captured for the removed clips, and any lane those takes leave
+    // empty, go with them (#4265) — one atomic write covering every removed
+    // clip, captured for the undo description.
+    const retiredTakeLanes = removeTakesForClips(removedClipIds);
+
     return {
         removedClips: plan.removedClips,
         shiftedClips: plan.shiftedClips,
         clipSatellites,
         clipAutomationLanes,
+        retiredTakeLanes,
     };
 }

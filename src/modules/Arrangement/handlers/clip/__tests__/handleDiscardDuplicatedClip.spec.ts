@@ -5,6 +5,8 @@ import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     removeClip: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn(),
+    restoreTakesForClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -13,6 +15,14 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 
 vi.mock('../../../useCases/clip/removeClip', () => ({
     removeClip: mocks.removeClip,
+}));
+
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
+vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
+    restoreTakesForClip: mocks.restoreTakesForClip,
 }));
 
 describe('handleDiscardDuplicatedClip', () => {
@@ -60,5 +70,45 @@ describe('handleDiscardDuplicatedClip', () => {
 
     it('should not create a new undo entry', () => {
         expect(handleDiscardDuplicatedClip.undoable).toBe(false);
+    });
+
+    it('does not restore the capture when the clip it names is absent', () => {
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: { id: 'lane-1', trackId: 'track-1', takes: [], activeCompRegions: [] },
+            },
+        ];
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'missing' });
+
+        handleDiscardDuplicatedClip.afterRedoReplay?.({
+            type: 'discardDuplicatedClip',
+            payload: { clipId: 'clip-copy', retiredTakeLanes },
+        });
+
+        // The redo re-created nothing, so the capture has no clip to come back to and
+        // must not reach the restore at all.
+        expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+    });
+
+    it('restores the capture once the clip it names is back', () => {
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: { id: 'lane-1', trackId: 'track-1', takes: [], activeCompRegions: [] },
+            },
+        ];
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'clip-copy',
+        });
+
+        handleDiscardDuplicatedClip.afterRedoReplay?.({
+            type: 'discardDuplicatedClip',
+            payload: { clipId: 'clip-copy', retiredTakeLanes },
+        });
+
+        expect(mocks.restoreTakesForClip).toHaveBeenCalledExactlyOnceWith(retiredTakeLanes);
     });
 });

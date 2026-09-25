@@ -46,7 +46,7 @@ export const RELEASE_INVENTORY_PATH = 'release/open-source-inventory.json';
  * one would bless a change nobody decided to make.
  */
 export const UNRESTAMPED_DIGEST_CLASSES =
-    'not restamped: Grand Boule tracked-set, WASM, DDSP, Electron, Levain, trademark, and owner-asset digests, and the public/wasm/manifest.json and WebLLM artifact-manifest snapshots — drift there is a release-surface change rather than dependency-bump drift, and it needs a person. When the drifted surface is project-wasm and its package was rebuilt, run `pnpm release:restamp:wasm` and verify with `pnpm test:release-inventory`.';
+    'not restamped: Grand Boule tracked-set, WASM, DDSP, Electron, Levain, trademark, and owner-asset digests, and the public/wasm/manifest.json and WebLLM artifact-manifest snapshots — drift there is a release-surface change rather than dependency-bump drift, and it needs a person. When the drifted surface is project-wasm and its package was rebuilt, run `pnpm release:restamp:wasm`; when it is a Grand Boule tracked set whose members are committed, run `pnpm release:restamp:tracked-set`; then verify with `pnpm test:release-inventory`.';
 
 const PROJECT_LICENSE_SURFACE_ID = 'project-license-distribution';
 /** These two required snapshots pin generated wasm and model artifacts, which no dependency bump moves. */

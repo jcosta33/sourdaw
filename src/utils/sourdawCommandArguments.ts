@@ -92,6 +92,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['set_plugin_parameter', ['instance_id', 'param_id', 'value']],
     ['set_plugin_state_bytes', ['instance_id', 'plugin_state']],
     ['stop_recording', ['instance_id']],
+    ['store_verified_whisper_model', ['bytes']],
     ['unload_plugin', ['instance_id']],
     ['write_file_bytes', ['path', 'data']],
     ['write_push2_display', ['bytes']],

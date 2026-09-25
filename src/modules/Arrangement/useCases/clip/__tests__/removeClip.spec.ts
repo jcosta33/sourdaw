@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createTake, createTakeLane } from '../../../models/TakeLane';
+import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { removeClip } from '../removeClip';
 
 type MockTrack = { clips: { id: string }[] };
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
         current: null as { positions: Map<string, unknown>; originals: Map<string, unknown> } | null,
     },
     activeRecordingRef: { current: [] as string[] },
+    takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/mapAllTracks', () => ({
@@ -55,6 +58,17 @@ vi.mock('../../../stores/activeRecordingRef', () => ({
     activeRecordingRef: mocks.activeRecordingRef,
 }));
 
+vi.mock('../../../stores/takeLaneStore', () => ({
+    takeLaneStore: {
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
+        set: vi.fn((state: TakeLaneStoreState) => {
+            mocks.takeLaneStoreValue.value = state;
+        }),
+    },
+}));
+
 describe('removeClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -62,6 +76,7 @@ describe('removeClip', () => {
         mocks.clipDragPreviewRef.current = null;
         mocks.activeRecordingRef.current = [];
         mocks.getAutomationLanes.mockReturnValue([]);
+        mocks.takeLaneStoreValue.value = null;
     });
 
     it('removes track data before delegating one MIDI cleanup batch ahead of remaining cleanup', () => {
@@ -161,5 +176,14 @@ describe('removeClip', () => {
         removeClip('c1');
 
         expect(mocks.activeRecordingRef.current).toEqual(['c2']);
+    });
+
+    it('retires the take and lane that referenced a removed clip (#4265)', () => {
+        const take = createTake('c1', 'Take 1', 0, 4);
+        mocks.takeLaneStoreValue.value = { lanes: [{ ...createTakeLane('t1'), takes: [take] }] };
+
+        removeClip('c1');
+
+        expect(mocks.takeLaneStoreValue.value).toEqual({ lanes: [] });
     });
 });

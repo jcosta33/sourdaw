@@ -7,7 +7,9 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
+import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import { composeReviewCommentBody } from '../prContract.ts';
 import {
     coordinatePublishReview,
     parseAcceptanceDocument,
@@ -23,6 +25,7 @@ import {
     reviewPublicationPayloadDigest,
     runPublishReviewCli,
     shellPort,
+    type PublishedReviewComment,
     type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
 } from '../publishReview.ts';
@@ -42,16 +45,30 @@ import {
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import {
-    acceptedFindings,
-    discardedDispositions,
+    appendReviewDossierEvents,
+    authorizedEvidenceDigest,
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
+import {
+    acceptedFindings,
+    deliveryAuthorization,
+    discardedDispositions,
+    publishedFindings,
+    publishedReviewId,
+} from '../reviewDossierViews.ts';
+import { recordPublicationBindings } from '../reviewPublicationBinding.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 import { OPERATOR_ABSENT_ATTESTATION, type RecoveryReceipt } from '../reviewPublicationRecoveryReceipt.ts';
-import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
+import {
+    exactPublishedReview,
+    inspectReviewPublicationRemote,
+    type RemotePublishedReview,
+} from '../reviewPublicationRemoteInspection.ts';
+import { REASSESSMENT_FILE_NAME, REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
 
+import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const validComment = {
@@ -206,6 +223,8 @@ function fakePort(
                 login: input.login ?? 'renamed-reviewer[bot]',
             };
         },
+        publicReviews: () => [],
+        publicReviewComments: () => [],
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, posted };
@@ -331,6 +350,9 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                     }
                     if (command === 'git' && args[0] === 'merge-base') {
                         return 'b'.repeat(40);
+                    }
+                    if (command === 'gh' && args[0] === 'api' && args.includes('--paginate')) {
+                        return '[]';
                     }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
@@ -1042,6 +1064,8 @@ describe('review publish', () => {
                     },
                     bundleFileExists: (path) => existsSync(path),
                     readBundleDiff: () => '',
+                    publicReviews: () => [],
+                    publicReviewComments: () => [],
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
                         if (oid === undefined) {
@@ -4749,7 +4773,7 @@ describe('orchestrator acceptance', () => {
             reviewState: () => ({
                 latestReviewerStateOnHead:
                     input.missingReviewer || (inFence && input.revokeAtFence) ? null : 'APPROVED',
-                orchestratorAcceptedAfterReviewer: false,
+                latestReviewerReviewDatabaseId: null,
                 unresolvedThreads: input.unresolved ? 1 : 0,
             }),
             postReview: (review) => ({
@@ -5008,6 +5032,11 @@ describe('fresh reviewer dossier publication', () => {
             manifest?: Record<string, unknown>;
             labels?: { name: string; description?: string }[];
             writable?: boolean;
+            reviewComments?: PublishedReviewComment[];
+            remoteReviews?: Record<number, RemotePublishedReview | undefined>;
+            publicReviews?: PublicReview[];
+            publicReviewComments?: PublicReviewComment[];
+            diff?: string;
         } = {}
     ) {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-dossier-'));
@@ -5017,7 +5046,7 @@ describe('fresh reviewer dossier publication', () => {
             join(bundle, 'manifest.json'),
             JSON.stringify(input.manifest ?? { pr: number, baseRefName: 'main', baseSha: base, headSha: head })
         );
-        writeFileSync(join(bundle, 'diff.patch'), '');
+        writeFileSync(join(bundle, 'diff.patch'), input.diff ?? '');
         writeFileSync(
             join(bundle, input.documentName ?? 'review.json'),
             JSON.stringify(input.document ?? reviewDocument)
@@ -5046,12 +5075,27 @@ describe('fresh reviewer dossier publication', () => {
                 return readJsonFile(path);
             },
             bundleFileExists: (path) => existsSync(path),
-            readBundleDiff: () => '',
+            readBundleDiff: () => input.diff ?? '',
             postReview: (review) => {
                 calls.push('post');
                 posted.review = review;
                 return { id: 99, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' };
             },
+            reviewComments: (_publishedNumber, reviewId) => {
+                calls.push(`reviewComments:${reviewId}`);
+                return input.reviewComments ?? [];
+            },
+            reviewState: (_publishedNumber, _expectedHead) => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: 99,
+                unresolvedThreads: 0,
+            }),
+            remoteReview: (_publishedNumber, reviewId) => {
+                calls.push(`remoteReview:${reviewId}`);
+                return input.remoteReviews?.[reviewId];
+            },
+            publicReviews: () => input.publicReviews ?? [],
+            publicReviewComments: () => input.publicReviewComments ?? [],
             log: () => undefined,
         };
         if (input.writable !== false) {
@@ -5068,6 +5112,57 @@ describe('fresh reviewer dossier publication', () => {
             writes,
             posted,
             readDossier: () => readJsonFile(join(bundle, 'dossier.json')),
+        };
+    }
+
+    function acceptanceDocument() {
+        return {
+            format: 'compact-v1',
+            event: 'APPROVE',
+            body: 'Final contract held.',
+            evidence: approvalEvidence(head),
+        };
+    }
+
+    function acceptanceDependencies(
+        fixture: ReturnType<typeof dossierFixture>,
+        accepted: string[] = []
+    ): AcceptReviewCoordinatorDependencies {
+        const port: PublishReviewPort = {
+            ...fixture.port,
+            reviewState: () => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: null,
+                unresolvedThreads: 0,
+            }),
+            postReview: (review) => {
+                accepted.push(review.body);
+                return {
+                    id: 99,
+                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    login: 'jcosta33',
+                    actorType: 'User',
+                    commitId: head,
+                };
+            },
+        };
+        return {
+            primaryRoot: () => fixture.root,
+            authenticateOrchestrator: async () => ({
+                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
+                session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            serializeMutation: async (_root, _number, operation) =>
+                operation({
+                    ownerOid: 'f'.repeat(40),
+                    journalReviewPublication: () => undefined,
+                    markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                }),
+            publish: publishPreparedAcceptance,
         };
     }
 
@@ -5118,39 +5213,650 @@ describe('fresh reviewer dossier publication', () => {
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(fixture.writes).toHaveLength(1);
+            // Two writes: the canonical record before the POST, then the publication binding after it.
+            expect(fixture.writes).toHaveLength(2);
             expect(fixture.writes[0]?.path).toBe(join(fixture.bundle, 'dossier.json'));
+            expect(fixture.writes[1]?.path).toBe(join(fixture.bundle, 'dossier.json'));
 
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.headSha).toBe(head);
             expect(persisted.baseSha).toBe(base);
             expect(persisted.recommendation).toBe('approve');
             expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
-            // An APPROVE carries no inline comments, so it accepts no findings.
+            // An APPROVE carries no inline comments, so it accepts no findings and binds only the
+            // review, plus the delivery authorization the reviewer publication itself records.
             expect(acceptedFindings(persisted)).toEqual([]);
+            expect(publishedReviewId(persisted)).toBe(99);
+            expect(publishedFindings(persisted)).toEqual([]);
+            expect(deliveryAuthorization(persisted)).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                evidenceManifestDigest: authorizedEvidenceDigest(persisted),
+            });
             expect(discardedDispositions(persisted)).toEqual([
                 { findingId: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' },
             ]);
-            expect(fixture.writes[0]?.contents).toBe(serializeReviewDossier(persisted));
+            expect(fixture.writes[1]?.contents).toBe(serializeReviewDossier(persisted));
+            // The pre-POST write is the same record without its post-publication events: the landed
+            // review binding and the delivery authorization it carries.
+            expect(parseReviewDossier(JSON.parse(fixture.writes[0]!.contents)).events.length).toBe(
+                persisted.events.length - 2
+            );
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
     });
 
-    it('replays the persisted canonical record on a second publication without rewriting it', () => {
+    it('publishes below the escalation threshold without recording a review-reassessed event', () => {
         const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses at or above the escalation threshold without a reassessment, before any POST or write', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes with a valid reassessment and records exactly one review-reassessed event', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            writeFileSync(
+                join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                JSON.stringify({
+                    format: 'reassessment-v1',
+                    pr: number,
+                    headSha: head,
+                    baseSha: base,
+                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    action: 'continue',
+                    reason: 're-scoped the change and re-dispatched the remaining stances',
+                })
+            );
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const reassessments = persisted.events.filter((event) => event.kind === 'review-reassessed');
+            expect(reassessments).toHaveLength(1);
+            expect(reassessments[0]).toMatchObject({
+                kind: 'review-reassessed',
+                roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                action: 'continue',
+                reason: 're-scoped the change and re-dispatched the remaining stances',
+            });
+            // The delivery authorization binds the digest of the record minus its post-publication
+            // events (delivery-authorized and review-reassessed), so the writer's recorded digest
+            // equals the recomputed authorized digest — and the production deliver reader recomputes
+            // the same value from the live record.
+            const authorization = deliveryAuthorization(persisted);
+            if (authorization === undefined) {
+                throw new Error('expected a recorded delivery authorization');
+            }
+            expect(authorization.evidenceManifestDigest).toBe(authorizedEvidenceDigest(persisted));
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(binding.dossierDigest).toBe(authorizedEvidenceDigest(persisted));
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the escalation threshold without a reassessment', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest lacks baseSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(
+                `observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+            expect(message).toMatch(/manifest\.json has no readable baseSha/);
+            expect(message).toMatch(/reassessment\.json/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold with a missing manifest, not a raw ENOENT', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            rmSync(join(fixture.bundle, 'manifest.json'));
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/manifest\.json has no readable baseSha/);
+            expect(message).toMatch(/reassessment\.json/);
+            expect(message).not.toMatch(/ENOENT/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays a recorded publication at or above the threshold without a reassessment instead of refusing', () => {
+        const landedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+            remoteReviews: { 99: landedReview },
+        });
+        try {
+            writeFileSync(
+                join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                JSON.stringify({
+                    format: 'reassessment-v1',
+                    pr: number,
+                    headSha: head,
+                    baseSha: base,
+                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    action: 'continue',
+                    reason: 're-scoped the change and re-dispatched the remaining stances',
+                })
+            );
+            // First publication consumes the reassessment and records the publication.
+            expect(publishReview(number, fixture.port)).toBe(99);
+            // The reassessment is gone: a fresh gate would now refuse for the missing file. The
+            // recorded publication instead replays, so the gate never runs.
+            rmSync(join(fixture.bundle, REASSESSMENT_FILE_NAME));
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('binds the deliver reader to the authorized dossier digest the writer recorded', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const authorization = deliveryAuthorization(persisted);
+            if (authorization === undefined) {
+                throw new Error('expected a recorded delivery authorization');
+            }
+
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            expect(binding.kind).toBe('required');
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            // The production reader recomputes authorizedEvidenceDigest, matching the digest the
+            // writer recorded as the authorization's evidence manifest.
+            expect(binding.dossierDigest).toBe(authorization.evidenceManifestDigest);
+
+            // A later appended dossier event changes the recomputed digest: the reader derives it
+            // from the live record rather than a stored or cached value.
+            const appended = appendReviewDossierEvents(persisted, [
+                {
+                    kind: 'finding-accepted',
+                    findingId: 'later-finding',
+                    path: 'scripts/target.ts',
+                    line: 1,
+                    side: 'RIGHT',
+                },
+            ]);
+            writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(appended));
+
+            const rebinding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (rebinding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(rebinding.dossierDigest).not.toBe(binding.dossierDigest);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays the recorded publication on a second run without re-posting or rewriting', () => {
+        const landedReview: RemotePublishedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            remoteReviews: { 99: landedReview },
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
             const first = fixture.readDossier();
-            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes).toHaveLength(2);
 
             expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes).toHaveLength(2);
             expect(fixture.readDossier()).toEqual(first);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(2);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            expect(fixture.calls).toContain('remoteReview:99');
             expect(parseReviewDossier(fixture.readDossier()).dossierDigest).toBe(
                 parseReviewDossier(first).dossierDigest
             );
+            // The replay keeps the single delivery authorization the first APPROVE recorded.
+            expect(deliveryAuthorization(parseReviewDossier(fixture.readDossier()))).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                evidenceManifestDigest: authorizedEvidenceDigest(parseReviewDossier(first)),
+            });
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to re-post when the recorded publication no longer stands live and exact', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/recorded review publication 99 does not stand live and exact/u);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('binds the landed review and each posted comment into the dossier on REQUEST_CHANGES', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const changesDocument = {
+            event: 'REQUEST_CHANGES',
+            body: 'One blocking finding.',
+            comments: [comment],
+            reviewerModel: 'glm-5.3-flash',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const postedComment: PublishedReviewComment = {
+            id: 2329000042,
+            path: comment.path,
+            line: comment.line,
+            side: comment.side,
+            body: 'rendered',
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            document: changesDocument,
+            diff,
+            reviewComments: [postedComment],
+        });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.posted.review?.event).toBe('REQUEST_CHANGES');
+            expect(fixture.calls).toContain('reviewComments:99');
+
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.recommendation).toBe('request-changes');
+            expect(acceptedFindings(persisted)).toEqual([
+                { findingId: 'comment-0', path: comment.path, line: comment.line, side: 'RIGHT' },
+            ]);
+            expect(publishedReviewId(persisted)).toBe(99);
+            expect(publishedFindings(persisted)).toEqual([
+                { findingId: 'comment-0', reviewId: 99, commentId: 2329000042 },
+            ]);
+            // REQUEST_CHANGES records no delivery authorization: only the reviewer APPROVE does.
+            expect(deliveryAuthorization(persisted)).toBeUndefined();
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses the binding when the landed review carries another comment shape', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff,
+            reviewComments: [],
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/review 99 carries 0 public comments, not the document's 1/u);
+            expect(fixture.calls).toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses the binding when a landed comment does not match the document positionally', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff,
+            reviewComments: [{ id: 2329000043, path: 'scripts/other.ts', line: 5, side: 'RIGHT', body: 'rendered' }],
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/review 99 comment 0 \(scripts\/other\.ts:5:RIGHT\) does not match the document/u);
+            expect(fixture.calls).toContain('post');
+            // The refusal lands before the binding write, so only the pre-POST canonical record persisted.
+            expect(fixture.writes).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to replay when the landed review drifts from the recorded publication', () => {
+        const remoteReviews: Record<number, RemotePublishedReview | undefined> = {};
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput(), remoteReviews });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+
+            remoteReviews[99] = {
+                id: 99,
+                state: 'APPROVED',
+                body: 'A tampered summary.',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                comments: [],
+            };
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/recorded review publication 99 does not stand live and exact/u);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to replay when the recorded publication leaves an accepted finding unbound', () => {
+        const comment = {
+            path: 'scripts/target.ts',
+            line: 5,
+            side: 'RIGHT' as const,
+            defect: 'the gate reads the wrong base',
+            consequence: 'a foreign commit slips the authorship gate',
+            done: 'read the comparison base',
+        };
+        const diff = [
+            'diff --git a/scripts/target.ts b/scripts/target.ts',
+            'index 1111111..2222222 100644',
+            '--- a/scripts/target.ts',
+            '+++ b/scripts/target.ts',
+            '@@ -2,3 +2,4 @@',
+            ' context2',
+            ' context3',
+            ' context4',
+            '+added',
+            '',
+        ].join('\n');
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [{ path: comment.path, line: comment.line, side: comment.side }],
+            recommendation: 'request-changes',
+        });
+        // A chain recording the review but not its finding: exactly one review-published, no finding-published.
+        const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(bound)),
+            document: {
+                event: 'REQUEST_CHANGES',
+                body: 'One blocking finding.',
+                comments: [comment],
+                reviewerModel: 'glm-5.3-flash',
+            },
+            diff,
+            remoteReviews: {
+                99: {
+                    id: 99,
+                    state: 'CHANGES_REQUESTED',
+                    body: 'One blocking finding.',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    comments: [
+                        {
+                            path: comment.path,
+                            line: comment.line,
+                            side: comment.side,
+                            body: composeReviewCommentBody(comment),
+                        },
+                    ],
+                },
+            },
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/lacks public comment bindings for: comment-0/u);
+            expect(fixture.calls).not.toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses to bind a dossier that already records a publication', () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 98 },
+        ]);
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: JSON.parse(serializeReviewDossier(bound)) });
+        const document: Parameters<typeof recordPublicationBindings>[2] = {
+            event: 'APPROVE',
+            body: 'Attacked the dossier gate; it held.',
+            comments: [],
+        };
+        try {
+            expect(() => recordPublicationBindings(number, head, document, 99, fixture.port)).toThrow(
+                /review dossier already binds publication 98; refusing to rebind to 99/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a recorded publication whose dossier chain was tampered with', () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            recommendation: 'request-changes',
+        });
+        const tampered = JSON.parse(canonical) as { events: Record<string, unknown>[] };
+        tampered.events.push({
+            kind: 'review-published',
+            reviewId: 99,
+            sequence: tampered.events.length,
+            previousDigest: 'x'.repeat(64),
+            digest: 'y'.repeat(64),
+        });
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: tampered });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/previousDigest does not chain/u);
+            expect(fixture.calls).not.toContain('post');
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5242,9 +5948,10 @@ describe('fresh reviewer dossier publication', () => {
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes).toHaveLength(2);
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
+            expect(publishedReviewId(persisted)).toBe(99);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5278,7 +5985,7 @@ describe('fresh reviewer dossier publication', () => {
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.posted.review?.event).toBe('APPROVE');
-            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes).toHaveLength(2);
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.requiredStances).toEqual([gateStance, 'test-validity']);
         } finally {
@@ -5454,12 +6161,22 @@ describe('fresh reviewer dossier publication', () => {
     });
 
     it('replays the mixed round from the persisted record without rewriting it', () => {
+        const mixedBody =
+            'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.';
+        const landedReview: RemotePublishedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: mixedBody,
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
         const fixture = dossierFixture({
             plan: riskPlan(),
             labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
             document: {
                 ...reviewDocument,
-                body: 'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.',
+                body: mixedBody,
             },
             dossier: dossierInput({
                 stances: [
@@ -5473,18 +6190,21 @@ describe('fresh reviewer dossier publication', () => {
                     { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
                 ],
             }),
+            remoteReviews: { 99: landedReview },
         });
         try {
             expect(publishReview(number, fixture.port)).toBe(99);
             const first = fixture.readDossier();
-            expect(fixture.writes).toHaveLength(1);
+            // Two writes: the canonical record before the POST, then the publication binding after it.
+            expect(fixture.writes).toHaveLength(2);
 
             // The replay derives the draws from the persisted record's events, so the mixed round
-            // publishes again unchanged instead of refusing on draws it can no longer see.
+            // publishes again unchanged instead of refusing on draws it can no longer see, and the
+            // recorded publication id stands live so no duplicate is posted.
             expect(publishReview(number, fixture.port)).toBe(99);
-            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes).toHaveLength(2);
             expect(fixture.readDossier()).toEqual(first);
-            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(2);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5752,64 +6472,251 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('leaves orchestrator acceptance unaffected by a plan with no dossier', async () => {
-        const acceptanceDocument = {
-            format: 'compact-v1',
-            event: 'APPROVE',
-            body: 'Final contract held.',
-            evidence: approvalEvidence(head),
-        };
+    it('refuses orchestrator acceptance when a plan-carrying bundle has no dossier', async () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
-            document: acceptanceDocument,
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance requires the head's review dossier/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses orchestrator acceptance when the dossier records no publication', async () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(canonical),
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance requires the dossier to record its review publication/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses orchestrator acceptance when an accepted finding lacks its public binding', async () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            recommendation: 'request-changes',
+        });
+        const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance requires every accepted finding to bind one public comment; unbound: comment-0/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('posts orchestrator acceptance when the dossier accounting is complete', async () => {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        const dossierJson = JSON.parse(serializeReviewDossier(withPublication));
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierJson,
+            document: {
+                ...acceptanceDocument(),
+                authorization: {
+                    intent: 'deliver',
+                    approvalReviewId: 99,
+                    unresolvedThreads: 0,
+                    evidenceManifestDigest: withPublication.dossierDigest,
+                },
+            },
             documentName: 'acceptance.json',
         });
         const accepted: string[] = [];
         try {
-            const port: PublishReviewPort = {
-                ...fixture.port,
-                reviewState: () => ({
-                    latestReviewerStateOnHead: 'APPROVED',
-                    orchestratorAcceptedAfterReviewer: false,
-                    unresolvedThreads: 0,
-                }),
-                postReview: (review) => {
-                    accepted.push(review.body);
-                    return {
-                        id: 99,
-                        actorNodeId: ORCHESTRATOR_USER_NODE_ID,
-                        login: 'jcosta33',
-                        actorType: 'User',
-                        commitId: head,
-                    };
-                },
-            };
-            const dependencies: AcceptReviewCoordinatorDependencies = {
-                primaryRoot: () => fixture.root,
-                authenticateOrchestrator: async () => ({
-                    minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                    session: { configDir: '/tmp/user', env: {}, dispose: () => undefined },
-                }),
-                repositoryName: () => 'jcosta33/sourdaw',
-                reviewPort: () => port,
-                serializeMutation: async (_root, _number, operation) =>
-                    operation({
-                        ownerOid: 'f'.repeat(40),
-                        journalReviewPublication: () => undefined,
-                        markRemoteMutationAttempt: () => undefined,
-                        markDefinitiveNoMutationHttpStatus: () => undefined,
-                        registerSuccessfulCompletion: () => undefined,
-                    }),
-                publish: publishPreparedAcceptance,
-            };
-
-            await coordinateAcceptReview(number, dependencies);
-
+            await coordinateAcceptReview(number, acceptanceDependencies(fixture, accepted));
             expect(accepted).toEqual(['Final contract held.']);
-            expect(fixture.writes).toEqual([]);
-            expect(fixture.calls.filter((call) => call.startsWith('read:'))).toEqual([
-                `read:${join(fixture.bundle, 'acceptance.json')}`,
-            ]);
+            // One write: the delivery-authorized binding appended after the acceptance POST lands.
+            expect(fixture.writes).toHaveLength(1);
+            expect(fixture.writes[0]?.path).toBe(join(fixture.bundle, 'dossier.json'));
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(deliveryAuthorization(persisted)).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                evidenceManifestDigest: withPublication.dossierDigest,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+            });
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    function acceptanceWithAuthorization() {
+        const { canonical } = buildReviewDossier({
+            plan: riskPlan(),
+            raw: dossierInput(),
+            discarded: [],
+            comments: [],
+            recommendation: 'approve',
+        });
+        const withPublication = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
+            { kind: 'review-published', reviewId: 99 },
+        ]);
+        return { withPublication };
+    }
+
+    it('refuses orchestrator acceptance of a plan-carrying bundle without an authorization block', async () => {
+        const { withPublication } = acceptanceWithAuthorization();
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: acceptanceDocument(),
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /requires an authorization block/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it.each([
+        {
+            label: 'an approval review id that is not the recorded publication',
+            authorization: (dossierDigest: string) => ({
+                intent: 'deliver',
+                approvalReviewId: 97,
+                unresolvedThreads: 0,
+                evidenceManifestDigest: dossierDigest,
+            }),
+            message: /approvalReviewId 97 does not match the dossier's recorded publication 99/u,
+        },
+        {
+            label: 'an unresolved-thread count that was never observed',
+            authorization: (dossierDigest: string) => ({
+                intent: 'deliver',
+                approvalReviewId: 99,
+                unresolvedThreads: 1,
+                evidenceManifestDigest: dossierDigest,
+            }),
+            message: /unresolvedThreads 1 does not match the observed 0/u,
+        },
+        {
+            label: 'an evidence-manifest digest that is not the dossier’s own',
+            authorization: (_dossierDigest: string) => ({
+                intent: 'deliver',
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                evidenceManifestDigest: 'e'.repeat(64),
+            }),
+            message: /evidenceManifestDigest does not match the dossier's digest/u,
+        },
+    ])('refuses orchestrator acceptance carrying %s', async ({ authorization, message }) => {
+        const { withPublication } = acceptanceWithAuthorization();
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(withPublication)),
+            document: {
+                ...acceptanceDocument(),
+                authorization: authorization(withPublication.dossierDigest),
+            },
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(message);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a duplicate delivery authorization already recorded in the dossier', async () => {
+        const { withPublication } = acceptanceWithAuthorization();
+        // The reviewer publication itself records the delivery authorization on APPROVE: reviewId and
+        // approvalReviewId both bind the just-posted reviewer review (99). Acceptance must refuse to
+        // mint a second one.
+        const alreadyAuthorized = appendReviewDossierEvents(withPublication, [
+            {
+                kind: 'delivery-authorized',
+                reviewId: 99,
+                approvalReviewId: 99,
+                evidenceManifestDigest: withPublication.dossierDigest,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+            },
+        ]);
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: JSON.parse(serializeReviewDossier(alreadyAuthorized)),
+            document: {
+                ...acceptanceDocument(),
+                authorization: {
+                    intent: 'deliver',
+                    approvalReviewId: 99,
+                    unresolvedThreads: 0,
+                    evidenceManifestDigest: alreadyAuthorized.dossierDigest,
+                },
+            },
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /already records delivery authorization 99; refusing a duplicate authorization/u
+            );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses an authorization block on a legacy bundle with no evidence manifest', async () => {
+        const fixture = dossierFixture({
+            document: {
+                ...acceptanceDocument(),
+                authorization: {
+                    intent: 'deliver',
+                    approvalReviewId: 99,
+                    unresolvedThreads: 0,
+                    evidenceManifestDigest: 'e'.repeat(64),
+                },
+            },
+            documentName: 'acceptance.json',
+        });
+        try {
+            await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
+                /acceptance authorization cannot bind: the legacy bundle .* carries no evidence manifest/u
+            );
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

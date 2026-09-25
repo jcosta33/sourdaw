@@ -469,14 +469,15 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('does not count a clip whose warp state was written but is content-identical to default as carrying satellite state', () => {
-        // A real write path — not a poke at the map — that leaves the clip's
+        // A real write path — not a poke at the store — that leaves the clip's
         // warp state value-identical to `defaultWarpState`: the clip has no
-        // prior entry, and `repitch` is already `defaultWarpState.stretchMode`.
+        // prior entry, and `repitch` is already `defaultWarpState.stretchMode`,
+        // so `setWarpState` stores nothing.
         setStretchMode('clip-a', 'repitch');
-        expect(warpStates.has('clip-a')).toBe(true);
+        expect(warpStates.has('clip-a')).toBe(false);
 
         // `hasClipGlueDependencies` must not block gluing a clip whose only
-        // warp-state footprint is a value-identical-to-default map entry.
+        // warp write was a semantic no-op stored as absent.
         expect(hasClipGlueDependencies(['clip-a'])).toBe(false);
         expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
 
@@ -521,11 +522,11 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('sweeps the consumed source clips warp state when a glue with a content-default entry commits', () => {
-        // Real write path, not a map poke: `repitch` is `defaultWarpState.stretchMode`,
-        // so this is exactly the regression scenario above — content-identical to
-        // default, which the content-aware gate now lets through.
+        // Real write path, not a store poke: `repitch` is `defaultWarpState.stretchMode`,
+        // so this is exactly the regression scenario above — a semantic no-op stored
+        // as absent, which the content-aware gate still lets through.
         setStretchMode('clip-a', 'repitch');
-        expect(warpStates.has('clip-a')).toBe(true);
+        expect(warpStates.has('clip-a')).toBe(false);
 
         expect(glueClips(['clip-a', 'clip-b'])).toBe(true);
 

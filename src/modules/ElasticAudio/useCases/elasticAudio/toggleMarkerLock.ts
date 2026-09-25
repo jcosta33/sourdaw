@@ -1,8 +1,8 @@
-import { warpStates } from '#/modules/Arrangement/stores';
+import { getStoredWarpState, setWarpState, warpStateStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
 function findOwningClip(markerId: string): string | null {
-    for (const [clipId, state] of warpStates) {
+    for (const [clipId, state] of Object.entries(warpStateStore.value?.states ?? {})) {
         if (state.markers.some((m) => m.id === markerId)) {
             return clipId;
         }
@@ -15,7 +15,7 @@ export function toggleMarkerLock(markerId: string): void {
     if (clipId === null) {
         return;
     }
-    const before = warpStates.get(clipId);
+    const before = getStoredWarpState(clipId);
     if (!before) {
         return;
     }
@@ -23,15 +23,15 @@ export function toggleMarkerLock(markerId: string): void {
 
     const nextMarkers = before.markers.map((m) => (m.id === markerId ? { ...m, locked: !(m.locked ?? false) } : m));
     const nextState = { ...before, markers: nextMarkers };
-    warpStates.set(clipId, nextState);
+    setWarpState(clipId, nextState);
 
     pushUndoEntry(
         'Toggle elastic marker lock',
         () => {
-            warpStates.set(clipId, beforeSnapshot);
+            setWarpState(clipId, beforeSnapshot);
         },
         () => {
-            warpStates.set(clipId, { ...nextState, markers: [...nextMarkers] });
+            setWarpState(clipId, { ...nextState, markers: [...nextMarkers] });
         }
     );
 }

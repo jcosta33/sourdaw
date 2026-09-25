@@ -118,6 +118,11 @@ function runTrustedLanePublish(cwd: string, args: string[], env: NodeJS.ProcessE
         cwd,
         env,
         encoding: 'utf8',
+        // Captured stderr keeps a deliberately provoked refusal on the thrown error's message
+        // (and `stderr`) instead of the spec process's own stderr, where it read as a shard
+        // failure (#4486). `execFileSync` still appends the captured stderr to the thrown error,
+        // so `toThrow(/expected exactly one locked author lane .../)` keeps matching.
+        stdio: ['pipe', 'pipe', 'pipe'],
     });
 }
 
@@ -657,7 +662,8 @@ describe('lane publish', () => {
                     "if (args.includes('fetch')) { appendFileSync(process.env.TEST_EVENT_LOG, 'fetch\\n'); process.exit(0); }\n" +
                     "if (args.includes('ls-remote')) { console.log('f'.repeat(40) + '\\trefs/heads/main'); process.exit(0); }\n" +
                     "if (args.includes('push')) { appendFileSync(process.env.TEST_EVENT_LOG, 'push\\n'); appendFileSync(process.env.TEST_PUSH_LOG, JSON.stringify({ cwd: process.cwd(), args }) + '\\n'); process.exit(0); }\n" +
-                    `const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: 'inherit', env: process.env });\n` +
+                    `const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: ['inherit', 'inherit', 'pipe'], env: process.env });\n` +
+                    'if (result.stderr) process.stderr.write(result.stderr);\n' +
                     'if (result.error) throw result.error; process.exit(result.status ?? 1);\n'
             );
             chmodSync(gitWrapper, 0o700);

@@ -1,9 +1,36 @@
 import { createHandler } from '#/utils/createHandler';
-import { type ClipRippleInsertPlanSnapshot } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type ClipRippleInsertPlanSnapshot,
+    type RetiredTakeLaneSnapshot,
+} from '#/utils/handlerContract';
 
 import { addClip } from '../../useCases/clip/addClip';
+import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { pairedInverseForRedo } from './takeRetirementRedo';
+
+type RestoreDrawnClipAction = Extract<AppAction, { type: 'restoreDrawnClip' }>;
+
+/**
+ * The capture the paired discard recorded when it ran at undo time.
+ *
+ * Read from the inverse on the live future stack rather than this action's own
+ * payload: the session mirror serializes the entry at commit time and parses the
+ * inverse and the redo into independent objects, so a shared array on the two
+ * payloads is empty whenever the entry crossed a reload. A redo invoked outside
+ * the live stack — a direct call with no paired entry — has only its own payload
+ * to fall back on.
+ */
+function pendingRetiredTakeLanes(action: RestoreDrawnClipAction): readonly RetiredTakeLaneSnapshot[] {
+    const inverse = pairedInverseForRedo(action);
+    if (inverse === undefined) {
+        return action.payload.retiredTakeLanes ?? [];
+    }
+    return inverse?.type === 'discardDrawnClip' ? (inverse.payload.retiredTakeLanes ?? []) : [];
+}
 
 /**
  * Redo half of `drawClip`: re-creates the drawn clip and re-applies the ripple
@@ -35,6 +62,9 @@ export const handleRestoreDrawnClip = createHandler<'restoreDrawnClip'>({
                 plan: { shiftedClips: plan.shiftedClips.map((shift) => ({ ...shift })) },
             });
         }
+        // The discard captured what removing this clip id retired; the redo
+        // re-created the same id, so put those takes back.
+        restoreTakesForClip(pendingRetiredTakeLanes(action));
         return toHandlerExecutionResult(true);
     },
     describe: () => ({ label: 'Restore drawn clip' }),

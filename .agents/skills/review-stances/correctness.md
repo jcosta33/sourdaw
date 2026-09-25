@@ -299,3 +299,17 @@ Linked-lane playback resolves the source and ignores every point stored on the f
 reported a successful write to that follower. Review point mutations against the sampler's resolved owner: native and
 decibel forms must refuse follower, dangling, and cyclic targets without redirecting or detaching them, while a source
 write must still change the follower's sampled value.
+
+### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
+
+PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane
+after its child returned, unconditionally, and discard the removal's boolean result. A receipt a
+concurrent invocation wrote during the child run was therefore deleted by the older success, and the
+newer stopped obligation disappeared; a failed unlink was reported as success.
+
+Blind spot: review treated the receipt path as owned by the recovering invocation and never asked
+whether the cleared receipt was the one recovery began from, or whether the removal result was surfaced.
+
+Probe that would have caught it: write a replacement receipt for the same lane inside the recovery
+child before it returns code 0 and require recovery to return non-zero with the replacement bytes
+preserved; then make the unlink throw and require recovery to report the failure.

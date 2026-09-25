@@ -502,7 +502,7 @@ const WHISPER_MODEL_SIZE_BYTES: u64 = 147_964_211;
 /// resampled to this before decoding, and skipping the resample when the
 /// capture already runs at it is only correct against this one number.
 const SPEECH_MODEL_SAMPLE_RATE_HZ: f64 = 16_000.0;
-const WHISPER_MODEL: verified_cached_model::VerifiedCachedModel =
+pub(crate) const WHISPER_MODEL: verified_cached_model::VerifiedCachedModel =
     verified_cached_model::VerifiedCachedModel {
         filename: WHISPER_MODEL_FILE,
         expected_sha256: WHISPER_MODEL_SHA256,

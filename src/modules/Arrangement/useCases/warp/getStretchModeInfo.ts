@@ -13,9 +13,9 @@ export const STRETCH_MODES: readonly WarpState['stretchMode'][] = ['repitch', 'c
  * editors do not offer them. No quality, CPU or transient capability is claimed
  * for a mode that does not run.
  *
- * These ids are in-memory only: warp state lives in the `warpStates` Map and is
- * never written to the CRDT document or the .sdaw file, so they are not a wire
- * format and carry no migration obligation.
+ * These ids persist with the clip's warp state on the `warpStates` CRDT slot
+ * and in the project file; renaming a mode is a wire-format change and needs
+ * a migration.
  */
 export function getStretchModeInfo(mode: WarpState['stretchMode']): {
     name: string;

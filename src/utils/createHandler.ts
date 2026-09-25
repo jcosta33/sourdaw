@@ -34,6 +34,8 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     validateSessionActionArguments?: (payload: unknown) => boolean;
     prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
+    /** See `ActionHandlerCommon.afterRedoReplay`; runs when a redo replays the entry this inverse inverts. */
+    afterRedoReplay?: (action: Extract<AppAction, { type: ActionType }>) => void;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
     requiresAbortCompensation?: boolean;
@@ -86,6 +88,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         validateMaterializedCommandArguments: config.validateMaterializedCommandArguments,
         validateSessionActionArguments: config.validateSessionActionArguments,
         prepareAbort: config.prepareAbort,
+        afterRedoReplay: config.afterRedoReplay,
         isNoop: config.isNoop,
         validateSessionEntry: config.validateSessionEntry,
         requiresAbortCompensation: config.requiresAbortCompensation,

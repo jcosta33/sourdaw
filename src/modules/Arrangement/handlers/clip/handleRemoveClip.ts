@@ -5,9 +5,12 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
+import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
+
+import { refreshRetiredTakeLanesForRedo } from './takeRetirementRedo';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
@@ -60,6 +63,12 @@ export const handleRemoveClip = createHandler<'removeClip'>({
     validate: (action, context) =>
         clipStillExists(action.payload.clipId) && batchMembersAreIndependent(action, context),
     execute: (alpha) => {
+        // A redo replays this removal with `skipUndo`, so the fresh capture
+        // `describe()` just took never reaches an entry: without this the entry
+        // keeps the first removal's capture and the undo that follows the redo
+        // cannot put back a take that landed on the restored clip in between.
+        refreshRetiredTakeLanesForRedo(alpha, alpha.payload.clipId);
+
         const state = getTrackStoreState();
         let trackId: string | null = null;
         if (state) {
@@ -111,6 +120,13 @@ export const handleRemoveClip = createHandler<'removeClip'>({
               }
             : null;
 
+        // Exactly the take-lane state the removal retires, captured before
+        // `execute` writes: whichever route it takes — `rippleDeleteClips` or
+        // the `removeClip` fallback — retires these clips' takes, and undo has
+        // to put the lanes back as they were (#4265).
+        const removedClipIds = plan ? plan.removedClips.map((clip) => clip.id) : [alpha.payload.clipId];
+        const retiredTakeLanes = captureRetiredTakeLanes(removedClipIds);
+
         const midiState = getMidiStoreState();
         const notes = midiState?.notesByClipId[alpha.payload.clipId];
         const cc = midiState?.ccByClipId[alpha.payload.clipId];
@@ -128,6 +144,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                     midiNotesSnapshot: notes ? structuredClone(notes) : null,
                     midiCcSnapshot: cc ? structuredClone(cc) : null,
                     midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
+                    retiredTakeLanes,
                 },
             },
         };

@@ -19,25 +19,28 @@ type PendingCutSnapshot = {
 
 const pendingCutSnapshots = new WeakMap<object, PendingCutSnapshot>();
 
-/** Mirrors the id-resolution `cutSelectedClip` performs internally, without its
- *  side effects — `describe()` runs before `execute()` and must know the
- *  target tracks before the cut has happened. */
-function resolveSelectedTrackIds(): string[] {
+/** The selected clip ids `cutSelectedClip` resolves internally, without its side
+ *  effects — `describe()` runs before `execute()` and must know which clips the
+ *  cut retires before it has happened. */
+function resolveSelectedClipIds(): string[] {
     const workspace = clipSelectionStore.value;
     if (!workspace) {
         return [];
     }
     // A multi-selection wins; otherwise the single focused clip stands in for it, and an
     // empty selection yields no target at all.
-    let ids: readonly string[] = [];
     if (workspace.selectedClipIds.length > 0) {
-        ids = workspace.selectedClipIds;
-    } else if (workspace.selectedClipId) {
-        ids = [workspace.selectedClipId];
+        return [...workspace.selectedClipIds];
     }
+    return workspace.selectedClipId ? [workspace.selectedClipId] : [];
+}
 
+/** Mirrors the id-resolution `cutSelectedClip` performs internally, without its
+ *  side effects — `describe()` runs before `execute()` and must know the
+ *  target tracks before the cut has happened. */
+function resolveSelectedTrackIds(): string[] {
     const trackIds = new Set<string>();
-    for (const id of ids) {
+    for (const id of resolveSelectedClipIds()) {
         const target = resolveEligibleClipWriteTarget({ clipId: id });
         if (target.status === 'eligible' && 'trackId' in target) {
             trackIds.add(target.trackId);
@@ -66,7 +69,7 @@ export const handleCutClip = createHandler<'cutClip'>({
             return { label: 'Cut clip', inverseAction: null };
         }
 
-        const preCutState = captureTrackClipStates(trackIds);
+        const preCutState = captureTrackClipStates(trackIds, resolveSelectedClipIds());
         // Empty placeholder now; `execute()` fills it once the cut lands, and
         // both `inverseAction.payload.expected` and `redoAction.payload.replacement`
         // reference this same array, so the fill is visible in both.

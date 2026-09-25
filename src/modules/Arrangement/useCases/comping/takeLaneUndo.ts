@@ -4,7 +4,9 @@ import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { insertTakeLane } from './insertTakeLane';
+import { laneWithLiveTakes } from './laneWithLiveTakes';
 import { removeTakeLane } from './removeTakeLane';
+import { retireLaneInsertion } from './retireLaneInsertion';
 
 type TakeLaneFacetState =
     | { readonly kind: 'takes'; readonly value: readonly Take[] }
@@ -30,20 +32,19 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
     if (!state || !lanePresent(state.lanes, laneId)) {
         return;
     }
-    if (facet.kind === 'takes') {
-        const takes = facet.value;
-        takeLaneStore.set({
-            lanes: state.lanes.map((existing) =>
-                existing.id === laneId ? { ...existing, takes: [...takes] } : existing
-            ),
-        });
-        return;
-    }
-    const activeCompRegions = facet.value;
+    // Whichever facet is being replayed, the lane goes back through the one liveness
+    // rule: a take whose clip is gone is not part of the state any more, and neither is
+    // a region that names it.
     takeLaneStore.set({
-        lanes: state.lanes.map((existing) =>
-            existing.id === laneId ? { ...existing, activeCompRegions: [...activeCompRegions] } : existing
-        ),
+        lanes: state.lanes.map((existing) => {
+            if (existing.id !== laneId) {
+                return existing;
+            }
+            if (facet.kind === 'takes') {
+                return laneWithLiveTakes({ ...existing, takes: [...facet.value] });
+            }
+            return laneWithLiveTakes({ ...existing, activeCompRegions: [...facet.value] });
+        }),
     });
 }
 
@@ -54,6 +55,17 @@ function applyFacetState(laneId: string, facet: TakeLaneFacetState): void {
  * undo time, so edits made after the entry — to other lanes or to the same
  * lane's other facets — survive undo and redo instead of being erased by a
  * whole-store snapshot replay.
+ *
+ * A removed lane's redo retires the insertion the undo made, wherever it landed: the
+ * undo puts the captured lane back through `insertTakeLane`, which merges it into
+ * whatever lane the track owns, and a projection's lane no longer matches the captured
+ * id. `retireLaneInsertion` takes back exactly the captured takes and the regions
+ * naming them, leaving that lane's own state; removing the lane by id alone would be
+ * inert, and removing whatever lane the track owns would destroy state this flatten
+ * never retired.
+ *
+ * The insert filters the lane it places through the live-take rule itself, so the
+ * captures replayed here are handed over as they were taken.
  */
 export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void {
     const undo = () => {
@@ -76,7 +88,7 @@ export function pushTargetedTakeLaneUndoEntry(edit: TargetedTakeLaneEdit): void 
             insertTakeLane(edit.lane, edit.laneIndex);
             return;
         }
-        removeTakeLane(edit.lane.id);
+        retireLaneInsertion(edit.lane);
     };
     pushUndoEntry(edit.label, undo, redo);
 }

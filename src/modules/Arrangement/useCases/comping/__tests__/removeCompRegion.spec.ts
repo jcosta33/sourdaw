@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { removeCompRegion } from '../removeCompRegion';
 
 type MockRegion = { startBeat: number; endBeat: number; takeId: string };
-type MockLane = { id: string; trackId: string; activeCompRegions: MockRegion[] };
+type MockTake = { id: string; clipId: string; name: string; startBeat: number; endBeat: number; selected: boolean };
+type MockLane = { id: string; trackId: string; takes: MockTake[]; activeCompRegions: MockRegion[] };
 type TakeLaneState = { lanes: MockLane[] };
 type TakeLaneHolder = { value: TakeLaneState | null };
 
@@ -31,7 +35,19 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 describe('removeCompRegion', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        // A replayed facet goes back through the lane liveness rule, so the fixtures
+        // need the tracks and clips their take ids stand for.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'clip-a', trackId: 't1' })] }),
+                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'clip-other', trackId: 't2' })] }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
+    });
 
     it('removes the matching region from the lane and records an undo entry', () => {
         mocks.takeLaneValue.value = {
@@ -39,6 +55,7 @@ describe('removeCompRegion', () => {
                 {
                     id: 'lane-1',
                     trackId: 't1',
+                    takes: [],
                     activeCompRegions: [
                         { startBeat: 0, endBeat: 4, takeId: 'take-a' },
                         { startBeat: 4, endBeat: 8, takeId: 'take-b' },
@@ -65,7 +82,7 @@ describe('removeCompRegion', () => {
     });
 
     it('is a no-op when the track has no lane', () => {
-        mocks.takeLaneValue.value = { lanes: [{ id: 'lane-1', trackId: 'other', activeCompRegions: [] }] };
+        mocks.takeLaneValue.value = { lanes: [{ id: 'lane-1', trackId: 'other', takes: [], activeCompRegions: [] }] };
 
         removeCompRegion('t1', 0);
 
@@ -75,7 +92,14 @@ describe('removeCompRegion', () => {
 
     it('is a no-op when the lane has no region at the given start beat', () => {
         mocks.takeLaneValue.value = {
-            lanes: [{ id: 'lane-1', trackId: 't1', activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'a' }] }],
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'a' }],
+                },
+            ],
         };
 
         removeCompRegion('t1', 99);
@@ -90,11 +114,13 @@ describe('removeCompRegion', () => {
                 {
                     id: 'lane-1',
                     trackId: 't1',
+                    takes: [],
                     activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-a' }],
                 },
                 {
                     id: 'lane-2',
                     trackId: 't2',
+                    takes: [],
                     activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'other-take' }],
                 },
             ],
@@ -114,6 +140,16 @@ describe('removeCompRegion', () => {
                 {
                     id: 'lane-1',
                     trackId: 't1',
+                    takes: [
+                        {
+                            id: 'take-a',
+                            clipId: 'clip-a',
+                            name: 'Take A',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                        },
+                    ],
                     activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-a' }],
                 },
             ],
@@ -134,5 +170,57 @@ describe('removeCompRegion', () => {
         redo();
         const redoArg = mocks.takeLaneSet.mock.calls.at(-1)![0];
         expect(redoArg.lanes[0]!.activeCompRegions).toEqual([]);
+    });
+
+    it('does not bring a region back when the take it names has no clip left', () => {
+        mocks.takeLaneValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        {
+                            id: 'take-a',
+                            clipId: 'clip-a',
+                            name: 'Take A',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: false,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-a' }],
+                },
+            ],
+        };
+
+        removeCompRegion('t1', 0);
+        const undoCall = mocks.pushUndoEntry.mock.calls[0];
+        if (!undoCall) {
+            throw new Error('expected pushUndoEntry to be called');
+        }
+        const [, undo] = undoCall;
+        expect(mocks.takeLaneSet).toHaveBeenCalledTimes(1);
+
+        // A projection takes the take's clip out of the project while the removal stands,
+        // so the region the entry captured now names material no track holds.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 't1', clips: [] }),
+                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'clip-other', trackId: 't2' })] }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
+
+        undo();
+
+        // The replayed facet goes back through the lane liveness rule — the same rule the
+        // takes facet does. A region left for a take the project no longer holds advances
+        // `resolveClipsWithComping`'s gap cursor over its span, silencing the track's own
+        // material there in live playback and in the offline render. The second store write
+        // is the replay's own, so this reads the state the undo wrote and not the removal's.
+        expect(mocks.takeLaneSet).toHaveBeenCalledTimes(2);
+        const undoArg = mocks.takeLaneSet.mock.calls.at(-1)![0];
+        expect(undoArg.lanes[0]!.activeCompRegions).toEqual([]);
     });
 });

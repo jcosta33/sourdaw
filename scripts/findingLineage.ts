@@ -13,8 +13,8 @@
  */
 
 import { canonicalJson, lastMarkerLine, parseMarkerPayload, type JsonValue } from './canonicalRecord.ts';
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { assertPublicationSafeEvidence } from './reviewDossier.ts';
 
 export const FINDING_LINEAGE_FORMAT = 'lineage-v1';
 

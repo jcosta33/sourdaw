@@ -196,6 +196,9 @@ const {
 const { assertHostedQuantumMeasurementWorkflow } = await import(
     `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
 );
+const { assertSemanticReviewWorkflow } = await import(
+    `${process.env.REPO_ROOT}/scripts/semanticReviewWorkflowContract.ts`
+);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
 const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
@@ -204,8 +207,12 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
+// The harness that owns the credential boundary must run it here too: the recorded snapshot alone is
+// regenerated as a matter of course, so it cannot stand behind a boundary move by itself.
+assertSemanticReviewWorkflow(semanticReview);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const gitleaksIgnore = readFileSync(`${process.env.REPO_ROOT}/.gitleaksignore`, 'utf8');
@@ -1023,7 +1030,7 @@ expect(
     `the registered workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
 );
 
-// The snapshot pins the four files' contents; the directory SET is pinned
+// The snapshot pins every registered file's contents; the directory SET is pinned
 // beside them, because a fifth workflow the parse never reads can mint a
 // passing Gate over a red head.
 let inventoryError;
@@ -1044,6 +1051,7 @@ const workflowsByFile = {
     'nightly.yml': nightly,
     'quantum-measurements.yml': hostedQuantumMeasurement,
     'wasm-artifacts.yml': hostedWasm,
+    'semantic-review.yml': semanticReview,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
 // the dropped shards never ran at all.
