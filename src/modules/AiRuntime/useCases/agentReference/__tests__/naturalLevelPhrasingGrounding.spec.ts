@@ -84,35 +84,25 @@ const projectContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-/** The fixture with a Keys synth whose output parameter is named "Master", as Levain's is. */
+/** A synth whose output parameter is named "Master", as Levain's is. */
+const keysSynth: ProjectTrack['devices'][number] = {
+    id: 'device-keys-synth',
+    type: 'levain',
+    bypassed: false,
+    parameters: [{ id: 'masterGain', name: 'Master', type: 'float', value: 0.8, minValue: 0, maxValue: 2, unit: '' }],
+};
+
+function withKeysSynth(track: ProjectTrack): ProjectTrack {
+    if (track.id !== 'track-keys') {
+        return track;
+    }
+    return { ...track, deviceCount: 1, devices: [keysSynth] };
+}
+
+/** The fixture with that synth on the Keys track. */
 const projectWithMasterParameter: ProjectContext = {
     ...projectContext,
-    tracks: projectContext.tracks.map((track) =>
-        track.id === 'track-keys'
-            ? {
-                  ...track,
-                  deviceCount: 1,
-                  devices: [
-                      {
-                          id: 'device-keys-synth',
-                          type: 'levain',
-                          bypassed: false,
-                          parameters: [
-                              {
-                                  id: 'masterGain',
-                                  name: 'Master',
-                                  type: 'float',
-                                  value: 0.8,
-                                  minValue: 0,
-                                  maxValue: 2,
-                                  unit: '',
-                              },
-                          ],
-                      },
-                  ],
-              }
-            : track
-    ),
+    tracks: projectContext.tracks.map(withKeysSynth),
 };
 
 /** The fixture with a track whose name holds the word master. */
@@ -339,14 +329,20 @@ describe('natural level phrasing grounds the call its words ask for', () => {
     });
 
     it('grounds an absolute master level brought down with a generic verb', () => {
-        const result = bridge([{ name: 'setMasterGain', arguments: { gainDb: -1 } }], 'Bring the master down to -1 dB.');
+        const result = bridge(
+            [{ name: 'setMasterGain', arguments: { gainDb: -1 } }],
+            'Bring the master down to -1 dB.'
+        );
 
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { gainDb: -1 } }]);
     });
 
     it('grounds a relative master change asked for as a louder master', () => {
-        const result = bridge([{ name: 'setMasterGain', arguments: { deltaDb: 2 } }], 'Make the master louder by 2 dB.');
+        const result = bridge(
+            [{ name: 'setMasterGain', arguments: { deltaDb: 2 } }],
+            'Make the master louder by 2 dB.'
+        );
 
         expect(result.rejections).toEqual([]);
         expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { deltaDb: 2 } }]);
