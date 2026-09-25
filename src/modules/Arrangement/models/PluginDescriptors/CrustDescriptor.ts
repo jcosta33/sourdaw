@@ -107,10 +107,10 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
                 0,
                 6,
                 [
-                    "Drives both ceiling's limiter and satDrive's saturator stage harder as this rises: raise ceiling headroom or reduce satDrive to compensate.",
+                    "Drives ceiling's limiter harder as this rises: raise ceiling headroom to compensate; while satEnabled is on and satMix is above zero, it also drives satDrive's saturator stage harder, so reduce satDrive to compensate too.",
                 ],
                 [
-                    'Raising gain without leaving ceiling headroom pushes reduction and saturation harder than the source calls for.',
+                    'Raising gain without leaving ceiling headroom pushes limiter reduction harder than the source calls for, and pushes saturation harder too whenever satEnabled is on and satMix is above zero.',
                 ],
                 noExternalModulation
             ),

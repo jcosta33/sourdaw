@@ -76,7 +76,7 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     grinder: 'descriptor-v1:fe7c1d7a',
     proof: 'descriptor-v1:0f484ceb',
     yeast: 'descriptor-v1:e58d800b',
-    crust: 'descriptor-v1:ec64c4e8',
+    crust: 'descriptor-v1:ec04f66a',
     'builtin-crumbs': 'descriptor-v1:b99d022e',
     'grand-boule': 'descriptor-v1:93d1562a',
     knead: 'descriptor-v1:f8e350da',
