@@ -366,13 +366,23 @@ describe('semantic command list set predicates', () => {
         });
     });
 
-    it('resolves an isFrozen predicate against the owning track frozen state', () => {
+    it('resolves an isFrozen predicate against the owning track frozen state, not its muted state', () => {
+        // track-hat is muted AND frozen in the shared fixture, so isFrozen would pass even reading
+        // the muted field by mistake. Discriminate frozen from muted with a track that is frozen
+        // only.
+        const mutatedContext: ProjectContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-hat' ? { ...track, muted: false, frozen: true } : track
+            ),
+        };
         const result = compileSelectorItem({
             commandName: 'muteTrack',
             commandArguments: { muted: true },
             entity: 'track',
             targetArgument: 'trackId',
             match: { all: [{ isFrozen: true }] },
+            context: mutatedContext,
         });
         expect(result).toMatchObject({
             status: 'accepted',
@@ -426,7 +436,15 @@ describe('semantic command list set predicates', () => {
         });
     });
 
-    it('resolves an isFrozen predicate on a device entity against the owning track state', () => {
+    it('resolves an isFrozen predicate on a device entity against the owning track state, not its muted state', () => {
+        // Same discrimination as the track-level isFrozen case, applied to a device whose owning
+        // track is frozen only — an owner-muted read would pass this row too if left undiscriminated.
+        const mutatedContext: ProjectContext = {
+            ...context,
+            tracks: context.tracks.map((track) =>
+                track.id === 'track-hat' ? { ...track, muted: false, frozen: true } : track
+            ),
+        };
         const result = compileSelectorItem({
             itemId: 'device-owner-frozen',
             commandName: 'bypassDevice',
@@ -434,6 +452,7 @@ describe('semantic command list set predicates', () => {
             entity: 'device',
             targetArgument: 'deviceId',
             match: { all: [{ isFrozen: true }] },
+            context: mutatedContext,
         });
         expect(result).toMatchObject({
             status: 'accepted',

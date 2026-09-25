@@ -23,6 +23,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type SemanticCommandListMatchSelectorRecord } from '../../models/SemanticCommandList';
@@ -259,6 +260,7 @@ describe('match selector approval revalidation', () => {
         clearPendingActionConfirmations();
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        projectStore.set(defaultProjectStoreState);
         chatStore.set({
             messages: [{ id: 'assistant-1', role: 'assistant', content: 'Awaiting confirmation', timestamp: 1 }],
             isGenerating: false,
@@ -275,6 +277,7 @@ describe('match selector approval revalidation', () => {
         clearAiHistory();
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        projectStore.set(defaultProjectStoreState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -313,14 +316,23 @@ describe('match selector approval revalidation', () => {
         expect(trackIdsOf(actions).toSorted()).toEqual(['track-kick', 'track-snare']);
         propose('confirmation-drum-color-b', actions, matchSelectorPredicates, revision);
 
-        // Renaming the snare off its name-derived 'snare' canonical role, with no production-brief
-        // authored role in play, drops its canonical role to 'unknown' — no longer in the 'drums'
-        // role family the approved batch's selector matched.
-        setTracks(
-            (trackStore.value?.tracks ?? []).map((track) =>
-                track.id === 'track-snare' ? { ...track, name: 'Room Mic' } : track
-            )
-        );
+        // An authored production-brief role takes precedence over the name-derived canonical role,
+        // moving the snare's role family off 'drums' without touching the snare's own track record —
+        // so `classifyAgentProjectDivergence`'s target-fingerprint check (which only inspects the
+        // resolved trackIds' own CRDT records) sees no change at all, and only the selector
+        // revalidation this fix adds can catch it.
+        const currentProjectState = projectStore.value;
+        projectStore.set({
+            ...currentProjectState,
+            productionBrief: {
+                ...currentProjectState.productionBrief,
+                trackRoles: [
+                    ...currentProjectState.productionBrief.trackRoles,
+                    { id: 'authored-role-snare-guitar', trackId: 'track-snare', role: 'guitar', createdAt: Date.now() },
+                ],
+            },
+        });
+        flushAutomergeStorageWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirmation-drum-color-b' });
 
@@ -364,5 +376,44 @@ describe('match selector approval revalidation', () => {
         expect(colors.get('track-snare')).toBe(DRUM_COLOR);
         expect(colors.get('track-lead-vocal')).toBe(DEFAULT_TRACK_COLOR);
         expect(colors.get('track-keys')).toBe(DEFAULT_TRACK_COLOR);
+    });
+
+    it('invalidates a predicate-selected color batch when the resolved set swaps membership without changing size', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorProposal();
+        expect(trackIdsOf(actions).toSorted()).toEqual(['track-kick', 'track-snare']);
+        propose('confirmation-drum-color-swap', actions, matchSelectorPredicates, revision);
+
+        // Snare leaves the drums family through an authored production-brief role at the same moment
+        // Tom joins it, so the live selector still resolves exactly two targets — just not the two
+        // the approved batch carried. A revalidation that only compared resolved counts would miss
+        // this; only a full id-set comparison catches it.
+        const currentProjectState = projectStore.value;
+        projectStore.set({
+            ...currentProjectState,
+            productionBrief: {
+                ...currentProjectState.productionBrief,
+                trackRoles: [
+                    ...currentProjectState.productionBrief.trackRoles,
+                    { id: 'authored-role-snare-guitar', trackId: 'track-snare', role: 'guitar', createdAt: Date.now() },
+                ],
+            },
+        });
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-drum-color-swap' });
+
+        expect(result.status).toBe('invalidated');
+        expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+        ]);
     });
 });
