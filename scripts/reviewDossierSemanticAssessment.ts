@@ -17,9 +17,16 @@
  */
 
 import { fail } from './prContract.ts';
-import { SEMANTIC_CI_FORMAT } from './semanticReviewContext.ts';
 
 import type { ReviewDossier } from './reviewDossier.ts';
+
+/**
+ * The `semantic-ci.json` format string, inlined rather than imported from `semanticReviewContext.ts`
+ * so the resolver — which transitively pulls in the `fflate` and GitHub-identity modules — stays out
+ * of the trusted GitHub-write closure this gate runs inside. It must stay equal to
+ * `SEMANTIC_CI_FORMAT` there; a mismatch fails closed here, refusing a record the writer produced.
+ */
+const SEMANTIC_CI_FORMAT = 'semantic-ci-v1';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
