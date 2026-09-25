@@ -1,0 +1,51 @@
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 21,26-27,94,127,130,158-169,210-213,215-216,217,218,220-221,227,229,230,231,232-233,233,234,235-239,240,241-242,243-252,253-262,263-265,266-270
+scripts/__tests__/semanticReviewContext.spec.ts
+  h_beb54bf43b47b7 1-8,9-10,11,13-26,27,28,29-50,51-55,56-59,60,61-126,127,128-129,130,131-153,154,155-158,159-161,162-163,164,165-168,169-171,172-243,244,245-274,275,276,277-289,290,291,292-300,301,302,303-351,352,353-390,361,391,392-399,400,401-410,411,412-439,440-485,486-502,503-509,510,517-518,541,544-545,546-560,561-576,577-623,624-651,652-692,693-698,736
+  s_9b530f08172a54::t_258f38fa09174b 12,511-516,519-540,542-543,699-735
+scripts/prepareReview.ts
+  h_beb54bf43b47b7 24,53-54,168,373
+scripts/semanticReviewContext.ts
+  h_beb54bf43b47b7 1-7,8-9,10,11,12-16,17-18,19-22,23-36,37,38,39,40-44,45-48,49-84,85,86-97,98,99-105,106-107,108-134,135-178,179-187,188,189-193,194-208,209-211,212,213-247,248-259,260-281,282-284,283,285-287,288,289-294,295-301,302,303,304-307,308,309,310-312,314-322,324,325,326-332,333-335,337,339-347,339-346,348-352,353,354,355,356,357,358,358-359,360-364,365,366,367,368-385,376,386,388-390,390-408,409-411,412-420,421-425,427-430,448-449,450-455,456,457-489,491-498,499,500-518
+  s_9e15f5b7ec3308::t_c2bb8505871c21 426,431-447,490
+package.json
+  h_beb54bf43b47b7 55
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 915
+scripts/prepareReviewEntry.ts
+  h_beb54bf43b47b7 1-2,3,4-18,19-38,20,39,40,41,45,46-52,53-60,61,62,63-65,66,67-75,76-83,84,85,86-87,88,89-90,91-102,106,107-146
+  s_9e15f5b7ec3308::t_caad244b5d5fcf 42-44,103-105
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169,1739
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "627b8b7d6527f9b73f0c6b3ec0e3e2faa0f26d3f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
