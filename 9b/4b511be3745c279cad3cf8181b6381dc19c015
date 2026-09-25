@@ -1,0 +1,29 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_ef536aab624565::t_d9e9ab208b30af 69,71-72,1459-1482
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  s_2bfd55a4393d7c::t_dc8d12705b4473 1-3,7,171-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9b4b511be3745c279cad3cf8181b6381dc19c015",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
