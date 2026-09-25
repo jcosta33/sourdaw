@@ -1,0 +1,23 @@
+crates/daw-engine/src/retrospective.rs
+  s_a33c5368acef99::t_10f8a5ad05a9f4 340,501-512,514,516,519-537,540-571,728-753
+  s_a33c5368acef99::t_8b2679fa786016 11,18-26,86-99,196-201,205,211,214,310-315,335-336,339
+  s_a33c5368acef99::t_f860a98e14acdc 337-338,341,754
+crates/daw-engine/src/lib.rs
+  s_a33c5368acef99::t_08bb86b04b2502 357-359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "598c7f49a26c38ba704ef637ea3cabd4a32a6fad",
+  "prompts": {},
+  "sessions": {
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
