@@ -1,0 +1,24 @@
+scripts/resourceGuard.ts
+  s_2bfd55a4393d7c::t_9fd1b26e05a5ed 126
+scripts/__tests__/resourceGuard.spec.ts
+  s_2bfd55a4393d7c::t_9d890f9c12aeae 873
+  s_2bfd55a4393d7c::t_401b007b98b943 872
+  s_2bfd55a4393d7c::t_1a2f9d50505f0e 910
+  s_2bfd55a4393d7c::t_13017bf0ded4b5 904
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "19ccfd3834468f0c217874d7c9c792fc9a99df7b",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
