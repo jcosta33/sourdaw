@@ -1078,7 +1078,7 @@ function getOtherThanMasterReferences(context: ProjectContext): ProjectContext {
     };
 }
 
-/** Whether a clause names the master itself, outside a longer name of another project object ("Master Vox"). */
+/** Whether a clause names the master itself, outside a longer name of another project object ("Master Keys"). */
 function namesMaster(clause: PromptClause, context: ProjectContext): boolean {
     return /\bmaster\b/iu.test(maskProjectReferences(clause.text, getOtherThanMasterReferences(context)));
 }
