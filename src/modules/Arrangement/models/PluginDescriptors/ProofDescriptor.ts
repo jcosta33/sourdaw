@@ -91,7 +91,7 @@ export const PROOF_DESCRIPTOR = applySingleDescriptorGuidance(
                 'Chain output trim',
                 'Scales the signal after every mastering module, including the limiter and dither, before it leaves the chain.',
                 -6,
-                6,
+                0,
                 [
                     "Applied after lim_ceiling's limiter and its dither stage, so raising this can push the signal back over the ceiling that lim_ceiling just enforced; input_gain instead changes what reaches the limiter.",
                 ],
