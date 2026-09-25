@@ -1,4 +1,5 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
@@ -7,6 +8,7 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -18,6 +20,7 @@ import {
     RECIPE_DISCOVERY_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
+import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import {
     COMMAND_BATCH_DECLINE_KINDS,
     COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH,
@@ -33,6 +36,7 @@ export {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -199,6 +203,47 @@ function getRecipeDiscoverySchema(): ToolSchema {
     );
 }
 
+function getAnalysisMeasureSchema(): ToolSchema {
+    const metricIds = getAgentMeasurementMetricIds();
+    const boundedId = { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH };
+    return tool(
+        ANALYSIS_MEASURE_TOOL_NAME,
+        `Measure objective figures of the rendered audio of one scope over a section or beat range: the master mix (kind "master" or "project", with mute and solo applied), or up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks or buses, each rendered in isolation with its inserts and send returns and without solo. The application renders at the current project revision and returns loudness, peak, dynamics, spectral, stereo and transient figures, never audio. Name the range by sectionId or by startBeat and endBeat.`,
+        {
+            scope: {
+                type: 'object',
+                properties: {
+                    kind: { type: 'string', enum: ['master', 'project', 'tracks', 'buses'] },
+                    ids: {
+                        type: 'array',
+                        minItems: 1,
+                        maxItems: ANALYSIS_MEASURE_MAX_TARGETS,
+                        items: { ...boundedId },
+                    },
+                },
+                required: ['kind'],
+                additionalProperties: false,
+            },
+            range: {
+                type: 'object',
+                properties: {
+                    sectionId: { ...boundedId },
+                    startBeat: { type: 'number', minimum: 0 },
+                    endBeat: { type: 'number', minimum: 0 },
+                },
+                additionalProperties: false,
+            },
+            metrics: {
+                type: 'array',
+                minItems: 1,
+                maxItems: metricIds.length,
+                items: { type: 'string', enum: [...metricIds] },
+            },
+        },
+        ['scope', 'range']
+    );
+}
+
 export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
     return [
         getProjectQuerySchema(),
@@ -346,6 +391,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             },
             ['scope']
         ),
+        getAnalysisMeasureSchema(),
         getRecipeDiscoverySchema(),
     ];
 }

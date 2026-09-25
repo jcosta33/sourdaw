@@ -48,6 +48,7 @@ import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformer
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
@@ -437,10 +438,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME ||
                             tool.function.name === CREATIVE_INTERPRETATION_TOOL_NAME
                     );
-                    // Recipe discovery is dropped from the WebLLM pool rather than made mandatory or
-                    // left eligible for the single prompt-selected slot: either place would cost the
-                    // local tier a planning tool (usually project.discover) it already had. Hosted
-                    // backends never take this branch, so they keep it unchanged.
+                    // Recipe discovery and measurement are dropped from the WebLLM pool rather than made
+                    // mandatory or left eligible for the single prompt-selected slot: either place would
+                    // cost the local tier a planning tool (usually project.discover) it already had.
+                    // Hosted backends never take this branch, so they keep both unchanged.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
@@ -450,7 +451,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME &&
                             tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME &&
                             tool.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME &&
-                            tool.function.name !== RECIPE_DISCOVERY_TOOL_NAME
+                            tool.function.name !== RECIPE_DISCOVERY_TOOL_NAME &&
+                            tool.function.name !== ANALYSIS_MEASURE_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
