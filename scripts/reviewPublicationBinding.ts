@@ -118,18 +118,19 @@ function persistCanonicalReviewDossier(
 
 /**
  * The bundle base the escalation reassessment must bind, read from the bundle manifest. A
- * post-threshold head whose manifest supplies no readable base refuses with the escalation contract
+ * post-threshold head whose manifest supplies no usable context refuses with the escalation contract
  * message — naming the observed count, the threshold, and the reassessment route — rather than a raw
- * manifest read error: an unverifiable base can never satisfy the gate. The bundle reader reports an
- * absent, malformed, or field-incomplete manifest as one failure, so the message names both possible
- * causes instead of asserting the baseSha is missing when the manifest itself is at fault.
+ * manifest read error: an unverifiable base can never satisfy the gate. The bundle reader rejects an
+ * absent, unreadable, and field-incomplete manifest as one failure without naming the field at
+ * fault, so the refusal names the field set it requires instead of blaming baseSha for a manifest
+ * that is present and readable but incomplete elsewhere.
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
         return readReviewBundleContext(bundle).baseSha;
     } catch {
         return fail(
-            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} supplies no readable base to bind — its baseSha or the manifest itself is missing or unreadable; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound to an unverifiable base`
+            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or incomplete in pr, baseRefName, baseSha, or headSha; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound to an unverifiable base`
         );
     }
 }
