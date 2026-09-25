@@ -21,6 +21,8 @@ type AgentDeviceParameter = {
     bounds: { minimum: number; maximum: number };
     default: number;
     enumValues: readonly string[] | null;
+    /** See {@link DeviceParameter.legalSet}. Omitted when the descriptor declares no legal set. */
+    legalValues?: readonly number[];
     automatable: boolean;
     guidance: DeviceParameterGuidance;
 };
@@ -63,7 +65,7 @@ function parameterType(parameter: DeviceParameter): AgentDeviceParameter['type']
 
 function toManifestParameter(parameter: DeviceParameter, guidance: DeviceParameterGuidance): AgentDeviceParameter {
     const type = parameterType(parameter);
-    return {
+    const manifestParameter: AgentDeviceParameter = {
         id: parameter.id,
         name: parameter.name,
         type,
@@ -74,6 +76,10 @@ function toManifestParameter(parameter: DeviceParameter, guidance: DeviceParamet
         automatable: parameter.automatable,
         guidance,
     };
+    if (parameter.legalSet) {
+        return { ...manifestParameter, legalValues: [...parameter.legalSet.values] };
+    }
+    return manifestParameter;
 }
 
 /** Arrangement owns catalog descriptors, never live node topology or latency. */

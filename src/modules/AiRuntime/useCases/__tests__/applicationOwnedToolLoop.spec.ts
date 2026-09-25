@@ -471,6 +471,46 @@ describe('application-owned tool loop', () => {
         }
     });
 
+    it('forwards a descriptor-declared legal set through the factory-manifest receipt', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'manifest-legal-set',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['crust'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-manifest-legal-set',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            // Crust's full guidance payload exceeds the default per-call receipt
+            // budget; this test proves the field reaches the route's output, not
+            // the unrelated budget behaviour, so it widens the budget rather than
+            // picking a smaller descriptor that would leave the row untested.
+            limits: { maxReceiptBytesPerCall: 32_768, maxReceiptBytesPerTurn: 65_536, maxTotalReceiptBytes: 131_072 },
+        });
+        const receipt = result.receipts.find((entry) => entry.callId === 'manifest-legal-set');
+
+        expect(receipt?.data).toEqual(
+            expect.objectContaining({
+                devices: expect.arrayContaining([
+                    expect.objectContaining({
+                        type: 'crust',
+                        parameters: expect.arrayContaining([
+                            expect.objectContaining({ id: 'oversampling', legalValues: [1, 2, 4, 8, 16, 32] }),
+                        ]),
+                    }),
+                ]),
+            })
+        );
+    });
+
     it('refuses a turn that declines and proposes at once, so the outcome of a turn is never ambiguous', async () => {
         const result = await runApplicationOwnedToolLoop({
             loopId: 'loop-decline-mixed',
