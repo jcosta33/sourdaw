@@ -15,6 +15,7 @@ const mocks = vi.hoisted(
         takeLaneStoreValue: { value: TakeLaneStoreState | null };
         takeLaneStoreSet: Mock<typeof takeLaneStore.set>;
         activeRecordingRef: { current: string[] };
+        commitRecording: Mock<(clip: unknown) => Promise<void>>;
     } => ({
         getTrackState: vi.fn<typeof import('../../../repositories/track/getTrackState').getTrackState>(),
         setTrackState: vi.fn<typeof import('../../../repositories/track/setTrackState').setTrackState>(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(
         takeLaneStoreValue: { value: { lanes: [] } },
         takeLaneStoreSet: vi.fn<typeof import('#/modules/Arrangement/stores/takeLaneStore').takeLaneStore.set>(),
         activeRecordingRef: { current: ['c1'] },
+        commitRecording: vi.fn<(clip: unknown) => Promise<void>>(() => Promise.resolve()),
     })
 );
 
@@ -53,6 +55,10 @@ vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
 
 vi.mock('../../../stores/activeRecordingRef', () => ({
     activeRecordingRef: mocks.activeRecordingRef,
+}));
+
+vi.mock('../commitRecording', () => ({
+    commitRecording: mocks.commitRecording,
 }));
 
 describe('stopRecording', () => {

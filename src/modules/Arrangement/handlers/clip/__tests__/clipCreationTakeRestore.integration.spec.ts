@@ -1,0 +1,388 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    executeAppActionBatch,
+    redo,
+    registerProductionCommandHandlers,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { removeClip } from '../../../useCases/clip/removeClip';
+
+const UNDO_SESSION_KEY = 'sourdaw-undo-session';
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
+
+const mocks = vi.hoisted(() => ({ failPostCommitStep: false }));
+
+// `executeAppAction` runs this after the storage commit and turns a throw from it into
+// an `AppActionCommittedError`. That is the same committed outcome a failing post-write
+// observer, macro recording or handler effect produces, and the one `executeRedo`'s
+// committed branch has to handle: the write it reports on already landed. The real clear
+// runs otherwise.
+vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/stores')>();
+    return {
+        ...actual,
+        clearSemanticContext: (): void => {
+            if (mocks.failPostCommitStep) {
+                throw new Error('post-commit step failed');
+            }
+            actual.clearSemanticContext();
+        },
+    };
+});
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+
+/** One redo whose post-commit step fails, which reports as a committed error: the
+ *  replayed write landed and the entry may never be re-applied. */
+async function redoWithFailingPostCommitStep(): Promise<void> {
+    mocks.failPostCommitStep = true;
+    try {
+        // `AppActionCommittedError`'s own wording, so the case proves the replay took the
+        // committed branch rather than any other refusal.
+        await expect(redo()).rejects.toThrow(/Action committed but post-commit processing failed: addClip/);
+    } finally {
+        mocks.failPostCommitStep = false;
+    }
+}
+
+/** The take ids the entry at the head of the redo stack would restore. */
+function capturedRetiredTakeIdsAtFutureHead(): string[] {
+    const entry = undoHistoryStore.value?.future.at(0);
+    if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'discardDuplicatedClip') {
+        throw new Error('expected the discard entry at the head of the redo stack');
+    }
+    return (entry.inverseAction.payload.retiredTakeLanes ?? []).flatMap((capture) => capture.retiredTakeIds ?? []);
+}
+
+/** The production boot sequence: register every handler map, then hydrate the undo
+ *  stacks from the session mirror. Re-running it is exactly what a reload does. */
+function registerAndHydrateProductionHandlers(): void {
+    clearHandlerRegistry();
+    registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+}
+
+function clipIds(): string[] {
+    return (trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id);
+}
+
+function takeIdsInLiveLanes(): string[] {
+    return (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.id));
+}
+
+/** A take naming the clip, projected into the lane with no local undo entry —
+ *  the same shape a collaborator's or an unrecorded write has. */
+function projectTakeOntoClip(clipId: string): string {
+    const take = createTake(clipId, `Projected take on ${clipId}`, 0, 4);
+    const lane: TakeLane = { ...createTakeLane('track-1'), takes: [take] };
+    takeLaneStore.set({ lanes: [lane] });
+    flushAutomergeStorageWrites();
+    return take.id;
+}
+
+async function createClip(action: Parameters<typeof executeAppAction>[0]): Promise<void> {
+    await executeAppAction(action, { source: 'prompt' });
+    flushAutomergeStorageWrites();
+}
+
+/** The mirror flush is a microtask behind the stacks' own write; wait for the
+ *  shape the reload has to read rather than for any mirror at all. */
+async function waitForMirrorStacks(past: number, future: number): Promise<void> {
+    await vi.waitFor(() => {
+        const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        expect(raw).not.toBeNull();
+        const parsed = JSON.parse(raw ?? '{}') as { past?: unknown[]; future?: unknown[] };
+        expect(parsed.past).toHaveLength(past);
+        expect(parsed.future).toHaveLength(future);
+    });
+}
+
+describe('clip-creation take restore', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('clip creation take restore integration');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+        registerAndHydrateProductionHandlers();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        const clip = ClipDummy.create({ id: 'clip-source', startBeat: 0, endBeat: 4 });
+        const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it('puts back a take on an added clip when the add is redone', async () => {
+        await createClip({
+            type: 'addClip',
+            payload: {
+                id: 'clip-added',
+                trackId: 'track-1',
+                startBeat: 8,
+                endBeat: 12,
+                name: 'Added',
+                type: 'audio',
+            },
+        });
+        expect(clipIds()).toEqual(['clip-source', 'clip-added']);
+        const takeId = projectTakeOntoClip('clip-added');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-added']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('puts a take back when the redo commits and then throws', async () => {
+        await createClip({
+            type: 'addClip',
+            payload: {
+                id: 'clip-added',
+                trackId: 'track-1',
+                startBeat: 8,
+                endBeat: 12,
+                name: 'Added',
+                type: 'audio',
+            },
+        });
+        const takeId = projectTakeOntoClip('clip-added');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redoWithFailingPostCommitStep();
+
+        // The write landed before the observer failed, so the clip is back — and the take
+        // has to be back with it. A committed outcome reported without the entry's
+        // reconcile leaves the clip's capture unrestored.
+        expect(clipIds()).toEqual(['clip-source', 'clip-added']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('keeps the capture through a redo that commits and then throws', async () => {
+        await createClip({
+            type: 'addClip',
+            payload: {
+                id: 'clip-added',
+                trackId: 'track-1',
+                startBeat: 8,
+                endBeat: 12,
+                name: 'Added',
+                type: 'audio',
+            },
+        });
+        const takeId = projectTakeOntoClip('clip-added');
+
+        await undo();
+        await redoWithFailingPostCommitStep();
+
+        // The next undo captures what the removal actually retires, so a committed redo
+        // that skipped the reconcile would overwrite this entry's capture with the empty
+        // lane the replay left behind — and the take would be gone for good.
+        await undo();
+        expect(capturedRetiredTakeIdsAtFutureHead()).toEqual([takeId]);
+
+        await redo();
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('puts back a take on a duplicated clip when the duplicate is redone', async () => {
+        await createClip({ type: 'duplicateClip', payload: { clipId: 'clip-source', targetClipId: 'clip-copy' } });
+        expect(clipIds()).toEqual(['clip-source', 'clip-copy']);
+        const takeId = projectTakeOntoClip('clip-copy');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-copy']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('puts back a take on a clip duplicated to a destination when that duplicate is redone', async () => {
+        await createClip({
+            type: 'duplicateClipAt',
+            payload: {
+                clipId: 'clip-source',
+                destinationTrackId: 'track-1',
+                startBeat: 8,
+                targetClipId: 'clip-copy-at',
+            },
+        });
+        expect(clipIds()).toEqual(['clip-source', 'clip-copy-at']);
+        const takeId = projectTakeOntoClip('clip-copy-at');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-copy-at']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('puts back a take on a clip duplicated to the next bar when that duplicate is redone', async () => {
+        await createClip({
+            type: 'duplicateClipToNextBar',
+            payload: { clipId: 'clip-source', targetClipId: 'clip-copy-next-bar' },
+        });
+        expect(clipIds()).toEqual(['clip-source', 'clip-copy-next-bar']);
+        const takeId = projectTakeOntoClip('clip-copy-next-bar');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-copy-next-bar']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('puts the take back after a session restore between the undo and the redo', async () => {
+        await createClip({
+            type: 'addClip',
+            payload: {
+                id: 'clip-added',
+                trackId: 'track-1',
+                startBeat: 8,
+                endBeat: 12,
+                name: 'Added',
+                type: 'audio',
+            },
+        });
+        const takeId = projectTakeOntoClip('clip-added');
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+
+        // Flush the session mirror, then hydrate the undo stacks from it the way a
+        // reload does: the discard's capture has to survive the round trip, because
+        // the redo reads it off the entry rather than from a shared object.
+        await waitForMirrorStacks(0, 1);
+        registerAndHydrateProductionHandlers();
+        expect(undoHistoryStore.value?.future.at(0)?.kind).toBe('action');
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-added']);
+        expect(takeIdsInLiveLanes()).toEqual([takeId]);
+    });
+
+    it('does not re-attach the captured lane when the redo re-creates nothing', async () => {
+        await createClip({ type: 'duplicateClip', payload: { clipId: 'clip-source', targetClipId: 'clip-copy' } });
+        projectTakeOntoClip('clip-copy');
+
+        await undo();
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        // The source leaves outside the history — a projection, not an edit — so the
+        // redo's own no-op guard refuses it and the copy is never re-created. The
+        // capture must not put its take back under an identity nothing carries.
+        removeClip('clip-source');
+        flushAutomergeStorageWrites();
+
+        await redo();
+
+        expect(clipIds()).not.toContain('clip-copy');
+        expect(takeIdsInLiveLanes()).toEqual([]);
+    });
+
+    it('restores every capture when a grouped redo replays two creations', async () => {
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'clip-first',
+                        trackId: 'track-1',
+                        startBeat: 8,
+                        endBeat: 12,
+                        name: 'First',
+                        type: 'audio',
+                    },
+                },
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'clip-second',
+                        trackId: 'track-1',
+                        startBeat: 12,
+                        endBeat: 16,
+                        name: 'Second',
+                        type: 'audio',
+                    },
+                },
+            ],
+            { source: 'prompt', groupId: 'grouped-creations' }
+        );
+        expect(result.status).toBe('committed');
+        expect(clipIds()).toEqual(['clip-source', 'clip-first', 'clip-second']);
+
+        // A take on each creation, in one lane, written with no local undo entry.
+        const firstTake = createTake('clip-first', 'First take', 8, 12);
+        const secondTake = createTake('clip-second', 'Second take', 12, 16);
+        takeLaneStore.set({ lanes: [{ ...createTakeLane('track-1'), takes: [firstTake, secondTake] }] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        expect(clipIds()).toEqual(['clip-source']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+
+        await redo();
+
+        expect(clipIds()).toEqual(['clip-source', 'clip-first', 'clip-second']);
+        // Every creation's capture has to be reconciled, not only the first one's.
+        expect(takeIdsInLiveLanes()).toEqual([firstTake.id, secondTake.id]);
+    });
+});

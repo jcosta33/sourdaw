@@ -16,6 +16,7 @@ import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipSchedu
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
+import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 type FakeWorker = {
     onmessage: ((e: MessageEvent<unknown>) => void) | null;
@@ -60,10 +61,12 @@ const harness = vi.hoisted(() => ({
     start_audio_recording: vi.fn<StartAudioRecordingMock>(() => Promise.resolve(true)),
     start_recording: vi.fn<() => TestRecordingClip[]>(() => []),
     stop_audio_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-    stop_recording: vi.fn<() => void>(),
+    stop_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
-    track_store: { value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean }[] } },
+    track_store: {
+        value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean; clips: [] }[] },
+    },
     transport_store: {
         value: null as import('../../stores/transportStore').TransportState | null,
         set: vi.fn(),
@@ -72,6 +75,8 @@ const harness = vi.hoisted(() => ({
         value: { changes: [] as TempoMapStoreState['changes'] },
     },
     update_clip: vi.fn<UpdateClipMock>(),
+    commit_recording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+    stage_recording_take: vi.fn(),
 }));
 
 vi.mock('../../stores/transportStore', () => ({
@@ -98,9 +103,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    removeClip: vi.fn(),
+    discardRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
+    stageRecordingTake: harness.stage_recording_take,
+    commitRecording: harness.commit_recording,
     startRecording: harness.start_recording,
     stopRecording: harness.stop_recording,
     updateClip: harness.update_clip,
@@ -307,6 +314,40 @@ describe('stopPlayheadScheduler', () => {
         stopPlayheadScheduler();
 
         expect(stopAutomationRecording).toHaveBeenCalled();
+    });
+
+    it('registers the teardown punch-out commit on the recording lifecycle so a following stop awaits it', async () => {
+        // Earlier cases can leave a settled commit tracked; drain them so the
+        // only commit the wait below observes is this teardown's.
+        await recordingLifecycle.waitForCommits();
+
+        let release_commit: (() => void) | undefined;
+        const held_commit = new Promise<void>((resolve) => {
+            release_commit = resolve;
+        });
+        harness.stop_recording.mockImplementationOnce(() => held_commit);
+        schedulerSession.punchRecordingActive = true;
+        playheadPositionRef.current = 1.5;
+
+        stopPlayheadScheduler();
+
+        // The ref, not the store, is the live boundary on every teardown route.
+        expect(harness.stop_recording).toHaveBeenCalledWith(1.5);
+
+        // A following user-facing stop waits on the lifecycle. While the
+        // teardown's commit is held that wait must stay pending, or the stop
+        // resolves early and the next Undo consumes the previous history entry
+        // (#4439).
+        let settled = false;
+        const waiting = recordingLifecycle.waitForCommits().then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        release_commit!();
+        await waiting;
+        expect(settled).toBe(true);
     });
 });
 
@@ -520,7 +561,7 @@ describe('playhead scheduler tick', () => {
         expect(afterRestart?.generation).toBeGreaterThan(beforeRestartGeneration ?? 0);
     });
 
-    it('should cache punch-in audio completion through the AudioEngine use case and update the recording clip', async () => {
+    it('should cache punch-in audio completion through the AudioEngine use case and commit the recording clip', async () => {
         const random_uuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
         const recording_clip = {
             id: 'rec-clip-1',
@@ -537,7 +578,7 @@ describe('playhead scheduler tick', () => {
             muted: false,
         };
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,
@@ -567,14 +608,8 @@ describe('playhead scheduler tick', () => {
                 buffer,
                 bufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
-            expect(harness.update_clip).toHaveBeenCalledWith('rec-clip-1', expect.any(Function));
-
-            const update_clip_call = harness.update_clip.mock.calls[0]!;
-            const updated_clip = update_clip_call[1]({
-                ...recording_clip,
-                audioBufferId: 'old-buffer',
-            });
-            expect(updated_clip).toEqual({
+            expect(harness.update_clip).not.toHaveBeenCalled();
+            expect(harness.commit_recording).toHaveBeenCalledWith({
                 ...recording_clip,
                 audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
@@ -586,7 +621,7 @@ describe('playhead scheduler tick', () => {
     it('logs when punch-in audio recording fails to start', async () => {
         const recordingError = new Error('microphone unavailable');
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,
@@ -707,7 +742,7 @@ describe('playhead scheduler tick', () => {
         expect(scheduleMidiNotes).toHaveBeenCalledTimes(2);
     });
 
-    it('waits for punch-out recorder teardown before finalizing the recording', async () => {
+    it('finalizes the recording before awaiting punch-out recorder teardown, so the capture terminal commits the final span', async () => {
         const order: string[] = [];
         let finishRecordingStop: (() => void) | undefined;
         const recordingFlush = new Promise<void>((resolve) => {
@@ -716,9 +751,10 @@ describe('playhead scheduler tick', () => {
         harness.stop_audio_recording.mockReturnValueOnce(recordingFlush);
         harness.stop_recording.mockImplementationOnce(() => {
             order.push('stopRecording');
+            return Promise.resolve();
         });
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,
@@ -743,21 +779,24 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.1;
         await fireTick();
 
-        expect(order).toEqual([]);
+        // The finalizer runs while the recorder teardown is still pending: the
+        // flush invokes the capture terminal that commits the take, and that
+        // commit must observe the punch-out span rather than the anchor.
+        expect(order).toEqual(['stopRecording']);
         expect(harness.stop_audio_recording).toHaveBeenCalledOnce();
         const finish = finishRecordingStop;
         if (!finish) {
             throw new Error('Expected punch-out recorder teardown to be pending');
         }
         finish();
-        await vi.waitFor(() => expect(harness.stop_recording).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(schedulerSession.punchRecordingActive).toBe(false));
         expect(order).toEqual(['stopRecording']);
     });
 
     it('reports a recorder rejection during scheduler teardown without leaving the session active', async () => {
         const recordingError = new Error('scheduler recorder stop failed');
         harness.track_store.value = {
-            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true, clips: [] }],
         };
         harness.transport_store.value = {
             ...playingTransport,

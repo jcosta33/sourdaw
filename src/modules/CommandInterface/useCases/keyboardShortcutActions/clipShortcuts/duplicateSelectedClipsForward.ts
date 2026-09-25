@@ -1,7 +1,45 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, removeClip } from '#/modules/Arrangement/useCases';
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { addClip, captureRetiredTakeLanes, removeClip, restoreTakesForClip } from '#/modules/Arrangement/useCases';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+
+type ClipInfo = {
+    clipId: string;
+    trackId: string;
+    startBeat: number;
+    endBeat: number;
+    name: string;
+    type: 'audio' | 'midi';
+    audioBufferId?: string;
+};
+
+type ClipCopy = {
+    info: ClipInfo;
+    createdId: string;
+};
+
+/** The selected clips with the placement data a copy needs, in track order. */
+function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonly string[]): ClipInfo[] {
+    const selected: ClipInfo[] = [];
+    for (const track of tracks) {
+        for (const clip of track.clips) {
+            if (!selectedClipIds.includes(clip.id)) {
+                continue;
+            }
+            selected.push({
+                clipId: clip.id,
+                trackId: track.id,
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                name: clip.name,
+                type: clip.type,
+                audioBufferId: clip.audioBufferId,
+            });
+        }
+    }
+    return selected;
+}
 
 /**
  * Duplicates all selected clips forward by the selection's total time span (R-B2).
@@ -20,34 +58,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
-    // Collect selected clips with their track info
-    type ClipInfo = {
-        clipId: string;
-        trackId: string;
-        startBeat: number;
-        endBeat: number;
-        name: string;
-        type: 'audio' | 'midi';
-        audioBufferId?: string;
-    };
-
-    const selected: ClipInfo[] = [];
-    for (const track of state.tracks) {
-        for (const clip of track.clips) {
-            if (selectedClipIds.includes(clip.id)) {
-                selected.push({
-                    clipId: clip.id,
-                    trackId: track.id,
-                    startBeat: clip.startBeat,
-                    endBeat: clip.endBeat,
-                    name: clip.name,
-                    type: clip.type,
-                    audioBufferId: clip.audioBufferId,
-                });
-            }
-        }
-    }
-
+    const selected = collectSelectedClips(state.tracks, selectedClipIds);
     if (selected.length === 0) {
         return;
     }
@@ -60,7 +71,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
-    const createdIds: string[] = [];
+    const copies: ClipCopy[] = [];
 
     for (const info of selected) {
         const newClip = addClip({
@@ -71,55 +82,63 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
             type: info.type,
             audioBufferId: info.audioBufferId,
         });
-        if (newClip) {
-            createdIds.push(newClip.id);
-            duplicateClipAutomation(info.clipId, newClip.id);
+        if (!newClip) {
+            continue;
         }
+        copies.push({ info, createdId: newClip.id });
+        duplicateClipAutomation(info.clipId, newClip.id);
     }
 
-    if (createdIds.length === 0) {
+    if (copies.length === 0) {
         return;
     }
 
-    // Capture the exact clips+positions for redo so we don't re-enter pushUndoEntry
-    const redoInfos = selected.map((info, index) => ({
-        trackId: info.trackId,
-        startBeat: info.startBeat + span,
-        endBeat: info.endBeat + span,
-        name: `${info.name} (copy)`,
-        type: info.type,
-        audioBufferId: info.audioBufferId,
-        sourceClipId: info.clipId,
-        createdId: createdIds[index]!,
-    }));
+    const createdIds = copies.map((copy) => copy.createdId);
 
-    // Mutable tracking: redo creates new clip IDs, so undo must reference the latest set.
-    let currentIds = [...createdIds];
+    // Redo re-creates every copy under the id it was minted with, so the takes the
+    // undo retires come back under the same clip identity. Only the undo knows what
+    // the copies are carrying by the time they leave, so it takes the capture.
+    let retiredTakeLanes: readonly RetiredTakeLaneSnapshot[] = [];
 
     pushUndoEntry(
         `Duplicate ${createdIds.length} clip${createdIds.length > 1 ? 's' : ''} forward`,
         () => {
-            for (const id of currentIds) {
+            retiredTakeLanes = captureRetiredTakeLanes(createdIds);
+            for (const id of createdIds) {
                 removeClip(id);
             }
         },
         () => {
-            const newIds: string[] = [];
-            for (const ri of redoInfos) {
+            const recreatedIds = new Set<string>();
+            for (const copy of copies) {
                 const newClip = addClip({
-                    trackId: ri.trackId,
-                    startBeat: ri.startBeat,
-                    endBeat: ri.endBeat,
-                    name: ri.name,
-                    type: ri.type,
-                    audioBufferId: ri.audioBufferId,
+                    id: copy.createdId,
+                    trackId: copy.info.trackId,
+                    startBeat: copy.info.startBeat + span,
+                    endBeat: copy.info.endBeat + span,
+                    name: `${copy.info.name} (copy)`,
+                    type: copy.info.type,
+                    audioBufferId: copy.info.audioBufferId,
                 });
-                if (newClip) {
-                    newIds.push(newClip.id);
-                    duplicateClipAutomation(ri.sourceClipId, newClip.id);
+                if (!newClip) {
+                    continue;
                 }
+                recreatedIds.add(newClip.id);
+                duplicateClipAutomation(copy.info.clipId, newClip.id);
             }
-            currentIds = newIds;
+            if (recreatedIds.size === 0) {
+                // The destination tracks are gone, or the ids are taken: nothing came back,
+                // so putting the capture back would insert lanes for tracks and clips that
+                // exist nowhere. The redo reports that it did not apply instead.
+                return REDO_NOT_APPLIED;
+            }
+            // Only the copies that came back may take their lanes with them: a copy whose
+            // destination track is gone was never re-created, and restoring its capture
+            // would leave a lane nothing owns.
+            restoreTakesForClip(
+                retiredTakeLanes.filter((capture) => capture.lane.takes.some((take) => recreatedIds.has(take.clipId)))
+            );
+            return undefined;
         }
     );
 }

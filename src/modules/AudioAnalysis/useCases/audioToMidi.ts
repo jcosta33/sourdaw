@@ -3,9 +3,11 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { frequencyToMidiNote } from '#/utils/pitch';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
-import { detectOnsets, type DetectedOnset } from './detectOnsets';
+import { detectOnsets, type DetectedOnset, type OnsetDetectionSource } from './detectOnsets';
 import { resolveMidiTrackId } from './resolveMidiTrackId';
 
 export type AudioToMidiOptions = {
@@ -70,13 +72,117 @@ function estimatePitch(data: Float32Array, start: number, length: number, sample
     return sampleRate / bestLag;
 }
 
+type ClipPlaybackFields = {
+    startBeat: number;
+    endBeat: number;
+    audioOffsetBeats?: number;
+    stretchMode?: string;
+    stretchRatio?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+};
+
+type AudibleSourceSpan = {
+    iteration: number;
+    startSec: number;
+    durationSec: number;
+};
+
+type AudibleClipWindow = {
+    clipBeats: number;
+    secondsPerBeat: number;
+    stretchRatio: number;
+    sourcePreRollSec: number;
+    loopLengthBeats: number;
+    spans: AudibleSourceSpan[];
+};
+
+/**
+ * The source spans the offline scheduler would play for this clip: trim, slip,
+ * stretch, and loop, on a flat tempo. Null when the clip has no positive length.
+ */
+function projectAudibleClipWindow(
+    clip: ClipPlaybackFields,
+    tempo: number,
+    bufferDurationSec: number
+): AudibleClipWindow | null {
+    const clipBeats = clip.endBeat - clip.startBeat;
+    if (!Number.isFinite(clipBeats) || clipBeats <= 0) {
+        return null;
+    }
+
+    const secondsPerBeat = 60 / tempo;
+    const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+    const offsetSec = (clip.audioOffsetBeats ?? 0) * secondsPerBeat;
+    const baseBufferOffsetSec = Math.max(0, offsetSec);
+    const sourcePreRollSec = Math.max(0, -offsetSec) / stretchRatio;
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clipBeats,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+
+    const spans: AudibleSourceSpan[] = [];
+    for (
+        let iteration = 0;
+        iteration < loop.iterationCount && iteration * loop.loopLengthBeats < clipBeats;
+        iteration++
+    ) {
+        const remainingBeats = Math.min(loop.loopLengthBeats, clipBeats - iteration * loop.loopLengthBeats);
+        const audibleDestSec = remainingBeats * secondsPerBeat - sourcePreRollSec;
+        if (!(audibleDestSec > 0)) {
+            continue;
+        }
+        const remainingBufferSourceSec = Math.max(0, bufferDurationSec - baseBufferOffsetSec);
+        const sourceDurationSec = Math.min(audibleDestSec * stretchRatio, remainingBufferSourceSec);
+        if (!(sourceDurationSec > 0)) {
+            continue;
+        }
+        spans.push({ iteration, startSec: baseBufferOffsetSec, durationSec: sourceDurationSec });
+    }
+
+    return {
+        clipBeats,
+        secondsPerBeat,
+        stretchRatio,
+        sourcePreRollSec,
+        loopLengthBeats: loop.loopLengthBeats,
+        spans,
+    };
+}
+
+function windowedOnsetSource(buffer: AudioBuffer, startSec: number, durationSec: number): OnsetDetectionSource | null {
+    if (!Number.isFinite(startSec) || !Number.isFinite(durationSec) || durationSec <= 0) {
+        return null;
+    }
+    const channel = buffer.getChannelData(0);
+    const sampleRate = buffer.sampleRate;
+    const startSample = Math.max(0, Math.min(channel.length, Math.floor(startSec * sampleRate)));
+    const endSample = Math.max(
+        startSample,
+        Math.min(channel.length, Math.floor((startSec + durationSec) * sampleRate))
+    );
+    if (endSample <= startSample) {
+        return null;
+    }
+    const samples = channel.subarray(startSample, endSample);
+    return {
+        sampleRate,
+        getChannelData: () => samples,
+    };
+}
+
 function freqToMidiPitch(freq: number): number {
     return Math.round(frequencyToMidiNote(freq));
 }
 
-function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targetPitch: number): DetectedOnset[] {
-    const channelData = buffer.getChannelData(0);
-    const sampleRate = buffer.sampleRate;
+function detectPitchForOnsets(
+    onsets: DetectedOnset[],
+    source: OnsetDetectionSource,
+    targetPitch: number
+): DetectedOnset[] {
+    const channelData = source.getChannelData(0);
+    const sampleRate = source.sampleRate;
     const windowSamples = FRAME_SIZE * 2;
 
     return onsets.map((onset) => {
@@ -125,16 +231,38 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
         }
 
         const tempo = getTransportState()?.tempo ?? DEFAULT_TEMPO_BPM;
-        const beatsPerSecond = tempo / 60;
-        const minIntervalSec = minInterval / beatsPerSecond;
-
-        let onsets = detectOnsets(buffer, sensitivity, minIntervalSec);
-
-        if (mode === 'pitched') {
-            onsets = detectPitchForOnsets(onsets, buffer, targetPitch);
+        const audible = projectAudibleClipWindow(clip, tempo, buffer.duration);
+        if (!audible) {
+            return false;
         }
 
-        if (onsets.length === 0) {
+        const minIntervalSec = minInterval * audible.secondsPerBeat;
+        const transcribed: Array<{ startBeat: number; amplitude: number; pitch?: number }> = [];
+
+        for (const span of audible.spans) {
+            const source = windowedOnsetSource(buffer, span.startSec, span.durationSec);
+            if (!source) {
+                continue;
+            }
+
+            let onsets = detectOnsets(source, sensitivity, minIntervalSec);
+            if (mode === 'pitched') {
+                onsets = detectPitchForOnsets(onsets, source, targetPitch);
+            }
+
+            for (const onset of onsets) {
+                const noteStartBeat =
+                    span.iteration * audible.loopLengthBeats +
+                    audible.sourcePreRollSec / audible.secondsPerBeat +
+                    onset.timeSec / audible.stretchRatio / audible.secondsPerBeat;
+                if (noteStartBeat < 0 || noteStartBeat >= audible.clipBeats) {
+                    continue;
+                }
+                transcribed.push({ startBeat: noteStartBeat, amplitude: onset.amplitude, pitch: onset.pitch });
+            }
+        }
+
+        if (transcribed.length === 0) {
             return false;
         }
 
@@ -159,17 +287,16 @@ export function audioToMidi(options: AudioToMidiOptions): boolean {
         }
 
         let maxAmplitude = 1e-8;
-        for (const output of onsets) {
+        for (const output of transcribed) {
             if (output.amplitude > maxAmplitude) {
                 maxAmplitude = output.amplitude;
             }
         }
 
-        for (let index = 0; index < onsets.length; index++) {
-            const onset = onsets[index]!;
-            const startBeat = onset.timeSec * beatsPerSecond;
-            const nextOnsetBeat =
-                index < onsets.length - 1 ? onsets[index + 1]!.timeSec * beatsPerSecond : startBeat + 1;
+        for (let index = 0; index < transcribed.length; index++) {
+            const onset = transcribed[index]!;
+            const startBeat = onset.startBeat;
+            const nextOnsetBeat = index < transcribed.length - 1 ? transcribed[index + 1]!.startBeat : startBeat + 1;
             const duration = Math.max(minInterval, (nextOnsetBeat - startBeat) * 0.9);
             const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
             const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;

@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
         warpState: null,
     })),
     applyClipAutomationLaneTransition: vi.fn(() => true),
+    restoreTakesForClip: vi.fn(),
+    removeTakesForClips: vi.fn(),
+    takeLaneStore: { value: null as { lanes: readonly unknown[] } | null },
     midiStore: { value: null as FakeMidiState | null },
 }));
 
@@ -54,6 +57,18 @@ vi.mock('../../../stores/clipSatelliteState', () => ({
 
 vi.mock('../../../useCases/clip/applyClipAutomationLaneTransition', () => ({
     applyClipAutomationLaneTransition: mocks.applyClipAutomationLaneTransition,
+}));
+
+vi.mock('../../../useCases/comping/restoreTakesForClip', () => ({
+    restoreTakesForClip: mocks.restoreTakesForClip,
+}));
+
+vi.mock('../../../useCases/comping/removeTakesForClips', () => ({
+    removeTakesForClips: mocks.removeTakesForClips,
+}));
+
+vi.mock('../../../stores/takeLaneStore', () => ({
+    takeLaneStore: mocks.takeLaneStore,
 }));
 
 /**
@@ -1480,6 +1495,89 @@ describe('handleRestoreTrackClipStates', () => {
             });
 
             expect(isNoop).toBe(true);
+        });
+    });
+
+    describe('retired take lanes', () => {
+        const retiredTakeLanes = [
+            {
+                laneIndex: 0,
+                lane: {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-1', clipId: 'c2', name: 'Take 1', startBeat: 0, endBeat: 4, selected: false }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+                },
+                retiredTakeIds: ['take-1'],
+            },
+        ];
+
+        beforeEach(() => {
+            mocks.takeLaneStore.value = null;
+            // The real `removeTakesForClips` returns the capture it retired; the
+            // redo leg hands that return value on, so the mock owes its contract.
+            mocks.removeTakesForClips.mockReturnValue([]);
+        });
+
+        it('restores the captured lanes when the pre-removal snapshot is the replacement', () => {
+            const track = liveTrack('t1', []);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', [])],
+                    replacement: [snapshotFor('t1', ['c2'], { retiredTakeLanes })],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.restoreTakesForClip).toHaveBeenCalledTimes(1);
+            expect(mocks.restoreTakesForClip).toHaveBeenCalledWith(retiredTakeLanes);
+            expect(mocks.removeTakesForClips).not.toHaveBeenCalled();
+        });
+
+        // The empty-capture variant of this route — a projection emptying the lane before
+        // the redo — is the same code path, and its real store outcome is pinned with the
+        // real take-lane use cases by the cut route's "does not resurrect a take a
+        // projection removed before the redo".
+        it('re-retires the removed clips when the post-removal snapshot is the replacement', () => {
+            const track = liveTrack('t1', ['c2']);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+            mocks.takeLaneStore.value = { lanes: [structuredClone(retiredTakeLanes[0]!.lane)] };
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c2'], { retiredTakeLanes })],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(['c2']);
+            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
+        });
+
+        it('does not retire takes for a restore whose snapshot carries no take-lane capture', () => {
+            const track = liveTrack('t1', ['c1']);
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'])],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            // The clip-replacement routes (flatten, paste, consolidate) drop clips
+            // without retiring takes, so a restore that carries no take-lane capture
+            // must not start retiring them (#4518).
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeTakesForClips).not.toHaveBeenCalled();
+            expect(mocks.restoreTakesForClip).not.toHaveBeenCalled();
         });
     });
 

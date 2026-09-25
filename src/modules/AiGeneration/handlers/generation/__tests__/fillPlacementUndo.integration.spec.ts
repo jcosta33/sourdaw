@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultTrackState, markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { defaultTrackState, markerStore, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Command/stores';
@@ -68,6 +71,10 @@ function placedFillNotes(): { clip: Track['clips'][number]; starts: number[]; en
         starts: notes.map((note) => clip.startBeat + note.startBeat),
         ends: notes.map((note) => clip.startBeat + note.startBeat + note.duration),
     };
+}
+
+function takeIdsInLiveLanes(): string[] {
+    return (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes.map((take) => take.id));
 }
 
 describe('fill generation placement, undo and redo (#3765)', () => {
@@ -150,6 +157,38 @@ describe('fill generation placement, undo and redo (#3765)', () => {
         const undoneAgain = await undo();
         expect(undoneAgain.headConsumed).toBe(true);
         expect(drumTrackClips()).toHaveLength(0);
+    });
+
+    it('keeps a take recorded on a placed fill across undo and redo', async () => {
+        await executeAppAction({ type: 'generateFill', payload: { atBeat: 14, durationBeats: 2 } });
+        const clip = drumTrackClips()[0];
+        if (!clip) {
+            throw new Error('Expected the fill clip to be placed on the drum track');
+        }
+
+        // A take naming the placed clip, projected into the lane with no local
+        // undo entry — the same shape a collaborator's write has. The fill's undo
+        // discards the clip through the shared duplicated-clip inverse, and its
+        // redo re-creates the same clip id, so the take has to come back with it.
+        const take = {
+            id: 'take-on-fill',
+            clipId: clip.id,
+            name: 'Take on fill',
+            startBeat: clip.startBeat,
+            endBeat: clip.endBeat,
+            selected: false,
+        };
+        takeLaneStore.set({ lanes: [{ id: 'lane-1', trackId: 't-drums', takes: [take], activeCompRegions: [] }] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        expect(drumTrackClips()).toHaveLength(0);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await redo();
+
+        expect(drumTrackClips().map((candidate) => candidate.id)).toEqual([clip.id]);
+        expect(takeIdsInLiveLanes()).toEqual([take.id]);
     });
 
     it('places transition fills at every section boundary and undoes them as one step', async () => {

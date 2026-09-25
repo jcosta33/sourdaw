@@ -3,11 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { shellPort } from '../deliverPullRequest';
 import { REVIEWER_BOT_NODE_ID } from '../githubAppIdentity';
 
+/**
+ * The orchestrator acceptance review is no longer part of the review-state read (#4584): the
+ * reviewer publication is the delivery authorization, so this spec pins only the reviewer
+ * approval-on-head ordering that remains — connection order is authoritative even when two
+ * same-head reviews share a timestamp, a dismissed or wrong-head reviewer approval is never
+ * resurrected, and a review mutation between the two complete scans is refused.
+ */
 const head = 'a'.repeat(40);
 const userId = 'MDQ6VXNlcjg5NzgyNzA=';
 function review(id: string, actorId: string, state = 'APPROVED', commit = head, actorType = 'User') {
     return {
         id,
+        databaseId: 1,
         state,
         submittedAt: '2026-09-09T00:00:00Z',
         author: { id: actorId, login: 'display-only', __typename: actorType },
@@ -37,25 +45,26 @@ function inspect(reviews: ReturnType<typeof review>[]) {
     }).reviewState(1, head);
 }
 
-describe('orchestrator review ordering', () => {
-    it('requires the pinned user acceptance after the independent bot in connection order', () => {
-        expect(inspect([reviewer(), acceptance()])).toMatchObject({
+describe('reviewer review ordering', () => {
+    it('keeps the reviewer approval on the head regardless of a later orchestrator acceptance', () => {
+        expect(inspect([reviewer(), acceptance()])).toEqual({
             latestReviewerStateOnHead: 'APPROVED',
-            orchestratorAcceptedAfterReviewer: true,
+            latestReviewerReviewDatabaseId: 1,
+            unresolvedThreads: 0,
         });
-        expect(inspect([acceptance(), reviewer()])).toMatchObject({ orchestratorAcceptedAfterReviewer: false });
     });
+
     it.each([
         [reviewer()],
         [reviewer(), review('wrong-user', 'other')],
         [reviewer(), review('wrong-type', userId, 'APPROVED', head, 'Bot')],
-        [reviewer(), review('stale', userId, 'APPROVED', 'b'.repeat(40))],
         [reviewer(), acceptance(), review('dismissed', userId, 'DISMISSED')],
         [reviewer(), acceptance(), review('rejected', userId, 'CHANGES_REQUESTED')],
         [reviewer(), acceptance(), review('new-stale', userId, 'APPROVED', 'b'.repeat(40))],
-    ])('refuses missing, stale, impersonated, or superseded acceptance %#', (...reviews) => {
-        expect(inspect(reviews)).toMatchObject({ orchestratorAcceptedAfterReviewer: false });
+    ])('keeps the reviewer approval or refuses a missing one %#', (...reviews) => {
+        expect(inspect(reviews).latestReviewerStateOnHead).toBe('APPROVED');
     });
+
     it('does not resurrect a dismissed or wrong-head reviewer approval', () => {
         expect(
             inspect([reviewer(), acceptance(), review('dismissed', REVIEWER_BOT_NODE_ID, 'DISMISSED', head, 'Bot')])
@@ -69,6 +78,7 @@ describe('orchestrator review ordering', () => {
             ]).latestReviewerStateOnHead
         ).toBeNull();
     });
+
     it('refuses review mutation between complete scans', () => {
         let calls = 0;
         const port = shellPort('jcosta33/sourdaw', {

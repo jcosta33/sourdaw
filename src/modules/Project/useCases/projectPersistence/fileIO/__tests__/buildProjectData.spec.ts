@@ -31,6 +31,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: { value: { layers: [] } },
     vcaGroupStore: { value: { groups: [] } },
     gainEnvelopeStore: { value: { envelopes: {} } },
+    warpStateStore: { value: { states: {} } },
 }));
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: { lanes: [] } },

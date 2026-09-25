@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { addClip } from '../../useCases/clip/addClip';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
@@ -75,6 +75,10 @@ export const handleDrawClip = createHandler<'drawClip'>({
     describe: (action) => {
         const state = getDrawClipState(action);
         const plan = appliedRipplePlan(state);
+        // Filled in place by `discardDrawnClip` at undo time and read by the redo:
+        // a take naming the drawn clip can land after the draw, so only the undo can
+        // capture what removing the clip retires.
+        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
         return {
             label: plan ? 'Draw clip (ripple)' : 'Draw clip',
             inverseAction: {
@@ -83,6 +87,7 @@ export const handleDrawClip = createHandler<'drawClip'>({
                     clipId: state.clipId,
                     trackId: action.payload.trackId,
                     ripplePlan: plan ? { shiftedClips: structuredClone(plan.shiftedClips) } : null,
+                    retiredTakeLanes,
                 },
             },
             // Redo replays the captured plan through `restoreDrawnClip` rather
@@ -100,6 +105,7 @@ export const handleDrawClip = createHandler<'drawClip'>({
                     name: action.payload.name,
                     type: action.payload.type,
                     ripplePlan: plan ? { shiftedClips: structuredClone(plan.shiftedClips) } : null,
+                    retiredTakeLanes,
                 },
             },
         };

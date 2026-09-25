@@ -1,19 +1,24 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { createWarpMarker, defaultWarpState, type WarpState } from '../../models/WarpMarker';
+import { createWarpMarker, defaultWarpState } from '../../models/WarpMarker';
 import {
+    __resetWarpStatesForTest,
     addWarpMarker,
+    getStoredWarpState,
     getWarpState,
     hasNonDefaultWarpState,
     isDefaultWarpState,
     removeWarpState,
+    sanitizeClipWarpStates,
+    setAllWarpStates,
     setWarpState,
+    warpStateStore,
     warpStates,
 } from '../warpStates';
 
 describe('warpStates', () => {
     beforeEach(() => {
-        warpStates.clear();
+        __resetWarpStatesForTest();
     });
 
     it('setWarpState replaces the state for a clip', () => {
@@ -25,11 +30,12 @@ describe('warpStates', () => {
     it('removeWarpState deletes the entry, falling back to the default afterwards', () => {
         addWarpMarker('c1', 1, 1.2);
         expect(getWarpState('c1').markers).toHaveLength(1);
+        expect(warpStates.size).toBe(1);
 
         removeWarpState('c1');
 
-        // The map entry is gone — getWarpState now returns the shared default.
         expect(warpStates.has('c1')).toBe(false);
+        expect(warpStates.size).toBe(0);
         expect(getWarpState('c1')).toBe(defaultWarpState);
     });
 
@@ -49,6 +55,40 @@ describe('warpStates', () => {
         expect(getWarpState('c1').markers).toHaveLength(1);
     });
 
+    it('stores a default warp state as absent', () => {
+        setWarpState('c1', { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null });
+        expect(getStoredWarpState('c1')).toBeUndefined();
+        expect(hasNonDefaultWarpState('c1')).toBe(false);
+    });
+
+    it('round-trips non-default markers through sanitize and setAllWarpStates', () => {
+        addWarpMarker('clip-a', 1, 1.5);
+        const built = Object.entries(warpStateStore.value?.states ?? {}).map(([clipId, state]) => ({
+            clipId,
+            ...state,
+        }));
+
+        __resetWarpStatesForTest();
+        addWarpMarker('stale', 9, 9);
+        expect(hasNonDefaultWarpState('stale')).toBe(true);
+
+        setAllWarpStates(sanitizeClipWarpStates(built));
+        expect(getWarpState('clip-a').markers).toHaveLength(1);
+        expect(getWarpState('clip-a').markers[0]?.originalBeat).toBe(1);
+        expect(getStoredWarpState('stale')).toBeUndefined();
+    });
+
+    it('hydrates an absent or empty field to empty and drops prior in-memory markers', () => {
+        addWarpMarker('prior', 2, 2.5);
+        setAllWarpStates(sanitizeClipWarpStates(undefined));
+        expect(getStoredWarpState('prior')).toBeUndefined();
+        expect(Object.keys(warpStateStore.value?.states ?? {})).toEqual([]);
+
+        addWarpMarker('prior', 2, 2.5);
+        setAllWarpStates(sanitizeClipWarpStates([]));
+        expect(getStoredWarpState('prior')).toBeUndefined();
+    });
+
     describe('isDefaultWarpState', () => {
         it('is true for a state value-identical to defaultWarpState', () => {
             expect(isDefaultWarpState({ ...defaultWarpState })).toBe(true);
@@ -57,10 +97,10 @@ describe('warpStates', () => {
             ).toBe(true);
         });
 
-        it.each<[string, Partial<WarpState>]>([
+        it.each([
             ['enabled true', { enabled: true }],
             ['a marker present', { markers: [createWarpMarker(1, 1.2)] }],
-            ['a non-default stretch mode', { stretchMode: 'complex' }],
+            ['a non-default stretch mode', { stretchMode: 'complex' as const }],
             ['a non-null originalTempo', { originalTempo: 120 }],
         ])('is false when the state differs by %s', (_label, overrides) => {
             expect(isDefaultWarpState({ ...defaultWarpState, ...overrides })).toBe(false);
@@ -68,17 +108,14 @@ describe('warpStates', () => {
     });
 
     describe('hasNonDefaultWarpState', () => {
-        it('is false for a clip with no map entry', () => {
+        it('is false for a clip with no store entry', () => {
             expect(hasNonDefaultWarpState('missing-clip')).toBe(false);
         });
 
-        it('is false for a clip whose entry is value-identical to default (the presence trap)', () => {
-            // Mirrors what a write path like `setStretchMode` produces when it
-            // writes the mode a clip already has: a map entry exists, but it
-            // carries no state a user would recognize as "satellite state".
+        it('is false after writing a value-identical default (stored as absent)', () => {
             setWarpState('c1', { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null });
 
-            expect(warpStates.has('c1')).toBe(true);
+            expect(warpStates.has('c1')).toBe(false);
             expect(hasNonDefaultWarpState('c1')).toBe(false);
         });
 

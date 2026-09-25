@@ -27,6 +27,23 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             stretchMode: 'complex',
             originalTempo: null,
         },
+    getStoredWarpState: (clipId: string) => mocks.warpStates.get(clipId),
+    setWarpState: (
+        clipId: string,
+        state: {
+            enabled: boolean;
+            markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
+            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            originalTempo: number | null;
+        }
+    ) => {
+        mocks.warpStates.set(clipId, state);
+    },
+    warpStateStore: {
+        get value() {
+            return { states: Object.fromEntries(mocks.warpStates) };
+        },
+    },
 }));
 
 import { removeMarker } from '../removeMarker';

@@ -6,6 +6,7 @@ import {
     takeLaneStore,
     trackStore,
     vcaGroupStore,
+    warpStateStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
@@ -299,6 +300,9 @@ export async function buildProjectData({
         vcaGroups: structuredClone(vcaGroupStore.value?.groups ?? []),
         gainEnvelopes: Object.values(gainEnvelopeStore.value?.envelopes ?? {}).map((envelope) =>
             structuredClone(envelope)
+        ),
+        warpStates: Object.entries(warpStateStore.value?.states ?? {}).map(([clipId, state]) =>
+            structuredClone({ clipId, ...state })
         ),
         modulation: { modulators: structuredClone(modulationStore.value?.modulators ?? []) },
         cvGate: cvGateState,

@@ -122,8 +122,13 @@ export const RELEASE_PROOF_ARCHIVE_LIMITS = {
 type JsonRecord = Record<string, unknown>;
 
 class FileReadLimitError extends Error {
-    constructor(readonly kind: 'file' | 'aggregate') {
+    // An explicit field, not a parameter property: Node runs this script with type
+    // stripping only, which erases the type but cannot synthesise the field
+    // assignment a parameter property implies (#4503).
+    readonly kind: 'file' | 'aggregate';
+    constructor(kind: 'file' | 'aggregate') {
         super();
+        this.kind = kind;
     }
 }
 

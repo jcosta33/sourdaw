@@ -69,6 +69,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
+    setWarpState: vi.fn(),
+    getStoredWarpState: vi.fn(),
+    warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
     trackStore: { value: null },
     defaultTrackState: { tracks: [] },
     // A barrel factory replaces the whole module, so every member anything in

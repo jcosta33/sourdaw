@@ -1,8 +1,8 @@
-import { getWarpState, warpStates } from '../../stores/warpStates';
+import { getWarpState, setWarpState } from '../../stores/warpStates';
 
 export function removeWarpMarker(clipId: string, markerId: string): void {
     const current = getWarpState(clipId);
-    warpStates.set(clipId, {
+    setWarpState(clipId, {
         ...current,
         markers: current.markers.filter((message) => message.id !== markerId),
     });

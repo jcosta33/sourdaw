@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    acceptedFindings,
+    appendReviewDossierEvents,
     assembleReviewDossier,
-    completedStances,
-    discardedDispositions,
+    authorizedEvidenceDigest,
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
@@ -14,6 +13,12 @@ import {
     parseReviewDossierInput,
     parseReviewStancesRecord,
 } from '../reviewDossierPublication.ts';
+import {
+    acceptedFindings,
+    completedStances,
+    deliveryAuthorization,
+    discardedDispositions,
+} from '../reviewDossierViews.ts';
 
 import type { ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewDossierInput, ReviewDossierStanceInput } from '../reviewDossierPublication.ts';
@@ -989,5 +994,107 @@ describe('buildReviewDossier', () => {
 
     it.each(BUILD_REFUSALS)('refuses $label', ({ run, message }) => {
         expect(run).toThrow(message);
+    });
+});
+
+describe('delivery authorization binding (#3376, spec #3367 AC-005)', () => {
+    const REVIEW_ID = 770;
+
+    function publishedDossier(): ReviewDossier {
+        const base = assembleReviewDossier({
+            plan: PLAN,
+            events: COMPLETED_STANCES,
+            discarded: [],
+            evidence: EVIDENCE,
+            limitations: [LIMITATION],
+            recommendation: 'approve',
+        });
+        return appendReviewDossierEvents(base, [{ kind: 'review-published', reviewId: REVIEW_ID }]);
+    }
+
+    function authorizedDossier(published: ReviewDossier, overrides: Record<string, unknown> = {}): ReviewDossier {
+        return appendReviewDossierEvents(published, [
+            {
+                kind: 'delivery-authorized',
+                reviewId: REVIEW_ID,
+                approvalReviewId: REVIEW_ID,
+                evidenceManifestDigest: published.dossierDigest,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                ...overrides,
+            },
+        ]);
+    }
+
+    it('round-trips a recorded authorization and recovers the acceptance-time digest', () => {
+        const published = publishedDossier();
+        const authorized = authorizedDossier(published);
+        const parsed = parseReviewDossier(JSON.parse(serializeReviewDossier(authorized)));
+
+        expect(deliveryAuthorization(parsed)).toEqual({
+            reviewId: REVIEW_ID,
+            approvalReviewId: REVIEW_ID,
+            evidenceManifestDigest: published.dossierDigest,
+            unresolvedThreads: 0,
+            intent: 'deliver',
+        });
+        expect(authorizedEvidenceDigest(parsed)).toBe(published.dossierDigest);
+        expect(parsed.dossierDigest).not.toBe(published.dossierDigest);
+    });
+
+    it('returns the record digest unchanged while no authorization is recorded', () => {
+        const published = publishedDossier();
+
+        expect(authorizedEvidenceDigest(published)).toBe(published.dossierDigest);
+        expect(deliveryAuthorization(published)).toBeUndefined();
+    });
+
+    it('refuses a second delivery authorization', () => {
+        const published = publishedDossier();
+        const authorized = authorizedDossier(published);
+
+        expect(() =>
+            appendReviewDossierEvents(authorized, [
+                {
+                    kind: 'delivery-authorized',
+                    reviewId: 771,
+                    approvalReviewId: REVIEW_ID,
+                    evidenceManifestDigest: published.dossierDigest,
+                    unresolvedThreads: 0,
+                    intent: 'deliver',
+                },
+            ])
+        ).toThrow(/more than one delivery authorization: 770 and 771/);
+    });
+
+    it('refuses a delivery authorization recorded before any publication', () => {
+        const base = assembleReviewDossier({
+            plan: PLAN,
+            events: COMPLETED_STANCES,
+            discarded: [],
+            evidence: EVIDENCE,
+            limitations: [LIMITATION],
+            recommendation: 'approve',
+        });
+
+        expect(() => authorizedDossier(base)).toThrow(/without a recorded publication/);
+    });
+
+    it('refuses a delivery authorization binding an approval other than the recorded publication', () => {
+        const published = publishedDossier();
+
+        expect(() => authorizedDossier(published, { approvalReviewId: 999 })).toThrow(
+            /binds approval 999, not the recorded publication 770/
+        );
+    });
+
+    it.each([
+        ['a non-hex evidence manifest digest', { evidenceManifestDigest: 'not-a-digest' }],
+        ['a foreign intent', { intent: 'publish' }],
+        ['a negative unresolved thread count', { unresolvedThreads: -1 }],
+    ])('refuses %s', (_label, override) => {
+        const published = publishedDossier();
+
+        expect(() => authorizedDossier(published, override)).toThrow();
     });
 });

@@ -15,12 +15,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, PR_STATE } from './prContract.ts';
-import {
-    readBundleGeneratedSet,
-    readReviewBundleContext,
-    reviewBundlePath,
-    type ReviewBundleContext,
-} from './prepareReview.ts';
+import { reviewBundlePath, type ReviewBundleContext } from './prepareReview.ts';
 import {
     type PullRequestRemoteMutationBoundary,
     type PullRequestReviewPublicationMutationBoundary,
@@ -38,6 +33,12 @@ import {
     type ReviewState,
 } from './pullRequestReviewState.ts';
 import {
+    readPublicReviewComments,
+    readPublicReviews,
+    type PublicReview,
+    type PublicReviewComment,
+} from './reconstructReviewRounds.ts';
+import {
     assertSameApprovalContext,
     publicationApprovalContext,
     readLiveApprovalContext,
@@ -48,14 +49,31 @@ import {
     assertPublicationEvidence,
     parseAcceptanceDocument,
     parseReviewDocument,
+    type AcceptanceDocument,
     type ReviewComment,
     type ReviewDocument,
     type ReviewEvent,
 } from './reviewDocumentParser.ts';
-import { assertPublicationSafeEvidence } from './reviewDossier.ts';
-import { buildReviewDossier, readDossierStanceDraws, recordedReviewStances } from './reviewDossierPublication.ts';
+import { readDossierStanceDraws } from './reviewDossierPublication.ts';
 import { assertReviewerModelDiversity, type AuthorshipLabel } from './reviewerModelDiversity.ts';
-import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
+import {
+    assertAcceptanceAuthorization,
+    assertAcceptanceDossierAccounting,
+    prepareReviewDossierPublication,
+    recordAcceptanceAuthorization,
+    recordedPublicationReplay,
+    recordPublicationBindings,
+} from './reviewPublicationBinding.ts';
+import {
+    readRemoteReview,
+    readReviewComments,
+    type PublishedReviewComment,
+    type RemotePublishedReview,
+} from './reviewPublicationRemoteInspection.ts';
+
+import type { ReviewReassessment } from './reviewRoundEscalation.ts';
+
+export type { PublishedReviewComment } from './reviewPublicationRemoteInspection.ts';
 
 export { renderReviewDocumentBody } from './reviewApprovalFormat.ts';
 export {
@@ -96,6 +114,22 @@ export type PublishReviewPort = {
         body: string;
         comments: ReviewComment[];
     }) => { id: number; actorNodeId: string; login: string; actorType?: string; commitId?: string };
+    /**
+     * The public comments one posted review carries, with their database ids, in creation order
+     * (#3375, spec #3367 AC-004). Needed only when a bundle dossier awaits its publication binding.
+     */
+    reviewComments?: (number: number, reviewId: number) => PublishedReviewComment[];
+    /**
+     * One already-posted review by id, or undefined when no such review stands. Needed only when a
+     * bundle dossier records a publication and the run must replay it instead of re-posting.
+     */
+    remoteReview?: (number: number, reviewId: number) => RemotePublishedReview | undefined;
+    /**
+     * The pull request's whole public review history and review comments, needed to count reviewer
+     * request-changes rounds for the escalation gate (#4584).
+     */
+    publicReviews?: (number: number) => PublicReview[];
+    publicReviewComments?: (number: number) => PublicReviewComment[];
     log: (message: string) => void;
 };
 
@@ -168,131 +202,9 @@ export type PreparedReviewPublication = {
     document: ReviewDocument;
     payloadDigest: string;
     approvalContext?: ReviewBundleContext;
+    /** The escalation reassessment the dossier gate consumed, when the round threshold required one. */
+    reviewReassessment?: ReviewReassessment;
 };
-
-const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
-const REVIEW_STANCES_NAME = 'stances.json';
-const REVIEW_DOSSIER_NAME = 'dossier.json';
-const REVIEW_DISCARDED_NAME = 'discarded.json';
-
-type BundleFileRead = { present: true; value: unknown } | { present: false };
-
-/**
- * The publication port signals an absent bundle file by throwing, and a file that does not parse
- * arrives the same way. The port's own existence probe tells the two apart, so a file that is
- * present but unparseable is refused here instead of being mistaken for an absent legacy artifact.
- */
-function readBundleFile(port: PublishReviewPort, path: string): BundleFileRead {
-    try {
-        return { present: true, value: port.readReviewJson(path) };
-    } catch {
-        if (port.bundleFileExists(path)) {
-            fail(`review bundle file at ${path} does not parse`);
-        }
-        return { present: false };
-    }
-}
-
-function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: ReviewRiskPlan, bundle: string): void {
-    let manifest: ReviewBundleContext;
-    try {
-        manifest = readReviewBundleContext(bundle);
-    } catch {
-        fail(`review risk plan has no readable bundle manifest at ${join(bundle, 'manifest.json')}`);
-    }
-    if (plan.pr !== number) {
-        fail(`review risk plan pr ${plan.pr} does not match pull request ${number}`);
-    }
-    if (plan.headSha !== head) {
-        fail(`review risk plan headSha ${plan.headSha} does not match the live head ${head}`);
-    }
-    if (plan.pr !== manifest.pr) {
-        fail(`review risk plan pr ${plan.pr} does not match the bundle manifest pr ${manifest.pr}`);
-    }
-    if (plan.headSha !== manifest.headSha) {
-        fail(`review risk plan headSha ${plan.headSha} does not match the bundle manifest headSha ${manifest.headSha}`);
-    }
-    if (plan.baseSha !== manifest.baseSha) {
-        fail(`review risk plan baseSha ${plan.baseSha} does not match the bundle manifest baseSha ${manifest.baseSha}`);
-    }
-}
-
-/**
- * Approval claims are published evidence too, so they carry the same publication-safe shapes the
- * durable dossier enforces. The bounded review body and inline comments are deliberately excluded:
- * both are publication-fixed shapes with their own limits.
- */
-function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
-    for (const [index, claim] of (document.evidence?.claims ?? []).entries()) {
-        assertPublicationSafeEvidence(`review evidence claim[${index}].observable`, [claim.observable]);
-        assertPublicationSafeEvidence(`review evidence claim[${index}].verification`, [claim.verification]);
-        assertPublicationSafeEvidence(`review evidence claim[${index}].observed`, [claim.observed]);
-    }
-}
-
-function persistCanonicalReviewDossier(
-    publication: ReturnType<typeof buildReviewDossier>,
-    bundle: string,
-    port: PublishReviewPort
-): void {
-    if (publication.fromPersisted) {
-        return;
-    }
-    if (port.writeBundleText === undefined) {
-        fail(`review publication cannot write ${join(bundle, REVIEW_DOSSIER_NAME)}: the port has no bundle writer`);
-    }
-    port.writeBundleText(join(bundle, REVIEW_DOSSIER_NAME), publication.canonical);
-}
-
-/**
- * Fresh reviewer publications carry the head-bound dossier beside the review document. The
- * orchestrator's acceptance document is not a review stance record, so it never reaches here.
- */
-function prepareReviewDossierPublication(input: {
-    number: number;
-    head: string;
-    bundle: string;
-    document: ReviewDocument;
-    port: PublishReviewPort;
-}): void {
-    const planPath = join(input.bundle, REVIEW_RISK_PLAN_NAME);
-    const planRead = readBundleFile(input.port, planPath);
-    if (!planRead.present) {
-        // Legacy compatibility: a bundle whose manifest was prepared before `review:prepare` wrote
-        // risk plans records no such generated file, so it publishes exactly as before instead of
-        // being refused for a record it was never prepared with. A manifest that does record the
-        // plan is asserting the bundle carries one, so an absent file is a refusal, not a legacy
-        // bundle.
-        if (readBundleGeneratedSet(input.bundle)?.has(REVIEW_RISK_PLAN_NAME) !== true) {
-            return;
-        }
-        fail(`missing review risk plan at ${planPath}; the bundle manifest records generating it`);
-    }
-    const plan = parseReviewRiskPlan(planRead.value);
-    assertReviewRiskPlanBindsBundle(input.number, input.head, plan, input.bundle);
-    const dossierRead = readBundleFile(input.port, join(input.bundle, REVIEW_DOSSIER_NAME));
-    if (!dossierRead.present) {
-        fail(
-            `missing review dossier at ${join(input.bundle, REVIEW_DOSSIER_NAME)}; write the caller's ${REVIEW_DOSSIER_NAME} beside review.json for head ${input.head}`
-        );
-    }
-    assertReviewEvidenceClaimsSafe(input.document);
-    const discardedRead = readBundleFile(input.port, join(input.bundle, REVIEW_DISCARDED_NAME));
-    // The caller's pre-dispatch stance record is the only stance gate: when it is present the
-    // dossier must correspond to it one-to-one, and when it is absent the publication carries no
-    // stance-completeness constraint. The plan's mechanically derived list is never enforced.
-    const stancesPath = join(input.bundle, REVIEW_STANCES_NAME);
-    const recordedStances = recordedReviewStances(readBundleFile(input.port, stancesPath), stancesPath);
-    const publication = buildReviewDossier({
-        plan,
-        raw: dossierRead.value,
-        discarded: discardedRead.present ? discardedRead.value : undefined,
-        comments: input.document.comments,
-        recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
-        recordedStances,
-    });
-    persistCanonicalReviewDossier(publication, input.bundle, input.port);
-}
 
 function prepareReviewPublication(
     number: number,
@@ -317,13 +229,15 @@ function prepareReviewPublication(
     assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
     const approvalContext = publicationApprovalContext(number, head, document, port);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
-    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
-        prepareReviewDossierPublication({ number, head, bundle, document, port });
-    }
+    const reviewReassessment =
+        actorNodeId !== ORCHESTRATOR_USER_NODE_ID
+            ? prepareReviewDossierPublication({ number, head, bundle, document, port })
+            : undefined;
     return {
         head,
         document,
         approvalContext,
+        reviewReassessment,
         payloadDigest: reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: head,
@@ -354,7 +268,7 @@ function publishPreparedReviewForActor(
             ? parseAcceptanceDocument(prepared.document)
             : parseReviewDocument(prepared.document);
     if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
-        assertAcceptancePreconditions(number, prepared.head, port);
+        assertAcceptancePreconditions(number, prepared.head, document, port);
     }
     assertPublicationEvidence(document, pullRequest.head);
     const context = publicationApprovalContext(number, prepared.head, document, port);
@@ -372,6 +286,15 @@ function publishPreparedReviewForActor(
     );
     if (payloadDigest !== prepared.payloadDigest) {
         fail('review-publication payload does not match the prepared digest');
+    }
+    // A dossier that already records its publication replays it: the exact same review stands
+    // live, so this run reports its id instead of posting a duplicate.
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+        const replayed = recordedPublicationReplay(number, prepared.head, document, actorNodeId, port);
+        if (replayed !== undefined) {
+            port.log(String(replayed));
+            return replayed;
+        }
     }
     boundary?.journalReviewPublication({
         expectedHead: prepared.head,
@@ -394,15 +317,28 @@ function publishPreparedReviewForActor(
     ) {
         fail('orchestrator acceptance response does not match the User actor and prepared head');
     }
+    if (actorNodeId !== ORCHESTRATOR_USER_NODE_ID) {
+        recordPublicationBindings(number, prepared.head, document, posted.id, port, prepared.reviewReassessment);
+    } else {
+        recordAcceptanceAuthorization(number, prepared.head, document.authorization, posted.id, port);
+    }
     port.log(String(posted.id));
     return posted.id;
 }
 
-function assertAcceptancePreconditions(number: number, head: string, port: PublishReviewPort): void {
+function assertAcceptancePreconditions(
+    number: number,
+    head: string,
+    document: AcceptanceDocument,
+    port: PublishReviewPort
+): void {
     if (port.reviewState === undefined) {
         fail('orchestrator acceptance requires a complete independent review-state reader');
     }
-    assertIndependentReviewerApproval(number, port.reviewState(number, head));
+    const state = port.reviewState(number, head);
+    assertIndependentReviewerApproval(number, state);
+    assertAcceptanceDossierAccounting(number, head, port);
+    assertAcceptanceAuthorization(number, head, document.authorization, state.unresolvedThreads, port);
 }
 
 export function publishPreparedReview(
@@ -524,6 +460,10 @@ export function shellPort(
                 commitId: response.commit_id,
             };
         },
+        reviewComments: (number, reviewId) => readReviewComments(gh, number, reviewId),
+        remoteReview: (number, reviewId) => readRemoteReview(gh, number, reviewId),
+        publicReviews: (number) => readPublicReviews(gh, number),
+        publicReviewComments: (number) => readPublicReviewComments(gh, number),
         log: (message) => {
             console.log(message);
         },
@@ -573,7 +513,12 @@ async function coordinateReviewPublication(
             );
             const prepared = prepareReviewPublication(number, preflightPort, actorNodeId);
             if (actorNodeId === ORCHESTRATOR_USER_NODE_ID) {
-                assertAcceptancePreconditions(number, prepared.head, preflightPort);
+                assertAcceptancePreconditions(
+                    number,
+                    prepared.head,
+                    parseAcceptanceDocument(prepared.document),
+                    preflightPort
+                );
             }
             await dependencies.serializeMutation(
                 primaryRoot,

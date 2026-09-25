@@ -292,3 +292,17 @@ acceptor on the provider path — the handler, the payload validator, the execut
 its `required`, the strategy's key set, and the grounding value rules — and drive one call carrying the
 new form through the real planner path end to end. A green handler spec is not evidence for the planner
 path; the narrow acceptor is the one the diff did not touch.
+
+### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
+
+PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane
+after its child returned, unconditionally, and discard the removal's boolean result. A receipt a
+concurrent invocation wrote during the child run was therefore deleted by the older success, and the
+newer stopped obligation disappeared; a failed unlink was reported as success.
+
+Blind spot: review treated the receipt path as owned by the recovering invocation and never asked
+whether the cleared receipt was the one recovery began from, or whether the removal result was surfaced.
+
+Probe that would have caught it: write a replacement receipt for the same lane inside the recovery
+child before it returns code 0 and require recovery to return non-zero with the replacement bytes
+preserved; then make the unlink throw and require recovery to report the failure.

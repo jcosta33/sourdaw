@@ -27,6 +27,14 @@ target/
 # Review bundles produced by `pnpm review:prepare`
 .agents/review-bundles/
 
+# Detached review-probe worktrees
+.agents/review-worktrees/
+
+# Advisory semantic-review sidecars and their response cache. Deliberately outside
+# `.agents/review-bundles/`: blind reviewers are handed that bundle, and these reports carry
+# proposed verdicts and probabilities they must not see.
+.agents/semantic-review/
+
 # Native dependent-lane descriptors; kept in the protected primary checkout
 .agents/lane-stacks/
 

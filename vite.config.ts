@@ -1,6 +1,5 @@
 /// <reference types="vitest" />
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { env } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -127,7 +126,12 @@ export default defineConfig({
             // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does
             // not support. The base64 entrypoint is functionally identical but
             // inlines the .wasm as a base64 string, sidestepping the issue entirely.
-            '@automerge/automerge': resolve('node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js'),
+            // Resolve through `import.meta.resolve` so Node walks up from this config
+            // file to the checkout that owns the install (a review worktree has no
+            // `node_modules` of its own), then pin the base64 sibling in that entrypoint.
+            '@automerge/automerge': fileURLToPath(
+                new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))
+            ),
         },
     },
     preview: {

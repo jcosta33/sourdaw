@@ -34,6 +34,17 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
             stretchMode: 'complex',
             originalTempo: null,
         },
+    setWarpState: (
+        clipId: string,
+        state: {
+            enabled: boolean;
+            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
+            originalTempo: number | null;
+        }
+    ) => {
+        mocks.warpStates.set(clipId, state);
+    },
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({

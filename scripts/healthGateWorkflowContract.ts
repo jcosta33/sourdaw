@@ -38,6 +38,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'nightly.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
+    'semantic-review.yml',
 ] as const;
 
 export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
@@ -61,7 +62,10 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // workflow-level pin, and no pin read it: `contents: write` on a validation
 // leg would hand every pull request a token that can push. The heavy and
 // nightly files keep their own exact job-level pins (CodeQL, the nightly
-// reporter); these two files must grant nothing at job level.
+// reporter); these files must grant nothing. The semantic-review file is
+// absent because its coverage job carries a deliberate `contents: read`, and
+// `semanticReviewWorkflowContract.ts` pins that job's permissions exactly
+// beside the assessment job's own ban.
 export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'health-gates.yml',
     'validation.yml',
@@ -204,6 +208,20 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Scan history for secrets',
         ],
         'heavy-gate': ['Require every job to have succeeded or been skipped'],
+    },
+    'semantic-review.yml': {
+        assess: [
+            'Checkout the trusted revision',
+            'Fetch the reviewed head as Git objects',
+            'Set up pnpm',
+            'Set up Node',
+            'Install dependencies',
+            'Assess the change',
+            'Report the assessment',
+            'Upload the advisory report',
+            'Compute the coverage line',
+        ],
+        coverage: ['Download the advisory report', 'Publish the withheld paths'],
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
