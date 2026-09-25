@@ -5022,15 +5022,13 @@ describe('fresh reviewer dossier publication', () => {
     }
 
     /**
-     * The escalation refusal may name baseSha inside the field set it demands, and nowhere else:
-     * a clause that mentions the base outside that list is how a manifest incomplete in a
-     * different field gets blamed on a base that is present and readable. Asserting on the
-     * remainder rather than on a known bad phrase keeps the guard tied to that claim.
+     * The escalation refusal is the operator's whole diagnostic for this state, and the same text
+     * serves every state that reaches it. Cases that reach it therefore pin its exact contract
+     * text: any rewording that changes what it blames fails them. Phrase-level negatives could not
+     * hold that claim, because a synonym for the same field walked past them.
      */
-    function assertRefusalBlamesNoFieldOutsideRequiredSet(message: string): void {
-        const requiredFields = /incomplete in pr, baseRefName, baseSha, or headSha/;
-        expect(message).toMatch(requiredFields);
-        expect(message.replace(requiredFields, '')).not.toMatch(/base/i);
+    function expectedEscalationRefusal(bundle: string): string {
+        return `review round escalation: observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or incomplete in pr, baseRefName, baseSha, or headSha; the reassessment at ${join(bundle, 'reassessment.json')} cannot be bound without that context`;
     }
 
     function dossierFixture(
@@ -5419,9 +5417,7 @@ describe('fresh reviewer dossier publication', () => {
         try {
             rmSync(join(fixture.bundle, 'manifest.json'));
             const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/does not supply a usable review bundle context/);
-            assertRefusalBlamesNoFieldOutsideRequiredSet(message);
-            expect(message).toMatch(/reassessment\.json/);
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle));
             expect(message).not.toMatch(/ENOENT/);
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
@@ -5443,9 +5439,7 @@ describe('fresh reviewer dossier publication', () => {
         });
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(/does not supply a usable review bundle context/);
-            assertRefusalBlamesNoFieldOutsideRequiredSet(message);
-            expect(message).toMatch(/reassessment\.json/);
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle));
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
