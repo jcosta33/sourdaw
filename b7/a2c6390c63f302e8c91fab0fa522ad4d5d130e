@@ -1,0 +1,41 @@
+.github/pull_request_template.md
+  s_ef536aab624565::t_12f84b498f98d8 7
+  s_ef536aab624565::t_4f005400323a0c 16
+scripts/__tests__/publishLane.spec.ts
+  s_ef536aab624565::t_e81daa68274289 1378-1394
+  s_2bfd55a4393d7c::t_1fa77facd1bb34 84,557,1324,1356,1409
+.agents/skills/delivery-orchestration/SKILL.md
+  s_ef536aab624565::t_aa762cf51616bc 144-148,193-201
+scripts/__tests__/prContract.spec.ts
+  s_ef536aab624565::t_95a56928128ab5 35,37,67,74,475-479,723,810,819,828,835,844,851,865,875,888,902,917,928,941,950,952,955,973,980,998,1006,1016,1026,1040,1052,1063,1073,1103,1112,1116-1118,1121-1122,1134,1136,1138,1145,1155,1164,1186,1204,1215,1222,1232,1241,1251,1255,1275,1282,1292,1294,1298-1300,1302,1304-1327,1331,1335-1354,1382,1389-1392
+scripts/prContract.ts
+  s_ef536aab624565::t_394e98f65d15a0 48,56-58,60-68,92-93,96
+scripts/publishLane.ts
+  s_ef536aab624565::t_d1930230547859 106
+scripts/testInstructions.ts
+  s_ef536aab624565::t_976c6d89ca2829 3-5,10-13,17-20,640-641,682-685,687-705,709-711,714-715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b7a2c6390c63f302e8c91fab0fa522ad4d5d130e",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
