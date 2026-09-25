@@ -8,6 +8,7 @@ import { runAllAsyncEffects } from '#/utils/runEffects';
 import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';
+import { insertTakeLane } from '../../useCases/comping/insertTakeLane';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
@@ -113,9 +114,12 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         }
 
         if (takeLaneSnapshots.length > 0) {
-            const takes = takeLaneStore.value;
-            if (takes) {
-                takeLaneStore.set({ lanes: [...takes.lanes, ...(takeLaneSnapshots as never[])] });
+            // Merge each captured lane through the shared insert instead of
+            // appending: a projection may have given the track a lane while it
+            // was absent, and a second lane for one track is dead state that
+            // `getTakeLaneForTrack` and the comp resolver never read (#4527).
+            for (const snapshot of takeLaneSnapshots) {
+                insertTakeLane(snapshot as never, takeLaneStore.value?.lanes.length ?? 0);
             }
         }
 

@@ -17,10 +17,9 @@ import { takesWithLiveClips } from './takesWithLiveClips';
  * (`getTakeLaneForTrack`, the comp resolver) take the first one for a track and a second
  * lane's takes and regions are dead state. This replay enforces that — it merges into
  * the track's lane rather than placing a second one — as every route that creates a lane
- * does, with `handleRestoreTrack` the remaining exception: it appends its captured lanes
- * straight to the store and can still leave two for a track (#4527). A lane a projection
- * gave the track while this one was absent therefore keeps the track, and the lane being
- * put back merges into it through `reconcileLane` — the same reconcile
+ * does: `handleRestoreTrack` puts its captured lanes back through this same insert, so a
+ * lane a projection gave the track while this one was absent keeps the track, and the
+ * lane being put back merges into it through `reconcileLane` — the same reconcile
  * `restoreTakesForClip` uses, so the two cannot drift about what a replayed lane may
  * re-add. Declining instead would drop the takes and regions this lane carries, which is
  * the retirement this work exists to undo. The lane this resolves is also the lane the

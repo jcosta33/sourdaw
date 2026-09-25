@@ -51,6 +51,7 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
@@ -98,6 +99,15 @@ const otherLane = {
     takes: [{ id: 'take-d', clipId: 'clip-d', name: 'D', startBeat: 0, endBeat: 8, selected: true }],
     activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-d' }],
 };
+
+// restoreTrack replays its captured lanes through insertTakeLane, which drops a
+// take whose clip is not in the project: the removed-track fixtures below must
+// carry the clips their takes name, or the restore strips the lane bare (#4527).
+const compedTrackClips = () => [
+    ClipDummy.create({ id: 'clip-a' }),
+    ClipDummy.create({ id: 'clip-b' }),
+    ClipDummy.create({ id: 'clip-c' }),
+];
 
 function activeRegions(laneId = 'lane-1') {
     return takeLaneStore.value?.lanes.find((candidate) => candidate.id === laneId)?.activeCompRegions;
@@ -1208,7 +1218,7 @@ describe('setCompRegion command integration', () => {
                 removedEvents.push(event);
             });
             setArrangementEventBus(arrangementEvents);
-            const track1 = TrackDummy.create({ id: 'track-1', name: 'Comped vocal' });
+            const track1 = TrackDummy.create({ id: 'track-1', name: 'Comped vocal', clips: compedTrackClips() });
             const track2 = TrackDummy.create({ id: 'track-2', name: 'Peer track' });
             trackStore.set({ tracks: [track1, track2], selectedTrackId: 'track-1', ghostClips: [] });
             flushAutomergeStorageWrites();
@@ -1336,7 +1346,7 @@ describe('setCompRegion command integration', () => {
             removedEvents.push(event);
         });
         setArrangementEventBus(arrangementEvents);
-        const track1 = TrackDummy.create({ id: 'track-1', name: 'Selected vocal' });
+        const track1 = TrackDummy.create({ id: 'track-1', name: 'Selected vocal', clips: compedTrackClips() });
         const track2 = TrackDummy.create({ id: 'track-2', name: 'Peer track' });
         trackStore.set({ tracks: [track1, track2], selectedTrackId: 'track-1', ghostClips: [] });
         flushAutomergeStorageWrites();
