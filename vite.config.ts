@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { readFileSync } from 'node:fs';
+import { sep } from 'node:path';
 import { env } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -7,11 +8,26 @@ import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import { searchForWorkspaceRoot } from 'vite';
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 
 import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scripts/e2eServerIdentity';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
+
+/**
+ * A review worktree has no install of its own, so without this Vite refuses
+ * package assets imported with `?url` that sit in the checkout's node_modules.
+ */
+function resolveInstallNodeModulesDir(): string {
+    const viteModuleUrl = import.meta.resolve('vite');
+    const viteModulePath = fileURLToPath(viteModuleUrl);
+    const nodeModulesIndex = viteModulePath.indexOf(`${sep}node_modules${sep}`);
+    if (nodeModulesIndex === -1) {
+        throw new Error(`Failed to resolve node_modules directory from vite module path: ${viteModulePath}`);
+    }
+    return viteModulePath.slice(0, nodeModulesIndex + sep.length + 'node_modules'.length);
+}
 
 /**
  * E2E-only serving-identity marker. Browser verification on a shared machine
@@ -42,6 +58,9 @@ export default defineConfig({
         format: 'iife',
     },
     server: {
+        fs: {
+            allow: [searchForWorkspaceRoot(process.cwd()), resolveInstallNodeModulesDir()],
+        },
         hmr: process.env.NO_HMR !== '1',
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',
