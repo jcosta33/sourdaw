@@ -1,0 +1,52 @@
+src/modules/Bacteria/models/BacteriaModAssignmentsState.ts
+  s_2bfd55a4393d7c::t_26c53f8eda743b 53-74
+src/modules/Bacteria/useCases/index.ts
+  s_2bfd55a4393d7c::t_e6e04d46c36bbb 2
+src/modules/Bacteria/useCases/initBacteriaModAssignmentsPersistence.ts
+  s_2bfd55a4393d7c::t_ecb8048be740e8 1
+  s_2bfd55a4393d7c::t_9b85c50db8d51e 24-27
+src/modules/Bacteria/useCases/prepareOfflineBacteria.ts
+  s_2bfd55a4393d7c::t_7c8d9c32d8bfc5 4-5,14-15
+  s_2bfd55a4393d7c::t_3d530f9664b9a4 33-37,39-40
+src/modules/Bacteria/useCases/__tests__/initBacteriaModAssignmentsPersistence.spec.ts
+  s_2bfd55a4393d7c::t_950c01e8686954 18-19,21-28
+  s_2bfd55a4393d7c::t_5eb6973e53f08d 114-159
+  s_2bfd55a4393d7c::t_5807df7f6457ec 52
+src/modules/Bacteria/AGENTS.md
+  s_2bfd55a4393d7c::t_848ca05b2c1b34 22
+  s_2bfd55a4393d7c::t_df65be771fb3ed 10
+src/modules/Bacteria/useCases/__tests__/prepareOfflineBacteria.spec.ts
+  s_2bfd55a4393d7c::t_da97068c8a3e7f 47-57
+src/modules/Bacteria/useCases/__tests__/hydrateBacteriaPatchFromProject.spec.ts
+  s_2bfd55a4393d7c::t_233028ade19eb6 159-194
+  s_2bfd55a4393d7c::t_6f896eb9f7b4b1 5-13,18-26,31
+src/app/prepareOfflineDeviceSetup.ts
+  s_2bfd55a4393d7c::t_89732ed54c1a3b 182-188
+  s_2bfd55a4393d7c::t_87665d50681026 62-63
+  s_2bfd55a4393d7c::t_537244b8d445c2 2,16
+src/modules/Bacteria/useCases/hydrateBacteriaPatchFromProject.ts
+  s_2bfd55a4393d7c::t_f8954ef998f4f9 3
+  s_2bfd55a4393d7c::t_cd6afbd7026716 147,155-163,172,179-182,185-192,195-200,203-212,214-224
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_2bfd55a4393d7c::t_9de1bef1d35d41 1800-1802,1806
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_2bfd55a4393d7c::t_46f588a3b4ee1d 392-443
+src/modules/Bacteria/useCases/captureOfflineBacteria.ts
+  s_2bfd55a4393d7c::t_2922be9a37ee9e 1-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a33a6789fc253bffd09d5f5b1981860f3e02d2eb",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
