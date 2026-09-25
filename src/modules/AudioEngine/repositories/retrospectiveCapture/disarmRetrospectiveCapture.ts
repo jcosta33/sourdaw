@@ -6,7 +6,9 @@ export type DisarmRetrospectiveCaptureResult =
 /**
  * Stop the native engine's retrospective audio retention.
  *
- * Declines rather than throws when no desktop runtime or engine is present.
+ * Declines rather than throws when no desktop runtime is present. With no
+ * engine running the native side still clears the recorded arm, so no later
+ * engine boot arms the ring.
  */
 export async function disarmRetrospectiveCapture(): Promise<DisarmRetrospectiveCaptureResult> {
     if (!isDesktopRuntime()) {
