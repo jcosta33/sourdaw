@@ -61,7 +61,7 @@ import {
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
+import { clearAgentMeasurementArtifacts, stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -160,6 +160,7 @@ import {
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
+    setAgentMeasurementArtifactsClearer,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -328,6 +329,10 @@ setWorkspaceEventBus(eventBus);
 // AudioRendering's barrel, which Arrangement cannot import without a module
 // cycle, so the composition root supplies the stager.
 setClipAudioAssetStager(stageAudioBufferAsset);
+// Same seam shape as the stager above: AudioRendering's WAV export path
+// imports Project's use cases, so Project cannot import AudioRendering's
+// barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
+setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.

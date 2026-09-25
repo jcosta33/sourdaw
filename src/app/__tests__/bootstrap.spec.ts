@@ -373,6 +373,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     stageAudioBufferAsset: vi.fn(),
+    clearAgentMeasurementArtifacts: vi.fn(),
 
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -553,6 +554,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
+    setAgentMeasurementArtifactsClearer: noop,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
