@@ -293,7 +293,7 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
             trackId: 't1',
             takes: [],
             activeCompRegions: [],
-        } as RetiredTakeLaneSnapshot['lane'],
+        },
         laneIndex: 0,
         retiredTakeIds: ['take-1'],
     };
