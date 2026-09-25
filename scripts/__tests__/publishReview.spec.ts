@@ -5752,6 +5752,13 @@ describe('fresh reviewer dossier publication', () => {
                     actorNodeId: ORCHESTRATOR_USER_NODE_ID,
                     body: 'acceptance',
                 },
+                {
+                    id: 92,
+                    state: 'CHANGES_REQUESTED',
+                    commitId: head,
+                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    body: 'rejection',
+                },
             ],
         });
         try {
