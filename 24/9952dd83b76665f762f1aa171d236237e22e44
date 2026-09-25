@@ -1,0 +1,25 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_2bfd55a4393d7c::t_c663ae4004bdb7 491-495
+src/modules/AudioEngine/useCases/offlineRender/deviceParameterOverlapReason.ts
+  s_2bfd55a4393d7c::t_fedb8d7796948d 1-14
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_2bfd55a4393d7c::t_cc069be05e3fb8 98
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_2bfd55a4393d7c::t_5341f24a6657fa 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "249952dd83b76665f762f1aa171d236237e22e44",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
