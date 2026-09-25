@@ -16,12 +16,22 @@ vi.mock('../bacteriaParamBridgeDependencies', () => ({
     bacteriaParamBridgeDependencies: {},
 }));
 
+// The engine half — mapping and the `updateDevicePatch` push — moved to
+// `pushBacteriaModAssignmentsToEngine` (#4756), covered by its own spec.
+// This mock's `resolveEligibleDeviceWriteTarget`, matching the extracted
+// use case's own gate, keeps this file's "ineligible" case meaningful without
+// re-testing the mapping it no longer performs.
+vi.mock('../pushBacteriaModAssignmentsToEngine', () => ({
+    pushBacteriaModAssignmentsToEngine: vi.fn(),
+}));
+
+import { pushBacteriaModAssignmentsToEngine } from '../pushBacteriaModAssignmentsToEngine';
+
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
 
 function makeDeps() {
     return {
-        updateDevicePatch: vi.fn(),
         resolveEligibleDeviceWriteTarget: vi.fn().mockReturnValue({
             status: 'eligible',
             trackId: TRACK_ID,
@@ -39,7 +49,7 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
         vi.clearAllMocks();
     });
 
-    it('updates the store and pushes the whole mapped table through the patch door', () => {
+    it('updates the store and hands the whole table to the engine push use case', () => {
         const deps = makeDeps();
         const table = [
             assignment(),
@@ -49,31 +59,26 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
         setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, table);
 
         expect(setBacteriaModAssignments).toHaveBeenCalledWith(DEVICE_ID, table);
-        expect(deps.updateDevicePatch).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, {
-            modAssignments: [
-                { sourceId: 0, targetParam: 16, amount: 50 },
-                { sourceId: 6, targetParam: 33, amount: 19_980 * 0.2 },
-            ],
-        });
+        expect(pushBacteriaModAssignmentsToEngine).toHaveBeenCalledWith(DEVICE_ID, table);
     });
 
-    it('pushes an empty table so a remove that empties the list also silences the engine', () => {
+    it('hands an empty table to the engine push use case so a remove that empties the list also silences the engine', () => {
         const deps = makeDeps();
 
         setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, []);
 
         expect(setBacteriaModAssignments).toHaveBeenCalledWith(DEVICE_ID, []);
-        expect(deps.updateDevicePatch).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, { modAssignments: [] });
+        expect(pushBacteriaModAssignmentsToEngine).toHaveBeenCalledWith(DEVICE_ID, []);
     });
 
-    it('updates the store but pushes nothing when a row has no engine mapping', () => {
+    it('still delegates to the engine push use case for a table with no engine mapping — that gate moved with the mapping', () => {
         const deps = makeDeps();
         const table = [assignment({ targetParam: 'drive' })];
 
         setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, table);
 
         expect(setBacteriaModAssignments).toHaveBeenCalledWith(DEVICE_ID, table);
-        expect(deps.updateDevicePatch).not.toHaveBeenCalled();
+        expect(pushBacteriaModAssignmentsToEngine).toHaveBeenCalledWith(DEVICE_ID, table);
     });
 
     it('does nothing when the device cannot accept engine writes', () => {
@@ -83,6 +88,6 @@ describe('setBacteriaModAssignmentsWithAudio', () => {
         setBacteriaModAssignmentsWithAudio(deps as never)(DEVICE_ID, [assignment()]);
 
         expect(setBacteriaModAssignments).not.toHaveBeenCalled();
-        expect(deps.updateDevicePatch).not.toHaveBeenCalled();
+        expect(pushBacteriaModAssignmentsToEngine).not.toHaveBeenCalled();
     });
 });

@@ -197,9 +197,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio.ts': 2,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
-        // Modulation assignment push (#4264): setBacteriaModAssignmentsWithAudio
-        // pushes the whole assignment table through updateDevicePatch.
-        'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio.ts': 1,
+        // Count provenance: 0 in code, was 1 — #4756 extracted the engine half
+        // (resolveEligibleDeviceWriteTarget, mapBacteriaModAssignments,
+        // updateDevicePatch) into pushBacteriaModAssignmentsToEngine.ts, so this
+        // file now only writes the store and calls that use case by name; it
+        // names no `updateDevicePatch` itself.
+        // 'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio.ts': removed (0),
+        // Count provenance: new file, measured 1 — the destructured
+        // `updateDevicePatch` alias. Extracted from setBacteriaModAssignmentsWithAudio
+        // (#4756) so hydrateBacteriaPatchFromProject can push a projected routing
+        // table to the live engine without re-writing the store it read the
+        // table from.
+        'src/modules/Bacteria/useCases/bacteriaParamBridge/pushBacteriaModAssignmentsToEngine.ts': 1,
         // Count provenance: measured 2 in code, both `updateDeviceParam` — the
         // import and a single call on the transient branch. The **commit**
         // branch reaches no sink here at all; it dispatches

@@ -45,6 +45,18 @@ describe('prepareOfflineBacteria', () => {
         expect(port.postMessage).not.toHaveBeenCalled();
     });
 
+    it('posts the whole table at exactly the live node’s 64-row limit', () => {
+        const port = makePort();
+        const rows = Array.from({ length: 64 }, () => row());
+
+        prepareOfflineBacteria({ deviceState: chunkWithRows(rows), port });
+
+        expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({
+            type: 'set-mod-assignments',
+            assignments: Array.from({ length: 64 }, () => ({ sourceId: 0, targetParam: 1, amount: 0.5 })),
+        });
+    });
+
     it('posts the captured table, ignoring an absent deviceState, when captured is supplied (#4756)', () => {
         const port = makePort();
 

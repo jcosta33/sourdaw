@@ -19,6 +19,7 @@ import {
     GRAIN_WINDOW_INDEX,
     ROUTING_MODE_INDEX,
 } from './bacteriaParamBridge/helpers';
+import { pushBacteriaModAssignmentsToEngine } from './bacteriaParamBridge/pushBacteriaModAssignmentsToEngine';
 
 /**
  * Reverse index tables for the bridge's mode encodings. `parameterValues`
@@ -177,6 +178,16 @@ function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): Bacter
  * commits over whatever the document already held. Projecting the chunk here,
  * on mount and on every `deviceState` change, gives every edit something to
  * build on regardless of whether the live path has run yet.
+ *
+ * A routing table the projection actually changes is also pushed to the live
+ * engine through {@link pushBacteriaModAssignmentsToEngine} (#4756): a
+ * collaborator's write can move the document's chunk out from under a
+ * mounted, already-loaded panel with no store setter in the call path, and
+ * without this the node keeps playing the routing it loaded with while the
+ * panel, save, and export all describe the new one. This reaches only a
+ * *mounted* panel, since it is this hydrator's own effect that runs the
+ * projection; a foreign change with no panel mounted still reaches nothing
+ * live (#4764).
  */
 export function hydrateBacteriaPatchFromProject(deviceId: string): void {
     const tracks = trackStore.value?.tracks;
@@ -191,11 +202,13 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
 
     let patch = getBacteriaState(deviceId).patch;
     let changed = false;
+    let routingChanged = false;
 
     const routed = projectRoutingTable(patch, device.deviceState);
     if (routed !== patch) {
         patch = routed;
         changed = true;
+        routingChanged = true;
     }
 
     const parameterValues = device.parameterValues;
@@ -242,6 +255,14 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
 
     if (changed) {
         loadBacteriaPatch(deviceId, patch);
+    }
+
+    // Store-only above: an ineligible target must still take the projected
+    // rows so a later edit builds on them (#4756). Only a table the
+    // projection actually changed is worth a push — an equal or absent chunk
+    // pushes nothing new to the engine.
+    if (routingChanged) {
+        pushBacteriaModAssignmentsToEngine(deviceId, patch.modAssignments);
     }
 }
 
