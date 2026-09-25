@@ -276,10 +276,12 @@ mod tests {
     #[test]
     fn a_rebuilt_engine_is_armed_again_by_its_first_batch() {
         let state = AppState::default();
-        block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &state))
-            .expect("the arm is recorded");
         let _lost_commands = boot_capture_engine(&state);
         apply(&state, one_strip_batch());
+        // Armed by the command itself, so the replacing engine below can only
+        // be armed by the batch path.
+        block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &state))
+            .expect("the arm resolves");
         assert!(armed_target(&state).is_some());
 
         retire_stalled_engine(&state);
