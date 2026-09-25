@@ -8,11 +8,21 @@
 //! thread when armed; the capture callback only copies into it.
 
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
+use std::ops::RangeInclusive;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Seconds of interleaved audio retained while the ring is armed.
 pub const RETROSPECTIVE_SECONDS: u32 = 60;
+
+/// Channel counts a retrospective ring may be armed with.
+///
+/// The ring is stereo by convention: punch arms two channels, and a device
+/// delivering more is narrowed to the armed width on the capture callback
+/// ([`RetrospectiveWriter::write_block`]). The upper bound also bounds the
+/// allocation an arm makes, so a caller-supplied count can never size sixty
+/// seconds of storage past what the host can hold.
+pub const RETROSPECTIVE_CHANNEL_RANGE: RangeInclusive<usize> = 1..=2;
 
 /// Command slots between the control thread and the capture callback.
 ///
@@ -71,6 +81,20 @@ impl ActiveRing {
         }
 
         self.filled = (self.filled + block.len()).min(capacity);
+    }
+
+    /// Copy the first `self.channels` samples of every `in_channels`-wide
+    /// frame, dropping the rest. Writes only inside `buffer` (wrapping at
+    /// capacity), so a wider device never grows the armed allocation.
+    fn write_leading_channels(&mut self, block: &[f32], in_channels: usize) {
+        let out_channels = self.channels;
+        if out_channels == 0 || in_channels < out_channels {
+            return;
+        }
+
+        for frame in block.chunks_exact(in_channels) {
+            self.write_block(&frame[..out_channels]);
+        }
     }
 
     /// Copy a mono block into this wider ring by repeating each sample across
@@ -169,20 +193,25 @@ impl RetrospectiveControl {
     ///
     /// Allocates sixty seconds at `sample_rate` × `channels` on this thread.
     /// A later arm replaces the previous target; it does not fan out.
+    ///
+    /// A `channels` outside [`RETROSPECTIVE_CHANNEL_RANGE`], or a window whose
+    /// sample count does not fit `usize`, disarms rather than declining: the
+    /// caller asked to stop retaining under whatever it armed before, and a
+    /// previous target left in place would keep recording for a request that
+    /// was refused.
     pub fn arm(&mut self, track_id: usize, sample_rate: f32, channels: usize) {
         self.drain_retired();
 
-        if channels == 0 {
+        if !RETROSPECTIVE_CHANNEL_RANGE.contains(&channels) {
             self.disarm();
             return;
         }
 
         let frames = retrospective_capacity_frames(sample_rate);
-        let samples = frames.saturating_mul(channels);
-        if samples == 0 {
+        let Some(samples) = frames.checked_mul(channels).filter(|&samples| samples > 0) else {
             self.disarm();
             return;
-        }
+        };
 
         // Keep one command slot free so [`Self::disarm`] can always deliver.
         // Filling the ring with Arms used to drop Disarm while this side still
@@ -278,10 +307,12 @@ impl RetrospectiveWriter {
     /// Install pending arm/disarm commands, then copy `block` when armed.
     ///
     /// No heap allocation and no lock. A disarmed writer returns immediately.
-    /// Matching channel counts copy as-is. A mono block into a wider armed
-    /// ring is retained by repeating each sample across the armed channels.
-    /// Any other channel mismatch — including a wider input than the armed
-    /// allocation — refuses the block rather than writing past capacity.
+    /// Matching channel counts copy as-is. A block wider than the armed ring
+    /// (a four- or eight-input interface into the stereo punch ring) keeps the
+    /// first armed-width channels of each frame, in place. A mono block into a
+    /// wider armed ring is retained by repeating each sample across the armed
+    /// channels. A block whose length is not a whole number of frames, and any
+    /// other channel mismatch, is refused rather than written past capacity.
     #[inline]
     pub fn write_block(&mut self, block: &[f32], channels: usize) {
         self.drain_commands();
@@ -296,6 +327,13 @@ impl RetrospectiveWriter {
 
         if channels == active.channels {
             active.write_block(block);
+            self.retained_samples
+                .store(active.filled, Ordering::Relaxed);
+            return;
+        }
+
+        if channels > active.channels {
+            active.write_leading_channels(block, channels);
             self.retained_samples
                 .store(active.filled, Ordering::Relaxed);
             return;
@@ -460,17 +498,77 @@ mod tests {
         assert_eq!(out, [0.5, 0.5, -0.25, -0.25, 0.125, 0.125]);
     }
 
+    /// Three frames of a four-input interface: channel `c` of frame `f` is
+    /// `f * 10 + c`, so the retained order names exactly which samples were kept.
+    const FOUR_CHANNEL_FRAMES: [f32; 12] = [
+        0.0, 1.0, 2.0, 3.0, //
+        10.0, 11.0, 12.0, 13.0, //
+        20.0, 21.0, 22.0, 23.0,
+    ];
+
+    /// What a stereo ring keeps of [`FOUR_CHANNEL_FRAMES`]: channels 0 and 1
+    /// of every frame, in frame order.
+    const LEADING_STEREO_OF_FOUR: [f32; 6] = [0.0, 1.0, 10.0, 11.0, 20.0, 21.0];
+
     #[test]
-    fn wider_input_than_armed_channels_is_refused_without_overrun() {
+    fn wider_input_than_armed_channels_keeps_the_leading_armed_channels() {
         let (mut control, mut writer) = retrospective_capture();
-        control.arm(1, RATE, 1);
-        writer.write_block(&[], 1);
+        arm_and_drain(&mut control, &mut writer, 1);
         let capacity = writer.capacity_samples();
 
-        writer.write_block(&[0.1, 0.2, 0.3, 0.4], 2);
+        writer.write_block(&FOUR_CHANNEL_FRAMES, 4);
+
+        assert_eq!(writer.retained_samples(), LEADING_STEREO_OF_FOUR.len());
+        let mut out = [0.0f32; 6];
+        assert_eq!(writer.copy_retained(&mut out), 6);
+        assert_eq!(out, LEADING_STEREO_OF_FOUR);
+        assert_eq!(
+            writer.capacity_samples(),
+            capacity,
+            "a wider device must never grow the armed allocation"
+        );
+    }
+
+    #[test]
+    fn wider_input_whose_length_is_not_whole_frames_is_refused() {
+        let (mut control, mut writer) = retrospective_capture();
+        arm_and_drain(&mut control, &mut writer, 1);
+
+        writer.write_block(&FOUR_CHANNEL_FRAMES[..11], 4);
 
         assert_eq!(writer.retained_samples(), 0);
-        assert_eq!(writer.capacity_samples(), capacity);
+    }
+
+    #[test]
+    fn an_arm_outside_the_supported_channel_range_retains_nothing() {
+        for channels in [0, 3, usize::MAX] {
+            let (mut control, mut writer) = retrospective_capture();
+            control.arm(1, RATE, channels);
+            writer.write_block(&[], channels.min(4));
+
+            assert!(
+                !writer.is_armed(),
+                "{channels} channels is outside the supported range and must not arm"
+            );
+            assert_eq!(control.target_track_id(), None);
+
+            writer.write_block(&[0.5; 12], 3);
+            assert_eq!(writer.retained_samples(), 0);
+            assert_eq!(writer.capacity_samples(), 0);
+        }
+    }
+
+    #[test]
+    fn an_out_of_range_arm_disarms_the_previous_target() {
+        let (mut control, mut writer) = retrospective_capture();
+        arm_and_drain(&mut control, &mut writer, 1);
+        assert!(writer.is_armed());
+
+        control.arm(2, RATE, 3);
+        writer.write_block(&[], CHANNELS);
+
+        assert!(!writer.is_armed());
+        assert_eq!(control.target_track_id(), None);
     }
 
     #[test]
@@ -625,6 +723,33 @@ mod tests {
             assert!(writer.retained_samples() > 0);
             assert!(writer.retained_samples() <= writer.capacity_samples());
             assert_eq!(writer.target_track_id(), Some(2));
+        }
+
+        #[test]
+        fn the_wide_input_write_path_keeps_the_leading_channels_and_allocates_nothing() {
+            let (mut control, mut writer) = retrospective_capture();
+            arm_and_drain(&mut control, &mut writer, 1);
+
+            assert_no_alloc(|| {
+                writer.write_block(&FOUR_CHANNEL_FRAMES, 4);
+            });
+
+            let mut out = [0.0f32; 6];
+            assert_eq!(writer.copy_retained(&mut out), 6);
+            assert_eq!(out, LEADING_STEREO_OF_FOUR);
+        }
+
+        #[test]
+        fn an_out_of_range_arm_allocates_nothing() {
+            let (mut control, mut writer) = retrospective_capture();
+
+            assert_no_alloc(|| {
+                control.arm(1, RATE, 3);
+                control.arm(1, RATE, usize::MAX);
+            });
+
+            writer.write_block(&[], CHANNELS);
+            assert!(!writer.is_armed());
         }
 
         #[test]

@@ -354,7 +354,9 @@ impl EngineHandle {
     /// Arm retrospective audio retention for exactly one track.
     ///
     /// Allocates about sixty seconds of storage on this thread at the running
-    /// stream's sample rate. A later arm replaces the previous target.
+    /// stream's sample rate. A later arm replaces the previous target. A
+    /// `channels` outside
+    /// [`crate::retrospective::RETROSPECTIVE_CHANNEL_RANGE`] disarms instead.
     ///
     /// Opens the input after a successful arm so the capture callback runs —
     /// and fills the ring — before any record consumer registers. Without
