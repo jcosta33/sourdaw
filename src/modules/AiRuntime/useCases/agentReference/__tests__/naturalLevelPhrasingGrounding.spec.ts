@@ -287,6 +287,34 @@ describe('natural level phrasing grounds the call its words ask for', () => {
         ]);
     });
 
+    it('grounds a relative master change turned down before the master is named', () => {
+        const result = bridge([{ name: 'setMasterGain', arguments: { deltaDb: -3 } }], 'Turn down the master by 3 dB.');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { deltaDb: -3 } }]);
+    });
+
+    it('grounds a relative master change whose verb is split by the master', () => {
+        const result = bridge([{ name: 'setMasterGain', arguments: { deltaDb: 2 } }], 'Turn the master up 2 dB.');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { deltaDb: 2 } }]);
+    });
+
+    it('grounds an absolute master level brought down with a generic verb', () => {
+        const result = bridge([{ name: 'setMasterGain', arguments: { gainDb: -1 } }], 'Bring the master down to -1 dB.');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { gainDb: -1 } }]);
+    });
+
+    it('grounds a relative master change asked for as a louder master', () => {
+        const result = bridge([{ name: 'setMasterGain', arguments: { deltaDb: 2 } }], 'Make the master louder by 2 dB.');
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { deltaDb: 2 } }]);
+    });
+
     it('grounds the track change of a level list whose continuation names the master', () => {
         const result = bridge(
             [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -3 } }],
@@ -420,6 +448,18 @@ describe('natural level phrasing refuses what its words do not reach', () => {
         expect(masterTrack.actions).toEqual([]);
     });
 
+    it('refuses a track fader change on the master turned down before it is named', () => {
+        const result = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: 'master', deltaDb: -3 } }],
+            'Turn down the master by 3 dB.'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toMatchObject([
+            { name: 'setTrackGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
+    });
+
     it('refuses a track fader change on the master carried by a level continuation', () => {
         const result = bridge(
             [
@@ -462,6 +502,20 @@ describe('natural level phrasing refuses what its words do not reach', () => {
                 reason: 'Provider action is not grounded in the user request',
             })
         );
+    });
+
+    it('refuses a master level change when the clause states no decibel figure', () => {
+        const relative = bridge([{ name: 'setMasterGain', arguments: { deltaDb: -3 } }], 'Turn the master down a bit.');
+        const absolute = bridge([{ name: 'setMasterGain', arguments: { gainDb: -3 } }], 'Turn the master down a bit.');
+
+        expect(relative.actions).toEqual([]);
+        expect(absolute.actions).toEqual([]);
+        expect(relative.rejections).toMatchObject([
+            { name: 'setMasterGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
+        expect(absolute.rejections).toMatchObject([
+            { name: 'setMasterGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
     });
 
     it('refuses a split verb whose gap holds more than one reference', () => {
