@@ -124,15 +124,17 @@ function persistCanonicalReviewDossier(
  * bundle reader reports an absent, unreadable, malformed, and invalid manifest as one failure
  * without naming the field at fault, so the message describes what the reader enforces and the
  * repair, instead of blaming baseSha for a manifest that is present and readable but wrong elsewhere.
- * A fresh approval publication reads its approval context before this gate and surfaces the reader's
- * own error first, so the refusal is reachable for a request-changes publication (#4754).
+ * The repair is in place because review:prepare refuses to reuse a populated bundle whose manifest
+ * it cannot read, so regenerating is unavailable in every state that reaches this refusal. A fresh
+ * approval publication reads its approval context before this gate and surfaces the reader's own
+ * error first, so the refusal is reachable for a request-changes publication (#4754).
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
         return readReviewBundleContext(bundle).baseSha;
     } catch {
         return fail(
-            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair or regenerate the manifest so the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} can bind`
+            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} can bind`
         );
     }
 }
