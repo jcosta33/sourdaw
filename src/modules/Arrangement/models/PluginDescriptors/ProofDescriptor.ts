@@ -80,7 +80,7 @@ export const PROOF_DESCRIPTOR = applySingleDescriptorGuidance(
                 -6,
                 6,
                 [
-                    "Moves the output level one-for-one, the same as output_gain, until the programme reaches lim_ceiling; only above that point does raising this trade output level for the limiter's gain reduction instead.",
+                    'The multiband dynamics stage runs between this and the limiter and is on by default, so raising this moves output by less than one-for-one on material above its band thresholds, even below lim_ceiling; output_gain, applied after the limiter, is the one-for-one level trim instead.',
                 ],
                 [
                     'Driving this up feeds the limiter harder without changing the final ceiling, so it can increase audible gain reduction even though lim_ceiling stays the same.',
