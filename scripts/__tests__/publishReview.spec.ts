@@ -5727,6 +5727,43 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('names only the reviewer request-changes rounds when the history carries others', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: [
+                ...Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                    id: index + 1,
+                    state: 'CHANGES_REQUESTED',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    body: 'round',
+                })),
+                {
+                    id: 90,
+                    state: 'APPROVED',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    body: 'approval',
+                },
+                {
+                    id: 91,
+                    state: 'APPROVED',
+                    commitId: head,
+                    actorNodeId: ORCHESTRATOR_USER_NODE_ID,
+                    body: 'acceptance',
+                },
+            ],
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('replays a recorded publication at or above the threshold without a reassessment instead of refusing', () => {
         const landedReview = {
             id: 99,
