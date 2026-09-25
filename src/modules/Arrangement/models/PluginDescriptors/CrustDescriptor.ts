@@ -186,27 +186,27 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
             ),
             channelLinkTransient: parameterGuidance(
                 'Stereo link amount for transient catch',
-                'Sets how much the two channels share one gain-reduction decision when the limiter first catches a peak.',
+                'Sets how far a channel that is deepening its own gain reduction follows the other, more-reduced channel while the limiter is catching a peak; a channel that is not itself reducing gain, such as the untouched side of a one-sided peak, ignores this control entirely.',
                 90,
                 100,
                 [
-                    'Works alongside channelLinkRelease, which links the recovery phase separately from this attack-side linking.',
+                    'Works alongside channelLinkRelease, which instead governs a channel that is holding or recovering gain: on a one-sided peak the untouched channel follows the catching side through channelLinkRelease at the catch and through the recovery, not through this control.',
                 ],
                 [
-                    'Reducing this below full link lets the channels reduce gain independently, which can shift the stereo image on transient-heavy material.',
+                    'Reducing this below full link only lets a still-deepening channel lag behind a deeper-reducing other channel; it has no effect on a channel that is not itself reducing gain. Punchy, Dynamic, and Aggressive also scale this and channelLinkRelease below full (0.8, 0.9, and 0.6), so 100 is not full link under those algorithms.',
                 ],
                 noExternalModulation
             ),
             channelLinkRelease: parameterGuidance(
                 'Stereo link amount for release recovery',
-                "Sets how much the two channels share one gain-recovery decision after the limiter's reduction decays.",
+                "Sets how far a channel that is holding or recovering gain — including the untouched side of a one-sided peak — follows the other channel's deeper reduction, both at the moment the limiter catches and through the recovery that follows.",
                 85,
                 100,
                 [
-                    'Works alongside channelLinkTransient, which links the attack-side decision separately from this recovery linking.',
+                    'Works alongside channelLinkTransient, which instead governs a channel that is itself deepening a reduction; a one-sided peak is carried entirely by this control, since the catching channel needs no linking and the untouched channel is always holding or recovering.',
                 ],
                 [
-                    'Reducing this below full link lets each channel recover independently, which can pull the stereo image during decay.',
+                    "Reducing this below full link lets the untouched or recovering channel pull away from the other channel's reduction, which can shift the stereo image during a catch or its decay. Punchy, Dynamic, and Aggressive also scale this and channelLinkTransient below full (0.8, 0.9, and 0.6), so 100 is not full link under those algorithms.",
                 ],
                 noExternalModulation
             ),
