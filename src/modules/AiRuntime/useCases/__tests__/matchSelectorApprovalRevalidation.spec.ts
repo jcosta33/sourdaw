@@ -321,7 +321,7 @@ describe('match selector approval revalidation', () => {
         // so `classifyAgentProjectDivergence`'s target-fingerprint check (which only inspects the
         // resolved trackIds' own CRDT records) sees no change at all, and only the selector
         // revalidation this fix adds can catch it.
-        const currentProjectState = projectStore.value;
+        const currentProjectState = projectStore.value ?? defaultProjectStoreState;
         projectStore.set({
             ...currentProjectState,
             productionBrief: {
@@ -392,7 +392,7 @@ describe('match selector approval revalidation', () => {
         // Tom joins it, so the live selector still resolves exactly two targets — just not the two
         // the approved batch carried. A revalidation that only compared resolved counts would miss
         // this; only a full id-set comparison catches it.
-        const currentProjectState = projectStore.value;
+        const currentProjectState = projectStore.value ?? defaultProjectStoreState;
         projectStore.set({
             ...currentProjectState,
             productionBrief: {
