@@ -21,11 +21,17 @@ import {
     assertDossierSize,
     buildDossier,
     computeDossierDigest,
+    dossierPayload,
     headDigestOf,
     readAssessmentImpact,
     reviewDossierEventDigest,
     type AssessmentImpact,
 } from './reviewDossierChain.ts';
+import {
+    REVIEW_REASSESSED_EVENT_KEYS,
+    readReviewReassessedEvent,
+    type ReviewReassessedDossierEvent,
+} from './reviewDossierReassessed.ts';
 
 import type { ReviewRiskClass, ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
@@ -33,6 +39,7 @@ export {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
     REVIEW_DOSSIER_MAX_BYTES,
+    authorizedEvidenceDigest,
     reviewDossierEventDigest,
     serializeReviewDossier,
     type AssessmentImpact,
@@ -77,7 +84,12 @@ export type ReviewDossierEvent =
           evidenceManifestDigest: string;
           unresolvedThreads: number;
           intent: 'deliver';
-      };
+      }
+    // The escalation reassessment the reviewer publication consumed (#4584): the orchestrator's
+    // `reassessment.json` recorded the observed reviewer request-changes rounds before the next
+    // fresh publication was allowed past the threshold. Records persisted before this kind
+    // existed carry none.
+    | ReviewReassessedDossierEvent;
 
 export type ReviewDossierEventRecord = ReviewDossierEvent & {
     sequence: number;
@@ -161,6 +173,7 @@ const EVENT_KIND_KEYS: Record<ReviewDossierEvent['kind'], readonly string[]> = {
         'unresolvedThreads',
         'intent',
     ],
+    'review-reassessed': REVIEW_REASSESSED_EVENT_KEYS,
 };
 const EVIDENCE_KEYS = ['observable', 'verification', 'observed'] as const;
 const DISCARDED_KEYS = ['finding', 'stance', 'reason'] as const;
@@ -292,7 +305,8 @@ function readEventKind(record: Record<string, unknown>, label: string): ReviewDo
         kind !== 'finding-discarded' &&
         kind !== 'review-published' &&
         kind !== 'finding-published' &&
-        kind !== 'delivery-authorized'
+        kind !== 'delivery-authorized' &&
+        kind !== 'review-reassessed'
     ) {
         fail(`review dossier ${label} kind must be a known event kind, found ${describeValue(kind)}`);
     }
@@ -361,6 +375,9 @@ function readEvent(
             ),
         };
     }
+    if (kind === 'review-reassessed') {
+        return readReviewReassessedEvent(record, label);
+    }
     return {
         kind,
         findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
@@ -428,6 +445,7 @@ type PublicationBindings = {
     reviewId: number | undefined;
     findings: Map<string, Extract<ReviewDossierEvent, { kind: 'finding-published' }>>;
     authorization: Extract<ReviewDossierEvent, { kind: 'delivery-authorized' }> | undefined;
+    reassessment: Extract<ReviewDossierEvent, { kind: 'review-reassessed' }> | undefined;
 };
 
 /**
@@ -437,7 +455,12 @@ type PublicationBindings = {
  * event order — bindings always append after the dispositions — is not part of the rule.
  */
 function collectPublicationBindings(events: readonly ReviewDossierEvent[]): PublicationBindings {
-    const bindings: PublicationBindings = { reviewId: undefined, findings: new Map(), authorization: undefined };
+    const bindings: PublicationBindings = {
+        reviewId: undefined,
+        findings: new Map(),
+        authorization: undefined,
+        reassessment: undefined,
+    };
     for (const event of events) {
         if (event.kind === 'review-published') {
             if (bindings.reviewId !== undefined) {
@@ -466,6 +489,12 @@ function collectPublicationBindings(events: readonly ReviewDossierEvent[]): Publ
                 );
             }
             bindings.authorization = event;
+        }
+        if (event.kind === 'review-reassessed') {
+            if (bindings.reassessment !== undefined) {
+                fail(`review dossier records more than one round reassessment`);
+            }
+            bindings.reassessment = event;
         }
     }
     return bindings;
@@ -498,7 +527,8 @@ function assertTotalMaps(payload: DossierPayload): void {
         if (
             event.kind === 'review-published' ||
             event.kind === 'finding-published' ||
-            event.kind === 'delivery-authorized'
+            event.kind === 'delivery-authorized' ||
+            event.kind === 'review-reassessed'
         ) {
             continue;
         }
@@ -673,25 +703,6 @@ export function assembleReviewDossier(input: {
 }
 
 /**
- * The payload a persisted dossier's own fields rebuild against a given event list. The append and
- * acceptance-digest paths both need exactly this projection, so it lives in one place.
- */
-function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEvent[]): DossierPayload {
-    return {
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events,
-        evidence: dossier.evidence,
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-        assessmentImpact: dossier.assessmentImpact,
-    };
-}
-
-/**
  * Appends post-publication binding events to a persisted dossier (#3375, spec #3367 AC-004). The
  * chain is append-only: unchanged events keep their exact digests because each digest covers only
  * its own payload, sequence, and predecessor, so re-chaining the prefix reproduces it byte for
@@ -712,19 +723,4 @@ export function appendReviewDossierEvents(
     const result = buildDossier(payload);
     assertDossierSize(result);
     return result;
-}
-
-/**
- * The digest the orchestrator's acceptance authorized (#3376, spec #3367 AC-005): the dossier exactly
- * as it stood when delivery was authorized, before the `delivery-authorized` event was appended.
- * Rebuilding without that event reproduces the acceptance-time digest byte for byte because the chain
- * is deterministic, which is what lets delivery prove the authorized evidence is the evidence this
- * head still carries.
- */
-export function authorizedEvidenceDigest(dossier: ReviewDossier): string {
-    const events = dossier.events.filter((event) => event.kind !== 'delivery-authorized');
-    if (events.length === dossier.events.length) {
-        return dossier.dossierDigest;
-    }
-    return buildDossier(dossierPayload(dossier, events)).dossierDigest;
 }

@@ -117,6 +117,7 @@ export const EXPOSED_COMMANDS = [
     'set_plugin_parameter',
     'set_plugin_state_bytes',
     'stop_recording',
+    'store_verified_whisper_model',
     'unload_plugin',
     'write_file_bytes',
     'write_push2_display',

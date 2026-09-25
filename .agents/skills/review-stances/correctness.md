@@ -293,6 +293,13 @@ its `required`, the strategy's key set, and the grounding value rules — and dr
 new form through the real planner path end to end. A green handler spec is not evidence for the planner
 path; the narrow acceptor is the one the diff did not touch.
 
+### 2026-09-21 — point writes targeted a linked follower that playback ignores (introduced in 2a0e594f94; fixed in #4506)
+
+Linked-lane playback resolves the source and ignores every point stored on the follower, but the point command still
+reported a successful write to that follower. Review point mutations against the sampler's resolved owner: native and
+decibel forms must refuse follower, dangling, and cyclic targets without redirecting or detaching them, while a source
+write must still change the follower's sampled value.
+
 ### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
 
 PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane

@@ -25,10 +25,11 @@ import { launch_new_project, RECENT_PROJECTS_STORAGE_KEY, setupWorkspace } from 
  *      model — network/disk-gated, not deterministic.
  *
  *    So this spec holds the honest contract instead: along every
- *    deterministic prompt-bar route (idle, preview, preview-cancelled,
+ *    deterministic prompt-bar route (idle, review awaiting, review-cancelled,
  *    batch-confirmed), the control stays unmounted while the prompt pipeline
- *    demonstrably works (preview mounts, cancellation unmounts it, the
- *    confirmed batch lands its tracks and success notice).
+ *    demonstrably works (the awaiting-review indicator mounts, cancelling it
+ *    unmounts the indicator, the confirmed batch lands its tracks and success
+ *    notice).
  *
  * 2. LaunchScreen's `aria-label="Open recent project <name>"` cards
  *    (src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx). They
@@ -51,36 +52,49 @@ test.describe('PromptBar cancel-processing control', () => {
 
     test('cancel-processing stays unmounted across every deterministic prompt-bar route', async ({ page }) => {
         const input = page.getByTestId('prompt-input');
+        const awaiting_review = page.getByText('Changes awaiting review', { exact: true });
+        const review_in_agent = page.getByRole('button', { name: 'Review in Agent' });
+        const agent_confirm = page.getByRole('button', { name: 'Confirm agent actions' });
+        const agent_cancel = page.getByRole('button', { name: 'Cancel agent actions' });
 
-        // Idle contract: nothing is processing, so the control does not mount
-        // and the input is interactive.
+        // Idle contract: nothing is processing or awaiting review, so the
+        // control does not mount and the input is interactive.
         await expect(input).toBeVisible();
         await expect(input).toBeEnabled();
         await expect(CANCEL_PROCESSING(page)).toHaveCount(0);
+        await expect(awaiting_review).toHaveCount(0);
+        await expect(agent_confirm).toHaveCount(0);
+        await expect(agent_cancel).toHaveCount(0);
 
         // Compound fast path (no LLM): three addTrack actions plan
-        // deterministically and any multi-action batch requires confirmation,
-        // mounting the preview with its own Confirm/Cancel actions controls.
+        // deterministically and any multi-action batch requires confirmation.
+        // The prompt bar raises the review and hands the actions to the Agent
+        // surface rather than rendering its own confirm/cancel controls.
         await input.fill('create 3 audio tracks');
         await input.press('Enter');
 
-        const confirm = page.getByRole('button', { name: 'Confirm actions' });
-        const cancel_preview = page.getByRole('button', { name: 'Cancel actions' });
-        await expect(confirm).toBeVisible({ timeout: 15_000 });
-        await expect(cancel_preview).toBeVisible();
-        // The preview replaces the main bar, so the processing cancel cannot
-        // coexist with the confirmation controls.
+        await expect(awaiting_review).toBeVisible({ timeout: 15_000 });
+        await expect(review_in_agent).toBeVisible();
+        // The Agent surface's controls mount only after the review route is
+        // taken, so neither is reachable before it.
+        await expect(agent_confirm).toHaveCount(0);
+        await expect(agent_cancel).toHaveCount(0);
+        // The review replaces the main bar, so the processing cancel cannot
+        // coexist with the approval controls.
         await expect(CANCEL_PROCESSING(page)).toHaveCount(0);
 
-        // Cancelling the preview settles it: the confirmation controls unmount,
-        // the bar returns to idle, and the processing cancel still never mounts.
-        await cancel_preview.click();
+        await review_in_agent.click();
+        await expect(agent_cancel).toBeVisible({ timeout: 15_000 });
 
-        await expect(confirm).toBeHidden();
+        // Cancelling the review settles it: the approval controls unmount, the
+        // bar returns to idle, and the processing cancel still never mounts.
+        await agent_cancel.click();
+
+        await expect(awaiting_review).toHaveCount(0);
         await expect(CANCEL_PROCESSING(page)).toHaveCount(0);
         await expect(input).toBeEnabled();
 
-        // The confirmed route executes for real: the preview's batch commits,
+        // The confirmed route executes for real: the review's batch commits,
         // the AiChangeToast (role="status") reports the success, the tracks land
         // in the track list — and the processing control remains unmounted
         // before, during, and after (the batch never yields an observable
@@ -88,8 +102,10 @@ test.describe('PromptBar cancel-processing control', () => {
         await input.fill('create 32 audio tracks');
         await input.press('Enter');
 
-        await expect(confirm).toBeVisible({ timeout: 15_000 });
-        await confirm.click();
+        await expect(awaiting_review).toBeVisible({ timeout: 15_000 });
+        await review_in_agent.click();
+        await expect(agent_confirm).toBeVisible({ timeout: 15_000 });
+        await agent_confirm.click();
 
         const success_notice = page.getByRole('status').filter({ hasText: 'Confirmed: create 32 audio tracks' });
         await expect(success_notice.first()).toBeVisible({ timeout: 15_000 });

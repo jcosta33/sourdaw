@@ -13,11 +13,10 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
-    AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     GITHUB_HTTPS_REMOTE,
     ORCHESTRATOR_USER_NODE_ID,
@@ -40,6 +39,7 @@ import {
     descriptiveLabelNames,
     ensureModelLabelArgs,
     existingOpenPullRequestArgs,
+    isProductScopeChange,
     issueProjectItemsArgs,
     issueTrackerMetadataArgs,
     labelListArgs,
@@ -49,6 +49,7 @@ import {
     openMilestoneTitlesArgs,
     openMilestoneTitlesFromRows,
     operatorSessionAccess,
+    PRODUCT_SCOPE_PREFIXES,
     projectListArgs,
     projectTitlesFromListing,
     projectTitlesFromRow,
@@ -56,6 +57,7 @@ import {
     pullRequestMetadataArgs,
     pullRequestLabelMetadataFromRow,
     pullRequestProjectItemsArgs,
+    runPublishLaneCli,
     trackerMetadataFromIssueRow,
     updatePullRequestArgs,
     issueExistsFromLookup,
@@ -65,6 +67,8 @@ import {
     mergeabilityFromPullRequestRow,
     parsePublishLaneArgs,
     parsePublishWorktrees,
+    PUBLISH_LANE_TEST_GUIDANCE,
+    PUBLISH_LANE_USAGE,
     publishLane,
     resolveAuthorLane,
     shellPort,
@@ -76,13 +80,8 @@ import {
     type PublishWorktree,
     type RemoteBranchRead,
 } from '../publishLane.ts';
-import {
-    SOURCE_ATTESTATION_MARKER,
-    parseSourceAttestation,
-    sourceAttestationComment,
-    sourceAttestationRecord,
-    type AttestationComment,
-} from '../sourceAttestation.ts';
+import { changedReviewPaths, type ReviewChangedPath } from '../reviewDiffSummary.ts';
+import { COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL } from '../testInstructions.ts';
 
 const PRIMARY_ROOT = '/repo';
 const DEFAULT_SUBJECT = 'feat(vcs): add identities';
@@ -92,6 +91,22 @@ const ISSUE_LANE = '/repo/.agents/worktrees/agent-12-work';
 const CLEANUP_LANE = '/repo/.agents/worktrees/agent--cleanup';
 const LEGACY_LANE = '/repo/.agents/worktrees/collab-sync-state';
 const LEGACY_BRANCH = 'fix/collab-sync-state-2039';
+/** A How-to-test value that is nothing but CI narration: exactly what the product-scope gate refuses. */
+const COMMAND_ONLY_TEST =
+    '- `pnpm test:run scripts/__tests__/publishLane.spec.ts` (140 passed)\n- `pnpm typecheck` (clean)';
+const PRODUCT_SCOPE_PATH: ReviewChangedPath = {
+    path: 'src/modules/AiRuntime/x.ts',
+    group: 'handwritten',
+    added: 1,
+    deleted: 0,
+    binary: false,
+};
+/**
+ * The full product-scope inventory, spec-owned on purpose: trimming the production
+ * PRODUCT_SCOPE_PREFIXES to a proper subset must redden the dropped prefixes' iterations below —
+ * their paths stop firing the gate — instead of silently shrinking this loop.
+ */
+const PRODUCT_SCOPE_PREFIXES_UNDER_TEST = ['src/modules/', 'src/components/', 'electron/'];
 
 /**
  * Fixture Git runs without the ambient global and system configuration. That configuration can wire
@@ -194,8 +209,6 @@ type FakeInput = {
     subject?: string | null;
     /** Author emails the publish delta's authorship read answers; defaults to the bot. */
     commitEmails?: string[];
-    /** Issue comments the attestation read answers; defaults to none. */
-    attestationComments?: AttestationComment[];
     /** Object-store rewrites the pre-push read answers; defaults to a clean store. */
     objectStoreRewrites?: { graftsFile?: string; replaceRefs?: number };
     headSha?: string;
@@ -212,6 +225,8 @@ type FakeInput = {
     mergeability?: PullRequestMergeability;
     /** Conflicting paths the lane's trial merge answers; defaults to none. */
     conflictingPaths?: string[];
+    /** Classified changed paths the lane's diff read answers; defaults to no paths at all. */
+    changedPaths?: ReviewChangedPath[];
     issueExists?: boolean;
     guardFailureReceipt?: GuardFailureReceipt;
     guardFailure?: (laneName: string) => GuardFailureReceipt | undefined;
@@ -238,7 +253,6 @@ function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const logs: string[] = [];
     const bodies: string[] = [];
-    const attestations: string[] = [];
     const dirty = input.dirty ?? false;
     const subject = input.subject === undefined ? DEFAULT_SUBJECT : (input.subject ?? undefined);
     const currentMetadata = input.currentMetadata ?? { labels: [modelLabelName('glm-5.3')], projectTitles: [] };
@@ -254,29 +268,18 @@ function fakePort(input: FakeInput = {}) {
         aheadBehind: () => ({ ahead: input.ahead ?? 1, behind: input.behind ?? 0 }),
         dirty: () => dirty,
         laneSubject: () => subject,
-        commitAttribution: (_lane, deltaBaseSha, excludedBaseShas, headSha) => {
-            calls.push(`attribution:${deltaBaseSha}:${excludedBaseShas.join('+')}:${headSha}`);
-            return (input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL]).map((email, index) => ({
-                // Index-first hex keeps the abbreviated display of neighboring fixture commits
-                // distinct, so refusal-capping assertions can tell commit 7 from commit 8.
-                oid: `${index.toString(16).padStart(2, '0')}${'0'.repeat(38)}`,
-                name: 'hplovecraft208[bot]',
-                email,
-            }));
+        commitAuthorEmails: () =>
+            (input.commitEmails ?? [AUTHOR_BOT_COMMIT_EMAIL]).map((email, index) => ({ sha: `sha${index}`, email })),
+        // The store read is ledgered so the gate-order pins below can prove the classification
+        // read follows the object-store verification instead of merely preceding the push.
+        objectStoreRewrites: () => {
+            calls.push('objectStoreRewrites');
+            return {
+                graftsFile: input.objectStoreRewrites?.graftsFile,
+                replaceRefs: input.objectStoreRewrites?.replaceRefs ?? 0,
+            };
         },
-        attestationComments: (number) => {
-            calls.push(`attestationRead:${number}`);
-            return input.attestationComments ?? [];
-        },
-        addAttestationComment: (number, body) => {
-            calls.push(`attest:${number}`);
-            attestations.push(body);
-        },
-        objectStoreRewrites: () => ({
-            graftsFile: input.objectStoreRewrites?.graftsFile,
-            replaceRefs: input.objectStoreRewrites?.replaceRefs ?? 0,
-        }),
-        headSha: () => input.headSha ?? 'a'.repeat(40),
+        headSha: () => input.headSha ?? 'abc',
         remoteBranchSha: () => input.remoteRead ?? { kind: 'present', sha: 'abc' },
         isAncestor: () => input.ancestor ?? true,
         push: (_lane, branch, headSha) => {
@@ -290,6 +293,10 @@ function fakePort(input: FakeInput = {}) {
         conflictingPaths: (_lane, base, head) => {
             calls.push(`conflicts:${base}:${head}`);
             return input.conflictingPaths ?? [];
+        },
+        changedPaths: (lane, baseSha, headSha) => {
+            calls.push(`changedPaths:${lane}:${baseSha}:${headSha}`);
+            return input.changedPaths ?? [];
         },
         // The queried branch is the entire authorization decision on the legacy path, so it goes
         // into the ledger: a fake that discarded it would stay green if resolution asked about a
@@ -385,7 +392,7 @@ function fakePort(input: FakeInput = {}) {
             return input.guardFailure !== undefined ? input.guardFailure(laneName) : input.guardFailureReceipt;
         },
     };
-    return { port, calls, logs, bodies, attestations };
+    return { port, calls, logs, bodies };
 }
 
 describe('stack publication fencing', () => {
@@ -401,7 +408,7 @@ describe('stack publication fencing', () => {
         const read = f.port.existingOpenPullRequest;
         f.port.existingOpenPullRequest = (branch) => {
             const current = read(branch);
-            return current === undefined ? undefined : { ...current, baseRefName: 'main', headRefOid: 'a'.repeat(40) };
+            return current === undefined ? undefined : { ...current, baseRefName: 'main', headRefOid: 'abc' };
         };
         expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(41);
         expect(f.calls).toContain('edit:41');
@@ -444,7 +451,7 @@ describe('stack publication fencing', () => {
                       title: DEFAULT_SUBJECT,
                       body: '',
                       baseRefName: change === 'base' ? 'agent/other' : 'agent/parent',
-                      headRefOid: change === 'head' ? 'other' : 'a'.repeat(40),
+                      headRefOid: change === 'head' ? 'other' : 'abc',
                   }
                 : undefined;
         f.port.createPullRequest = () => {
@@ -485,7 +492,7 @@ describe('stack publication fencing', () => {
             };
             port.existingOpenPullRequest = () =>
                 created
-                    ? { number: 88, title: DEFAULT_SUBJECT, body: '', baseRefName: base, headRefOid: 'a'.repeat(40) }
+                    ? { number: 88, title: DEFAULT_SUBJECT, body: '', baseRefName: base, headRefOid: 'abc' }
                     : undefined;
             port.createPullRequest = (input) => {
                 expect(input.base).toBe(base);
@@ -528,19 +535,32 @@ describe('stack publication fencing', () => {
         );
         expect(retarget.calls.some((call) => call.startsWith('push:'))).toBe(false);
     });
-});
 
-/** The one attestation a publish must have posted; a test that cannot name it proves nothing. */
-function soleAttestation(attestations: string[]): string {
-    if (attestations.length !== 1) {
-        throw new Error(`expected exactly one posted attestation, found ${attestations.length}`);
-    }
-    const [body] = attestations;
-    if (body === undefined) {
-        throw new Error('posted attestation body is missing');
-    }
-    return body;
-}
+    it('classifies the how-to-test gate from the stack parent head, not origin/main', () => {
+        // Product scope shows up only in the parent-head..head range; a gate that read base..head
+        // (origin/main) instead would see no paths at all and never refuse. Only a gate reading the
+        // resolved comparisonHead (the parent head here) can tell the two ranges apart.
+        const { port, calls } = fakePort({ existing: 41 });
+        port.stackBase = () => ({
+            branch: 'agent/parent',
+            head: 'parent-head',
+            parentNumber: 11,
+            parentState: 'OPEN',
+            parentHead: 'parent-head',
+        });
+        port.changedPaths = (lane, base, head) => {
+            calls.push(`changedPaths:${lane}:${base}:${head}`);
+            return base === 'parent-head' ? [PRODUCT_SCOPE_PATH] : [];
+        };
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
+            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+        );
+
+        expect(calls).toContain(`changedPaths:${ISSUE_LANE}:parent-head:abc`);
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+    });
+});
 
 /**
  * The whole text of a refusal, so a test can assert what it must *not* say. `toThrow` can only
@@ -623,10 +643,9 @@ describe('lane publish', () => {
             for (const file of [
                 'trustedGithubWriteBootstrap.ts',
                 'publishLane.ts',
-                'sourceAttestation.ts',
-                'canonicalRecord.ts',
                 'githubAppIdentity.ts',
                 'prContract.ts',
+                'testInstructions.ts',
                 'stackedLanes.ts',
                 'reviewDiffSummary.ts',
                 'wasm-artifacts.ts',
@@ -1298,6 +1317,104 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain(TEST_INSTRUCTIONS);
     });
 
+    it('refuses a product-scope publish whose --test only narrates commands, before any remote write', () => {
+        const { port, calls } = fakePort({ changedPaths: [PRODUCT_SCOPE_PATH] });
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
+            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+        );
+        // The gate read the lane's own diff over the exact base and head the port carries before
+        // refusing, so the classification is the lane's, not a guess — and it read after the
+        // object-store verification, so no rewrite can split what the gate reads from what the
+        // push packs. Requiring the store read itself in the ledger is what pins the order: a
+        // read that ran before the store verification would refuse without the store read ever
+        // landing in the ledger.
+        expect(calls).toContain('objectStoreRewrites');
+        expect(calls.indexOf(`changedPaths:${ISSUE_LANE}:base:abc`)).toBeGreaterThan(
+            calls.indexOf('objectStoreRewrites')
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
+    });
+
+    it('publishes a product-scope change whose --test teaches an observable step', () => {
+        const { port, calls, bodies } = fakePort({ changedPaths: [PRODUCT_SCOPE_PATH] });
+        const observable = 'Open the arrangement view and confirm the new clip handle renders.';
+
+        expect(publishLane(12, port, undefined, observable, DEFAULT_SUMMARY)).toBe(88);
+
+        expect(calls).toContain('push:agent/12/work');
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${observable}`);
+    });
+
+    it('refuses an explicit command-only --test on a product-scope update of an existing pull request', () => {
+        const { port, calls } = fakePort({ existing: 41, changedPaths: [PRODUCT_SCOPE_PATH] });
+
+        expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST)).toThrow(
+            COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
+    it('preserves a body verbatim through a product-scope update without re-judging it', () => {
+        // The preserved body is command-only on purpose: keying the gate on the resolved value
+        // instead of the flag would re-judge it and redden this update, which must succeed with
+        // the in-flight pull request's How-to-test carried through untouched.
+        const { port, calls, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, COMMAND_ONLY_TEST),
+            changedPaths: [PRODUCT_SCOPE_PATH],
+        });
+
+        expect(publishLane(12, port)).toBe(41);
+
+        expect(calls).toContain('edit:41');
+        expect(bodies.at(-1)).toContain(`### 🧪 How to test\n${COMMAND_ONLY_TEST}`);
+    });
+
+    it('pins the product-scope prefix inventory the gate classifies by', () => {
+        expect([...PRODUCT_SCOPE_PREFIXES]).toEqual(PRODUCT_SCOPE_PREFIXES_UNDER_TEST);
+    });
+
+    // One iteration per product prefix, so trimming PRODUCT_SCOPE_PREFIXES to any proper subset
+    // reddens the iterations whose prefixes it dropped.
+    it.each(PRODUCT_SCOPE_PREFIXES_UNDER_TEST)(
+        'refuses a command-only --test under the product prefix %s',
+        (prefix) => {
+            const { port, calls } = fakePort({
+                changedPaths: [{ path: `${prefix}x.ts`, group: 'handwritten', added: 1, deleted: 0, binary: false }],
+            });
+
+            expect(() => publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toThrow(
+                COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL
+            );
+            expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        }
+    );
+
+    it('skips the gate for test files under a product tree', () => {
+        const { port, calls } = fakePort({
+            changedPaths: [
+                { path: 'src/modules/AiRuntime/x.spec.ts', group: 'tests', added: 1, deleted: 0, binary: false },
+            ],
+        });
+
+        expect(publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('push:agent/12/work');
+    });
+
+    it('skips the gate for docs under a product tree', () => {
+        const { port, calls } = fakePort({
+            changedPaths: [{ path: 'electron/README.md', group: 'docs', added: 1, deleted: 0, binary: false }],
+        });
+
+        expect(publishLane(12, port, undefined, COMMAND_ONLY_TEST, DEFAULT_SUMMARY)).toBe(88);
+        expect(calls).toContain('push:agent/12/work');
+    });
+
     it('updates the existing What section when --summary is supplied', () => {
         const updatedSummary = 'Describe the change for a teammate who was not in the session.';
         const { port, bodies } = fakePort({
@@ -1716,9 +1833,9 @@ describe('lane publish', () => {
         const message = refusalMessage(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY));
 
         expect(message).toContain('authored as fixture-author@example.com');
-        expect(message).toContain('0700000 fixture-author@example.com');
+        expect(message).toContain('sha7 fixture-author@example.com');
         expect(message).toContain('+2 more');
-        expect(message).not.toContain('0800000');
+        expect(message).not.toContain('sha8');
     });
 
     it('parses porcelain worktrees and argv', () => {
@@ -1810,6 +1927,27 @@ describe('lane publish', () => {
         expect(() => parsePublishLaneArgs(['12', '--model'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--model', 'glm-5.3', '--model', 'kimi-k2.5'])).toThrow(/usage/);
         expect(() => parsePublishLaneArgs(['12', '--milestone', 'v1.2', '--milestone', 'v1.3'])).toThrow(/usage/);
+    });
+
+    it('prints the --test guidance under the usage line on --help', async () => {
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        let lines: string[] = [];
+        try {
+            await expect(runPublishLaneCli(['--help'])).resolves.toBe(0);
+            lines = log.mock.calls.map((call) => call.map((part) => String(part)).join(' '));
+        } finally {
+            log.mockRestore();
+        }
+
+        expect(lines[0]).toBe(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
+        expect(lines).toContain(PUBLISH_LANE_TEST_GUIDANCE);
+        // The guidance derives its tree list from PRODUCT_SCOPE_PREFIXES, so this containment is
+        // content-level: dropping a tree from the interpolation reddens here without restating
+        // the literals beside the constant.
+        const guidance = lines.find((line) => line.includes('product-scope')) ?? '';
+        for (const prefix of PRODUCT_SCOPE_PREFIXES_UNDER_TEST) {
+            expect(guidance).toContain(prefix);
+        }
     });
 
     it('carries the selected lane path into the port for explicit path resolution', () => {
@@ -2241,6 +2379,170 @@ describe('lane publish', () => {
     });
 
     /**
+     * The classification the `--test` gate consumes must come from the repository, not a guess, so
+     * this measures the port's own numstat read against a real commit: a fake can prove only which
+     * port member is called, never that a `src/modules/` change classifies as product scope.
+     */
+    it('classifies a real lane commit touching src/modules as product scope', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-paths-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            const moduleFile = join(PRODUCT_SCOPE_PREFIXES[0], 'engine.ts');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), 'export const engine = 1;\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(audio): fixture product change']);
+
+            const paths = shellPort(session, repository).changedPaths(repository, base, 'HEAD');
+
+            expect(paths).toContainEqual({
+                path: moduleFile,
+                group: 'handwritten',
+                added: 1,
+                deleted: 0,
+                binary: false,
+            });
+            expect(isProductScopeChange(paths)).toBe(true);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The lane-root half of the classification, unpinnable while both real-git fixtures share one
+     * root: the gate must read the LANE's .gitattributes, like reportDiff, so a lane that marks its
+     * own product-tree file linguist-generated keeps the gate silent even when an alternative root
+     * (the primary checkout, say) without that marking would classify the same numstat handwritten.
+     */
+    it('classifies generated markings from the lane root, not an alternative root', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lane-attributes-'));
+        const alternativeRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-alt-attributes-'));
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            const moduleFile = join(PRODUCT_SCOPE_PREFIXES[0], 'generated.ts');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), 'export const generated = 1;\n');
+            writeFileSync(join(repository, '.gitattributes'), `${moduleFile} linguist-generated=true\n`);
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(audio): fixture generated product change']);
+
+            const lanePaths = shellPort(session, repository).changedPaths(repository, base, 'HEAD');
+            expect(lanePaths).toContainEqual({
+                path: moduleFile,
+                group: 'generated',
+                added: 1,
+                deleted: 0,
+                binary: false,
+            });
+            expect(isProductScopeChange(lanePaths)).toBe(false);
+
+            const alternativePaths = changedReviewPaths(
+                alternativeRoot,
+                Buffer.from(git(['diff', '--numstat', '-z', `${base}...HEAD`]))
+            );
+            expect(alternativePaths).toContainEqual({
+                path: moduleFile,
+                group: 'handwritten',
+                added: 1,
+                deleted: 0,
+                binary: false,
+            });
+            expect(isProductScopeChange(alternativePaths)).toBe(true);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            rmSync(alternativeRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
+     * The two-dot mutation this pins: diffing against main's moving tip instead of the merge base
+     * answers the extra src/modules deletion entry main's advance produced — which the toEqual
+     * below catches, and which would fabricate product scope — instead of the lane's own scripts
+     * change. The merge-base range must see exactly that change and, because a scripts path is
+     * never product scope, must classify the lane as not firing the gate, whatever product paths
+     * unrelated main movement carries. The port carries a distinct primary root whose
+     * .gitattributes marks the lane's own file generated, so substituting the primary root for the
+     * lane in the classification reddens the handwritten expectation instead of passing vacuously.
+     */
+    it('classifies a scripts-only lane by its merge base, never by advanced main', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-range-'));
+        const primary = mkdtempSync(join(tmpdir(), 'sourdaw-publish-changed-primary-'));
+        writeFileSync(join(primary, '.gitattributes'), 'scripts/fixture.ts linguist-generated=true\n');
+        const session: GhSession = {
+            configDir: '/tmp/sourdaw-gh',
+            env: { PATH: process.env.PATH, ...HERMETIC_GIT_CONFIG },
+            dispose: () => undefined,
+        };
+        const git = (args: string[]) => fixtureGit(repository, args);
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(repository, 'base.txt'), 'base\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(fixture): base']);
+            const base = git(['rev-parse', 'HEAD']);
+
+            git(['checkout', '-b', 'agent/12/scripts']);
+            mkdirSync(join(repository, 'scripts'), { recursive: true });
+            writeFileSync(join(repository, 'scripts', 'fixture.ts'), 'export const fixture = 1;\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'chore(scripts): fixture lane change']);
+            const laneHead = git(['rev-parse', 'HEAD']);
+
+            git(['checkout', 'main']);
+            const moduleFile = join(PRODUCT_SCOPE_PREFIXES[0], 'foo.ts');
+            mkdirSync(join(repository, dirname(moduleFile)), { recursive: true });
+            writeFileSync(join(repository, moduleFile), 'export const foo = 1;\n');
+            git(['add', '-A']);
+            git(['commit', '--no-gpg-sign', '-m', 'feat(audio): unrelated main movement']);
+            const mainTip = git(['rev-parse', 'HEAD']);
+
+            const paths = shellPort(session, repository, primary).changedPaths(repository, mainTip, laneHead);
+
+            // The merge-base view is the lane's own change alone, so the product path main gained
+            // never reaches the classification — a two-dot revert answers two records here, the
+            // scripts/fixture.ts addition and that same src/modules deletion entry, and the toEqual
+            // catches both. The lane's own root has no .gitattributes, so the entry stays
+            // handwritten: a primary-root substitution would answer generated.
+            expect(paths).toEqual([
+                { path: 'scripts/fixture.ts', group: 'handwritten', added: 1, deleted: 0, binary: false },
+            ]);
+            expect(isProductScopeChange(paths)).toBe(false);
+            expect(git(['merge-base', mainTip, laneHead])).toBe(base);
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            rmSync(primary, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    /**
      * The read itself must not conflate "no ref for the branch" with "could not read the remote":
      * a fake port can only hand `publishLane` a pre-classified answer, so the classification of the
      * raw `ls-remote --heads` output is pinned here against the real port, with a git shim answering
@@ -2575,6 +2877,28 @@ describe('lane publish', () => {
             expect(calls.some((call) => call.startsWith('label:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('readModel:'))).toBe(false);
             expect(calls.some((call) => call.startsWith('prMeta:'))).toBe(false);
+        });
+
+        it('never judges a legacy lane by the product-scope how-to-test gate, even with a command-only --test', () => {
+            // A legacy lane writes no body (the contract above), so a command-only --test here is
+            // free text the operator chose for some other purpose, not a How-to-test section this
+            // gate could be protecting. The gate must not merely decline to act on it: it must
+            // never read the lane's diff at all, so it stays a push-only publish exactly as before
+            // this gate existed, regardless of --test content or product-scope paths.
+            const { port, calls, bodies } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+                changedPaths: [PRODUCT_SCOPE_PATH],
+            });
+
+            expect(publishLane(undefined, port, undefined, COMMAND_ONLY_TEST)).toBe(2275);
+
+            expect(calls).toContain(`push:${LEGACY_BRANCH}`);
+            expect(calls.some((call) => call.startsWith('changedPaths:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+            expect(bodies).toEqual([]);
         });
 
         it('applies metadata to a legacy pull request only when --model is explicit', () => {
@@ -3704,27 +4028,18 @@ describe('push delta authorship gate', () => {
     const BRANCH = 'agent/12/authorship';
     const HUMAN_EMAIL = 'fixture@example.com';
 
-    function commitInLane(lane: string, filename: string, message: string, author: 'bot' | 'human' | 'forged'): string {
+    function commitInLane(lane: string, filename: string, message: string, author: 'bot' | 'human'): string {
         writeFileSync(join(lane, filename), `${filename}\n`);
         fixtureGit(lane, ['add', '--', filename]);
-        // 'forged' wears the App's display name under a foreign email: the gate keys on the email,
-        // so this commit must be condemned exactly like any other foreign-authored one.
-        const identities: Record<'bot' | 'human' | 'forged', NodeJS.ProcessEnv> = {
-            bot: {
-                GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
-                GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
-                GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
-                GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
-            },
-            forged: {
-                GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
-                GIT_AUTHOR_EMAIL: HUMAN_EMAIL,
-                GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
-                GIT_COMMITTER_EMAIL: HUMAN_EMAIL,
-            },
-            human: {},
-        };
-        const overrides = identities[author];
+        const overrides: NodeJS.ProcessEnv =
+            author === 'bot'
+                ? {
+                      GIT_AUTHOR_NAME: 'hplovecraft208[bot]',
+                      GIT_AUTHOR_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                      GIT_COMMITTER_NAME: 'hplovecraft208[bot]',
+                      GIT_COMMITTER_EMAIL: AUTHOR_BOT_COMMIT_EMAIL,
+                  }
+                : {};
         execFileSync('git', ['commit', '--no-gpg-sign', '-m', message], {
             cwd: lane,
             env: fixtureGitEnv(overrides),
@@ -3741,7 +4056,6 @@ describe('push delta authorship gate', () => {
         baseSha: string;
         port: PublishLanePort;
         session: GhSession;
-        attestations: string[];
     } {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-authorship-'));
         const primary = join(fixtureRoot, 'primary');
@@ -3767,7 +4081,6 @@ describe('push delta authorship gate', () => {
         fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
         fixtureGit(primary, ['config', `branch.${BRANCH}.sourdaw-author-model`, 'glm-5.3']);
         const session = createGhSession('ghs_authorship_marker', { PATH: process.env.PATH });
-        const attestations: string[] = [];
         const port: PublishLanePort = {
             ...shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }),
             issueExists: () => true,
@@ -3776,10 +4089,6 @@ describe('push delta authorship gate', () => {
             updatePullRequest: () => undefined,
             readPullRequestMergeability: () => 'mergeable',
             ensureModelLabel: () => undefined,
-            attestationComments: () => [],
-            addAttestationComment: (_number, body) => {
-                attestations.push(body);
-            },
             readIssueTrackerMetadata: () => trackerMetadataFromIssueRow({}),
             openMilestoneTitles: () => [],
             knownProjectTitles: () => {
@@ -3790,7 +4099,7 @@ describe('push delta authorship gate', () => {
             readPullRequestProjectTitles: () => [],
             applyPullRequestMetadata: () => undefined,
         };
-        return { fixtureRoot, primary, lane, remote, baseSha, port, session, attestations };
+        return { fixtureRoot, primary, lane, remote, baseSha, port, session };
     }
 
     function dispose(fixture: ReturnType<typeof authorshipFixture>): void {
@@ -3968,7 +4277,7 @@ describe('push delta authorship gate', () => {
             // With only the parent head excluded, the gated range still condemns the merged
             // main-side commit; both resolved bases together are what clear it.
             const emails = (excluded: string[]) =>
-                f.port.commitAttribution(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
+                f.port.commitAuthorEmails(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
             expect(emails([f.baseSha])).toContain(FOREIGN_EMAIL);
             expect(emails([f.baseSha, mainSha])).not.toContain(FOREIGN_EMAIL);
 
@@ -4036,7 +4345,7 @@ describe('push delta authorship gate', () => {
             // `publishes a stack child of a merged parent whose retained commits only the parent-head
             // exclusion clears`.
             const emails = (excluded: string[]) =>
-                f.port.commitAttribution(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
+                f.port.commitAuthorEmails(f.lane, remoteTip, excluded, head).map((commit) => commit.email);
             expect(emails([f.baseSha])).toContain(HUMAN_EMAIL);
             expect(emails([parentHead])).not.toContain(HUMAN_EMAIL);
 
@@ -4076,7 +4385,7 @@ describe('push delta authorship gate', () => {
             // which is exactly why the read alone cannot decide a push: the store is split.
             expect(
                 f.port
-                    .commitAttribution(f.lane, f.baseSha, [f.baseSha, f.baseSha], humanHead)
+                    .commitAuthorEmails(f.lane, f.baseSha, [f.baseSha, f.baseSha], humanHead)
                     .map((commit) => commit.email)
             ).toContain(HUMAN_EMAIL);
 
@@ -4106,7 +4415,7 @@ describe('push delta authorship gate', () => {
             writeFileSync(graftsPath, `${botHead} ${f.baseSha}\n`);
             expect(
                 f.port
-                    .commitAttribution(f.lane, f.baseSha, [f.baseSha, f.baseSha], botHead)
+                    .commitAuthorEmails(f.lane, f.baseSha, [f.baseSha, f.baseSha], botHead)
                     .map((commit) => commit.email)
             ).not.toContain(HUMAN_EMAIL);
 
@@ -4309,7 +4618,7 @@ describe('push delta authorship gate', () => {
             // resolved to main, only adding the parent-head exclusion clears what the child retained.
             expect(fixtureGit(f.lane, ['log', '--format=%ae', `${mainSha}..${head}`])).toContain(HUMAN_EMAIL);
             const emails = (excluded: string[]) =>
-                f.port.commitAttribution(f.lane, mainSha, excluded, head).map((commit) => commit.email);
+                f.port.commitAuthorEmails(f.lane, mainSha, excluded, head).map((commit) => commit.email);
             expect(emails([mainSha])).toContain(HUMAN_EMAIL);
             expect(emails([mainSha, landed.parentHead])).not.toContain(HUMAN_EMAIL);
 
@@ -4387,175 +4696,5 @@ describe('push delta authorship gate', () => {
         } finally {
             dispose(f);
         }
-    });
-
-    it('refuses a forged display name — the App\u2019s name under a foreign email — before anything reaches the remote', () => {
-        const f = authorshipFixture();
-        try {
-            commitInLane(f.lane, 'one.txt', 'feat(gate): bot commit', 'bot');
-            commitInLane(f.lane, 'two.txt', 'feat(gate): forged display name', 'forged');
-
-            const message = refusalMessage(() =>
-                publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)
-            );
-
-            expect(message).toContain(`authored as ${HUMAN_EMAIL}`);
-            expect(() => fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`])).toThrow();
-            expect(f.attestations).toEqual([]);
-        } finally {
-            dispose(f);
-        }
-    });
-
-    it('attests every exact commit OID and its observed authorship, bound to the pushed head', () => {
-        const f = authorshipFixture();
-        try {
-            const first = commitInLane(f.lane, 'one.txt', 'feat(gate): first bot commit', 'bot');
-            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): second bot commit', 'bot');
-
-            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
-
-            const record = parseSourceAttestation(soleAttestation(f.attestations));
-            expect(record?.pr).toBe(88);
-            // The attested head is exactly what the pinned push delivered to the remote.
-            expect(record?.head).toBe(fixtureGit(f.remote, ['rev-parse', `refs/heads/${BRANCH}`]));
-            expect(record?.head).toBe(head);
-            expect(record?.commits.map((entry) => entry.oid)).toEqual([first, head].sort());
-            for (const entry of record?.commits ?? []) {
-                expect(entry.name).toBe('hplovecraft208[bot]');
-                expect(entry.email).toBe(AUTHOR_BOT_COMMIT_EMAIL);
-            }
-        } finally {
-            dispose(f);
-        }
-    });
-
-    it('attests observed authorship truthfully when the remote tip holds pre-gate human commits', () => {
-        const f = authorshipFixture();
-        try {
-            const humanTip = commitInLane(f.lane, 'one.txt', 'feat(gate): human commit', 'human');
-            fixtureGit(f.primary, ['push', f.remote, `${humanTip}:refs/heads/${BRANCH}`]);
-            const head = commitInLane(f.lane, 'two.txt', 'feat(gate): bot commit on top', 'bot');
-
-            expect(publishLane(12, f.port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
-
-            // The gate condemned only the delta (bot-authored, so it passed); the attestation
-            // binds the whole lane-authored set above the comparison base and records the human
-            // commit's observed authorship verbatim — the record is evidence, not a verdict.
-            const record = parseSourceAttestation(soleAttestation(f.attestations));
-            expect(record?.head).toBe(head);
-            expect(record?.commits.map((entry) => entry.oid)).toEqual([humanTip, head].sort());
-            expect(record?.commits.find((entry) => entry.oid === humanTip)?.email).toBe(HUMAN_EMAIL);
-        } finally {
-            dispose(f);
-        }
-    });
-});
-
-describe('source attestation', () => {
-    const HEAD = 'a'.repeat(40);
-    const BASE = 'c'.repeat(40);
-    const REMOTE_TIP = 'f'.repeat(40);
-    const BOT_COMMIT = { oid: '0'.repeat(40), name: 'hplovecraft208[bot]', email: AUTHOR_BOT_COMMIT_EMAIL };
-
-    it('gates the remote-tip delta while attesting the full set above the comparison base', () => {
-        const { port, calls, attestations } = fakePort({
-            baseSha: BASE,
-            remoteRead: { kind: 'present', sha: REMOTE_TIP },
-        });
-
-        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
-
-        // Both reads bind the pushed head; the attestation reads above the comparison base while
-        // the gate reads only the remote-tip delta — one calculation, two scopes.
-        expect(calls).toContain(`attribution:${BASE}:${BASE}:${HEAD}`);
-        expect(calls).toContain(`attribution:${REMOTE_TIP}:${BASE}:${HEAD}`);
-        expect(calls).toContain(`pushHead:${HEAD}`);
-        const record = parseSourceAttestation(soleAttestation(attestations));
-        expect(record).toEqual(sourceAttestationRecord(88, HEAD, [BOT_COMMIT]));
-    });
-
-    it('reads the attestation set once when the first publication makes the delta base the comparison base', () => {
-        const { port, calls } = fakePort({ baseSha: BASE, remoteRead: { kind: 'absent' } });
-
-        expect(publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY)).toBe(88);
-
-        const reads = calls.filter((call) => call.startsWith('attribution:'));
-        expect(reads).toEqual([`attribution:${BASE}:${BASE}:${HEAD}`]);
-        expect(calls).toContain('attest:88');
-    });
-
-    it('does not repost an attestation whose canonical marker already stands from the author App', () => {
-        const standing = sourceAttestationComment(sourceAttestationRecord(88, HEAD, [BOT_COMMIT]));
-        const { port, calls } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: standing, authorNodeId: AUTHOR_BOT_NODE_ID }],
-        });
-
-        expect(publishLane(12, port)).toBe(88);
-
-        expect(calls).toContain('attestationRead:88');
-        expect(calls.some((call) => call.startsWith('attest:'))).toBe(false);
-    });
-
-    it('supersedes a standing record that differs under the same head, by posting the recomputed one', () => {
-        const drifted = sourceAttestationComment(
-            sourceAttestationRecord(88, HEAD, [BOT_COMMIT, { ...BOT_COMMIT, oid: `1${'0'.repeat(39)}` }])
-        );
-        const { port, calls } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: drifted, authorNodeId: AUTHOR_BOT_NODE_ID }],
-        });
-
-        expect(publishLane(12, port)).toBe(88);
-
-        expect(calls).toContain('attest:88');
-    });
-
-    it('ignores a foreign-actor marker, even byte-identical to the record it would post', () => {
-        const standing = sourceAttestationComment(sourceAttestationRecord(88, HEAD, [BOT_COMMIT]));
-        const { port, calls } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: standing, authorNodeId: 'BOT_kgDOFORGED' }],
-        });
-
-        expect(publishLane(12, port)).toBe(88);
-
-        expect(calls).toContain('attest:88');
-    });
-
-    it('fails on a malformed author-App marker: corrupt protected-channel evidence is never absent', () => {
-        const { port } = fakePort({
-            existing: 88,
-            baseSha: BASE,
-            attestationComments: [{ body: `${SOURCE_ATTESTATION_MARKER} not json`, authorNodeId: AUTHOR_BOT_NODE_ID }],
-        });
-
-        expect(() => publishLane(12, port)).toThrow(/not valid JSON/);
-    });
-
-    it('attests a legacy lane\u2019s publication to its existing pull request', () => {
-        const legacyTree = worktree({
-            path: LEGACY_LANE,
-            branch: LEGACY_BRANCH,
-            locked: true,
-            lockReason: AUTHOR_LOCK_REASON,
-        });
-        const { port, calls, attestations } = fakePort({
-            trees: [...otherAuthorLanes(), legacyTree],
-            cwd: LEGACY_LANE,
-            existing: 2275,
-            baseSha: BASE,
-        });
-
-        expect(publishLane(undefined, port)).toBe(2275);
-
-        expect(calls).toContain('attest:2275');
-        const record = parseSourceAttestation(soleAttestation(attestations));
-        expect(record?.pr).toBe(2275);
-        expect(record?.head).toBe(HEAD);
     });
 });

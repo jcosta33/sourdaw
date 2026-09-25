@@ -483,12 +483,7 @@ function trustedPublishFixture(root: string, policy: string): void {
     );
     writeFileSync(join(root, 'scripts/githubAppIdentity.ts'), 'export const publishingPermission = "ordinary";\n');
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
-    for (const path of stackSummarySources) {
-        writeFileSync(join(root, path), 'export {};\n');
-    }
-    // The lane:publish closure carries the source attestation modules; the synthetic publishLane
-    // above imports none of them, but the snapshot refuses a graph path missing from the commit.
-    for (const path of ['scripts/sourceAttestation.ts', 'scripts/canonicalRecord.ts']) {
+    for (const path of [...stackSummarySources, 'scripts/testInstructions.ts']) {
         writeFileSync(join(root, path), 'export {};\n');
     }
     runGit(root, ['init', '-b', 'main']);
@@ -573,6 +568,8 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
     writeFileSync(join(root, 'scripts/prContract.ts'), PR_CONTRACT_TRUSTED_ENV_STUB);
     for (const path of [
         'githubAppIdentity.ts',
+        'reconstructReviewRounds.ts',
+        'reviewRoundEscalation.ts',
         'reviewPublicationLegacyIncidents.ts',
         'prepareReview.ts',
         'reviewBundleLocator.ts',
@@ -581,6 +578,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewDocumentParser.ts',
         'reviewDossier.ts',
         'reviewDossierChain.ts',
+        'reviewDossierReassessed.ts',
         'reviewDossierViews.ts',
         'evidenceSafety.ts',
         'canonicalRecord.ts',
@@ -817,7 +815,7 @@ describe('package scripts and gitignore', () => {
         const final = pullRequestSnapshot({
             state: 'MERGED',
             mergeable: 'UNKNOWN',
-            mergedByActorNodeId: ORCHESTRATOR_USER_NODE_ID,
+            mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
         });
         const dependentBefore: StackedPullRequest = {
             number: 2601,
@@ -865,9 +863,7 @@ describe('package scripts and gitignore', () => {
             headCheckRuns: () => [],
             requiredStatusCheckContexts: () => ['Gate'],
             reviewState: () => ({
-                orchestratorAcceptedAfterReviewer: true,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 latestReviewerStateOnHead: 'APPROVED',
                 unresolvedThreads: 0,
             }),
@@ -1078,6 +1074,7 @@ describe('package scripts and gitignore', () => {
             'scripts/trackerIssueReconciliation.ts',
             'scripts/reviewBundleLocator.ts',
             'scripts/reviewDossier.ts',
+            'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierChain.ts',
             'scripts/reviewDossierViews.ts',
             'scripts/evidenceSafety.ts',
@@ -1099,11 +1096,15 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverPublishReviewLock.ts',
+            'scripts/reconstructReviewRounds.ts',
+            'scripts/reviewRepair.ts',
+            'scripts/reviewRoundEscalation.ts',
             'scripts/publishReview.ts',
             'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewDocumentParser.ts',
             'scripts/reviewDossier.ts',
+            'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierChain.ts',
             'scripts/evidenceSafety.ts',
             'scripts/canonicalRecord.ts',
@@ -1210,6 +1211,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/trackerIssueReconciliation.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
                     'scripts/reviewDossierViews.ts',
                     'scripts/evidenceSafety.ts',
@@ -1230,11 +1232,15 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/acceptReview.ts',
+                    'scripts/reconstructReviewRounds.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
@@ -1259,10 +1265,14 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reconstructReviewRounds.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewRoundEscalation.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
@@ -1287,11 +1297,15 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/recoverPublishReviewLock.ts',
+                    'scripts/reconstructReviewRounds.ts',
+                    'scripts/reviewRepair.ts',
+                    'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
@@ -1318,8 +1332,13 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/repairReviewFinding.ts',
+                    'scripts/reconstructReviewRounds.ts',
+                    'scripts/reviewBundleLocator.ts',
+                    'scripts/reviewDossierViews.ts',
+                    'scripts/reviewRoundEscalation.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
@@ -1341,6 +1360,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/confirmReviewRepairs.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewDossier.ts',
+                    'scripts/reviewDossierReassessed.ts',
                     'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
@@ -1395,10 +1415,9 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/syncParentLane.ts',
                     'scripts/publishLane.ts',
-                    'scripts/sourceAttestation.ts',
-                    'scripts/canonicalRecord.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
+                    'scripts/testInstructions.ts',
                     ...stackSummarySources,
                 ],
             },
@@ -1515,10 +1534,9 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('lane:publish')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishLane.ts',
-            'scripts/sourceAttestation.ts',
-            'scripts/canonicalRecord.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
+            'scripts/testInstructions.ts',
             ...stackSummarySources,
         ]);
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-package-'));
@@ -2482,10 +2500,6 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
-            }),
             authenticateAuthor: async () => {
                 entered.push('authenticate');
                 throw new Error('authentication should not start');
@@ -2569,6 +2583,8 @@ describe('package scripts and gitignore', () => {
                 readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
                 bundleFileExists: (path: string) => existsSync(path),
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
+                publicReviews: () => [],
+                publicReviewComments: () => [],
                 postReview: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),
@@ -2605,10 +2621,6 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
-            }),
             authenticateAuthor: async () => {
                 entered.push('authenticate');
                 throw new Error('authentication should not start');
@@ -2919,10 +2931,6 @@ describe('package scripts and gitignore', () => {
                 const dependencies: DeliveryCoordinatorDependencies = {
                     primaryRoot: () => root,
                     serializeDelivery: withPullRequestDeliveryLock,
-                    authenticateOrchestrator: async () => ({
-                        minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                        session: { env: {}, configDir: '/unused', dispose: () => undefined },
-                    }),
                     authenticateAuthor: async () => authentication,
                     authenticateTracker: async () => authentication,
                     repositoryName: () => 'jcosta33/sourdaw',
@@ -2986,10 +2994,6 @@ describe('package scripts and gitignore', () => {
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeDelivery: withPullRequestDeliveryLock,
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: { env: {}, configDir: '/unused', dispose: () => undefined },
-            }),
             authenticateAuthor: async () => authentication,
             authenticateTracker: async () => authentication,
             repositoryName: () => 'jcosta33/sourdaw',
@@ -3425,7 +3429,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('routes only merge mutation through the user runner and preserves author receipt writes', () => {
+    it('routes merge and receipt writes through author-role runners', () => {
         const calls: Array<{ actor: string; args: string[] }> = [];
         const port = shellPort(
             'jcosta33/sourdaw',
@@ -3461,7 +3465,7 @@ describe('package scripts and gitignore', () => {
             },
             {
                 mergeCapture: (_command, args) => {
-                    calls.push({ actor: 'orchestrator', args });
+                    calls.push({ actor: 'author-merge', args });
                     expect(args).toEqual([
                         'api',
                         '--method',
@@ -3478,7 +3482,7 @@ describe('package scripts and gitignore', () => {
         );
         expect(port.addDeliveryReceipt(2495, 'receipt').authorNodeId).toBe(AUTHOR_BOT_NODE_ID);
         port.merge(2495, 'head', false);
-        expect(calls.map((call) => call.actor)).toEqual(['author', 'author', 'orchestrator']);
+        expect(calls.map((call) => call.actor)).toEqual(['author', 'author', 'author-merge']);
     });
 
     it('wires PR operations and the regular-issue adapter to distinct least-privilege sessions', async () => {
@@ -3516,11 +3520,6 @@ describe('package scripts and gitignore', () => {
             clearDeliveryReceiptAuthority: () => undefined,
             log: () => undefined,
         };
-        const orchestratorSession = {
-            env: { GH_TOKEN: 'user-merge-sentinel' },
-            configDir: '/orchestrator-only',
-            dispose: () => undefined,
-        };
         const seen: string[] = [];
         const adapterRequests: Array<{ args: string[]; token: string }> = [];
         let trackerPort: ReconcileTrackerIssuePort | undefined;
@@ -3538,19 +3537,13 @@ describe('package scripts and gitignore', () => {
                     seen.push(`lock:${number}:release`);
                 }
             },
-            authenticateOrchestrator: async () => ({
-                minted: { actorNodeId: ORCHESTRATOR_USER_NODE_ID },
-                session: orchestratorSession,
-            }),
             authenticateAuthor: async () => author,
             authenticateTracker: async () => tracker,
             repositoryName: (session) => {
                 seen.push(`repository:${session.env.GH_TOKEN ?? ''}`);
                 return 'jcosta33/sourdaw';
             },
-            deliveryPort: (_repository, auth, _root, _markAttempt, mergeSession) => {
-                expect(mergeSession).toBe(orchestratorSession);
-                expect(mergeSession).not.toBe(auth.session);
+            deliveryPort: (_repository, auth, _root, _markAttempt) => {
                 seen.push(`delivery:${auth.session.env.GH_TOKEN ?? ''}`);
                 return deliveryPort;
             },

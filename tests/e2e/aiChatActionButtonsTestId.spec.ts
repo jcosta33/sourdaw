@@ -8,14 +8,17 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
  * src/modules/AiRuntime/presentations/views/ChatPanel.tsx) render only on an
  * assistant message whose pendingActionConfirmationStatus is 'proposed'.
  *
- * A deterministic route to that state is the prompt-mode compound fast path
+ * A deterministic route to that state is the apply-mode compound fast path
  * (`tryCompoundFastPath`): the command "create 3 audio tracks" plans three
  * addTrack actions, and any multi-action batch requires confirmation
- * (`requiresAppActionConfirmation`), no LLM inference involved. Prompt mode
- * still needs a resolvable backend (`resolveBackend() !== 'none'`), which
- * headless Chromium satisfies via `navigator.gpu` (WebGPU-present ⇒ 'webllm').
- * When the composer is disabled because no backend resolves at all, the spec
- * degrades to the weaker idle-state contract instead.
+ * (`requiresAppActionConfirmation`). No LLM inference, provider, or GPU is
+ * involved: the composer's "Agent execution mode" select chooses the mode, and
+ * `sendChatMessage` routes every non-explain mode straight to orchestration
+ * (`interactionMode !== 'explain'`), where `parsePromptToActions` runs the
+ * compound fast path before the provider-planning route can deny the request.
+ * `navigator.gpu` presence is deliberately not consulted here — admission reads
+ * the actual `requestAdapter` result, so a machine with no adapter still
+ * reaches this state.
  */
 
 const CONFIRM_BUTTON = (page: Page): Locator => page.getByRole('button', { name: 'Confirm pending actions' });
@@ -52,15 +55,10 @@ test.describe('AI chat pending-action buttons — test-id targeted', () => {
         await open_chat_panel(page);
 
         const input = page.getByTestId('chat-composer-input');
-        if (await input.isDisabled()) {
-            // No AI backend resolved — the strong flow is not reachable; hold
-            // the honest weaker contract instead of failing on environment.
-            await assert_idle_contract(page);
-            return;
-        }
 
-        // Switch the composer from open-ended chat to command mode.
-        await page.getByRole('button', { name: 'Command Mode' }).click();
+        // Switch the composer from open-ended chat to command mode. The input
+        // stays enabled with no backend, so its state is not an admission gate.
+        await page.getByLabel('Agent execution mode').selectOption('apply');
 
         // Multi-action fast path: three addTrack actions force a confirmation
         // proposal, which mounts the Confirm/Cancel controls on the assistant

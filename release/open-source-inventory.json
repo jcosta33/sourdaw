@@ -620,10 +620,15 @@
                 "crates/sourdaw-native/src/commands/speech.rs",
                 "crates/sourdaw-native/src/commands/verified_cached_model.rs",
                 "src/infra/release/modelReleaseAdmission.ts",
-                "src/modules/AiRuntime/useCases/voiceDictation/loadCachedWhisperModel.ts"
+                "src/modules/AiRuntime/useCases/voiceDictation/loadCachedWhisperModel.ts",
+                "crates/sourdaw-native/src/commands/store_verified_whisper_model.rs",
+                "src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts",
+                "src/modules/AiRuntime/useCases/voiceInput/downloadWhisperModel.ts",
+                "src/modules/AiRuntime/repositories/voiceNativeAdapter/storeVerifiedWhisperModel.ts"
             ],
             "sources": [
                 "https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1",
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin",
                 "https://crates.io/crates/whisper-rs/0.16.0"
             ],
             "revisions": [
@@ -643,7 +648,8 @@
             ],
             "evidence": [
                 "The cached-model contract pins one model revision and verifies its exact 147964211-byte SHA-256 before Whisper consumes the bytes.",
-                "The model repository declares MIT; installed whisper-rs and whisper-rs-sys metadata declare Unlicense."
+                "The model repository declares MIT; installed whisper-rs and whisper-rs-sys metadata declare Unlicense.",
+                "Voice setup downloads the pinned ggml-base.en.bin only after an explicit user gesture, verifies its exact size and SHA-256 in the renderer, and store_verified_whisper_model re-verifies before an atomic cache write; nothing fetches without consent."
             ],
             "obligations": [
                 "Carry the MIT and Unlicense notices in distributed desktop material."
@@ -783,7 +789,7 @@
             ],
             "digests": [
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
-                "sha256:afbcd1fda4eec505c482eb20c390e3fe61d29a14109d93c8200e6cecfc16b1b7:electron/protocol.ts",
+                "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:61bf6ba1b489e37730605d318698ba64167301cc55cadfc73c8da5ae2b97f90c:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
@@ -1201,7 +1207,7 @@
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d7fc8b8a840827f945dd0350ed3d757004743e7bcec88ab926991268fc1124a8:grand-boule-factory-admission",
                 "tracked-set-sha256:8fe1e80d6328473eff08f2071db77a67845c9a803181b67d248b0d0237246376:grand-boule-live-runtime",
-                "tracked-set-sha256:311dd92bf101dcd074cd7c978bcaf537bc90d634e1d2c9b3601dc0e4f610ec50:grand-boule-project-state",
+                "tracked-set-sha256:6f057a83908c13c8dd18e5cf72ec31f325f15a37faf35a41149bf6839301c9be:grand-boule-project-state",
                 "tracked-set-sha256:d57e235550ad746a11808650e7b7bca8b3984f9217bb8d41de243a4e12030d41:grand-boule-offline-composition",
                 "tracked-set-sha256:e65cf347580b7d21da3bfd479b45dc7eead1647435c8c0e24fedcd782ec2f4d9:grand-boule-release-proof"
             ],
@@ -2346,6 +2352,16 @@
             "surface": "semantic-review-egress",
             "file": "scripts/semanticReview/provider.ts",
             "value": "https://api.typesafe.ai"
+        },
+        {
+            "surface": "whisper-model",
+            "file": "src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts",
+            "value": "https://huggingface.co"
+        },
+        {
+            "surface": "whisper-model",
+            "file": "src/modules/AiRuntime/repositories/voiceInput/whisperModelArtifact.ts",
+            "value": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin"
         }
     ],
     "marks": [

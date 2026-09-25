@@ -367,6 +367,14 @@ impl SourdawNative {
     }
 
     #[napi]
+    pub async fn store_verified_whisper_model(&self, bytes: Buffer) -> Result<()> {
+        reason(
+            commands::store_verified_whisper_model::store_verified_whisper_model(bytes.to_vec())
+                .await,
+        )
+    }
+
+    #[napi]
     pub async fn start_dictation(&self, session_id: String) -> Result<String> {
         reason(
             commands::speech::start_dictation(

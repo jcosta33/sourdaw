@@ -48,16 +48,12 @@ import {
     type GuardFailureReceipt,
     type IssueRelationship,
 } from './prContract.ts';
-import { formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
 import {
-    assertAttestationDraft,
-    attestationMarkerLine,
-    latestAttestationForHead,
-    sourceAttestationComment,
-    sourceAttestationRecord,
-    type AttestationComment,
-    type AttestedCommit,
-} from './sourceAttestation.ts';
+    changedReviewPaths,
+    formatReviewDiffSummary,
+    summarizeReviewDiff,
+    type ReviewChangedPath,
+} from './reviewDiffSummary.ts';
 import {
     assertStackAcyclic,
     parseStackParents,
@@ -67,6 +63,7 @@ import {
     stackPublicationBase,
     writeLaneStack,
 } from './stackedLanes.ts';
+import { assertObservableTestInstructions } from './testInstructions.ts';
 
 export { canonicalPath, containsPath };
 
@@ -94,6 +91,19 @@ export type StackPublicationContext = {
 
 export const PUBLISH_LANE_USAGE =
     'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
+
+/**
+ * The source trees whose changes a user runs in the app: a lane touching any of them is product
+ * scope, and its How-to-test section has to teach an observable step, not recite checks. Declared
+ * above the guidance so the printed tree list is derived from it rather than retyped beside it.
+ */
+export const PRODUCT_SCOPE_PREFIXES = ['src/modules/', 'src/components/', 'electron/'] as const;
+
+/**
+ * The `--test` contract the usage line has no room to state, printed under it by `--help`. Usage
+ * stays one line because refusals embed it verbatim; the rule rides beside it.
+ */
+export const PUBLISH_LANE_TEST_GUIDANCE = `--test teaches how a reviewer verifies the change; for product-scope changes (${PRODUCT_SCOPE_PREFIXES.join(', ')}) it must give user/reviewer-observable steps and their expected result, and CI or author checks do not substitute.`;
 
 /**
  * The same authoring-model rule `lane:open` enforces, mirrored here rather than imported: the
@@ -536,11 +546,21 @@ export function addPullRequestProjectsArgs(number: number, titles: string[]): st
 }
 
 /**
- * One commit as the publication read observed it: the full 40-hex OID (the attestation binds exact
- * identities, never abbreviations) and the author name and email Git recorded. The shape is the
- * attestation module's own, so the gate and the record builder consume one type.
+ * Product scope means a *handwritten* change under a product tree. Test, docs, and generated paths
+ * under the same trees have no user-observable surface of their own, so they never fire the gate.
  */
-export type CommitAttribution = AttestedCommit;
+export function isProductScopeChange(paths: readonly ReviewChangedPath[]): boolean {
+    return paths.some(
+        (entry) =>
+            entry.group === 'handwritten' && PRODUCT_SCOPE_PREFIXES.some((prefix) => entry.path.startsWith(prefix))
+    );
+}
+
+/** One commit the authorship gate read named: its short sha and the email it is authored as. */
+export type CommitAuthorEmail = {
+    sha: string;
+    email: string;
+};
 
 /**
  * Object-store rewrites that split what a traversal sees from what a push sends: `git log` follows
@@ -574,27 +594,16 @@ export type PublishLanePort = {
     dirty: (lane: string) => boolean;
     laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
     /**
-     * Observed author identity of every commit reachable from `headSha` but from neither
-     * `deltaBaseSha` nor any `excludedBaseSha`, merges included, read in the lane itself without
-     * replacement objects, so the gate and the attestation see exactly the objects a push would
-     * send. The authorship gate consumes the delta read (`remote tip..head` when the branch exists
-     * remotely); the source attestation consumes the same read over the comparison base, so both
-     * come from one calculation and cannot disagree.
+     * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
+     * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
+     * the gate sees exactly the objects a push would send.
      */
-    commitAttribution: (
+    commitAuthorEmails: (
         lane: string,
         deltaBaseSha: string,
         excludedBaseShas: string[],
         headSha: string
-    ) => CommitAttribution[];
-    /**
-     * Every issue comment on the pull request, body plus its author's immutable node id, in
-     * ascending comment-id order (paginated in full), so the attestation's newest-authority and
-     * replay rules read the same sequence every other evidence reader does.
-     */
-    attestationComments: (number: number) => AttestationComment[];
-    /** Post the source attestation comment as the authenticated author App. */
-    addAttestationComment: (number: number, body: string) => void;
+    ) => CommitAuthorEmail[];
     /**
      * The lane repository's object-store rewrites, resolved in the lane itself before any remote
      * write: a graft file or replace ref lets the object store show one history to a traversal and
@@ -613,6 +622,8 @@ export type PublishLanePort = {
     readPullRequestMergeability: (number: number) => PullRequestMergeability;
     /** The paths a real trial merge of `base` and `head` conflicts on, in the lane's own repository. */
     conflictingPaths: (lane: string, base: string, head: string) => string[];
+    /** The lane's changed paths between `baseSha` and `headSha`, classified for scope gates. */
+    changedPaths: (lane: string, baseSha: string, headSha: string) => readonly ReviewChangedPath[];
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
     updatePullRequest: (number: number, input: { body: string }) => void;
     saveAuthorModel: (branch: string, model: string) => void;
@@ -1002,56 +1013,26 @@ export const NO_LANE_SUBJECT_FAILURE =
  * contain the main commits the lane merged, or a merged parent's pre-squash head that squash
  * semantics keep off main forever — the refusal prescribes re-creating the named commits.
  */
-/**
- * The one commit-set calculation a publication runs, shared by the authorship gate and the source
- * attestation so the two can never disagree about which commits a head carries. `deltaBase` is the
- * gate's narrow base: the remote tip when the branch already exists remotely (its commits were
- * gated at their own publication), otherwise the comparison head of a first publication.
- * `attestationBase` is always the comparison head: the attestation binds the whole lane-authored
- * set above it, so every published head carries one self-contained record and a re-publication
- * after a crash recomputes the identical record instead of an empty delta. `excludedBaseShas` are
- * the resolved bases — origin/main and any stack parent head — whose reachable commits are never
- * the lane's to author and whose own publications gate them.
- */
-export type PublicationRanges = {
-    deltaBase: string;
-    excludedBaseShas: string[];
-    attestationBase: string;
-};
-
-export function publicationRanges(
+function assertBotAuthoredDelta(
+    lane: ResolvedLane,
     remoteRead: RemoteBranchRead,
     comparisonHead: string,
     baseSha: string,
-    stackParentHead: string | undefined
-): PublicationRanges {
-    // The publication read the remote before this calculation and already refused an unreadable
-    // listing, so the read here is `present` or `absent`: a present remote tip is the delta base
-    // exactly as the undefined-vs-remote-tip split always worked, and an absent branch is a first
-    // publication whose delta base is the comparison head.
-    return {
-        deltaBase: remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead,
-        excludedBaseShas: Array.from(
-            new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
-        ),
-        attestationBase: comparisonHead,
-    };
-}
-
-/**
- * The authorship gate: every commit in the delta this publication adds must be authored with the
- * lane-stamped author-App identity. The caller computed the delta over the shared publication
- * ranges; this gate only judges it.
- */
-function assertBotAuthoredDelta(
-    lane: ResolvedLane,
-    delta: CommitAttribution[],
-    ranges: PublicationRanges,
-    remoteRead: RemoteBranchRead,
-    comparisonHead: string,
+    stackParentHead: string | undefined,
+    headSha: string,
     port: PublishLanePort
 ): void {
-    const offending = delta.filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
+    // The publication read the remote before this gate and already refused an unreadable listing,
+    // so the read here is `present` or `absent`: a present remote tip is the delta base exactly as
+    // the undefined-vs-remote-tip split always worked, and an absent branch is a first publication
+    // whose delta base is the comparison head.
+    const deltaBase = remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead;
+    const excludedBaseShas = Array.from(
+        new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
+    );
+    const offending = port
+        .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
+        .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
     if (offending.length === 0) {
         return;
     }
@@ -1065,10 +1046,10 @@ function assertBotAuthoredDelta(
     // stamped identity.
     const offersRebase =
         remoteRead.kind === 'absent' &&
-        ranges.excludedBaseShas
+        excludedBaseShas
             .filter((sha) => sha !== comparisonHead)
             .every((sha) => port.isAncestor(sha, comparisonHead, lane.path));
-    fail(authorshipRefusal(lane.branch, ranges.deltaBase, comparisonHead, offending, offersRebase));
+    fail(authorshipRefusal(lane.branch, deltaBase, comparisonHead, offending, offersRebase));
 }
 
 /** At most this many offending commits are named one by one before the refusal counts the rest. */
@@ -1087,17 +1068,15 @@ function authorshipRefusal(
     branch: string,
     deltaBase: string,
     comparisonHead: string,
-    offending: CommitAttribution[],
+    offending: CommitAuthorEmail[],
     offersRebase: boolean
 ): string {
     const distinctEmails = Array.from(new Set(offending.map((commit) => commit.email)))
         .map(displayCommitAuthorEmail)
         .join(', ');
-    const namedCommits = offending.slice(0, MAX_NAMED_OFFENDING_COMMITS).map(
-        // The refusal is human-facing remediation, so it names commits abbreviated as `%h` always
-        // did; the attestation, not the refusal, is the evidence that binds the full OIDs.
-        (commit) => `${commit.oid.slice(0, 7)} ${displayCommitAuthorEmail(commit.email)}`
-    );
+    const namedCommits = offending
+        .slice(0, MAX_NAMED_OFFENDING_COMMITS)
+        .map((commit) => `${commit.sha} ${displayCommitAuthorEmail(commit.email)}`);
     const more = offending.length - namedCommits.length;
     if (more > 0) {
         namedCommits.push(`+${more} more`);
@@ -1135,26 +1114,6 @@ function objectStoreRewritesRefusal(branch: string, rewrites: ObjectStoreRewrite
 /** An empty author email renders readably; a bare comma in the refusal would name nothing. */
 function displayCommitAuthorEmail(email: string): string {
     return email === '' ? '(empty author email)' : email;
-}
-
-/**
- * Posts the publication's source attestation: one `sourdaw-attestation-v1` marker comment by the
- * author App binding every exact commit OID above the comparison base, with its observed Git
- * authorship, to the published head. The record was validated pre-push; composing it here only
- * attaches the pull-request number. Replay is idempotent — a re-publication whose recomputed
- * marker already stands from the App posts nothing — and a record that differs under the same
- * head (the excluded bases moved) supersedes by comment order. A malformed App-authored marker on
- * the pull request fails the run: corrupt evidence on the protected channel is never laundered
- * into absence.
- */
-function attestPublication(number: number, headSha: string, commits: CommitAttribution[], port: PublishLanePort): void {
-    const record = sourceAttestationRecord(number, headSha, commits);
-    const marker = attestationMarkerLine(record);
-    const existing = latestAttestationForHead(port.attestationComments(number), headSha);
-    if (existing !== undefined && attestationMarkerLine(existing) === marker) {
-        return;
-    }
-    port.addAttestationComment(number, sourceAttestationComment(record));
 }
 
 /**
@@ -1361,24 +1320,31 @@ export function publishLane(
     // the remote tip..head when the branch exists remotely, and the lane-subject range otherwise.
     // These run before every remote write, with the rest of the pre-push refusal set: first the
     // object store must carry no rewrite that could split the gate's read from the push, and only
-    // then can reads over that store decide the authorship gate and compose the attestation. The
-    // attestation set is read in the same pre-push window: the push below pins `headSha`, and
-    // baseSha and the stack context are re-proven around it, so the attested set is exactly the
-    // pushed set and any commit-set drift invalidates the run before the push.
+    // then can a read over that store decide — the authorship gate and the product-scope
+    // test-instructions gate both.
     const rewrites = port.objectStoreRewrites(lane.path);
     if (rewrites.graftsFile !== undefined || rewrites.replaceRefs > 0) {
         fail(objectStoreRewritesRefusal(lane.branch, rewrites));
     }
-    const ranges = publicationRanges(remoteRead, comparisonHead, baseSha, stack?.parentHead);
-    const attestedCommits = port.commitAttribution(lane.path, ranges.attestationBase, ranges.excludedBaseShas, headSha);
-    // Bounds and shape are validated now, before any remote write; composing and posting the
-    // comment after the push only formats what this read already proved.
-    assertAttestationDraft(headSha, attestedCommits);
-    const deltaCommits =
-        ranges.deltaBase === ranges.attestationBase
-            ? attestedCommits
-            : port.commitAttribution(lane.path, ranges.deltaBase, ranges.excludedBaseShas, headSha);
-    assertBotAuthoredDelta(lane, deltaCommits, ranges, remoteRead, comparisonHead, port);
+    // Gated on the flag, never the resolved value: a body preserved verbatim from an existing pull
+    // request (--test omitted) is not re-judged, so in-flight pull requests keep their semantics,
+    // while every fresh create and explicit rewrite teaches an observable step when the change is
+    // product scope. The classification read follows the object-store verification, so no rewrite
+    // can split what it reads from what the push packs, and it still lands before any remote write,
+    // so a refusal leaves nothing pushed. A legacy lane is exempt outright, before the classifier
+    // ever sees `testInstructions`: `pullRequestWrite` already writes no body for it (see its
+    // legacy contract above), so there is no body this gate could be protecting, and a legacy
+    // `--test` is free text the operator chose for some unrelated purpose. Judging it anyway would
+    // refuse a push-only publish over text it discards, and would hand the classifier's regex work
+    // an unbounded value nothing has capped — this check must short-circuit on `lane.legacy` before
+    // reading `testInstructions` at all, not merely skip acting on the result.
+    if (!lane.legacy && testInstructions !== undefined) {
+        const changedPaths = port.changedPaths(lane.path, comparisonHead, headSha);
+        if (isProductScopeChange(changedPaths)) {
+            assertObservableTestInstructions(testInstructions);
+        }
+    }
+    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, baseSha, stack?.parentHead, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1410,7 +1376,6 @@ export function publishLane(
     if (metadata !== undefined) {
         assertPullRequestMetadata(number, metadata, port);
     }
-    attestPublication(number, headSha, attestedCommits, port);
     reportPullRequestMergeability(lane, number, comparisonHead, headSha, port);
     port.log(String(number));
     return number;
@@ -1702,6 +1667,11 @@ type PullRequestWrite = {
  * and a body this script is about to write; a legacy lane writes neither, so the port is never asked
  * and none of those rules can fire. A legacy lane carrying only merges above `origin/main` therefore
  * still publishes, because pushing is the whole of what publishing it means.
+ *
+ * The product-scope how-to-test gate in `publishLane` is exempted the same way but not by this
+ * function: `testInstructions` reaches that gate directly, never through the `write` this function
+ * returns, so returning `undefined` here does not by itself protect it. That gate carries its own
+ * `lane.legacy` check for exactly this reason.
  */
 function pullRequestWrite(
     issue: number | undefined,
@@ -1808,58 +1778,44 @@ function laneSubjectArgs(baseSha: string, headSha: string): string[] {
 }
 
 /**
- * The publication's commit-set read: every commit, merges included, between the base and the head,
+ * The authorship gate's read: every commit, merges included, between the delta base and the head,
  * excluding everything the resolved bases reach — base-side commits are not the lane's to author,
- * and the bases' own publications gate them. The format carries the full OID and the observed
- * author name and email separated by unit separators; `--no-replace-objects` leads the argv
- * because `git log` honors `refs/replace/*` while `git push` packs the original objects, so a read
- * that honors replacements could pass a bot-authored clone while the remote receives the human
- * original.
+ * and the bases' own publications gate them. `--no-replace-objects` leads the argv because `git
+ * log` honors `refs/replace/*` while `git push` packs the original objects, so a read that honors
+ * replacements could pass a bot-authored clone while the remote receives the human original.
  */
-function commitAttributionArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
+function commitAuthorEmailArgs(deltaBaseSha: string, excludedBaseShas: string[], headSha: string): string[] {
     return [
         '--no-replace-objects',
         'log',
-        '--format=%H%x1f%an%x1f%ae',
+        '--format=%h %ae',
         `${deltaBaseSha}..${headSha}`,
         ...excludedBaseShas.map((sha) => `^${sha}`),
     ];
 }
 
-function readCommitAttribution(
+function readCommitAuthorEmails(
     lane: string,
     deltaBaseSha: string,
     excludedBaseShas: string[],
     headSha: string,
     capture: (args: string[], cwd: string) => string
-): CommitAttribution[] {
-    const lines = capture(commitAttributionArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
+): CommitAuthorEmail[] {
+    const lines = capture(commitAuthorEmailArgs(deltaBaseSha, excludedBaseShas, headSha), lane).split('\n');
     // The capture ends in exactly one blank line; strip only that one, so a commit whose author
     // email is genuinely empty survives as an offending value instead of vanishing with a filter.
     if (lines[lines.length - 1] === '') {
         lines.pop();
     }
-    return lines.map(parseCommitAttribution);
+    return lines.map(parseCommitAuthorEmail);
 }
 
-/**
- * `%H%x1f%an%x1f%ae` splits on the unit separator into exactly three fields; a name carrying the
- * separator yields a different count and fails closed rather than attributing fields by guess.
- * The OID must be full 40-hex: the attestation binds exact identities, and abbreviated or corrupt
- * output is a read defect, not data.
- */
-function parseCommitAttribution(line: string): CommitAttribution {
-    const [oid, name, email, ...rest] = line.split('\x1F');
-    if (
-        rest.length > 0 ||
-        oid === undefined ||
-        name === undefined ||
-        email === undefined ||
-        !/^[0-9a-f]{40}$/u.test(oid)
-    ) {
-        fail(`commit attribution read returned an unparseable line: ${JSON.stringify(line)}`);
-    }
-    return { oid, name, email };
+/** `%h %ae` splits on the first space; a genuinely empty email leaves the email part empty. */
+function parseCommitAuthorEmail(line: string): CommitAuthorEmail {
+    const separator = line.indexOf(' ');
+    return separator === -1
+        ? { sha: line, email: '' }
+        : { sha: line.slice(0, separator), email: line.slice(separator + 1) };
 }
 
 /**
@@ -2018,26 +1974,12 @@ export function shellPort(
         laneSubject: (lane, baseSha, headSha) =>
             spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
             undefined,
-        commitAttribution: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
-            readCommitAttribution(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
+        commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
+            readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
                 // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
                 // empty author email line survives the read instead of vanishing into the trim.
                 spawnCapture(executables.git, args, { cwd, env: session.env, trim: false })
             ),
-        attestationComments: (number) =>
-            parseAttestationCommentRows(
-                parseJson<unknown>(gh(attestationCommentsArgs(number)), `attestation comments for PR #${number}`)
-            ),
-        addAttestationComment: (number, body) => {
-            gh([
-                'api',
-                '--method',
-                'POST',
-                `repos/${REQUIRED_REPOSITORY}/issues/${number}/comments`,
-                '-f',
-                `body=${body}`,
-            ]);
-        },
         objectStoreRewrites: (lane) =>
             readObjectStoreRewrites(lane, (args, cwd) =>
                 spawnCapture(executables.git, args, { cwd, env: session.env })
@@ -2129,6 +2071,21 @@ export function shellPort(
             }
             console.log(formatReviewDiffSummary(summarizeReviewDiff(lane, result.stdout)));
         },
+        // Merge-base range, like reportDiff above: a two-dot range would diff against main's moving
+        // tip, so unrelated origin/main movement past the merge base would fabricate product scope
+        // for a lane that never touched it. Classified from the lane root like reportDiff, so the
+        // gate and the size report cannot disagree about a linguist-generated marking.
+        changedPaths: (lane, baseSha, headSha) =>
+            changedReviewPaths(
+                lane,
+                Buffer.from(
+                    spawnCapture(executables.git, ['diff', '--numstat', '-z', `${baseSha}...${headSha}`], {
+                        cwd: lane,
+                        env: session.env,
+                        trim: false,
+                    })
+                )
+            ),
         readPullRequestMergeability: (number) => {
             try {
                 return mergeabilityFromPullRequestRow(
@@ -2342,47 +2299,6 @@ export function pullRequestProjectItemsArgs(number: number): string[] {
     return ['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'projectItems'];
 }
 
-/** The attestation's comment read: every issue comment on the pull request, all pages slurped. */
-export function attestationCommentsArgs(number: number): string[] {
-    return ['api', '--paginate', '--slurp', `repos/${REQUIRED_REPOSITORY}/issues/${number}/comments?per_page=100`];
-}
-
-/**
- * The slurped pages of issue comments, flattened in ascending comment-id order into the shape the
- * attestation reader consumes. A comment without a string body or without its author's node id is
- * a read defect and fails closed — never laundered into an absent comment, which would let a
- * malformed record escape the reader's malformed-marker refusal.
- */
-export function parseAttestationCommentRows(value: unknown): AttestationComment[] {
-    if (!Array.isArray(value)) {
-        fail('attestation comments read must be a slurped array of pages');
-    }
-    const comments: AttestationComment[] = [];
-    for (const page of value) {
-        if (!Array.isArray(page)) {
-            fail('attestation comments read must be a slurped array of pages');
-        }
-        for (const row of page) {
-            if (typeof row !== 'object' || row === null || Array.isArray(row)) {
-                fail('attestation comment row must be an object');
-            }
-            const { body, user } = row as { body?: unknown; user?: unknown };
-            if (typeof body !== 'string') {
-                fail('attestation comment body is unreadable');
-            }
-            if (typeof user !== 'object' || user === null || Array.isArray(user)) {
-                fail('attestation comment author is unreadable');
-            }
-            const nodeId = (user as { node_id?: unknown }).node_id;
-            if (typeof nodeId !== 'string') {
-                fail('attestation comment author node id is unreadable');
-            }
-            comments.push({ body, authorNodeId: nodeId });
-        }
-    }
-    return comments;
-}
-
 export type OpenPullRequestRow = {
     number: number;
     headRefName: string;
@@ -2437,6 +2353,7 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
     const parsed = parsePublishLaneArgs(args);
     if (parsed.help) {
         console.log(PUBLISH_LANE_USAGE.replace('usage:', 'Usage:'));
+        console.log(PUBLISH_LANE_TEST_GUIDANCE);
         return 0;
     }
     if (parsed.issue === undefined && parsed.lanePath === undefined) {

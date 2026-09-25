@@ -62,13 +62,15 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
 // workflow-level pin, and no pin read it: `contents: write` on a validation
 // leg would hand every pull request a token that can push. The heavy and
 // nightly files keep their own exact job-level pins (CodeQL, the nightly
-// reporter); these two files must grant nothing at job level.
+// reporter); these files must grant nothing. The semantic-review file is
+// absent because its coverage job carries a deliberate `contents: read`, and
+// `semanticReviewWorkflowContract.ts` pins that job's permissions exactly
+// beside the assessment job's own ban.
 export const JOB_LEVEL_PERMISSION_FREE_FILES = [
     'health-gates.yml',
     'validation.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
-    'semantic-review.yml',
 ] as const;
 
 const SETUP_NODE = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
@@ -217,7 +219,9 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Assess the change',
             'Report the assessment',
             'Upload the advisory report',
+            'Compute the coverage line',
         ],
+        coverage: ['Download the advisory report', 'Publish the withheld paths'],
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
