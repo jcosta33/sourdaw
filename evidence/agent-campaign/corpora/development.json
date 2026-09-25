@@ -7,15 +7,13 @@
             "sealed": true
         },
         "named-target-with-unit": {
-            "sealed": false,
-            "pendingContract": "decibel forms on setTrackGain, setSend, setMasterGain"
+            "sealed": true
         },
         "device-insert-with-parameter": {
             "sealed": true
         },
         "new-bus-send-with-level": {
-            "sealed": false,
-            "pendingContract": "decibel send level on addSend/setSend"
+            "sealed": true
         },
         "time-scoped-level": {
             "sealed": false,
@@ -909,6 +907,463 @@
                     "touchedIdsWithin": ["track-guitar", "delay-time"],
                     "protectedIds": ["track-kick", "track-drum-bus"],
                     "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-LEVEL-1",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Set the Lead Vocal volume to -6 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Lead Vocal"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "gainDb": -6
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-lead-vocal"],
+                    "protectedIds": ["track-kick", "track-bass-di"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-LEVEL-2",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Turn the Bass DI down 3 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "deltaDb": -3
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Bass DI"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-bass-di",
+                            "deltaDb": -3
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-bass-di"],
+                    "protectedIds": ["track-lead-vocal"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-LEVEL-3",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Set the master to -1 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set master gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setMasterGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-master",
+                            "name": "setMasterGain",
+                            "arguments": {
+                                "gainDb": -1
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setMasterGain",
+                        "payload": {
+                            "gainDb": -1
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [],
+                    "protectedIds": ["track-kick"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-LEVEL-4",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Set the Kick send to the Drum Bus to -6 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-send",
+                            "name": "setSend",
+                            "arguments": {
+                                "busId": "track-drum-bus",
+                                "levelDb": -6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Kick"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setSend",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "busId": "track-drum-bus",
+                            "levelDb": -6
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "track-drum-bus"],
+                    "protectedIds": ["track-snare"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-SEND-1",
+            "promptClass": "new-bus-send-with-level",
+            "class": "execute-exact",
+            "prompt": "Create a bus called Vocal Reverb and send the Lead Vocal to it at -12 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create bus", "add send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["createBus", "addSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "createBus",
+                            "arguments": {
+                                "name": "Vocal Reverb",
+                                "binding": "reverb"
+                            }
+                        },
+                        {
+                            "id": "send-lead-vocal",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$reverb",
+                                "levelDb": -12
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Lead Vocal"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "createBus",
+                        "payload": {
+                            "name": "Vocal Reverb"
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "levelDb": -12
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-lead-vocal"],
+                    "protectedIds": ["track-reverb-bus", "track-drum-bus"],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-SEND-2",
+            "promptClass": "new-bus-send-with-level",
+            "class": "execute-exact",
+            "prompt": "Make a new bus named Guitar Room and send the Guitar to it at -18 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create bus", "add send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["createBus", "addSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "createBus",
+                            "arguments": {
+                                "name": "Guitar Room",
+                                "binding": "room"
+                            }
+                        },
+                        {
+                            "id": "send-guitar",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$room",
+                                "levelDb": -18
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "createBus",
+                        "payload": {
+                            "name": "Guitar Room"
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "levelDb": -18
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-guitar"],
+                    "protectedIds": ["track-reverb-bus"],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-SEND-3",
+            "promptClass": "new-bus-send-with-level",
+            "class": "execute-exact",
+            "prompt": "Create a Parallel Drums bus and send the Kick to it at -6 dB and the Snare at -9 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create bus", "add send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["createBus", "addSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "createBus",
+                            "arguments": {
+                                "name": "Parallel Drums",
+                                "binding": "parallel"
+                            }
+                        },
+                        {
+                            "id": "send-kick",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$parallel",
+                                "levelDb": -6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Kick"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        },
+                        {
+                            "id": "send-snare",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$parallel",
+                                "levelDb": -9
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Snare"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "createBus",
+                        "payload": {
+                            "name": "Parallel Drums"
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "levelDb": -6
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "levelDb": -9
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "track-snare"],
+                    "protectedIds": ["track-hi-hat", "track-drum-bus"],
+                    "maxCommands": 3
                 }
             }
         }
