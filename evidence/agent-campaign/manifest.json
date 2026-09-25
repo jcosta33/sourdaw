@@ -656,7 +656,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts",
-                    "digest": "60cd3adf2cc81ef87a25ef0510eac1805ad9fbe2d145f71922af2a56bce231ae"
+                    "digest": "9ac915481205845bd6a76d3f4283d8ff6a87853d641113b5a03c79364c5518a4"
                 }
             ]
         },

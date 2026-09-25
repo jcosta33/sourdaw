@@ -69,11 +69,17 @@ const EXPECTED_METRIC_IDS = [
  * what lets these expectations be absolute figures rather than comparisons
  * against the code's own output.
  */
-function sineChannel(peakDbfs: number, length: number, toneHz = TONE_HZ, phase = 0): Float32Array {
+function sineChannel(
+    peakDbfs: number,
+    length: number,
+    toneHz = TONE_HZ,
+    phase = 0,
+    sampleRate = SAMPLE_RATE
+): Float32Array {
     const amplitude = 10 ** (peakDbfs / 20);
     const samples = new Float32Array(length);
     for (let index = 0; index < length; index++) {
-        samples[index] = amplitude * Math.sin((2 * Math.PI * toneHz * index) / SAMPLE_RATE + phase);
+        samples[index] = amplitude * Math.sin((2 * Math.PI * toneHz * index) / sampleRate + phase);
     }
     return samples;
 }
@@ -143,26 +149,30 @@ function clickChannel(length: number, clickFrames: readonly number[]): Float32Ar
     return samples;
 }
 
-function audioBuffer(channelData: readonly Float32Array[]): AudioBuffer {
+function audioBuffer(channelData: readonly Float32Array[], sampleRate = SAMPLE_RATE): AudioBuffer {
     const length = channelData[0]?.length ?? 0;
     return {
-        sampleRate: SAMPLE_RATE,
+        sampleRate,
         length,
         numberOfChannels: channelData.length,
-        duration: length / SAMPLE_RATE,
+        duration: length / sampleRate,
         getChannelData: (channel: number) => channelData[channel] ?? new Float32Array(length),
     } as unknown as AudioBuffer;
 }
 
-function retainArtifact(channelData: readonly Float32Array[], contentAddress = CONTENT_ADDRESS): void {
-    const buffer = audioBuffer(channelData);
+function retainArtifact(
+    channelData: readonly Float32Array[],
+    contentAddress = CONTENT_ADDRESS,
+    sampleRate = SAMPLE_RATE
+): void {
+    const buffer = audioBuffer(channelData, sampleRate);
     mocks.getExactAgentSectionRenderArtifact.mockReturnValue({
         ...JOB,
         sourceRevision: SOURCE_REVISION,
         owner: 'agent-section-render',
         retention: 'session',
         renderedAt: 1_700_000_000_000,
-        durationSeconds: buffer.length / SAMPLE_RATE,
+        durationSeconds: buffer.length / sampleRate,
         frameCount: buffer.length,
         channelCount: channelData.length,
         byteSize: buffer.length * channelData.length * 4,
@@ -174,9 +184,14 @@ function retainArtifact(channelData: readonly Float32Array[], contentAddress = C
 
 function analyze(
     channelData: readonly Float32Array[],
-    options: { baseline?: MeasuredAgentObjectiveAnalysisReceipt; requestedContentAddress?: string } = {}
+    options: {
+        baseline?: MeasuredAgentObjectiveAnalysisReceipt;
+        requestedContentAddress?: string;
+        /** Overrides the mocked buffer's `sampleRate`; the metrics under test are read from it, not from `JOB`. */
+        sampleRate?: number;
+    } = {}
 ): AgentObjectiveAnalysisReceipt {
-    retainArtifact(channelData);
+    retainArtifact(channelData, CONTENT_ADDRESS, options.sampleRate ?? SAMPLE_RATE);
     return analyzeAgentRenderReceipt({
         subject: {
             job: JOB,
@@ -846,5 +861,55 @@ describe('analyzeAgentRenderReceipt — low-frequency stereo content', () => {
         const receipt = analyze([silence, silence]);
 
         expect(entry(receipt, 'lowFrequencyStereoContent')).toEqual({ status: 'unavailable', reason: 'silent' });
+    });
+
+    // The crossover is a fourth-order Linkwitz-Riley low-pass (two cascaded
+    // Butterworth stages), whose magnitude is |H(f)| = 1 / (1 + (f/fc)^4) at
+    // fc = 120 Hz. A tone at fc and one an octave below it pin that response,
+    // rather than just its pass/stop behaviour, and are run at both a render
+    // sample rate below and above the file's default so a filter designed at
+    // the wrong rate is caught too.
+    const CROSSOVER_TONE_HZ = 120;
+
+    it.each([44_100, 48_000])(
+        'reads the fourth-order Linkwitz-Riley magnitude at the crossover, at %d Hz',
+        (sampleRate) => {
+            // |H(60)| = 1 / (1 + (60/120)^4) = 16/17, |H(120)| = 1 / (1 + 1) = 1/2.
+            // Filtering commutes with mid/side: the 120 Hz component cancels out
+            // of mid and the 60 Hz component cancels out of side, leaving
+            // mid = 0.5 * 16/17 and side = 0.5 * 1/2, so
+            // side^2 / (mid^2 + side^2) = 0.0625 / (0.0625 + 0.2215) ~= 0.220.
+            const rowLength = sampleRate * 2;
+            const bass = sineChannel(AMPLITUDE_HALF_DBFS, rowLength, LOW_TONE_HZ, 0, sampleRate);
+            const crossoverTone = sineChannel(AMPLITUDE_HALF_DBFS, rowLength, CROSSOVER_TONE_HZ, 0, sampleRate);
+            const receipt = analyze([mixChannels(bass, crossoverTone), mixChannels(bass, invert(crossoverTone))], {
+                sampleRate,
+            });
+
+            expect(Math.abs(metric(receipt, 'lowFrequencyStereoContent') - 0.22)).toBeLessThan(0.01);
+        }
+    );
+
+    it('reads negligible low-band side energy when only a tone far above the crossover is out of phase', () => {
+        const sampleRate = 48_000;
+        const rowLength = sampleRate * 2;
+        const bass = sineChannel(AMPLITUDE_HALF_DBFS, rowLength, LOW_TONE_HZ, 0, sampleRate);
+        const highTone = sineChannel(AMPLITUDE_HALF_DBFS, rowLength, TONE_HZ, 0, sampleRate);
+        const receipt = analyze([mixChannels(bass, highTone), mixChannels(bass, invert(highTone))], { sampleRate });
+
+        expect(metric(receipt, 'lowFrequencyStereoContent')).toBeLessThan(1e-4);
+    });
+
+    it('reports the low-frequency stereo content entry in the receipt measured shape', () => {
+        const bass = sineChannel(AMPLITUDE_HALF_DBFS, length, LOW_TONE_HZ);
+        const receipt = analyze([bass, invert(bass)]);
+
+        expect(entry(receipt, 'lowFrequencyStereoContent')).toEqual({
+            status: 'measured',
+            metricVersion: 1,
+            unit: 'ratio',
+            value: expect.any(Number),
+            confidence: 'estimated',
+        });
     });
 });
