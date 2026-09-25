@@ -47,8 +47,9 @@ const CANONICAL_ROLE_TO_RECIPE_ROLE: Readonly<Record<CanonicalRole, RecipeRole |
 type ResolvedTarget = {
     id: string;
     deviceTypes: readonly string[];
-    devices: readonly { id: string; type: string }[];
+    devices: readonly { id: string; type: string; bypassed: boolean }[];
     canonicalRole: CanonicalRole;
+    frozen: boolean;
 };
 
 type ResolvedRole = {
@@ -67,7 +68,7 @@ type RecipeDiscoveryStep = {
     kind: MixRecipeStep['kind'];
     deviceType: string;
     parameters: readonly { paramId: string; minimum: number; maximum: number }[];
-    existingDeviceIds?: readonly string[];
+    existingDevices: readonly { id: string; bypassed: boolean }[];
 };
 
 type RecipeDiscoveryCandidate = {
@@ -140,8 +141,9 @@ function resolveTarget(targetId: string | null, tracks: readonly ProjectContextT
         target: {
             id: track.id,
             deviceTypes: track.devices.map((device) => device.type),
-            devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
+            devices: track.devices.map((device) => ({ id: device.id, type: device.type, bypassed: device.bypassed })),
             canonicalRole: resolveCanonicalRole(track.canonicalRole?.role),
+            frozen: track.frozen ?? false,
         },
     };
 }
@@ -183,15 +185,15 @@ function buildStep(step: MixRecipeStep, target: ResolvedTarget | null): RecipeDi
         maximum: parameter.maximum,
     }));
     if (target === null) {
-        return { kind: step.kind, deviceType: step.deviceType, parameters };
+        return { kind: step.kind, deviceType: step.deviceType, parameters, existingDevices: [] };
     }
     return {
         kind: step.kind,
         deviceType: step.deviceType,
         parameters,
-        existingDeviceIds: target.devices
+        existingDevices: target.devices
             .filter((device) => device.type === step.deviceType)
-            .map((device) => device.id),
+            .map((device) => ({ id: device.id, bypassed: device.bypassed })),
     };
 }
 
@@ -273,6 +275,9 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
         warnings.push(
             `Unresolved descriptor term(s): ${unresolvedTerms.join(', ')}. Accepted terms — ${describeAcceptedTerms(catalog)}.`
         );
+    }
+    if (target !== null && target.frozen) {
+        warnings.push('This target is frozen; device changes are refused while it is frozen.');
     }
     if (role.source === 'target' && role.recipeRole === null) {
         warnings.push(

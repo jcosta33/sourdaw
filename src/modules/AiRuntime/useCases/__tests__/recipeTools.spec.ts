@@ -333,12 +333,67 @@ describe('recipe.discover', () => {
         });
 
         const data = receipt.data as {
-            candidates: { id: string; steps: { deviceType: string; existingDeviceIds?: string[] }[] }[];
+            candidates: {
+                id: string;
+                steps: { deviceType: string; existingDevices: { id: string; bypassed: boolean }[] }[];
+            }[];
         };
         const busPunchy = data.candidates.find((candidate) => candidate.id === 'bus-punchy');
         expect(busPunchy).toBeDefined();
         const editStep = busPunchy?.steps.find((step) => step.deviceType === 'builtin-compressor');
-        expect(editStep?.existingDeviceIds).toEqual(['device-comp-1']);
+        expect(editStep?.existingDevices).toEqual([{ id: 'device-comp-1', bypassed: false }]);
+    });
+
+    it('reports the bus-punchy compressor as bypassed when the bus only carries it bypassed', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'bus-3',
+                    name: 'Drum Bus',
+                    kind: 'bus',
+                    devices: [
+                        {
+                            id: 'device-comp-2',
+                            name: 'Compressor',
+                            type: 'builtin-compressor',
+                            bypassed: true,
+                            parameterValues: {},
+                        },
+                    ],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-bus-bypassed-compressor', {
+            descriptors: ['punchy'],
+            targetId: 'bus-3',
+        });
+
+        const data = receipt.data as {
+            candidates: {
+                id: string;
+                steps: { deviceType: string; existingDevices: { id: string; bypassed: boolean }[] }[];
+            }[];
+        };
+        const busPunchy = data.candidates.find((candidate) => candidate.id === 'bus-punchy');
+        expect(busPunchy).toBeDefined();
+        const editStep = busPunchy?.steps.find((step) => step.deviceType === 'builtin-compressor');
+        expect(editStep?.existingDevices).toEqual([{ id: 'device-comp-2', bypassed: true }]);
+    });
+
+    it('warns that device changes are refused while the target is frozen', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'bus-frozen', name: 'Drum Bus', kind: 'bus', frozen: true })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-frozen', { descriptors: ['punchy'], targetId: 'bus-frozen' });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('frozen'))).toBe(true);
     });
 
     it('fails with invalid-tool-arguments for an unknown targetId', async () => {
