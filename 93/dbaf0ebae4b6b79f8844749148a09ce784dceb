@@ -38,6 +38,10 @@ scripts/reviewRoundEscalation.ts
   h_beb54bf43b47b7 1-201
 scripts/trustedGithubWriteBootstrap.ts
   h_beb54bf43b47b7 163,215-217,223,249-251,256,282-284,290,318-321,324,341
+.github/workflows/semantic-review.yml
+  h_beb54bf43b47b7 173-181
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 2061
 ---
 {
   "schema_version": "authorship/3.0.0",
