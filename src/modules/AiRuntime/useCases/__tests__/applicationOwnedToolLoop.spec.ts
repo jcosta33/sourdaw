@@ -372,6 +372,7 @@ describe('application-owned tool loop', () => {
             'project.discover',
             'project.query',
             'project.resolve',
+            'recipe.discover',
             'render.request',
         ]);
         expect(schemas.every((schema) => schema.function.parameters.additionalProperties === false)).toBe(true);

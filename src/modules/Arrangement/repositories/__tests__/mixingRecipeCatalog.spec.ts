@@ -4,6 +4,8 @@ import { BUILTIN_PLUGINS, type DeviceParameter } from '#/modules/Arrangement/mod
 import {
     MIX_RECIPE_BANDS,
     MIX_RECIPE_CATALOG_VERSION,
+    MIX_RECIPE_DESCRIPTOR_EFFECTS,
+    MIX_RECIPE_DESCRIPTOR_TERMS,
     MIX_RECIPE_DESCRIPTORS,
     MIX_RECIPE_METRIC_IDS,
     MIX_RECIPE_ROLES,
@@ -51,9 +53,53 @@ function hasMisplacedBand(entry: MixRecipeMetricExpectation, declaredBands: Read
 
 describe('mixingRecipeCatalog', () => {
     it('publishes the declared version and vocabulary', () => {
+        expect(MIX_RECIPE_CATALOG_VERSION).toBe(2);
         expect(catalog.version).toBe(MIX_RECIPE_CATALOG_VERSION);
         expect(catalog.descriptors).toEqual([...MIX_RECIPE_DESCRIPTORS]);
         expect(catalog.roles).toEqual([...MIX_RECIPE_ROLES]);
+        expect(catalog.descriptorTerms).toEqual(MIX_RECIPE_DESCRIPTOR_TERMS);
+        expect(catalog.descriptorEffects).toEqual(MIX_RECIPE_DESCRIPTOR_EFFECTS);
+    });
+
+    it('gives every descriptor a produces or removes effect, marking only muddy and thin as removes', () => {
+        const missing = MIX_RECIPE_DESCRIPTORS.filter(
+            (descriptor) =>
+                catalog.descriptorEffects[descriptor] !== 'produces' &&
+                catalog.descriptorEffects[descriptor] !== 'removes'
+        );
+        const removing = MIX_RECIPE_DESCRIPTORS.filter(
+            (descriptor) => catalog.descriptorEffects[descriptor] === 'removes'
+        );
+
+        expect(missing).toEqual([]);
+        expect(removing.sort()).toEqual(['muddy', 'thin']);
+    });
+
+    it('lists every descriptor among its own terms, each lowercase, trimmed, and single-spaced', () => {
+        const missingOwnId = MIX_RECIPE_DESCRIPTORS.filter(
+            (descriptor) => !MIX_RECIPE_DESCRIPTOR_TERMS[descriptor].includes(descriptor)
+        );
+        const malformed = MIX_RECIPE_DESCRIPTORS.flatMap((descriptor) =>
+            MIX_RECIPE_DESCRIPTOR_TERMS[descriptor]
+                .filter((term) => term !== term.toLowerCase().trim() || /\s{2,}/.test(term))
+                .map((term) => `${descriptor}:${term}`)
+        );
+
+        expect(missingOwnId).toEqual([]);
+        expect(malformed).toEqual([]);
+    });
+
+    it('never lists the same term under two descriptors', () => {
+        const owners = new Map<string, string[]>();
+        for (const descriptor of MIX_RECIPE_DESCRIPTORS) {
+            for (const term of MIX_RECIPE_DESCRIPTOR_TERMS[descriptor]) {
+                const existingOwners = owners.get(term) ?? [];
+                owners.set(term, [...existingOwners, descriptor]);
+            }
+        }
+        const duplicated = Array.from(owners.entries()).filter(([, descriptors]) => descriptors.length > 1);
+
+        expect(duplicated).toEqual([]);
     });
 
     it('covers every descriptor and role pair', () => {
@@ -144,13 +190,64 @@ describe('mixingRecipeCatalog', () => {
         expect(misplacedBands).toEqual([]);
     });
 
-    it('keeps third-party equipment marks out of every recipe text field', () => {
-        const offending = catalog.recipes.flatMap((recipe) =>
+    it('derives the direction of every less/more descriptor phrase from the produces/removes tables, not a hand-written list', () => {
+        const owners = new Map<string, (typeof MIX_RECIPE_DESCRIPTORS)[number]>();
+        for (const descriptor of MIX_RECIPE_DESCRIPTORS) {
+            for (const term of MIX_RECIPE_DESCRIPTOR_TERMS[descriptor]) {
+                owners.set(term, descriptor);
+            }
+        }
+
+        const violations: string[] = [];
+        let lessChecked = 0;
+        let moreChecked = 0;
+
+        for (const owner of MIX_RECIPE_DESCRIPTORS) {
+            for (const term of MIX_RECIPE_DESCRIPTOR_TERMS[owner]) {
+                const lessBase = /^less (.+)$/.exec(term)?.[1];
+                if (lessBase !== undefined && owners.has(lessBase)) {
+                    const baseOwner = owners.get(lessBase)!;
+                    lessChecked += 1;
+                    // A "less X" phrase owned by the descriptor that produces X inverts it; owned by
+                    // the descriptor that removes X restates it, per the doc comment on the terms table.
+                    const mustOwnItself = MIX_RECIPE_DESCRIPTOR_EFFECTS[baseOwner] === 'removes';
+                    const ownsItself = owner === baseOwner;
+                    if (ownsItself !== mustOwnItself) {
+                        violations.push(
+                            `${term} owned by ${owner}, but base "${lessBase}" is owned by ${baseOwner} (${MIX_RECIPE_DESCRIPTOR_EFFECTS[baseOwner]})`
+                        );
+                    }
+                }
+
+                const moreBase = /^more (.+)$/.exec(term)?.[1];
+                if (moreBase !== undefined && owners.has(moreBase)) {
+                    const baseOwner = owners.get(moreBase)!;
+                    moreChecked += 1;
+                    if (owner !== baseOwner) {
+                        violations.push(`${term} owned by ${owner}, but base "${moreBase}" is owned by ${baseOwner}`);
+                    }
+                }
+            }
+        }
+
+        expect(lessChecked).toBeGreaterThan(0);
+        expect(moreChecked).toBeGreaterThan(0);
+        expect(violations).toEqual([]);
+    });
+
+    it('keeps third-party equipment marks out of every recipe text field and every descriptor term', () => {
+        const offendingFields = catalog.recipes.flatMap((recipe) =>
             textFieldsOf(recipe)
                 .filter((field) => THIRD_PARTY_MARKS.test(field))
                 .map((field) => `${recipe.id}:${field}`)
         );
+        const offendingTerms = MIX_RECIPE_DESCRIPTORS.flatMap((descriptor) =>
+            catalog.descriptorTerms[descriptor]
+                .filter((term) => THIRD_PARTY_MARKS.test(term))
+                .map((term) => `${descriptor}:${term}`)
+        );
 
-        expect(offending).toEqual([]);
+        expect(offendingFields).toEqual([]);
+        expect(offendingTerms).toEqual([]);
     });
 });
