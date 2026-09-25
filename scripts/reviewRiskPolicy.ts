@@ -124,6 +124,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/rulesetHardening.ts',
     'scripts/stackedLanes.ts',
     'scripts/syncParentLane.ts',
+    'scripts/testInstructions.ts',
     'scripts/trackerIssueReconciliation.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
     'scripts/wasm-artifacts.ts',

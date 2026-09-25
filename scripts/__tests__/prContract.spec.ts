@@ -30,6 +30,12 @@ import {
     type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
+import {
+    assertObservableTestInstructions,
+    commandOnlyTestInstructions,
+    COMMAND_HEADS,
+    COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL,
+} from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
@@ -715,6 +721,651 @@ describe('pull-request contract', () => {
         expect(() => composeReviewCommentBody({ defect, consequence, done })).toThrow(
             new RegExp(`exceeding the ${REVIEW_COMMENT_MAX_BYTES}-byte limit`)
         );
+    });
+});
+
+describe('product-scope test instructions', () => {
+    // The gate's refusal, imported rather than copied: the exported literal is the single owner,
+    // so rewording it reddens every pin in this file and in publishLane.spec.ts from one place.
+    const REFUSAL = COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL;
+
+    /**
+     * The full head inventory, spec-owned on purpose: dropping any head reddens the equality pin.
+     * For a bare head the behavioral iteration reddens too — a second net. For a colon-bearing
+     * head the equality pin is the only net: the dropped head's line still refuses, because the
+     * slash/colon path rule classifies it as command material regardless.
+     */
+    const COMMAND_HEADS_UNDER_TEST = [
+        'bash',
+        'biome',
+        'bun',
+        'cargo',
+        'cat',
+        'cd',
+        'cmake',
+        'curl',
+        'deno',
+        'diff',
+        'docker',
+        'dotnet',
+        'echo',
+        'electron',
+        'electron-builder',
+        'env',
+        'eslint',
+        'find',
+        'flutter',
+        'format',
+        'gh',
+        'git',
+        'go',
+        'gradle',
+        'grep',
+        'guard',
+        'head',
+        'jest',
+        'knip',
+        'less',
+        'lint',
+        'ls',
+        'make',
+        'mvn',
+        'node',
+        'npm',
+        'npx',
+        'oxlint',
+        'pip',
+        'pnpm',
+        'playwright',
+        'prettier',
+        'pytest',
+        'python',
+        'python3',
+        'rg',
+        'rustc',
+        'sh',
+        'sort',
+        'tail',
+        'tee',
+        'test:barrel-mocks',
+        'test:e2e',
+        'test:run',
+        'deps:validate',
+        'tsx',
+        'tsc',
+        'typecheck',
+        'uv',
+        'vite',
+        'vitest',
+        'wasm:all',
+        'wasm-bindgen',
+        'wasm-pack',
+        'wasm:verify',
+        'wc',
+        'which',
+        'xargs',
+        'yarn',
+    ];
+
+    it('pins the command-head inventory the narration gate classifies by', () => {
+        expect([...COMMAND_HEADS]).toEqual(COMMAND_HEADS_UNDER_TEST);
+    });
+
+    it.each(COMMAND_HEADS_UNDER_TEST)('refuses the annotation-only inventory line for the %s head', (head) => {
+        const line = `${head} run all (green)`;
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it('refuses a pure command list', () => {
+        const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
+            '\n'
+        );
+
+        expect(commandOnlyTestInstructions(list)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(list))).toBe(REFUSAL);
+    });
+
+    it('refuses an inventory whose lead is an ordinary shell-tool sweep', () => {
+        // The head inventory is the un-gating boundary: an unlisted tool word lands as prose and
+        // rescues its own line, laundering the whole inventory behind it.
+        const sweep = "- grep -rn 'handleClip' src/modules/ (ok)\n- pnpm typecheck (clean)";
+
+        expect(commandOnlyTestInstructions(sweep)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(sweep))).toBe(REFUSAL);
+    });
+
+    it('refuses one semicolon-joined line of commands', () => {
+        const line = 'pnpm test:run src/x.spec.ts; pnpm typecheck; pnpm lint';
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it('refuses numbered lines whose commands ride in backticks behind a filler word', () => {
+        // "Run" is filler and the backtick span is the classified content, so `1. Run `pnpm …``
+        // is narration like the bare command would be — the markers never rescue it.
+        const steps = ['1. Run `pnpm test:run x`', '2. Run `pnpm typecheck`'].join('\n');
+
+        expect(commandOnlyTestInstructions(steps)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(steps))).toBe(REFUSAL);
+    });
+
+    it('refuses filler-led segments alongside command-led ones', () => {
+        const mixed = ['- `pnpm lint` (clean)', '- same for pnpm typecheck:test (OK)'].join('\n');
+
+        expect(commandOnlyTestInstructions(mixed)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(mixed))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a bare tool head with a colon', 'vitest: run every suite'],
+        ['a bare compiler head', 'tsc --noEmit'],
+        ['a tool head with a conjunction', 'lint + format the touched modules'],
+        ['a guard invocation', 'guard --profile focused -- pnpm test:run scripts/x.spec.ts'],
+        // Deliberately redundant: the subcommand slot drops './scripts/seed' as the token at
+        // index 1 behind 'node', and the slash rule drops it as a command token either way, so
+        // no single-rule deletion reddens this fixture.
+        ['a launch of an extension-less path', 'node ./scripts/seed'],
+    ])('refuses %s as the only content', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a prose-position slash token only through the path rule', () => {
+        // Outside any argument run, 'web/console' survives into the remainder as a plain word
+        // unless the slash rule drops it — deleting that rule turns it into a rescuing noun and
+        // reddens this fixture.
+        const line = 'the web/console spec and pnpm lint (clean)';
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a package-manager exec chain', 'pnpm exec cargo build'],
+        ['an exec chain seeding through a script', 'pnpm exec tsx scripts/seed.ts seed-project'],
+        ['a commit message quoted in single quotes', "git commit -m 'add the drag handle'"],
+        ['a commit message quoted in double quotes', 'git commit -m "add the drag handle"'],
+    ])('refuses %s', (_label, instructions) => {
+        // A head inside the argument run is command material the run continues through, and prose
+        // quoted inside the run drops with the run in every shell quote kind — neither can rescue
+        // the launch it belongs to.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a python one-liner with a quoted semicolon', 'python -c "import json; print(1)"'],
+        ['a commit message carrying a quoted semicolon', 'git commit -m "fix the handle; add tests"'],
+        ['a node one-liner with a single-quoted semicolon', "node -e 'process.exit(1); console.log(2)'"],
+    ])('refuses %s', (_label, instructions) => {
+        // The segment split separates only on '.'/';' outside a quoted span — all three quote
+        // kinds — so a separator inside the quoted argument cannot manufacture a launch-less
+        // fragment whose stray words rescue the line. The double-quoted pair and the single-quoted
+        // node shape each redden the deletion of their own quote kind's tracking in
+        // splitOutsideQuotedSpans.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a rebuild-and-verify command pair', 'pnpm wasm:all\npnpm wasm:verify'],
+        [
+            'a spec path whose own name carries an observation stem',
+            'pnpm test:run src/modules/BrowserAi/repositories/__tests__/checkModelCached.spec.ts (green)\n' +
+                'pnpm typecheck (clean)',
+        ],
+        ['a seeded spec path', 'pnpm test:run src/utils/seedProject.spec.ts'],
+    ])('refuses %s', (_label, instructions) => {
+        // The stems ride inside command tokens — the colon suffix, the path — which the remainder
+        // drops before any cue or vocabulary test sees them, so these stay narration.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a script-name continuation', 'pnpm test:run everything (140 passed)'],
+        ['the same launch quoted', '`pnpm test:run everything` (140 passed)'],
+        ['a spec-file argument', 'pnpm test:run x.spec.ts (140 passed)'],
+    ])('refuses %s', (_label, instructions) => {
+        // The colon-bearing head is the same launch's script name: the argument run continues
+        // through it, so the bare arguments behind it stay narration.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['annotation words leading into a launch', 'Run the suite `pnpm test:run x.spec.ts`'],
+        [
+            'annotation words leading into two launches',
+            'Run the focused suite with `pnpm test:run x.spec.ts` then `pnpm typecheck` (clean)',
+        ],
+    ])('refuses %s', (_label, instructions) => {
+        // Annotation vocabulary between the filler and the launch must not defeat the head check:
+        // a head anywhere in an all-annotation segment narrates it.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('strips see-verb annotations and keeps a see-verb step that carries its own verb', () => {
+        const annotation = '`pnpm test:run x.spec.ts` (expected: 140 passed)';
+        const stripped = '`pnpm typecheck` (see CI)';
+        const step = 'See the channel meter follow the level';
+
+        expect(commandOnlyTestInstructions(annotation)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotation))).toBe(REFUSAL);
+        expect(commandOnlyTestInstructions(stripped)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(stripped))).toBe(REFUSAL);
+        // Without a see stem, a see-verb observation is rescued by its leading non-head word.
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a wasm-pack build', 'wasm-pack build crates/audio-engine'],
+        // './scripts/seed' is not extension-shaped — its only dot is leading, with no trailing
+        // dot-letters — so this fixture singly pins the slash rule; the extension rule's nets are
+        // the '.env' and 'data.json' leads below.
+        ['a dotted script path', './scripts/seed'],
+        ['a dotted script path behind a launch', 'node ./scripts/seed'],
+        // The extension rule through a dot-led shape: '.env' ends in dot-plus-letters with no
+        // slash, so only FILE_EXTENSION_SUFFIX makes it command material.
+        ['a dot-led env file', '.env lint all (clean)'],
+        // The extension rule through a plain filename lead: 'data.json' carries no slash or dot
+        // prefix, so deleting FILE_EXTENSION_SUFFIX leaves it a prose word that rescues.
+        ['a data-file lead', 'data.json lint all (green)'],
+    ])('refuses %s', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a launched extension-bearing data file', () => {
+        const line = 'node data.json (green)';
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a status copula after the launch', '`pnpm typecheck` is clean'],
+        ['a copula pair joined by a semicolon', '`pnpm lint` is green; `pnpm typecheck` is green'],
+        ['an exec flow into a suite that passes', 'cargo test -p audio-engine and the suite passes'],
+        [
+            'a guard invocation with an all-annotation tail',
+            'pnpm guard --profile focused -- pnpm test:run x.spec.ts, all green, as expected',
+        ],
+        ['a suite narration closed with a pronoun status clause', 'run the suite `pnpm lint` and it is clean'],
+    ])('refuses %s', (_label, instructions) => {
+        // Status companions like 'passes' and 'as expected' are vocabulary the run's trailing
+        // rule treats as annotation, and a pronoun clause like 'it is clean' is annotation behind
+        // a launch the run never opened — either way the segment keeps narrating instead of
+        // ending in a rescuing word.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a bare launch quoted or bare, subcommand and all', () => {
+        // The token after a leading command head is that launch's subcommand, so quoting the
+        // launch cannot change the verdict — and 'pnpm build' refuses the same way.
+        for (const launch of ['pnpm dev', '`pnpm dev`', 'pnpm build']) {
+            expect(commandOnlyTestInstructions(launch)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(launch))).toBe(REFUSAL);
+        }
+    });
+
+    it('passes a bare launch whose argument run flows into a step', () => {
+        // 'dev' is the launch's subcommand slot and drops; the run ends at the vocabulary word
+        // 'and', and the drag cue rescues the rest.
+        const step = 'pnpm dev and drag a clip onto a lane, it lands quantized';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes an exec chain flowing into a step with in-run cue words', () => {
+        // 'exec' is the subcommand slot and 'playwright' a head inside the run — both command
+        // material the run continues through; 'open' is the cue word that ends the run and is
+        // kept, so the rest of the step rescues the segment.
+        const step = 'pnpm exec playwright open the app and see the mixer render';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a watch launch ending in its own cue-stemmed argument', 'gh run watch'],
+        ['a checks launch trailing the same argument', 'gh pr checks watch'],
+        ['an exec chain ending at its cue-word argument', 'pnpm exec playwright open'],
+        ['an inventory led by one of those launches', '- gh run watch (green)\n- pnpm typecheck (clean)'],
+    ])('refuses %s', (_label, instructions) => {
+        // A run-ending vocabulary-or-cue word rescues only when material follows it: as the
+        // segment's last token it is the command's trailing argument and drops, and a word
+        // followed by nothing but annotation drops with it — while 'open' above keeps the
+        // segment's rescue because the step's words follow it.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses the ast-grep form the repository mandates', () => {
+        // After the exec slot, 'run' names the ast-grep subcommand whose flags count as command
+        // material: command material directly behind a run-ending word keeps the argument run
+        // open, so '--lang' and 'src' can never leak out as rescuing prose — while 'pnpm run
+        // build' and 'gh run watch' still refuse through their subcommand slot and the launched
+        // drag step still passes.
+        const line = "pnpm exec ast-grep run --lang ts -p 'executeAppAction($$$ARGS)' src";
+
+        expect(commandOnlyTestInstructions(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a lane-unique port prefix', 'SOURDAW_E2E_PORT=4010 pnpm test:e2e tests/transport.spec.ts'],
+        ['a CI env prefix', 'CI=true pnpm test'],
+        ['a numeric env prefix', 'NO_HMR=1 pnpm dev'],
+    ])('refuses %s: an env assignment cannot lead a launch as prose', (_label, instructions) => {
+        // A NAME=value token is command material, so the launch behind it cannot be rescued by
+        // reading the assignment as the segment's leading prose word.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a quiet oxlint sweep', 'oxlint --quiet src/modules/foo'],
+        ['a python3 module launch', 'python3 -m pytest tests/'],
+    ])('refuses %s', (_label, instructions) => {
+        // This repository's own binaries narrate bare like every other head; the inventory
+        // iteration above already reddens any dropped spelling of these two.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a run subcommand with a bare argument', 'pnpm run build'],
+        ['a bare start launch', 'npm start'],
+        ['a staging launch', 'git add .'],
+        ['a branch switch', 'git switch main'],
+        ['a report launch', 'pnpm exec playwright show-report'],
+        // This repository's own wasm toolchain narrates bare: a build line with status
+        // annotation must refuse like its pnpm-prefixed spelling.
+        ['a bare wasm-bindgen build', 'wasm-bindgen build --target web (ok)'],
+        ['a conjunction pair with an annotation tail', 'pnpm typecheck and pnpm lint, both green'],
+        // A command mention behind a bare-subcommand launch's conjunction: the head drops as
+        // command material and the annotation-only remainder keeps the segment narration, so the
+        // loose arm of the run closer cannot launder a second command behind a conjunction.
+        ['a launch with a command mention behind its conjunction', 'pnpm dev and vitest everything (green)'],
+        ['a launch with a flagged command behind its conjunction', 'pnpm dev and tsc --noEmit (clean)'],
+        // A run-ending word with nothing material behind it is the command's trailing argument,
+        // not an observation: 'play' and 'drag' are cue stems the trailing rule drops, while
+        // 'see' never reaches the cue test — it rides the annotation vocabulary, and the
+        // argument-run scan drops it the same way. These shapes border the trailing-cue rule and
+        // were cross-checked against an external semantic judgment before pinning.
+        ['a bare cue after the launch', 'pnpm dev and play'],
+        ['a comma cue with nothing behind it', 'pnpm dev, drag'],
+        ['a see verb with nothing to see', 'npm start and see'],
+    ])('refuses %s', (_label, instructions) => {
+        // The subcommand slot drops the token behind the leading head whatever it is, and the
+        // argument run behind the slot stays annotation-only — none of these teach a step.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('passes a prose-led action list as the fail-open margin', () => {
+        // 'Open' is a cue leading prose, not a launch, so the segment stays prose-led and passes
+        // whatever follows — the documented margin where the gate judges inventories, not quality.
+        const step = 'Open the app and drag';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a launch-less annotation clause split off by a semicolon', () => {
+        // The semicolon splits the line, and the pronoun clause left behind carries no launch:
+        // annotation without a launch is the fail-open margin (an external semantic judgment
+        // scores it 0.08 for teaching a step), while the same clause attached to its launch —
+        // the three-line inventory fixture — refuses.
+        const split = 'pnpm typecheck; it is clean';
+
+        expect(commandOnlyTestInstructions(split)).toBe(false);
+        expect(() => assertObservableTestInstructions(split)).not.toThrow();
+    });
+
+    it('keeps noun-clause parentheticals that name UI state', () => {
+        // A parenthetical whose content is not pure annotation keeps its content in the prose, and
+        // the nouns beyond the vocabulary rescue the segment. The short twin has no vocabulary
+        // word left to rescue through: its article itself ends the argument run (the kept
+        // parenthetical's edge punctuation strips away) with the material noun 'clip' behind it.
+        const tracks = '1. `pnpm dev` (the level meter tracks the input)';
+        const lands = '1. `pnpm dev` (the clip lands quantized to the grid)';
+        const landsShort = '1. `pnpm dev` (the clip lands quantized)';
+
+        expect(commandOnlyTestInstructions(tracks)).toBe(false);
+        expect(() => assertObservableTestInstructions(tracks)).not.toThrow();
+        expect(commandOnlyTestInstructions(lands)).toBe(false);
+        expect(() => assertObservableTestInstructions(lands)).not.toThrow();
+        expect(commandOnlyTestInstructions(landsShort)).toBe(false);
+        expect(() => assertObservableTestInstructions(landsShort)).not.toThrow();
+    });
+
+    it('refuses a launch whose argument run stays annotation', () => {
+        const annotations = 'pnpm lint on every touched file (clean)';
+
+        expect(commandOnlyTestInstructions(annotations)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotations))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a git sync sequence', 'git fetch origin; git merge origin/main'],
+        ['a make task pair', 'make test\nmake lint'],
+        ['an electron launch', 'electron .'],
+        ['a node script invocation', 'node scripts/check.ts'],
+    ])('refuses %s', (_label, instructions) => {
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('passes a manual step whose leading verb is also a command head', () => {
+        // 'Format' names a command head, so the argument-run scan opens — and must close at the
+        // first word a reader reads, leaving the step's nouns to rescue the segment as usual.
+        const step = 'Format the disk name in the export dialog';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a MIDI step', 'Make a MIDI track'],
+        ['a rename step', 'Format the clip name'],
+        ['a note-taking step', 'make a note of the levels'],
+        ['a shell-named sorting step', 'sort the clips by name'],
+        ['a shell-named printing step', 'echo the level'],
+        // The article guard consults the first token behind a head-only quoted span, so the
+        // quoted spellings read their article exactly where the bare ones do; deleting that
+        // probe reddens these three while 'make test' stays a launch through the pinned
+        // make-task fixture.
+        ['a backticked MIDI step', '`make` a MIDI track'],
+        ['a backticked rename step', '`format` the clip name'],
+        ['a backticked sorting step behind a filler', 'run `sort` the clips by name'],
+    ])('passes a manual %s whose head-verb opens onto an article', (_label, step) => {
+        // The article directly behind the peeled head keeps the argument run closed — the head is
+        // the step's own verb naming its object — so the UI nouns reach the rescue check instead
+        // of being eaten as the launch's arguments. A bare argument behind the same head stays a
+        // launch: 'make test' and 'make lint' are pinned refusing by the make-task fixture.
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['an article naming the tested spec', 'pnpm test:run the transport spec (140 passed)'],
+        ['an article naming the launched app', 'pnpm typecheck the app (clean)'],
+        ['an article-led inventory', 'pnpm test:run the transport spec (140 passed)\npnpm typecheck the app (clean)'],
+        ['a bare argument behind a run-closing filler', 'pnpm dlx vitest run x (green)'],
+    ])(
+        'refuses %s: a bare token behind a run-closing vocabulary word stays command argument',
+        (_label, instructions) => {
+            // Behind a launch of command machinery — a command-material subcommand slot or a head
+            // dropped inside the run — the bare non-cue word behind the run-ending vocabulary word is
+            // the command's own argument, not the material that closes it: these refuse where their
+            // article-free twins (`pnpm test:run everything (140 passed)`, pinned above) always have.
+            // Reverting the strict material rule reddens this fixture while the launched drag-step
+            // pass rides its cue and clause unchanged.
+            expect(commandOnlyTestInstructions(instructions)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        }
+    );
+
+    it.each([
+        // A preposition behind the head takes the article guard's neighbor route: the run opens,
+        // the preposition ends it as vocabulary, and the UI nouns behind rescue the step.
+        ['a navigation step', 'go to the mixer'],
+        ['a search step', 'find the missing plugin'],
+    ])('passes a manual %s whose head-verb opens onto a preposition', (_label, step) => {
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a comma-joined observation no conjunction introduces', () => {
+        const step = 'pnpm dev, drag a clip onto a lane, it lands quantized';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a filler-led sentence mentioning its launch mid-prose', () => {
+        // 'Run' peels as filler and the prose carries the launch mention inside the sentence,
+        // with the observation trailing — a natural author phrasing whose rescue rides the
+        // beyond-vocabulary nouns, not the cue stems.
+        const step = 'Run the app with the flag and the meter follows';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a single-quoted leading launch teaching its observation', () => {
+        // The peel must treat both quote kinds as the launch's shell, so the observation after a
+        // single-quoted launch rescues the segment exactly as the backtick spelling does.
+        const step = "'pnpm dev' and drag a clip onto a lane, it lands quantized";
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('pairs the double quote in every quoted-span rule', () => {
+        // The lead unwrap, the span removal, and the quoted-argument drop must agree on all three
+        // quote kinds: a double-quoted lead is a launch shell, and a double-quoted data-file lead
+        // is command material exactly like its single-quoted spelling.
+        const step = '"pnpm dev" and drag a clip onto a lane, it lands quantized';
+
+        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+
+        const doubleQuotedLead = '"data.json" (green)';
+        expect(commandOnlyTestInstructions(doubleQuotedLead)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(doubleQuotedLead))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a backticked launch annotated with a bare result', '1. `pnpm typecheck` (no errors)'],
+        ['a backticked launch annotated with an expectation', '1. `pnpm typecheck` (should be green)'],
+        ['a backticked launch annotated with a status', '1. `pnpm lint` (still green)'],
+        ['a backticked launch followed by its passing count', '1. `pnpm test:run x` — 140 passing'],
+        ['a double-quoted exec chain seeding a build', '"pnpm exec" cargo build'],
+        [
+            'a three-line inventory of annotated launches',
+            '1. `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)\n2. `pnpm typecheck` — it is clean\n3. `pnpm lint` (still green)',
+        ],
+    ])('refuses %s', (_label, instructions) => {
+        // The launch shell never rescues its own annotations: result companions ('no errors',
+        // 'should be green', 'still green', '140 passing', 'it is clean') are vocabulary the
+        // remainder drops, and a quoted lead opens the argument run exactly like the bare
+        // spelling — its content is the launch whose subcommand slot and arguments keep
+        // narrating behind it.
+        expect(commandOnlyTestInstructions(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it('refuses a filler word joining two commands mid-segment', () => {
+        const joined = 'pnpm typecheck and then pnpm lint';
+
+        expect(commandOnlyTestInstructions(joined)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(joined))).toBe(REFUSAL);
+    });
+
+    it('reads a cue-bearing parenthetical as part of the step and a bare one as annotation', () => {
+        // A parenthetical carrying an observation cue keeps its content in the prose the cue check
+        // reads; a cue-free one is the annotation it looks like and strips away.
+        const teaches = '1. `pnpm dev` (confirm the transport play button toggles)';
+        const watches = '1. `pnpm test:e2e tests/transport.spec.ts` (reviewer watches the headed run)';
+        const annotates = '`pnpm typecheck` (clean)';
+
+        expect(commandOnlyTestInstructions(teaches)).toBe(false);
+        expect(() => assertObservableTestInstructions(teaches)).not.toThrow();
+        expect(commandOnlyTestInstructions(watches)).toBe(false);
+        expect(() => assertObservableTestInstructions(watches)).not.toThrow();
+        expect(commandOnlyTestInstructions(annotates)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotates))).toBe(REFUSAL);
+    });
+
+    it('passes any single prose sentence, including one a filler word opens', () => {
+        // "Run" leads the existing fixtures' own How-to-test sentence: filler stripping must stop
+        // at the command list, not read the sentence's next word as one.
+        const prose = 'Run the focused publisher specs and confirm they pass.';
+
+        expect(commandOnlyTestInstructions(prose)).toBe(false);
+        expect(() => assertObservableTestInstructions(prose)).not.toThrow();
+        expect(commandOnlyTestInstructions('Open the arrangement view and confirm the new clip handle appears.')).toBe(
+            false
+        );
+    });
+
+    it('passes None.', () => {
+        expect(commandOnlyTestInstructions('None.')).toBe(false);
+        expect(() => assertObservableTestInstructions('None.')).not.toThrow();
+    });
+
+    it('passes when any segment is prose, even inside an otherwise command-only list', () => {
+        expect(
+            commandOnlyTestInstructions('- `pnpm lint` (clean)\n- No user-visible change; this only touches scripts.')
+        ).toBe(false);
+    });
+
+    it.each([
+        [
+            'a launch that teaches its observation behind a comma',
+            'Run `pnpm dev` and confirm the transport play button toggles.',
+        ],
+        [
+            'a backticked launch followed by observation clauses',
+            '`pnpm dev`, open the arrangement view, confirm the fader renders',
+        ],
+        [
+            'a numbered step pairing the command with its observation',
+            '1. `pnpm dev` then open the arrangement view and confirm the new clip handle appears',
+        ],
+        [
+            'a numbered step pairing the launch with a drag observation',
+            '1. `pnpm dev` and drag a clip onto a lane, the clip lands quantized to the grid',
+        ],
+        [
+            'a numbered step pairing the launch with a listening check',
+            '1. `pnpm dev`, play the transport from bar 1, audio starts at the set tempo',
+        ],
+        ['a launched observation whose nouns inflect the cue stems', 'Run `pnpm dev` and confirm playback starts'],
+    ])('passes %s', (_label, instructions) => {
+        // The launch head alone does not make these narration: each teaches what to observe, so
+        // the remainder rule keeps them acceptable for a product-scope change.
+        expect(commandOnlyTestInstructions(instructions)).toBe(false);
+        expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
+    });
+
+    it('drops empty segments from separators and blank lines instead of counting them', () => {
+        // Whitespace-only text has no segment at all, so it is not command narration — the emptiness
+        // gate lives in composePublishBody, not here.
+        expect(commandOnlyTestInstructions('   \n\t  ')).toBe(false);
+        expect(commandOnlyTestInstructions('  `pnpm typecheck`  \n')).toBe(true);
+        expect(commandOnlyTestInstructions('pnpm typecheck; ; ;')).toBe(true);
+        expect(commandOnlyTestInstructions('pnpm typecheck.\n\n')).toBe(true);
     });
 });
 
