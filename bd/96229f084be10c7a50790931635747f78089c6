@@ -1,0 +1,90 @@
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_9e15f5b7ec3308::t_73069247c82322 1,18
+  s_9e15f5b7ec3308::t_8e0e26bb2658a8 43
+  s_9e15f5b7ec3308::t_67efa60b88ca68 182-201
+  s_9e15f5b7ec3308::t_cbf1f5f0599003 349
+src/modules/Arrangement/models/MixRecipe.ts
+  s_9e15f5b7ec3308::t_ece59e3e020891 190,196
+  s_9e15f5b7ec3308::t_ec93983a49621c 68-92
+src/modules/Arrangement/repositories/__tests__/mixingRecipeCatalog.spec.ts
+  s_9e15f5b7ec3308::t_c2cfbe31c11bee 56,60,76-95,98-99,101-102
+  s_9e15f5b7ec3308::t_2b1d2931e0084b 8
+  s_9e15f5b7ec3308::t_9c6b658aecf13b 96-97,100
+  s_9e15f5b7ec3308::t_55eb238654159d 238-239,244-248,250-251
+  s_9e15f5b7ec3308::t_c9d4c335b4e7c7 193-237
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_9e15f5b7ec3308::t_699f9180ae7bdc 1272
+  s_9e15f5b7ec3308::t_a00ee2ae964106 743-791
+  s_9e15f5b7ec3308::t_50229e5ff33d7d 50,53,55
+  s_9e15f5b7ec3308::t_92074f9bba2cb8 1
+  s_9e15f5b7ec3308::t_681d02d6d72e26 809-810
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_9e15f5b7ec3308::t_2c39335909aee6 375
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_9e15f5b7ec3308::t_18bcc4d6bf6c87 19
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_9e15f5b7ec3308::t_c20357f96d2e4d 245
+  s_9e15f5b7ec3308::t_96097dd0ea402e 3,14
+  s_9e15f5b7ec3308::t_d617602a88a6fe 172-195
+src/modules/AiRuntime/useCases/parseRecipeDiscoveryInput.ts
+  s_9e15f5b7ec3308::t_f954dfbe703caf 1-100
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_9e15f5b7ec3308::t_21f2b060728896 1-3,6-13,60-143,145-176,178-182,213-244,353-432,437-440,551-572
+  s_9e15f5b7ec3308::t_ae4c53cbf08a72 573-586
+  s_9e15f5b7ec3308::t_c9f610dcbcda3e 496-518,520-552
+  s_9e15f5b7ec3308::t_6128e5729888da 519
+  s_9e15f5b7ec3308::t_889c9e9e538450 4-5,14-58
+  s_9e15f5b7ec3308::t_8342ca640524a6 144
+  s_9e15f5b7ec3308::t_a57720aad9d6cc 310-351
+  s_9e15f5b7ec3308::t_4c4af4a62b13de 59,352
+src/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog.ts
+  s_9e15f5b7ec3308::t_9ecbf9c4f67937 30
+  s_9e15f5b7ec3308::t_cf0a15bd96f9e3 4
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_9e15f5b7ec3308::t_bec6b2c23b64e7 1,3-11,17-22,25,27-48,50,54-55,64-66,68-69,75-79,81-85,87-110,112,114-131,143,145-147,149-150,160-171,173-197,199-203,205,207-209,215-217,219-227,253-265,268-275,279,281-282,301-303,305-306,310-346,350-366
+  s_9e15f5b7ec3308::t_0df301560d2d54 113
+  s_9e15f5b7ec3308::t_83a3ea28f11fdf 111
+  s_9e15f5b7ec3308::t_6c8f0918f5ab8f 132-134,140-142,144,148,151,153,157-159
+  s_9e15f5b7ec3308::t_6a0d02173fb023 276-278,280
+  s_9e15f5b7ec3308::t_41a88e4137895e 284-285,287-299
+  s_9e15f5b7ec3308::t_e5f3f6bbb5dcf8 152
+  s_9e15f5b7ec3308::t_148eea42205f48 49,56,60
+  s_a33c5368acef99::t_559c14f21592d8 63,300
+  s_9e15f5b7ec3308::t_02335f008b6896 283,286
+  s_9e15f5b7ec3308::t_38d4ee69bb8497 57-59,61-62
+evidence/agent-campaign/manifest.json
+  s_9e15f5b7ec3308::t_7a2b671160ab4b 15,19,23,43,77,81,85,89,374,527,942,946,950,954
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_9e15f5b7ec3308::t_5a9ac6ef0805f5 519-522
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_9e15f5b7ec3308::t_83b5762d775f18 53
+  s_9e15f5b7ec3308::t_67b916d840ca11 440-443,452-453
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_9e15f5b7ec3308::t_106c148e4a8e1b 25
+  s_9e15f5b7ec3308::t_27b229b3412ee2 1267,1270,1274-1322
+  s_9e15f5b7ec3308::t_54360637216237 1323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bd96229f084be10c7a50790931635747f78089c6",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
