@@ -299,6 +299,12 @@ export async function reproposePendingChatActions(
         agentApproval: approval,
         affectedIds: [...affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
+        // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
+        // in the working batch's commands rather than re-resolving any `match` selector, so the
+        // carried record from the original proposal is still what the batch was built against; a
+        // later `resolveConfirmationAdmission` changed-revision re-resolution needs it to keep
+        // guarding a reproposed confirmation the same way it guards a first-proposed one.
+        matchSelectorPredicates: confirmation.approvalSnapshot.matchSelectorPredicates,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

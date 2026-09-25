@@ -91,6 +91,24 @@ export type SemanticCommandListSelector = {
     quantity: SemanticCommandListQuantity;
 };
 
+/**
+ * One `match` selector a compiled batch carried, recording the exact selector fields
+ * `ArbitraryCommandListSelectorEvidence.predicate` compiled plus the stable ids it resolved to at
+ * that moment. Carried on the pending confirmation's approval snapshot so an approval-time project
+ * change can re-resolve the same selector against the live project before rebinding the batch,
+ * rather than trusting a fingerprint check that only covers ids already in the resolved set.
+ */
+export type SemanticCommandListMatchSelectorRecord = {
+    itemId: string;
+    entity: SemanticCommandListEntity;
+    where?: SemanticCommandListSelector['where'];
+    match: SemanticCommandListMatch;
+    condition?: SemanticCommandListSelector['condition'];
+    excludeIds?: string[];
+    quantity: SemanticCommandListQuantity;
+    stableIds: string[];
+};
+
 export type SemanticCommandListItem = {
     id: string;
     name: string;

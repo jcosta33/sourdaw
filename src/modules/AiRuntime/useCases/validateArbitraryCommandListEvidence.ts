@@ -170,9 +170,12 @@ export function validateArbitraryCommandListEvidence(input: {
             return { status: 'rejected', reason: 'Structured command compiler evidence preconditions no longer hold.' };
         }
         // A `match` selector's precondition is the resolved id set, not any one candidate's
-        // fingerprint: a track the compiled predicate never saw can start matching without
-        // changing a single already-resolved candidate. Re-running the same resolver against this
-        // validation's own context is the only way to catch that a table row above cannot.
+        // fingerprint, so the table check above cannot state it. This replay only confirms that
+        // resolving the selector again, against this call's own context, agrees with what the
+        // compiler recorded: `parsePromptToActions` compiles and calls this validator against the
+        // same context with no await between them, so this can never observe a project change made
+        // after the compile — that guard lives in `resolveConfirmationAdmission`'s approval-time
+        // re-resolution instead.
         if (selector.predicate !== undefined) {
             const replayed = resolveSemanticCommandListSelector({
                 candidates,

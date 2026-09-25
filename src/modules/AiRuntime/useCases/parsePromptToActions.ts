@@ -19,6 +19,7 @@ import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../m
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
     isWorkflowCapabilityId,
@@ -920,6 +921,28 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
 
+                    // Every `match` selector the compiled list carried, with the stable ids it resolved to,
+                    // so `resolveConfirmationAdmission` can re-resolve each one before rebinding an
+                    // approval that changed revision instead of trusting only its fingerprint check.
+                    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
+                        compiledList.compilerEvidence?.selectors.flatMap((selector) => {
+                            if (selector.predicate === undefined) {
+                                return [];
+                            }
+                            return [
+                                {
+                                    itemId: selector.itemId,
+                                    entity: selector.predicate.entity,
+                                    where: selector.predicate.where,
+                                    match: selector.predicate.match,
+                                    condition: selector.predicate.condition,
+                                    excludeIds: selector.predicate.excludeIds,
+                                    quantity: selector.predicate.quantity,
+                                    stableIds: [...selector.stableIds],
+                                },
+                            ];
+                        }) ?? [];
+
                     return {
                         actions: guarded.actions,
                         ...(bridged.actionCommandGraph === undefined
@@ -933,6 +956,7 @@ const planPromptIntent = inject({ logger })(
                         ...(compiledList.compilerEvidence === undefined
                             ? {}
                             : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
+                        ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,
                     };

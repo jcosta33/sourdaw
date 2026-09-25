@@ -380,6 +380,67 @@ describe('semantic command list set predicates', () => {
         });
     });
 
+    it('resolves an isMuted predicate on a clip entity against the owning track state, not the clip own muted field', () => {
+        const mutedTrackClipId = 'clip-hat-unmuted-own';
+        const mutatedContext: ProjectContext = {
+            ...context,
+            tracks: context.tracks.map((track) => {
+                if (track.id === 'track-hat') {
+                    return {
+                        ...track,
+                        clips: [
+                            {
+                                id: mutedTrackClipId,
+                                name: 'Hat Clip',
+                                type: 'audio',
+                                startBeat: 0,
+                                endBeat: 4,
+                                noteCount: 0,
+                                muted: false,
+                            },
+                        ],
+                    };
+                }
+                if (track.id === 'track-kick') {
+                    return {
+                        ...track,
+                        clips: track.clips.map((clip) =>
+                            clip.id === 'clip-kick-verse' ? { ...clip, muted: true } : clip
+                        ),
+                    };
+                }
+                return track;
+            }),
+        };
+        const result = compileSelectorItem({
+            itemId: 'clip-owner-muted',
+            commandName: 'duplicateClip',
+            entity: 'clip',
+            targetArgument: 'clipId',
+            match: { all: [{ isMuted: true }] },
+            context: mutatedContext,
+        });
+        expect(result).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { selectors: [{ stableIds: [mutedTrackClipId] }] },
+        });
+    });
+
+    it('resolves an isFrozen predicate on a device entity against the owning track state', () => {
+        const result = compileSelectorItem({
+            itemId: 'device-owner-frozen',
+            commandName: 'bypassDevice',
+            commandArguments: { bypassed: true },
+            entity: 'device',
+            targetArgument: 'deviceId',
+            match: { all: [{ isFrozen: true }] },
+        });
+        expect(result).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { selectors: [{ stableIds: ['device-hat-comp'] }] },
+        });
+    });
+
     it('resolves inSection on a clip to only the clip whose span overlaps, excluding clips touching either boundary', () => {
         const result = compileSelectorItem({
             commandName: 'duplicateClip',
@@ -469,9 +530,17 @@ describe('semantic command list set predicates', () => {
             match: { all: [{ roleFamily: 'guitar' }] },
             quantity: { unit: 'targets', maximum: 3 },
         });
-        expect(result).toMatchObject({
+        expect(result).toEqual({
             status: 'rejected',
-            detail: { kind: 'missing-target', resolvedCount: 0, expectedCount: 3 },
+            reason: 'Bulk selector maximum-zero resolved 0 targets; its match named no target.',
+            detail: {
+                kind: 'missing-target',
+                itemId: 'maximum-zero',
+                entity: 'track',
+                resolvedCount: 0,
+                expectedCount: 3,
+                candidateIds: [],
+            },
         });
     });
 

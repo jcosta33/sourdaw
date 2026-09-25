@@ -353,10 +353,16 @@ export function resolveSemanticCommandListSelector(input: {
         // The exact-quantity message stays byte-identical to its pre-`maximum` wording, read
         // literally by existing evidence; a `maximum` rejection names both the resolved count and
         // the maximum, since either could otherwise be read from the other's precondition failure.
-        const reason =
-            'exactly' in selector.quantity
-                ? `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, not its exact quantity.`
-                : `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, more than its maximum of ${String(quantityCheck.expectedCount)}.`;
+        // A `maximum` selector that resolves nothing did not overflow a bound — its `match` named
+        // no target at all — so it gets its own wording instead of the "more than its maximum" text.
+        let reason: string;
+        if ('exactly' in selector.quantity) {
+            reason = `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, not its exact quantity.`;
+        } else if (quantityCheck.kind === 'missing-target') {
+            reason = `Bulk selector ${input.itemId} resolved 0 targets; its match named no target.`;
+        } else {
+            reason = `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, more than its maximum of ${String(quantityCheck.expectedCount)}.`;
+        }
         return {
             status: 'rejected',
             reason,
