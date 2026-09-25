@@ -91,3 +91,71 @@ describe('compileAutomationSegments — multi-point chain', () => {
         }
     });
 });
+
+// #4684: a `segments`-bound device parameter must land on the same
+// PDC-delayed clock as the clips it shapes. `compensationDelaySec` shifts
+// every emitted segment later in seconds, before the seconds→frames
+// conversion, and holds the render-start value in the opening window the
+// shift creates.
+describe('compileAutomationSegments — compensationDelaySec', () => {
+    it('opens with a held segment and lands the step later by the compensation', () => {
+        // 120 BPM: beat 0 = 0s (step curve, value 0), beat 4 = 2s (value 1).
+        // compensationDelaySec 0.01 shifts everything 0.01s = 480 frames later.
+        const segments = compileAutomationSegments(
+            [point(0, 0, 'step'), point(4, 1)],
+            4,
+            120,
+            [],
+            SR,
+            0,
+            undefined,
+            0.01
+        );
+        // Opening segment holds the render-start value (0) across the shift window.
+        expect(segments[0]?.startFrame).toBe(0);
+        expect(segments[0]?.endFrame).toBe(480);
+        expect(segments[0]?.startValue).toBe(0);
+        expect(segments[0]?.endValue).toBe(0);
+        // The step to 1 lands at 2.01s = 96480 frames, not 96000.
+        const stepped = segments.find((segment) => segment.endValue === 1);
+        expect(stepped?.startFrame).toBe(96_480);
+        expect(stepped?.endFrame).toBe(96_480);
+    });
+
+    it('is byte-identical to the uncompensated output when compensationDelaySec is 0 or omitted', () => {
+        const withoutOption = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, 120, [], SR);
+        const withZero = compileAutomationSegments([point(0, 0, 'step'), point(4, 1)], 4, 120, [], SR, 0, undefined, 0);
+        expect(withZero).toEqual(withoutOption);
+        // No opening hold segment: the step lands at 2s = 96000 frames, unshifted.
+        expect(withoutOption[0]?.startFrame).toBe(0);
+        expect(withoutOption[0]?.endFrame).toBe(96_000);
+        const stepped = withoutOption.find((segment) => segment.endValue === 1);
+        expect(stepped?.startFrame).toBe(96_000);
+        expect(stepped?.endFrame).toBe(96_000);
+    });
+
+    it('clamps a step inside the last compensation window to the render duration', () => {
+        // Duration 2s; the step sits exactly at the render end (beat 4 = 2s at
+        // 120 BPM). Shifting by 0.01s would place it at 2.01s, past the 2s
+        // render — every frame must clamp to durationSeconds * sampleRate.
+        const durationSeconds = 2;
+        const segments = compileAutomationSegments(
+            [point(0, 0, 'step'), point(4, 1)],
+            durationSeconds,
+            120,
+            [],
+            SR,
+            0,
+            undefined,
+            0.01
+        );
+        const maxFrame = durationSeconds * SR;
+        for (const segment of segments) {
+            expect(segment.startFrame).toBeLessThanOrEqual(maxFrame);
+            expect(segment.endFrame).toBeLessThanOrEqual(maxFrame);
+        }
+        const stepped = segments.find((segment) => segment.endValue === 1);
+        expect(stepped?.startFrame).toBe(maxFrame);
+        expect(stepped?.endFrame).toBe(maxFrame);
+    });
+});

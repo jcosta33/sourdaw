@@ -657,6 +657,64 @@ describe('scheduleTrackAutomation', () => {
         );
     });
 
+    // #4684: a segments-bound device lane must land on the same PDC-delayed
+    // clock as the clips it shapes. `slewTickSeconds: 0` disables the offline
+    // device-param glide so the compiled segments show the raw, unslewed step.
+    it('shifts a segments-bound device lane later by the track compensation delay', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'fermenter-1:filterCutoff',
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0, curve: 'step', tension: 0 },
+                        { beat: 4, value: 1, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
+                {
+                    deviceId: 'fermenter-1',
+                    deviceType: 'fermenter',
+                    strategy: {
+                        resolveOfflineAutomation: (name: string) => {
+                            if (name !== 'filterCutoff') {
+                                return null;
+                            }
+                            return {
+                                kind: 'segments',
+                                apply: (segments) => {
+                                    scheduleParam('filterCutoff', segments);
+                                },
+                            };
+                        },
+                    },
+                },
+            ],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            sampleRate: 48_000,
+            compensationDelaySec: 0.01,
+            slewTickSeconds: 0,
+        });
+
+        type Segment = { startFrame: number; endFrame: number; startValue: number; endValue: number };
+        const segments = scheduleParam.mock.calls[0]![1] as Segment[];
+        // Opening segment holds the render-start value (0) across the 0.01s shift window.
+        expect(segments[0]).toEqual({ startFrame: 0, endFrame: 480, startValue: 0, endValue: 0 });
+        // The step to 1 lands at 2.01s = 96480 frames, not 96000.
+        const stepped = segments.find((segment) => segment.endValue === 1);
+        expect(stepped?.startFrame).toBe(96_480);
+        expect(stepped?.endFrame).toBe(96_480);
+    });
+
     it('does not let a native strategy steal a legacy bare Web Audio lane', () => {
         const delayMix = makeParam();
         const delayNode = {
