@@ -588,6 +588,264 @@ describe('projectLiveAutomationWrites — hosted device lanes', () => {
         expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
     });
 
+    it('projects both disjoint clip-scoped lanes on one carried device parameter (Fixture D)', () => {
+        const clipA = clip({ id: 'clip-a', startBeat: 0, endBeat: 0.4 });
+        const clipB = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
+        const track = createTrack({ devices: [hostedDevice], clips: [clipA, clipB] });
+        const lanes: AutomationLane[] = [
+            lane({
+                id: 'lane-clip-a',
+                trackId: track.id,
+                parameterId: 'plugin-1:7',
+                clipId: clipA.id,
+                points: [point(0, 0.3, 'step')],
+            }),
+            lane({
+                id: 'lane-clip-b',
+                trackId: track.id,
+                parameterId: 'plugin-1:7',
+                clipId: clipB.id,
+                points: [point(0.4, 0.9, 'step')],
+            }),
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
+        expect(entry).toBeDefined();
+        expect(entry!.writes).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ shape: 'step', value: 0.3, time: 0 }),
+                expect.objectContaining({ shape: 'step', value: 0.9, time: 0.4 }),
+            ])
+        );
+    });
+
+    it('merges rather than falsely reports an overlap when a clip ending exactly at the region start ties on frame 0 with the next clip (Fixture D)', () => {
+        // clip-a [0,2) ends exactly where the region starts, so its lane
+        // compiles to a zero-length stream sitting at frame 0 — nothing to
+        // merge, only a tie to break correctly against clip-b's real ramp,
+        // which also starts at frame 0 once shifted into the region. Lane
+        // order deliberately puts the full stream (clip-b) before the
+        // zero-length one (clip-a), the order `mergeAutomationSegmentStreams`
+        // must sort correctly rather than reading as an overlap.
+        const clipA = clip({ id: 'clip-a', startBeat: 0, endBeat: 2 });
+        const clipB = clip({ id: 'clip-b', startBeat: 2, endBeat: 4 });
+        const track = createTrack({ devices: [hostedDevice], clips: [clipA, clipB] });
+        const lanes: AutomationLane[] = [
+            lane({
+                id: 'lane-clip-b',
+                trackId: track.id,
+                parameterId: 'plugin-1:7',
+                clipId: clipB.id,
+                points: [point(2, 0.2, 'linear'), point(3, 0.8, 'linear')],
+            }),
+            lane({
+                id: 'lane-clip-a',
+                trackId: track.id,
+                parameterId: 'plugin-1:7',
+                clipId: clipA.id,
+                points: [point(0, 0.3, 'step')],
+            }),
+            lane({
+                id: 'lane-gain',
+                trackId: track.id,
+                parameterId: 'gain',
+                points: [point(0, 0.5, 'linear'), point(4, 1, 'linear')],
+            }),
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 2,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(true);
+        expect(result.entries.some((entry) => entry.target.kind === 'track-fader')).toBe(true);
+    });
+
+    it('excludes only the withheld lane, keeps the device-parameter and fader entries, when a track-level lane overlaps a clip-scoped lane on one carried device parameter (Fixture O)', () => {
+        const clipB = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
+        const track = createTrack({ devices: [hostedDevice], clips: [clipB] });
+        const trackLane = lane({
+            id: 'lane-track',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            // A second point past clip-b's start, so this track-level
+            // lane's own schedule genuinely spans across clip-b's
+            // window — a real overlap, not two lanes that merely
+            // compile back to back.
+            points: [point(0, 0.3, 'step'), point(2, 0.3, 'step')],
+        });
+        const clipLane = lane({
+            id: 'lane-clip-b',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            clipId: clipB.id,
+            points: [point(0.4, 0.9, 'step')],
+        });
+        // The overlap must not silence the rest of the strip — a gain lane
+        // on the same track has nothing to do with the clashing device
+        // parameter and must still convert.
+        const gainLane = lane({
+            trackId: track.id,
+            parameterId: 'gain',
+            minValue: 0,
+            maxValue: 2,
+            points: [point(0, 0.5, 'step'), point(1, 0.2, 'step')],
+        });
+        const lanes: AutomationLane[] = [trackLane, clipLane, gainLane];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        // `lane-clip-b` is latest in lane-array order, so the merge keeps it
+        // and withholds only `trackLane`.
+        const reason = `automation on track "${track.name}": lanes on device "${hostedDevice.id}" overlap on parameter "7"`;
+        expect(result.exclusions).toEqual([{ stripId: track.id, subjectId: trackLane.id, reason }]);
+        const deviceEntry = result.entries.find((entry) => entry.target.kind === 'device-parameter');
+        expect(deviceEntry).toBeDefined();
+        expect(deviceEntry!.writes[0]).toEqual({ shape: 'step', value: 0.9, time: 0.4 });
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+        expect(faderEntry!.writes).toEqual([
+            { shape: 'step', value: 0.5, time: 0 },
+            { shape: 'step', value: 0.2, time: 1 },
+        ]);
+    });
+
+    it('withholds only the losing lane out of a crossfaded pair, leaving a distant disjoint clip and an unrelated gain lane untouched', () => {
+        // A[0,2.25) and B[1.75,4) genuinely overlap (a crossfade); C[6,8) is
+        // far enough away that it never joins their cluster. All three carry
+        // lanes on the same device parameter; a gain lane has nothing to do
+        // with any of it. Lane order a, b, c, gain: b is latest in
+        // lane-array order among the clashing pair, so it survives and a is
+        // the only lane withheld.
+        const clipA = clip({ id: 'clip-a', startBeat: 0, endBeat: 2.25 });
+        const clipB = clip({ id: 'clip-b', startBeat: 1.75, endBeat: 4 });
+        const clipC = clip({ id: 'clip-c', startBeat: 6, endBeat: 8 });
+        const track = createTrack({ devices: [hostedDevice], clips: [clipA, clipB, clipC] });
+        const laneA = lane({
+            id: 'lane-a',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            clipId: clipA.id,
+            points: [point(0, 0.1, 'linear'), point(2, 0.9, 'linear')],
+        });
+        const laneB = lane({
+            id: 'lane-b',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            clipId: clipB.id,
+            points: [point(2, 0.1, 'linear'), point(4, 0.9, 'linear')],
+        });
+        const laneC = lane({
+            id: 'lane-c',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            clipId: clipC.id,
+            points: [point(6, 0.5, 'step')],
+        });
+        const laneGain = lane({
+            trackId: track.id,
+            parameterId: 'gain',
+            minValue: 0,
+            maxValue: 2,
+            points: [point(0, 0.5, 'step')],
+        });
+        const lanes: AutomationLane[] = [laneA, laneB, laneC, laneGain];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 10,
+        });
+
+        const reason = `automation on track "${track.name}": lanes on device "${hostedDevice.id}" overlap on parameter "7"`;
+        expect(result.exclusions).toEqual([{ stripId: track.id, subjectId: laneA.id, reason }]);
+        const deviceEntry = result.entries.find((entry) => entry.target.kind === 'device-parameter');
+        expect(deviceEntry).toBeDefined();
+        // Opens with lane-b's own value at its window start (kept, not
+        // withheld) and still carries lane-c's untouched, disjoint write.
+        expect(deviceEntry!.writes).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ shape: 'step', value: 0.1, time: 1.75 }),
+                expect.objectContaining({ shape: 'step', value: 0.5, time: 6 }),
+            ])
+        );
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+    });
+
+    it('excludes every withheld lane out of a three-way mutual overlap on one carried device parameter, not only the first', () => {
+        // All three lanes are track-level (no clipId) and span the whole
+        // render, so all three genuinely overlap — one cluster of three.
+        // lane-3 is latest in lane-array order and survives; lane-1 and
+        // lane-2 are both withheld and must both be excluded.
+        const track = createTrack({ devices: [hostedDevice] });
+        const lane1 = lane({
+            id: 'lane-1',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            points: [point(0, 0.1, 'step'), point(4, 0.1, 'step')],
+        });
+        const lane2 = lane({
+            id: 'lane-2',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            points: [point(0, 0.5, 'step'), point(4, 0.5, 'step')],
+        });
+        const lane3 = lane({
+            id: 'lane-3',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            points: [point(0, 0.9, 'step'), point(4, 0.9, 'step')],
+        });
+        const lanes: AutomationLane[] = [lane1, lane2, lane3];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        const reason = `automation on track "${track.name}": lanes on device "${hostedDevice.id}" overlap on parameter "7"`;
+        expect(result.exclusions).toEqual([
+            { stripId: track.id, subjectId: lane1.id, reason },
+            { stripId: track.id, subjectId: lane2.id, reason },
+        ]);
+    });
+
     it('still excludes a built-in device lane on a strip whose hosted device is carried', () => {
         const track = createTrack({ devices: [builtinDevice, hostedDevice] });
         const builtinLane = lane({

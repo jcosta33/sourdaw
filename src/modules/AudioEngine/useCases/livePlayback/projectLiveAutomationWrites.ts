@@ -60,6 +60,18 @@
  * same law `projectLiveGraphProgramme` applies to a clip it cannot carry. One
  * strip's automation failing to compile must not silence a session that
  * could otherwise play.
+ *
+ * Two or more lanes on one device parameter that genuinely overlap cannot all
+ * fit the one schedule the extraction's recorder holds
+ * (`projectStripAutomationWrites`), so `mergeAutomationSegmentStreams` keeps
+ * only the lane latest in lane-array order and reports the rest on the
+ * result's `overlaps` field, each overlap naming its withheld lane ids
+ * directly — the parameter's entry itself still stands in `entries`, carrying
+ * the kept lane's writes. Unlike the malformed-stream case above, an overlap
+ * must not silence the rest of the strip either — the fader, pan and every
+ * other device parameter still converted. This producer names each withheld
+ * lane on its exclusion channel instead, so the exclusion points at the lane
+ * a musician would need to fix rather than the strip.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -69,6 +81,7 @@ import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type OfflineDeviceAutomationLaw } from '../../repositories/offlineScheduler/automationScheduling';
 import { clipBoundsById } from '../offlineRender/clipBoundsById';
 import { deviceParameterLanes } from '../offlineRender/deviceParameterLanes';
+import { deviceParameterOverlapReason } from '../offlineRender/deviceParameterOverlapReason';
 import { laneAddressesDevice } from '../offlineRender/laneAddressesDevice';
 import {
     projectStripAutomationWrites,
@@ -240,6 +253,12 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         if (projected.outcome === 'declined') {
             exclusions.push({ stripId: track.id, subjectId: track.id, reason: projected.reason });
             continue;
+        }
+        for (const overlap of projected.overlaps) {
+            const reason = deviceParameterOverlapReason(track.name, overlap);
+            for (const laneId of overlap.laneIds) {
+                exclusions.push({ stripId: track.id, subjectId: laneId, reason });
+            }
         }
         for (const entry of projected.entries) {
             entries.push({

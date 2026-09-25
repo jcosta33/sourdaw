@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Device, type Track } from '#/modules/Arrangement/stores';
+import { type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
@@ -483,5 +483,164 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
 
         expect(result.outcome).toBe('rendered');
         expect(deviceWrites).toEqual([]);
+    });
+
+    function clip(id: string, startBeat: number, endBeat: number): Clip {
+        return {
+            id,
+            trackId: 'audio-1',
+            name: id,
+            type: 'audio',
+            startBeat,
+            endBeat,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#00ff00',
+            locked: false,
+            muted: false,
+        };
+    }
+
+    /** A one-point lane on the same parameter, scoped to `clipId` when given. */
+    function pointLane(id: string, value: number, beat: number, clipId?: string): StoredAutomationLane {
+        return {
+            id,
+            trackId: 'audio-1',
+            clipId,
+            parameterId: 'glue-1:inputGain',
+            parameterName: 'glue-1:inputGain',
+            points: [{ beat, value, curve: 'step', tension: 0 }],
+            enabled: true,
+            visible: true,
+            collapsed: false,
+            objects: [],
+            minValue: -24,
+            maxValue: 24,
+        };
+    }
+
+    /**
+     * Two disjoint clip-scoped lanes on one device parameter (Fixture D):
+     * `clip-a`[0, 0.01) holds `lane-clip-a`'s value 3, `clip-b`[0.01, 0.02)
+     * holds `lane-clip-b`'s value 9. Neither one's window overlaps the
+     * other's, so `scheduleTrackAutomation` merges them into the single
+     * schedule this recorder can hold, and the render carries both values.
+     */
+    async function renderFixtureD(lanes: StoredAutomationLane[]) {
+        const frames = 480;
+        const { transport, commands } = capturingTransport(frames);
+        automationStore.set({ lanes });
+        const audio = createTrack({
+            id: 'audio-1',
+            name: 'Glued',
+            automationMode: 'read',
+            devices: [gluten],
+            clips: [clip('clip-a', 0, 0.01), clip('clip-b', 0.01, 0.02)],
+        });
+        const result = await renderOfflineWithNativeEngine({
+            transport,
+            sampleRate: 48_000,
+            frameCount: frames,
+            durationSeconds: frames / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => {
+                const startSeconds = startPpq * 0.5;
+                const endSeconds = endPpq * 0.5;
+                return {
+                    startSamples: startSeconds * sampleRate,
+                    endSamples: endSeconds * sampleRate,
+                    durationSamples: (endSeconds - startSeconds) * sampleRate,
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+            renderableTracks: [audio],
+            scheduledTracks: [audio],
+            contributingTrackIds: new Set(['audio-1']),
+            soloGatedByTrackId: new Map(),
+            vcaMultiplierByTrackId: new Map(),
+        });
+        const deviceWrites = commands.filter(
+            (command): command is Extract<NativeGraphWireCommand, { kind: 'write-device-parameter' }> =>
+                command.kind === 'write-device-parameter'
+        );
+        return { result, commands, deviceWrites };
+    }
+
+    it('renders both disjoint clip-scoped lanes on one device parameter, lane-a then lane-b (Fixture D)', async () => {
+        const { result, deviceWrites } = await renderFixtureD([
+            pointLane('lane-clip-a', 3, 0, 'clip-a'),
+            pointLane('lane-clip-b', 9, 0.01, 'clip-b'),
+        ]);
+
+        expect(result.outcome).toBe('rendered');
+        expect(deviceWrites).toEqual([
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'glue-1', parameterId: 'input_gain' },
+                write: { shape: 'step', value: 3, time: 0 },
+            },
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'glue-1', parameterId: 'input_gain' },
+                write: { shape: 'step', value: 9, time: 0.005 },
+            },
+        ]);
+    });
+
+    it('renders the same disjoint pair in the opposite lane-array order, unchanged (Fixture D)', async () => {
+        const { result, deviceWrites } = await renderFixtureD([
+            pointLane('lane-clip-b', 9, 0.01, 'clip-b'),
+            pointLane('lane-clip-a', 3, 0, 'clip-a'),
+        ]);
+
+        expect(result.outcome).toBe('rendered');
+        expect(deviceWrites).toEqual([
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'glue-1', parameterId: 'input_gain' },
+                write: { shape: 'step', value: 3, time: 0 },
+            },
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId: 'glue-1', parameterId: 'input_gain' },
+                write: { shape: 'step', value: 9, time: 0.005 },
+            },
+        ]);
+    });
+
+    it('declines the whole strip when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O)', async () => {
+        const trackLane: StoredAutomationLane = {
+            id: 'lane-track',
+            trackId: 'audio-1',
+            // Track-level (no clipId): held across the whole render, with a
+            // second point at the render's own end so its own schedule
+            // genuinely spans past clip-b's start — a real overlap, not two
+            // lanes that merely compile back to back.
+            parameterId: 'glue-1:inputGain',
+            parameterName: 'glue-1:inputGain',
+            points: [
+                { beat: 0, value: 3, curve: 'step', tension: 0 },
+                { beat: 0.02, value: 3, curve: 'step', tension: 0 },
+            ],
+            enabled: true,
+            visible: true,
+            collapsed: false,
+            objects: [],
+            minValue: -24,
+            maxValue: 24,
+        };
+        const { result, commands } = await renderFixtureD([trackLane, pointLane('lane-clip-b', 9, 0.01, 'clip-b')]);
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation on track "Glued": lanes on device "glue-1" overlap on parameter "inputGain"',
+        });
+        expect(commands).toEqual([]);
     });
 });
