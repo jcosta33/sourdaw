@@ -1,0 +1,18 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 1469-1475,1481,1526-1554
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  h_beb54bf43b47b7 181-187,199
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 437-441,465-634,1177-1186,1188-1191,1200,1202-1207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e6fdfe51963069fbe6073c81068014d539452665",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
