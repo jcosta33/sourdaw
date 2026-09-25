@@ -1123,8 +1123,50 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         ]);
     });
 
-    it('applies overlapping lanes separately, in lane-array order, unchanged (Fixture O)', () => {
+    it('never calls onWithheldDeviceLanes when every lane on the group is disjoint (Fixture D)', () => {
         const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0.4, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            clipBoundsById: clipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+    });
+
+    it('applies the merged stream once, withholding the losing lane, when lanes on one device parameter genuinely overlap (Fixture O)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
 
         scheduleTrackAutomationFixture({
             lanes: [
@@ -1161,16 +1203,20 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
             sampleRate: 100,
             slewTickSeconds: 0.1,
             clipBoundsById: clipBounds,
+            onWithheldDeviceLanes,
         });
 
-        type Segment = { startFrame: number; endFrame: number; startValue: number; endValue: number };
-        expect(scheduleParam.mock.calls).toHaveLength(2);
-        // Lane-array order: the track lane resolved first, so its stream
-        // applies first — unchanged, still spanning the whole render.
-        const firstCall = scheduleParam.mock.calls[0]![0] as Segment[];
-        expect(firstCall[0]).toEqual({ startFrame: 0, endFrame: 10, startValue: 3, endValue: 3 });
-        expect(firstCall.at(-1)).toEqual({ startFrame: 100, endFrame: 100, startValue: 3, endValue: 3 });
-        expect(scheduleParam.mock.calls[1]![0]).toEqual([{ startFrame: 40, endFrame: 40, startValue: 9, endValue: 9 }]);
+        // One call for the whole group: `lane-clip-b` is latest in
+        // lane-array order, so its stream — a lone terminator at its clip's
+        // start frame — is what the group keeps and applies.
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 40, endFrame: 40, startValue: 9, endValue: 9 }]);
+        expect(onWithheldDeviceLanes).toHaveBeenCalledTimes(1);
+        expect(onWithheldDeviceLanes).toHaveBeenCalledWith({
+            deviceId: 'device-1',
+            parameterId: 'param',
+            laneIds: ['lane-track'],
+        });
     });
 });
 

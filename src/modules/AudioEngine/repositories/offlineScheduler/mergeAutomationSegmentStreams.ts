@@ -1,41 +1,63 @@
 import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
 
+/** One lane's compiled segment stream on the (device, parameter) pair being merged. */
+export type AutomationSegmentStream = Readonly<{
+    laneId: string;
+    segments: readonly OfflineAutomationSegment[];
+}>;
+
 /**
- * `overlapping: false` carries the single stream every disjoint lane on one
- * device parameter merges into; `overlapping: true` carries nothing, because
- * the caller's own per-lane fallback (today's behaviour) already has what it
- * needs — the original streams it was handed.
+ * `segments` is the single stream every kept lane on one device parameter
+ * merges into — one stream per disjoint cluster the sweep below finds, with
+ * exactly one survivor per cluster of two or more. `withheldLaneIds` names
+ * every lane a cluster did not keep, in the original `streams` array order,
+ * so a caller that must account for a withheld lane (the live producer, the
+ * native export) does not have to re-derive who lost.
  */
-export type MergedAutomationSegmentStreams =
-    | { readonly overlapping: false; readonly segments: readonly OfflineAutomationSegment[] }
-    | { readonly overlapping: true };
+export type MergedAutomationSegmentStreams = Readonly<{
+    segments: readonly OfflineAutomationSegment[];
+    withheldLaneIds: readonly string[];
+}>;
 
 /**
  * Merge every lane's compiled segment stream on one device parameter into the
  * single stream a "last apply wins" consumer (a worklet's `paramAutomation`,
- * the offline recording projection) can hold at once — or report that the
- * lanes overlap, so the caller keeps applying each stream separately exactly
- * as it always has.
+ * the offline recording projection) can hold at once, withholding whichever
+ * lanes in a genuinely overlapping cluster lose the tie-break — rather than
+ * abandoning the whole group over one clashing pair and dropping lanes that
+ * intersect nothing.
  *
- * Two streams are disjoint when the later one's first frame is at or past the
- * earlier one's zero-length terminator frame — the frame `compileAutomationSegments`
- * always closes a stream with, carrying the value the lane last held. Merging
- * them holds that value across the gap between the terminator and the next
- * stream's first frame, replacing the terminator: nothing writes the
- * parameter in that gap, live or offline, so it keeps its last value there
- * exactly as Web Audio's per-clip-window `applyAutomation` does. A zero-width
- * gap (the next stream starts exactly where the previous one ended) drops the
- * terminator instead of inserting a zero-length hold next to it. The merged
- * stream ends with the last stream's own terminator, and — given only
- * disjoint streams — stays contiguous throughout: every accepted assertion in
- * this file also holds for `isContiguousAutomationSchedule`
- * (`engine/ToasterNode.ts`), which additionally requires the very first frame
- * to be `0`; a caller merging streams that do not open there must not present
- * the result to that check.
+ * Streams are sorted by first frame (ties broken by terminator frame
+ * ascending — see below), then swept into clusters: a stream joins the
+ * current cluster when its start frame is before the cluster's own running
+ * maximum terminator frame seen so far, not merely the immediately preceding
+ * stream's own terminator — a short stream nested entirely inside an earlier,
+ * longer-running one must still join the cluster the longer stream opened,
+ * even though the stream immediately before it (also nested, and shorter
+ * still) ends earlier than the outer one does.
  *
- * Any streams found overlapping — the later one starts before the earlier
- * one's terminator — abandon the merge for the whole group: there is no
- * general way to interleave two schedules that both claim the same frame.
+ * A cluster of one stream is kept whole. A cluster of two or more keeps
+ * exactly the one stream latest in the caller's original lane-array order —
+ * the same "last apply wins" precedence a single non-clashing consumer would
+ * have given every lane on this parameter — and withholds the rest, recording
+ * each withheld lane's id once, in original lane-array order.
+ *
+ * The kept streams (one per cluster, in time order) are pairwise disjoint by
+ * construction and merge exactly as before: the later one's first frame is at
+ * or past the earlier one's zero-length terminator frame — the frame
+ * `compileAutomationSegments` always closes a stream with, carrying the value
+ * the lane last held. Merging them holds that value across the gap between
+ * the terminator and the next stream's first frame, replacing the
+ * terminator: nothing writes the parameter in that gap, live or offline, so
+ * it keeps its last value there exactly as Web Audio's per-clip-window
+ * `applyAutomation` does. A zero-width gap (the next stream starts exactly
+ * where the previous one ended) drops the terminator instead of inserting a
+ * zero-length hold next to it. The merged stream ends with the last kept
+ * stream's own terminator, and — given only disjoint kept streams — stays
+ * contiguous throughout: every accepted assertion in this file also holds for
+ * `isContiguousAutomationSchedule` (`engine/ToasterNode.ts`), which
+ * additionally requires the very first frame to be `0`; a caller merging
+ * streams that do not open there must not present the result to that check.
  *
  * A clip whose window ends exactly at the region start compiles to a
  * zero-length stream — a lone terminator sitting at frame 0, carrying nothing
@@ -48,34 +70,76 @@ export type MergedAutomationSegmentStreams =
  * stream's first frame is checked against, order-independently.
  */
 export function mergeAutomationSegmentStreams(
-    streams: ReadonlyArray<readonly OfflineAutomationSegment[]>
+    streams: readonly AutomationSegmentStream[]
 ): MergedAutomationSegmentStreams {
-    const nonEmpty = streams.filter((stream) => stream.length > 0);
+    const nonEmpty = streams.filter((stream) => stream.segments.length > 0);
     if (nonEmpty.length === 0) {
-        return { overlapping: false, segments: [] };
-    }
-    const ordered = [...nonEmpty].sort((first, second) => {
-        const startFrameDiff = first[0]!.startFrame - second[0]!.startFrame;
-        return startFrameDiff !== 0 ? startFrameDiff : first.at(-1)!.endFrame - second.at(-1)!.endFrame;
-    });
-    for (let index = 1; index < ordered.length; index++) {
-        const previousTerminator = ordered[index - 1]!.at(-1)!;
-        const nextFirst = ordered[index]![0]!;
-        if (nextFirst.startFrame < previousTerminator.endFrame) {
-            return { overlapping: true };
-        }
+        return { segments: [], withheldLaneIds: [] };
     }
 
+    const laneOrder = new Map<string, number>();
+    for (const [index, stream] of streams.entries()) {
+        laneOrder.set(stream.laneId, index);
+    }
+
+    const ordered = [...nonEmpty].sort((first, second) => {
+        const startFrameDiff = first.segments[0]!.startFrame - second.segments[0]!.startFrame;
+        if (startFrameDiff !== 0) {
+            return startFrameDiff;
+        }
+        return first.segments.at(-1)!.endFrame - second.segments.at(-1)!.endFrame;
+    });
+
+    const clusters: AutomationSegmentStream[][] = [];
+    let currentCluster: AutomationSegmentStream[] = [];
+    let runningMaxTerminator = -Infinity;
+    for (const stream of ordered) {
+        const startFrame = stream.segments[0]!.startFrame;
+        const terminatorFrame = stream.segments.at(-1)!.endFrame;
+        if (currentCluster.length > 0 && startFrame < runningMaxTerminator) {
+            currentCluster.push(stream);
+            runningMaxTerminator = Math.max(runningMaxTerminator, terminatorFrame);
+            continue;
+        }
+        if (currentCluster.length > 0) {
+            clusters.push(currentCluster);
+        }
+        currentCluster = [stream];
+        runningMaxTerminator = terminatorFrame;
+    }
+    if (currentCluster.length > 0) {
+        clusters.push(currentCluster);
+    }
+
+    const withheldLaneIds: string[] = [];
+    const kept: AutomationSegmentStream[] = [];
+    for (const cluster of clusters) {
+        if (cluster.length === 1) {
+            kept.push(cluster[0]!);
+            continue;
+        }
+        const keeper = cluster.reduce((latest, candidate) =>
+            laneOrder.get(candidate.laneId)! > laneOrder.get(latest.laneId)! ? candidate : latest
+        );
+        kept.push(keeper);
+        for (const stream of cluster) {
+            if (stream !== keeper) {
+                withheldLaneIds.push(stream.laneId);
+            }
+        }
+    }
+    withheldLaneIds.sort((first, second) => laneOrder.get(first)! - laneOrder.get(second)!);
+
     const merged: OfflineAutomationSegment[] = [];
-    for (let index = 0; index < ordered.length; index++) {
-        const stream = ordered[index]!;
-        if (index === ordered.length - 1) {
+    for (let index = 0; index < kept.length; index++) {
+        const stream = kept[index]!.segments;
+        if (index === kept.length - 1) {
             merged.push(...stream);
             break;
         }
         merged.push(...stream.slice(0, -1));
         const terminator = stream.at(-1)!;
-        const nextFirst = ordered[index + 1]![0]!;
+        const nextFirst = kept[index + 1]!.segments[0]!;
         if (nextFirst.startFrame > terminator.endFrame) {
             merged.push({
                 startFrame: terminator.endFrame,
@@ -85,5 +149,5 @@ export function mergeAutomationSegmentStreams(
             });
         }
     }
-    return { overlapping: false, segments: merged };
+    return { segments: merged, withheldLaneIds };
 }
