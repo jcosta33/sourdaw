@@ -1313,6 +1313,14 @@ describe('product-scope test instructions', () => {
         ['a unit-test mention', 'Unit tests cover the undo path.'],
         ['an end-to-end mention', 'The e2e smoke set exercises the mixer.'],
         ['a CI mention', 'CI runs the native graph tests on every push.'],
+        ['a unit-suite mention', 'Covered by the unit suite.'],
+        ['an end-to-end-suite mention', 'Covered by the end-to-end suite.'],
+        ['an integration-test mention', 'Covered by integration tests.'],
+        ['a mention of the existing tests', 'Covered by the existing tests.'],
+        // The runners as proper nouns: a capitalized Vitest leads as the step-verb exemption
+        // would read any Title-case head, so only the suite vocabulary refuses these two.
+        ['a test-runner mention', 'Vitest covers the transport scheduler.'],
+        ['a browser-runner mention', 'Covered by Playwright.'],
     ])('refuses %s even with no command token', (_label, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
@@ -1320,11 +1328,79 @@ describe('product-scope test instructions', () => {
 
     it.each([
         ['a spectrum step', 'Open the spectrum analyzer and confirm the peak sits at 1 kHz.'],
-        ['a lower-case ci inside a word', 'Play the acid loop and confirm the circuit saturates.'],
+        ['ci letters inside a longer word', 'Play the acid loop and confirm the circuit saturates.'],
+        // CI_WORD is case-sensitive on purpose: a lower-case standalone 'ci' is a name the step
+        // types, not the pipeline.
+        ['a standalone lower-case ci token', 'Rename the clip to ci and confirm the label updates.'],
         ['a special-effects step', 'Load a special preset and confirm the reverb tail rings out.'],
+        // A bare 'test' qualifies nothing: a test tone or a test take is audio the reviewer
+        // plays or records.
+        ['a test-tone step', 'Play the test tone and confirm the meter reads -18 dBFS.'],
+        ['a test-take step', 'Record a test take and confirm it lands on the take lane.'],
     ])('passes %s that only brushes the test-suite vocabulary', (_label, step) => {
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a two-step inline list', '1. Press Play. 2. Press Stop; the playhead returns to bar 1.'],
+        [
+            'a three-step inline list',
+            "1. Record or comp a clip so its take lane holds a take, select the clip, and invoke 'Cut Clip' from the command palette. 2. Press Undo: the clip and its take lane return (previously the history was empty and undo did nothing). 3. Redo reapplies the cut.",
+        ],
+    ])('passes %s whose later markers strand as letter-free segments', (_label, steps) => {
+        // Only a line's leading marker leaves before the sentence split, so '2' and '3' strand as
+        // segments of their own; a segment with no letters names no command and never narrates.
+        expect(testInstructionsNarrateChecks(steps)).toBe(false);
+        expect(() => assertObservableTestInstructions(steps)).not.toThrow();
+    });
+
+    it('refuses an inline numbered list of commands', () => {
+        // The letter-free guard exempts only the stranded markers: the command segments between
+        // them still narrate.
+        const steps = '1. pnpm lint. 2. pnpm typecheck.';
+
+        expect(testInstructionsNarrateChecks(steps)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(steps))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a navigation step', 'Go to Settings.'],
+        ['a back step', 'Go back.'],
+        ['a channel step naming a bare number', 'Make track 2 mono.'],
+        // A letter-free token is never command-shaped evidence, even when it leads with a dash
+        // the flag rule would otherwise read.
+        ['a level observation naming a signed number', 'Echo at -6 dB is audible.'],
+        ['a sorting step', 'Sort by name.'],
+        ['a search step', 'Find Reverb.'],
+        ['a display step', 'Format as bars.'],
+        ['an audible-effect observation', 'Echo should be audible.'],
+        ['a noise comparison', 'Less hiss than before.'],
+        [
+            'a step-verb sentence between app steps',
+            'Open the arrangement view. Go to bar 9. Press Play; the clip starts on the downbeat.',
+        ],
+    ])('passes %s whose sentence-initial Title-case verb is also a command head', (_label, step) => {
+        // Shells are case-sensitive, so a capitalized head with no flag, path, colon suffix,
+        // filename, or env assignment beside it is the step's verb, not a launch opening an
+        // argument run that would eat the UI nouns behind it.
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a lower-case make launch', 'make test'],
+        ['a capitalized launch carrying a flag', 'Cargo test --package daw-engine'],
+        ['a lower-case find sweep', 'find . -name x'],
+        ['a lower-case go test run', 'go test ./...'],
+        // The Title-case head still drops from the prose, so with nothing but annotation behind
+        // it the head mention keeps the segment narrating.
+        ['a capitalized head followed only by annotation', 'Make test'],
+        // A quoted head was typed as a command, so its Title case exempts nothing.
+        ['a backticked Title-case launch', '`Make` release'],
+    ])('refuses %s: the step-verb exemption needs Title case and no command-shaped token', (_label, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
     });
 
     it('passes None.', () => {

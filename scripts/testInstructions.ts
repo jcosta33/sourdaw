@@ -336,6 +336,8 @@ function leadingQuotedSpanContent(value: string): string {
     return closing > 1 ? value.slice(1, closing) : value;
 }
 
+type PeeledLaunch = { lead: string; follower: string; spanLead: boolean; spanTokens: number };
+
 /**
  * The launch a segment's peel exposes, with what the argument-run scan needs around it: the head
  * token, the token that follows it (the determiner probe), and the quoted-span facts. The peel is
@@ -347,7 +349,7 @@ function leadingQuotedSpanContent(value: string): string {
  * first token behind a head-only span — '`make` a MIDI track' reads its article exactly where the
  * bare spelling does, while a bare argument behind the span ('`make` test') still opens the run.
  */
-function peeledLaunch(segment: string): { lead: string; follower: string; spanLead: boolean; spanTokens: number } {
+function peeledLaunch(segment: string): PeeledLaunch {
     let rest = stripRepeated(segment, LEADING_LIST_MARKER);
     let spanLead = false;
     let spanTokens = 0;
@@ -396,13 +398,16 @@ function proseRemainder(segment: string): string {
 
 /** Whether a token is command material no prose can ride on: heads, paths, flags, filenames, env assignments. */
 function isCommandToken(token: string): boolean {
+    return COMMAND_HEADS.has(token) || isCommandShapedToken(token) || isNumberOrPunctuation(token);
+}
+
+/** Whether a token has a command's shape whatever its words: a path, a colon suffix, a filename, a flag, or an env assignment. */
+function isCommandShapedToken(token: string): boolean {
     return (
-        COMMAND_HEADS.has(token) ||
         /[/\\:]/.test(token) ||
         FILE_EXTENSION_SUFFIX.test(token) ||
         token.startsWith('-') ||
-        ENV_ASSIGNMENT_TOKEN.test(token) ||
-        isNumberOrPunctuation(token)
+        ENV_ASSIGNMENT_TOKEN.test(token)
     );
 }
 
@@ -451,10 +456,35 @@ function isMaterialBehindRun(token: string, strict: boolean): boolean {
  * Whether the peel's lead opens the segment's argument run: a command head or an env assignment
  * leads it (`SOURDAW_E2E_PORT=4010 pnpm test:e2e …`), while an article directly behind the head
  * keeps the run closed — `Make a MIDI track` is the step's own verb naming its object, not a
- * launch.
+ * launch — and so does a step-verb lead.
  */
-function opensArgumentRun(lead: string, follower: string): boolean {
+function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
+    if (isStepVerbLead(launch, segment)) {
+        return false;
+    }
+    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const follower = launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return (COMMAND_HEADS.has(lead) || ENV_ASSIGNMENT_TOKEN.test(lead)) && !LEADING_ARTICLES.has(follower);
+}
+
+/** A plain capitalized word: the casing a sentence gives its first word, never a typed command. */
+const TITLE_CASE_WORD = /^[A-Z][a-z]+$/;
+
+/**
+ * Whether the peeled lead is the step's own sentence-initial verb rather than a launch: an unquoted
+ * Title-case word (`Go to Settings`, `Find Reverb`) in a segment carrying no command-shaped token.
+ * Shells are case-sensitive, so a typed launch is lower-case; a capitalized head is a sentence
+ * start unless a flag, path, colon suffix, filename, or env assignment beside it shows the segment
+ * is a command line after all (`Cargo test --package daw-engine`). Letter-free tokens (`bar 9`,
+ * `1.5`) never count as that evidence. A quoted head was typed as a command, so it stays a launch
+ * whatever its case. The head itself still drops from the prose, so a Title-case head followed only
+ * by annotation (`Make test`) keeps narrating through `mentionsCommandHead`.
+ */
+function isStepVerbLead(launch: PeeledLaunch, segment: string): boolean {
+    if (launch.spanLead || !TITLE_CASE_WORD.test(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, ''))) {
+        return false;
+    }
+    return !unwrappedTokens(segment).some((token) => !isNumberOrPunctuation(token) && isCommandShapedToken(token));
 }
 
 /**
@@ -524,9 +554,7 @@ function proseRemainderWords(segment: string): string[] {
     // Seeded from the launch the peel exposes — a leading span's content included — not from
     // tokens[0], which a leading quoted span leaves empty.
     const launch = peeledLaunch(segment);
-    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    const follower = launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    let insideArgumentRun = opensArgumentRun(lead, follower);
+    let insideArgumentRun = opensArgumentRun(launch, segment);
     let slotBehindSpan = insideArgumentRun && launch.spanLead && launch.spanTokens === 1;
     // The strict material mode arms when the run's launch is command machinery: the head's
     // subcommand slot carried command material, or a command head was dropped inside the run. A
@@ -605,10 +633,13 @@ function leadsWithCommandMaterial(segment: string): boolean {
  * annotation words between the filler and the launch must not hide it.
  */
 function mentionsCommandHead(segment: string): boolean {
+    return unwrappedTokens(segment).some((token) => COMMAND_HEADS.has(token));
+}
+
+/** The segment's lower-cased tokens with quoted spans unwrapped and edge punctuation stripped. */
+function unwrappedTokens(segment: string): string[] {
     const unwrapped = segment.replace(QUOTED_SPAN, (span) => ` ${span.slice(1, -1)} `);
-    return unwrapped
-        .split(/\s+/)
-        .some((token) => COMMAND_HEADS.has(token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase()));
+    return unwrapped.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
 }
 
 /**
@@ -616,9 +647,14 @@ function mentionsCommandHead(segment: string): boolean {
  * three must hold: the prose remainder (cue-bearing parentheticals included) carries no observation
  * cue, every leftover word is annotation from the closed vocabulary, and the segment is launched —
  * a command head or command-shaped token leads it, or a command head appears among its tokens. Any
- * cue or any word beyond the vocabulary is real instruction and rescues the segment.
+ * cue or any word beyond the vocabulary is real instruction and rescues the segment. A segment with
+ * no letters names no command: it is the stranded marker of an inline numbered list (`2` from
+ * `1. Press Play. 2. Press Stop`), whose own dot the sentence split reads as a boundary.
  */
 function isCommandNarration(segment: string): boolean {
+    if (!/[a-z]/i.test(segment)) {
+        return false;
+    }
     const words = proseRemainderWords(segment);
     if (words.some((word) => OBSERVATION_CUE.test(word))) {
         return false;
@@ -679,17 +715,28 @@ function splitOutsideQuotedSpans(line: string): string[] {
 }
 
 /**
- * Test-suite vocabulary no reviewer step in the app ever needs: spec files, the suites that hold
- * them, and CI. A segment naming any of them is describing coverage — "the census spec fails if …",
- * "run the focused publisher specs" — whatever prose surrounds it. `CI` is matched case-sensitively
- * so the letters inside ordinary words and lower-case abbreviations stay out of it.
+ * Test-suite vocabulary no reviewer step in the app ever needs: spec files and the suites that hold
+ * them. A segment naming any of them is describing coverage — "the census spec fails if …",
+ * "run the focused publisher specs" — whatever prose surrounds it. `specs?` also covers every
+ * `x.spec.ts` filename, because the dots around it are word boundaries. A bare `test` stays out:
+ * a test tone or a test take is something a reviewer plays or records, so only a qualified suite
+ * (`unit suite`, `integration tests`, `the existing tests`) names coverage.
  */
 const TEST_SUITE_WORDS =
-    /\b(?:specs?|unit[- ]tests?|test suites?|e2e|end-to-end tests?)\b|\.spec\.[cm]?[jt]sx?\b|__tests__\//i;
+    /\b(?:specs?|e2e|test suites?|(?:unit|integration|end-to-end|existing)[- ](?:tests?|suites?))\b|__tests__\//i;
+
+/**
+ * The repository's test runners, named as proper nouns. Matched case-sensitively: prose capitalizes a runner's
+ * name (`Covered by Playwright`), while the lower-case spelling is the command a launch types
+ * (`pnpm exec playwright open the app …`), which the narration rule judges instead.
+ */
+const TEST_RUNNER_NAMES = /\b(?:Vitest|Playwright)\b/;
+
+/** `CI`, matched case-sensitively so a lower-case `ci` token and the letters inside words stay out. */
 const CI_WORD = /\bCI\b/;
 
 function namesTestSuite(segment: string): boolean {
-    return TEST_SUITE_WORDS.test(segment) || CI_WORD.test(segment);
+    return TEST_SUITE_WORDS.test(segment) || TEST_RUNNER_NAMES.test(segment) || CI_WORD.test(segment);
 }
 
 /**
