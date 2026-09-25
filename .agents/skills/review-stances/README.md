@@ -33,17 +33,19 @@ Create a worktree only when a probe must edit code and run it. Reading the head 
 pnpm install --frozen-lockfile --ignore-scripts
 ```
 
-That install is measured at about eleven seconds and one gigabyte, hardlinked from the pnpm store, and it makes the worktree own its dependency tree so the guard admits it. Run every probe from the worktree against that install; for example:
+That install is measured at about eleven seconds and one gigabyte, hardlinked from the pnpm store, and it makes the worktree own its dependency tree. Run every probe from the worktree against that install; for example:
 
 ```
-pnpm guard --profile focused --show-output -- pnpm exec vitest run scripts/__tests__/<spec>
+pnpm guard --profile focused --show-output -- pnpm test:run scripts/__tests__/<spec>
 ```
 
-A probe can still fail for environment reasons unrelated to the head. Treat that as a limitation to record and verify by reading the head — never as evidence about the head. Record the limitation and report the head's corresponding claim as unverified, naming the spec, so the orchestrator can run it where the environment exists; the mandatory mutation-and-named-spec baseline probe is undischargeable for such a spec, so the round must say so rather than pass.
+Run the probe through `pnpm test:run`, never `pnpm exec vitest run`: the same wrapper fails a run that collects no case or executes no assertion, while a bare vitest invocation can exit 0 on an empty collection and read as a pass.
+
+A probe can still fail for environment reasons unrelated to the head. Treat that as a limitation to record and verify by reading the head — never as evidence about the head. Record the limitation and report the head's corresponding claim as unverified, naming the spec, so the orchestrator can run it where the environment exists; the mandatory mutation-and-named-spec baseline probe is undischargeable for such a spec, so the round must say so rather than pass. Recognize the class in the spec or its diff: it builds a path to `node_modules`, or to a binary inside it, from its own file location or from `process.cwd()`, then executes or imports through it — its swallowed ENOENT and exit 1 look exactly like a real head regression, so classify from the spec, never from the artifact. `scripts/__tests__/checkProjectLicense.spec.ts` and `scripts/__tests__/agentDeliveryScripts.spec.ts` are live examples.
 
 Never symlink the primary checkout's `node_modules` into the worktree, and never copy the primary tree; gitignored credentials live only there. The worktree's own install is what keeps the primary's install untouched. Point the probe's caches inside the review worktree; they are removed with it. Do not fetch, gc, commit, or stage from the review worktree. Unstaged edits stay in that worktree. Lock it for the probe with `git worktree lock`. When the probe returns, leave the directory and run `git worktree remove --force --force`. A plain remove refuses the modified and untracked files the probe leaves behind, and one `--force` refuses a worktree that is still locked. If a probe is killed and the directory is still there, run `git worktree remove --force --force` on it from outside the directory. `git worktree prune` only drops a registration whose directory is already gone. Do not use `rm -rf` as the cleanup. Do not take the author lock `active:sourdaw-author`.
 
-**Why:** A scratch clone in the temp directory lands on the internal boot disk and filled it. Editing the live lane changes the head under review and can strand the author's push. Sharing the primary checkout's install is refused: a `node_modules` symlink into it rewrites the owner's install metadata on every pnpm run and aborts the next trusted delivery script, so the guard admits only a checkout whose `node_modules` belongs to that checkout. `pnpm install` in the review worktree is the sanctioned route — the worktree then owns its tree.
+**Why:** A scratch clone in the temp directory lands on the internal boot disk and filled it. Editing the live lane changes the head under review and can strand the author's push. Sharing the primary checkout's install is refused: a `node_modules` symlink into it rewrites the owner's install metadata on every pnpm run and aborts the next trusted delivery script. The guard refuses exactly that signature — a `node_modules` whose install record names another project — and it fails open when there is no install or the record is unreadable, so its silence never proves isolation held. `pnpm install` in the review worktree is the sanctioned route: it gives the worktree its own install record, which is what the guard can examine.
 
 ## Review language
 
