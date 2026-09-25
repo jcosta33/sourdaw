@@ -285,7 +285,7 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
                     "Crust's declared parameters expose no enable switch for the sidechain highpass itself, so this value currently reaches a detector stage that defaults off; gain and ceiling reduction are unaffected until that switch is enabled.",
                 ],
                 [
-                    'Crust does not expose the sidechain highpass enable switch as a device parameter, so changing this value has no audible effect on gain reduction through the standalone parameter surface.',
+                    "While scHpfEnabled stays off, Crust's default, changing this value has no audible effect on gain reduction because the detector stage it feeds is bypassed; once a user turns that switch on from the Crust panel, this value reshapes how the limiter reacts to low frequencies.",
                 ],
                 noExternalModulation
             ),
