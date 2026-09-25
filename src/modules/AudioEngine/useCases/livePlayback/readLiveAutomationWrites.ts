@@ -32,7 +32,9 @@
  * parameter list (#3568). A built-in needs the engine to build a body for its
  * type at all — `nativeBuiltinBody`, the renderer's mirror of the engine's own
  * registry — because that is what decides whether `write-device-parameter`
- * resolves a native address for it (#3893).
+ * resolves a native address for it (#3893). The built-in half of the law, and
+ * the re-addressing below, are `nativeBuiltinAutomation`'s — the one copy the
+ * desktop export's native render shares (#3776).
  *
  * The laws are Arrangement's own, reached through the composition-root seam
  * (`offlineDeviceParameterLawState`) for the reason that seam exists: an
@@ -47,12 +49,12 @@
  * A lane is authored in the id project truth stores, and the engine resolves a
  * built-in stamp by the name that body answers to; for a Fermenter the two are
  * spelled differently on purpose. This file re-addresses each such entry
- * through `nativeBuiltinBody`, rather than the pure projector doing it, because
- * the projector is handed entries and a law and never reads a type registry —
- * binding one is exactly what this file is for.
+ * (`nativeBuiltinAutomation`'s `addressNatively`), rather than the pure
+ * projector doing it, because the projector is handed entries and a law and
+ * never reads a type registry — binding one is exactly what this file is for.
  */
 
-import { deriveVcaMultiplier, getVcaGroupsState, type Device, type Track } from '#/modules/Arrangement/stores';
+import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { DEFAULT_TEMPO_BPM, defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
@@ -69,13 +71,10 @@ import {
 
 import { engineHostedStripIds } from './engineHostedStripIds';
 import { isDeviceCarriedByNativeSession } from './isDeviceCarriedByNativeSession';
+import { nativeBuiltinAutomation } from './nativeBuiltinAutomation';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
-import {
-    projectLiveAutomationWrites,
-    type LiveAutomationWrites,
-    type LiveAutomationWritesEntry,
-} from './projectLiveAutomationWrites';
+import { projectLiveAutomationWrites, type LiveAutomationWrites } from './projectLiveAutomationWrites';
 import { type StripCarrier } from './stripCarriers';
 
 /** What a session with no clock to place automation on holds. */
@@ -85,12 +84,6 @@ const NO_AUTOMATION: LiveAutomationWrites = { entries: [], exclusions: [] };
 type HostedParameterHalf = Readonly<{
     accepts: (externalInstanceId: string, parameterId: string) => boolean;
     clamp: (input: { externalInstanceId: string; parameterId: string; value: number }) => number;
-}>;
-
-/** The device type's declared descriptor law, for the built-ins the engine builds. */
-type BuiltinParameterHalf = Readonly<{
-    accepts: (input: { deviceType: string; paramId: string }) => boolean;
-    clamp: (input: { deviceType: string; paramId: string; value: number }) => number;
 }>;
 
 /** The hosted plugin instance behind each device on these strips, by device id. */
@@ -106,47 +99,6 @@ function instanceIdByDeviceId(stripTracks: readonly Track[]): ReadonlyMap<string
     return instances;
 }
 
-/** The device project truth records for each device on these strips, by device id. */
-function deviceByDeviceId(stripTracks: readonly Track[]): ReadonlyMap<string, Device> {
-    return new Map(
-        stripTracks.flatMap((track) => track.devices.map((device): [string, Device] => [device.id, device]))
-    );
-}
-
-/**
- * Whether a carried built-in lane may stamp this parameter, given the seam
- * already answered `builtin !== null`.
- *
- * The presence check mirrors `deviceAcceptsAutomationParameter`
- * (`Transport/useCases/scheduling/applyAutomation/applyAutomation.ts`): a key
- * must already sit on the device before either law is asked, because the
- * descriptor law fails open on a name its descriptor never declares — Knead's
- * own descriptor declares no parameters, so the law alone would admit any id a
- * lane can spell. The body's own vocabulary
- * (`nativeBuiltinBody(...).addressesParameter`) is the second gate: it is what
- * decides whether the engine can resolve the name at all, and one
- * unresolvable name refuses the whole `write-device-parameter` batch. Only
- * once both hold is the declared law itself consulted.
- */
-function builtinResolvesParameter(input: {
-    device: Device | undefined;
-    deviceType: string;
-    parameterId: string;
-    builtin: BuiltinParameterHalf;
-}): boolean {
-    const { device, deviceType, parameterId, builtin } = input;
-    if (!device) {
-        return false;
-    }
-    if (device.parameterValues[parameterId] === undefined) {
-        return false;
-    }
-    if (!nativeBuiltinBody(deviceType)?.addressesParameter(parameterId)) {
-        return false;
-    }
-    return builtin.accepts({ deviceType, paramId: parameterId });
-}
-
 /**
  * The two halves of the seam, and the one law the projection is held to.
  *
@@ -155,14 +107,15 @@ function builtinResolvesParameter(input: {
  * can be admitted, because the value stamped would be one nothing had held to
  * the parameter's declared grain.
  */
-function liveDeviceParameterLaw(stripTracks: readonly Track[]): {
+function liveDeviceParameterLaw(
+    stripTracks: readonly Track[],
+    builtin: OfflineDeviceAutomationLaw | null
+): {
     law: OfflineDeviceAutomationLaw;
     hosted: HostedParameterHalf | null;
-    builtin: BuiltinParameterHalf | null;
 } {
-    const { acceptsExternalPluginParameter, clampExternalPluginValue, isAutomatable, clampValue, quantiseValue } =
-        offlineDeviceParameterLawState;
-    const refused = { law: REFUSE_DEVICE_AUTOMATION, hosted: null, builtin: null };
+    const { acceptsExternalPluginParameter, clampExternalPluginValue, quantiseValue } = offlineDeviceParameterLawState;
+    const refused = { law: REFUSE_DEVICE_AUTOMATION, hosted: null };
     if (!quantiseValue) {
         return refused;
     }
@@ -170,40 +123,32 @@ function liveDeviceParameterLaw(stripTracks: readonly Track[]): {
         acceptsExternalPluginParameter && clampExternalPluginValue
             ? { accepts: acceptsExternalPluginParameter, clamp: clampExternalPluginValue }
             : null;
-    const builtin: BuiltinParameterHalf | null =
-        isAutomatable && clampValue ? { accepts: isAutomatable, clamp: clampValue } : null;
     if (!hosted && !builtin) {
         return refused;
     }
 
     const instances = instanceIdByDeviceId(stripTracks);
-    const devices = deviceByDeviceId(stripTracks);
     return {
         hosted,
-        builtin,
         law: {
             // Which family answers is decided by what the device is, exactly as
             // the engine's own mapper decides it: a device that resolves to an
             // instance is the plugin's to speak for, and anything else is a
-            // built-in, admitted only where the device already holds the
-            // parameter, the body resolves that id at all, and the declared law
-            // accepts it — see `builtinResolvesParameter`.
-            acceptsAutomation: ({ deviceId, deviceType, parameterId }) => {
-                const externalInstanceId = instances.get(deviceId);
+            // built-in, held to `nativeBuiltinAutomation`'s law.
+            acceptsAutomation: (candidate) => {
+                const externalInstanceId = instances.get(candidate.deviceId);
                 if (externalInstanceId !== undefined) {
-                    return hosted !== null && hosted.accepts(externalInstanceId, parameterId);
+                    return hosted !== null && hosted.accepts(externalInstanceId, candidate.parameterId);
                 }
-                if (builtin === null) {
-                    return false;
-                }
-                return builtinResolvesParameter({ device: devices.get(deviceId), deviceType, parameterId, builtin });
+                return builtin !== null && builtin.acceptsAutomation(candidate);
             },
-            clampValue: ({ deviceId, deviceType, paramId, value }) => {
+            clampValue: (candidate) => {
+                const { deviceId, paramId, value } = candidate;
                 const externalInstanceId = instances.get(deviceId);
                 if (externalInstanceId !== undefined) {
                     return hosted === null ? value : hosted.clamp({ externalInstanceId, parameterId: paramId, value });
                 }
-                return builtin === null ? value : builtin.clamp({ deviceType, paramId, value });
+                return builtin === null ? value : builtin.clampValue(candidate);
             },
             // Identity for `external-plugin` today, and read from the seam rather
             // than assumed so a declared type law arriving for the family reaches
@@ -229,26 +174,6 @@ function carriedBuiltinDevices(track: Track): readonly StripAutomationDeviceEntr
             ? [{ deviceId: device.id, deviceType: device.type }]
             : []
     );
-}
-
-/**
- * Re-address a stamped built-in parameter under the name its body answers to
- * (see the header). Every other entry is returned untouched: a strip position
- * and a hosted parameter already travel in the vocabulary the engine resolves.
- */
-function addressedNatively(
-    entry: LiveAutomationWritesEntry,
-    devices: ReadonlyMap<string, Device>
-): LiveAutomationWritesEntry {
-    if (entry.target.kind !== 'device-parameter') {
-        return entry;
-    }
-    const device = devices.get(entry.target.deviceId);
-    const body = device === undefined ? null : nativeBuiltinBody(device.type);
-    if (!body) {
-        return entry;
-    }
-    return { ...entry, target: { ...entry.target, parameterId: body.parameterName(entry.target.parameterId) } };
 }
 
 /**
@@ -302,7 +227,9 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         ])
     );
 
-    const { law, hosted, builtin } = liveDeviceParameterLaw(stripTracks);
+    const builtinAutomation = nativeBuiltinAutomation({ source: offlineDeviceParameterLawState, stripTracks });
+    const builtin = builtinAutomation.law;
+    const { law, hosted } = liveDeviceParameterLaw(stripTracks, builtin);
     const trackById = new Map(stripTracks.map((track): [string, Track] => [track.id, track]));
     const hostedStripIds = engineHostedStripIdsOfCarriedSession(stripTracks);
 
@@ -331,6 +258,5 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         deviceParameterLaw: law,
     });
 
-    const devices = deviceByDeviceId(stripTracks);
-    return { ...projected, entries: projected.entries.map((entry) => addressedNatively(entry, devices)) };
+    return { ...projected, entries: projected.entries.map(builtinAutomation.addressNatively) };
 }
