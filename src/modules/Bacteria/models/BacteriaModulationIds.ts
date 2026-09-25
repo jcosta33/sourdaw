@@ -3,6 +3,13 @@ import { logger } from '#/infra/logger/appLogger';
 import { type BacteriaModAssignment } from './BacteriaPatch';
 
 /**
+ * Mirrors the live worklet's own refusal in `BacteriaNode.setModAssignments`
+ * and the engine's own table capacity
+ * (`BacteriaEngine::MAX_MOD_ASSIGNMENTS`, `crates/daw-dsp/src/bacteria/engine.rs`).
+ */
+const MAX_MOD_ASSIGNMENTS = 64;
+
+/**
  * The string → numeric-id grammar for the engine's modulation matrix
  * (`BacteriaInstance::add_mod_assignment` in `crates/daw-dsp/src/bacteria/mod.rs`).
  *
@@ -121,6 +128,29 @@ export function mapBacteriaModAssignments(assignments: BacteriaModAssignment[]):
         mapped.push({ sourceId, targetParam: targetId, amount: assignment.amount * range });
     }
     return mapped;
+}
+
+/**
+ * Resolve an already-decoded modulation-assignment table into the rows the
+ * engine may safely receive, or `null` when there is nothing safe to push:
+ * `assignments` is absent (the chunk was missing or unreadable), decodes to
+ * zero rows, carries a row the engine's grammar cannot map ([`mapBacteriaModAssignments`]
+ * refuses the whole table on one unmappable row), or exceeds the live node's
+ * own [`MAX_MOD_ASSIGNMENTS`]-row limit.
+ *
+ * Shared by `prepareOfflineBacteria` (offline export) and
+ * `resolveNativeBacteriaModAssignments` (the native runtime-sink projection,
+ * `src/modules/Bacteria/useCases/`) so the two carriers cannot drift on which
+ * tables they refuse — an offline or native render must never apply a
+ * routing the live node itself would have refused.
+ */
+export function resolveMappedBacteriaModAssignments(
+    assignments: readonly BacteriaModAssignment[] | null
+): NumericBacteriaModAssignment[] | null {
+    if (!assignments || assignments.length === 0 || assignments.length > MAX_MOD_ASSIGNMENTS) {
+        return null;
+    }
+    return mapBacteriaModAssignments(assignments as BacteriaModAssignment[]);
 }
 
 /** One selectable target in the dock's add flow, with its display label. */

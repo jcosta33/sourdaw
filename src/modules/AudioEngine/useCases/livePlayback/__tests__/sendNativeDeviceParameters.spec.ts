@@ -16,6 +16,7 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
+    type AudioGraphSetDeviceModAssignmentsCommand,
     type AudioGraphSetDeviceParametersCommand,
 } from '../../../models/AudioGraphBackend';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
@@ -131,5 +132,57 @@ describe('sendNativeDeviceParameters', () => {
         ).resolves.toBe(true);
 
         expect(apply).not.toHaveBeenCalled();
+    });
+
+    // A Bacteria modulation-assignment table rides the same batch as the
+    // parameter records, appended last (#4685 slice 2). The two carry one
+    // gesture, so they must land together — not as a second, later batch.
+    it('appends a mod-assignments command carrying the given table after the parameter records', async () => {
+        const apply = armedSession();
+
+        await sendNativeDeviceParameters({
+            trackId: 'track-1',
+            deviceId: 'device-a',
+            values: { engine: 2 },
+            modAssignments: [{ sourceId: 0, targetParam: 1, amount: 0.9 }],
+        });
+
+        const batch = apply.mock.calls[0]?.[0];
+        expect(batch?.commands.at(-1)).toEqual({
+            kind: 'set-device-mod-assignments',
+            target: { trackId: 'track-1', deviceId: 'device-a' },
+            assignments: [{ sourceId: 0, targetParam: 1, amount: 0.9 }],
+        } satisfies AudioGraphSetDeviceModAssignmentsCommand);
+    });
+
+    // `[]` is a valid table — it clears the engine's routing — and must be
+    // sent, not folded away as if it were absent.
+    it('appends a mod-assignments command carrying an empty table when told to clear it', async () => {
+        const apply = armedSession();
+
+        await sendNativeDeviceParameters({
+            trackId: 'track-1',
+            deviceId: 'device-a',
+            values: { engine: 2 },
+            modAssignments: [],
+        });
+
+        const batch = apply.mock.calls[0]?.[0];
+        expect(batch?.commands.at(-1)).toEqual({
+            kind: 'set-device-mod-assignments',
+            target: { trackId: 'track-1', deviceId: 'device-a' },
+            assignments: [],
+        } satisfies AudioGraphSetDeviceModAssignmentsCommand);
+    });
+
+    // Absent, not merely empty: a plain parameter write must never touch
+    // routing it was not asked to change.
+    it('appends no mod-assignments command when the write names no table at all', async () => {
+        const apply = armedSession();
+
+        await sendNativeDeviceParameters({ trackId: 'track-1', deviceId: 'device-a', values: { engine: 2 } });
+
+        const batch = apply.mock.calls[0]?.[0];
+        expect(batch?.commands.every((command) => command.kind !== 'set-device-mod-assignments')).toBe(true);
     });
 });

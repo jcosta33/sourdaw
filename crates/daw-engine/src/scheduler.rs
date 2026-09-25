@@ -450,6 +450,36 @@ pub enum GraphCommand {
     AddDetachedEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     SetParam(usize, DeviceParam, f32),
     SetBypass(usize, bool),
+    /// Drop a Bacteria body's whole modulation-assignment table.
+    ///
+    /// Addresses the same effect id [`GraphCommand::SetParam`] does. The
+    /// table has no per-entry removal on either host, so a live replacement —
+    /// an edit, an undo, a patch reload — always opens with this before
+    /// [`GraphCommand::AddModAssignment`] re-adds whatever rows survive,
+    /// exactly as `BacteriaNode`'s worklet protocol does on the Web Audio
+    /// carrier. An id naming a body other than Bacteria, or no body at all,
+    /// is counted the way an unmapped [`GraphCommand::SetParam`] is
+    /// (`record_unmapped_set_param_call`) and otherwise ignored: no allocation
+    /// and no lock either way, because [`BacteriaBody::clear_mod_assignments`]
+    /// forwards to an engine method that only clears a preallocated table.
+    ClearModAssignments(usize),
+    /// Add one row to a Bacteria body's modulation-assignment table.
+    ///
+    /// Carries no `Vec`, `Box`, or `String`: `source_id` and `target_param`
+    /// are the engine's own small integer grammar and `amount` is the scaled
+    /// offset, so the whole row is stack-sized and applying or dropping it
+    /// allocates nothing. Refused the same way
+    /// [`GraphCommand::ClearModAssignments`] is refused, for the same
+    /// non-Bacteria-body reason; `BacteriaEngine::add_mod_assignment` also
+    /// silently ignores a row past its own 64-row ceiling or naming a source
+    /// or target outside its tables, so a batch that oversends still lands
+    /// exactly 64 rows rather than aborting the callback.
+    AddModAssignment {
+        effect_id: usize,
+        source_id: u8,
+        target_param: u16,
+        amount: f32,
+    },
     /// State how many frames a device delays its own output by, so the graph
     /// can hold everything that arrives at a summing point beside it back to
     /// the same depth.
@@ -926,6 +956,8 @@ impl GraphCommand {
             // back on the master chain — so none of them frees a slot.
             Self::SetParam(..)
             | Self::SetBypass(..)
+            | Self::ClearModAssignments(..)
+            | Self::AddModAssignment { .. }
             | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
             | Self::SendMidiControl(..)
@@ -1022,6 +1054,8 @@ impl GraphCommand {
             | Self::AddHostedPlugin(..)
             | Self::SetParam(..)
             | Self::SetBypass(..)
+            | Self::ClearModAssignments(..)
+            | Self::AddModAssignment { .. }
             | Self::SendMidiNote(..)
             | Self::SendMidiControl(..)
             | Self::ScheduleMidiNotes { .. }
@@ -1096,7 +1130,7 @@ impl PluginCore {
             BuiltinEffectType::Gluten => Self::gluten_with_patch(sample_rate, &[]),
             BuiltinEffectType::Crust => Self::crust_with_patch(sample_rate, &[]),
             BuiltinEffectType::Grinder => Self::grinder_with_patch(sample_rate, &[]),
-            BuiltinEffectType::Bacteria => Self::bacteria_with_patch(sample_rate, &[]),
+            BuiltinEffectType::Bacteria => Self::bacteria_with_patch(sample_rate, &[], &[]),
             BuiltinEffectType::Proof => Self::proof_with_patch(sample_rate, &[]),
             BuiltinEffectType::DutchOven => Self::dutch_oven_with_patch(sample_rate, &[]),
             BuiltinEffectType::Toaster => Self::toaster_with_patch(sample_rate, &[]),
@@ -1206,9 +1240,26 @@ impl PluginCore {
     /// The ordering law here is [`BACTERIA_PATCH_PRECEDENCE`], which is empty
     /// — applied through [`BuiltinEffectType::patch_precedence`] all the same,
     /// so the record build is one code path with the other bodies'.
-    pub fn bacteria_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+    ///
+    /// `assignments` is the modulation-routing table the patch opens with,
+    /// each row a `(source_id, target_param, amount)` triple in the engine's
+    /// own numeric grammar. Applied on the control thread the same way the
+    /// scalar patch is — cleared then re-added, mirroring
+    /// [`GraphCommand::ClearModAssignments`] followed by
+    /// [`GraphCommand::AddModAssignment`] — so a body built with rows already
+    /// carries them across the ring rather than opening empty and waiting for
+    /// a live write to populate it.
+    pub fn bacteria_with_patch(
+        sample_rate: f32,
+        patch: &[(BuiltinParamName, f32)],
+        assignments: &[(u8, u16, f32)],
+    ) -> Self {
         let mut body = BacteriaBody::new(sample_rate);
         body.load_patch(patch);
+        body.clear_mod_assignments();
+        for &(source_id, target_param, amount) in assignments {
+            body.add_mod_assignment(source_id, target_param, amount);
+        }
         Self::Bacteria(Box::new(body))
     }
 
@@ -2905,6 +2956,28 @@ impl BacteriaBody {
     pub fn latency_samples(&self) -> u32 {
         self.engine.latency_samples()
     }
+
+    /// Drop the whole modulation-assignment table, on either thread.
+    ///
+    /// Forwards to [`BacteriaEngine::clear_mod_assignments`] verbatim: that
+    /// method only clears a `Vec` already sized to its ceiling and rebuilds
+    /// the bounded `modulated_targets` scratch from the (now empty) table, so
+    /// nothing here allocates or locks.
+    fn clear_mod_assignments(&mut self) {
+        self.engine.clear_mod_assignments();
+    }
+
+    /// Add one row to the modulation-assignment table, on either thread.
+    ///
+    /// Forwards to [`BacteriaEngine::add_mod_assignment`] verbatim, which is
+    /// itself the allocation-free refusal door: a source or target id outside
+    /// the engine's tables, or a row past its 64-row ceiling, is silently
+    /// dropped there rather than here, so a caller oversending a table still
+    /// lands as many rows as the engine holds room for.
+    fn add_mod_assignment(&mut self, source_id: u8, target_param: u16, amount: f32) {
+        self.engine
+            .add_mod_assignment(source_id, target_param, amount);
+    }
 }
 
 /// The Proof patch keys that must land before every other entry — none.
@@ -4461,6 +4534,43 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
         }
         (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Clear a Bacteria body's modulation-assignment table, answering whether the
+/// id named one.
+///
+/// Mirrors [`apply_builtin_param`]'s law: an id naming any other body is a
+/// producer that lost track of what the id holds, and the caller counts that
+/// rather than the engine guessing which body the command was meant for.
+fn apply_clear_mod_assignments(instance: &mut PluginCore) -> bool {
+    match instance {
+        PluginCore::Bacteria(body) => {
+            body.clear_mod_assignments();
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Add one row to a Bacteria body's modulation-assignment table, answering
+/// whether the id named one.
+///
+/// Carries the row's own refusal from the engine (see
+/// [`GraphCommand::AddModAssignment`]); the only thing this function itself
+/// refuses is an id naming a body other than Bacteria.
+fn apply_add_mod_assignment(
+    instance: &mut PluginCore,
+    source_id: u8,
+    target_param: u16,
+    amount: f32,
+) -> bool {
+    match instance {
+        PluginCore::Bacteria(body) => {
+            body.add_mod_assignment(source_id, target_param, amount);
             true
         }
         _ => false,
@@ -6365,6 +6475,40 @@ impl AudioScheduler {
                         }
                     }
                     self.pdc_dirty |= moved_latency;
+                    None
+                }
+                // Neither addition nor clear moves a declared latency, so
+                // both are absent from `dirties_compensation` — and both are
+                // refused, and counted, the same way an unmapped `SetParam`
+                // is when the id names no Bacteria body.
+                GraphCommand::ClearModAssignments(id) => {
+                    if let Some(slot) = self.effect_index.lookup(id) {
+                        if let Some(effect) = self.effects.get_mut(slot) {
+                            if !apply_clear_mod_assignments(&mut effect.instance) {
+                                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                            }
+                        }
+                    }
+                    None
+                }
+                GraphCommand::AddModAssignment {
+                    effect_id,
+                    source_id,
+                    target_param,
+                    amount,
+                } => {
+                    if let Some(slot) = self.effect_index.lookup(effect_id) {
+                        if let Some(effect) = self.effects.get_mut(slot) {
+                            if !apply_add_mod_assignment(
+                                &mut effect.instance,
+                                source_id,
+                                target_param,
+                                amount,
+                            ) {
+                                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                            }
+                        }
+                    }
                     None
                 }
                 // Bypass itself does not dirty the compensation: a hosted
@@ -11700,7 +11844,7 @@ mod tests {
             command_tx
                 .push(GraphCommand::AddDetachedEffect(
                     7,
-                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, patch),
+                    PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, patch, &[]),
                     None,
                 ))
                 .unwrap();
@@ -11957,6 +12101,44 @@ mod tests {
             );
         }
 
+        /// A live replacement of the whole modulation-assignment table — a
+        /// clear followed by as many adds as the table holds — is what
+        /// [`GraphCommand::ClearModAssignments`] and
+        /// [`GraphCommand::AddModAssignment`] apply on the audio thread, so
+        /// draining a table's worth of them must not allocate any more than
+        /// a `SetParam` drain does. [`BacteriaBody::clear_mod_assignments`]
+        /// and [`BacteriaBody::add_mod_assignment`] forward verbatim to
+        /// [`BacteriaEngine::clear_mod_assignments`] and
+        /// [`BacteriaEngine::add_mod_assignment`], both of which only touch a
+        /// `Vec` already sized to [`MAX_MOD_ASSIGNMENTS`] — this guards that
+        /// claim rather than trusting the doc comment.
+        #[test]
+        fn a_bacteria_body_replaces_its_mod_assignment_table_on_the_audio_thread_without_allocating(
+        ) {
+            const FRAMES: usize = 512;
+            const ROWS: usize = 64;
+
+            let material = bacteria_guard_material(FRAMES);
+            let mut body = BacteriaBody::new(BACTERIA_GUARD_RATE);
+            let mut left = material.clone();
+            let mut right = material.clone();
+
+            assert_no_alloc(|| {
+                body.clear_mod_assignments();
+                for row in 0..ROWS {
+                    body.add_mod_assignment(0, 1, 0.01 * row as f32);
+                }
+                body.process(&mut left, &mut right);
+            });
+
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "a mod-assignment replacement left the engine producing non-finite samples"
+            );
+        }
+
         /// The whole of what a `SetParam` drain does to a self-reporting body:
         /// the write, and the latency refresh that follows it. Both run on the
         /// callback, so neither may allocate.
@@ -11981,7 +12163,7 @@ mod tests {
             let writes = bacteria_guard_writes(&[("band0_oversampling", 8.0)]);
             let mut effect = ActiveEffect::detached(
                 9,
-                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opening_patch),
+                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &opening_patch, &[]),
             );
             assert_eq!(
                 effect.instance.declared_latency_frames(),
@@ -12073,12 +12255,12 @@ mod tests {
             let material = bacteria_guard_material(FRAMES);
 
             let PluginCore::Bacteria(mut written) =
-                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch)
+                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch, &[])
             else {
                 unreachable!("bacteria_with_patch builds the bacteria variant");
             };
             let PluginCore::Bacteria(mut untouched) =
-                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch)
+                PluginCore::bacteria_with_patch(BACTERIA_GUARD_RATE, &patch, &[])
             else {
                 unreachable!("bacteria_with_patch builds the bacteria variant");
             };
@@ -23324,7 +23506,21 @@ mod timeline_tests {
     /// The body [`PluginCore::bacteria_with_patch`] built, unwrapped so a spec
     /// can render through it directly.
     fn bacteria_body(patch: &[(BuiltinParamName, f32)]) -> Box<BacteriaBody> {
-        let PluginCore::Bacteria(body) = PluginCore::bacteria_with_patch(BACTERIA_RATE, patch)
+        bacteria_body_with_assignments(patch, &[])
+    }
+
+    /// [`bacteria_body`], carrying an opening modulation-assignment table.
+    ///
+    /// Separate from [`bacteria_body`] rather than a default parameter — Rust
+    /// has none — so every existing call keeps reading as "no routing" while
+    /// a spec that needs one row or several can still build through the same
+    /// carrier `commands/graph.rs` builds through.
+    fn bacteria_body_with_assignments(
+        patch: &[(BuiltinParamName, f32)],
+        assignments: &[(u8, u16, f32)],
+    ) -> Box<BacteriaBody> {
+        let PluginCore::Bacteria(body) =
+            PluginCore::bacteria_with_patch(BACTERIA_RATE, patch, assignments)
         else {
             unreachable!("bacteria_with_patch builds the bacteria variant");
         };
@@ -23367,7 +23563,7 @@ mod timeline_tests {
         track_with_material_clip(harness, 1, 101, material);
         harness.send(GraphCommand::AddDetachedEffect(
             7,
-            PluginCore::bacteria_with_patch(BACTERIA_RATE, patch),
+            PluginCore::bacteria_with_patch(BACTERIA_RATE, patch, &[]),
             None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
@@ -23387,7 +23583,7 @@ mod timeline_tests {
         patch: &[(&str, f32)],
         latency_frames: usize,
     ) {
-        let core = PluginCore::bacteria_with_patch(BACTERIA_RATE, &bacteria_patch(patch));
+        let core = PluginCore::bacteria_with_patch(BACTERIA_RATE, &bacteria_patch(patch), &[]);
         assert_eq!(
             core.declared_latency_frames(),
             Some(latency_frames),
@@ -23697,6 +23893,54 @@ mod timeline_tests {
             one_call, split_left,
             "the body renders different samples for a callback split into runs, so handing \
              the engine the whole callback is not the same processing the worklet performs"
+        );
+    }
+
+    /// A modulation-assignment row modulates the target it names, and a
+    /// table cleared before anything renders leaves the body indistinguishable
+    /// from one that never had a row.
+    ///
+    /// Source `0` and target `1` are LFO1 and band 0's gain offset
+    /// (`bacteriaModSourceId`/`bacteriaModTargetId` in
+    /// `BacteriaModulationIds.ts`) — the same pair the dock's own add flow
+    /// offers first, and the "the band pumps" behaviour this whole slice
+    /// exists to carry onto the native engine. LFO1 free-runs every sample
+    /// regardless of whether anything reads it
+    /// (`BacteriaEngine::process_block`), so a table naming it as a source
+    /// is exercised on every sample of an 8192-frame burst rather than
+    /// depending on when the render happens to sample its phase.
+    #[test]
+    fn a_bacteria_mod_assignment_modulates_the_render_and_an_empty_table_matches_the_untouched_one()
+    {
+        const FRAMES: usize = 8192;
+
+        let patch = bacteria_patch(&[("bandCount", 1.0)]);
+        let material = bacteria_burst_material(FRAMES);
+
+        let mut untouched = bacteria_body(&patch);
+        let untouched_render = bacteria_render(&mut untouched, &material);
+
+        let mut modulated = bacteria_body_with_assignments(&patch, &[(0, 1, 0.8)]);
+        let modulated_render = bacteria_render(&mut modulated, &material);
+
+        // Cleared before this body has processed a single sample, so the
+        // comparison below isolates `clear_mod_assignments` from any state
+        // the earlier render would otherwise have left behind.
+        let mut cleared = bacteria_body_with_assignments(&patch, &[(0, 1, 0.8)]);
+        cleared.clear_mod_assignments();
+        let cleared_render = bacteria_render(&mut cleared, &material);
+
+        assert!(
+            untouched_render.iter().any(|sample| *sample != 0.0),
+            "the untouched render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            modulated_render, untouched_render,
+            "the modulation-assignment row left the render unchanged, so it is not audible"
+        );
+        assert_eq!(
+            cleared_render, untouched_render,
+            "a table cleared before rendering still moved the render away from the untouched one"
         );
     }
 

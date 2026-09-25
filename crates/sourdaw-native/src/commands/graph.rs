@@ -286,6 +286,19 @@ const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
     MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
 
+/// The most modulation-assignment rows one bacteria device's table may carry,
+/// at construction ([`DevicePayload::mod_assignments`]) or on the immediate
+/// door ([`GraphCommandPayload::SetDeviceModAssignments`]).
+///
+/// Mirrors `daw_dsp::bacteria::engine::MAX_MOD_ASSIGNMENTS`, restated here
+/// rather than made `pub` on that crate for this alone: `daw-dsp` also builds
+/// to wasm, and widening its public surface for a constant this crate can
+/// otherwise just restate would cost a wasm rebuild and manifest restamp for
+/// no behavioural change. The mirror could still drift from the real ceiling
+/// unnoticed; `a_bacteria_mod_assignment_table_past_the_mirrored_ceiling_is_refused_by_the_engine_too`
+/// proves against the real engine that it does not.
+const MAX_BACTERIA_MOD_ASSIGNMENTS: usize = 64;
+
 /// MIDI channels a note can sound on.
 ///
 /// Mirrors the engine's own address space, which is where the ceiling comes
@@ -445,6 +458,30 @@ pub enum GraphCommandPayload {
         track_id: String,
         device_id: String,
         bypassed: bool,
+    },
+    /// Replace a bacteria device's whole modulation-assignment table on the
+    /// engine's own instance, at the next audio callback.
+    ///
+    /// The immediate counterpart of the `modAssignments`
+    /// [`DevicePayload`] carries at construction: a live edit — add, remove,
+    /// or reorder a row — reaches an already-built strip through this,
+    /// exactly as [`GraphCommandPayload::SetDeviceParameters`] is the
+    /// immediate counterpart of `parameterValues`. The table has no
+    /// per-entry removal at the wasm boundary or here, so it is always the
+    /// engine's own clear-then-re-add ([`GraphCommand::ClearModAssignments`],
+    /// [`GraphCommand::AddModAssignment`]); an empty `assignments` list
+    /// clears the table and adds nothing back.
+    ///
+    /// A bacteria device only. `assignments` is charged against
+    /// [`MAX_BACTERIA_MOD_ASSIGNMENTS`], and, together with the clear this
+    /// always issues, against [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] and
+    /// [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`] the same way a
+    /// `SetDeviceParameters` record's keys are — before any row is resolved.
+    #[serde(rename_all = "camelCase")]
+    SetDeviceModAssignments {
+        track_id: String,
+        device_id: String,
+        assignments: Vec<ModAssignmentPayload>,
     },
     /// Write timeline-addressed notes into the note store a device holds.
     ///
@@ -632,6 +669,29 @@ pub struct DevicePayload {
     /// splicing a bankless, and therefore mute, sampler onto the strip.
     #[serde(default)]
     pub sample_bank_key: Option<String>,
+    /// This device's whole modulation-assignment table, present only for a
+    /// bacteria device (#4685 slice 2). Absent means the project has
+    /// committed no `deviceState` chunk yet for this device — the same
+    /// absence [`Self::sample_bank_key`] carries for the same reason — and
+    /// is read as an empty table, not as "leave whatever the engine already
+    /// holds": construction always builds a fresh instance, so there is
+    /// nothing to leave. `map_device` refuses the whole batch when this is
+    /// present on any device type other than bacteria.
+    #[serde(default)]
+    pub mod_assignments: Option<Vec<ModAssignmentPayload>>,
+}
+
+/// One row of a bacteria device's modulation-assignment table, mirrored from
+/// `NumericBacteriaModAssignment`
+/// (`src/modules/Bacteria/models/BacteriaModulationIds.ts`) — the shape the
+/// wire already carries once the UI table has been mapped onto the engine's
+/// own source/target grammar and amount scale.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModAssignmentPayload {
+    pub source_id: u8,
+    pub target_param: u16,
+    pub amount: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2438,6 +2498,32 @@ fn map_device(
     let builtin = builtin_device_type(&device.device_type)
         .expect("no_native_body refused every type with no built-in body");
 
+    // A modulation-assignment table only ever means something to bacteria:
+    // every other body has no engine vocabulary to apply it against, so a
+    // producer that names one on any other type has authored a batch this
+    // mapper cannot honestly build rather than one it should silently drop
+    // the field from.
+    if let Some(rows) = device.mod_assignments.as_ref() {
+        if builtin != BuiltinEffectType::Bacteria {
+            return Err(format!(
+                "device '{}' of type '{}' carries modAssignments, which only a bacteria device \
+                 may set",
+                device.id, device.device_type
+            ));
+        }
+        if rows.len() > MAX_BACTERIA_MOD_ASSIGNMENTS {
+            return Err(format!(
+                "device '{}' names {} mod assignments, past the engine's ceiling of \
+                 {MAX_BACTERIA_MOD_ASSIGNMENTS}",
+                device.id,
+                rows.len()
+            ));
+        }
+        for row in rows {
+            finite(row.amount as f64, "device modAssignments amount")?;
+        }
+    }
+
     // The built-in's parameters resolve control-side, through the same single
     // mapping the engine's addressed `SetParam` applies, and before the batch
     // charges a chain slot for the device. A key the body's own vocabulary
@@ -2526,10 +2612,23 @@ fn map_device(
             )
         }
         BuiltinEffectType::Bacteria => {
+            // Validated above: at most `MAX_BACTERIA_MOD_ASSIGNMENTS` rows,
+            // every amount finite. Absent reads as empty, the same "nothing
+            // committed yet" reading `device.parameter_values` gets from a
+            // bare `HashMap::new()`.
+            let assignments: Vec<(u8, u16, f32)> = device
+                .mod_assignments
+                .as_ref()
+                .map(|rows| {
+                    rows.iter()
+                        .map(|row| (row.source_id, row.target_param, row.amount))
+                        .collect()
+                })
+                .unwrap_or_default();
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
                 |patch| {
                     (
-                        PluginCore::bacteria_with_patch(sample_rate, &patch),
+                        PluginCore::bacteria_with_patch(sample_rate, &patch, &assignments),
                         Vec::new(),
                     )
                 },
@@ -3555,6 +3654,52 @@ fn map_command(
             // command ring, which `EngineHandle::send_graph_batch_with_headroom`
             // sizes to the batch it is handed, this arm's one op included.
             ops.push(GraphCommand::SetBypass(device.native_effect_id, *bypassed));
+            Ok(())
+        }
+
+        GraphCommandPayload::SetDeviceModAssignments {
+            track_id,
+            device_id,
+            assignments,
+        } => {
+            let device = registry.devices.get(device_id).ok_or_else(|| {
+                format!("set-device-mod-assignments: unknown device '{device_id}'")
+            })?;
+            if device.strip_id != *track_id {
+                return Err(format!(
+                    "set-device-mod-assignments: device '{device_id}' is not on strip \
+                     '{track_id}'"
+                ));
+            }
+            if device.builtin() != Some(BuiltinEffectType::Bacteria) {
+                return Err(format!(
+                    "set-device-mod-assignments: device '{device_id}' is not a bacteria device"
+                ));
+            }
+            if assignments.len() > MAX_BACTERIA_MOD_ASSIGNMENTS {
+                return Err(format!(
+                    "set-device-mod-assignments: batch carries {} rows, past the ceiling of \
+                     {MAX_BACTERIA_MOD_ASSIGNMENTS}",
+                    assignments.len()
+                ));
+            }
+            // Charged the same way a `SetDeviceParameters` record's keys are:
+            // one unit per row plus one for the clear this always issues,
+            // before any row is resolved.
+            budgets
+                .charge_immediate_device_parameters(assignments.len() + 1)
+                .map_err(|reason| format!("set-device-mod-assignments: {reason}"))?;
+            let effect_id = device.native_effect_id;
+            ops.push(GraphCommand::ClearModAssignments(effect_id));
+            for row in assignments {
+                let amount = finite(row.amount as f64, "set-device-mod-assignments amount")? as f32;
+                ops.push(GraphCommand::AddModAssignment {
+                    effect_id,
+                    source_id: row.source_id,
+                    target_param: row.target_param,
+                    amount,
+                });
+            }
             Ok(())
         }
 
@@ -13713,6 +13858,488 @@ mod tests {
             "the filter corner in the patch never reached the instance the mapper built \
              (largest difference {})",
             max_abs_difference(&low_corner, &high_corner)
+        );
+    }
+
+    // ── Modulation-assignment table (#4685 slice 2) ─────────────────────────
+
+    /// [`render_builtin_clip`] for a bacteria device that also carries a
+    /// modulation-assignment table at construction, which that helper's
+    /// device literal has no slot for.
+    fn render_bacteria_clip_with_mod_assignments(
+        parameter_values: Value,
+        mod_assignments: Value,
+    ) -> Vec<f32> {
+        const RATE: f32 = 48_000.0;
+        const FRAMES: usize = 4_800;
+        let material: Vec<f32> = (0..48_000)
+            .map(|frame| {
+                let t = frame as f32 / RATE;
+                0.5 * (2.0 * std::f32::consts::PI * 2_000.0 * t).sin()
+            })
+            .collect();
+        let mut samples = TimelineSamplePool::default();
+        samples.insert(
+            "source-a".to_string(),
+            TimelineSample {
+                left: material.clone().into(),
+                right: material.into(),
+                sample_rate: RATE,
+            },
+        );
+
+        render_offline_batch(
+            &batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Bus",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": false,
+                                   "parameterValues": parameter_values,
+                                   "modAssignments": mod_assignments } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-clip",
+                    "playback": {
+                        "trackId": "t1",
+                        "source": { "sourceId": "source-a" },
+                        "startTime": 0,
+                        "sourceOffsetSeconds": 0,
+                        "durationSeconds": 0.1,
+                        "playbackRate": 1,
+                        "gain": 1,
+                        "fade": { "microFadeSeconds": 0 }
+                    }
+                }
+            ])),
+            &samples,
+            &mut LevainBankStore::default(),
+            FRAMES,
+            RATE,
+        )
+        .expect("a bacteria body carrying mod assignments renders offline")
+    }
+
+    /// A bacteria device's `modAssignments` at construction reaches the same
+    /// instance `PluginCore::bacteria_with_patch` builds, and the row it
+    /// carries is audible: the mapper's own door for the table is
+    /// [`DevicePayload::mod_assignments`], not a `SetParam` command, so a
+    /// device registering the right body proves nothing about whether the
+    /// row was actually applied — only a render comparison does.
+    #[test]
+    fn a_bacteria_device_with_one_mod_assignment_row_maps_and_the_engine_plays_it() {
+        const TOLERANCE: f32 = 1e-6;
+
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Bus",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": false,
+                               "parameterValues": json!({}),
+                               "modAssignments": [
+                                   { "sourceId": 0, "targetParam": 1, "amount": 0.8 }
+                               ] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bacteria device carrying one mod-assignment row maps");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Bacteria(_), _)
+            )),
+            "the bacteria device did not register a built-in body"
+        );
+
+        let with_row = render_bacteria_clip_with_mod_assignments(
+            json!({}),
+            json!([ { "sourceId": 0, "targetParam": 1, "amount": 0.8 } ]),
+        );
+        let without_row = render_bacteria_clip_with_mod_assignments(json!({}), json!([]));
+        assert!(
+            max_abs_difference(&with_row, &without_row) > TOLERANCE,
+            "a mod-assignment row present at construction never reached the built body \
+             (largest difference {})",
+            max_abs_difference(&with_row, &without_row)
+        );
+    }
+
+    /// `modAssignments` on any device type but bacteria has no engine
+    /// vocabulary to apply it against, so the batch refuses whole rather than
+    /// silently dropping the field.
+    #[test]
+    fn mod_assignments_on_a_non_bacteria_device_refuses_naming_the_device() {
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-glu", "type": "gluten", "bypassed": false,
+                               "parameterValues": json!({}),
+                               "modAssignments": [
+                                   { "sourceId": 0, "targetParam": 1, "amount": 0.5 }
+                               ] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("modAssignments on a non-bacteria device must refuse");
+
+        assert!(
+            refusal.contains("d-glu") && refusal.contains("modAssignments"),
+            "the refusal must name the device and the field, got: {refusal}"
+        );
+    }
+
+    /// A bacteria device naming more rows than the engine's table holds at
+    /// construction refuses whole rather than silently truncating — the same
+    /// law [`MAX_BACTERIA_MOD_ASSIGNMENTS`] enforces on the immediate door.
+    #[test]
+    fn a_bacteria_device_naming_past_the_ceiling_of_mod_assignments_at_construction_refuses() {
+        let rows: Vec<Value> = (0..MAX_BACTERIA_MOD_ASSIGNMENTS + 1)
+            .map(|index| json!({ "sourceId": 0, "targetParam": 1, "amount": 0.01 * index as f64 }))
+            .collect();
+
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Bus",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": false,
+                               "parameterValues": json!({}),
+                               "modAssignments": rows } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a mod-assignments table past the ceiling at construction must refuse");
+
+        assert!(
+            refusal.contains("d-bac") && refusal.contains("65"),
+            "the refusal must name the device and the count, got: {refusal}"
+        );
+    }
+
+    /// JSON cannot carry a non-finite number at all — `serde_json` refuses an
+    /// out-of-range literal like `1e400` while decoding, before any field of
+    /// this batch is ever read, so there is no wire batch the finite check
+    /// below could ever see in the field. This constructs the payload
+    /// directly to prove the type-level guard still refuses, in case a future
+    /// caller ever builds one without going through JSON.
+    #[test]
+    fn a_non_finite_mod_assignment_amount_refuses_at_the_type_level() {
+        assert!(
+            serde_json::from_str::<f32>("1e400").is_err(),
+            "fixture: a JSON literal cannot carry a non-finite number at all"
+        );
+
+        let device = DevicePayload {
+            id: "d-bac".to_string(),
+            name: None,
+            device_type: "bacteria".to_string(),
+            bypassed: false,
+            parameter_values: HashMap::new(),
+            external_plugin_id: None,
+            external_instance_id: None,
+            sample_bank_key: None,
+            mod_assignments: Some(vec![ModAssignmentPayload {
+                source_id: 0,
+                target_param: 1,
+                amount: f32::NAN,
+            }]),
+        };
+        let mut ops = Vec::new();
+        let refusal = map_device(
+            &device,
+            &mut GraphRegistry::default(),
+            true,
+            48_000.0,
+            &HashMap::new(),
+            &mut AttachedCrumbs::default(),
+            &mut LevainBankStore::default(),
+            &mut ops,
+        )
+        .expect_err("a non-finite mod-assignment amount must refuse");
+
+        assert!(
+            refusal.contains("finite"),
+            "the refusal must name the reason, got: {refusal}"
+        );
+    }
+
+    /// A registry already holding one mapped bacteria device, for the
+    /// immediate `set-device-mod-assignments` door's own tests: those write
+    /// against an already-built strip, the same way a live edit reaches an
+    /// already-playing session.
+    fn registry_with_mapped_bacteria(
+        device_id: &str,
+        track_id: &str,
+        effect_id: usize,
+    ) -> GraphRegistry {
+        let mut registry = GraphRegistry::default();
+        registry.strips.insert(
+            track_id.to_string(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec![device_id.to_string()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            device_id.to_string(),
+            DeviceEntry {
+                native_effect_id: effect_id,
+                strip_id: track_id.to_string(),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::Bacteria),
+                scoring_telemetry: None,
+            },
+        );
+        registry
+    }
+
+    /// A 2-row `set-device-mod-assignments` write expands into the engine's
+    /// own clear-then-re-add, in row order: the table has no per-entry
+    /// removal, so every write replaces the whole thing.
+    #[test]
+    fn set_device_mod_assignments_with_two_rows_expands_into_clear_then_two_adds() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": [
+                      { "sourceId": 0, "targetParam": 1, "amount": 0.5 },
+                      { "sourceId": 1, "targetParam": 2, "amount": -0.25 }
+                  ] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a 2-row mod-assignments write on a mapped bacteria device maps");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [
+                    GraphCommand::ClearModAssignments(7),
+                    GraphCommand::AddModAssignment {
+                        effect_id: 7,
+                        source_id: 0,
+                        target_param: 1,
+                        ..
+                    },
+                    GraphCommand::AddModAssignment {
+                        effect_id: 7,
+                        source_id: 1,
+                        target_param: 2,
+                        ..
+                    },
+                ]
+            ),
+            "a 2-row write must expand into a clear followed by one add per row in order, got \
+             {} ops",
+            mapped.ops.len()
+        );
+    }
+
+    /// An empty `set-device-mod-assignments` table clears and adds nothing
+    /// back — the door a user's last row removal reaches the engine through.
+    #[test]
+    fn set_device_mod_assignments_with_an_empty_table_yields_only_the_clear() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": [] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("an empty mod-assignments write on a mapped bacteria device maps");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::ClearModAssignments(7)]
+            ),
+            "an empty table must clear and add nothing back, got {} ops",
+            mapped.ops.len()
+        );
+    }
+
+    /// An unknown device refuses by name, exactly as every other immediate
+    /// device write does.
+    #[test]
+    fn set_device_mod_assignments_on_an_unknown_device_refuses() {
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-missing",
+                  "assignments": [] }
+            ])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("an unknown device must refuse");
+
+        assert!(
+            refusal.contains("d-missing"),
+            "the refusal must name the device, got: {refusal}"
+        );
+    }
+
+    /// A device write naming a strip other than the one the device actually
+    /// sits on refuses by name, exactly as `set-device-parameters` does.
+    #[test]
+    fn set_device_mod_assignments_on_the_wrong_strip_refuses() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t-other", "deviceId": "d-bac",
+                  "assignments": [] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a device write naming the wrong strip must refuse");
+
+        assert!(
+            refusal.contains("d-bac") && refusal.contains("t-other"),
+            "the refusal must name the device and the strip it does not sit on, got: {refusal}"
+        );
+    }
+
+    /// A non-bacteria built-in has no engine table this door could ever
+    /// address, so it refuses by name rather than silently doing nothing.
+    #[test]
+    fn set_device_mod_assignments_on_a_non_bacteria_builtin_refuses() {
+        let mut registry = GraphRegistry::default();
+        registry.strips.insert(
+            "t1".to_string(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec!["d-glu".to_string()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            "d-glu".to_string(),
+            DeviceEntry {
+                native_effect_id: 3,
+                strip_id: "t1".to_string(),
+                origin: DeviceOrigin::Builtin(BuiltinEffectType::Gluten),
+                scoring_telemetry: None,
+            },
+        );
+
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-glu",
+                  "assignments": [] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a non-bacteria built-in must refuse a mod-assignments write");
+
+        assert!(
+            refusal.contains("d-glu") && refusal.contains("not a bacteria"),
+            "the refusal must name the device and the reason, got: {refusal}"
+        );
+    }
+
+    /// A table past the ceiling on the immediate door refuses whole, the same
+    /// as it does at construction.
+    #[test]
+    fn set_device_mod_assignments_past_the_ceiling_refuses() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let rows: Vec<Value> = (0..MAX_BACTERIA_MOD_ASSIGNMENTS + 1)
+            .map(|index| json!({ "sourceId": 0, "targetParam": 1, "amount": 0.01 * index as f64 }))
+            .collect();
+
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": rows }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("65 rows on the immediate door must refuse");
+
+        assert!(
+            refusal.contains("65"),
+            "the refusal must name the count past the ceiling, got: {refusal}"
+        );
+    }
+
+    /// A 65th identical modulation-assignment row accepted would change the
+    /// engine's accumulated offset for the target every one of these rows
+    /// shares (`param_offsets[target] += source * amount`,
+    /// `crates/daw-dsp/src/bacteria/engine.rs`), so a render that ends up
+    /// bit-identical between a 64-row and a 65-row table proves the real
+    /// engine refused the 65th — which is what [`MAX_BACTERIA_MOD_ASSIGNMENTS`]
+    /// claims happens, without this crate ever reading `daw_dsp`'s own
+    /// (private) ceiling to check the two agree.
+    #[test]
+    fn a_bacteria_mod_assignment_table_past_the_mirrored_ceiling_is_refused_by_the_engine_too() {
+        const RATE: f32 = 48_000.0;
+        // LFO1 -> band0 gain; LFO1 free-runs every sample regardless of
+        // whatever else the engine is doing, so its contribution never
+        // depends on anything but the assignment table itself.
+        let row = (0u8, 1u16, 0.9f32);
+        let sixty_four: Vec<(u8, u16, f32)> = vec![row; MAX_BACTERIA_MOD_ASSIGNMENTS];
+        let mut sixty_five = sixty_four.clone();
+        sixty_five.push(row);
+
+        let render = |rows: &[(u8, u16, f32)]| {
+            let mut engine = daw_dsp::bacteria::engine::BacteriaEngine::new(RATE);
+            for &(source_id, target_param, amount) in rows {
+                engine.add_mod_assignment(source_id, target_param, amount);
+            }
+            let mut left = vec![0.3f32; 256];
+            let mut right = vec![0.3f32; 256];
+            engine.process_block(&mut left, &mut right);
+            (left, right)
+        };
+
+        assert_eq!(
+            render(&sixty_four),
+            render(&sixty_five),
+            "a 65th mod-assignment row changed the render, so the engine did not refuse it at \
+             this crate's mirrored ceiling of {MAX_BACTERIA_MOD_ASSIGNMENTS}"
         );
     }
 

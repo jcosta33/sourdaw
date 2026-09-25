@@ -361,6 +361,12 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 // this carrier builds each device's bypass from the strip's
                 // devices at creation — so a producer never aims one here.
                 return null;
+            case 'set-device-mod-assignments':
+                // A live modulation-assignment edit addresses the native
+                // engine's carried body, and this carrier builds a bacteria
+                // device's table from the strip's own devices at creation
+                // (`modAssignments`) — so a producer never aims one here.
+                return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);
                 return null;

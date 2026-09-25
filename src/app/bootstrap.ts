@@ -207,6 +207,7 @@ import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
+import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
 import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
@@ -518,6 +519,11 @@ configureAudioDeviceRuntimeSink({
     // gets folded into the record `projectDeviceForNativeBody` sends. See
     // `projectNativeDeviceState`.
     projectNativeDeviceState,
+    // The modulation-assignment mirror of the row above: Bacteria's routing
+    // table also never crosses the wire on its own, so this is where it gets
+    // folded into the record `projectDeviceForNativeBody` sends, at build and
+    // on every edit alike. See `nativeModAssignments`.
+    nativeModAssignments,
     // The bank door beside the row above. One body is built from staged
     // material rather than from its record, so the same opaque state that is
     // projected into `parameterValues` also names the bank the engine must
