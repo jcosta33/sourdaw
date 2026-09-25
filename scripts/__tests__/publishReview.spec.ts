@@ -5432,7 +5432,8 @@ describe('fresh reviewer dossier publication', () => {
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
             expect(message).toMatch(/does not supply a usable review bundle context/);
-            expect(message).not.toMatch(/its baseSha or the manifest itself is missing or unreadable/);
+            expect(message).toMatch(/incomplete in pr, baseRefName, baseSha, or headSha/);
+            expect(message).not.toMatch(/no readable baseSha/);
             expect(message).toMatch(/reassessment\.json/);
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
