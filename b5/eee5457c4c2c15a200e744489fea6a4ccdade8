@@ -1,0 +1,53 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 244,249,337-340,348-350
+  s_9e15f5b7ec3308::t_cc395a52b1e610 245-248,341-347
+AGENTS.md
+  h_beb54bf43b47b7 175-183,184,189-193
+  s_9e15f5b7ec3308::t_ce3da67f5a8dc6 185-188,194-198
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 14-19,232,233,234-236,237-239,240-244,245-246,293,294,295-297,298,299,300-311,312-313,314-341,901-942,944,965-971,977-978,983-992,993,996,1000,1008-1009,1011
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_beb54bf43b47b7 10,172-177,179-184,670-693,701-710,726,728-730,741-742,820,835,847
+  s_9b530f08172a54::t_fac84c24920ad5 23,163-171,178,716-725,727,731-740
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 20,112-115,564-566,720
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 25-27,29-31,32-35,36-37,38,39,40-44,48,63,64-70,71,72,73-74,75-84
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 53,5582-5602,5604-5617,5619-5621,5624-5629,5641-5651,5653-5666
+  s_9b530f08172a54::t_1436b542e8bfc5 5576-5581,5603,5618,5622-5623,5630-5640,5652
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  h_beb54bf43b47b7 14,306-340
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 255-256
+  s_9e15f5b7ec3308::t_5a310cfd1728fb 297-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b5eee5457c4c2c15a200e744489fea6a4ccdade8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
