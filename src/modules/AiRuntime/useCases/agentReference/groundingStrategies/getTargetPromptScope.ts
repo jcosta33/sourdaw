@@ -29,6 +29,9 @@ export function getTargetPromptScope(
     if (promptRole === 'container') {
         return getAddClipPromptEvidence(actionScope)?.targetText ?? '';
     }
+    if (actionScope.roleTexts) {
+        return promptRole === 'source' ? actionScope.roleTexts.source : actionScope.roleTexts.destination;
+    }
     const separator = /\b(?:to|into|through)\b/iu.exec(actionScope.masked);
     if (!separator) {
         return '';

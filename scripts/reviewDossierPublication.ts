@@ -21,9 +21,16 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from './reviewDossier.ts';
+import { readAssessmentImpact } from './reviewDossierChain.ts';
 import { acceptedFindings, completedStances, discardedDispositions } from './reviewDossierViews.ts';
 
-import type { ReviewDossier, ReviewDossierEvent, ReviewDossierStance, ReviewModelTier } from './reviewDossier.ts';
+import type {
+    AssessmentImpact,
+    ReviewDossier,
+    ReviewDossierEvent,
+    ReviewDossierStance,
+    ReviewModelTier,
+} from './reviewDossier.ts';
 import type { ReviewerStanceDraw } from './reviewerModelDiversity.ts';
 import type { ReviewRiskPlan } from './reviewRiskPolicy.ts';
 
@@ -50,6 +57,8 @@ export type ReviewDossierInput = {
     stances: ReviewDossierStanceInput[];
     evidence: { observable: string; verification: string; observed: string }[];
     limitations: string[];
+    /** How the round's advisory semantic assessment influenced it: influence, never agreement. */
+    assessmentImpact: AssessmentImpact;
 };
 
 type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
@@ -213,6 +222,7 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
         stances: readStances(value.stances),
         evidence: readEvidence(value.evidence),
         limitations: readLimitations(value.limitations),
+        assessmentImpact: readAssessmentImpact(value.assessmentImpact, 'review dossier input assessmentImpact'),
     };
 }
 
@@ -354,6 +364,7 @@ function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
         evidence: parsed.evidence,
         limitations: parsed.limitations,
         recommendation: input.recommendation,
+        assessmentImpact: parsed.assessmentImpact,
     });
 }
 
@@ -453,6 +464,14 @@ function assertPublicationAgreement(dossier: ReviewDossier, input: ReviewDossier
     assertFindingsMatchComments(acceptedFindings(dossier), input.comments);
 }
 
+/**
+ * Assembles the canonical record for a publication. The caller input form (`dossier-input-v1`)
+ * always carries `assessmentImpact`; the bundle's own persisted record (`dossier-v1`) may omit it,
+ * because that is the shape every pre-field dossier on disk has and re-publishing one must keep
+ * working. A persisted record that claims a publication is not trusted on that claim alone: the
+ * publish path's replay authentication still has to prove the named review stands live and exact,
+ * and reports its own failure when it does not.
+ */
 export function buildReviewDossier(input: ReviewDossierBuildInput): ReviewDossierPublication {
     const persisted = tryParsePersistedDossier(input.raw);
     const dossier = persisted ?? assembleFromInput(input);

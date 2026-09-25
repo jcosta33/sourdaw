@@ -16,6 +16,7 @@ use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
 use crate::plugin_slot::CaptureInputBlock;
+use crate::retrospective::RetrospectiveWriter;
 use crate::scheduler::{
     graph_progress_channel, meter_channel, transport_position_channel, AudioScheduler,
     GraphCommand, GraphProgressSnapshot, MeterSnapshot, RetiredGraphObjects,
@@ -515,6 +516,9 @@ pub(crate) struct SpawnedAudioThread {
     /// itself. See [`new_output_stream_fault_slot`].
     pub output_stream_fault: Arc<AtomicU8>,
     pub retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
+    /// Control half of the retrospective ring whose writer sits in the
+    /// capture callback. Arms and disarms retention from the control thread.
+    pub retrospective: crate::retrospective::RetrospectiveControl,
 }
 
 /// Spawn the audio thread and report the sample rate the stream actually
@@ -554,6 +558,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let liveness = new_render_liveness();
     let build_liveness = liveness.clone();
     let owner_liveness = liveness.clone();
+    let (retrospective_control, retrospective_writer) =
+        crate::retrospective::retrospective_capture();
 
     let handle = spawn_owned_audio_stream(
         move || match build_audio_stream(
@@ -574,6 +580,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             &capture_refusal_slot,
             &output_stream_fault_slot,
             &build_liveness,
+            retrospective_writer,
         ) {
             Ok(streams) => Ok(StreamWithReclaimerShutdown(
                 Some(streams),
@@ -611,6 +618,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         liveness,
         output_stream_fault,
         retired_adoption_tx,
+        retrospective: retrospective_control,
     })
 }
 
@@ -1118,6 +1126,7 @@ fn attach_capture<B: InputBackend>(
     engine_sample_rate: f32,
     on_error: StreamErrorFn,
     input_latency_slot: Arc<AtomicUsize>,
+    mut retrospective: RetrospectiveWriter,
 ) -> Result<(<B::Open as OpenInput>::Stream, CaptureFeed), InputOpenRefusal> {
     // There is one refusal route and it is not the ring: `on_error` is
     // `FnMut`, so once it is handed to `open.start` below it may already be
@@ -1140,10 +1149,12 @@ fn attach_capture<B: InputBackend>(
         input_latency_slot,
     );
 
-    // The capture thread's whole job: copy the device's block into the ring
-    // or count that it could not. No allocation, no lock, no logging.
+    // The capture thread's whole job: copy the device's block into the device
+    // FIFO and, when retrospective retention is armed, into that ring too.
+    // No allocation, no lock, no logging.
     let capture: CaptureFn = Box::new(move |data: &[f32], channels: usize| {
         writer.write_block(data, channels);
+        retrospective.write_block(data, channels);
     });
 
     // Built here, on the thread that opens the stream, because the render
@@ -1232,6 +1243,7 @@ struct PendingCapture {
     input_latency_slot: Arc<AtomicUsize>,
     capture_refusal_slot: Arc<AtomicU8>,
     output_stream_fault_slot: Arc<AtomicU8>,
+    retrospective: RetrospectiveWriter,
 }
 
 /// Open the capture side of an engine whose output stream is already running.
@@ -1257,6 +1269,7 @@ fn open_pending_capture<B: InputBackend>(
         input_latency_slot,
         capture_refusal_slot,
         output_stream_fault_slot,
+        retrospective,
     } = pending;
 
     capture_side(
@@ -1268,6 +1281,7 @@ fn open_pending_capture<B: InputBackend>(
                 output_stream_fault_slot,
             ),
             Arc::clone(&input_latency_slot),
+            retrospective,
         ),
         &mut feed_tx,
         &input_latency_slot,
@@ -1395,6 +1409,7 @@ fn build_audio_stream(
     capture_refusal_slot: &Arc<AtomicU8>,
     output_stream_fault_slot: &Arc<AtomicU8>,
     liveness: &RenderLiveness,
+    retrospective: RetrospectiveWriter,
 ) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -1450,14 +1465,21 @@ fn build_audio_stream(
 
     Ok(OwnedDeviceStreams {
         capture: None,
-        pending_capture: capture_event_tx.map(|tx| PendingCapture {
-            capture_event_tx: tx,
-            sample_rate,
-            feed_tx: capture_feed_tx,
-            input_latency_slot: Arc::clone(input_latency_slot),
-            capture_refusal_slot: Arc::clone(capture_refusal_slot),
-            output_stream_fault_slot: Arc::clone(output_stream_fault_slot),
-        }),
+        pending_capture: match capture_event_tx {
+            Some(tx) => Some(PendingCapture {
+                capture_event_tx: tx,
+                sample_rate,
+                feed_tx: capture_feed_tx,
+                input_latency_slot: Arc::clone(input_latency_slot),
+                capture_refusal_slot: Arc::clone(capture_refusal_slot),
+                output_stream_fault_slot: Arc::clone(output_stream_fault_slot),
+                retrospective,
+            }),
+            None => {
+                drop(retrospective);
+                None
+            }
+        },
         _output: output,
     })
 }
@@ -1626,7 +1648,12 @@ mod capture_seam_tests {
         let (mut feed_tx, mut feed_rx) = feed_channel();
 
         let capture = capture_side(
-            attach_capture::<AbsentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            attach_capture::<AbsentInput>(
+                ENGINE_RATE,
+                error_sink(),
+                Arc::clone(&slot),
+                crate::retrospective::RetrospectiveWriter::inert(),
+            ),
             &mut feed_tx,
             &slot,
             &refusal_slot,
@@ -1653,7 +1680,12 @@ mod capture_seam_tests {
         let (mut feed_tx, mut feed_rx) = feed_channel();
 
         let stream = capture_side(
-            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            attach_capture::<PresentInput>(
+                ENGINE_RATE,
+                error_sink(),
+                Arc::clone(&slot),
+                crate::retrospective::RetrospectiveWriter::inert(),
+            ),
             &mut feed_tx,
             &slot,
             &refusal_slot,
@@ -1675,13 +1707,22 @@ mod capture_seam_tests {
         let slot = new_input_latency_slot();
         let refusal_slot = new_capture_refusal_slot();
         let (mut feed_tx, _feed_rx) = feed_channel();
-        let (_taken, feed) =
-            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot))
-                .expect("a present input device opens");
+        let (_taken, feed) = attach_capture::<PresentInput>(
+            ENGINE_RATE,
+            error_sink(),
+            Arc::clone(&slot),
+            crate::retrospective::RetrospectiveWriter::inert(),
+        )
+        .expect("a present input device opens");
         feed_tx.push(feed).expect("the slot starts empty");
 
         let stream = capture_side(
-            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            attach_capture::<PresentInput>(
+                ENGINE_RATE,
+                error_sink(),
+                Arc::clone(&slot),
+                crate::retrospective::RetrospectiveWriter::inert(),
+            ),
             &mut feed_tx,
             &slot,
             &refusal_slot,
@@ -1702,7 +1743,12 @@ mod capture_seam_tests {
         let (mut feed_tx, mut feed_rx) = feed_channel();
 
         capture_side(
-            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            attach_capture::<PresentInput>(
+                ENGINE_RATE,
+                error_sink(),
+                Arc::clone(&slot),
+                crate::retrospective::RetrospectiveWriter::inert(),
+            ),
             &mut feed_tx,
             &slot,
             &refusal_slot,
@@ -1753,6 +1799,7 @@ mod capture_seam_tests {
                 input_latency_slot: new_input_latency_slot(),
                 capture_refusal_slot: Arc::clone(&refusal_slot),
                 output_stream_fault_slot: new_output_stream_fault_slot(),
+                retrospective: crate::retrospective::RetrospectiveWriter::inert(),
             },
             refusal_slot,
             feed_rx,
@@ -1959,9 +2006,14 @@ mod capture_seam_tests {
     #[test]
     fn a_refused_capture_open_names_what_refused() {
         let slot = new_input_latency_slot();
-        let refusal = attach_capture::<AbsentInput>(ENGINE_RATE, error_sink(), slot)
-            .err()
-            .expect("a machine with no input device cannot open one");
+        let refusal = attach_capture::<AbsentInput>(
+            ENGINE_RATE,
+            error_sink(),
+            slot,
+            crate::retrospective::RetrospectiveWriter::inert(),
+        )
+        .err()
+        .expect("a machine with no input device cannot open one");
 
         assert_eq!(refusal, InputOpenRefusal::NoDefaultInputDevice);
         assert_eq!(
@@ -1991,6 +2043,7 @@ mod capture_seam_tests {
                 ENGINE_RATE,
                 super::stream_error_sink(StreamSide::Input, tx, new_output_stream_fault_slot()),
                 Arc::clone(&slot),
+                crate::retrospective::RetrospectiveWriter::inert(),
             ),
             &mut feed_tx,
             &slot,
@@ -2054,7 +2107,12 @@ mod capture_seam_tests {
         let (mut feed_tx, _feed_rx) = feed_channel();
 
         let capture = capture_side(
-            attach_capture::<BusyStartInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            attach_capture::<BusyStartInput>(
+                ENGINE_RATE,
+                error_sink(),
+                Arc::clone(&slot),
+                crate::retrospective::RetrospectiveWriter::inert(),
+            ),
             &mut feed_tx,
             &slot,
             &refusal_slot,

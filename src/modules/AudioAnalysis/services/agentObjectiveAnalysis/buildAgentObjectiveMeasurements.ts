@@ -198,19 +198,22 @@ function buildSpectralEntries(context: RenderMeasurementContext): MetricEntries<
 
 type StereoMetricId = 'stereoCorrelation' | 'sideEnergyFraction' | 'lowFrequencyStereoContent';
 
-function buildStereoEntries({ channels, length, silent }: RenderMeasurementContext): MetricEntries<StereoMetricId> {
+function buildStereoEntries({
+    channels,
+    length,
+    sampleRate,
+    silent,
+}: RenderMeasurementContext): MetricEntries<StereoMetricId> {
     const left = channels[0];
     const right = channels[1];
-    const stereo = !silent && left && right ? measureRenderStereo({ left, right, length }) : null;
+    const stereo = !silent && left && right ? measureRenderStereo({ left, right, length, sampleRate }) : null;
     /** One channel has no stereo relationship to report at any level. */
     const missing = channels.length < 2 ? unavailable('mono') : unavailable('silent');
 
     return {
         stereoCorrelation: stereo ? measured('correlation', stereo.correlation, 'exact') : missing,
         sideEnergyFraction: stereo ? measured('ratio', stereo.sideEnergyFraction, 'exact') : missing,
-        // Mid/side band splitting is measurable from this same buffer; nothing
-        // here estimates it in the meantime.
-        lowFrequencyStereoContent: unavailable('not-implemented'),
+        lowFrequencyStereoContent: stereo ? measured('ratio', stereo.lowFrequencyStereoContent, 'estimated') : missing,
     };
 }
 

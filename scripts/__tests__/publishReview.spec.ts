@@ -50,6 +50,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import { buildDossier } from '../reviewDossierChain.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
@@ -4981,6 +4982,7 @@ describe('fresh reviewer dossier publication', () => {
                 },
             ],
             limitations: [],
+            assessmentImpact: 'none',
             ...overrides,
         };
     }
@@ -5566,6 +5568,97 @@ describe('fresh reviewer dossier publication', () => {
             const message = refusalMessage(() => publishReview(number, fixture.port));
             expect(message).toMatch(/recorded review publication 99 does not stand live and exact/u);
             expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    /**
+     * The bundle's own persisted record for the head, omitting the impact. `reviewId` adds the
+     * record's self-asserted publication; without it the record is the unpublished pre-field shape.
+     */
+    function canonicalPersistedDossier(reviewId?: number): unknown {
+        const publication = reviewId === undefined ? [] : [{ kind: 'review-published' as const, reviewId }];
+        return buildDossier({
+            pr: number,
+            headSha: head,
+            baseSha: base,
+            riskClasses: ['small'],
+            requiredStances: ['correctness', 'test-validity'],
+            events: [
+                {
+                    kind: 'stance-completed',
+                    stance: 'correctness',
+                    reviewerModel: 'review-model',
+                    modelTier: 'strongest',
+                    outcome: 'clean',
+                },
+                {
+                    kind: 'stance-completed',
+                    stance: 'test-validity',
+                    reviewerModel: 'review-model',
+                    modelTier: 'standard',
+                    outcome: 'clean',
+                },
+                ...publication,
+            ],
+            evidence: [
+                {
+                    observable: 'the canonical dossier is persisted beside review.json',
+                    verification: 'pnpm test:run scripts/__tests__/publishReview.spec.ts',
+                    observed: 'one canonical dossier.json on disk',
+                },
+            ],
+            limitations: [],
+            recommendation: 'approve',
+        });
+    }
+
+    it('refuses a fabricated publication claim that omits the impact and names no live review', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: canonicalPersistedDossier(424242) });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+
+            // The cause is the failed authentication, not the omitted field.
+            expect(message).toMatch(/recorded review publication 424242 does not stand live and exact/u);
+            expect(fixture.calls).not.toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a bundle holding an unpublished pre-field record with no impact', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: canonicalPersistedDossier() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls).toContain('post');
+            expect(publishedReviewId(parseReviewDossier(fixture.readDossier()))).toBe(99);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays a pre-field record with no impact once its publication authenticates live', () => {
+        const landedReview: RemotePublishedReview = {
+            id: 5272945685,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: canonicalPersistedDossier(5272945685),
+            remoteReviews: { 5272945685: landedReview },
+        });
+        try {
+            const before = fixture.readDossier();
+
+            expect(publishReview(number, fixture.port)).toBe(5272945685);
+            expect(fixture.calls).not.toContain('post');
+            expect(fixture.writes).toHaveLength(0);
+            expect(fixture.readDossier()).toEqual(before);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }

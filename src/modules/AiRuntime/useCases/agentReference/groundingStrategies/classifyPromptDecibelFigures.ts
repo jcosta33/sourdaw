@@ -23,6 +23,8 @@ export type PromptDecibelFigure = {
     /** The figure the request states, signed for a relative change; `null` when the form is unstated. */
     db: number | null;
     form: PromptDecibelForm;
+    /** Where the figure starts in the scope it was read from. */
+    index: number;
 };
 
 /** `dB`, `db`, `d b`, immediately after the number. */
@@ -124,11 +126,12 @@ function classifyFigure(maskedScope: string, number: PromptNumber, unitEnd: numb
     const precedingWord = getPrecedingWord(maskedScope, number);
     const followingWord = getFollowingWord(maskedScope, unitEnd);
     const db = parsePromptNumberValue(number.raw);
+    const { index } = number;
     if (db === null || SOURCE_CONNECTORS.has(precedingWord)) {
-        return { db: null, form: 'unstated' };
+        return { db: null, form: 'unstated', index };
     }
     if (ABSOLUTE_CONNECTORS.has(precedingWord)) {
-        return { db, form: 'absolute' };
+        return { db, form: 'absolute', index };
     }
     const scopeSign = getScopeSign(normalizePromptText(maskedScope));
     const statesChange =
@@ -142,13 +145,13 @@ function classifyFigure(maskedScope: string, number: PromptNumber, unitEnd: numb
     if (!statesChange) {
         // An unsigned figure with no cue says neither; a negative one can only be
         // a level, since a control below the floor has nowhere to move down to.
-        return number.raw.startsWith('-') ? { db, form: 'absolute' } : { db: null, form: 'unstated' };
+        return number.raw.startsWith('-') ? { db, form: 'absolute', index } : { db: null, form: 'unstated', index };
     }
     const sign = getRelativeSign(precedingWord, followingWord, number.raw, scopeSign);
     if (sign === null) {
-        return { db: null, form: 'unstated' };
+        return { db: null, form: 'unstated', index };
     }
-    return { db: sign * Math.abs(db), form: 'relative' };
+    return { db: sign * Math.abs(db), form: 'relative', index };
 }
 
 /**

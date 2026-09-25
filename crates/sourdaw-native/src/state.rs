@@ -309,6 +309,20 @@ pub struct AppState {
     /// re-cross the wire every batch (#2225). Control-side only, LRU-capped;
     /// see `commands::graph::GraphMappingSessions`.
     pub graph_mapping_sessions: Arc<Mutex<crate::commands::graph::GraphMappingSessions>>,
+    /// The retrospective arm the renderer last asked for: a project track
+    /// strip and a channel count, or `None`.
+    ///
+    /// Set by `arm_retrospective_capture`, cleared by
+    /// `disarm_retrospective_capture`, and nothing else writes it — in
+    /// particular it survives an engine retire, because the armed ring lives
+    /// inside one `EngineHandle` and dies with it while the renderer's punch
+    /// stays enabled. Every graph batch applied to the live engine re-applies
+    /// it (`commands::engine_retrospective::apply_desired_retrospective_arm`),
+    /// which is how an engine booted after the arm, or rebuilt after a device
+    /// loss, comes up armed. Lock order: graph registry, then engine, then
+    /// this — it is always the innermost of the three.
+    pub retrospective_arm:
+        Arc<Mutex<Option<crate::commands::engine_retrospective::DesiredRetrospectiveArm>>>,
     /// The durable half of `plugin_registry`: the file a scan writes and the
     /// first plugin-touching command reads back, so a relaunched app resolves
     /// a saved project's plugins without a manual scan. Control-side only —
@@ -590,6 +604,7 @@ impl Default for AppState {
             graph_mapping_sessions: Arc::new(Mutex::new(
                 crate::commands::graph::GraphMappingSessions::default(),
             )),
+            retrospective_arm: Arc::new(Mutex::new(None)),
             plugin_registry_store: Arc::new(
                 crate::host::plugin_registry_store::PluginRegistryStore::in_memory_only(),
             ),

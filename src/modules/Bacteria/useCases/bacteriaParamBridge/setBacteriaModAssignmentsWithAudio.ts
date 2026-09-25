@@ -1,10 +1,10 @@
 import { inject } from '#/infra/di/inject';
 
-import { mapBacteriaModAssignments } from '../../models/BacteriaModulationIds';
 import { type BacteriaModAssignment } from '../../models/BacteriaPatch';
 import { setBacteriaModAssignments } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
+import { pushBacteriaModAssignmentsToEngine } from './pushBacteriaModAssignmentsToEngine';
 
 /**
  * Replace the device's whole modulation-assignment routing.
@@ -14,11 +14,10 @@ import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependenci
  * no per-entry removal: its side is a wholesale replacement (clear-then-re-add
  * inside the worklet), so the store and the engine always describe the same
  * routing after one call. The table leaves through the patch door
- * ({@link updateDevicePatch}) rather than the scalar `(paramId, value)` door,
- * which cannot express a structured row.
+ * ({@link pushBacteriaModAssignmentsToEngine}) rather than the scalar
+ * `(paramId, value)` door, which cannot express a structured row.
  */
 export const setBacteriaModAssignmentsWithAudio = inject(bacteriaParamBridgeDependencies)(({
-    updateDevicePatch: updateDevicePatchFn,
     resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
     return function setBacteriaModAssignmentsWithAudio(deviceId: string, assignments: BacteriaModAssignment[]): void {
@@ -28,11 +27,6 @@ export const setBacteriaModAssignmentsWithAudio = inject(bacteriaParamBridgeDepe
         }
 
         setBacteriaModAssignments(deviceId, assignments);
-
-        const mapped = mapBacteriaModAssignments(assignments);
-        if (!mapped) {
-            return;
-        }
-        updateDevicePatchFn(target.trackId, target.deviceId, { modAssignments: mapped });
+        pushBacteriaModAssignmentsToEngine(deviceId, assignments);
     };
 });

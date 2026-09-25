@@ -869,8 +869,8 @@ describe('default budgets', () => {
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
-        { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 5.5 * 1024 ** 3 },
-        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 5.5 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 6.5 * 1024 ** 3 },
+        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'test:e2e'], expected: 5.5 * 1024 ** 3 },
         {
@@ -901,13 +901,13 @@ describe('default budgets', () => {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['--filter', 'sourdaw', 'deps:validate'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 6.5 * 1024 ** 3,
         },
         {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['--filter=sourdaw', 'deps:validate'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 6.5 * 1024 ** 3,
         },
         {
             profile: 'focused' as const,
