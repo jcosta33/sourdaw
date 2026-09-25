@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/naturalLevelPhrasingGrounding.spec.ts
+  s_9e15f5b7ec3308::t_3e7ecc270d402f 290-299
+  s_9e15f5b7ec3308::t_b36545a0887d29 423-464
+  s_9e15f5b7ec3308::t_19c57a7ea4846b 465-466
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_9e15f5b7ec3308::t_b0441291deee39 1055-1059,1205,1214-1219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6b40dcb2fdf70bf826d4c7ba05d0084764180680",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
