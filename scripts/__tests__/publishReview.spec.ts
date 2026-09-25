@@ -5267,8 +5267,12 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    /** A caller-authored canonical record that claims a publication while omitting the impact. */
-    function canonicalClaimedReplay(reviewId: number): unknown {
+    /**
+     * The bundle's own persisted record for the head, omitting the impact. `reviewId` adds the
+     * record's self-asserted publication; without it the record is the unpublished pre-field shape.
+     */
+    function canonicalPersistedDossier(reviewId?: number): unknown {
+        const publication = reviewId === undefined ? [] : [{ kind: 'review-published' as const, reviewId }];
         return buildDossier({
             pr: number,
             headSha: head,
@@ -5290,7 +5294,7 @@ describe('fresh reviewer dossier publication', () => {
                     modelTier: 'standard',
                     outcome: 'clean',
                 },
-                { kind: 'review-published', reviewId },
+                ...publication,
             ],
             evidence: [
                 {
@@ -5305,14 +5309,24 @@ describe('fresh reviewer dossier publication', () => {
     }
 
     it('refuses a fabricated publication claim that omits the impact and names no live review', () => {
-        const fixture = dossierFixture({ plan: riskPlan(), dossier: canonicalClaimedReplay(424242) });
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: canonicalPersistedDossier(424242) });
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
 
-            expect(message).toMatch(
-                /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/
-            );
+            // The cause is the failed authentication, not the omitted field.
+            expect(message).toMatch(/recorded review publication 424242 does not stand live and exact/u);
             expect(fixture.calls).not.toContain('post');
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes a bundle holding an unpublished pre-field record with no impact', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: canonicalPersistedDossier() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls).toContain('post');
+            expect(publishedReviewId(parseReviewDossier(fixture.readDossier()))).toBe(99);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5329,7 +5343,7 @@ describe('fresh reviewer dossier publication', () => {
         };
         const fixture = dossierFixture({
             plan: riskPlan(),
-            dossier: canonicalClaimedReplay(5272945685),
+            dossier: canonicalPersistedDossier(5272945685),
             remoteReviews: { 5272945685: landedReview },
         });
         try {

@@ -176,17 +176,20 @@ are the orchestrator's attestation, which the record cannot decide for or agains
 are not declared there; they are the review document's own inline comments. `review:publish` refuses
 a fresh reviewer publication before any remote write when the dossier is missing, malformed, or
 rebound from the head the plan binds; when the caller input omits `assessmentImpact` or carries a
-value outside the four tokens, when a persisted record that does not replay an already-published
-head omits it, or when its recorded impact contradicts the round's own limitations or accepted
-findings; when the bundle carries `stances.json`, every
+value outside the four tokens; when its recorded impact contradicts the round's own limitations or
+accepted findings; when a persisted record's claimed publication does not stand live and exact on
+this head, reported as that failure and never as a missing field; when the bundle carries
+`stances.json`, every
 dossier entry must match a recorded stance and every recorded stance an entry (draws on one stance
 share its single recorded entry); when its accepted findings do not match the document's comments
 one-to-one; or when its recommendation disagrees with the document's event. It then persists the
 canonical append-only record bound to the head, with `assessmentImpact` beside `recommendation` and
 covered by `dossierDigest`; re-publishing the same head replays that record unchanged rather than
-minting a second one. The caller input always carries `assessmentImpact`; only a persisted record
-replaying an already-published head — one that records its `review-published` event — may omit it,
-and a record for a fresh head must carry it exactly as the input form does.
+minting a second one. The caller input always carries `assessmentImpact`. The bundle's own persisted
+record for the head may omit it — that is the shape every pre-field dossier on disk has — and a
+re-published bundle keeps working; a persisted record that claims a publication is not trusted on
+that claim alone, because its self-asserted `review-published` event is the caller's, so the named
+review must stand live and exact or the publication is refused for that failure.
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a

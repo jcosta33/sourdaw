@@ -20,6 +20,7 @@ import {
     completedStances,
     deliveryAuthorization,
     discardedDispositions,
+    publishedReviewId,
 } from '../reviewDossierViews.ts';
 
 import type { AssessmentImpact, ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
@@ -159,30 +160,22 @@ function inputWithoutAssessmentImpact(): Record<string, unknown> {
     return rest;
 }
 
-/** A fresh canonical record, authored directly, that omits the impact the input form requires. */
-function canonicalRecordWithoutAssessmentImpact(): unknown {
+/**
+ * The bundle's own persisted record for the head, authored directly, omitting the impact: the shape
+ * every pre-field dossier on disk has. `reviewId` adds the record's self-asserted publication.
+ */
+function canonicalPersistedRecordWithImpactOmitted(reviewId?: number): unknown {
+    const events: ReviewDossierEvent[] = [...COMPLETED_STANCES];
+    if (reviewId !== undefined) {
+        events.push({ kind: 'review-published', reviewId });
+    }
     return buildDossier({
         pr: PLAN.pr,
         headSha: PLAN.headSha,
         baseSha: PLAN.baseSha,
         riskClasses: PLAN.riskClasses,
         requiredStances: [...PLAN.requiredStances],
-        events: [...COMPLETED_STANCES],
-        evidence: EVIDENCE,
-        limitations: [LIMITATION],
-        recommendation: 'request-changes',
-    });
-}
-
-/** A canonical record claiming a publication, authored directly, while omitting the impact. */
-function canonicalPublishedRecordWithoutAssessmentImpact(reviewId = 5272945685): unknown {
-    return buildDossier({
-        pr: PLAN.pr,
-        headSha: PLAN.headSha,
-        baseSha: PLAN.baseSha,
-        riskClasses: PLAN.riskClasses,
-        requiredStances: [...PLAN.requiredStances],
-        events: [...COMPLETED_STANCES, { kind: 'review-published', reviewId }],
+        events,
         evidence: EVIDENCE,
         limitations: [LIMITATION],
         recommendation: 'request-changes',
@@ -675,18 +668,6 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
         message: /review dossier input format must be dossier-input-v1/,
     },
     {
-        label: 'a hand-authored canonical record for a fresh head with no assessment impact',
-        run: () =>
-            buildReviewDossier({
-                plan: PLAN,
-                raw: canonicalRecordWithoutAssessmentImpact(),
-                discarded: [],
-                comments: [],
-                recommendation: 'request-changes',
-            }),
-        message: /assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/,
-    },
-    {
         label: 'an input claiming limitation-only with no limited round',
         run: () =>
             buildReviewDossier({
@@ -732,46 +713,31 @@ describe('parseReviewDossierInput', () => {
     });
 });
 
-describe('recorded replay authentication', () => {
-    it('tolerates an absent impact only when the claimed publication authenticates live', () => {
-        const result = buildReviewDossier({
-            plan: PLAN,
-            raw: canonicalPublishedRecordWithoutAssessmentImpact(),
-            discarded: [],
-            comments: [],
-            recommendation: 'request-changes',
-            recordedPublicationAuthenticated: () => true,
-        });
-
-        expect(result.fromPersisted).toBe(true);
-        expect(result.dossier.assessmentImpact).toBeUndefined();
-        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(result.canonical)))).toBe(result.canonical);
-    });
-
-    it('refuses an absent impact when the claimed publication does not authenticate live', () => {
-        expect(() =>
-            buildReviewDossier({
+describe('persisted record without an assessment impact', () => {
+    /**
+     * The tolerance is anchored on the bundle's own persisted record, not on the record's
+     * self-asserted publication or a live fact: the input form always carries the field (above),
+     * while a persisted record may omit it, because that is the shape every pre-field dossier has.
+     */
+    it.each([undefined, 5272945685])(
+        'tolerates the persisted record that omits the impact (publication event: %s)',
+        (reviewId) => {
+            const result = buildReviewDossier({
                 plan: PLAN,
-                raw: canonicalPublishedRecordWithoutAssessmentImpact(),
+                raw: canonicalPersistedRecordWithImpactOmitted(reviewId),
                 discarded: [],
                 comments: [],
                 recommendation: 'request-changes',
-                recordedPublicationAuthenticated: () => false,
-            })
-        ).toThrow(/assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/);
-    });
+            });
 
-    it('refuses an absent impact when no authentication is supplied at all', () => {
-        expect(() =>
-            buildReviewDossier({
-                plan: PLAN,
-                raw: canonicalPublishedRecordWithoutAssessmentImpact(),
-                discarded: [],
-                comments: [],
-                recommendation: 'request-changes',
-            })
-        ).toThrow(/assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/);
-    });
+            expect(result.fromPersisted).toBe(true);
+            expect(result.dossier.assessmentImpact).toBeUndefined();
+            if (reviewId !== undefined) {
+                expect(publishedReviewId(result.dossier)).toBe(reviewId);
+            }
+            expect(serializeReviewDossier(parseReviewDossier(JSON.parse(result.canonical)))).toBe(result.canonical);
+        }
+    );
 });
 
 describe('parseReviewStancesRecord', () => {
