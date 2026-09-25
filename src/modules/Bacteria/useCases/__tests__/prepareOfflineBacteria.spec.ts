@@ -44,4 +44,15 @@ describe('prepareOfflineBacteria', () => {
 
         expect(port.postMessage).not.toHaveBeenCalled();
     });
+
+    it('posts the captured table, ignoring an absent deviceState, when captured is supplied (#4756)', () => {
+        const port = makePort();
+
+        prepareOfflineBacteria({ deviceState: undefined, port, captured: { assignments: [row()] } });
+
+        expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({
+            type: 'set-mod-assignments',
+            assignments: [{ sourceId: 0, targetParam: 1, amount: 0.5 }],
+        });
+    });
 });

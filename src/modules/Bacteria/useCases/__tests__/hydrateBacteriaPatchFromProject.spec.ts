@@ -2,18 +2,33 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { DEFAULT_PATCH, type BacteriaPatch } from '../../models/BacteriaPatch';
-import { bacteriaStore, getBacteriaState, loadBacteriaPatch, setBacteriaParam } from '../../stores/bacteriaStore';
+import { BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION } from '../../models/BacteriaModAssignmentsState';
+import { DEFAULT_PATCH, type BacteriaModAssignment, type BacteriaPatch } from '../../models/BacteriaPatch';
+import {
+    bacteriaStore,
+    getBacteriaState,
+    loadBacteriaPatch,
+    setBacteriaParam,
+    setBacteriaUiLevel,
+} from '../../stores/bacteriaStore';
 import { hydrateBacteriaPatchFromProject } from '../hydrateBacteriaPatchFromProject';
 
 const DEVICE_ID = 'bacteria-1';
 
-function seedProjectDevice(parameterValues: Record<string, number>, type = 'bacteria'): void {
+function row(overrides: Partial<BacteriaModAssignment> = {}): BacteriaModAssignment {
+    return { sourceId: 'lfo1', targetParam: 'band0_drive', amount: 0.5, bipolar: true, ...overrides };
+}
+
+function seedProjectDevice(
+    parameterValues: Record<string, number> | undefined,
+    type = 'bacteria',
+    deviceState?: unknown
+): void {
     trackStore.set({
         tracks: [
             {
                 id: 't1',
-                devices: [{ id: DEVICE_ID, type, parameterValues }],
+                devices: [{ id: DEVICE_ID, type, parameterValues, deviceState }],
             },
         ],
     } as unknown as typeof trackStore.value);
@@ -140,5 +155,41 @@ describe('hydrateBacteriaPatchFromProject', () => {
         expect(patch.name).toBe('My patch');
         expect(patch.snapshots).toEqual(metadataPatch.snapshots);
         expect(patch.mix).toBe(0.25);
+    });
+
+    it('projects the routing table from the deviceState chunk onto an empty store table (#4756)', () => {
+        const r1 = row();
+        setBacteriaUiLevel(DEVICE_ID, 1);
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([]);
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [r1] },
+        });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([r1]);
+    });
+
+    it('projects the routing table even when parameterValues is absent', () => {
+        const r1 = row();
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [r1] },
+        });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([r1]);
+    });
+
+    it('leaves the routing table untouched when the chunk is absent', () => {
+        const r1 = row();
+        loadBacteriaPatch(DEVICE_ID, { ...DEFAULT_PATCH, modAssignments: [r1] });
+        seedProjectDevice({ mix: 0.5 });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([r1]);
     });
 });

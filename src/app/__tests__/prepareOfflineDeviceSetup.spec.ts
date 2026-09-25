@@ -389,4 +389,56 @@ describe('captureOfflineDeviceSetup explicit project source', () => {
         expect(parameterMessages(postMessage, 'sustain_threshold')).toEqual([]);
         expect(createGrandBouleStore('same-id').value?.midiCalibration.sustainThreshold).toBe(0.2);
     });
+
+    it('captures a bacteria device’s chunk into a detached assignments value (#4756)', () => {
+        const supplied = device('bacteria', {
+            version: 1,
+            data: { modAssignments: [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 0.5, bipolar: true }] },
+        });
+
+        const captured = captureOfflineDeviceSetup(supplied);
+
+        expect(captured).toEqual({
+            kind: 'bacteria',
+            value: { assignments: [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 0.5, bipolar: true }] },
+        });
+    });
+
+    it('prepares the captured bacteria table without a deviceState', async () => {
+        const supplied = device('bacteria', {
+            version: 1,
+            data: { modAssignments: [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 0.5, bipolar: true }] },
+        });
+        const captured = captureOfflineDeviceSetup(supplied);
+        const { port, postMessage } = makePort();
+
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured, port });
+
+        expect(postMessage).toHaveBeenCalledExactlyOnceWith({
+            type: 'set-mod-assignments',
+            assignments: [{ sourceId: 0, targetParam: 1, amount: 0.5 }],
+        });
+    });
+
+    it('captures the same bacteria table regardless of an explicit project source', () => {
+        const supplied = device('bacteria', {
+            version: 1,
+            data: { modAssignments: [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 0.5, bipolar: true }] },
+        });
+
+        const withoutSource = captureOfflineDeviceSetup(supplied);
+        const withSource = captureOfflineDeviceSetup(supplied, { projectOnly: true, calibration: null });
+
+        expect(withSource).toEqual(withoutSource);
+    });
+
+    it('posts nothing when the captured bacteria device has no chunk', async () => {
+        const supplied = device('bacteria');
+        const captured = captureOfflineDeviceSetup(supplied);
+        const { port, postMessage } = makePort();
+
+        await prepareOfflineDeviceSetup({ deviceId: supplied.id, deviceType: supplied.type, captured, port });
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
 });

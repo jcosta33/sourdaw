@@ -15,8 +15,17 @@ vi.mock('../hydrateBacteriaModAssignmentsFromProject', () => ({
     hydrateBacteriaModAssignmentsFromProject: mocks.hydrateBacteriaModAssignmentsFromProject,
 }));
 
+import { trackStore } from '#/modules/Arrangement/stores';
+
 import { type BacteriaModAssignment } from '../../models/BacteriaPatch';
-import { bacteriaStore, setBacteriaModAssignments, updateBacteriaMeters } from '../../stores/bacteriaStore';
+import {
+    bacteriaStore,
+    getBacteriaState,
+    setBacteriaModAssignments,
+    setBacteriaUiLevel,
+    updateBacteriaMeters,
+} from '../../stores/bacteriaStore';
+import { hydrateBacteriaPatchFromProject } from '../hydrateBacteriaPatchFromProject';
 import { initBacteriaModAssignmentsPersistence } from '../initBacteriaModAssignmentsPersistence';
 
 import type { hydrateBacteriaModAssignmentsFromProject } from '../hydrateBacteriaModAssignmentsFromProject';
@@ -40,6 +49,7 @@ describe('initBacteriaModAssignmentsPersistence', () => {
     afterEach(() => {
         stop();
         bacteriaStore.set({});
+        trackStore.set(null);
     });
 
     it('subscribes and returns an unsubscribe function', () => {
@@ -100,5 +110,51 @@ describe('initBacteriaModAssignmentsPersistence', () => {
         setBacteriaModAssignments(DEVICE_ID, [row()]);
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('commits [r1, r2] when an edit builds on the table the panel hydration projected from the document (#4756)', async () => {
+        // The real document read, not the canned mock: this is the one case
+        // that must prove the load-subscriber-equality skip and the panel
+        // hydration cooperate rather than fight, so both run for real.
+        const actual = await vi.importActual<typeof import('../hydrateBacteriaModAssignmentsFromProject')>(
+            '../hydrateBacteriaModAssignmentsFromProject'
+        );
+        mocks.hydrateBacteriaModAssignmentsFromProject.mockImplementation(actual.hydrateBacteriaModAssignmentsFromProject);
+
+        const r1 = row();
+        const r2 = row({ targetParam: 'band2_gain' });
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    devices: [
+                        { id: DEVICE_ID, type: 'bacteria', deviceState: { version: 1, data: { modAssignments: [r1] } } },
+                    ],
+                },
+            ],
+        } as unknown as typeof trackStore.value);
+
+        // First sight: the default empty table, not an edit.
+        setBacteriaUiLevel(DEVICE_ID, 1);
+        // Panel mount hydration: builds the table on top of the document's [r1]
+        // rather than the store's still-empty one, and must not itself commit
+        // since it only re-states what the document already holds.
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+
+        // The routing-matrix edit: add r2 on top of the hydrated [r1].
+        const table = getBacteriaState(DEVICE_ID).patch.modAssignments;
+        setBacteriaModAssignments(DEVICE_ID, [...table, r2]);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
+            {
+                type: 'setDeviceState',
+                payload: {
+                    deviceId: DEVICE_ID,
+                    state: { version: 1, data: { modAssignments: [r1, r2] } },
+                },
+            },
+            { skipMacroRecording: true }
+        );
     });
 });

@@ -50,6 +50,28 @@ export function toBacteriaModAssignmentsState(
     };
 }
 
+/**
+ * Row-for-row equality, ignoring array identity.
+ *
+ * Shared by the persistence subscriber's document-equality skip and the panel
+ * hydrator's routing projection — both need to tell a table that merely has a
+ * new array reference from one that actually names a different routing.
+ */
+export function rowsEqual(a: readonly BacteriaModAssignment[], b: readonly BacteriaModAssignment[]): boolean {
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every((row, index) => {
+        const other = b[index]!;
+        return (
+            row.sourceId === other.sourceId &&
+            row.targetParam === other.targetParam &&
+            row.amount === other.amount &&
+            row.bipolar === other.bipolar
+        );
+    });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

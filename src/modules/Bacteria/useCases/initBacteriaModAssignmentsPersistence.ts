@@ -1,23 +1,9 @@
+import { rowsEqual } from '../models/BacteriaModAssignmentsState';
 import { type BacteriaModAssignment } from '../models/BacteriaPatch';
 import { bacteriaStore } from '../stores/bacteriaStore';
 
 import { commitBacteriaModAssignments } from './commitBacteriaModAssignments';
 import { hydrateBacteriaModAssignmentsFromProject } from './hydrateBacteriaModAssignmentsFromProject';
-
-function rowsEqual(a: readonly BacteriaModAssignment[], b: readonly BacteriaModAssignment[]): boolean {
-    if (a.length !== b.length) {
-        return false;
-    }
-    return a.every((row, index) => {
-        const other = b[index]!;
-        return (
-            row.sourceId === other.sourceId &&
-            row.targetParam === other.targetParam &&
-            row.amount === other.amount &&
-            row.bipolar === other.bipolar
-        );
-    });
-}
 
 /**
  * Mirror every Bacteria modulation-routing edit into project truth.
@@ -35,8 +21,10 @@ function rowsEqual(a: readonly BacteriaModAssignment[], b: readonly BacteriaModA
  * meter frame.
  *
  * A device is recorded on first sight without committing: registration is a device's
- * first appearance, and the table it appears with is either the default empty table or
- * the one just read back from the document by the load subscriber — neither is an edit.
+ * first appearance, and the table it appears with is either the default empty table, the
+ * one just read back from the document by the load subscriber, or the one the panel's own
+ * `hydrateBacteriaPatchFromProject` projected from `deviceState` on mount — none of the
+ * three is an edit.
  *
  * Beyond that, a real identity change still skips the commit when the new table equals,
  * row for row, the table the document's current `deviceState` already decodes to (an
