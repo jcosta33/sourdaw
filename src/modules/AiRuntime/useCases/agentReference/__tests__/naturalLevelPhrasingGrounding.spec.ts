@@ -84,11 +84,48 @@ const projectContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-function bridge(calls: ProviderCalls, prompt: string) {
+/** The fixture with a Keys synth whose output parameter is named "Master", as Levain's is. */
+const projectWithMasterParameter: ProjectContext = {
+    ...projectContext,
+    tracks: projectContext.tracks.map((track) =>
+        track.id === 'track-keys'
+            ? {
+                  ...track,
+                  deviceCount: 1,
+                  devices: [
+                      {
+                          id: 'device-keys-synth',
+                          type: 'levain',
+                          bypassed: false,
+                          parameters: [
+                              {
+                                  id: 'masterGain',
+                                  name: 'Master',
+                                  type: 'float',
+                                  value: 0.8,
+                                  minValue: 0,
+                                  maxValue: 2,
+                                  unit: '',
+                              },
+                          ],
+                      },
+                  ],
+              }
+            : track
+    ),
+};
+
+/** The fixture with a track whose name holds the word master. */
+const projectWithMasterNamedTrack: ProjectContext = {
+    ...projectContext,
+    tracks: [...projectContext.tracks, createTrack({ id: 'track-master-vox', name: 'Master Vox' })],
+};
+
+function bridge(calls: ProviderCalls, prompt: string, context: ProjectContext = projectContext) {
     return bridgeGroundedLlmToolCalls({
         calls,
         prompt,
-        context: projectContext,
+        context,
         markerSignatures: [],
         sectionSignatures: [],
     });
@@ -315,6 +352,17 @@ describe('natural level phrasing grounds the call its words ask for', () => {
         expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { deltaDb: 2 } }]);
     });
 
+    it('grounds a master level change while a device parameter is also named Master', () => {
+        const result = bridge(
+            [{ name: 'setMasterGain', arguments: { deltaDb: -1.5 } }],
+            'Turn down the master by 1.5 dB.',
+            projectWithMasterParameter
+        );
+
+        expect(result.rejections).toEqual([]);
+        expect(result.actions).toEqual([{ type: 'setMasterGain', payload: { deltaDb: -1.5 } }]);
+    });
+
     it('grounds the track change of a level list whose continuation names the master', () => {
         const result = bridge(
             [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -3 } }],
@@ -502,6 +550,60 @@ describe('natural level phrasing refuses what its words do not reach', () => {
                 reason: 'Provider action is not grounded in the user request',
             })
         );
+    });
+
+    it('refuses a track fader change on the master while a device parameter is also named Master', () => {
+        const direct = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: 'master', deltaDb: -1.5 } }],
+            'Lower the master by 1.5 dB.',
+            projectWithMasterParameter
+        );
+        const continuation = bridge(
+            [
+                { name: 'setTrackGain', arguments: { trackId: 'track-kick', deltaDb: -3 } },
+                { name: 'setTrackGain', arguments: { trackId: 'master', deltaDb: 2 } },
+            ],
+            'Turn the Kick down 3 dB and the Master up 2 dB.',
+            projectWithMasterParameter
+        );
+
+        expect(direct.actions).toEqual([]);
+        expect(direct.rejections).toMatchObject([
+            { name: 'setTrackGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
+        expect(continuation.actions).not.toContainEqual({
+            type: 'setTrackGain',
+            payload: { trackId: 'master', deltaDb: 2 },
+        });
+        expect(continuation.rejections).toContainEqual(
+            expect.objectContaining({
+                index: 1,
+                name: 'setTrackGain',
+                reason: 'Provider action is not grounded in the user request',
+            })
+        );
+    });
+
+    it('refuses a master level change on a track whose name holds the word master', () => {
+        const turnedDown = bridge(
+            [{ name: 'setMasterGain', arguments: { deltaDb: -3 } }],
+            'Turn down the Master Vox by 3 dB.',
+            projectWithMasterNamedTrack
+        );
+        const lowered = bridge(
+            [{ name: 'setMasterGain', arguments: { deltaDb: -3 } }],
+            'Lower the Master Vox by 3 dB.',
+            projectWithMasterNamedTrack
+        );
+
+        expect(turnedDown.actions).toEqual([]);
+        expect(lowered.actions).toEqual([]);
+        expect(turnedDown.rejections).toMatchObject([
+            { name: 'setMasterGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
+        expect(lowered.rejections).toMatchObject([
+            { name: 'setMasterGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
     });
 
     it('refuses a master level change when the clause states no decibel figure', () => {

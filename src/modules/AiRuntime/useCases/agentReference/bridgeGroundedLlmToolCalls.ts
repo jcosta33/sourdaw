@@ -1048,13 +1048,50 @@ function namesSendOrMaster(clause: PromptClause, context: ProjectContext): boole
     if (/□\s+sends?\b/u.test(clause.masked) || /\bsends?\b.*\b(?:to|into)\b/iu.test(clause.masked)) {
         return true;
     }
-    const nonMasterContext = { ...context, tracks: context.tracks.filter((track) => track.kind !== 'master') };
-    return /\bmaster\b/iu.test(maskProjectReferences(clause.text, nonMasterContext));
+    return namesMaster(clause, context);
 }
 
-/** Whether a clause states a level the track fader action never moves: a send's or the master's. */
-function namesLevelOutsideTrackFader(actionName: string, clause: PromptClause, context: ProjectContext): boolean {
-    return actionName === 'setTrackGain' && namesSendOrMaster(clause, context);
+function isBareMasterReference(reference: string): boolean {
+    return normalizePromptText(reference) === 'master';
+}
+
+/**
+ * The project's objects other than the master, less any whose whole name is the bare word "master":
+ * a synth parameter named "Master" cannot tell the master apart from itself, so it never hides it.
+ */
+function getOtherThanMasterReferences(context: ProjectContext): ProjectContext {
+    return {
+        ...context,
+        vcaGroups: context.vcaGroups?.filter((group) => !isBareMasterReference(group.name)),
+        tracks: context.tracks
+            .filter((track) => track.kind !== 'master' && !isBareMasterReference(track.name))
+            .map((track) => ({
+                ...track,
+                clips: track.clips.filter((clip) => !isBareMasterReference(clip.name)),
+                devices: track.devices.map((device) => ({
+                    ...device,
+                    parameters: device.parameters?.filter(
+                        (parameter) => !isBareMasterReference(parameter.id) && !isBareMasterReference(parameter.name)
+                    ),
+                })),
+            })),
+    };
+}
+
+/** Whether a clause names the master itself, outside a longer name of another project object ("Master Vox"). */
+function namesMaster(clause: PromptClause, context: ProjectContext): boolean {
+    return /\bmaster\b/iu.test(maskProjectReferences(clause.text, getOtherThanMasterReferences(context)));
+}
+
+/**
+ * Whether a clause states a level the action never moves: a send's or the master's for a track
+ * fader, and anything but the master's for the master fader.
+ */
+function namesLevelOutsideActionFader(actionName: string, clause: PromptClause, context: ProjectContext): boolean {
+    if (actionName === 'setTrackGain') {
+        return namesSendOrMaster(clause, context);
+    }
+    return actionName === 'setMasterGain' && !namesMaster(clause, context);
 }
 
 /**
@@ -1202,7 +1239,7 @@ function resolveActionPromptScope({
                 ) {
                     continue;
                 }
-                if (namesLevelOutsideTrackFader(actionName, clause, context)) {
+                if (namesLevelOutsideActionFader(actionName, clause, context)) {
                     continue;
                 }
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
@@ -1215,7 +1252,7 @@ function resolveActionPromptScope({
             continuesScope &&
             previousScope &&
             isLevelContinuationClause(clause.masked, decibelLevelForms) &&
-            !namesLevelOutsideTrackFader(actionName, clause, context)
+            !namesLevelOutsideActionFader(actionName, clause, context)
         ) {
             matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
                 previousScope,
