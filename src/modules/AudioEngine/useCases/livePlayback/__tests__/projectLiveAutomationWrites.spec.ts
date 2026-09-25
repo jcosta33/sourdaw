@@ -803,6 +803,49 @@ describe('projectLiveAutomationWrites — hosted device lanes', () => {
         expect(faderEntry).toBeDefined();
     });
 
+    it('excludes every withheld lane out of a three-way mutual overlap on one carried device parameter, not only the first', () => {
+        // All three lanes are track-level (no clipId) and span the whole
+        // render, so all three genuinely overlap — one cluster of three.
+        // lane-3 is latest in lane-array order and survives; lane-1 and
+        // lane-2 are both withheld and must both be excluded.
+        const track = createTrack({ devices: [hostedDevice] });
+        const lane1 = lane({
+            id: 'lane-1',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            points: [point(0, 0.1, 'step'), point(4, 0.1, 'step')],
+        });
+        const lane2 = lane({
+            id: 'lane-2',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            points: [point(0, 0.5, 'step'), point(4, 0.5, 'step')],
+        });
+        const lane3 = lane({
+            id: 'lane-3',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            points: [point(0, 0.9, 'step'), point(4, 0.9, 'step')],
+        });
+        const lanes: AutomationLane[] = [lane1, lane2, lane3];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        const reason = `automation on track "${track.name}": lanes on device "${hostedDevice.id}" overlap on parameter "7"`;
+        expect(result.exclusions).toEqual([
+            { stripId: track.id, subjectId: lane1.id, reason },
+            { stripId: track.id, subjectId: lane2.id, reason },
+        ]);
+    });
+
     it('still excludes a built-in device lane on a strip whose hosted device is carried', () => {
         const track = createTrack({ devices: [builtinDevice, hostedDevice] });
         const builtinLane = lane({
