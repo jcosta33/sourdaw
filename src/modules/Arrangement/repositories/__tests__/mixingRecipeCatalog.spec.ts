@@ -190,6 +190,51 @@ describe('mixingRecipeCatalog', () => {
         expect(misplacedBands).toEqual([]);
     });
 
+    it('derives the direction of every less/more descriptor phrase from the produces/removes tables, not a hand-written list', () => {
+        const owners = new Map<string, (typeof MIX_RECIPE_DESCRIPTORS)[number]>();
+        for (const descriptor of MIX_RECIPE_DESCRIPTORS) {
+            for (const term of MIX_RECIPE_DESCRIPTOR_TERMS[descriptor]) {
+                owners.set(term, descriptor);
+            }
+        }
+
+        const violations: string[] = [];
+        let lessChecked = 0;
+        let moreChecked = 0;
+
+        for (const owner of MIX_RECIPE_DESCRIPTORS) {
+            for (const term of MIX_RECIPE_DESCRIPTOR_TERMS[owner]) {
+                const lessBase = /^less (.+)$/.exec(term)?.[1];
+                if (lessBase !== undefined && owners.has(lessBase)) {
+                    const baseOwner = owners.get(lessBase)!;
+                    lessChecked += 1;
+                    // A "less X" phrase owned by the descriptor that produces X inverts it; owned by
+                    // the descriptor that removes X restates it, per the doc comment on the terms table.
+                    const mustOwnItself = MIX_RECIPE_DESCRIPTOR_EFFECTS[baseOwner] === 'removes';
+                    const ownsItself = owner === baseOwner;
+                    if (ownsItself !== mustOwnItself) {
+                        violations.push(
+                            `${term} owned by ${owner}, but base "${lessBase}" is owned by ${baseOwner} (${MIX_RECIPE_DESCRIPTOR_EFFECTS[baseOwner]})`
+                        );
+                    }
+                }
+
+                const moreBase = /^more (.+)$/.exec(term)?.[1];
+                if (moreBase !== undefined && owners.has(moreBase)) {
+                    const baseOwner = owners.get(moreBase)!;
+                    moreChecked += 1;
+                    if (owner !== baseOwner) {
+                        violations.push(`${term} owned by ${owner}, but base "${moreBase}" is owned by ${baseOwner}`);
+                    }
+                }
+            }
+        }
+
+        expect(lessChecked).toBeGreaterThan(0);
+        expect(moreChecked).toBeGreaterThan(0);
+        expect(violations).toEqual([]);
+    });
+
     it('keeps third-party equipment marks out of every recipe text field and every descriptor term', () => {
         const offendingFields = catalog.recipes.flatMap((recipe) =>
             textFieldsOf(recipe)
