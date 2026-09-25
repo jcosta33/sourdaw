@@ -318,12 +318,21 @@ describe('natural level phrasing refuses what its words do not reach', () => {
     });
 
     it('refuses a level put on a track when the clause states no decibel figure', () => {
-        const result = bridge(
+        const decibels = bridge(
             [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', gainDb: -6 } }],
             'Put the Kick at bar 5.'
         );
+        // The bar number read as a 5% linear level: only the missing decibel figure stops "put" naming it.
+        const barNumberAsLevel = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', gain: 0.05 } }],
+            'Put the Kick at bar 5.'
+        );
 
-        expect(result.actions).toEqual([]);
+        expect(decibels.actions).toEqual([]);
+        expect(barNumberAsLevel.actions).toEqual([]);
+        expect(barNumberAsLevel.rejections).toMatchObject([
+            { name: 'setTrackGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
     });
 
     it('refuses a master level set when the clause states no decibel figure', () => {
@@ -333,12 +342,21 @@ describe('natural level phrasing refuses what its words do not reach', () => {
     });
 
     it('refuses a track brought up when the clause states no decibel figure', () => {
-        const result = bridge(
+        const decibels = bridge(
             [{ name: 'setTrackGain', arguments: { trackId: 'track-guitar', deltaDb: 2 } }],
             'Bring the Guitar up.'
         );
+        // A linear level needs no figure in the prompt: only the missing decibel figure stops "bring up" naming it.
+        const linearLevel = bridge(
+            [{ name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 0.5 } }],
+            'Bring the Guitar up.'
+        );
 
-        expect(result.actions).toEqual([]);
+        expect(decibels.actions).toEqual([]);
+        expect(linearLevel.actions).toEqual([]);
+        expect(linearLevel.rejections).toMatchObject([
+            { name: 'setTrackGain', reason: 'Provider action is not grounded in the user request' },
+        ]);
     });
 
     it('refuses a new bus whose proposed name is not the name between the article and the noun', () => {
