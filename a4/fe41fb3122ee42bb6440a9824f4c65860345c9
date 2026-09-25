@@ -1,0 +1,44 @@
+src/modules/Bacteria/useCases/__tests__/hydrateBacteriaPatchFromProject.spec.ts
+  s_2bfd55a4393d7c::t_dc87cffb73f394 218-219,221-271
+  s_2bfd55a4393d7c::t_d5b85daa314ef6 220
+  s_2bfd55a4393d7c::t_05a816e52a20b6 1,14-33,37
+  s_2bfd55a4393d7c::t_26646cbe0a2528 62-63
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/setBacteriaModAssignmentsWithAudio.spec.ts
+  s_2bfd55a4393d7c::t_e1cba238b615c0 19-29
+  s_2bfd55a4393d7c::t_afbe430fa1dd0c 52,62,65,71,74,81,91
+src/modules/Bacteria/useCases/__tests__/prepareOfflineBacteria.spec.ts
+  s_2bfd55a4393d7c::t_d8dbd2d8a8dba8 48-55,57-59
+  s_2bfd55a4393d7c::t_26575378596f2f 56
+src/modules/Bacteria/AGENTS.md
+  s_2bfd55a4393d7c::t_ffef2f50b23f87 21
+  s_2bfd55a4393d7c::t_dcbece00cae46f 22
+src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaModAssignmentsWithAudio.ts
+  s_2bfd55a4393d7c::t_878f5a88292d13 7,17-18,30
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/pushBacteriaModAssignmentsToEngine.spec.ts
+  s_2bfd55a4393d7c::t_9b2275e6c7ff75 1-79
+src/modules/Bacteria/useCases/hydrateBacteriaPatchFromProject.ts
+  s_2bfd55a4393d7c::t_2ffdfb0b0ae37c 181-190
+  s_2bfd55a4393d7c::t_8559ae9b48dc61 22
+  s_2bfd55a4393d7c::t_3d6676c9439fc8 205,211
+  s_2bfd55a4393d7c::t_083b887ecf97bc 259-266
+src/modules/Bacteria/useCases/bacteriaParamBridge/pushBacteriaModAssignmentsToEngine.ts
+  s_2bfd55a4393d7c::t_12fdf2c430b017 1-35
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_2bfd55a4393d7c::t_034a26049679ac 200-211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a4fe41fb3122ee42bb6440a9824f4c65860345c9",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
