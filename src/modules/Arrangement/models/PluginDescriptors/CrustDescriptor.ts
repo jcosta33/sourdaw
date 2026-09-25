@@ -142,12 +142,12 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
                 'Manual limiter attack time',
                 'Sets how quickly gain reduction catches a transient when attackAuto is off.',
                 0,
-                30,
+                4.5,
                 [
-                    'attackAuto must be off for this value to reach the limiter, and lookahead caps how long this can actually ramp.',
+                    'attackAuto must be off for this value to reach the limiter, and lookahead sets the ramp budget it can use: within the recommended 1-5 ms lookahead range, the true-peak detector delay caps the largest attack that actually applies near 4.875 ms.',
                 ],
                 [
-                    'This value is discarded by the engine whenever attackAuto is on, so changing it has no audible effect until that switch is cleared.',
+                    'This value is discarded by the engine whenever attackAuto is on, and even with that switch off, lookahead can clamp whatever time is dialed in down to its own ramp budget before it reaches the limiter.',
                 ],
                 noExternalModulation
             ),
