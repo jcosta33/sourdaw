@@ -1,0 +1,31 @@
+scripts/__tests__/semanticReviewContext.spec.ts
+  s_1c08b47ac3792f::t_1c46fa500f149d 688-719
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_2bfd55a4393d7c::t_3226002390783e 27,318-396
+scripts/semanticReviewContext.ts
+  s_1c08b47ac3792f::t_bedd4fc99f02f8 177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2e471b46aca40530028f4ee6fb15fbeb4f57f96c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
