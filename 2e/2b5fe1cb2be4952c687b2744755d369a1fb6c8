@@ -1,0 +1,45 @@
+evidence/agent-campaign/corpora/development.json
+  s_9e15f5b7ec3308::t_8d79d130b55a77 10,16
+  s_9e15f5b7ec3308::t_5e26bd75a5db3e 912-1368
+evidence/agent-campaign/corpora/held-out.json
+  s_9e15f5b7ec3308::t_3f5915532feace 858-1314
+  s_9e15f5b7ec3308::t_57be6d6d13dd7a 10,16
+src/modules/AiRuntime/useCases/agentReference/__tests__/naturalLevelPhrasingGrounding.spec.ts
+  s_a33c5368acef99::t_8429a38354ec6e 403,407-411,413-417,427,431-435,437-441
+  s_9e15f5b7ec3308::t_3e7ecc270d402f 317-331,336-341,346-350,362-371,613
+  s_9e15f5b7ec3308::t_b36545a0887d29 495-506,507-548,605-610,616
+  s_9e15f5b7ec3308::t_19c57a7ea4846b 549-550
+  s_9e15f5b7ec3308::t_8f213928b35642 611-612,614-615,617-618
+  s_9e15f5b7ec3308::t_672c38dc4d65b6 87-102,105,332-335,342-345
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_9e15f5b7ec3308::t_b0441291deee39 1095-1096,1251-1254,1256
+  s_9e15f5b7ec3308::t_4aae26af6bcd91 1081
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_9e15f5b7ec3308::t_a4f4c87ee8680d 2424-2441
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_9e15f5b7ec3308::t_9a244e11892d4a 1942-1959
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2e2b5fe1cb2be4952c687b2744755d369a1fb6c8",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
