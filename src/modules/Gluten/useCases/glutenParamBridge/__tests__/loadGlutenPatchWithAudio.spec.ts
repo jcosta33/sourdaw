@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 import { DEFAULT_PATCH, type GlutenPatch } from '../../../models/GlutenPatch';
+import { paramBatcher } from '../helpers';
 import { loadGlutenPatchWithAudio } from '../loadGlutenPatchWithAudio';
 
 const { resolveEligibleDeviceWriteTarget, pushParamImmediately, loadGlutenPatch } = vi.hoisted(() => ({
@@ -124,4 +125,65 @@ describe('loadGlutenPatchWithAudio', () => {
             expect(warnSpy).not.toHaveBeenCalled();
         }
     );
+
+    describe('pending knob-drag rAF after a patch load', () => {
+        let rafQueue: FrameRequestCallback[];
+
+        beforeEach(() => {
+            paramBatcher.cancelAll();
+            rafQueue = [];
+            vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback): number => {
+                rafQueue.push(cb);
+                return rafQueue.length;
+            });
+            vi.stubGlobal('cancelAnimationFrame', (id: number): void => {
+                rafQueue[id - 1] = () => {};
+            });
+        });
+
+        afterEach(() => {
+            paramBatcher.cancelAll();
+            vi.unstubAllGlobals();
+        });
+
+        function flushAnimationFrames(): void {
+            const queued = rafQueue;
+            rafQueue = [];
+            for (const cb of queued) {
+                cb(0);
+            }
+        }
+
+        it('cancels the loaded device key and leaves another device pending', () => {
+            const loadedDeviceId = 'dev';
+            const otherDeviceId = 'other-dev';
+            const key = 'threshold';
+            const staleValue = 99;
+            const patch: GlutenPatch = { ...DEFAULT_PATCH, threshold: -24 };
+            const loadedFlush = vi.fn();
+            const otherFlush = vi.fn();
+
+            paramBatcher.schedule(
+                `${loadedDeviceId}:${key}`,
+                { deviceId: loadedDeviceId, key, value: staleValue },
+                loadedFlush
+            );
+            paramBatcher.schedule(
+                `${otherDeviceId}:${key}`,
+                { deviceId: otherDeviceId, key, value: staleValue },
+                otherFlush
+            );
+
+            loadGlutenPatchWithAudio(loadedDeviceId, patch);
+            flushAnimationFrames();
+
+            expect(loadedFlush).not.toHaveBeenCalled();
+            expect(otherFlush).toHaveBeenCalledWith(`${otherDeviceId}:${key}`, {
+                deviceId: otherDeviceId,
+                key,
+                value: staleValue,
+            });
+            expect(pushedValueFor(key)).toBe(-24);
+        });
+    });
 });
