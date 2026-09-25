@@ -12,34 +12,15 @@
     "census": {
         "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"
     },
-    "environment": [
-        "package.json",
-        "pnpm-lock.yaml",
-        "Cargo.lock",
-        "tsconfig.json",
-        "vite.config.ts"
-    ],
+    "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
         {
             "id": "TASK-SA-00-protocol-governance",
-            "gates": [
-                "AC-006",
-                "AC-007",
-                "AC-008",
-                "AC-017",
-                "AC-055",
-                "AC-060"
-            ]
+            "gates": ["AC-006", "AC-007", "AC-008", "AC-017", "AC-055", "AC-060"]
         },
         {
             "id": "TASK-SA-01-project-model-and-query",
-            "gates": [
-                "AC-002",
-                "AC-003",
-                "AC-004",
-                "AC-005",
-                "AC-062"
-            ]
+            "gates": ["AC-002", "AC-003", "AC-004", "AC-005", "AC-062"]
         },
         {
             "id": "TASK-SA-02-command-execution",
@@ -59,15 +40,7 @@
         },
         {
             "id": "TASK-SA-03-runtime-lifecycle",
-            "gates": [
-                "AC-018",
-                "AC-019",
-                "AC-020",
-                "AC-050",
-                "AC-052",
-                "AC-053",
-                "AC-058"
-            ]
+            "gates": ["AC-018", "AC-019", "AC-020", "AC-050", "AC-052", "AC-053", "AC-058"]
         },
         {
             "id": "TASK-SA-04-providers",
@@ -101,37 +74,19 @@
         },
         {
             "id": "TASK-SA-06-devices-assets-audio",
-            "gates": [
-                "AC-039",
-                "AC-040",
-                "AC-041",
-                "AC-042",
-                "AC-043",
-                "AC-049"
-            ]
+            "gates": ["AC-039", "AC-040", "AC-041", "AC-042", "AC-043", "AC-049"]
         },
         {
             "id": "TASK-SA-07-media-exclusions",
-            "gates": [
-                "AC-044",
-                "AC-047",
-                "AC-048"
-            ]
+            "gates": ["AC-044", "AC-047", "AC-048"]
         },
         {
             "id": "TASK-SA-08-adapters-and-platform",
-            "gates": [
-                "AC-001",
-                "AC-051",
-                "AC-057"
-            ]
+            "gates": ["AC-001", "AC-051", "AC-057"]
         },
         {
             "id": "TASK-SA-09-evidence",
-            "gates": [
-                "AC-054",
-                "AC-056"
-            ]
+            "gates": ["AC-054", "AC-056"]
         }
     ],
     "suites": [
@@ -665,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "75faa3a107d49b82ac2d3c59e762b6f8fb5ce2aaf9d701cc723b384dfd4e465f"
+                    "digest": "677e66cafbcf632377bd23e4353424007f65db78b320e5a626dae99e3dd1c3a1"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
@@ -984,32 +939,19 @@
     "collisions": [
         {
             "path": "crates/sourdaw/src",
-            "suites": [
-                "AC-030",
-                "AC-049",
-                "AC-057"
-            ]
+            "suites": ["AC-030", "AC-049", "AC-057"]
         },
         {
             "path": "scripts/agent-campaign/run-evidence-gate.ts",
-            "suites": [
-                "AC-054",
-                "AC-060"
-            ]
+            "suites": ["AC-054", "AC-060"]
         },
         {
             "path": "src/modules/AiRuntime/useCases/__tests__/agentRunRecovery.spec.ts",
-            "suites": [
-                "AC-019",
-                "AC-024"
-            ]
+            "suites": ["AC-019", "AC-024"]
         },
         {
             "path": "src/modules/AiRuntime/useCases/__tests__/agentRunWorkLease.spec.ts",
-            "suites": [
-                "AC-019",
-                "AC-020"
-            ]
+            "suites": ["AC-019", "AC-020"]
         }
     ]
 }
