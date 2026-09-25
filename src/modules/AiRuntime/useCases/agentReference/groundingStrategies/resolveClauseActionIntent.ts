@@ -1,6 +1,9 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
+import { findGappedIntentPhrase, type IntentPhraseGaps } from './findGappedIntentPhrase';
+import { getClauseIntentVocabulary, type CreationProposal } from './getClauseIntentVocabulary';
 import { getIntentPhraseIndex } from './getIntentPhraseIndex';
+import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { isExplicitCommandClause } from './isExplicitCommandClause';
 import { isGenericDeviceIntent } from './isGenericDeviceIntent';
 import { isNegatedIntent } from './isNegatedIntent';
@@ -14,23 +17,47 @@ type ClauseActionIntent = {
     phrase: string;
 };
 
+/** The earliest place the phrase names its action: contiguously, or across one gap the clause admits. */
+function findPhraseIndex(maskedText: string, phrase: string, gaps: IntentPhraseGaps): number {
+    const contiguousIndex = getIntentPhraseIndex(maskedText, phrase);
+    const gapped = findGappedIntentPhrase(maskedText, phrase, gaps);
+    if (gapped === null || (contiguousIndex >= 0 && contiguousIndex <= gapped.index)) {
+        return contiguousIndex;
+    }
+    return gapped.index;
+}
+
+function getCreationProposal(
+    expectedActionType: string | undefined,
+    proposedNames: readonly string[]
+): CreationProposal | undefined {
+    if (expectedActionType === undefined || proposedNames.length === 0) {
+        return undefined;
+    }
+    return { actionType: expectedActionType, proposedNames };
+}
+
 export function resolveClauseActionIntent(
     maskedText: string,
     catalog: GroundingCatalog,
-    expectedActionType?: string
+    expectedActionType?: string,
+    proposedNames: readonly string[] = []
 ): ClauseActionIntent | null {
-    if (!isExplicitCommandClause(maskedText, catalog)) {
+    const creationProposal = getCreationProposal(expectedActionType, proposedNames);
+    if (!isExplicitCommandClause(maskedText, catalog, creationProposal)) {
         return null;
     }
+    const statedLevelForms = getStatedDecibelLevelForms(maskedText);
     const matches = catalog
-        .flatMap((entry) =>
-            entry.intentPhrases.map((phrase) => ({
+        .flatMap((entry) => {
+            const vocabulary = getClauseIntentVocabulary(entry, statedLevelForms, creationProposal);
+            return vocabulary.phrases.map((phrase) => ({
                 actionType: entry.actionType,
-                index: getIntentPhraseIndex(maskedText, phrase),
+                index: findPhraseIndex(maskedText, phrase, vocabulary.gaps),
                 phrase,
-            }))
-        )
-        .filter((match) => match.index >= 0 && !isNegatedIntent(maskedText, match.phrase))
+            }));
+        })
+        .filter((match) => match.index >= 0 && !isNegatedIntent(maskedText, match.phrase, match.index))
         .sort((left, right) => {
             const genericDifference =
                 Number(isGenericDeviceIntent(left.phrase)) - Number(isGenericDeviceIntent(right.phrase));

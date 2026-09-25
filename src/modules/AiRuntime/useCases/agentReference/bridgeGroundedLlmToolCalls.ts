@@ -76,13 +76,22 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
-import { classifyPromptDecibelFigures, type PromptNumber } from './groundingStrategies/classifyPromptDecibelFigures';
+import {
+    bindDecibelFiguresToReferences,
+    type PromptReferenceSpan,
+} from './groundingStrategies/bindDecibelFiguresToReferences';
+import {
+    classifyPromptDecibelFigures,
+    type PromptDecibelFigure,
+    type PromptNumber,
+} from './groundingStrategies/classifyPromptDecibelFigures';
 import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
+import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -90,6 +99,7 @@ import { getIntentPhraseIndex } from './groundingStrategies/getIntentPhraseIndex
 import { getNearestIntentAction } from './groundingStrategies/getNearestIntentAction';
 import { getPromptClauses } from './groundingStrategies/getPromptClauses';
 import { getReferencedCancellationAction } from './groundingStrategies/getReferencedCancellationAction';
+import { getStatedDecibelLevelForms } from './groundingStrategies/getStatedDecibelLevelForms';
 import { getTargetPromptScope } from './groundingStrategies/getTargetPromptScope';
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
 import { hasTrailingIntentCancellation } from './groundingStrategies/hasTrailingIntentCancellation';
@@ -106,6 +116,7 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
+import { splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
@@ -1011,6 +1022,137 @@ function refusesCreativeWholePromptScope(input: {
     );
 }
 
+type PromptClauseScope = ActionPromptScope & {
+    end: number;
+    start: number;
+};
+
+/** The names the same-action calls of a creation propose for the objects they create. */
+function getProposedCreationNames(
+    actionName: string,
+    assertedArguments: readonly Readonly<Record<string, unknown>>[]
+): string[] {
+    if (!BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(actionName)) {
+        return [];
+    }
+    return assertedArguments.flatMap((arguments_) =>
+        typeof arguments_.name === 'string' && normalizePromptText(arguments_.name).length > 0 ? [arguments_.name] : []
+    );
+}
+
+/**
+ * Whether a clause names a send ("the Kick send", "send the Kick to the Drum Bus") or the master.
+ * Either one is what a level stated there moves, never a track fader.
+ */
+function namesSendOrMaster(clause: PromptClause, context: ProjectContext): boolean {
+    if (/□\s+sends?\b/u.test(clause.masked) || /\bsends?\b.*\b(?:to|into)\b/iu.test(clause.masked)) {
+        return true;
+    }
+    return namesMaster(clause, context);
+}
+
+function isBareMasterReference(reference: string): boolean {
+    return normalizePromptText(reference) === 'master';
+}
+
+/**
+ * The project's objects other than the master, less any whose whole name is the bare word "master":
+ * a synth parameter named "Master" cannot tell the master apart from itself, so it never hides it.
+ */
+function getOtherThanMasterReferences(context: ProjectContext): ProjectContext {
+    return {
+        ...context,
+        vcaGroups: context.vcaGroups?.filter((group) => !isBareMasterReference(group.name)),
+        tracks: context.tracks
+            .filter((track) => track.kind !== 'master' && !isBareMasterReference(track.name))
+            .map((track) => ({
+                ...track,
+                clips: track.clips.filter((clip) => !isBareMasterReference(clip.name)),
+                devices: track.devices.map((device) => ({
+                    ...device,
+                    parameters: device.parameters?.filter(
+                        (parameter) => !isBareMasterReference(parameter.id) && !isBareMasterReference(parameter.name)
+                    ),
+                })),
+            })),
+    };
+}
+
+/** Whether a clause names the master itself, outside a longer name of another project object ("Master Keys"). */
+function namesMaster(clause: PromptClause, context: ProjectContext): boolean {
+    return /\bmaster\b/iu.test(maskProjectReferences(clause.text, getOtherThanMasterReferences(context)));
+}
+
+/**
+ * Whether a clause states a level the action never moves: a send's or the master's for a track
+ * fader, and anything but the master's for the master fader.
+ */
+function namesLevelOutsideActionFader(actionName: string, clause: PromptClause, context: ProjectContext): boolean {
+    if (actionName === 'setTrackGain') {
+        return namesSendOrMaster(clause, context);
+    }
+    return actionName === 'setMasterGain' && !namesMaster(clause, context);
+}
+
+/**
+ * A clause that only adds one more reference and its decibel figure to the level change before it:
+ * "and the Snare at -9 dB". The figure's connector states its form, and the action must declare it.
+ */
+function isLevelContinuationClause(
+    maskedClause: string,
+    decibelLevelForms: readonly ('absolute-decibel' | 'relative-decibel')[]
+): boolean {
+    if (
+        !/^\s*(?:(?:the|a|an)\s+)?(?:clip)?□+\s+(?:at|to|by|up|down)\s+[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*d\s?b\s*$/iu.test(
+            maskedClause
+        )
+    ) {
+        return false;
+    }
+    const statedLevelForms = getStatedDecibelLevelForms(maskedClause);
+    return decibelLevelForms.some((form) => statedLevelForms.has(form));
+}
+
+/**
+ * The scope extended over a continuation clause. The continuation's reference joins the source
+ * side; the destination stays the one the scope already named.
+ */
+function mergeLevelContinuation(
+    scope: PromptClauseScope,
+    continuation: { end: number },
+    prompt: string,
+    maskedPrompt: string
+): PromptClauseScope {
+    const roleTexts = scope.roleTexts ?? {
+        destination: getTargetPromptScope(scope, 'destination'),
+        source: getTargetPromptScope(scope, 'source'),
+    };
+    return {
+        ...scope,
+        end: continuation.end,
+        masked: maskedPrompt.slice(scope.start, continuation.end),
+        referenceSlots: (scope.referenceSlots ?? 1) + 1,
+        roleTexts: {
+            destination: roleTexts.destination,
+            source: `${roleTexts.source} ${prompt.slice(scope.end, continuation.end)}`,
+        },
+        text: prompt.slice(scope.start, continuation.end),
+    };
+}
+
+/** The scope grounding the call at `actionOrdinal`, counting each scope once per reference slot. */
+function getScopeAtOrdinal(scopes: readonly PromptClauseScope[], actionOrdinal: number): PromptClauseScope | undefined {
+    let firstOrdinal = 0;
+    for (const scope of scopes) {
+        const slots = scope.referenceSlots ?? 1;
+        if (actionOrdinal < firstOrdinal + slots) {
+            return scope;
+        }
+        firstOrdinal += slots;
+    }
+    return undefined;
+}
+
 function resolveActionPromptScope({
     actionName,
     actionOrdinal,
@@ -1075,15 +1217,20 @@ function resolveActionPromptScope({
     if (actionName === 'glueClips') {
         maskedPrompt = maskGlueClipPairConjunction(maskedPrompt);
     }
-    const matchingScopes: ActionPromptScope[] = [];
-    for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+    const proposedNames = getProposedCreationNames(actionName, sameActionAssertedArguments);
+    const decibelLevelForms = catalog.find((entry) => entry.actionType === actionName)?.decibelLevelForms ?? [];
+    const matchingScopes: PromptClauseScope[] = [];
+    let takesContinuation = false;
+    for (const clause of splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog)) {
+        const continuesScope = takesContinuation;
+        takesContinuation = false;
         const controlTargetReferences = getAssertedControlTargetReferences(
             groundingRules,
             sameActionAssertedArguments,
             context,
             clause.text
         );
-        const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
+        const intent = resolveClauseActionIntent(clause.masked, catalog, actionName, proposedNames);
         if (intent) {
             if (intent.actionType === actionName) {
                 if (
@@ -1092,8 +1239,28 @@ function resolveActionPromptScope({
                 ) {
                     continue;
                 }
+                if (namesLevelOutsideActionFader(actionName, clause, context)) {
+                    continue;
+                }
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
+                takesContinuation = decibelLevelForms.length > 0;
             }
+            continue;
+        }
+        const previousScope = matchingScopes.at(-1);
+        if (
+            continuesScope &&
+            previousScope &&
+            isLevelContinuationClause(clause.masked, decibelLevelForms) &&
+            !namesLevelOutsideActionFader(actionName, clause, context)
+        ) {
+            matchingScopes[matchingScopes.length - 1] = mergeLevelContinuation(
+                previousScope,
+                clause,
+                prompt,
+                maskedPrompt
+            );
+            takesContinuation = true;
             continue;
         }
         const directionalIntentPhrase =
@@ -1106,11 +1273,26 @@ function resolveActionPromptScope({
         }
     }
     const appliesOneExplicitScopeToCompilerExpansion = compilerExpandedTargets && matchingScopes.length === 1;
-    if (!appliesOneExplicitScopeToCompilerExpansion && matchingScopes.length !== sameActionCallCount) {
+    const referenceSlotCount = matchingScopes.reduce((count, scope) => count + (scope.referenceSlots ?? 1), 0);
+    if (!appliesOneExplicitScopeToCompilerExpansion && referenceSlotCount !== sameActionCallCount) {
         return null;
     }
-    const selectedScope = matchingScopes[appliesOneExplicitScopeToCompilerExpansion ? 0 : actionOrdinal];
+    const selectedScope = appliesOneExplicitScopeToCompilerExpansion
+        ? matchingScopes[0]
+        : getScopeAtOrdinal(matchingScopes, actionOrdinal);
     if (!selectedScope) {
+        return null;
+    }
+    if (
+        proposedNames.length > 0 &&
+        !selectedScope.directional &&
+        resolveClauseActionIntent(
+            selectedScope.masked,
+            catalog,
+            actionName,
+            getProposedCreationNames(actionName, [assertedArguments])
+        )?.actionType !== actionName
+    ) {
         return null;
     }
     const selectedTargetReferences = getAssertedControlTargetReferences(
@@ -1882,48 +2064,6 @@ function normalizePromptNumber(
     return value;
 }
 
-/**
- * Every complete numeric expression one scope states. A leading `+` is part of
- * the figure: "+3 dB" is a change upward, and reading it as an unsigned 3 loses
- * the only thing that says which way. Adjacent numeric fragments stay one raw
- * token even when malformed, so `1/2/3 dB` cannot authorize its suffix `3 dB`.
- */
-function findPromptNumbers(maskedScope: string): PromptNumber[] {
-    const discovered = [
-        ...maskedScope.matchAll(/[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?/gu),
-    ];
-    const numbers: PromptNumber[] = [];
-    for (const match of discovered) {
-        let index = match.index;
-        while (index > 0 && (maskedScope[index - 1] === '+' || maskedScope[index - 1] === '-')) {
-            index -= 1;
-        }
-        const end = match.index + match[0].length;
-        const previous = numbers[numbers.length - 1];
-        const separator = previous ? maskedScope.slice(previous.end, index) : '';
-        const continuesPrevious =
-            previous !== undefined &&
-            ((separator === '' && /^[.+-]/u.test(maskedScope.slice(index, end))) ||
-                /^\s*\/[-\s/+.]*$/u.test(separator) ||
-                /^[.+-]+$/u.test(separator));
-        if (continuesPrevious) {
-            previous.end = end;
-            previous.raw = maskedScope.slice(previous.index, end);
-            continue;
-        }
-        numbers.push({ end, index, raw: maskedScope.slice(index, end) });
-    }
-    for (const number of numbers) {
-        const incompleteFraction = /^\s*\/\s*[+-]*(?=[^\d.]|$)/u.exec(maskedScope.slice(number.end));
-        if (!incompleteFraction) {
-            continue;
-        }
-        number.end += incompleteFraction[0].length;
-        number.raw = maskedScope.slice(number.index, number.end);
-    }
-    return numbers;
-}
-
 function isRatioUnitDenominator(maskedScope: string, number: PromptNumber): boolean {
     return /(?:\d|\.)\s*:\s*$/u.test(maskedScope.slice(0, number.index));
 }
@@ -1971,17 +2111,77 @@ function getAdjacentDeviceParameterUnits(
     return units;
 }
 
+function getFiguresInLevelForm(
+    figures: readonly PromptDecibelFigure[],
+    levelForm: 'absolute-decibel' | 'relative-decibel'
+): number[] {
+    const statedForm = levelForm === 'absolute-decibel' ? 'absolute' : 'relative';
+    return figures
+        .filter((figure) => figure.form === statedForm)
+        .map((figure) => figure.db)
+        .filter((db): db is number => db !== null);
+}
+
 /** The decibel figures the request states in the form this rule accepts, and no others. */
 function getStatedDecibelFigures(
     maskedScope: string,
     numbers: readonly PromptNumber[],
     levelForm: 'absolute-decibel' | 'relative-decibel'
 ): number[] {
-    const statedForm = levelForm === 'absolute-decibel' ? 'absolute' : 'relative';
-    return classifyPromptDecibelFigures(maskedScope, numbers)
-        .filter((figure) => figure.form === statedForm)
-        .map((figure) => figure.db)
-        .filter((db): db is number => db !== null);
+    return getFiguresInLevelForm(classifyPromptDecibelFigures(maskedScope, numbers), levelForm);
+}
+
+/** Every project track the scope text names, longest name first, one span per stretch of text. */
+function getTrackReferenceSpans(
+    scopeText: string,
+    tracks: readonly { id: string; name: string }[]
+): PromptReferenceSpan[] {
+    const spans: PromptReferenceSpan[] = [];
+    for (const track of tracks.toSorted((left, right) => right.name.length - left.name.length)) {
+        for (const range of getReferenceRanges(scopeText, track.name)) {
+            if (spans.some((span) => range.start < span.end && range.end > span.start)) {
+                continue;
+            }
+            spans.push({ ...range, id: track.id });
+        }
+    }
+    return spans;
+}
+
+/**
+ * The decibel figures a scope naming several tracks binds to this call's own track, or `undefined`
+ * when the scope names fewer than two and every figure it states is this call's. The call's track
+ * is its first grounded non-destination target; tracks the call's other targets name, such as the
+ * bus a send feeds, are not candidates.
+ */
+function getReferenceBoundDecibelFigures(
+    actionScope: ActionPromptScope,
+    targetRules: GroundingRules['targetRules'],
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): readonly PromptDecibelFigure[] | undefined {
+    const anchorRule = targetRules.find(
+        (targetRule) =>
+            targetRule.promptRole !== 'destination' && typeof groundedArguments[targetRule.argument] === 'string'
+    );
+    const anchorId = anchorRule ? groundedArguments[anchorRule.argument] : undefined;
+    if (typeof anchorId !== 'string' || !context.tracks.some((track) => track.id === anchorId)) {
+        return undefined;
+    }
+    const otherTargetIds = new Set(
+        targetRules
+            .filter((targetRule) => targetRule !== anchorRule)
+            .map((targetRule) => groundedArguments[targetRule.argument])
+    );
+    const references = getTrackReferenceSpans(
+        actionScope.text,
+        context.tracks.filter((track) => !otherTargetIds.has(track.id))
+    );
+    if (new Set(references.map((reference) => reference.id)).size < 2) {
+        return undefined;
+    }
+    const figures = classifyPromptDecibelFigures(actionScope.masked, findPromptNumbers(actionScope.masked));
+    return bindDecibelFiguresToReferences(actionScope.text, references, figures).get(anchorId) ?? [];
 }
 
 /**
@@ -1998,7 +2198,8 @@ function statesDecibelFigure(maskedScope: string): boolean {
 function getExpectedNumbers(
     actionScope: ActionPromptScope,
     valueRule: GroundingValueRule,
-    automationLane: AutomationLaneValueRange | undefined
+    automationLane: AutomationLaneValueRange | undefined,
+    referenceBoundFigures?: readonly PromptDecibelFigure[]
 ): number[] | null {
     if (valueRule.kind !== 'number-if-present') {
         return [];
@@ -2013,6 +2214,9 @@ function getExpectedNumbers(
         return null;
     }
     if (valueRule.levelForm === 'absolute-decibel' || valueRule.levelForm === 'relative-decibel') {
+        if (referenceBoundFigures !== undefined) {
+            return getFiguresInLevelForm(referenceBoundFigures, valueRule.levelForm);
+        }
         return getStatedDecibelFigures(actionScope.masked, numbers, valueRule.levelForm);
     }
     if (valueRule.unit === 'stretch-ratio') {
@@ -2615,7 +2819,8 @@ function validateNumberValue(
     assertedValue: unknown,
     actionScope: ActionPromptScope,
     groundedArguments: Record<string, unknown>,
-    context: ProjectContext
+    context: ProjectContext,
+    referenceBoundFigures: readonly PromptDecibelFigure[] | undefined
 ): string | null {
     if (valueRule.levelForm === 'linear' && statesDecibelFigure(actionScope.masked)) {
         return `Provider value ${valueRule.argument} must use the decibel form the request states`;
@@ -2624,7 +2829,7 @@ function validateNumberValue(
     if (automationLane === null) {
         return getValueMismatchReason(valueRule.argument);
     }
-    const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane);
+    const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane, referenceBoundFigures);
     if (expectedNumbers === null) {
         return getValueMismatchReason(valueRule.argument);
     }
@@ -2944,7 +3149,8 @@ function validateGroundedValue(
     actionScope: ActionPromptScope,
     groundedArguments: Record<string, unknown>,
     context: ProjectContext,
-    admitsCreativeCall: boolean
+    admitsCreativeCall: boolean,
+    referenceBoundFigures: readonly PromptDecibelFigure[] | undefined
 ): string | null {
     if (
         admitsCreativeCall &&
@@ -2956,7 +3162,14 @@ function validateGroundedValue(
         case 'boolean-intent':
             return validateBooleanIntentValue(valueRule, assertedValue, actionScope);
         case 'number-if-present':
-            return validateNumberValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+            return validateNumberValue(
+                valueRule,
+                assertedValue,
+                actionScope,
+                groundedArguments,
+                context,
+                referenceBoundFigures
+            );
         case 'marker-beat': {
             const expectedBeat = getMarkerBeatFromPrompt(actionScope.text);
             return assertedValue === expectedBeat ? null : getValueMismatchReason(valueRule.argument);
@@ -3080,6 +3293,12 @@ function validateGroundedValues(
     clipRenameCarrier: ValidClipRenameCarrier | null,
     admitsCreativeCall: boolean
 ): string | null {
+    const referenceBoundFigures = getReferenceBoundDecibelFigures(
+        actionScope,
+        groundingRules.targetRules,
+        groundedArguments,
+        context
+    );
     for (const valueRule of groundingRules.valueRules) {
         if (statesLevelInAnotherForm(valueRule, groundingRules, groundedArguments)) {
             continue;
@@ -3094,7 +3313,8 @@ function validateGroundedValues(
                 actionScope,
                 groundedArguments,
                 context,
-                admitsCreativeCall
+                admitsCreativeCall,
+                referenceBoundFigures
             );
         } else {
             const matchesRenameValue =
@@ -3931,16 +4151,18 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = compilerTargetOverride.stableIds[0];
             continue;
         }
-        const bulkSiblingTargetIds =
-            call.name === 'setTrackOutput' && targetRule.argument === 'trackId'
-                ? sameActionAssertedArguments.flatMap((arguments_) => {
-                      const trackId = arguments_.trackId;
-                      if (typeof trackId !== 'string' || trackId === assertedValue) {
-                          return [];
-                      }
-                      return [trackId];
-                  })
-                : [];
+        const groundsSiblingReferences =
+            (call.name === 'setTrackOutput' && targetRule.argument === 'trackId') ||
+            ((actionScope.referenceSlots ?? 1) > 1 && targetRule.promptRole !== 'destination');
+        const bulkSiblingTargetIds = groundsSiblingReferences
+            ? sameActionAssertedArguments.flatMap((arguments_) => {
+                  const siblingId = arguments_[targetRule.argument];
+                  if (typeof siblingId !== 'string' || siblingId === assertedValue) {
+                      return [];
+                  }
+                  return [siblingId];
+              })
+            : [];
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
