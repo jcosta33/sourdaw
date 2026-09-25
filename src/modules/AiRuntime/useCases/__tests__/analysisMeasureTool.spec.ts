@@ -532,7 +532,14 @@ describe('analysis.measure', () => {
         expect(crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint).not.toHaveBeenCalled();
     });
 
-    it('passes an unavailable low-frequency stereo reading through unchanged', async () => {
+    it('passes a mono render unavailable low-frequency stereo reading through unchanged', async () => {
+        // Render mono to ensure unavailable due to lacking stereo channels
+        const monoClicks = clickChannel(
+            SAMPLE_RATE * 4,
+            [0.5, 1.5, 2.5, 3.5].map((second) => second * SAMPLE_RATE)
+        );
+        engine.renderOffline.mockResolvedValue(fakeBuffer([monoClicks]));
+
         const { receipt } = await measureOnce({
             scope: MASTER,
             range: CHORUS,
@@ -541,7 +548,7 @@ describe('analysis.measure', () => {
 
         expect(receipt.data).toMatchObject({ metrics: ['lowFrequencyStereoContent'] });
         expect((receipt.data as { targets: { measurements: unknown }[] }).targets[0]?.measurements).toEqual({
-            lowFrequencyStereoContent: { status: 'unavailable', reason: 'not-implemented' },
+            lowFrequencyStereoContent: { status: 'unavailable', reason: 'mono' },
         });
     });
 
