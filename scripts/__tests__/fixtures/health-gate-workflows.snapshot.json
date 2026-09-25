@@ -2280,6 +2280,10 @@
         "if": "${{ !cancelled() && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false && github.event.pull_request.base.ref == 'main')) }}",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 30,
+        "outputs": {
+          "coverage": "${{ steps.coverage.outputs.coverage }}",
+          "attempt": "${{ github.run_attempt }}"
+        },
         "steps": [
           {
             "name": "Checkout the trusted revision",
@@ -2325,10 +2329,44 @@
             "name": "Upload the advisory report",
             "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "with": {
-              "name": "semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}",
+              "name": "semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}",
               "path": "${{ runner.temp }}/semantic-review",
               "retention-days": 7
             }
+          },
+          {
+            "name": "Compute the coverage line",
+            "id": "coverage",
+            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\ncoverage='no assessment delivered'\nif [ -f \"$report_directory/scan.json\" ]; then\n  # The figure is labelled as distinct path-and-reason pairs because\n  # that is what it counts: the report counts regions, and its producer\n  # emits one identical entry per over-budget region of a file. Counting\n  # those repeats as withheld would contradict the annotations, which\n  # collapse them, and dropping the pair's reason would hide it.\n  computed=$(jq -r '\"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | unique_by([.path, .reason]) | length)) distinct path-and-reason pairs\"' \"$report_directory/scan.json\" 2>/dev/null || true)\n  if [ -n \"$computed\" ]; then\n    coverage=$computed\n  fi\nfi\nprintf 'coverage=%s\\n' \"$coverage\" >> \"$GITHUB_OUTPUT\"\n"
+          }
+        ]
+      },
+      "coverage": {
+        "name": "Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}",
+        "needs": "assess",
+        "if": "${{ !cancelled() }}",
+        "runs-on": "ubuntu-latest",
+        "permissions": {
+          "contents": "read"
+        },
+        "steps": [
+          {
+            "name": "Download the advisory report",
+            "id": "download",
+            "continue-on-error": true,
+            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "with": {
+              "name": "semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ needs.assess.outputs.attempt }}",
+              "path": "${{ runner.temp }}/semantic-review"
+            }
+          },
+          {
+            "name": "Publish the withheld paths",
+            "env": {
+              "DOWNLOAD_OUTCOME": "${{ steps.download.outcome }}",
+              "COVERAGE_LINE": "${{ needs.assess.outputs.coverage }}"
+            },
+            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nreport=\"$report_directory/scan.json\"\nwithheld_list=\"$report_directory/withheld-notices.txt\"\n# Three absences, told apart by what the fetch proved. A missing or\n# empty report with a failed fetch is either a retrieval failure (the\n# line exists, so this run published one) or a run that published\n# nothing; a missing or empty report with a successful fetch disproves\n# \"published nothing\" and is a report that cannot be read.\nif [ ! -s \"$report\" ]; then\n  if [ \"$DOWNLOAD_OUTCOME\" = 'failure' ]; then\n    if [ -n \"$COVERAGE_LINE\" ]; then\n      printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'\n    else\n      printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'\n    fi\n    exit 0\n  fi\n  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'\n  exit 0\nfi\n\n# One annotation per distinct withheld path-and-reason pair, in the\n# order the report lists them. The producer emits one identical entry\n# per over-budget region of a file, so the pairs are deduplicated while\n# every distinct reason is kept: emitting the repeats would spend the\n# budget on the same notice and hide a distinct reason, and sorting the\n# survivors would let the ten-pair budget fall on alphabet rather than\n# on the report's own order. The `file=` property is identity-bearing,\n# so it is escaped exactly and never folded: folding a control\n# character into a space would annotate two paths under one name and\n# attribute a reason to the wrong file. The property escapes `%`, a\n# carriage return, a newline, `:`, and `,`; the displayed text escapes\n# `%`, a carriage return, and a newline.\nif ! jq -r '\n  def esc_data: gsub(\"%\"; \"%25\") | gsub(\"\\r\"; \"%0D\") | gsub(\"\\n\"; \"%0A\");\n  def esc_prop: esc_data | gsub(\":\"; \"%3A\") | gsub(\",\"; \"%2C\");\n  [.scope.unassessed[], .scope.truncated[]]\n  | reduce .[] as $entry (\n      { seen: {}, distinct: [] };\n      ($entry | [.path, .reason] | tojson) as $key\n      | if .seen[$key] then . else .seen[$key] = true | .distinct += [$entry] end\n    )\n  | .distinct[]\n  | \"::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)\"\n' \"$report\" > \"$withheld_list\" 2>/dev/null; then\n  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'\n  exit 0\nfi\n\n# At most ten annotations, one per distinct pair, then one notice\n# counting the pairs that were not annotated.\nwithheld=0\nannotated=0\nwhile IFS= read -r notice; do\n  withheld=$((withheld + 1))\n  if [ \"$annotated\" -lt 10 ]; then\n    printf '%s\\n' \"$notice\"\n    annotated=$((annotated + 1))\n  fi\ndone < \"$withheld_list\"\n\nprintf '::notice title=Jev coverage::%s further distinct path-and-reason pairs were not annotated.\\n' \"$((withheld - annotated))\"\n"
           }
         ]
       }

@@ -87,12 +87,13 @@ not train on customer data, but zero-data retention is an enterprise offering an
 here.
 
 The workflow definition is now part of the pinned health-gate surface. It is registered in
-`HEALTH_GATE_WORKFLOW_FILES`, its jobs and ordered steps are in `STEP_INVENTORY`, its file may grant
-no job-level permissions, and its whole parsed contents are in the recorded snapshot, so any edit
-fails the harness until the record is regenerated and the diff reviewed. The properties that make the
-trust boundary hold are pinned beside the snapshot in `semanticReviewWorkflowContract.ts`, which
-refuses a head checkout, a `pull_request` trigger, a persisted credential, a key on any other step, a
-widened token, a dropped fork gate, and a renamed check.
+`HEALTH_GATE_WORKFLOW_FILES`, its jobs and ordered steps are in `STEP_INVENTORY`, and its whole
+parsed contents are in the recorded snapshot, so any edit fails the harness until the record is
+regenerated and the diff reviewed. The properties that make the trust boundary hold are pinned beside
+the snapshot in `semanticReviewWorkflowContract.ts`, which refuses a head checkout, a `pull_request`
+trigger, a persisted credential, a key on any other step, a widened token, a dropped fork gate, and a
+renamed check. That contract also fixes the job-level permissions: the assessment job grants none,
+and the coverage job that annotates the withheld paths grants exactly `contents: read`.
 
 Three things remain true and are worth stating plainly. The signal's usefulness is still unmeasured —
 no labelled evaluation exists, and a green check means the assessment ran. The provider's judgement
