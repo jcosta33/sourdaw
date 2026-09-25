@@ -5021,6 +5021,18 @@ describe('fresh reviewer dossier publication', () => {
         throw new Error('expected the publication to refuse');
     }
 
+    /**
+     * The escalation refusal may name baseSha inside the field set it demands, and nowhere else:
+     * a clause that mentions the base outside that list is how a manifest incomplete in a
+     * different field gets blamed on a base that is present and readable. Asserting on the
+     * remainder rather than on a known bad phrase keeps the guard tied to that claim.
+     */
+    function assertRefusalBlamesNoFieldOutsideRequiredSet(message: string): void {
+        const requiredFields = /incomplete in pr, baseRefName, baseSha, or headSha/;
+        expect(message).toMatch(requiredFields);
+        expect(message.replace(requiredFields, '')).not.toMatch(/base/i);
+    }
+
     function dossierFixture(
         input: {
             plan?: unknown;
@@ -5408,7 +5420,7 @@ describe('fresh reviewer dossier publication', () => {
             rmSync(join(fixture.bundle, 'manifest.json'));
             const message = refusalMessage(() => publishReview(number, fixture.port));
             expect(message).toMatch(/does not supply a usable review bundle context/);
-            expect(message).not.toMatch(/no readable baseSha/);
+            assertRefusalBlamesNoFieldOutsideRequiredSet(message);
             expect(message).toMatch(/reassessment\.json/);
             expect(message).not.toMatch(/ENOENT/);
             expect(fixture.posted.review).toBeUndefined();
@@ -5432,9 +5444,7 @@ describe('fresh reviewer dossier publication', () => {
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
             expect(message).toMatch(/does not supply a usable review bundle context/);
-            expect(message).toMatch(/incomplete in pr, baseRefName, baseSha, or headSha/);
-            expect(message).not.toMatch(/no readable baseSha/);
-            expect(message).not.toMatch(/unverifiable/);
+            assertRefusalBlamesNoFieldOutsideRequiredSet(message);
             expect(message).toMatch(/reassessment\.json/);
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
