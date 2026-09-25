@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts
+  s_1c08b47ac3792f::t_e7ceb12adedb6a 536-542,551
+  s_1c08b47ac3792f::t_fa428ae23c853e 535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6ec539eab74b49278f4dbe969d17b2e20d7af4f5",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
