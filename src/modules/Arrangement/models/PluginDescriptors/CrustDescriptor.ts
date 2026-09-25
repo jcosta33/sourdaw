@@ -225,10 +225,10 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
                 2,
                 8,
                 [
-                    "Only audible while satEnabled is on and satDrive is adding harmonic content; it has no effect on the limiter's own true-peak detector.",
+                    'Only applies while satEnabled is on and satMix is above zero, whatever satDrive is set to; the saturator stage stays idle and skips its oversampling step entirely when either is off, regardless of drive.',
                 ],
                 [
-                    'Raising this without satEnabled on spends CPU oversampling a saturation stage that is not producing any harmonics.',
+                    "Lowering this while the stage is engaged trades reduced CPU cost for more audible aliasing from the harmonic generator, since fewer oversampled points separate the shaping curve's harmonics from the Nyquist fold.",
                 ],
                 noExternalModulation
             ),
