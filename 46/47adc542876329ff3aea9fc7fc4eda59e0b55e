@@ -1,0 +1,23 @@
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/loadGlutenPatchWithAudio.spec.ts
+  s_b9f6de95080875::t_37ed36dc5ef466 128-188
+  s_b9f6de95080875::t_dd8b48f2378dfd 1,7
+src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts
+  s_b9f6de95080875::t_54858d7d37c176 8
+  s_b9f6de95080875::t_726f62cb27ea82 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4647adc542876329ff3aea9fc7fc4eda59e0b55e",
+  "prompts": {},
+  "sessions": {
+    "s_b9f6de95080875": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "50f73aa5-eebb-4cb9-8a31-2a25755f93a5",
+        "model": "cursor-grok-4.6-xhigh"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
