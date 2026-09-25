@@ -7,7 +7,7 @@ Multiband creative multi-effects framework (crossover filtering, multi-model dis
 - **Stores** (`stores/index.ts`): `bacteriaStore`, `updateBacteriaMeters`.
 - **Views** (`presentations/views/index.ts`): `BacteriaPanel`.
 - **Events** (`events/index.ts`): No public events.
-- **Use Cases** (`useCases/index.ts`): No public cross-module use cases; internal parameter bridge and preset loaders consume state within the module.
+- **Use Cases** (`useCases/index.ts`): `initBacteriaSubscribers`, `initBacteriaModAssignmentsPersistence`, `prepareOfflineBacteria`. Internal parameter bridge and preset loaders otherwise consume state within the module.
 
 ## Key Subsystems
 
@@ -19,6 +19,7 @@ Multiband creative multi-effects framework (crossover filtering, multi-model dis
 ## Invariants & Traps
 
 - `modAssignments` are structured routing rows, never scalar engine parameters: the scalar bridge only transmits `(paramId, value)` pairs. The whole table reaches the engine as one replacement through the patch door (`updateDevicePatch` → the worklet's `set-mod-assignments`), from `loadBacteriaPatchWithAudio` and from `setBacteriaModAssignmentsWithAudio`. The engine table has no per-entry removal — removal, undo, and reload are clear-then-re-add. `snapshots` remain UI/persistence metadata with no engine push.
+- The table also persists in project truth: `initBacteriaModAssignmentsPersistence` mirrors every session-store edit into the device's `deviceState` chunk (`BacteriaModAssignmentsState.ts`) through `commitBacteriaModAssignments`, skipping the write when the store already matches what the document holds. `bacteriaSubscriber.ts` re-applies that chunk through `setBacteriaModAssignmentsWithAudio` once a freshly built live worklet emits `audioDevice.loaded` — construction alone never reads the document. The Web Audio offline export posts the same table from `prepareOfflineBacteria`, mapped through `mapBacteriaModAssignments` and refused above the live node's own 64-row limit.
 - Crossover slope is index-encoded (0=12 dB/oct, 1=24 dB/oct, 2=36 dB/oct, 3=48 dB/oct).
 - DSP engine lives in `crates/daw-dsp/src/bacteria/` compiled to WASM; render path is strictly non-allocating.
 

@@ -1,4 +1,5 @@
 import { type Device } from '#/modules/Arrangement/stores';
+import { prepareOfflineBacteria } from '#/modules/Bacteria/useCases';
 import { prepareCrumbsEngine, captureCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { prepareOfflineGrandBoule, captureOfflineGrandBoule } from '#/modules/GrandBoule/useCases';
 import { prepareOfflineLevain, captureOfflineLevain } from '#/modules/Levain/useCases';
@@ -170,7 +171,12 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // state is read-only telemetry, and the true-peak hold is a UI affordance,
     // so there is nothing an export needs that a flat map of numbers misses.
     crust: null,
-    bacteria: null,
+    // Its modulation-routing table is a variable-length list of rows, not a fixed
+    // set of numeric leaves, so it rides `deviceState` rather than `parameterValues`
+    // — the same chunk the live load subscriber re-applies. Without this arm an
+    // export replayed every band and knob but silently dropped every LFO, envelope
+    // and macro routing the project held.
+    bacteria: ({ deviceState, port }) => prepareOfflineBacteria({ deviceState, port }),
     grinder: null,
     // Its module order is persisted as `chain_order_N` params the worklet ignores;
     // only a `reorder` message moves the chain, and nothing offline sent one, so

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Device } from '#/modules/Arrangement/stores';
 import { createTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { prepareOfflineBacteria } from '#/modules/Bacteria/useCases';
 import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import {
     createGrandBouleStore,
@@ -51,6 +52,10 @@ vi.mock('#/modules/GrandBoule/useCases', async (importOriginal) => {
 vi.mock('#/modules/Toaster/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Toaster/useCases')>();
     return { ...actual, prepareOfflineToaster: vi.fn(actual.prepareOfflineToaster) };
+});
+vi.mock('#/modules/Bacteria/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Bacteria/useCases')>();
+    return { ...actual, prepareOfflineBacteria: vi.fn(actual.prepareOfflineBacteria) };
 });
 
 type ReorderMessage = { type: string; order: number[] };
@@ -165,6 +170,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         vi.mocked(prepareCrumbsEngine).mockReset().mockResolvedValue('ready');
         vi.mocked(prepareOfflineToaster).mockClear();
         vi.mocked(prepareOfflineGrandBoule).mockClear();
+        vi.mocked(prepareOfflineBacteria).mockClear();
     });
 
     it('routes levain to its own hydration, forwarding the abort signal it needs to cancel a fetch', async () => {
@@ -221,7 +227,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
     // a recorded decision — their whole state arrives as `parameterValues` — so the
     // observable contract is that they post nothing at all, not that they happen to
     // have no branch.
-    const HYDRATING_TYPES = ['levain', 'proof', 'toaster', 'builtin-crumbs', 'grand-boule'] as const;
+    const HYDRATING_TYPES = ['levain', 'proof', 'toaster', 'builtin-crumbs', 'grand-boule', 'bacteria'] as const;
     const NON_HYDRATING_TYPES = NATIVE_DSP_DEVICE_TYPES.filter(
         (type) => !HYDRATING_TYPES.some((hydrating) => hydrating === type)
     );
@@ -243,8 +249,9 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         // moved off `null`, taking the non-hydrating count from 9 to 8. Crust
         // then arrived as a native device with nothing to hydrate — every
         // control it owns is a `parameterValue` — taking the table to 13 rows
-        // and the non-hydrating count to 9.
-        expect(NON_HYDRATING_TYPES).toHaveLength(8);
+        // and the non-hydrating count to 9. Bacteria then moved off `null` for
+        // its modulation-routing table, taking the non-hydrating count to 7.
+        expect(NON_HYDRATING_TYPES).toHaveLength(7);
         expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(13);
     });
 
@@ -263,6 +270,19 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         // No signal: the kit push is a bounded run of postMessage calls with
         // nothing to abort, unlike Levain's sample fetch.
         expect(prepareOfflineToaster).toHaveBeenCalledExactlyOnceWith({ deviceId: 'toaster-1', deviceState, port });
+    });
+
+    it('routes a bacteria device to the Bacteria module, passing its deviceState and port', async () => {
+        const { port } = makePort();
+        const deviceState = {
+            version: 1,
+            data: { modAssignments: [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 0.5, bipolar: true }] },
+        };
+
+        await prepareOfflineDeviceSetup({ deviceId: 'bacteria-1', deviceType: 'bacteria', deviceState, port });
+
+        // No deviceId: `prepareOfflineBacteria` only needs the chunk and the port.
+        expect(prepareOfflineBacteria).toHaveBeenCalledExactlyOnceWith({ deviceState, port });
     });
 
     it('routes Grand Boule with the immutable render snapshot', async () => {

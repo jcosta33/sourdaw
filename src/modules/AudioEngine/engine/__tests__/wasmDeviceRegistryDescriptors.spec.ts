@@ -1207,6 +1207,26 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.onLatencyChanged).not.toHaveBeenCalled();
             expect(result.onMeterData).not.toHaveBeenCalled();
         });
+
+        it('emits audioDevice.loaded once accepted, and not when the load is rejected', async () => {
+            const result = makeBacteriaResult({});
+            factoryMocks.createBacteriaNode.mockResolvedValue(result);
+            const emitDeviceLoaded = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceLoaded });
+            const deps = createDeps({ deviceType: 'bacteria', deviceId: 'bac-emit' });
+
+            const { loadPromise } = requireDescriptor('bacteria').create(deps);
+            await loadPromise;
+
+            expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'bac-emit', deviceType: 'bacteria' });
+
+            vi.mocked(deps.onLoaded).mockReturnValue(false);
+            emitDeviceLoaded.mockClear();
+            factoryMocks.createBacteriaNode.mockResolvedValue(makeBacteriaResult({}));
+            await requireDescriptor('bacteria').create(deps).loadPromise;
+
+            expect(emitDeviceLoaded).not.toHaveBeenCalled();
+        });
     });
 
     describe('crumbs', () => {
