@@ -1,0 +1,58 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_2bfd55a4393d7c::t_1f8a476add8e7c 1137-1138,1148-1149
+  s_2bfd55a4393d7c::t_1d6105d7f18416 1053-1089,1092-1097,1100-1136,1139-1147,1150-1176
+  s_2bfd55a4393d7c::t_dbd6f50445a2e1 1090-1091,1098-1099
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/mergeAutomationSegmentStreams.spec.ts
+  s_2bfd55a4393d7c::t_d4e1809cd40e62 1-123
+  s_2bfd55a4393d7c::t_dcea4ea9c7c2f9 124-136
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_2bfd55a4393d7c::t_729729573f303a 470,475
+  s_2bfd55a4393d7c::t_bde9622867612e 457-469,471-474,476-495
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_2bfd55a4393d7c::t_448e4349f316f3 591-675
+src/modules/AudioEngine/repositories/offlineScheduler/mergeAutomationSegmentStreams.ts
+  s_2bfd55a4393d7c::t_950efc0e44b90c 1-76
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_2bfd55a4393d7c::t_1a331b4944023d 33-40
+  s_2bfd55a4393d7c::t_e8cbe3d0e8e5b1 179-189,191-195,209-212
+  s_2bfd55a4393d7c::t_d1362c268e724e 323
+  s_2bfd55a4393d7c::t_228b4725bebded 221-224,226,229,231-233,240
+  s_2bfd55a4393d7c::t_fcf62142df7ecc 225,227-228,230,234-239,241-242
+  s_2bfd55a4393d7c::t_ad3c58966d0e0f 338-344
+  s_2bfd55a4393d7c::t_4060ebd57eec4a 307-310
+  s_2bfd55a4393d7c::t_f20487e9f6065f 311-315
+  s_9e15f5b7ec3308::t_aa1a74c900b34e 220,345
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_2bfd55a4393d7c::t_2a297643ce6a69 11
+  s_2bfd55a4393d7c::t_60f34d23b569d4 618-638,642
+  s_2bfd55a4393d7c::t_e72083d1ff74ce 487-617,639-641,643-645
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_2bfd55a4393d7c::t_884921ad8880f3 648-668
+  s_2bfd55a4393d7c::t_17ca03f3d318e0 484-494
+  s_2bfd55a4393d7c::t_f29ddd63a59192 260-273
+  s_2bfd55a4393d7c::t_a317d592233364 13,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f770198c4ad205a6b3833fd891027ff428adb349",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
