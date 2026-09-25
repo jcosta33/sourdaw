@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     installBundleAtomically,
     isProcessAlive,
@@ -20,8 +21,7 @@ import {
 import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
-
-import type { GhSession } from '../githubAppIdentity.ts';
+import { REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 const SEMANTIC_CI_TEXT = '{"state":"no-assessment","reason":"absent"}';
 
@@ -53,6 +53,7 @@ function pullRequest(overrides: Partial<ReviewPullRequest> = {}): ReviewPullRequ
         baseRefOid: 'basesha',
         headRefName: 'agent/12/work',
         baseRefName: 'main',
+        state: 'OPEN',
         ...overrides,
     };
 }
@@ -166,17 +167,65 @@ describe('review prepare', () => {
         }
     });
 
+    it('logs the escalation flag and the required reassessment once the request-changes rounds meet the threshold', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port, logs } = fakePort(root);
+        port.reviews = () => [
+            {
+                id: 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            },
+            {
+                id: 2,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            },
+            {
+                id: 3,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            },
+        ];
+        port.reviewComments = () => [];
+        try {
+            const destination = prepareReview(42, port);
+            expect(logs).toContain(
+                `review-round-escalation:42:request-changes=${REVIEW_ROUND_ESCALATION_THRESHOLD}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+            expect(logs).toContain(
+                `review-round-escalation:42:write ${join(destination, 'reassessment.json')} before the next publication`
+            );
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
     it('pins the trusted executing closure to the entry local-import graph', () => {
         const entryFile = join(import.meta.dirname, '..', 'prepareReviewEntry.ts');
         expect(trustedExecutingPaths(entryFile)).toEqual([
             'scripts/canonicalRecord.ts',
+            'scripts/evidenceSafety.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
             'scripts/prepareReview.ts',
             'scripts/prepareReviewEntry.ts',
+            'scripts/reconstructReviewRounds.ts',
             'scripts/reviewBundleLocator.ts',
             'scripts/reviewDiffSummary.ts',
+            'scripts/reviewDossier.ts',
+            'scripts/reviewDossierChain.ts',
+            'scripts/reviewDossierReassessed.ts',
+            'scripts/reviewDossierViews.ts',
+            'scripts/reviewRepair.ts',
             'scripts/reviewRiskPolicy.ts',
+            'scripts/reviewRoundEscalation.ts',
             'scripts/semanticReview/contracts.ts',
             'scripts/semanticReview/interpret.ts',
             'scripts/semanticReview/report.ts',
@@ -219,7 +268,6 @@ describe('review prepare', () => {
         const blobs = [{ path: 'scripts/prepareReview.ts', originBlob: source, source }];
         expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/imports unlisted local dependency/);
     });
-
     it('writes a risk plan for the reviewed head and records it as generated', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
         const { port } = fakePort(root);

@@ -8,6 +8,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
@@ -82,6 +83,23 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
                 endBeat: 4,
                 expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
                 replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }],
+            },
+        },
+    },
+    {
+        // Live point 'automation-point' was changed from the captured value 0.9 to 0.4.
+        title: 'restoreAutomationPointPresence refuses a changed captured point',
+        actionType: 'restoreAutomationPointPresence',
+        divergedAction: {
+            type: 'restoreAutomationPointPresence',
+            payload: {
+                laneId: 'automation-follower',
+                owner: { trackId: 'track-live', parameterId: 'gain', linkedLaneId: 'automation-source' },
+                point: { id: 'automation-point', beat: 4, value: 0.9, curve: 'linear', tension: 0 },
+                equalBeatIndex: 0,
+                expectedEqualBeatPoints: [],
+                expectedPresence: 'present',
+                replacementPresence: 'absent',
             },
         },
     },
@@ -305,6 +323,24 @@ function seedLiveProjectState(): void {
             },
         ],
     });
+    automationStore.set({
+        lanes: [
+            {
+                id: 'automation-follower',
+                trackId: 'track-live',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [{ id: 'automation-point', beat: 4, value: 0.4, curve: 'linear', tension: 0 }],
+                objects: [],
+                visible: true,
+                enabled: true,
+                collapsed: false,
+                linkedLaneId: 'automation-source',
+                minValue: 0,
+                maxValue: 1,
+            },
+        ],
+    });
 }
 
 /** The live Yeast rack the divergence guards above are checked against. */
@@ -349,6 +385,7 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
 
     afterEach(() => {
         resetLiveYeastRack();
+        automationStore.set({ lanes: [] });
         clearHandlerRegistry();
     });
 

@@ -7,7 +7,6 @@ date: 2026-09-21
 owner: The Sourdaw team
 sources:
     - scripts/canonicalRecord.ts
-    - scripts/sourceAttestation.ts
     - scripts/reviewDossier.ts
     - scripts/reviewDossierPublication.ts
     - scripts/reviewApprovalFormat.ts
@@ -18,7 +17,6 @@ sources:
     - scripts/reviewPublicationBinding.ts
     - scripts/reconstructReviewRounds.ts
     - scripts/__tests__/canonicalRecord.spec.ts
-    - scripts/__tests__/sourceAttestation.spec.ts
     - scripts/__tests__/reviewDossier.spec.ts
     - scripts/__tests__/reviewDossierPublication.spec.ts
     - scripts/__tests__/publishReview.spec.ts
@@ -66,10 +64,8 @@ reader retained.
 - `stances.json` — the caller's pre-dispatch stance record; when a bundle carries it, the dossier
   publication gate binds the record's draws to it one-to-one as sets of stance names
   (`reviewDossierPublication.ts`).
-- The `sourdaw-*-v1` marker-line records — repair records, confirmation, finding lineage, and the
-  source attestation (`sourceAttestation.ts`), which binds every exact commit OID above the
-  comparison base and its observed Git authorship to the published head — all framed by the one
-  marker grammar in `canonicalRecord.ts`.
+- The `sourdaw-*-v1` marker-line records — repair records, confirmation, and finding lineage — all
+  framed by the one marker grammar in `canonicalRecord.ts`.
 - Delivery receipts (`prContract.ts`): HTML-comment records with their own v1/v2 grammars, not
   marker lines — v2 carries a visible summary plus a hidden canonical payload, and v1 HTML-only
   receipts remain readable.
@@ -105,9 +101,7 @@ forgery, predecessor-digest, redaction, size bounds, head rebinding), `reviewDos
 .spec.ts` (input assembly, replay idempotence, stance-record correspondence),
 `publishReview.spec.ts` (live-head binding, recovery journal across crash, legacy adapters,
 paginated reads), `repairReviewFinding.spec.ts` / `confirmReviewRepairs.spec.ts` (foreign-actor
-marker refusal, thread and comment pagination), `sourceAttestation.spec.ts` (record round-trip,
-canonical byte form, exact-OID binding, foreign-actor marker refusal, newest authority), and
-`deliverPullRequest.spec.ts` (immutable
+marker refusal, thread and comment pagination), and `deliverPullRequest.spec.ts` (immutable
 actor identities, wrong-head and wrong-actor approvals ignored, receipt ordering).
 
 ## Consequences
@@ -152,3 +146,31 @@ refused; legacy bundles without a risk plan deliver exactly as before. The revie
 the dossier modules it now reads. `threeRoleTransitions.spec.ts` pins the cross-role matrix —
 author, reviewer, and orchestrator approvals are never interchangeable, and an acceptance left
 behind on a stale head authorizes nothing.
+
+## Extension — risk calibration and enforcement cutover (2026-09-22, #3377)
+
+AC-009 calibration closes the demonstrated policy-coverage gap without changing the class or
+stance vocabularies: the path classifier now earns `realtime-audio` for the playback-timing
+surface (`src/modules/Transport/useCases/playheadScheduler/`), `undo` for the saved-project
+integrity surfaces (the `useCases/projectPersistence/` prefix and the Project `repositories/`
+tree, anchored so a like-named path outside the Project module earns nothing), and
+`native-security` for every file in a trusted GitHub-write closure
+(`GOVERNANCE_TRANSITION_PATHS`, pinned to the `trustedDependencyGraphs` union as sets in both
+directions by a spec so either list diverging from the other fails red). Each is a semantic risk
+that size-based classification called `small`; the earned-stance union and the proportionality
+rule — no class contributes a stance outside its own entry, and a plan's `requiredStances` must
+equal exactly what its classes earn — are unchanged. Task-derived stances beyond the heuristic
+prefixes were already representable: `stances.json` and the dossier admit free-form justified
+names, and the admission lines are judged by `stances:check` where the typed-judgment credential
+is available.
+
+For the record, the #3376 section above describes the delivery authorization as bound to the live
+orchestrator acceptance review; as reviewed and merged, `deliver` binds both live reviews —
+`reviewId` to the orchestrator acceptance and `approvalReviewId` to the reviewer approval
+(`latestReviewerReviewDatabaseId`) — refusing a record that names a stale or unidentifiable
+either.
+
+AC-010 is preserved by non-change: this calibration touches no workflow, no ruleset, and no CI
+admission rule, and the before/after ruleset readback in the change's evidence shows byte-equal
+required contexts. CI admission stays advisory; exact-head, identity, thread,
+structural-mergeability, and immutable-evidence gates stay blocking.

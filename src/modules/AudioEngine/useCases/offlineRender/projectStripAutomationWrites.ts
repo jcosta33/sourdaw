@@ -24,10 +24,12 @@
  * A caller that can name devices the backend will actually accept a parameter
  * write for hands them in ({@link StripAutomationWritesInput.deviceEntries}),
  * and each one's lanes come back as `device-parameter` entries carrying step
- * writes (#3568). A caller that names none gets exactly what this projection
- * gave before: the scheduler resolves a device lane against an empty chain and
- * drops it, which is what the export wants and what main did for an orphan
- * lane.
+ * writes (#3568). A caller that names none gets no device entry at all: the
+ * scheduler resolves a device lane against an empty chain and drops it, which
+ * is what main did for an orphan lane. Both callers that name devices — the
+ * live writer and the native export (#3776) — decide on their own which lanes
+ * that drop would lose, because only they know which devices the engine
+ * actually carries.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -97,7 +99,7 @@ export type StripAutomationWritesInput = Readonly<{
     resolveLaneCeiling: (lane: Pick<AutomationLane, 'parameterId' | 'minValue' | 'maxValue' | 'clipId'>) => number;
     /**
      * Devices on this strip whose parameter lanes the caller wants converted.
-     * Omitted — the export's own case — means no device lane resolves at all.
+     * Omitted means no device lane resolves at all.
      */
     deviceEntries?: readonly StripAutomationDeviceEntry[];
     /**
@@ -138,15 +140,16 @@ function seamPanValue(recorded: number): number {
  * main gave a project holding an orphan lane on a device the user has since
  * removed (`prepareRemoveDevice.ts` deletes the device, never its lanes). This
  * projection preserves that silent drop rather than declining the whole strip
- * over it; the live producer names such a lane on its own
- * (`projectLiveAutomationWrites.ts`), because live has an exclusion channel
- * the export does not.
+ * over it; a caller that must not lose a lane says so on its own — the live
+ * producer names it as an exclusion (`projectLiveAutomationWrites.ts`), and
+ * the native export declines (`nativeRefusedDeviceLane.ts`).
  *
  * Exported because a caller that *could* name devices but has no law to judge
- * them by is held to the same refusal — see `readLiveAutomationWrites.ts`, whose
- * seam may be unwired. Two copies of "no device parameter is carried" is one
- * copy too many: a later loosening of one of them would silently split the
- * export's behaviour from the live producer's.
+ * them by is held to the same refusal — see `readLiveAutomationWrites.ts` and
+ * `renderOfflineWithNativeEngine.ts`, whose seams may be unwired. Two copies of
+ * "no device parameter is carried" is one copy too many: a later loosening of
+ * one of them would silently split the export's behaviour from the live
+ * producer's.
  */
 export const REFUSE_DEVICE_AUTOMATION: OfflineDeviceAutomationLaw = {
     acceptsAutomation: () => false,
@@ -171,9 +174,10 @@ function recordingDeviceEntry(entry: StripAutomationDeviceEntry, recorded: Recor
         deviceId: entry.deviceId,
         deviceType: entry.deviceType,
         // A caller that names devices names only the ones the engine will
-        // actually carry, so a named device's parameter lane is live. The
-        // export's own case names none, which is why the ceiling guard in
-        // `scheduleTrackAutomation` cannot fire on this projection today.
+        // actually carry, so a named device's parameter lane is live. This
+        // entry answers every parameter with a segment binding, which is why
+        // the curve-write refusal in `scheduleTrackAutomation` cannot fire on
+        // this projection.
         contributesAudio: true,
         strategy: {
             resolveOfflineAutomation: (parameterId: string) => ({

@@ -63,8 +63,74 @@ const REQUIRED_STANCES: Record<ReviewRiskClass, readonly ReviewStanceId[]> = {
 };
 
 const REALTIME_AUDIO_PREFIXES = ['crates/daw-dsp/', 'src/modules/AudioEngine/', 'public/wasm/'] as const;
+/**
+ * Playback-timing surfaces (#3377 AC-009 calibration): the playhead scheduler is not on the audio
+ * thread, but a defect there moves the audible playhead, so it earns the realtime-audio class the
+ * same way the DSP prefixes do.
+ */
+const REALTIME_TIMING_PREFIXES = ['src/modules/Transport/useCases/playheadScheduler/'] as const;
 const NATIVE_SECURITY_PREFIXES = ['electron/', 'crates/', '.github/workflows/'] as const;
-const NATIVE_SECURITY_PATHS = ['src/utils/desktopBridge.ts', 'scripts/githubAppIdentity.ts'] as const;
+const NATIVE_SECURITY_PATHS = ['src/utils/desktopBridge.ts'] as const;
+/**
+ * Privileged governance-transition surfaces (#3377 AC-009 calibration): every file in a trusted
+ * GitHub-write closure executes with a role identity, so a change to one can move a privileged
+ * transition while classifying `small` on size alone. Listed explicitly rather than by prefix —
+ * most of `scripts/` is unprivileged tooling — and a spec pins this list to the closure union in
+ * `trustedGithubWriteBootstrap.ts`, so adding a file to a closure without listing it here reddens
+ * that spec.
+ */
+export const GOVERNANCE_TRANSITION_PATHS = [
+    'scripts/acceptReview.ts',
+    'scripts/canonicalRecord.ts',
+    'scripts/claimTrackerIssue.ts',
+    'scripts/confirmReviewRepairs.ts',
+    'scripts/deliverPullRequest.ts',
+    'scripts/deliveryLockLegacyIncidents.ts',
+    'scripts/deliveryRemoteInspection.ts',
+    'scripts/evidenceSafety.ts',
+    'scripts/githubAppIdentity.ts',
+    'scripts/prContract.ts',
+    'scripts/prepareReview.ts',
+    'scripts/publishLane.ts',
+    'scripts/publishReview.ts',
+    'scripts/pullRequestMutationLock.ts',
+    'scripts/pullRequestReviewState.ts',
+    'scripts/reconcileTrackerIssue.ts',
+    'scripts/reconstructReviewRounds.ts',
+    'scripts/recoverDeliveryLock.ts',
+    'scripts/recoverPublishReviewLock.ts',
+    'scripts/repairReviewFinding.ts',
+    'scripts/resolveThread.ts',
+    'scripts/reviewApprovalContext.ts',
+    'scripts/reviewApprovalFormat.ts',
+    'scripts/reviewBundleLocator.ts',
+    'scripts/reviewCommentDiffPreflight.ts',
+    'scripts/reviewDiffSummary.ts',
+    'scripts/reviewDocumentParser.ts',
+    'scripts/reviewDossier.ts',
+    'scripts/reviewDossierChain.ts',
+    'scripts/reviewDossierPublication.ts',
+    'scripts/reviewDossierReassessed.ts',
+    'scripts/reviewDossierViews.ts',
+    'scripts/reviewPublicationBinding.ts',
+    'scripts/reviewPublicationLegacyIncidents.ts',
+    'scripts/reviewPublicationRecoveryReceipt.ts',
+    'scripts/reviewPublicationRemoteInspection.ts',
+    'scripts/reviewRepair.ts',
+    'scripts/reviewRiskPolicy.ts',
+    'scripts/reviewRoundEscalation.ts',
+    'scripts/reviewShadowStatus.ts',
+    'scripts/reviewerModelDiversity.ts',
+    'scripts/rulesetHardening.ts',
+    'scripts/stackedLanes.ts',
+    'scripts/syncParentLane.ts',
+    'scripts/testInstructions.ts',
+    'scripts/trackerIssueReconciliation.ts',
+    'scripts/trustedGithubWriteBootstrap.ts',
+    'scripts/wasm-artifacts.ts',
+    'scripts/wasmToolchainPins.ts',
+    'scripts/workspaceManifestFingerprint.ts',
+] as const;
 const CROSS_CUTTING_PREFIXES = ['src/app/', 'src/infra/', 'src/helpers/', 'src/utils/'] as const;
 const MODULES_PREFIX = 'src/modules/';
 
@@ -102,7 +168,10 @@ function exactTriggers(rule: string, exactPaths: readonly string[], paths: reado
 }
 
 function realtimeAudioFindings(paths: readonly ReviewChangedPath[]): RiskFinding[] {
-    const triggers = prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, paths);
+    const triggers = [
+        ...prefixTriggers('realtime-audio', REALTIME_AUDIO_PREFIXES, paths),
+        ...prefixTriggers('realtime-audio', REALTIME_TIMING_PREFIXES, paths),
+    ];
     return triggers.length === 0 ? [] : [{ riskClass: 'realtime-audio', triggers }];
 }
 
@@ -110,15 +179,27 @@ function nativeSecurityFindings(paths: readonly ReviewChangedPath[]): RiskFindin
     const triggers = [
         ...prefixTriggers('native-security', NATIVE_SECURITY_PREFIXES, paths),
         ...exactTriggers('native-security', NATIVE_SECURITY_PATHS, paths),
+        ...exactTriggers('native-security', GOVERNANCE_TRANSITION_PATHS, paths),
     ];
     return triggers.length === 0 ? [] : [{ riskClass: 'native-security', triggers }];
 }
+
+/**
+ * Saved-project integrity surfaces (#3377 AC-009 calibration, review repair): the persistence use
+ * cases and the Project repositories tree — the layer that actually writes saved projects —
+ * anchored as prefixes so a like-named path outside the Project module earns nothing.
+ */
+const PROJECT_PERSISTENCE_PREFIXES = [
+    'src/modules/project/usecases/projectpersistence/',
+    'src/modules/project/repositories/',
+] as const;
 
 function isUndoPath(path: string): boolean {
     const lower = path.toLowerCase();
     return (
         lower.includes('undo') ||
         lower.includes('crdtdocument') ||
+        PROJECT_PERSISTENCE_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
         lower.endsWith('.sdaw') ||
         (lower.startsWith('src/app/') && lower.includes('bootstrap'))
     );

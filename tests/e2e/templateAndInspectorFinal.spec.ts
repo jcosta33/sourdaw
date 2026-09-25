@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -59,11 +60,24 @@ test.describe('Device Panel — Show/Hide', () => {
         await add_track(page, 'MIDI');
 
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const synth = inspector.getByText('Synth').first();
-        await synth.click();
-        await page.waitForTimeout(1000);
+        // `getByText('Synth').first()` resolved to the track-role `<option
+        // value="synth">` above the rack, which is not clickable. The rack card
+        // is the real control, and selecting it swaps the inspector to the
+        // device detail view: `builtin-synth` has no custom UI, so
+        // `TrackDevicesSection` calls `onSelectDevice` instead of opening a
+        // plugin panel.
+        const synth_card = inspector.locator('[data-testid^="device-card-"]').filter({ hasText: 'Synth' });
+        await expect(synth_card).toHaveCount(1);
 
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
+        const back_to_track = inspector.getByRole('button', { name: 'Back to track' });
+        await expect(back_to_track).toHaveCount(0);
+
+        await synth_card.click();
+
+        // The detail view is false before the click and true after — the
+        // transport toolbar this case used to assert is visible either way.
+        await expect(back_to_track).toBeVisible();
+        await expect(inspector.getByRole('heading', { name: 'Synth' })).toBeVisible();
     });
 });
 

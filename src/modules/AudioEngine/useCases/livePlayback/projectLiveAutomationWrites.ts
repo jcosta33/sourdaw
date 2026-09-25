@@ -49,10 +49,11 @@
  *   - Anything else — a lane on a device the engine builds no body for, or an
  *     orphan lane left behind by `prepareRemoveDevice.ts`, which deletes the
  *     device and never its lanes.
- *     `projectStripAutomationWrites` silently drops it; live has an exclusion
- *     channel the export does not, so this producer names each one (#3124),
- *     while still emitting the strip's converted fader/pan/send entries: one
- *     lane the writer cannot carry must not silence the rest of the strip.
+ *     `projectStripAutomationWrites` silently drops it, so this producer
+ *     names each one on its exclusion channel (#3124) — where the native
+ *     export, which has none, declines instead (`nativeRefusedDeviceLane.ts`)
+ *     — while still emitting the strip's converted fader/pan/send entries:
+ *     one lane the writer cannot carry must not silence the rest of the strip.
  *
  * A strip the extraction declines outright — today, only a malformed
  * recorded event stream — is excluded whole, keyed to the strip itself: the
@@ -62,13 +63,13 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
-import { resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
-import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
 import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type OfflineDeviceAutomationLaw } from '../../repositories/offlineScheduler/automationScheduling';
 import { clipBoundsById } from '../offlineRender/clipBoundsById';
+import { deviceParameterLanes } from '../offlineRender/deviceParameterLanes';
+import { laneAddressesDevice } from '../offlineRender/laneAddressesDevice';
 import {
     projectStripAutomationWrites,
     type StripAutomationDeviceEntry,
@@ -121,47 +122,7 @@ export type LiveAutomationWritesInput = Readonly<{
     deviceParameterLaw: OfflineDeviceAutomationLaw;
 }>;
 
-const KNOWN_STRIP_PARAMETER_IDS = new Set(['gain', 'pan']);
-const SEND_PARAMETER_PREFIX = 'send:';
 const DEVICE_AUTOMATION_EXCLUSION_REASON = 'device parameter automation has no native body yet (#3124)';
-
-/**
- * Enabled lanes on this strip that name neither the fader, the pan, nor a
- * send — the device-parameter family, each of which the caller then places in
- * one of the three outcomes the header describes (#3068, #3568).
- *
- * Mirrors `scheduleTrackAutomation`'s own drop conditions
- * (`repositories/offlineScheduler/automationScheduling.ts`) so this never
- * excludes a lane the scheduler would never have carried anyway: a clip-scoped
- * lane whose clip is not in `clipBoundsById` (the clip was removed or never
- * built), and a lane that resolves — after following its link chain — to no
- * points at all.
- */
-function deviceParameterLanes(input: {
-    lanes: readonly AutomationLane[];
-    laneById: ReadonlyMap<string, AutomationLane>;
-    trackId: string;
-    clipBounds: ReadonlyMap<string, { startBeat: number; endBeat: number }>;
-}): readonly AutomationLane[] {
-    const { lanes, laneById, trackId, clipBounds } = input;
-    return lanes.filter((lane) => {
-        if (lane.trackId !== trackId || lane.enabled === false) {
-            return false;
-        }
-        if (KNOWN_STRIP_PARAMETER_IDS.has(lane.parameterId) || lane.parameterId.startsWith(SEND_PARAMETER_PREFIX)) {
-            return false;
-        }
-        if (lane.clipId && !clipBounds.has(lane.clipId)) {
-            return false;
-        }
-        const resolved = resolveLinkedLane(lane.id, (id) => laneById.get(id));
-        if (!resolved) {
-            return false;
-        }
-        const sourceLane = laneById.get(resolved.sourceLaneId);
-        return sourceLane !== undefined && sourceLane.points.length > 0;
-    });
-}
 
 /**
  * Every device on this strip the engine has a body for, in chain order, as the
@@ -176,27 +137,6 @@ function nativeBodyDeviceEntries(track: Track): readonly StripAutomationDeviceEn
         }
         return nativeBuiltinBody(device.type) ? [{ deviceId: device.id, deviceType: device.type }] : [];
     });
-}
-
-/**
- * Whether this lane addresses one of `entries` under the device law — the same
- * two-step resolution `scheduleTrackAutomation` and the tick path both run, so
- * a legacy bare lane cannot be judged here against a different device than the
- * one that will actually carry it.
- */
-function laneAddresses(
-    lane: AutomationLane,
-    entries: readonly StripAutomationDeviceEntry[],
-    law: OfflineDeviceAutomationLaw
-): boolean {
-    const index = resolveDeviceAutomationTargetIndex(lane.parameterId, entries, (candidate, parameterId) =>
-        law.acceptsAutomation({
-            deviceId: candidate.deviceId,
-            deviceType: candidate.deviceType,
-            parameterId,
-        })
-    );
-    return index >= 0;
 }
 
 function assertNever(value: never): never {
@@ -270,8 +210,8 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
                 // the whole chain. Excluding it then would report a fault in a
                 // lane the engine is stamping.
                 if (
-                    laneAddresses(lane, carried, deviceParameterLaw) ||
-                    laneAddresses(lane, withNativeBody, deviceParameterLaw)
+                    laneAddressesDevice(lane, carried, deviceParameterLaw) ||
+                    laneAddressesDevice(lane, withNativeBody, deviceParameterLaw)
                 ) {
                     continue;
                 }

@@ -13,6 +13,7 @@ import { handleRemoveSendAutomationRange } from '../handlers/automation/handleRe
 import { handleRemoveSendAutomationRanges } from '../handlers/automation/handleRemoveSendAutomationRanges';
 import { handleRemoveTrackGainAutomationRange } from '../handlers/automation/handleRemoveTrackGainAutomationRange';
 import { handleRestoreAutomationLanePoints } from '../handlers/automation/handleRestoreAutomationLanePoints';
+import { handleRestoreAutomationPointPresence } from '../handlers/automation/handleRestoreAutomationPointPresence';
 import { handleReverseAutomation } from '../handlers/automation/handleReverseAutomation';
 import { handleScaleAutomation } from '../handlers/automation/handleScaleAutomation';
 import { handleSetAutomationLaneEnabled } from '../handlers/automation/handleSetAutomationLaneEnabled';
@@ -37,7 +38,8 @@ type AutomationAction =
     | Extract<AppAction, { type: 'reverseAutomation' }>
     | Extract<AppAction, { type: 'thinAutomation' }>
     | Extract<AppAction, { type: 'quantizeAutomation' }>
-    | Extract<AppAction, { type: 'restoreAutomationLanePoints' }>;
+    | Extract<AppAction, { type: 'restoreAutomationLanePoints' }>
+    | Extract<AppAction, { type: 'restoreAutomationPointPresence' }>;
 
 export type AutomationHandlersMap = {
     [Action in AutomationAction as Action['type']]: ActionHandler<Action>;
@@ -66,5 +68,6 @@ export function getAutomationHandlers(): AutomationHandlersMap {
         thinAutomation: handleThinAutomation,
         quantizeAutomation: handleQuantizeAutomation,
         restoreAutomationLanePoints: handleRestoreAutomationLanePoints,
+        restoreAutomationPointPresence: handleRestoreAutomationPointPresence,
     };
 }

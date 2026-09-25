@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
+import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
 import {
@@ -43,7 +44,12 @@ import {
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
-import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
+import {
+    appendReviewDossierEvents,
+    authorizedEvidenceDigest,
+    parseReviewDossier,
+    serializeReviewDossier,
+} from '../reviewDossier.ts';
 import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
@@ -60,7 +66,9 @@ import {
     inspectReviewPublicationRemote,
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
+import { REASSESSMENT_FILE_NAME, REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
 
+import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const validComment = {
@@ -215,6 +223,8 @@ function fakePort(
                 login: input.login ?? 'renamed-reviewer[bot]',
             };
         },
+        publicReviews: () => [],
+        publicReviewComments: () => [],
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, posted };
@@ -340,6 +350,9 @@ async function runFailingReviewPublication(root: string, number: number, head: s
                     }
                     if (command === 'git' && args[0] === 'merge-base') {
                         return 'b'.repeat(40);
+                    }
+                    if (command === 'gh' && args[0] === 'api' && args.includes('--paginate')) {
+                        return '[]';
                     }
                     if (command === 'gh' && args[0] === 'api') {
                         throw new Error(failureMessage);
@@ -1051,6 +1064,8 @@ describe('review publish', () => {
                     },
                     bundleFileExists: (path) => existsSync(path),
                     readBundleDiff: () => '',
+                    publicReviews: () => [],
+                    publicReviewComments: () => [],
                     postReview: () => {
                         const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
                         if (oid === undefined) {
@@ -4758,9 +4773,7 @@ describe('orchestrator acceptance', () => {
             reviewState: () => ({
                 latestReviewerStateOnHead:
                     input.missingReviewer || (inFence && input.revokeAtFence) ? null : 'APPROVED',
-                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: input.unresolved ? 1 : 0,
             }),
             postReview: (review) => ({
@@ -5021,6 +5034,8 @@ describe('fresh reviewer dossier publication', () => {
             writable?: boolean;
             reviewComments?: PublishedReviewComment[];
             remoteReviews?: Record<number, RemotePublishedReview | undefined>;
+            publicReviews?: PublicReview[];
+            publicReviewComments?: PublicReviewComment[];
             diff?: string;
         } = {}
     ) {
@@ -5070,10 +5085,17 @@ describe('fresh reviewer dossier publication', () => {
                 calls.push(`reviewComments:${reviewId}`);
                 return input.reviewComments ?? [];
             },
+            reviewState: (_publishedNumber, _expectedHead) => ({
+                latestReviewerStateOnHead: 'APPROVED',
+                latestReviewerReviewDatabaseId: 99,
+                unresolvedThreads: 0,
+            }),
             remoteReview: (_publishedNumber, reviewId) => {
                 calls.push(`remoteReview:${reviewId}`);
                 return input.remoteReviews?.[reviewId];
             },
+            publicReviews: () => input.publicReviews ?? [],
+            publicReviewComments: () => input.publicReviewComments ?? [],
             log: () => undefined,
         };
         if (input.writable !== false) {
@@ -5110,9 +5132,7 @@ describe('fresh reviewer dossier publication', () => {
             ...fixture.port,
             reviewState: () => ({
                 latestReviewerStateOnHead: 'APPROVED',
-                orchestratorAcceptedAfterReviewer: false,
                 latestReviewerReviewDatabaseId: null,
-                orchestratorAcceptanceReviewDatabaseId: null,
                 unresolvedThreads: 0,
             }),
             postReview: (review) => {
@@ -5203,18 +5223,296 @@ describe('fresh reviewer dossier publication', () => {
             expect(persisted.baseSha).toBe(base);
             expect(persisted.recommendation).toBe('approve');
             expect(persisted.requiredStances).toEqual(['correctness', 'test-validity']);
-            // An APPROVE carries no inline comments, so it accepts no findings and binds only the review.
+            // An APPROVE carries no inline comments, so it accepts no findings and binds only the
+            // review, plus the delivery authorization the reviewer publication itself records.
             expect(acceptedFindings(persisted)).toEqual([]);
             expect(publishedReviewId(persisted)).toBe(99);
             expect(publishedFindings(persisted)).toEqual([]);
+            expect(deliveryAuthorization(persisted)).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                evidenceManifestDigest: authorizedEvidenceDigest(persisted),
+            });
             expect(discardedDispositions(persisted)).toEqual([
                 { findingId: 'blind-1', stance: 'correctness', reason: 'not reproducible on this head' },
             ]);
             expect(fixture.writes[1]?.contents).toBe(serializeReviewDossier(persisted));
-            // The pre-POST write is the same record without its publication events.
+            // The pre-POST write is the same record without its post-publication events: the landed
+            // review binding and the delivery authorization it carries.
             expect(parseReviewDossier(JSON.parse(fixture.writes[0]!.contents)).events.length).toBe(
-                persisted.events.length - 1
+                persisted.events.length - 2
             );
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes below the escalation threshold without recording a review-reassessed event', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            expect(persisted.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses at or above the escalation threshold without a reassessment, before any POST or write', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('publishes with a valid reassessment and records exactly one review-reassessed event', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            writeFileSync(
+                join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                JSON.stringify({
+                    format: 'reassessment-v1',
+                    pr: number,
+                    headSha: head,
+                    baseSha: base,
+                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    action: 'continue',
+                    reason: 're-scoped the change and re-dispatched the remaining stances',
+                })
+            );
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const reassessments = persisted.events.filter((event) => event.kind === 'review-reassessed');
+            expect(reassessments).toHaveLength(1);
+            expect(reassessments[0]).toMatchObject({
+                kind: 'review-reassessed',
+                roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                action: 'continue',
+                reason: 're-scoped the change and re-dispatched the remaining stances',
+            });
+            // The delivery authorization binds the digest of the record minus its post-publication
+            // events (delivery-authorized and review-reassessed), so the writer's recorded digest
+            // equals the recomputed authorized digest — and the production deliver reader recomputes
+            // the same value from the live record.
+            const authorization = deliveryAuthorization(persisted);
+            if (authorization === undefined) {
+                throw new Error('expected a recorded delivery authorization');
+            }
+            expect(authorization.evidenceManifestDigest).toBe(authorizedEvidenceDigest(persisted));
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(binding.dossierDigest).toBe(authorizedEvidenceDigest(persisted));
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the escalation threshold without a reassessment', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest lacks baseSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(
+                `observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+            expect(message).toMatch(/manifest\.json has no readable baseSha/);
+            expect(message).toMatch(/reassessment\.json/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold with a missing manifest, not a raw ENOENT', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            rmSync(join(fixture.bundle, 'manifest.json'));
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toMatch(/manifest\.json has no readable baseSha/);
+            expect(message).toMatch(/reassessment\.json/);
+            expect(message).not.toMatch(/ENOENT/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('replays a recorded publication at or above the threshold without a reassessment instead of refusing', () => {
+        const landedReview = {
+            id: 99,
+            state: 'APPROVED',
+            body: 'Attacked the dossier gate; it held.',
+            commitId: head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+            remoteReviews: { 99: landedReview },
+        });
+        try {
+            writeFileSync(
+                join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                JSON.stringify({
+                    format: 'reassessment-v1',
+                    pr: number,
+                    headSha: head,
+                    baseSha: base,
+                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    action: 'continue',
+                    reason: 're-scoped the change and re-dispatched the remaining stances',
+                })
+            );
+            // First publication consumes the reassessment and records the publication.
+            expect(publishReview(number, fixture.port)).toBe(99);
+            // The reassessment is gone: a fresh gate would now refuse for the missing file. The
+            // recorded publication instead replays, so the gate never runs.
+            rmSync(join(fixture.bundle, REASSESSMENT_FILE_NAME));
+            expect(publishReview(number, fixture.port)).toBe(99);
+            expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('binds the deliver reader to the authorized dossier digest the writer recorded', () => {
+        const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+        try {
+            expect(publishReview(number, fixture.port)).toBe(99);
+            const persisted = parseReviewDossier(fixture.readDossier());
+            const authorization = deliveryAuthorization(persisted);
+            if (authorization === undefined) {
+                throw new Error('expected a recorded delivery authorization');
+            }
+
+            const deliverPort = deliverShellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                    run: () => {
+                        throw new Error('the dossier reader must not use the shell');
+                    },
+                },
+                { primaryRoot: fixture.root }
+            );
+
+            const binding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            expect(binding.kind).toBe('required');
+            if (binding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            // The production reader recomputes authorizedEvidenceDigest, matching the digest the
+            // writer recorded as the authorization's evidence manifest.
+            expect(binding.dossierDigest).toBe(authorization.evidenceManifestDigest);
+
+            // A later appended dossier event changes the recomputed digest: the reader derives it
+            // from the live record rather than a stored or cached value.
+            const appended = appendReviewDossierEvents(persisted, [
+                {
+                    kind: 'finding-accepted',
+                    findingId: 'later-finding',
+                    path: 'scripts/target.ts',
+                    line: 1,
+                    side: 'RIGHT',
+                },
+            ]);
+            writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(appended));
+
+            const rebinding = deliverPort.reviewBundleDeliveryAuthorization(number, head);
+            if (rebinding.kind !== 'required') {
+                throw new Error('unreachable');
+            }
+            expect(rebinding.dossierDigest).not.toBe(binding.dossierDigest);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5247,6 +5545,14 @@ describe('fresh reviewer dossier publication', () => {
             expect(parseReviewDossier(fixture.readDossier()).dossierDigest).toBe(
                 parseReviewDossier(first).dossierDigest
             );
+            // The replay keeps the single delivery authorization the first APPROVE recorded.
+            expect(deliveryAuthorization(parseReviewDossier(fixture.readDossier()))).toEqual({
+                reviewId: 99,
+                approvalReviewId: 99,
+                unresolvedThreads: 0,
+                intent: 'deliver',
+                evidenceManifestDigest: authorizedEvidenceDigest(parseReviewDossier(first)),
+            });
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -5320,6 +5626,8 @@ describe('fresh reviewer dossier publication', () => {
             expect(publishedFindings(persisted)).toEqual([
                 { findingId: 'comment-0', reviewId: 99, commentId: 2329000042 },
             ]);
+            // REQUEST_CHANGES records no delivery authorization: only the reviewer APPROVE does.
+            expect(deliveryAuthorization(persisted)).toBeUndefined();
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -6356,10 +6664,13 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses a duplicate delivery authorization already recorded in the dossier', async () => {
         const { withPublication } = acceptanceWithAuthorization();
+        // The reviewer publication itself records the delivery authorization on APPROVE: reviewId and
+        // approvalReviewId both bind the just-posted reviewer review (99). Acceptance must refuse to
+        // mint a second one.
         const alreadyAuthorized = appendReviewDossierEvents(withPublication, [
             {
                 kind: 'delivery-authorized',
-                reviewId: 98,
+                reviewId: 99,
                 approvalReviewId: 99,
                 evidenceManifestDigest: withPublication.dossierDigest,
                 unresolvedThreads: 0,
@@ -6382,7 +6693,7 @@ describe('fresh reviewer dossier publication', () => {
         });
         try {
             await expect(coordinateAcceptReview(number, acceptanceDependencies(fixture))).rejects.toThrow(
-                /already records delivery authorization 98; refusing a duplicate authorization/u
+                /already records delivery authorization 99; refusing a duplicate authorization/u
             );
         } finally {
             removeTemporaryDirectory(fixture.root);

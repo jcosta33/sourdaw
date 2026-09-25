@@ -11,9 +11,21 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import {
+    reconstructReviewRounds,
+    readPublicReviewComments,
+    readPublicReviews,
+    type PublicReview,
+    type PublicReviewComment,
+} from './reconstructReviewRounds.ts';
 import { reviewBundlePath } from './reviewBundleLocator.ts';
 import { changedReviewPaths, formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
 import { planReviewRisk } from './reviewRiskPolicy.ts';
+import {
+    REVIEW_ROUND_ESCALATION_THRESHOLD,
+    REASSESSMENT_FILE_NAME,
+    countReviewerRequestChangesRounds,
+} from './reviewRoundEscalation.ts';
 
 export type ReviewPullRequest = {
     number: number;
@@ -23,6 +35,7 @@ export type ReviewPullRequest = {
     baseRefOid: string;
     headRefName: string;
     baseRefName: string;
+    state: string;
 };
 
 export type PrepareReviewPort = {
@@ -34,6 +47,8 @@ export type PrepareReviewPort = {
     numstat: (baseSha: string, headSha: string) => Buffer;
     showFile: (sha: string, path: string) => string;
     listDecisionFiles: (sha: string) => string[];
+    reviews?: (number: number) => PublicReview[];
+    reviewComments?: (number: number) => PublicReviewComment[];
     installBundle: (destination: string, files: Record<string, string>) => void;
     /** The full text of `semantic-ci.json`, written by `prepareReview` with exactly one trailing newline. */
     semanticCiJson: (pr: number, headSha: string) => string;
@@ -179,6 +194,36 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
         headSha: pullRequest.headRefOid,
     });
     port.installBundle(destination, files);
+    // The escalation flag is advisory at prepare time: the bundle must still be produced so the
+    // caller can write `reassessment.json` beside it, and an unreadable public history is logged,
+    // never a refusal. The gate that actually blocks a fresh publication runs at publish time.
+    try {
+        if (port.reviews === undefined || port.reviewComments === undefined) {
+            port.log(
+                `review-round-escalation:${number}:request-changes=unreadable:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+        } else {
+            const reconstruction = reconstructReviewRounds(
+                number,
+                { state: pullRequest.state, head: pullRequest.headRefOid },
+                port.reviews(number),
+                port.reviewComments(number)
+            );
+            const requestChanges = countReviewerRequestChangesRounds(reconstruction);
+            port.log(
+                `review-round-escalation:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            );
+            if (requestChanges >= REVIEW_ROUND_ESCALATION_THRESHOLD) {
+                port.log(
+                    `review-round-escalation:${number}:write ${join(destination, REASSESSMENT_FILE_NAME)} before the next publication`
+                );
+            }
+        }
+    } catch {
+        port.log(
+            `review-round-escalation:${number}:request-changes=unreadable:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+        );
+    }
     port.log(destination);
     return destination;
 }
@@ -348,10 +393,12 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Omit
                     '--repo',
                     REQUIRED_REPOSITORY,
                     '--json',
-                    'number,title,body,headRefOid,baseRefOid,headRefName,baseRefName',
+                    'number,title,body,headRefOid,baseRefOid,headRefName,baseRefName,state',
                 ]),
                 `PR #${number}`
             ),
+        reviews: (number) => readPublicReviews(gh, number),
+        reviewComments: (number) => readPublicReviewComments(gh, number),
         fetchShas: (baseSha, headSha) => {
             git(['fetch', '--no-write-fetch-head', GITHUB_HTTPS_REMOTE, baseSha, headSha]);
         },

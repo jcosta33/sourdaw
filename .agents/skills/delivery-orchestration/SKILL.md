@@ -19,28 +19,28 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 
 ## Command reference
 
-| Need                             | Command                                                                                                                                                                                       |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                      | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
-| Claim the lane's issue           | `pnpm issue:claim <issue>`                                                                                                                                                                    |
-| Sync a dependent lane            | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
-| Push; open or update the PR      | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
-| Write the review bundle          | `pnpm review:prepare <pr>`                                                                                                                                                                    |
-| Post `review.json`               | `pnpm review:publish <pr>`                                                                                                                                                                    |
-| Post final `acceptance.json`     | `pnpm review:accept <pr>`                                                                                                                                                                     |
-| Record a repair, leave open      | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
-| Confirm repairs, resolve         | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
-| Reply `Done` and resolve         | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
-| Rebuild rounds; shadow-compare   | `pnpm review:reconstruct <pr>`                                                                                                                                                                |
-| Squash-merge                     | `pnpm deliver <pr>`                                                                                                                                                                           |
-| Recover a crashed delivery       | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
-| Recover a wedged review post     | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR            | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
-| Prune spent remote branches      | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
-| Remove a spent lane              | `pnpm lane:remove <path>`                                                                                                                                                                     |
-| Strand an abandoned lane         | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
-| Prune lane artifacts             | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
-| Restamp author identity on lanes | `pnpm lane:identity`                                                                                                                                                                          |
+| Need                                                        | Command                                                                                                                                                                                       |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open a lane                                                 | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                    |
+| Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
+| Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
+| Write the review bundle                                     | `pnpm review:prepare <pr>`                                                                                                                                                                    |
+| Post `review.json`                                          | `pnpm review:publish <pr>`                                                                                                                                                                    |
+| Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                     |
+| Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
+| Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
+| Reply `Done` and resolve                                    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
+| Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                |
+| Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
+| Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
+| Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
+| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
+| Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
+| Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
+| Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
+| Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                          |
 
 `pr:supersede` refuses to close a superseded pull request until every live
 review thread on it has exactly one recorded disposition on the replacement.
@@ -113,15 +113,20 @@ The delivery sequence, in order:
 4. After the author pushes a fixed head, `review:repair` records the repair per
    thread and leaves the thread open; let the reviewer confirm it with
    `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
-5. On an APPROVE round, write `acceptance.json` beside `review.json`, then
-   `review:accept <pr>` — final acceptance as the orchestrator User.
-6. `deliver <pr>` — squash-merge after both validation points (below).
+5. On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the
+   current head records the delivery authorization in the head's dossier.
+6. The author runs `deliver <pr>` through the protected primary checkout's
+   package route — it squash-merges as the author App after the reviewer APPROVE
+   (below). Lane files are data, never executable delivery code.
+
+`review:accept <pr>` remains only for legacy pre-policy heads: a plan-carrying
+bundle whose dossier already carries the reviewer-recorded delivery authorization
+refuses the duplicate. New deliveries never call it.
 
 Each script validates its own preconditions and refuses rather than repairs:
 `review:publish` posts only when GitHub's live head matches the bundle;
-`review:accept` requires the reviewer Bot's current-head approval and all
-threads resolved; `deliver` refuses `BLOCKED`, non-`main` bases, and unstable
-reads (below).
+`deliver` requires the reviewer Bot's current-head APPROVE and all threads
+resolved, and refuses `BLOCKED`, non-`main` bases, and unstable reads (below).
 
 ## lane:publish mechanics
 
@@ -135,7 +140,11 @@ retitles existing PRs, including after follow-up commits or merges. The body
 follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
 the script controls format and rejects malformed bodies. New PRs require
 explicit `--summary` and `--test`; later supplied flags replace their section,
-omitted flags preserve it. Publishing neither enables auto-merge nor posts
+omitted flags preserve it. A product-scope change — any handwritten path under
+`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` whose
+every segment narrates a command; it must teach user/reviewer-observable steps
+and their expected result, while a body preserved from an existing pull request
+is not re-judged. Publishing neither enables auto-merge nor posts
 reviews.
 
 `lane:publish` targets `main` for ordinary lanes and the verified parent branch
@@ -162,14 +171,6 @@ base with
 otherwise, when no offered rewrite can stay off base-side history, re-create
 the named offending commits. Never a rewrite rooted at the remote tip: it
 would replay base-side commits as the App.
-
-After the push and pull-request write, publication posts one `sourdaw-attestation-v1` marker
-comment as the author App: the source attestation binding every exact commit OID above the
-comparison base, with its observed Git authorship, to the published head. The record is validated
-before any remote write, recomputed from the same commit-set calculation the gate uses, and
-replayed idempotently — a re-publication whose recomputed marker already stands posts nothing,
-while one that differs under the same head supersedes by comment order. Readers trust only
-comments by the author App's immutable node id and fail closed on a malformed App-authored marker.
 
 Labels and milestone are written by the author App. Project membership is not:
 installation tokens cannot reach user-owned Projects v2, so the project listing,
@@ -254,6 +255,19 @@ carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
 Re-publication of the same head replays that persisted record unchanged rather
 than minting a second one.
 
+`review:prepare` logs `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`
+reconstructed from the pull request's public review history; once `<n>` reaches the
+escalation threshold it also names the bundle's `reassessment.json` as the action
+required before the next publication. The threshold is the single constant
+`REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts`. A fresh
+reviewer publication at or above it refuses before any remote write until the caller
+writes `reassessment.json` beside `dossier.json`, `format: 'reassessment-v1'`, carrying
+`pr`, `headSha`, `baseSha`, `roundsObserved`, `threshold`, `action` of
+`split` | `respec` | `continue`, and a single-line, trimmed, bounded, evidence-safe
+`reason`. The consumed reassessment is recorded as one addition-only
+`review-reassessed` dossier event; `review:repair` logs the same flag and is never
+blocked, so unresolved threads always stay resolvable.
+
 Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
 publishes exactly as before.
 
@@ -318,7 +332,9 @@ Readers of historical review and acceptance documents are unchanged, and
 After the review POST lands, `review:publish` appends `review-published` (the
 landed review id) and one `finding-published` per posted comment (its public
 comment id, matched to the document positionally after a path/line/side check)
-to the head's dossier; a bundle dossier that already records its publication
+to the head's dossier; when the escalation gate consumed a reassessment it also
+appends one `review-reassessed` event recording its observed count, threshold,
+action and reason in that same write; a bundle dossier that already records its publication
 replays — the exact same review must stand live: actor, head, state, body, and
 comments — instead of re-posting, and a recorded publication that no longer
 stands exact fails closed before any write. `review:accept` refuses a
@@ -362,37 +378,37 @@ short conclusion; the structured evidence never leaves the bundle.
 ### Stack children
 
 A stack child may receive `REQUEST_CHANGES` while its verified parent branch is
-its base. Fresh APPROVE publication and acceptance require base `main`; for a
+its base. Fresh APPROVE publication requires base `main`; for a
 registered child they also require the bundle's live context and proof that
 reconciliation contains the recorded parent's landed commit.
 
-## acceptance.json
+## acceptance.json (legacy pre-policy heads only)
 
-After independent review, write `acceptance.json` beside `review.json` in that
-head's existing bundle. `review:accept <pr>` accepts only an APPROVE document
-with no inline comments and the same head-bound evidence schema as reviewer
-approval. It requires the reviewer Bot's current-head approval and all threads
-resolved before publishing final acceptance as the immutable orchestrator
-User. The posting identity supplies the role; generated text must not announce
-acceptance on another person's behalf or claim personal human review.
+`review:accept <pr>` remains readable for pre-policy heads, but it is no longer
+part of the delivery flow. The reviewer publication is the delivery
+authorization (#4584): a reviewer APPROVE on a plan-carrying bundle records one
+`delivery-authorized` event bound to its own just-posted review id and to the
+dossier digest, in the same persisted write as the publication bindings.
+`review.json` carrying `authorization` is refused. `review:accept` refuses a
+plan-carrying head whose dossier already carries that reviewer-recorded
+authorization — refusing the duplicate — and keeps working for legacy bundles
+without a risk plan. New deliveries never call it.
 
-A plan-carrying bundle's acceptance also authorizes delivery (#3376, spec
-#3367 AC-005): the document MUST carry an `authorization` block —
-`{ intent: 'deliver', approvalReviewId, unresolvedThreads,
-evidenceManifestDigest }` — where `approvalReviewId` is the reviewer-publication
-review id the dossier records, `unresolvedThreads` the count observed at
-acceptance, and `evidenceManifestDigest` the dossier's `dossierDigest` as it
-stands before the authorization is recorded. `review:accept` refuses a missing,
-mismatched, or duplicated block, and appends a `delivery-authorized` event to
-the dossier after the acceptance POST lands. `review.json` carrying
-`authorization` is refused; the block is acceptance-only. Legacy bundles
-without a risk plan accept without the block, and a block on such a bundle is
-refused.
+A pre-policy plan-carrying head is not deliverable and cannot be re-authorized
+in place: re-publication replays the recorded publication rather than posting a
+fresh reviewer APPROVE, so no reviewer-bound `delivery-authorized` event is ever
+recorded. This holds whether the dossier already records the old orchestrator
+acceptance authorization (`deliver` refuses its ids, which do not both bind the
+live reviewer approval) or records an old-flow APPROVE with no authorization at
+all (`deliver` refuses for want of one). Bundles with no `risk-plan.json` stay
+exempt and still merge. Such a stuck head needs a new commit and a fresh review
+round.
 
 `deliver` consumes the record: a plan-carrying head bundle with no recorded
 authorization, an authorization whose digest is not the
-dossier-minus-authorization digest, or one bound to anything but the live
-orchestrator acceptance review refuses delivery before any merge.
+dossier-minus-authorization digest, or one whose `reviewId`/`approvalReviewId`
+do not both bind the live reviewer approval review refuses delivery before any
+merge. Legacy bundles without a risk plan deliver exactly as before.
 
 ## Thread resolution
 
@@ -446,12 +462,11 @@ not grow the PR.
 ### Validation order
 
 `pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after
-BOTH validation points confirm both the immutable reviewer Bot and orchestrator
-User `APPROVED` the current head, with final user acceptance after reviewer
+BOTH validation points confirm the immutable reviewer Bot `APPROVED` the current
+head, with its recorded delivery authorization binding that live reviewer
 approval, and all threads resolved. Approval counts or matching logins cannot
-substitute for those actor identities or ordering. Merge executes as the
-verified orchestrator User; receipt and tracker writes retain their author App
-identities.
+substitute for that actor identity. Merge executes as the immutable author App;
+receipt and tracker writes retain their author App identities.
 
 Head, head branch, base branch, body, canonical closing target, and stacked
 dependents must stay stable between reads. `deliver` remains main-only and
@@ -486,12 +501,13 @@ leave the ref; only `deliver --recover-lock` clears it.
 Recovery refuses a live recorded process fence, adopts the lock under its own
 fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
-orchestrator User or historical author Bot as merger. Clearing records a
+author Bot or historical orchestrator User as merger. Clearing records a
 dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
 
-Already-merged recovery accepts the immutable orchestrator User or historical
-author Bot as merger; fresh delivery requires the orchestrator User and rejects
-a fresh author-bot merge. Actor type and immutable ID must agree in both paths.
+Already-merged recovery accepts the immutable author Bot or historical
+orchestrator User as merger; fresh delivery requires the author App and rejects
+a fresh orchestrator-user merge. Actor type and immutable ID must agree in both
+paths.
 
 ## Review-publication lock recovery
 
@@ -529,8 +545,9 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `review:accept`, `deliver`, `issue:claim`, and
-`issue:reconcile` through the protected primary checkout's package route. This
+Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+protected primary checkout's package route; `review:accept` remains only for
+legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure
 must match one pinned `origin/main` commit and come only from the primary
 repository. Lane files are data, never executable delivery code. Lanes

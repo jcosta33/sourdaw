@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
-    HARDENING_FIELDS,
+    HARDENING_TARGETS,
     RULESET_HARDENING_USAGE,
     assertNoRequiredContextAdded,
     assertOnlyApprovedFieldsChanged,
+    assertTargetsSatisfied,
     buildHardenedRuleset,
     captureRollback,
     coordinateRulesetHardening,
@@ -36,6 +37,8 @@ type FixtureOptions = {
     dismissStaleReviews?: boolean;
     requireLastPushApproval?: boolean;
     reviewCount?: number;
+    requireCodeOwnerReview?: boolean;
+    requiredReviewers?: JsonValue[];
     mergeMethods?: string[];
     conditions?: RulesetDocument;
     bypassActors?: JsonValue[];
@@ -59,8 +62,8 @@ function fixture(overrides: FixtureOptions = {}): RulesetDocument {
         parameters: {
             required_approving_review_count: overrides.reviewCount ?? 2,
             dismiss_stale_reviews_on_push: overrides.dismissStaleReviews ?? false,
-            required_reviewers: [],
-            require_code_owner_review: false,
+            required_reviewers: overrides.requiredReviewers ?? [],
+            require_code_owner_review: overrides.requireCodeOwnerReview ?? false,
             require_last_push_approval: overrides.requireLastPushApproval ?? false,
             required_review_thread_resolution: true,
             require_extra_approval_for_unattributed_changes: true,
@@ -93,20 +96,18 @@ function fixture(overrides: FixtureOptions = {}): RulesetDocument {
     };
 }
 
-/** The pre-hardening live shape: the pair as this command is meant to find it. */
+/**
+ * The live `main` shape this command is meant to find: the two head-discipline booleans already hold
+ * (#3002) and the approving-review count is still 2, awaiting the single-approval change.
+ */
 function liveShape(): RulesetDocument {
-    return fixture({ dismissStaleReviews: false, requireLastPushApproval: false });
-}
-
-/** The live readback captured at authoring time: last-push approval had already been enabled. */
-function liveReadback(): RulesetDocument {
-    return fixture({ dismissStaleReviews: false, requireLastPushApproval: true });
+    return fixture({ dismissStaleReviews: true, requireLastPushApproval: true });
 }
 
 function rulesetWithoutApprovedFields(): RulesetDocument {
     return {
         name: 'main',
-        rules: [{ type: 'pull_request', parameters: { required_approving_review_count: 2 } }],
+        rules: [{ type: 'pull_request', parameters: {} }],
     };
 }
 
@@ -142,15 +143,19 @@ function fakePort(live: RulesetDocument, readback: RulesetDocument = live): Fake
     };
 }
 
-describe('HARDENING_FIELDS', () => {
-    it('should name exactly the approved head-discipline pair', () => {
-        expect(HARDENING_FIELDS).toEqual(['dismiss_stale_reviews_on_push', 'require_last_push_approval']);
-        expect(HARDENING_FIELDS).toHaveLength(2);
+describe('HARDENING_TARGETS', () => {
+    it('should name exactly the approved head-discipline fields and their targets', () => {
+        expect(HARDENING_TARGETS).toEqual([
+            { field: 'dismiss_stale_reviews_on_push', to: true },
+            { field: 'require_last_push_approval', to: true },
+            { field: 'required_approving_review_count', to: 1 },
+        ]);
+        expect(HARDENING_TARGETS).toHaveLength(3);
     });
 });
 
 describe('planHardening', () => {
-    it('should report both approved fields unsatisfied on the live shape', () => {
+    it('should report exactly the review count unsatisfied on the live shape', () => {
         const plan = planHardening(liveShape());
         expect(plan.ruleIndex).toBe(PULL_REQUEST_INDEX);
         expect(plan.satisfied).toBe(false);
@@ -158,31 +163,40 @@ describe('planHardening', () => {
             {
                 field: 'dismiss_stale_reviews_on_push',
                 path: 'rules[2].parameters.dismiss_stale_reviews_on_push',
-                satisfied: false,
-                from: false,
+                satisfied: true,
+                from: true,
                 to: true,
             },
             {
                 field: 'require_last_push_approval',
                 path: 'rules[2].parameters.require_last_push_approval',
-                satisfied: false,
-                from: false,
+                satisfied: true,
+                from: true,
                 to: true,
+            },
+            {
+                field: 'required_approving_review_count',
+                path: 'rules[2].parameters.required_approving_review_count',
+                satisfied: false,
+                from: 2,
+                to: 1,
+            },
+        ]);
+        expect(plan.changes.filter((change) => !change.satisfied)).toEqual([
+            {
+                field: 'required_approving_review_count',
+                path: 'rules[2].parameters.required_approving_review_count',
+                satisfied: false,
+                from: 2,
+                to: 1,
             },
         ]);
     });
 
-    it('should report the live readback honestly, where last-push approval already holds', () => {
-        const plan = planHardening(liveReadback());
-        expect(plan.satisfied).toBe(false);
-        expect(plan.changes.map((change) => change.satisfied)).toEqual([false, true]);
-        expect(plan.changes.filter((change) => !change.satisfied).map((change) => change.field)).toEqual([
-            'dismiss_stale_reviews_on_push',
-        ]);
-    });
-
-    it('should report already satisfied when both fields are true', () => {
-        const plan = planHardening(fixture({ dismissStaleReviews: true, requireLastPushApproval: true }));
+    it('should report already satisfied when every field holds its target', () => {
+        const plan = planHardening(
+            fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 })
+        );
         expect(plan.satisfied).toBe(true);
         expect(plan.changes.every((change) => change.satisfied)).toBe(true);
     });
@@ -203,6 +217,13 @@ describe('planHardening', () => {
                 satisfied: false,
                 from: undefined,
                 to: true,
+            },
+            {
+                field: 'required_approving_review_count',
+                path: 'rules[0].parameters.required_approving_review_count',
+                satisfied: false,
+                from: undefined,
+                to: 1,
             },
         ]);
     });
@@ -225,10 +246,10 @@ describe('planHardening', () => {
 });
 
 describe('buildHardenedRuleset', () => {
-    it('should enable both approved fields and alter nothing else', () => {
+    it('should set every approved field to its target and alter nothing else', () => {
         const live = liveShape();
         const hardened = buildHardenedRuleset(live);
-        expect(hardened).toEqual(fixture({ dismissStaleReviews: true, requireLastPushApproval: true }));
+        expect(hardened).toEqual(fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 }));
         expect(hardened).not.toBe(live);
         expect(hardened.rules).not.toBe(live.rules);
     });
@@ -237,31 +258,31 @@ describe('buildHardenedRuleset', () => {
         const live = liveShape();
         buildHardenedRuleset(live);
         expect(live).toEqual(liveShape());
-        expect(live).not.toEqual(fixture({ dismissStaleReviews: true, requireLastPushApproval: true }));
+        expect(live).not.toEqual(fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 }));
     });
 
-    it('should add an absent approved field as true', () => {
+    it('should add an absent approved field at its target', () => {
         expect(buildHardenedRuleset(rulesetWithoutApprovedFields())).toEqual({
             name: 'main',
             rules: [
                 {
                     type: 'pull_request',
                     parameters: {
-                        required_approving_review_count: 2,
                         dismiss_stale_reviews_on_push: true,
                         require_last_push_approval: true,
+                        required_approving_review_count: 1,
                     },
                 },
             ],
         });
     });
 
-    it('should pass its own approved-pair guard', () => {
+    it('should pass its own approved-set guard and differ only at the approved paths', () => {
         const live = liveShape();
         expect(() => assertOnlyApprovedFieldsChanged(live, buildHardenedRuleset(live))).not.toThrow();
+        expect(() => assertTargetsSatisfied(buildHardenedRuleset(live))).not.toThrow();
         expect(rulesetDifferences(live, buildHardenedRuleset(live)).sort()).toEqual([
-            'rules[2].parameters.dismiss_stale_reviews_on_push',
-            'rules[2].parameters.require_last_push_approval',
+            'rules[2].parameters.required_approving_review_count',
         ]);
     });
 });
@@ -271,9 +292,9 @@ describe('assertOnlyApprovedFieldsChanged', () => {
 
     const REFUSED: { label: string; after: RulesetDocument; path: string }[] = [
         {
-            label: 'required_approving_review_count',
-            after: fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 5 }),
-            path: 'rules[2].parameters.required_approving_review_count',
+            label: 'require_code_owner_review',
+            after: fixture({ dismissStaleReviews: true, requireLastPushApproval: true, requireCodeOwnerReview: true }),
+            path: 'rules[2].parameters.require_code_owner_review',
         },
         {
             label: 'allowed_merge_methods',
@@ -283,6 +304,15 @@ describe('assertOnlyApprovedFieldsChanged', () => {
                 mergeMethods: ['squash', 'merge'],
             }),
             path: 'rules[2].parameters.allowed_merge_methods[1]',
+        },
+        {
+            label: 'required_reviewers',
+            after: fixture({
+                dismissStaleReviews: true,
+                requireLastPushApproval: true,
+                requiredReviewers: [{ id: 1, name: 'reviewer' }],
+            }),
+            path: 'rules[2].parameters.required_reviewers[0]',
         },
         {
             label: 'conditions',
@@ -317,30 +347,63 @@ describe('assertOnlyApprovedFieldsChanged', () => {
         expect(() => assertOnlyApprovedFieldsChanged(before, after)).toThrow(path);
     });
 
-    it('should allow a pair that differs only in the two approved fields', () => {
+    it('should allow a pair that differs only in the approved fields', () => {
         expect(() => assertOnlyApprovedFieldsChanged(before, buildHardenedRuleset(before))).not.toThrow();
         expect(() => assertOnlyApprovedFieldsChanged(before, before)).not.toThrow();
     });
 
-    it('should name the approved pair in the refusal', () => {
-        const after = fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 5 });
+    it('should name the approved set in the refusal', () => {
+        const after = fixture({
+            dismissStaleReviews: true,
+            requireLastPushApproval: true,
+            requireCodeOwnerReview: true,
+        });
         expect(() => assertOnlyApprovedFieldsChanged(before, after)).toThrow(
-            'refusing ruleset change outside the approved pair dismiss_stale_reviews_on_push, require_last_push_approval'
+            'refusing ruleset change outside the approved set dismiss_stale_reviews_on_push, require_last_push_approval, required_approving_review_count'
         );
     });
 
     /**
      * The mutation probe for this slice's guard: an approved field changing must not hide an illegal
-     * change later in the walk. Removing the guard, or widening `HARDENING_FIELDS` to include
-     * `required_approving_review_count`, makes the filtered path allowed and this assertion red.
+     * change later in the walk. Changing the review count to 1 (now approved) alongside an illegal
+     * `require_code_owner_review` change must still refuse the illegal path, not pass on the count.
      */
-    it('should refuse an approved change that also carries a review-count change', () => {
-        const after = fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 5 });
+    it('should refuse an approved count change that also carries an illegal change', () => {
+        const after = fixture({
+            dismissStaleReviews: true,
+            requireLastPushApproval: true,
+            reviewCount: 1,
+            requireCodeOwnerReview: true,
+        });
         const differences = rulesetDifferences(before, after);
         expect(differences).toContain('rules[2].parameters.required_approving_review_count');
+        expect(differences).toContain('rules[2].parameters.require_code_owner_review');
         expect(() => assertOnlyApprovedFieldsChanged(before, after)).toThrow(
-            'rules[2].parameters.required_approving_review_count'
+            'rules[2].parameters.require_code_owner_review'
         );
+    });
+});
+
+describe('assertTargetsSatisfied', () => {
+    it('should refuse a ruleset that leaves an approved field short of its target, naming the path', () => {
+        expect(() =>
+            assertTargetsSatisfied(
+                fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 5 })
+            )
+        ).toThrow('rules[2].parameters.required_approving_review_count');
+        expect(() =>
+            assertTargetsSatisfied(
+                fixture({ dismissStaleReviews: false, requireLastPushApproval: true, reviewCount: 1 })
+            )
+        ).toThrow('rules[2].parameters.dismiss_stale_reviews_on_push');
+    });
+
+    it('should accept a ruleset where every field holds its target', () => {
+        expect(() =>
+            assertTargetsSatisfied(
+                fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 })
+            )
+        ).not.toThrow();
     });
 });
 
@@ -413,8 +476,8 @@ describe('captureRollback', () => {
         const rollback = captureRollback(live);
         buildHardenedRuleset(live);
         expect(captureRollback(live)).toBe(rollback);
-        expect(rollback).toContain('"dismiss_stale_reviews_on_push":false');
-        expect(rollback).not.toContain('"dismiss_stale_reviews_on_push":true');
+        expect(rollback).toContain('"required_approving_review_count":2');
+        expect(rollback).not.toContain('"required_approving_review_count":1');
     });
 });
 
@@ -440,7 +503,7 @@ describe('writableRuleset', () => {
 });
 
 describe('hardenRuleset', () => {
-    it('should write once with both fields true and nothing else changed, then read back', () => {
+    it('should write once with the review count at 1 and nothing else changed, then read back', () => {
         const live = liveShape();
         const hardened = buildHardenedRuleset(live);
         const { port, writes, reads } = fakePort(live, hardened);
@@ -448,13 +511,15 @@ describe('hardenRuleset', () => {
         expect(receipt).toEqual({
             rulesetId: RULESET_ID,
             outcome: 'applied',
-            changed: ['dismiss_stale_reviews_on_push', 'require_last_push_approval'],
+            changed: ['required_approving_review_count'],
             rollback: captureRollback(live),
         });
         expect(writes).toHaveLength(1);
         expect(writes[0]).toEqual({ rulesetId: RULESET_ID, ruleset: hardened });
         expect(reads).toEqual([RULESET_ID, RULESET_ID]);
-        expect(writes[0]?.ruleset).toEqual(fixture({ dismissStaleReviews: true, requireLastPushApproval: true }));
+        expect(writes[0]?.ruleset).toEqual(
+            fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 })
+        );
     });
 
     it('should capture the rollback and log it before writing', () => {
@@ -464,7 +529,7 @@ describe('hardenRuleset', () => {
         hardenRuleset(true, port);
         expect(logs).toEqual([
             `ruleset-rollback:${String(RULESET_ID)}:${captureRollback(live)}`,
-            `ruleset-hardening:${String(RULESET_ID)}:applied:dismiss_stale_reviews_on_push,require_last_push_approval`,
+            `ruleset-hardening:${String(RULESET_ID)}:applied:required_approving_review_count`,
         ]);
     });
 
@@ -475,20 +540,21 @@ describe('hardenRuleset', () => {
         expect(receipt).toEqual({
             rulesetId: RULESET_ID,
             outcome: 'dry-run',
-            changed: ['dismiss_stale_reviews_on_push', 'require_last_push_approval'],
+            changed: ['required_approving_review_count'],
             rollback: captureRollback(live),
         });
         expect(writes).toEqual([]);
         expect(reads).toEqual([RULESET_ID]);
         expect(logs).toEqual([
-            'ruleset-hardening-plan:rules[2].parameters.dismiss_stale_reviews_on_push:false->true',
-            'ruleset-hardening-plan:rules[2].parameters.require_last_push_approval:false->true',
-            `ruleset-hardening:${String(RULESET_ID)}:dry-run:dismiss_stale_reviews_on_push,require_last_push_approval`,
+            'ruleset-hardening-plan:rules[2].parameters.dismiss_stale_reviews_on_push:true->true',
+            'ruleset-hardening-plan:rules[2].parameters.require_last_push_approval:true->true',
+            'ruleset-hardening-plan:rules[2].parameters.required_approving_review_count:2->1',
+            `ruleset-hardening:${String(RULESET_ID)}:dry-run:required_approving_review_count`,
         ]);
     });
 
-    it('should write nothing and say so when both fields already hold', () => {
-        const live = fixture({ dismissStaleReviews: true, requireLastPushApproval: true });
+    it('should write nothing and say so when every field already holds', () => {
+        const live = fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 1 });
         const { port, writes, reads, logs } = fakePort(live);
         const receipt = hardenRuleset(true, port);
         expect(receipt).toEqual({
@@ -516,7 +582,7 @@ describe('hardenRuleset', () => {
         expect(writes).toEqual([]);
     });
 
-    it('should refuse a candidate that changes the review count before any write', () => {
+    it('should refuse a candidate that leaves the review count at a value other than 1 before any write', () => {
         const live = liveShape();
         const { port, writes } = fakePort(live, buildHardenedRuleset(live));
         const build = () => fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 5 });
@@ -536,7 +602,7 @@ describe('hardenRuleset', () => {
         expect(writes).toHaveLength(1);
     });
 
-    it('should refuse a readback that changed the review count', () => {
+    it('should refuse a readback that stored the review count at a value other than 1', () => {
         const live = liveShape();
         const readback = fixture({ dismissStaleReviews: true, requireLastPushApproval: true, reviewCount: 3 });
         const { port, writes } = fakePort(live, readback);
@@ -544,12 +610,10 @@ describe('hardenRuleset', () => {
         expect(writes).toHaveLength(1);
     });
 
-    it('should refuse a readback that never enabled the approved fields', () => {
+    it('should refuse a readback that never applied the review-count target', () => {
         const live = liveShape();
         const { port } = fakePort(live, live);
-        expect(() => hardenRuleset(true, port)).toThrow(
-            `ruleset ${String(RULESET_ID)} readback does not show both approved fields enabled`
-        );
+        expect(() => hardenRuleset(true, port)).toThrow('rules[2].parameters.required_approving_review_count');
     });
 });
 

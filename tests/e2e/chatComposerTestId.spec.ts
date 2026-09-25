@@ -19,14 +19,16 @@ test.describe('Chat composer', () => {
         await openChatPanel(page);
     });
 
-    // The composer is enabled by an admitted backend, and browser-local
-    // admission requires a WebGPU device. The expectation is read from
-    // Chromium's own adapter rather than assumed of the runner, so the
-    // enabled and disabled contracts are both real assertions. The general
-    // matrix has no adapter and therefore proves only the disabled branch; the
-    // enabled branch is proven by browserAiAdmittedPresentation.spec.ts on the
-    // hardware leg, and runs here as well on a developer machine with a GPU.
-    test('follows local AI admission and closes on toggle', async ({ page }, testInfo) => {
+    // The admission badge reports whether a browser-local backend is admitted,
+    // and admission requires a WebGPU device. The expectation is read from
+    // Chromium's own adapter rather than assumed of the runner, so both the
+    // unavailable and available branches are real assertions. The composer
+    // itself stays enabled either way: it is disabled only while generating, so
+    // deterministic commands run without a model. The general matrix has no
+    // adapter and therefore proves the unavailable branch; the available branch
+    // is proven by browserAiAdmittedPresentation.spec.ts on the hardware leg,
+    // and runs here as well on a developer machine with a GPU.
+    test('reports local AI admission state and closes on toggle', async ({ page }, testInfo) => {
         const input = page.getByRole('textbox', { name: 'Chat message input', exact: true });
         await expect(input).toBeVisible();
 
@@ -37,11 +39,13 @@ test.describe('Chat composer', () => {
         });
 
         if (hardware.status === 'unavailable') {
-            // Asserted before the disabled state: the composer is also disabled
-            // while detection is still running, so the settled label is what
-            // distinguishes a refused backend from an unfinished probe.
+            // The badge is absent while detection is still running, so the
+            // settled label is what distinguishes a refused backend from an
+            // unfinished probe. The composer stays enabled because
+            // deterministic commands run without a model — `disabled` is
+            // `isGenerating` alone.
             await expect(page.getByText('AI Not Available', { exact: true })).toBeVisible();
-            await expect(input).toBeDisabled();
+            await expect(input).toBeEnabled();
         } else {
             await expect(input).toBeEnabled();
             await expect(page.getByText('AI Not Available', { exact: true })).toHaveCount(0);
