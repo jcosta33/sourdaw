@@ -1466,15 +1466,19 @@ describe('package scripts and gitignore', () => {
      */
     it('declares exactly each command local import closure, so over- and under-declaration redden', () => {
         const repositoryRoot = join(import.meta.dirname, '..', '..');
+        const readSource = (path: string): string | undefined => {
+            try {
+                return readFileSync(join(repositoryRoot, path), 'utf8');
+            } catch {
+                return undefined;
+            }
+        };
         for (const [command, declared] of Object.entries(trustedDependencyGraphs)) {
             const entry = declared[1];
             if (entry === undefined) {
                 throw new Error(`trusted dependency graph for ${command} has no entry path`);
             }
-            const sources = new Map(
-                declared.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')] as const)
-            );
-            const expected = new Set(trustedLocalImportClosure(entry, sources));
+            const expected = new Set(trustedLocalImportClosure(entry, readSource));
             expected.add(BOOTSTRAP_PATH);
             expect(new Set(declared), `${command} declared closure`).toEqual(expected);
         }
@@ -1516,6 +1520,35 @@ describe('package scripts and gitignore', () => {
     it('refuses an import of the loader the snapshot never executes', async () => {
         expect(await snapshotRefusalFor("import { BOOTSTRAP_PATH } from './trustedGithubWriteBootstrap.ts';")).toMatch(
             /scripts\/deliverPullRequest\.ts imports scripts\/trustedGithubWriteBootstrap\.ts, which the trusted snapshot never executes/
+        );
+    });
+
+    /**
+     * A dynamic module load whose specifier is computed — `import(expr)`, `require(expr)`, or
+     * `createRequire(...)(expr)` — is not a literal the graph can check, and the snapshot writes only
+     * the declared sources, so it resolves nothing at delivery time. The graph assertion must refuse
+     * it, naming the file and the shape, rather than silently skipping it while reporting coverage it
+     * does not have.
+     */
+    it.each([
+        {
+            label: 'a computed dynamic import',
+            poisoned: "const specifier = './unchecked.ts';\nawait import(specifier);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a computed require',
+            poisoned: "const specifier = './unchecked.ts';\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a computed createRequire specifier',
+            poisoned: "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)(someVariable);",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label in the graph assertion', async ({ poisoned, shape }) => {
+        expect(await snapshotRefusalFor(poisoned)).toContain(
+            `scripts/deliverPullRequest.ts loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
         );
     });
 

@@ -434,6 +434,11 @@ function assertSnapshotResolvableImports(path: string, source: string, pathSet: 
         }
         throw new Error(`${path} imports ${specifier}, which does not resolve in the trusted snapshot`);
     }
+    for (const shape of snapshotComputedDynamicSpecifiers(source)) {
+        throw new Error(
+            `${path} loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
+        );
+    }
 }
 
 /** The whole of the loader's exemption: this one package, in this one file, and nothing else. */
@@ -455,6 +460,176 @@ export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
     scanImportSpecifiers(source, 0, source.length, specifiers);
     return [...specifiers];
+}
+
+const COMPUTED_DYNAMIC_IMPORT_SHAPE = 'import(...)';
+const COMPUTED_REQUIRE_SHAPE = 'require(...)';
+const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
+
+/**
+ * The module-loading shapes whose specifier is computed rather than a literal the snapshot can
+ * satisfy: `import(expr)`, `require(expr)` / `require.resolve(expr)`, and
+ * `createRequire(...)(expr)`. A literal or static-template specifier is carried by
+ * `snapshotImportSpecifiers`; a computed one is exactly what the graph check must not silently
+ * ignore, because the snapshot writes only the declared sources into a temporary directory and a
+ * computed specifier then resolves nothing there — the command dies mid-delivery with
+ * `ERR_MODULE_NOT_FOUND` while every graph check reports coverage it does not have. Each such shape
+ * is refused, naming the file and the shape.
+ */
+export function snapshotComputedDynamicSpecifiers(source: string): string[] {
+    const shapes = new Set<string>();
+    scanComputedDynamicSpecifiers(source, 0, source.length, shapes);
+    return [...shapes];
+}
+
+function scanComputedDynamicSpecifiers(
+    source: string,
+    start: number,
+    end: number,
+    shapes: Set<string>,
+    stopAtDepthZero = false
+): number {
+    let index = start;
+    let depth = stopAtDepthZero ? 1 : null;
+    while (index < end) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
+            continue;
+        }
+        if (quote === '`') {
+            index = scanComputedTemplate(source, index, end, shapes);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (depth !== null) {
+            if (source[index] === '{') {
+                depth += 1;
+                index += 1;
+                continue;
+            }
+            if (source[index] === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    return index + 1;
+                }
+                index += 1;
+                continue;
+            }
+        }
+        const computed = readComputedDynamicLoad(source, index);
+        if (computed !== undefined) {
+            shapes.add(computed.shape);
+            index = computed.end;
+            continue;
+        }
+        index += 1;
+    }
+    return index;
+}
+
+function scanComputedTemplate(source: string, index: number, end: number, shapes: Set<string>): number {
+    let cursor = index + 1;
+    while (cursor < end) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor + 1;
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            cursor = scanComputedDynamicSpecifiers(source, cursor + 2, end, shapes, true);
+            continue;
+        }
+        cursor += 1;
+    }
+    return end;
+}
+
+type ComputedDynamicLoad = { shape: string; end: number };
+
+function readComputedDynamicLoad(source: string, index: number): ComputedDynamicLoad | undefined {
+    if (isKeywordAt(source, index, 'import') && !isPrecededByDotAccess(source, index)) {
+        const afterKeyword = skipWhitespace(source, index + 6);
+        if (source[afterKeyword] === '(') {
+            return computedDynamicLoad(source, afterKeyword, COMPUTED_DYNAMIC_IMPORT_SHAPE);
+        }
+        return undefined;
+    }
+    if (isKeywordAt(source, index, 'require') && !isPrecededByDotAccess(source, index)) {
+        let cursor = skipWhitespace(source, index + 7);
+        if (source[cursor] === '.') {
+            const afterDot = skipWhitespace(source, cursor + 1);
+            if (isKeywordAt(source, afterDot, 'resolve')) {
+                cursor = afterDot + 7;
+            }
+        } else if (source.startsWith('?.', cursor)) {
+            const afterDot = skipWhitespace(source, cursor + 2);
+            if (isKeywordAt(source, afterDot, 'resolve')) {
+                cursor = afterDot + 7;
+            }
+        }
+        cursor = skipWhitespace(source, cursor);
+        if (source.startsWith('?.', cursor) && source[skipWhitespace(source, cursor + 2)] === '(') {
+            cursor = skipWhitespace(source, cursor + 2);
+        }
+        if (source[cursor] === '(') {
+            return computedDynamicLoad(source, cursor, COMPUTED_REQUIRE_SHAPE);
+        }
+        return undefined;
+    }
+    if (isKeywordAt(source, index, 'createRequire') && !isPrecededByDotAccess(source, index)) {
+        const afterKeyword = skipWhitespace(source, index + 13);
+        if (source[afterKeyword] === '(') {
+            const afterFirstCall = skipBalancedParens(source, afterKeyword);
+            if (afterFirstCall !== undefined) {
+                let secondCallCursor = skipWhitespace(source, afterFirstCall);
+                if (
+                    source.startsWith('?.', secondCallCursor) &&
+                    source[skipWhitespace(source, secondCallCursor + 2)] === '('
+                ) {
+                    secondCallCursor = skipWhitespace(source, secondCallCursor + 2);
+                }
+                if (source[secondCallCursor] === '(') {
+                    return computedDynamicLoad(source, secondCallCursor, COMPUTED_CREATE_REQUIRE_SHAPE);
+                }
+            }
+        }
+        return undefined;
+    }
+    return undefined;
+}
+
+function computedDynamicLoad(source: string, openParen: number, shape: string): ComputedDynamicLoad | undefined {
+    let specifierStart = skipWhitespace(source, openParen + 1);
+    while (source[specifierStart] === '(') {
+        specifierStart = skipWhitespace(source, specifierStart + 1);
+    }
+    const literal = readModuleStringAfter(source, specifierStart);
+    if (literal === undefined) {
+        return { shape, end: endOfBalancedCall(source, openParen) };
+    }
+    const afterLiteral = skipWhitespace(source, literal.end);
+    if (source[afterLiteral] !== ')') {
+        return { shape, end: endOfBalancedCall(source, openParen) };
+    }
+    return undefined;
+}
+
+function endOfBalancedCall(source: string, openParen: number): number {
+    const end = skipBalancedParens(source, openParen);
+    return end === undefined ? source.length : end;
 }
 
 function scanImportSpecifiers(
@@ -999,13 +1174,21 @@ function localModuleDependencies(path: string, source: string): string[] {
 
 /**
  * The local modules `entry` actually executes, walked with the same import scan the graph check uses:
- * everything reachable from `entry` through `./`-relative imports, transitively. The loader itself is
- * deliberately absent — no executed source may import it, which `assertTrustedSourceGraph` refuses — so
- * a command's declared set is exactly this closure plus the loader's own path. Exported so the specs
- * that pin each command's declared set to its true closure can see over- and under-declaration, which
- * the runtime check alone cannot: it only proves the declared set is closed under imports.
+ * every `./`-relative literal or static-template import from `entry` and, transitively, from each
+ * module it reaches. `readSource` supplies each module's source from the working tree, so the walk
+ * crosses an undeclared intermediate instead of stopping at it. The walk refuses rather than silently
+ * truncates: a reached module with no source, or a computed `import(expr)` / `require(expr)` /
+ * `createRequire(...)(expr)` specifier, throws — those shapes cannot be resolved from a snapshot and
+ * must not be skipped. The loader itself is deliberately absent — no executed source may import it,
+ * which `assertTrustedSourceGraph` refuses — so a command's declared set is exactly this closure plus
+ * the loader's own path. Exported so the specs pinning each command's declared set to its true closure
+ * can see over- and under-declaration, which the runtime check alone cannot: it only proves the
+ * declared set is closed under imports.
  */
-export function trustedLocalImportClosure(entry: string, sources: ReadonlyMap<string, string>): ReadonlySet<string> {
+export function trustedLocalImportClosure(
+    entry: string,
+    readSource: (path: string) => string | undefined
+): ReadonlySet<string> {
     const closure = new Set<string>();
     const pending = [entry];
     while (pending.length > 0) {
@@ -1014,9 +1197,14 @@ export function trustedLocalImportClosure(entry: string, sources: ReadonlyMap<st
             continue;
         }
         closure.add(path);
-        const source = sources.get(path);
+        const source = readSource(path);
         if (source === undefined) {
-            continue;
+            throw new Error(`local import closure cannot read ${path}, which ${entry} reaches`);
+        }
+        for (const shape of snapshotComputedDynamicSpecifiers(source)) {
+            throw new Error(
+                `${path} loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
+            );
         }
         for (const dependency of localModuleDependencies(path, source)) {
             if (!closure.has(dependency)) {
