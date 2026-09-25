@@ -5,7 +5,7 @@ import { clampOversampling, type GlutenPatch } from '../../models/GlutenPatch';
 import { loadGlutenPatch } from '../../stores/glutenStore';
 
 import { createFlushHandlers } from './createFlushHandlers';
-import { bridgeDeps, encodeGlutenValue } from './helpers';
+import { bridgeDeps, encodeGlutenValue, paramBatcher } from './helpers';
 
 const { pushParamImmediately } = createFlushHandlers(bridgeDeps);
 
@@ -84,6 +84,7 @@ export function loadGlutenPatchWithAudio(deviceId: string, rawPatch: GlutenPatch
             );
             continue;
         }
+        paramBatcher.cancel(`${deviceId}:${key}`);
         pushParamImmediately(deviceId, key, encodedValue);
     }
 }

@@ -24,6 +24,12 @@ name: Jev
 # The `main` ruleset does not require this check and must not: a required
 # context converts an observation into merge authority.
 #
+# The `Jev coverage` job is the same assessment's scope made readable from the
+# checks list: it holds no provider key, checks nothing out, and only reads back
+# the artifact the assessment job uploaded in this run to annotate the paths
+# that were withheld. Its own name carries the coverage line, so an agent that
+# never opens the job summary can still see what was assessed and what was not.
+#
 # [ADR 0046]: .agents/decisions/0046-semantic-review-is-advisory-and-local-first.md
 
 on:
@@ -77,6 +83,17 @@ jobs:
     if: ${{ !cancelled() && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false && github.event.pull_request.base.ref == 'main')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The coverage line reaches the `Jev coverage` job below, whose own name is
+    # built from it, so a reader learns the scope from the checks list without
+    # opening the summary. The output is the bare step output: a job skipped
+    # entirely never evaluates its own outputs mapping, so the fallback for the
+    # red and skipped paths lives in the consumer's name expression, where it
+    # runs. The attempt is carried beside it because a re-run of only the failed
+    # jobs does not re-run this job, and the consumer's own `github.run_attempt`
+    # would then name an artifact no job uploaded.
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
+      attempt: ${{ github.run_attempt }}
     steps:
       - name: Checkout the trusted revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,9 +190,154 @@ jobs:
       - name: Upload the advisory report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}
+          # Attempt-scoped: a re-run reuses the run id, so a run-scoped name
+          # would collide with the previous attempt's immutable artifact, fail
+          # this upload, skip the line, and still let the softened download read
+          # the superseded report.
+          name: semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/semantic-review
           # The report carries repository source regions as evidence ids and
           # hashes; the content itself stays in the run's own storage and ages
           # out on its own.
           retention-days: 7
+
+      - name: Compute the coverage line
+        id: coverage
+        # Runs after the upload, and only when every earlier step — the report
+        # step included — concluded successfully: the default success gate is
+        # what ties the published line to the report this attempt uploaded, and a
+        # line derived from a report that was never uploaded would name a scope
+        # no reader could open. A red or unpublished report is named by the
+        # coverage job's own fallback instead; a retrieval failure after a
+        # successful upload is named by that job's annotating step, which reports
+        # the failed fetch rather than an absent report. No provider key is in
+        # this environment.
+        run: |
+          set -euo pipefail
+          report_directory="$RUNNER_TEMP/semantic-review"
+          coverage='no assessment delivered'
+          if [ -f "$report_directory/scan.json" ]; then
+            # The figure is labelled as distinct path-and-reason pairs because
+            # that is what it counts: the report counts regions, and its producer
+            # emits one identical entry per over-budget region of a file. Counting
+            # those repeats as withheld would contradict the annotations, which
+            # collapse them, and dropping the pair's reason would hide it.
+            computed=$(jq -r '"\(.execution) · \(.scope.discovered) discovered · \(.scope.eligible) eligible · \(.scope.assessed) assessed · \(([.scope.unassessed[], .scope.truncated[]] | unique_by([.path, .reason]) | length)) distinct path-and-reason pairs"' "$report_directory/scan.json" 2>/dev/null || true)
+            if [ -n "$computed" ]; then
+              coverage=$computed
+            fi
+          fi
+          printf 'coverage=%s\n' "$coverage" >> "$GITHUB_OUTPUT"
+
+  coverage:
+    # The coverage line is this check's own name, so an agent reading the checks
+    # list learns the scope without opening the summary. The fallback lives here
+    # rather than in the assessment job's outputs, because a skipped job never
+    # evaluates its outputs mapping: this is the expression that actually runs
+    # on the red and skipped paths and names them. It is a second job because
+    # reading the report back out of the run's artifact belongs in a step that
+    # holds no provider key at all.
+    name: Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}
+    needs: assess
+    # Runs even when the assessment concluded red — a coverage gap is exactly
+    # what a reader of a red advisory check needs to see — and never on
+    # cancellation, which would annotate a revision nobody is waiting on.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download the advisory report
+        id: download
+        # The artifact exists only when the assessment delivered a report, so a
+        # missing one is an expected outcome rather than a failure, and the
+        # annotating step below is what reports it. Softening this fetch is
+        # safe because the step proves nothing, and its id publishes the raw
+        # outcome so that step can tell a failed retrieval from a run that never
+        # published anything. The name carries the producer's attempt, which
+        # arrives as a job output: a re-run of only the failed jobs does not
+        # re-run `assess`, so this job's own `github.run_attempt` would name an
+        # artifact no job uploaded.
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ needs.assess.outputs.attempt }}
+          path: ${{ runner.temp }}/semantic-review
+
+      - name: Publish the withheld paths
+        # Reads the producer's artifact. Nothing is checked out, and no file the
+        # reviewed head supplies is placed on disk. At most ten distinct pairs
+        # are annotated, one notice each at line 1, and the rest are counted in a
+        # single notice so a change with many withheld pairs cannot bury the
+        # checks list.
+        env:
+          # The fetch's raw outcome, and the coverage line that exists only when
+          # the upload succeeded. Together they say whether the producer
+          # published a report, so a failed retrieval is not blamed on a run that
+          # published nothing, and vice versa.
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          COVERAGE_LINE: ${{ needs.assess.outputs.coverage }}
+        run: |
+          set -euo pipefail
+          report_directory="$RUNNER_TEMP/semantic-review"
+          report="$report_directory/scan.json"
+          withheld_list="$report_directory/withheld-notices.txt"
+          # Three absences, told apart by what the fetch proved. A missing or
+          # empty report with a failed fetch is either a retrieval failure (the
+          # line exists, so this run published one) or a run that published
+          # nothing; a missing or empty report with a successful fetch disproves
+          # "published nothing" and is a report that cannot be read.
+          if [ ! -s "$report" ]; then
+            if [ "$DOWNLOAD_OUTCOME" = 'failure' ]; then
+              if [ -n "$COVERAGE_LINE" ]; then
+                printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\n'
+              else
+                printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\n'
+              fi
+              exit 0
+            fi
+            printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\n'
+            exit 0
+          fi
+
+          # One annotation per distinct withheld path-and-reason pair, in the
+          # order the report lists them. The producer emits one identical entry
+          # per over-budget region of a file, so the pairs are deduplicated while
+          # every distinct reason is kept: emitting the repeats would spend the
+          # budget on the same notice and hide a distinct reason, and sorting the
+          # survivors would let the ten-pair budget fall on alphabet rather than
+          # on the report's own order. The `file=` property is identity-bearing,
+          # so it is escaped exactly and never folded: folding a control
+          # character into a space would annotate two paths under one name and
+          # attribute a reason to the wrong file. The property escapes `%`, a
+          # carriage return, a newline, `:`, and `,`; the displayed text escapes
+          # `%`, a carriage return, and a newline.
+          if ! jq -r '
+            def esc_data: gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A");
+            def esc_prop: esc_data | gsub(":"; "%3A") | gsub(","; "%2C");
+            [.scope.unassessed[], .scope.truncated[]]
+            | reduce .[] as $entry (
+                { seen: {}, distinct: [] };
+                ($entry | [.path, .reason] | tojson) as $key
+                | if .seen[$key] then . else .seen[$key] = true | .distinct += [$entry] end
+              )
+            | .distinct[]
+            | "::notice file=\(.path | esc_prop),line=1::\(.path | esc_data): \(.reason | esc_data)"
+          ' "$report" > "$withheld_list" 2>/dev/null; then
+            printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\n'
+            exit 0
+          fi
+
+          # At most ten annotations, one per distinct pair, then one notice
+          # counting the pairs that were not annotated.
+          withheld=0
+          annotated=0
+          while IFS= read -r notice; do
+            withheld=$((withheld + 1))
+            if [ "$annotated" -lt 10 ]; then
+              printf '%s\n' "$notice"
+              annotated=$((annotated + 1))
+            fi
+          done < "$withheld_list"
+
+          printf '::notice title=Jev coverage::%s further distinct path-and-reason pairs were not annotated.\n' "$((withheld - annotated))"
