@@ -437,6 +437,31 @@ describe('linked automation point admission', () => {
         expect(automationStore.value).toEqual(peerStore);
     });
 
+    it('refuses follower-point undo after the follower lane is unlinked', async () => {
+        await executeAppAction({
+            type: 'removeAutomationPoint',
+            payload: { laneId: FOLLOWER_LANE_ID, pointIndex: 0, pointId: 'ignored-follower-point' },
+        });
+        const state = automationStore.value!;
+        automationStore.set({
+            lanes: state.lanes.map((lane) => {
+                if (lane.id !== FOLLOWER_LANE_ID) {
+                    return lane;
+                }
+                const { linkedLaneId: _linkedLaneId, ...unlinked } = lane;
+                return unlinked;
+            }),
+        });
+        flushAutomergeStorageWrites();
+        const unlinkedDocument = projectSnapshot();
+        const unlinkedStore = storeSnapshot();
+
+        expect((await undo()).headConsumed).toBe(false);
+        expect(projectSnapshot()).toBe(unlinkedDocument);
+        expect(automationStore.value).toEqual(unlinkedStore);
+        expect(automationStore.value?.lanes.find((lane) => lane.id === FOLLOWER_LANE_ID)?.points).toEqual([]);
+    });
+
     it('keeps source-lane point writes effective for a follower through undo and redo', async () => {
         expect(getAutomationValueAtBeat(SOURCE_LANE_ID, 4)).toBeCloseTo(0.2);
         expect(getAutomationValueAtBeat(FOLLOWER_LANE_ID, 4)).toBeCloseTo(0.4);

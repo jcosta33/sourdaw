@@ -86,6 +86,21 @@ describe('handleRestoreAutomationPointPresence', () => {
         expect(mockedRestore).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['unlinked since the removal', undefined],
+        ['now naming a different source lane', 'lane-other-source'],
+    ])('rejects a follower lane whose link changed to %s without mutating', (_label, linkedLaneId) => {
+        mockedGetState.mockReturnValue({ lanes: [lane({ linkedLaneId })] });
+
+        const result = handleRestoreAutomationPointPresence.execute({
+            type: 'restoreAutomationPointPresence',
+            payload: payload(),
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
     it('rejects a changed point with the captured id without mutating', () => {
         mockedGetState.mockReturnValue({ lanes: [lane({ points: [{ ...point, value: 0.4 }] })] });
 
@@ -110,6 +125,29 @@ describe('handleRestoreAutomationPointPresence', () => {
         const result = handleRestoreAutomationPointPresence.execute({
             type: 'restoreAutomationPointPresence',
             payload: payload(),
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'a same-beat peer whose id matches but value changed',
+            { id: 'peer-1', beat: point.beat, value: 0.5, curve: 'linear', tension: 0 } satisfies AutomationPoint,
+            { id: 'peer-1', beat: point.beat, value: 0.6, curve: 'linear', tension: 0 } satisfies AutomationPoint,
+        ],
+        [
+            'a same-beat peer whose value matches but id changed',
+            { id: 'peer-1', beat: point.beat, value: 0.5, curve: 'linear', tension: 0 } satisfies AutomationPoint,
+            { id: 'peer-2', beat: point.beat, value: 0.5, curve: 'linear', tension: 0 } satisfies AutomationPoint,
+        ],
+    ])('rejects restoration when the lane holds %s without mutating', (_label, capturedPeer, actualPeer) => {
+        mockedGetState.mockReturnValue({ lanes: [lane({ points: [actualPeer] })] });
+
+        const result = handleRestoreAutomationPointPresence.execute({
+            type: 'restoreAutomationPointPresence',
+            payload: payload({ expectedEqualBeatPoints: [capturedPeer] }),
         });
 
         expect(result).toEqual({ status: 'conflict' });
