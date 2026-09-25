@@ -187,6 +187,9 @@ export { setTrackSoloGate } from './trackAudioControls/setTrackSoloGate';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
 
+export { armRetrospectiveCapture } from './retrospectiveCapture/armRetrospectiveCapture';
+export { disarmRetrospectiveCapture } from './retrospectiveCapture/disarmRetrospectiveCapture';
+
 export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
 export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';
 export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';

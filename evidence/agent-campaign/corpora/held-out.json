@@ -7,15 +7,13 @@
             "sealed": true
         },
         "named-target-with-unit": {
-            "sealed": false,
-            "pendingContract": "decibel forms on setTrackGain, setSend, setMasterGain"
+            "sealed": true
         },
         "device-insert-with-parameter": {
             "sealed": true
         },
         "new-bus-send-with-level": {
-            "sealed": false,
-            "pendingContract": "decibel send level on addSend/setSend"
+            "sealed": true
         },
         "time-scoped-level": {
             "sealed": false,
@@ -854,6 +852,463 @@
                 "invariants": {
                     "touchedIdsWithin": ["track-snare", "dist-drive"],
                     "protectedIds": ["track-lead-vocal", "track-reverb-bus"],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-LEVEL-1",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Bring the Guitar up 2 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "deltaDb": 2
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Guitar"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deltaDb": 2
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-guitar"],
+                    "protectedIds": ["track-keys"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-LEVEL-2",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Put Backing Vocals L at -9 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -9
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Backing Vocals L"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "gainDb": -9
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-backing-vocal-left"],
+                    "protectedIds": ["track-backing-vocal-right"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-LEVEL-3",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Lower the master by 1.5 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set master gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setMasterGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-master",
+                            "name": "setMasterGain",
+                            "arguments": {
+                                "deltaDb": -1.5
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setMasterGain",
+                        "payload": {
+                            "deltaDb": -1.5
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": [],
+                    "protectedIds": ["track-guitar"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-LEVEL-4",
+            "promptClass": "named-target-with-unit",
+            "class": "execute-exact",
+            "prompt": "Lower the Snare send to the Drum Bus by 4 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-send",
+                            "name": "setSend",
+                            "arguments": {
+                                "busId": "track-drum-bus",
+                                "deltaDb": -4
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Snare"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setSend",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "busId": "track-drum-bus",
+                            "deltaDb": -4
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-snare", "track-drum-bus"],
+                    "protectedIds": ["track-kick"],
+                    "maxCommands": 1
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-SEND-1",
+            "promptClass": "new-bus-send-with-level",
+            "class": "execute-exact",
+            "prompt": "Add a bus called Keys Chorus and feed the Keys into it at -10 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create bus", "add send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["createBus", "addSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "createBus",
+                            "arguments": {
+                                "name": "Keys Chorus",
+                                "binding": "chorus"
+                            }
+                        },
+                        {
+                            "id": "send-keys",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$chorus",
+                                "levelDb": -10
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Keys"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "createBus",
+                        "payload": {
+                            "name": "Keys Chorus"
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "levelDb": -10
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-keys"],
+                    "protectedIds": ["track-reverb-bus"],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-SEND-2",
+            "promptClass": "new-bus-send-with-level",
+            "class": "execute-exact",
+            "prompt": "Set up a new bus named Vocal Delay with sends from Backing Vocals L and Backing Vocals R at -15 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create bus", "add send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["createBus", "addSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "createBus",
+                            "arguments": {
+                                "name": "Vocal Delay",
+                                "binding": "delay"
+                            }
+                        },
+                        {
+                            "id": "send-bvl",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$delay",
+                                "levelDb": -15
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Backing Vocals L"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        },
+                        {
+                            "id": "send-bvr",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$delay",
+                                "levelDb": -15
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Backing Vocals R"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "createBus",
+                        "payload": {
+                            "name": "Vocal Delay"
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "levelDb": -15
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "levelDb": -15
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-backing-vocal-left", "track-backing-vocal-right"],
+                    "protectedIds": ["track-lead-vocal"],
+                    "maxCommands": 3
+                }
+            }
+        },
+        {
+            "id": "AC054-HO-SEND-3",
+            "promptClass": "new-bus-send-with-level",
+            "class": "execute-exact",
+            "prompt": "Create a Bass Crush bus and send the Bass DI to it at -8 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["create bus", "add send"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["createBus", "addSend"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "make-bus",
+                            "name": "createBus",
+                            "arguments": {
+                                "name": "Bass Crush",
+                                "binding": "crush"
+                            }
+                        },
+                        {
+                            "id": "send-bass",
+                            "name": "addSend",
+                            "arguments": {
+                                "busId": "$crush",
+                                "levelDb": -8
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "where": {
+                                    "name": "Bass DI"
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 1
+                                }
+                            },
+                            "dependsOn": ["make-bus"]
+                        }
+                    ]
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "createBus",
+                        "payload": {
+                            "name": "Bass Crush"
+                        }
+                    },
+                    {
+                        "type": "addSend",
+                        "payload": {
+                            "trackId": "track-bass-di",
+                            "levelDb": -8
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-bass-di"],
+                    "protectedIds": ["track-drum-bus"],
                     "maxCommands": 2
                 }
             }

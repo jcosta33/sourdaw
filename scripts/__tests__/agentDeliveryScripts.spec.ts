@@ -912,7 +912,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:open']).toBe('node scripts/openLane.ts');
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['lane:sync-parent']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:sync-parent');
-        expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
+        expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReviewEntry.ts');
         expect(pkg.scripts['review:accept']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:accept');
         expect(pkg.scripts['review:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:publish');
         expect(pkg.scripts['review:accept']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:accept');

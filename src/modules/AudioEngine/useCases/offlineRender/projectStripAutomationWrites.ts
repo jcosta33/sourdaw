@@ -30,6 +30,16 @@
  * live writer and the native export (#3776) — decide on their own which lanes
  * that drop would lose, because only they know which devices the engine
  * actually carries.
+ *
+ * Two lanes driving one device parameter (a track lane plus a clip lane, or
+ * two clip lanes) reach this recorder as one `scheduleTrackAutomation` group,
+ * which applies exactly once per group with whatever
+ * `mergeAutomationSegmentStreams` kept — every disjoint lane, plus the one
+ * lane latest in lane-array order out of any genuinely overlapping cluster.
+ * The parameter's entry always carries that merged stream; the lanes a
+ * cluster did not keep are reported on the result's `overlaps` field
+ * (via `onWithheldDeviceLanes`) for a caller that must account for them,
+ * never by omitting the entry.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -73,7 +83,19 @@ export type StripAutomationWritesEntry = Readonly<{
 }>;
 
 export type StripAutomationWritesResult =
-    | Readonly<{ outcome: 'converted'; entries: readonly StripAutomationWritesEntry[] }>
+    | Readonly<{
+          outcome: 'converted';
+          entries: readonly StripAutomationWritesEntry[];
+          /**
+           * Every (device, parameter) group whose lanes did not all fit one
+           * merged stream, naming the lanes withheld from it — the group's
+           * entry above still carries the merged stream `entries` names.
+           * Empty when nothing clashed. A caller that must not silently lose
+           * a withheld lane's writes (the live producer, the native export)
+           * reads this and decides on its own.
+           */
+          overlaps: readonly { deviceId: string; parameterId: string; laneIds: readonly string[] }[];
+      }>
     | Readonly<{ outcome: 'declined'; reason: string }>;
 
 export type StripAutomationWritesInput = Readonly<{
@@ -168,6 +190,11 @@ type RecordedDeviceSegments = Map<string, readonly OfflineAutomationSegment[]>;
  * settled by the caller's law — the binding's job is only to say how the curve
  * reaches the device, and for a device the backend addresses by name that is
  * the segment stream, never an `AudioParam` this side owns.
+ *
+ * `scheduleTrackAutomation` applies one `segments` group exactly once, with
+ * whatever `mergeAutomationSegmentStreams` kept, so this recorder need only
+ * hold that single stream — there is no second `apply` for the same
+ * parameter to reconcile.
  */
 function recordingDeviceEntry(entry: StripAutomationDeviceEntry, recorded: RecordedDeviceSegments) {
     return {
@@ -191,11 +218,31 @@ function recordingDeviceEntry(entry: StripAutomationDeviceEntry, recorded: Recor
 }
 
 /**
+ * Every named device, wired to record rather than play, plus the recorder map
+ * they write into — one entry's `apply` per (device, parameter) group, so
+ * building this list needs no exclusion channel of its own; withheld lanes
+ * are reported separately, through `onWithheldDeviceLanes`.
+ */
+function recordingDeviceEntries(deviceEntries: readonly StripAutomationDeviceEntry[]): {
+    entries: ReturnType<typeof recordingDeviceEntry>[];
+    recordedByDeviceId: ReadonlyMap<string, RecordedDeviceSegments>;
+} {
+    const recordedByDeviceId = new Map<string, RecordedDeviceSegments>(
+        deviceEntries.map((entry): [string, RecordedDeviceSegments] => [entry.deviceId, new Map()])
+    );
+    const entries = deviceEntries.map((entry) => recordingDeviceEntry(entry, recordedByDeviceId.get(entry.deviceId)!));
+    return { entries, recordedByDeviceId };
+}
+
+/**
  * The device-parameter entries one strip's recorded segments compile into.
  *
  * A parameter no lane touched recorded nothing and gets no entry, for the same
  * reason an untouched strip position gets none: "no entry" and "converted,
- * wrote nothing" then read the same to every caller.
+ * wrote nothing" then read the same to every caller. A parameter some lanes
+ * were withheld from still gets its entry here — it carries the merged
+ * stream `scheduleTrackAutomation` kept, and the caller reads `overlaps`
+ * separately to know which lanes did not make it in.
  */
 function deviceParameterEntries(input: {
     trackId: string;
@@ -241,7 +288,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
     // The same lane set, gate and grain the web scheduler reads
     // (`scheduleTrackClips`); the mixdown always includes mixer lanes.
     if (track.automationMode === 'off') {
-        return { outcome: 'converted', entries: [] };
+        return { outcome: 'converted', entries: [], overlaps: [] };
     }
 
     const gainRecorder = createAutomationRecorder();
@@ -254,9 +301,14 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         sendAutomationParams.set(`send:${busId}`, recorder.param);
     }
 
-    const recordedByDeviceId = new Map<string, RecordedDeviceSegments>(
-        deviceEntries.map((entry): [string, RecordedDeviceSegments] => [entry.deviceId, new Map()])
-    );
+    const { entries: recordingEntries, recordedByDeviceId } = recordingDeviceEntries(deviceEntries);
+
+    // `deviceParameterOverlaps` is what `onWithheldDeviceLanes` reports —
+    // every (device, parameter) group `mergeAutomationSegmentStreams`
+    // withheld at least one lane from. The group's entry below still carries
+    // the merged stream it kept; this list is carried on the result for a
+    // caller that must account for the clash.
+    const deviceParameterOverlaps: { deviceId: string; parameterId: string; laneIds: readonly string[] }[] = [];
 
     scheduleTrackAutomation({
         lanes: [...lanes],
@@ -264,9 +316,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         trackGainNode: { gain: gainRecorder.param },
         trackPanNode: { pan: panRecorder.param },
         sendAutomationParams,
-        deviceEntries: deviceEntries.map((entry) =>
-            recordingDeviceEntry(entry, recordedByDeviceId.get(entry.deviceId)!)
-        ),
+        deviceEntries: recordingEntries,
         durationSeconds,
         defaultTempo,
         changes: [...changes],
@@ -279,6 +329,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         clipBoundsById: clipBoundsById(track),
         vcaMultiplier,
         resolveLaneCeiling,
+        onWithheldDeviceLanes: (clash) => deviceParameterOverlaps.push(clash),
     });
 
     const conversions: {
@@ -320,6 +371,13 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
             entries.push({ target, writes: converted.writes });
         }
     }
-    entries.push(...deviceParameterEntries({ trackId: track.id, deviceEntries, recordedByDeviceId, sampleRate }));
-    return { outcome: 'converted', entries };
+    entries.push(
+        ...deviceParameterEntries({
+            trackId: track.id,
+            deviceEntries,
+            recordedByDeviceId,
+            sampleRate,
+        })
+    );
+    return { outcome: 'converted', entries, overlaps: deviceParameterOverlaps };
 }

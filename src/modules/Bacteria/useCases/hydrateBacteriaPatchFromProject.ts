@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
+import { fromBacteriaModAssignmentsState, rowsEqual } from '../models/BacteriaModAssignmentsState';
 import {
     type BacteriaBand,
     type BacteriaCrossoverMode,
@@ -18,6 +19,7 @@ import {
     GRAIN_WINDOW_INDEX,
     ROUTING_MODE_INDEX,
 } from './bacteriaParamBridge/helpers';
+import { pushBacteriaModAssignmentsToEngine } from './bacteriaParamBridge/pushBacteriaModAssignmentsToEngine';
 
 /**
  * Reverse index tables for the bridge's mode encodings. `parameterValues`
@@ -142,8 +144,24 @@ function isStoredTrue(stored: number): boolean {
 }
 
 /**
+ * The patch with its routing table replaced by the device's decoded chunk, or
+ * the same patch reference when there is nothing to project.
+ *
+ * Split out of `hydrateBacteriaPatchFromProject` to keep that function's
+ * complexity under the project ceiling; the two decision points here (a null
+ * decode, an already-equal table) are one self-contained projection.
+ */
+function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): BacteriaPatch {
+    const decoded = fromBacteriaModAssignmentsState(deviceState);
+    if (decoded === null || rowsEqual(decoded, patch.modAssignments)) {
+        return patch;
+    }
+    return { ...patch, modAssignments: decoded };
+}
+
+/**
  * Hydrate the Bacteria session store from the device's persisted
- * `parameterValues` (#3673).
+ * `parameterValues` and its modulation-routing `deviceState` chunk (#3673, #4756).
  *
  * The panel store holds defaults until its own first write, so a project
  * loaded with nondefault parameters — and any later command, undo, or
@@ -151,6 +169,25 @@ function isStoredTrue(stored: number): boolean {
  * left the visible controls describing a patch nobody is hearing. This is the
  * same inbound projection the Fermenter and Gluten panels run: read-only, from
  * project state, into the owning store.
+ *
+ * The routing table rides the same projection for a different reason: it is
+ * the only piece of `BacteriaPatch` the load subscriber in `bacteriaSubscriber.ts`
+ * restores, and only once a live worklet has actually emitted `audioDevice.loaded`.
+ * An edit made before that — or a headless session where no live node is ever
+ * built — otherwise computes its add against the store's still-empty table and
+ * commits over whatever the document already held. Projecting the chunk here,
+ * on mount and on every `deviceState` change, gives every edit something to
+ * build on regardless of whether the live path has run yet.
+ *
+ * A routing table the projection actually changes is also pushed to the live
+ * engine through {@link pushBacteriaModAssignmentsToEngine} (#4756): a
+ * collaborator's write can move the document's chunk out from under a
+ * mounted, already-loaded panel with no store setter in the call path, and
+ * without this the node keeps playing the routing it loaded with while the
+ * panel, save, and export all describe the new one. This reaches only a
+ * *mounted* panel, since it is this hydrator's own effect that runs the
+ * projection; a foreign change with no panel mounted still reaches nothing
+ * live (#4764).
  */
 export function hydrateBacteriaPatchFromProject(deviceId: string): void {
     const tracks = trackStore.value?.tracks;
@@ -159,52 +196,78 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
     }
 
     const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
-    if (!device || device.type !== 'bacteria' || !device.parameterValues) {
+    if (!device || device.type !== 'bacteria') {
         return;
     }
-    const parameterValues = device.parameterValues;
 
     let patch = getBacteriaState(deviceId).patch;
     let changed = false;
+    let routingChanged = false;
 
-    for (const field of NUMERIC_GLOBAL_FIELDS) {
-        const stored = parameterValues[field];
-        if (isFiniteNumber(stored) && !Object.is(patch[field], stored)) {
-            patch = { ...patch, [field]: stored };
-            changed = true;
-        }
-    }
-
-    for (const field of BOOLEAN_GLOBAL_FIELDS) {
-        const stored = parameterValues[field];
-        if (isFiniteNumber(stored) && !Object.is(patch[field], isStoredTrue(stored))) {
-            patch = { ...patch, [field]: isStoredTrue(stored) };
-            changed = true;
-        }
-    }
-
-    for (let bandIndex = 0; bandIndex < patch.bands.length; bandIndex++) {
-        const hydrated = hydrateBandFromProject(patch.bands[bandIndex]!, bandIndex, parameterValues);
-        if (hydrated !== patch.bands[bandIndex]) {
-            patch = { ...patch, bands: patch.bands.map((band, index) => (index === bandIndex ? hydrated : band)) };
-            changed = true;
-        }
-    }
-
-    const crossoverMode = nameAt(CROSSOVER_MODE_NAMES, parameterValues.crossoverMode);
-    if (crossoverMode !== null && patch.crossoverMode !== crossoverMode) {
-        patch = { ...patch, crossoverMode: crossoverMode as BacteriaCrossoverMode };
+    const routed = projectRoutingTable(patch, device.deviceState);
+    if (routed !== patch) {
+        patch = routed;
         changed = true;
+        routingChanged = true;
     }
 
-    const globalRouting = nameAt(ROUTING_MODE_NAMES, parameterValues.globalRouting);
-    if (globalRouting !== null && patch.globalRouting !== globalRouting) {
-        patch = { ...patch, globalRouting: globalRouting as BacteriaRoutingMode };
-        changed = true;
+    const parameterValues = device.parameterValues;
+    if (parameterValues) {
+        for (const field of NUMERIC_GLOBAL_FIELDS) {
+            const stored = parameterValues[field];
+            if (isFiniteNumber(stored) && !Object.is(patch[field], stored)) {
+                patch = { ...patch, [field]: stored };
+                changed = true;
+            }
+        }
+
+        for (const field of BOOLEAN_GLOBAL_FIELDS) {
+            const stored = parameterValues[field];
+            if (isFiniteNumber(stored) && !Object.is(patch[field], isStoredTrue(stored))) {
+                patch = { ...patch, [field]: isStoredTrue(stored) };
+                changed = true;
+            }
+        }
+
+        for (let bandIndex = 0; bandIndex < patch.bands.length; bandIndex++) {
+            const hydrated = hydrateBandFromProject(patch.bands[bandIndex]!, bandIndex, parameterValues);
+            if (hydrated !== patch.bands[bandIndex]) {
+                patch = {
+                    ...patch,
+                    bands: patch.bands.map((band, index) => (index === bandIndex ? hydrated : band)),
+                };
+                changed = true;
+            }
+        }
+
+        const crossoverMode = nameAt(CROSSOVER_MODE_NAMES, parameterValues.crossoverMode);
+        if (crossoverMode !== null && patch.crossoverMode !== crossoverMode) {
+            patch = { ...patch, crossoverMode: crossoverMode as BacteriaCrossoverMode };
+            changed = true;
+        }
+
+        const globalRouting = nameAt(ROUTING_MODE_NAMES, parameterValues.globalRouting);
+        if (globalRouting !== null && patch.globalRouting !== globalRouting) {
+            patch = { ...patch, globalRouting: globalRouting as BacteriaRoutingMode };
+            changed = true;
+        }
     }
 
+    commitHydratedPatch(deviceId, patch, changed, routingChanged);
+}
+
+/**
+ * Store-only unless the routing projection itself changed: an ineligible
+ * target must still take the projected rows so a later edit builds on them
+ * (#4756), but only a table the projection actually changed is worth a push —
+ * an equal or absent chunk pushes nothing new to the engine.
+ */
+function commitHydratedPatch(deviceId: string, patch: BacteriaPatch, changed: boolean, routingChanged: boolean): void {
     if (changed) {
         loadBacteriaPatch(deviceId, patch);
+    }
+    if (routingChanged) {
+        pushBacteriaModAssignmentsToEngine(deviceId, patch.modAssignments);
     }
 }
 

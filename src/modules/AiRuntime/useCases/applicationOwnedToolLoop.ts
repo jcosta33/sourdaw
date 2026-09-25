@@ -1,4 +1,4 @@
-import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
+import { getAgentBuiltinDeviceFactoryManifest, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
@@ -47,9 +47,12 @@ import {
     PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
 } from './agentToolCatalog';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
+import { discoverMixRecipes } from './discoverMixRecipes';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
+import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 
 const DEFAULT_LIMITS = {
     maxTurns: 4,
@@ -737,6 +740,55 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
     }
 }
 
+function executeRecipeDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const parsed = parseRecipeDiscoveryInput(call.arguments, getMixRecipeCatalog().roles);
+    if (parsed.status === 'invalid') {
+        return failureReceipt({
+            callId,
+            toolName: RECIPE_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'invalid-tool-arguments',
+            safeMessage: parsed.reason,
+            retryable: true,
+        });
+    }
+    try {
+        const result = discoverMixRecipes(parsed.input);
+        if (result.status === 'invalid-target') {
+            return failureReceipt({
+                callId,
+                toolName: RECIPE_DISCOVERY_TOOL_NAME,
+                turn,
+                code: 'invalid-tool-arguments',
+                safeMessage: `recipe.discover targetId "${result.targetId}" is not a track in the project.`,
+                retryable: true,
+            });
+        }
+        return {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId,
+            toolName: RECIPE_DISCOVERY_TOOL_NAME,
+            turn,
+            status: 'success',
+            revision: null,
+            data: result.data,
+            summary: `${String(result.data.candidates.length)} of ${String(result.data.total)} recipe(s)`,
+            warnings: [...result.warnings],
+            error: null,
+        };
+    } catch {
+        return failureReceipt({
+            callId,
+            toolName: RECIPE_DISCOVERY_TOOL_NAME,
+            turn,
+            code: 'tool-execution-failed',
+            safeMessage: 'Recipe discovery failed inside the application authority.',
+            retryable: true,
+        });
+    }
+}
+
 function executeSafeRead(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
@@ -754,6 +806,8 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
             return executeCatalogDiscovery(call, callId, turn);
         case COMMAND_HISTORY_TOOL_NAME:
             return executeCommandHistory(call, callId, turn);
+        case RECIPE_DISCOVERY_TOOL_NAME:
+            return executeRecipeDiscovery(call, callId, turn);
         default:
             return failureReceipt({
                 callId,
@@ -1215,6 +1269,7 @@ export async function runApplicationOwnedToolLoop(
             AGENT_CATALOG_DISCOVERY_TOOL_NAME,
             AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
+            RECIPE_DISCOVERY_TOOL_NAME,
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls = identifiedCalls.filter(

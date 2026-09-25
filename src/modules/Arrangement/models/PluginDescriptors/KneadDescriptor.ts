@@ -1,7 +1,7 @@
 import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { effectGuidance } from './GuidanceProfiles';
 
 const KNEAD_DESCRIPTOR_DATA: PluginDescriptor = {
     id: 'knead',
@@ -34,11 +34,9 @@ export const KNEAD_DESCRIPTOR = applySingleDescriptorGuidance(
                 reason: 'Knead declares no device-owned output-gain control or automatic gain compensation.',
             }
         ),
-        declaredControl(
-            'Pitch-correction control',
-            'Changes the pitch-correction response for the selected clip.',
-            ['Balance correction strength with clip timing and formant preservation.'],
-            ['Aggressive values can produce audible pitch or formant artifacts.']
-        )
+        // No fallback and no overrides: Knead declares zero device-owned
+        // parameters (clip-owned pitch correction state lives elsewhere), so
+        // there is nothing here for either to cover.
+        undefined
     )
 );

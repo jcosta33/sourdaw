@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
+    clearInheritedRetrospectiveCaptureArm: vi.fn(),
     desktopStartupError: vi.fn(() => null),
     mountBrowserDisplayScaleHost: vi.fn(),
     reloadApplication: vi.fn(),
@@ -66,6 +67,10 @@ vi.mock('../DesktopStartupError', () => ({ DesktopStartupError: mocks.desktopSta
 
 vi.mock('../resolveAppComposition', () => ({
     resolveAppComposition: mocks.resolveAppComposition,
+}));
+
+vi.mock('../clearInheritedRetrospectiveCaptureArm', () => ({
+    clearInheritedRetrospectiveCaptureArm: mocks.clearInheritedRetrospectiveCaptureArm,
 }));
 
 vi.mock('../reloadApplication', () => ({ reloadApplication: mocks.reloadApplication }));
@@ -250,6 +255,12 @@ describe('app main composition', () => {
             throw new Error('Display scale reset or application render did not run');
         }
         expect(resetCallOrder).toBeLessThan(renderCallOrder);
+        expect(mocks.clearInheritedRetrospectiveCaptureArm).toHaveBeenCalledOnce();
+        const clearArmCallOrder = mocks.clearInheritedRetrospectiveCaptureArm.mock.invocationCallOrder[0];
+        if (clearArmCallOrder === undefined) {
+            throw new Error('Desktop startup did not clear an inherited retrospective capture arm');
+        }
+        expect(clearArmCallOrder).toBeLessThan(renderCallOrder);
         expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expectFirstPaintBusesRegisteredBeforeRender();
@@ -270,6 +281,7 @@ describe('app main composition', () => {
         expectFirstPaintRendered();
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
+        expect(mocks.clearInheritedRetrospectiveCaptureArm).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expectFirstPaintBusesRegisteredBeforeRender();
     });
@@ -294,6 +306,7 @@ describe('app main composition', () => {
         expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
         expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
+        expect(mocks.clearInheritedRetrospectiveCaptureArm).not.toHaveBeenCalled();
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expect(mocks.setWorkspaceEventBus).not.toHaveBeenCalled();

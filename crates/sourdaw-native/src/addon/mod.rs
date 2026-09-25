@@ -846,6 +846,28 @@ impl SourdawNative {
         )?)
     }
 
+    #[napi]
+    pub async fn arm_retrospective_capture(&self, track_id: String, channels: u32) -> Result<()> {
+        reason(
+            commands::engine_retrospective::arm_retrospective_capture(
+                track_id,
+                channels,
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
+    #[napi]
+    pub async fn disarm_retrospective_capture(&self) -> Result<()> {
+        reason(
+            commands::engine_retrospective::disarm_retrospective_capture(
+                &self.singletons.app_state,
+            )
+            .await,
+        )
+    }
+
     /// Empty the engine slot when the output stream behind it is gone, so the
     /// next `apply_graph_commands` boots a fresh engine on the current default
     /// device. Answers

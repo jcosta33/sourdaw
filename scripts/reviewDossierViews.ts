@@ -4,7 +4,16 @@
  * already proven the record these read.
  */
 
-import type { CompletedReviewStance, ReviewDossier, ReviewDossierStance } from './reviewDossier.ts';
+import type { AssessmentImpact, CompletedReviewStance, ReviewDossier, ReviewDossierStance } from './reviewDossier.ts';
+
+/**
+ * The assessment impact the recommendation is recorded beside: how the round's advisory semantic
+ * assessment influenced it, or undefined on a record persisted before the field existed. It records
+ * influence, never agreement — it is not a verdict, an approval, or merge authority.
+ */
+export function assessmentImpact(dossier: ReviewDossier): AssessmentImpact | undefined {
+    return dossier.assessmentImpact;
+}
 
 export function completedStances(dossier: ReviewDossier): CompletedReviewStance[] {
     return dossier.events

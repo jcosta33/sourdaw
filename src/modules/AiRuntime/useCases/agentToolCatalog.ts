@@ -1,3 +1,4 @@
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
@@ -14,6 +15,7 @@ import {
     PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 import {
@@ -38,6 +40,7 @@ export {
     PROJECT_DISCOVERY_TOOL_NAME,
     PROJECT_QUERY_TOOL_NAME,
     PROJECT_RESOLVE_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 
@@ -173,6 +176,26 @@ function getCommandIndexSearchSchema(): ToolSchema {
             },
         },
         ['intent']
+    );
+}
+
+function getRecipeDiscoverySchema(): ToolSchema {
+    const roles = getMixRecipeCatalog().roles;
+    return tool(
+        RECIPE_DISCOVERY_TOOL_NAME,
+        'Find authored mixing recipes for perceptual descriptors (for example warm, brighter, less muddy). Name the target track or bus to filter by its role and existing device chain, or pass role directly; results carry parameter ranges and metric expectations, and final values are chosen inside each range.',
+        {
+            descriptors: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 4,
+                items: { type: 'string', minLength: 1, maxLength: 48 },
+            },
+            targetId: { type: 'string', minLength: 1, maxLength: 256 },
+            role: { type: 'string', enum: [...roles] },
+            limit: { type: 'integer', minimum: 1, maximum: 8 },
+        },
+        ['descriptors']
     );
 }
 
@@ -323,5 +346,6 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             },
             ['scope']
         ),
+        getRecipeDiscoverySchema(),
     ];
 }

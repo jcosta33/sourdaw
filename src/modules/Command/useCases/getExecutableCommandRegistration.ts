@@ -39,6 +39,7 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         },
         toolDescription: descriptor.description,
         intentPhrases: descriptor.intentPhrases,
+        levelIntentPhrases: 'levelIntentPhrases' in descriptor ? descriptor.levelIntentPhrases : [],
         selectionPhrases: 'selectionPhrases' in descriptor ? descriptor.selectionPhrases : [],
         directionalIntent: 'directionalIntent' in descriptor ? descriptor.directionalIntent : undefined,
         targetChecks: descriptor.targetRules,
