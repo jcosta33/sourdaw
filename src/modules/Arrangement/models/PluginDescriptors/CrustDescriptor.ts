@@ -7,8 +7,8 @@
 
 import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTypes';
 
-import { applySingleDescriptorGuidance, descriptorGuidance } from './DescriptorGuidance';
-import { declaredControl, effectGuidance } from './GuidanceProfiles';
+import { applySingleDescriptorGuidance, descriptorGuidance, parameterGuidance } from './DescriptorGuidance';
+import { NO_SOURCE_SPECIFIC_MODULATION, effectGuidance } from './GuidanceProfiles';
 
 const CRUST_PARAMS: readonly PluginParamDef[] = [
     { id: 'gain', label: 'Gain', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
@@ -85,6 +85,8 @@ const CRUST_DESCRIPTOR_DATA: PluginDescriptor = {
     })),
 };
 
+const noExternalModulation = NO_SOURCE_SPECIFIC_MODULATION;
+
 export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
     CRUST_DESCRIPTOR_DATA,
     descriptorGuidance(
@@ -96,11 +98,197 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
             ['Aggressive drive can flatten transients and create misleading loudness.'],
             { availability: 'unavailable', reason: 'Crust declares no automatic loudness matching.' }
         ),
-        declaredControl(
-            'Limiter and saturator control',
-            'Changes peak handling, harmonic density, or output ceiling.',
-            ['Set ceiling before gain and timing.'],
-            ['High drive can flatten transients or overload later stages.']
-        )
+        // No fallback: every parameter below is authored by hand.
+        undefined,
+        {
+            gain: parameterGuidance(
+                'Input drive gain',
+                'Raises level into the limiter and saturator stages before ceiling and drive are applied.',
+                0,
+                6,
+                [
+                    "Drives both ceiling's limiter and satDrive's saturator stage harder as this rises: raise ceiling headroom or reduce satDrive to compensate.",
+                ],
+                [
+                    'Raising gain without leaving ceiling headroom pushes reduction and saturation harder than the source calls for.',
+                ],
+                noExternalModulation
+            ),
+            ceiling: parameterGuidance(
+                'Output true-peak ceiling',
+                'Sets the hard maximum output level the limiter will not exceed.',
+                -1,
+                -0.1,
+                [
+                    'Set before raising gain, since a higher ceiling gives gain more headroom before limiting engages; truePeak decides whether this measures true peak or sample peak.',
+                ],
+                [
+                    'A ceiling too close to 0 dBTP can still clip on inter-sample peaks downstream if truePeak is later disabled.',
+                ],
+                noExternalModulation
+            ),
+            lookahead: parameterGuidance(
+                'Limiter look-ahead window',
+                'Sets how far ahead the limiter reads the signal before the ceiling is enforced.',
+                1,
+                5,
+                [
+                    "A short lookahead silently truncates how long attack can ramp, and truePeak raises this window's effective floor for its own detector delay.",
+                ],
+                ['A lookahead shorter than the attack budget truncates the requested attack time without warning.'],
+                noExternalModulation
+            ),
+            attack: parameterGuidance(
+                'Manual limiter attack time',
+                'Sets how quickly gain reduction catches a transient when attackAuto is off.',
+                0,
+                30,
+                [
+                    'attackAuto must be off for this value to reach the limiter, and lookahead caps how long this can actually ramp.',
+                ],
+                [
+                    'This value is discarded by the engine whenever attackAuto is on, so changing it has no audible effect until that switch is cleared.',
+                ],
+                noExternalModulation
+            ),
+            attackAuto: parameterGuidance(
+                'Attack automatic mode',
+                "Chooses the algorithm's own profiled attack time instead of the manual attack control.",
+                1,
+                1,
+                ['Turning this off is required before attack has any effect on the render.'],
+                ['Leaving this on silently discards whatever value the attack control holds.'],
+                noExternalModulation
+            ),
+            release: parameterGuidance(
+                'Manual limiter release time',
+                'Sets how quickly gain recovers after the limiter catches a peak, used only when the program-dependent branch is not forced.',
+                50,
+                400,
+                [
+                    "releaseAuto must be off and this must be above zero for the manual value to apply instead of the algorithm's program-dependent release.",
+                ],
+                [
+                    'Leaving this at zero forces the program-dependent auto branch even when releaseAuto is off, so the manual value is silently ignored.',
+                ],
+                noExternalModulation
+            ),
+            releaseAuto: parameterGuidance(
+                'Release automatic mode',
+                "Chooses the algorithm's own program-dependent release instead of the manual release control.",
+                1,
+                1,
+                ['Turning this off only hands control to release when release is also above zero.'],
+                [
+                    'Turning this off does not guarantee the manual release value takes effect, since a release of zero still forces the auto branch.',
+                ],
+                noExternalModulation
+            ),
+            channelLinkTransient: parameterGuidance(
+                'Stereo link amount for transient catch',
+                'Sets how much the two channels share one gain-reduction decision when the limiter first catches a peak.',
+                90,
+                100,
+                [
+                    'Works alongside channelLinkRelease, which links the recovery phase separately from this attack-side linking.',
+                ],
+                [
+                    'Reducing this below full link lets the channels reduce gain independently, which can shift the stereo image on transient-heavy material.',
+                ],
+                noExternalModulation
+            ),
+            channelLinkRelease: parameterGuidance(
+                'Stereo link amount for release recovery',
+                "Sets how much the two channels share one gain-recovery decision after the limiter's reduction decays.",
+                85,
+                100,
+                [
+                    'Works alongside channelLinkTransient, which links the attack-side decision separately from this recovery linking.',
+                ],
+                [
+                    'Reducing this below full link lets each channel recover independently, which can pull the stereo image during decay.',
+                ],
+                noExternalModulation
+            ),
+            truePeak: parameterGuidance(
+                'True-peak detection mode',
+                "Switches the limiter's peak detector between sample-peak and oversampled true-peak measurement.",
+                1,
+                1,
+                ['Enabling this raises the floor lookahead can be reduced to before truncating detector delay.'],
+                ['Disabling this can let inter-sample peaks pass the ceiling that true-peak mode would have caught.'],
+                noExternalModulation
+            ),
+            oversampling: parameterGuidance(
+                'Saturator oversampling factor',
+                'Sets how many times the saturation stage upsamples before generating harmonics, trading CPU for reduced aliasing.',
+                2,
+                8,
+                [
+                    "Only audible while satEnabled is on and satDrive is adding harmonic content; it has no effect on the limiter's own true-peak detector.",
+                ],
+                [
+                    'Raising this without satEnabled on spends CPU oversampling a saturation stage that is not producing any harmonics.',
+                ],
+                noExternalModulation
+            ),
+            satEnabled: parameterGuidance(
+                'Saturation stage enable',
+                'Switches the saturator stage in or out of the signal path.',
+                0,
+                0,
+                ['satDrive and satMix are silent until this is on.'],
+                [
+                    'Leaving this off while raising satDrive or satMix produces no audible change, since the saturator stays idle until this switch is on.',
+                ],
+                noExternalModulation
+            ),
+            satDrive: parameterGuidance(
+                'Saturation drive',
+                "Sets how hard the signal is driven into the saturator's harmonic generator.",
+                0,
+                9,
+                ['Has no audible effect unless satEnabled is on and satMix is above zero.'],
+                [
+                    'Driving this hard while oversampling is low can alias, since higher drive generates harmonics further above the oversampled band.',
+                ],
+                noExternalModulation
+            ),
+            satMix: parameterGuidance(
+                'Saturation wet mix',
+                'Blends the driven saturator signal back against the dry path.',
+                0,
+                40,
+                ['Silent at zero regardless of satDrive, and produces nothing at all unless satEnabled is on.'],
+                ['Raising this without satEnabled on has no audible result, since the saturator stage stays idle.'],
+                noExternalModulation
+            ),
+            deltaListen: parameterGuidance(
+                'Delta (difference) listen',
+                'Solos what the limiter and saturator removed or added, instead of the processed programme.',
+                0,
+                0,
+                [
+                    'Reflects whatever gain and ceiling settings are currently doing to the signal; turn this back off before judging the processed mix.',
+                ],
+                [
+                    'Leaving this on during export or mixdown would render the difference signal instead of the intended processed audio.',
+                ],
+                noExternalModulation
+            ),
+            scHpfFreq: parameterGuidance(
+                'Sidechain detector highpass frequency',
+                "Sets the corner of a highpass filter applied only to the limiter's gain-detector input, not the audible output.",
+                40,
+                120,
+                [
+                    "Crust's declared parameters expose no enable switch for the sidechain highpass itself, so this value currently reaches a detector stage that defaults off; gain and ceiling reduction are unaffected until that switch is enabled.",
+                ],
+                [
+                    'Crust does not expose the sidechain highpass enable switch as a device parameter, so changing this value has no audible effect on gain reduction through the standalone parameter surface.',
+                ],
+                noExternalModulation
+            ),
+        }
     )
 );
