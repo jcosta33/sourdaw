@@ -75,6 +75,13 @@ function requestedValue(action: AddAutomationPointAction): LevelResolution {
 
 export const handleAddAutomationPoint = createHandler<'addAutomationPoint'>({
     execute: (action) => {
+        const lane = findLane(action.payload.laneId);
+        if (lane?.linkedLaneId) {
+            return {
+                status: 'conflict',
+                reason: `Lane "${lane.parameterName}" follows automation lane ${lane.linkedLaneId}; add points to its source lane instead.`,
+            };
+        }
         const requested = requestedValue(action);
         if (!requested.ok) {
             return { status: 'conflict', reason: requested.reason };

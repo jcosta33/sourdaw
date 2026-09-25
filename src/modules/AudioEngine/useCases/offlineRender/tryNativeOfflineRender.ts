@@ -31,6 +31,8 @@ export async function tryNativeOfflineRender(
         renderableTracks: allRenderableTracks,
         scheduledTracks,
         gainEnvelopes: input.scheduling.gainEnvelopes,
+        // The routes this render's own latency and detector wiring read.
+        sidechainRoutes: input.scheduling.latency.routes,
     });
     if (selection.engine === 'native/offline') {
         const native = await renderOfflineWithNativeEngine({

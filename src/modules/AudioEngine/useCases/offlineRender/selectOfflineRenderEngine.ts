@@ -17,9 +17,20 @@
  * native refusal:
  *
  *   - **Frozen tracks** replay a pre-rendered buffer through the web strip.
- *   - **Device chains** — no built-in device has a native offline realisation
- *     yet, and that conservatively covers instruments, sidechain targets and
- *     Toaster routing, which are all devices.
+ *   - **Device chains** — a chain renders natively only when every device on
+ *     it, bypassed or not, is a built-in the engine builds a body for
+ *     (`nativeBuiltinBody`, the renderer's mirror of the engine's own
+ *     registry), and the native render carries those bodies' parameter
+ *     automation the way the live writer does (#3776). Three exclusions stand:
+ *     a device with no native body — a hosted plugin (the offline render has
+ *     no engine to host an instance in), a Crumbs sampler (an engine-owned
+ *     splice the offline mapper has no lookup for), Faust, Yeast and every
+ *     Web Audio-only built-in — would be refused by name or not rendered at
+ *     all; an instrument (`isOfflineInstrumentDevice`), because instruments
+ *     and Toaster pad routes are scheduled web-side and a native strip would
+ *     print a rest; and the target of a sidechain route, because the native
+ *     wire has no sidechain vocabulary and a keyed device would print
+ *     unkeyed.
  *   - **MIDI programme** — instruments render web-side; a native render of a
  *     MIDI clip would be a rest that reads as a correct file.
  *   - **Clip gain envelopes** — the native wire has no envelope vocabulary
@@ -49,7 +60,9 @@ import { clipHasActiveGainEnvelope, type GainEnvelopeStoreState, type Track } fr
 
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
+import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
+import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
 import { resolveOutputTarget } from './resolveOutputTarget';
 
 export type OfflineRenderEngineSelection =
@@ -65,23 +78,46 @@ export type OfflineRenderEngineSelection =
           degraded: boolean;
       }>;
 
+/** A sidechain route as the Routing store spells it — only the keyed device matters here. */
+export type OfflineRenderSidechainRoute = Readonly<{ targetDeviceId: string }>;
+
 export type SelectOfflineRenderEngineInput = Readonly<{
     gainEnvelopes?: GainEnvelopeStoreState['envelopes'];
+    /** Every sidechain route the render reads, wired or not. */
+    sidechainRoutes: readonly OfflineRenderSidechainRoute[];
     /** Every track this render will build a strip for. */
     renderableTracks: readonly Track[];
     /** The tracks whose programme reaches the mix. */
     scheduledTracks: readonly Track[];
 }>;
 
+/** Why this track's chain cannot render natively, or `null` when every device on it can. */
+function deviceChainGateReason(track: Track, keyedDeviceIds: ReadonlySet<string>): string | null {
+    for (const device of track.devices) {
+        if (nativeBuiltinBody(device.type) === null) {
+            return `track "${track.name}" carries device "${device.type}", which the native render has no body for`;
+        }
+        if (isOfflineInstrumentDevice(device.type)) {
+            return `track "${track.name}" carries instrument "${device.type}", which renders through Web Audio`;
+        }
+        if (keyedDeviceIds.has(device.id)) {
+            return `track "${track.name}" carries device "${device.type}" keyed by a sidechain, which the native render does not wire`;
+        }
+    }
+    return null;
+}
+
 /** The first gate that holds, or `null` when the native engine can take it. */
 function contentGateReason(input: SelectOfflineRenderEngineInput): string | null {
     const { renderableTracks, scheduledTracks } = input;
+    const keyedDeviceIds = new Set(input.sidechainRoutes.map((route) => route.targetDeviceId));
     for (const track of renderableTracks) {
         if (track.freezeState.status === 'frozen') {
             return `track "${track.name}" is frozen and replays a pre-rendered buffer`;
         }
-        if (track.devices.length > 0) {
-            return `track "${track.name}" carries a device chain`;
+        const chainGate = deviceChainGateReason(track, keyedDeviceIds);
+        if (chainGate !== null) {
+            return chainGate;
         }
     }
     for (const track of scheduledTracks) {

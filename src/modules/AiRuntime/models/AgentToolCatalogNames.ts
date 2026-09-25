@@ -16,5 +16,6 @@ export const COMMAND_BATCH_DECLINE_TOOL_NAME = 'command.batch.decline';
 export const COMMAND_HISTORY_TOOL_NAME = 'command.history';
 export const RENDER_REQUEST_TOOL_NAME = 'render.request';
 export const ANALYSIS_REQUEST_TOOL_NAME = 'analysis.request';
+export const RECIPE_DISCOVERY_TOOL_NAME = 'recipe.discover';
 
 export const MAX_DISCOVERED_COMMAND_SCHEMAS = 8;
