@@ -5028,7 +5028,7 @@ describe('fresh reviewer dossier publication', () => {
      * hold that claim, because a synonym for the same field walked past them.
      */
     function expectedEscalationRefusal(bundle: string): string {
-        return `review round escalation: observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or incomplete in pr, baseRefName, baseSha, or headSha; the reassessment at ${join(bundle, 'reassessment.json')} cannot be bound without that context`;
+        return `review round escalation: observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair or regenerate the manifest so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
     }
 
     function dossierFixture(
@@ -5391,12 +5391,7 @@ describe('fresh reviewer dossier publication', () => {
         });
         try {
             const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toMatch(
-                `observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}`
-            );
-            expect(message).toMatch(/does not supply a usable review bundle context/);
-            expect(message).toMatch(/incomplete in pr, baseRefName, baseSha, or headSha/);
-            expect(message).toMatch(/reassessment\.json/);
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle));
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
@@ -5429,6 +5424,48 @@ describe('fresh reviewer dossier publication', () => {
     it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in a field other than baseSha', () => {
         const fixture = dossierFixture({
             manifest: { pr: number, baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in pr', () => {
+        const fixture = dossierFixture({
+            manifest: { baseRefName: 'main', baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest is incomplete in headSha', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', baseSha: base },
             publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
                 id: index + 1,
                 state: 'CHANGES_REQUESTED',

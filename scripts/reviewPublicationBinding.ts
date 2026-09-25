@@ -119,18 +119,18 @@ function persistCanonicalReviewDossier(
 /**
  * The bundle base the escalation reassessment must bind, read from the bundle manifest. A
  * post-threshold head whose manifest supplies no usable context refuses with the escalation contract
- * message — naming the observed count, the threshold, and the reassessment route — rather than a raw
- * manifest read error: the gate has nothing to bind without it. The bundle reader rejects an absent,
- * unreadable, or field-incomplete manifest as one failure without naming the field at fault, so the
- * refusal names the field set it requires instead of blaming baseSha for a manifest that is present
- * and readable but incomplete elsewhere.
+ * message — naming the observed count, the threshold, the manifest the reader rejected, the fields
+ * it demands, the repair, and the reassessment route — rather than a raw manifest read error. The
+ * bundle reader reports an absent, unreadable, malformed, and invalid manifest as one failure
+ * without naming the field at fault, so the message describes what the reader enforces and the
+ * repair, instead of blaming baseSha for a manifest that is present and readable but wrong elsewhere.
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
         return readReviewBundleContext(bundle).baseSha;
     } catch {
         return fail(
-            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or incomplete in pr, baseRefName, baseSha, or headSha; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound without that context`
+            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair or regenerate the manifest so the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} can bind`
         );
     }
 }
