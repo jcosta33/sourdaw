@@ -1,18 +1,10 @@
-#!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
     GITHUB_HTTPS_REMOTE,
     REQUIRED_REPOSITORY,
-    REVIEWER_BOT_NODE_ID,
-    assertRequiredRepository,
-    assertTrustedExecutingBlob,
-    authenticateRole,
-    isReviewerBotNodeId,
     gitAuthenticatedArgs,
-    originMainBlob,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
@@ -58,6 +50,8 @@ export type PrepareReviewPort = {
     reviews?: (number: number) => PublicReview[];
     reviewComments?: (number: number) => PublicReviewComment[];
     installBundle: (destination: string, files: Record<string, string>) => void;
+    /** The full text of `semantic-ci.json`, written by `prepareReview` with exactly one trailing newline. */
+    semanticCiJson: (pr: number, headSha: string) => string;
     log: (message: string) => void;
 };
 
@@ -171,6 +165,7 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
             4
         )}\n`,
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
+        'semantic-ci.json': `${port.semanticCiJson(pullRequest.number, pullRequest.headRefOid)}\n`,
         'contracts/AGENTS.md': agents,
         'contracts/CLAUDE.md': claude,
     };
@@ -375,7 +370,7 @@ export function installBundleAtomically(
     }
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): PrepareReviewPort {
+export function shellPort(session: GhSession, cwd: string = process.cwd()): Omit<PrepareReviewPort, 'semanticCiJson'> {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
@@ -445,48 +440,4 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Prep
             console.log(message);
         },
     };
-}
-
-async function main(): Promise<number> {
-    const parsed = parsePrepareReviewArgs(process.argv.slice(2));
-    if (parsed.help) {
-        console.log('Usage: pnpm review:prepare <pr-number>');
-        return 0;
-    }
-    if (parsed.number === undefined) {
-        fail('usage: pnpm review:prepare <pr-number>');
-    }
-    const executingFile = fileURLToPath(import.meta.url);
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/prepareReview.ts',
-        executingFile,
-        originMainBlob('scripts/prepareReview.ts', cwd)
-    );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
-    try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-        }
-        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
-            cwd: primaryRoot,
-        });
-        assertRequiredRepository(repository);
-        prepareReview(parsed.number, shellPort(auth.session));
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }

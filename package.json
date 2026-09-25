@@ -52,7 +52,7 @@
         "lane:strand": "node scripts/removeLane.ts --strand",
         "lane:identity": "node scripts/stampLaneIdentity.ts",
         "lane:prune": "node scripts/pruneLane.ts",
-        "review:prepare": "node scripts/prepareReview.ts",
+        "review:prepare": "node scripts/prepareReviewEntry.ts",
         "review:semantic": "node scripts/semanticReview.ts",
         "review:accept": "node scripts/trustedGithubWriteBootstrap.ts review:accept",
         "review:publish": "node scripts/trustedGithubWriteBootstrap.ts review:publish",
