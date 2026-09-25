@@ -621,6 +621,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/useCases/index.ts': 4,
         'src/modules/Bacteria/presentations/views/BacteriaPanel.tsx': 3,
         'src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts': 2,
+        // Event contract and subscription re-apply the persisted modulation
+        // routing to a freshly loaded Bacteria worklet; neither writes project truth.
+        'src/modules/Bacteria/useCases/bacteriaSubscriber.ts': 2,
         'src/modules/Crumbs/useCases/crumbsParamBridge/setCrumbsParamImmediate.ts': 1,
         // Count provenance: new file entry, measured 3, all `setCrumbsParamImmediate`
         // and all one write: the imported identifier, the module path in that same
