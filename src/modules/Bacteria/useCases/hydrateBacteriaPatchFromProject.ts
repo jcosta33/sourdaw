@@ -143,6 +143,22 @@ function isStoredTrue(stored: number): boolean {
 }
 
 /**
+ * The patch with its routing table replaced by the device's decoded chunk, or
+ * the same patch reference when there is nothing to project.
+ *
+ * Split out of `hydrateBacteriaPatchFromProject` to keep that function's
+ * complexity under the project ceiling; the two decision points here (a null
+ * decode, an already-equal table) are one self-contained projection.
+ */
+function projectRoutingTable(patch: BacteriaPatch, deviceState: unknown): BacteriaPatch {
+    const decoded = fromBacteriaModAssignmentsState(deviceState);
+    if (decoded === null || rowsEqual(decoded, patch.modAssignments)) {
+        return patch;
+    }
+    return { ...patch, modAssignments: decoded };
+}
+
+/**
  * Hydrate the Bacteria session store from the device's persisted
  * `parameterValues` and its modulation-routing `deviceState` chunk (#3673, #4756).
  *
@@ -176,9 +192,9 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
     let patch = getBacteriaState(deviceId).patch;
     let changed = false;
 
-    const decodedAssignments = fromBacteriaModAssignmentsState(device.deviceState);
-    if (decodedAssignments !== null && !rowsEqual(decodedAssignments, patch.modAssignments)) {
-        patch = { ...patch, modAssignments: decodedAssignments };
+    const routed = projectRoutingTable(patch, device.deviceState);
+    if (routed !== patch) {
+        patch = routed;
         changed = true;
     }
 

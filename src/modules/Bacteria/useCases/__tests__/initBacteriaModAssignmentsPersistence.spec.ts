@@ -2,13 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
+    pushUndoEntry: vi.fn(),
     hydrateBacteriaModAssignmentsFromProject: vi.fn(
-        () => null as ReturnType<typeof hydrateBacteriaModAssignmentsFromProject>
+        (_deviceId: string) => null as ReturnType<typeof hydrateBacteriaModAssignmentsFromProject>
     ),
 }));
 
+// `hydrateBacteriaPatchFromProject`'s real implementation pulls in the
+// `Arrangement` stores barrel, which reaches `pushUndoEntry` through modules
+// this spec never exercises (Automation, ElasticAudio); the barrel-mock
+// coverage check needs it named here even though no test calls it.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    pushUndoEntry: mocks.pushUndoEntry,
 }));
 
 vi.mock('../hydrateBacteriaModAssignmentsFromProject', () => ({
@@ -119,7 +125,9 @@ describe('initBacteriaModAssignmentsPersistence', () => {
         const actual = await vi.importActual<typeof import('../hydrateBacteriaModAssignmentsFromProject')>(
             '../hydrateBacteriaModAssignmentsFromProject'
         );
-        mocks.hydrateBacteriaModAssignmentsFromProject.mockImplementation(actual.hydrateBacteriaModAssignmentsFromProject);
+        mocks.hydrateBacteriaModAssignmentsFromProject.mockImplementation(
+            actual.hydrateBacteriaModAssignmentsFromProject
+        );
 
         const r1 = row();
         const r2 = row({ targetParam: 'band2_gain' });
@@ -128,7 +136,11 @@ describe('initBacteriaModAssignmentsPersistence', () => {
                 {
                     id: 't1',
                     devices: [
-                        { id: DEVICE_ID, type: 'bacteria', deviceState: { version: 1, data: { modAssignments: [r1] } } },
+                        {
+                            id: DEVICE_ID,
+                            type: 'bacteria',
+                            deviceState: { version: 1, data: { modAssignments: [r1] } },
+                        },
                     ],
                 },
             ],
