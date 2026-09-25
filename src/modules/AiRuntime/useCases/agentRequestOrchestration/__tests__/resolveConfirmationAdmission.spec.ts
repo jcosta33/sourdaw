@@ -12,8 +12,8 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type SemanticCommandListMatchSelectorRecord } from '../../../models/SemanticCommandList';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { type admitCommittedSectionRenderRetry } from '../admitCommittedSectionRenderRetry';
-import { type MatchSelectorPredicateRevalidation } from '../revalidateApprovedMatchSelectors';
 import { confirmationAdmission } from '../resolveConfirmationAdmission';
+import { type MatchSelectorPredicateRevalidation } from '../revalidateApprovedMatchSelectors';
 
 type RetryAdmissionInput = Parameters<typeof admitCommittedSectionRenderRetry>[0];
 type RetryAdmissionResult = ReturnType<typeof admitCommittedSectionRenderRetry>;
