@@ -19,7 +19,8 @@ vi.mock('../../../stores/punchRecordingStore', () => ({
     punchRecordingStore: mockPunchRecordingStore,
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
         value: {
             tracks: [{ id: 'audio-1', kind: 'audio' }],
@@ -29,7 +30,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     getTrackEligibility: (kind: string) => ({ acceptsRecording: kind === 'audio' }),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: vi.fn(),
 }));
 
