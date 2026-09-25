@@ -126,12 +126,42 @@ describe('recipe.discover', () => {
 
         expect(receipt.status).toBe('success');
         expect(receipt.data).toMatchObject({
-            terms: [{ term: 'shimmery', descriptor: null }],
+            terms: [{ term: 'shimmery', descriptor: null, effect: null }],
             total: 0,
             candidates: [],
         });
         expect(receipt.warnings).toHaveLength(1);
         expect(receipt.warnings[0]).toContain('shimmery');
+        expect(receipt.warnings[0]).toContain('less muddy');
+        expect(receipt.warnings[0]).toContain('(removes');
+        expect(receipt.warnings[0]).not.toContain('Known descriptors:');
+    });
+
+    it('resolves "thin" and "less thin" to the thin descriptor with a removes effect', async () => {
+        const receipt = await runRecipeDiscovery('loop-thin', { descriptors: ['thin', 'less thin'] });
+
+        expect(receipt.data).toMatchObject({
+            terms: [
+                { term: 'thin', descriptor: 'thin', effect: 'removes' },
+                { term: 'less thin', descriptor: 'thin', effect: 'removes' },
+            ],
+        });
+        const data = receipt.data as { candidates: { effect: string }[] };
+        expect(data.candidates.length).toBeGreaterThan(0);
+        for (const candidate of data.candidates) {
+            expect(candidate.effect).toBe('removes');
+        }
+    });
+
+    it('resolves "brighter" to the bright descriptor with a produces effect', async () => {
+        const receipt = await runRecipeDiscovery('loop-brighter', { descriptors: ['brighter'] });
+
+        expect(receipt.data).toMatchObject({ terms: [{ term: 'brighter', descriptor: 'bright', effect: 'produces' }] });
+        const data = receipt.data as { candidates: { effect: string }[] };
+        expect(data.candidates.length).toBeGreaterThan(0);
+        for (const candidate of data.candidates) {
+            expect(candidate.effect).toBe('produces');
+        }
     });
 
     it('resolves an untagged "Kick" track to the drums recipe role and returns only punchy/drums candidates', async () => {

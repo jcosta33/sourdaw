@@ -4,6 +4,7 @@ import { BUILTIN_PLUGINS, type DeviceParameter } from '#/modules/Arrangement/mod
 import {
     MIX_RECIPE_BANDS,
     MIX_RECIPE_CATALOG_VERSION,
+    MIX_RECIPE_DESCRIPTOR_EFFECTS,
     MIX_RECIPE_DESCRIPTOR_TERMS,
     MIX_RECIPE_DESCRIPTORS,
     MIX_RECIPE_METRIC_IDS,
@@ -57,6 +58,18 @@ describe('mixingRecipeCatalog', () => {
         expect(catalog.descriptors).toEqual([...MIX_RECIPE_DESCRIPTORS]);
         expect(catalog.roles).toEqual([...MIX_RECIPE_ROLES]);
         expect(catalog.descriptorTerms).toEqual(MIX_RECIPE_DESCRIPTOR_TERMS);
+        expect(catalog.descriptorEffects).toEqual(MIX_RECIPE_DESCRIPTOR_EFFECTS);
+    });
+
+    it('gives every descriptor a produces or removes effect, marking only muddy and thin as removes', () => {
+        const missing = MIX_RECIPE_DESCRIPTORS.filter(
+            (descriptor) =>
+                catalog.descriptorEffects[descriptor] !== 'produces' && catalog.descriptorEffects[descriptor] !== 'removes'
+        );
+        const removing = MIX_RECIPE_DESCRIPTORS.filter((descriptor) => catalog.descriptorEffects[descriptor] === 'removes');
+
+        expect(missing).toEqual([]);
+        expect(removing.sort()).toEqual(['muddy', 'thin']);
     });
 
     it('lists every descriptor among its own terms, each lowercase, trimmed, and single-spaced', () => {

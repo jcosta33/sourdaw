@@ -40,6 +40,31 @@ export const MIX_RECIPE_DESCRIPTORS = [
 
 export type MixRecipeDescriptor = (typeof MIX_RECIPE_DESCRIPTORS)[number];
 
+/** Whether a descriptor's recipe adds the named quality or removes the named fault. */
+export type MixRecipeDescriptorEffect = 'produces' | 'removes';
+
+/**
+ * Machine-readable form of the produces/removes rule stated above: `muddy` and
+ * `thin` `'removes'` the named fault, every other descriptor `'produces'` the
+ * named quality. A reader resolving a term to a descriptor reads this table
+ * beside it rather than inferring direction from the descriptor's surface word.
+ */
+export const MIX_RECIPE_DESCRIPTOR_EFFECTS: Readonly<Record<MixRecipeDescriptor, MixRecipeDescriptorEffect>> = {
+    warm: 'produces',
+    bright: 'produces',
+    tight: 'produces',
+    punchy: 'produces',
+    wide: 'produces',
+    intimate: 'produces',
+    dark: 'produces',
+    airy: 'produces',
+    muddy: 'removes',
+    thin: 'removes',
+    glued: 'produces',
+    'lo-fi': 'produces',
+    vintage: 'produces',
+};
+
 /**
  * The perceptual-request vocabulary that resolves to each descriptor.
  *
@@ -169,5 +194,6 @@ export type MixRecipeCatalog = {
     descriptors: readonly MixRecipeDescriptor[];
     roles: readonly MixRecipeRole[];
     descriptorTerms: Readonly<Record<MixRecipeDescriptor, readonly string[]>>;
+    descriptorEffects: Readonly<Record<MixRecipeDescriptor, MixRecipeDescriptorEffect>>;
     recipes: readonly MixRecipe[];
 };

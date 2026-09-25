@@ -8,6 +8,7 @@ type MixRecipe = MixRecipeCatalog['recipes'][number];
 type MixRecipeStep = MixRecipe['steps'][number];
 type RecipeDescriptor = MixRecipeCatalog['descriptors'][number];
 type RecipeRole = MixRecipeCatalog['roles'][number];
+type RecipeDescriptorEffect = MixRecipeCatalog['descriptorEffects'][RecipeDescriptor];
 
 /**
  * Every canonical track role this catalog can resolve to a recipe role.
@@ -49,7 +50,11 @@ type ResolvedRole = {
     canonicalRole?: string;
 };
 
-type RecipeDiscoveryTermResolution = { term: string; descriptor: RecipeDescriptor | null };
+type RecipeDiscoveryTermResolution = {
+    term: string;
+    descriptor: RecipeDescriptor | null;
+    effect: RecipeDescriptorEffect | null;
+};
 
 type RecipeDiscoveryStep = {
     kind: MixRecipeStep['kind'];
@@ -61,6 +66,7 @@ type RecipeDiscoveryStep = {
 type RecipeDiscoveryCandidate = {
     id: string;
     descriptor: RecipeDescriptor;
+    effect: RecipeDescriptorEffect;
     title: string;
     roles: readonly RecipeRole[];
     steps: readonly RecipeDiscoveryStep[];
@@ -177,10 +183,15 @@ function buildStep(step: MixRecipeStep, target: ResolvedTarget | null): RecipeDi
     };
 }
 
-function buildCandidate(recipe: MixRecipe, target: ResolvedTarget | null): RecipeDiscoveryCandidate {
+function buildCandidate(
+    recipe: MixRecipe,
+    target: ResolvedTarget | null,
+    effect: RecipeDescriptorEffect
+): RecipeDiscoveryCandidate {
     return {
         id: recipe.id,
         descriptor: recipe.descriptor,
+        effect,
         title: recipe.title,
         roles: recipe.roles,
         steps: recipe.steps.map((step) => buildStep(step, target)),
@@ -188,6 +199,31 @@ function buildCandidate(recipe: MixRecipe, target: ResolvedTarget | null): Recip
         contraindications: recipe.contraindications,
         metrics: recipe.metrics,
     };
+}
+
+/** The fault noun each corrective descriptor's recipe removes, for the unresolved-term warning. */
+const CORRECTIVE_DESCRIPTOR_FAULT_NOUNS: Readonly<Partial<Record<RecipeDescriptor, string>>> = {
+    muddy: 'mud',
+    thin: 'thinness',
+};
+
+/**
+ * One line naming every accepted term, grouped by descriptor, so a caller
+ * whose term went unresolved can retry with a term this catalog knows. Each
+ * `'removes'` descriptor is marked with the fault its recipe removes, because
+ * its terms otherwise read as a request for the fault itself.
+ */
+function describeAcceptedTerms(catalog: MixRecipeCatalog): string {
+    return catalog.descriptors
+        .map((descriptor) => {
+            const terms = catalog.descriptorTerms[descriptor].join(', ');
+            if (catalog.descriptorEffects[descriptor] === 'removes') {
+                const fault = CORRECTIVE_DESCRIPTOR_FAULT_NOUNS[descriptor];
+                return `${descriptor} (removes ${fault}): ${terms}`;
+            }
+            return `${descriptor}: ${terms}`;
+        })
+        .join('; ');
 }
 
 /**
@@ -203,7 +239,8 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
     const catalog = getMixRecipeCatalog();
     const terms = input.descriptors.map((raw) => {
         const term = normalizeDescriptorTerm(raw);
-        return { term, descriptor: resolveTermDescriptor(catalog, term) };
+        const descriptor = resolveTermDescriptor(catalog, term);
+        return { term, descriptor, effect: descriptor === null ? null : catalog.descriptorEffects[descriptor] };
     });
     const resolvedDescriptors = dedupeInFirstSeenOrder(
         terms.flatMap((entry) => (entry.descriptor === null ? [] : [entry.descriptor]))
@@ -222,7 +259,7 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
     const warnings: string[] = [];
     if (unresolvedTerms.length > 0) {
         warnings.push(
-            `Unresolved descriptor term(s): ${unresolvedTerms.join(', ')}. Known descriptors: ${catalog.descriptors.join(', ')}.`
+            `Unresolved descriptor term(s): ${unresolvedTerms.join(', ')}. Accepted terms — ${describeAcceptedTerms(catalog)}.`
         );
     }
     if (role.source === 'target' && role.recipeRole === null) {
@@ -262,7 +299,9 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
         return true;
     });
 
-    const candidates = matches.slice(0, input.limit).map((recipe) => buildCandidate(recipe, target));
+    const candidates = matches
+        .slice(0, input.limit)
+        .map((recipe) => buildCandidate(recipe, target, catalog.descriptorEffects[recipe.descriptor]));
 
     return {
         status: 'ok',
