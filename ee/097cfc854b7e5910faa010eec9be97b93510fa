@@ -1,0 +1,36 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_2bfd55a4393d7c::t_63249eb2cfd087 349-362,365,374
+  s_2bfd55a4393d7c::t_acfe6c379135d7 37
+  s_2bfd55a4393d7c::t_c3d6efbb809170 35-36
+  s_2bfd55a4393d7c::t_4e9059028947fb 401-402,407-409,411-418
+  s_2bfd55a4393d7c::t_fe10504aa687a7 240-271
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_2bfd55a4393d7c::t_5ef7ef883d7370 20
+  s_2bfd55a4393d7c::t_6943b998e98118 418-461
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  s_2bfd55a4393d7c::t_05e2d5ff8dfac1 94-161
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_2bfd55a4393d7c::t_e70b8a77f5a3ea 660-717
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_2bfd55a4393d7c::t_c7607e8554f474 20,39-48,50-59,64-65,71
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_2bfd55a4393d7c::t_d65edd32befbc1 483-489,498
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_2bfd55a4393d7c::t_8632fb3391e05b 433-463
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ee097cfc854b7e5910faa010eec9be97b93510fa",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
