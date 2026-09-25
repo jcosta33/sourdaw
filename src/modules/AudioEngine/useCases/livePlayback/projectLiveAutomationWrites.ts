@@ -80,9 +80,9 @@ import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type OfflineDeviceAutomationLaw } from '../../repositories/offlineScheduler/automationScheduling';
 import { clipBoundsById } from '../offlineRender/clipBoundsById';
 import { deviceParameterLanes } from '../offlineRender/deviceParameterLanes';
+import { deviceParameterOverlapReason } from '../offlineRender/deviceParameterOverlapReason';
 import { laneAddressesDevice } from '../offlineRender/laneAddressesDevice';
 import {
-    deviceParameterOverlapReason,
     projectStripAutomationWrites,
     type StripAutomationDeviceEntry,
     type StripAutomationWritesInput,

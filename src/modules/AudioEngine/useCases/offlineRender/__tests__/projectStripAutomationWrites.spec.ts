@@ -488,12 +488,10 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
             deviceParameterLaw,
         });
 
-        expect(result.outcome).toBe('converted');
-        expect(result.outcome === 'converted' ? result.overlaps : null).toEqual([
-            { deviceId: 'plugin-1', parameterId: '7' },
-        ]);
-        expect(
-            result.outcome === 'converted' ? result.entries.some((entry) => entry.target.kind === 'device-parameter') : null
-        ).toBe(false);
+        if (result.outcome !== 'converted') {
+            throw new Error(`expected 'converted', got 'declined': ${result.reason}`);
+        }
+        expect(result.overlaps).toEqual([{ deviceId: 'plugin-1', parameterId: '7' }]);
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
     });
 });

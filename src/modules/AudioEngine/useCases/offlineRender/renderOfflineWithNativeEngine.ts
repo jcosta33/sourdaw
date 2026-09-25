@@ -95,11 +95,11 @@ import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeC
 import { automationWriteCommand } from './automationWriteCommand';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
+import { deviceParameterOverlapReason } from './deviceParameterOverlapReason';
 import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import {
-    deviceParameterOverlapReason,
     projectStripAutomationWrites,
     REFUSE_DEVICE_AUTOMATION,
     type StripAutomationDeviceEntry,

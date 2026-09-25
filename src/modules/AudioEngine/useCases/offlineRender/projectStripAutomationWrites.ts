@@ -97,14 +97,6 @@ export type StripAutomationWritesResult =
       }>
     | Readonly<{ outcome: 'declined'; reason: string }>;
 
-/** The decline text a caller uses for the first overlap it is not prepared to keep pieces of. */
-export function deviceParameterOverlapReason(
-    trackName: string,
-    overlap: { deviceId: string; parameterId: string }
-): string {
-    return `automation on track "${trackName}": lanes on device "${overlap.deviceId}" overlap on parameter "${overlap.parameterId}"`;
-}
-
 export type StripAutomationWritesInput = Readonly<{
     track: Track;
     /**
