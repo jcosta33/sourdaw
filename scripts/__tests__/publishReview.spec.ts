@@ -5022,10 +5022,13 @@ describe('fresh reviewer dossier publication', () => {
     }
 
     /**
-     * The escalation refusal is the operator's whole diagnostic for this state, and the same text
-     * serves every state that reaches it. Cases that reach it therefore pin its exact contract
-     * text: any rewording that changes what it blames fails them. Phrase-level negatives could not
-     * hold that claim, because a synonym for the same field walked past them.
+     * The escalation refusal is the operator's diagnostic wherever it is reached, and the same text
+     * serves every state that reaches it, so the cases that reach it pin its exact contract text: any
+     * rewording that changes what it blames fails them. Phrase-level negatives could not hold that
+     * claim, because a synonym for the same field walked past them. In production this refusal is
+     * reachable for a request-changes publication: a fresh approval publication reads its approval
+     * context first and surfaces the raw manifest error there (#4754), so these cases pin the
+     * refusal's contract through the publication port rather than the approval path.
      */
     function expectedEscalationRefusal(bundle: string, observedCount: number): string {
         return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair or regenerate the manifest so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
@@ -5399,7 +5402,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a plan-less bundle at or above the threshold with a missing manifest, not a raw ENOENT', () => {
+    it('refuses a plan-less bundle at or above the threshold with a missing manifest', () => {
         const fixture = dossierFixture({
             publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
                 id: index + 1,
@@ -5487,6 +5490,27 @@ describe('fresh reviewer dossier publication', () => {
     it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid field', () => {
         const fixture = dossierFixture({
             manifest: { pr: number, baseRefName: '', baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid pr', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number + 0.5, baseRefName: 'main', baseSha: base, headSha: head },
             publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
                 id: index + 1,
                 state: 'CHANGES_REQUESTED',

@@ -124,6 +124,8 @@ function persistCanonicalReviewDossier(
  * bundle reader reports an absent, unreadable, malformed, and invalid manifest as one failure
  * without naming the field at fault, so the message describes what the reader enforces and the
  * repair, instead of blaming baseSha for a manifest that is present and readable but wrong elsewhere.
+ * A fresh approval publication reads its approval context before this gate and surfaces the reader's
+ * own error first, so the refusal is reachable for a request-changes publication (#4754).
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
