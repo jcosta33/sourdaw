@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/semanticListPredicates.spec.ts
+  s_9e15f5b7ec3308::t_e1eecf424f7fe3 439-447,455
+  s_9e15f5b7ec3308::t_1fd557cdef6874 369-378,385
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  s_9e15f5b7ec3308::t_2cf7e84fb63c37 280
+  s_9e15f5b7ec3308::t_d9bf44d52f1da7 319-335
+  s_9e15f5b7ec3308::t_d5a1aba39e970b 26
+  s_9e15f5b7ec3308::t_0d920603344c01 263
+  s_9e15f5b7ec3308::t_44aad58a52f885 380-418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e89b7a588f3281444b2824e89b87142e17ba0232",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
