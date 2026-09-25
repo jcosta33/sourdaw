@@ -194,6 +194,65 @@ describe('recipe.discover', () => {
         });
     });
 
+    it('resolves an untagged "Lead Vocal" track to the vocal recipe role', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'lead-vocal-1', name: 'Lead Vocal' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-lead-vocal', { descriptors: ['warmer'], targetId: 'lead-vocal-1' });
+
+        expect(receipt.data).toMatchObject({
+            role: { recipeRole: 'vocal', source: 'target', canonicalRole: 'lead vocal' },
+        });
+    });
+
+    it('resolves an untagged "Backing Vocal" track to the vocal recipe role', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'backing-vocal-1', name: 'Backing Vocal' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-backing-vocal', {
+            descriptors: ['warmer'],
+            targetId: 'backing-vocal-1',
+        });
+
+        expect(receipt.data).toMatchObject({
+            role: { recipeRole: 'vocal', source: 'target', canonicalRole: 'backing vocal' },
+        });
+    });
+
+    it('resolves a bus-kind track to the bus recipe role', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'bus-role-1', name: 'Drum Bus', kind: 'bus' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-bus-role', { descriptors: ['punchy'], targetId: 'bus-role-1' });
+
+        expect(receipt.data).toMatchObject({
+            role: { recipeRole: 'bus', source: 'target', canonicalRole: 'bus' },
+        });
+    });
+
+    it('resolves a master-kind track to the master recipe role', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'master-role-1', name: 'Master', kind: 'master' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-master-role', { descriptors: ['warmer'], targetId: 'master-role-1' });
+
+        expect(receipt.data).toMatchObject({
+            role: { recipeRole: 'master', source: 'target', canonicalRole: 'master' },
+        });
+    });
+
     it('returns zero candidates and a no-recipe-role warning for an FX Return with no role argument', async () => {
         trackStore.set({
             tracks: [createTrack({ id: 'fx-1', name: 'FX Return' })],

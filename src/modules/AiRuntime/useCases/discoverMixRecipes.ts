@@ -1,4 +1,5 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { getCanonicalTrackRoleOptions } from '#/modules/Project/useCases';
 
 import { getProjectContext, type ProjectContextTrack } from './getProjectContext';
 import { type RecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
@@ -9,14 +10,20 @@ type MixRecipeStep = MixRecipe['steps'][number];
 type RecipeDescriptor = MixRecipeCatalog['descriptors'][number];
 type RecipeRole = MixRecipeCatalog['roles'][number];
 type RecipeDescriptorEffect = MixRecipeCatalog['descriptorEffects'][RecipeDescriptor];
+type CanonicalRole = ReturnType<typeof getCanonicalTrackRoleOptions>[number];
+
+/** Every role this module can narrow a project track's raw evidence string down to. */
+const CANONICAL_ROLE_OPTIONS = getCanonicalTrackRoleOptions();
 
 /**
  * Every canonical track role this catalog can resolve to a recipe role.
  *
  * `fx` and `unknown` map to no recipe role: a track holding either needs an
  * explicit `role` argument before a candidate can be filtered by role at all.
+ * Keyed by the complete `CanonicalRole` union, so a role this catalog forgets
+ * to place fails typecheck rather than silently resolving to no recipe role.
  */
-const CANONICAL_ROLE_TO_RECIPE_ROLE: Readonly<Record<string, RecipeRole | null>> = {
+const CANONICAL_ROLE_TO_RECIPE_ROLE: Readonly<Record<CanonicalRole, RecipeRole | null>> = {
     kick: 'drums',
     snare: 'drums',
     'hi-hat': 'drums',
@@ -41,13 +48,13 @@ type ResolvedTarget = {
     id: string;
     deviceTypes: readonly string[];
     devices: readonly { id: string; type: string }[];
-    canonicalRole: string;
+    canonicalRole: CanonicalRole;
 };
 
 type ResolvedRole = {
     recipeRole: RecipeRole | null;
     source: 'argument' | 'target' | 'none';
-    canonicalRole?: string;
+    canonicalRole?: CanonicalRole;
 };
 
 type RecipeDiscoveryTermResolution = {
@@ -115,6 +122,11 @@ function dedupeInFirstSeenOrder(values: readonly RecipeDescriptor[]): RecipeDesc
 type ResolveTargetResult =
     { status: 'none' } | { status: 'not-found'; targetId: string } | { status: 'found'; target: ResolvedTarget };
 
+/** Narrows the context's structural-copy role string to the live catalog, falling back to `unknown`. */
+function resolveCanonicalRole(raw: string | undefined): CanonicalRole {
+    return CANONICAL_ROLE_OPTIONS.find((role) => role === raw) ?? 'unknown';
+}
+
 function resolveTarget(targetId: string | null, tracks: readonly ProjectContextTrack[]): ResolveTargetResult {
     if (targetId === null) {
         return { status: 'none' };
@@ -129,7 +141,7 @@ function resolveTarget(targetId: string | null, tracks: readonly ProjectContextT
             id: track.id,
             deviceTypes: track.devices.map((device) => device.type),
             devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
-            canonicalRole: track.canonicalRole?.role ?? 'unknown',
+            canonicalRole: resolveCanonicalRole(track.canonicalRole?.role),
         },
     };
 }
@@ -145,7 +157,7 @@ function resolveRole(
     }
     if (target !== null) {
         return {
-            recipeRole: CANONICAL_ROLE_TO_RECIPE_ROLE[target.canonicalRole] ?? null,
+            recipeRole: CANONICAL_ROLE_TO_RECIPE_ROLE[target.canonicalRole],
             source: 'target',
             canonicalRole: target.canonicalRole,
         };
