@@ -445,6 +445,32 @@ describe('renderOfflineWithNativeEngine — device parameter automation (#3776)'
         expect(commands).toEqual([]);
     });
 
+    it('declines a bare legacy lane whose key a device on the strip holds but the law refuses', async () => {
+        offlineDeviceParameterLawState.isAutomatable = ({ paramId }) => paramId !== 'inputGain';
+
+        const { result, commands } = await render([deviceLane('inputGain', 3)]);
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation lane "inputGain" on track "Glued" names a device parameter the native render cannot carry',
+        });
+        expect(commands).toEqual([]);
+    });
+
+    it('declines a typed legacy lane naming a device type on the strip whose key the law refuses', async () => {
+        offlineDeviceParameterLawState.isAutomatable = ({ paramId }) => paramId !== 'inputGain';
+
+        const { result, commands } = await render([deviceLane('gluten:inputGain', 3)]);
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason:
+                'automation lane "gluten:inputGain" on track "Glued" names a device parameter the native render ' +
+                'cannot carry',
+        });
+        expect(commands).toEqual([]);
+    });
+
     it('renders a strip reading no automation natively, whatever its device lanes name', async () => {
         const { result, deviceWrites } = await render([deviceLane('glue-1:notOnTheDevice', 3)], 'off');
 
