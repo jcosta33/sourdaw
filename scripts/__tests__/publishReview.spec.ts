@@ -5571,6 +5571,48 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('refuses a plan-less bundle at or above the threshold whose manifest carries an invalid baseRefName', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 42, baseSha: base, headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses a plan-less bundle at or above the threshold whose manifest cannot be parsed', () => {
+        const fixture = dossierFixture({
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            writeFileSync(join(fixture.bundle, 'manifest.json'), '{ not json');
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('names the round count it observed when the head has taken more rounds than the threshold', () => {
         const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 4;
         const fixture = dossierFixture({
