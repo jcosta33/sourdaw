@@ -20,6 +20,14 @@ scripts/semanticReviewWorkflowContract.ts
     }
   },
   "sessions": {
+    "s_79a4735522d528": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "df2605c7-64a6-4ac3-806a-20ac0d32372d",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_9b530f08172a54": {
       "agent_id": {
         "tool": "claude",

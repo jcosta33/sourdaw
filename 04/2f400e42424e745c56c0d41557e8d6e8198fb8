@@ -45,6 +45,14 @@ scripts/semanticReview/egressVendorShapes.ts
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     },
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_b7f23f55cf13eb": {
       "agent_id": {
         "tool": "cursor",

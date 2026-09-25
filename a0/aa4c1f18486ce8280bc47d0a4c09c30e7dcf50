@@ -1,0 +1,61 @@
+crates/daw-engine/src/lib.rs
+  s_fc329da86b0e81::t_254acaabfee41a 322
+  s_fc329da86b0e81::t_90dcea64c17fd6 1489
+  s_fc329da86b0e81::t_c58322d6bb6e56 211-213
+  s_fc329da86b0e81::t_02dff46f2cae99 354-356,365,370-383
+crates/daw-engine/src/retrospective.rs
+  s_fc329da86b0e81::t_fa0df1090a929c 284
+  s_fc329da86b0e81::t_4c96f9f8b9ff14 402,408
+  s_fc329da86b0e81::t_d82058ce6bc341 652-653,655,658
+  s_fc329da86b0e81::t_414f182a0268cb 151-153,163
+  s_fc329da86b0e81::t_4f56c466141b73 174,180
+  s_fc329da86b0e81::t_6dbe2f506c75e9 1-9,12,14-17,27-77,79-85,118-150,154-162,164-173,175-179,181-195,202-204,206-210,212-213,221-223,263-269,271,273-275,276-283,285-309,316-323,339-341,350-401,403-407,409-415,422-444,446-477,619-629,634-651,654,656-657,659-702,704-706,713-714,716-724,781-783
+  s_fc329da86b0e81::t_d5c0bdc7f54636 416
+  s_fc329da86b0e81::t_81e9bd1715262b 10,13
+src/modules/PunchRecording/useCases/punchRecording/__tests__/startBackgroundCapture.spec.ts
+  s_fc329da86b0e81::t_6d4064a834e09c 52-73,75-84
+crates/daw-engine/src/audio_thread.rs
+  s_fc329da86b0e81::t_d32e55fe7a03d5 621
+  s_fc329da86b0e81::t_38efc092385663 1412
+  s_fc329da86b0e81::t_c1db0ee68f74bb 1468-1482
+  s_fc329da86b0e81::t_dfac6376854086 2046
+  s_fc329da86b0e81::t_4f1e83537c2c55 19
+  s_fc329da86b0e81::t_0865ebc65590be 1802
+  s_fc329da86b0e81::t_2f37e769be1a80 2110-2115
+  s_fc329da86b0e81::t_89cfb4e5600bef 2009-2016
+  s_fc329da86b0e81::t_7780c0d421b419 1651-1656
+  s_fc329da86b0e81::t_7ec47446bd2fe8 519-521
+  s_fc329da86b0e81::t_0763dfd39ebc66 1272,1284
+  s_fc329da86b0e81::t_d6f8340e965941 1129,1152-1154,1157
+  s_fc329da86b0e81::t_e3899a4b7232ff 561-562,583
+  s_fc329da86b0e81::t_bcffd0dbe5feba 1683-1688,1720-1725,1746-1751
+  s_fc329da86b0e81::t_7d714a0fc691a8 1246
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  s_a33c5368acef99::t_29cba86f918632 281-284
+evidence/agent-campaign/manifest.json
+  s_a33c5368acef99::t_9c2512e3d9abf0 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a0aa4c1f18486ce8280bc47d0a4c09c30e7dcf50",
+  "prompts": {},
+  "sessions": {
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fc329da86b0e81": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "75b523dd-7b42-4aed-88f3-0fc923fa2dfb",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

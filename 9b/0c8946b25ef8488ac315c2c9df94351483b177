@@ -6,6 +6,8 @@ src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.t
   s_7a8418ba06eca3::t_39c4484be1d60f 14,23
   s_7a8418ba06eca3::t_4c4763e410a7a6 83
   s_7a8418ba06eca3::t_8934ba48629cbf 100
+src/modules/PunchRecording/useCases/punchRecording/togglePunchRecording.ts
+  s_6f8a6549430a9b::t_0ee7072255bbfe 1
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -13,6 +15,14 @@ src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInput.spec.t
   "base_commit_sha": "9b0c8946b25ef8488ac315c2c9df94351483b177",
   "prompts": {},
   "sessions": {
+    "s_6f8a6549430a9b": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "5f60e608-b3cc-46ab-99ac-4173b7a31bb1",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_7a8418ba06eca3": {
       "agent_id": {
         "tool": "cursor",

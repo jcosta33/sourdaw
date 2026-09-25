@@ -1,0 +1,17 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "815a52b1f54550cb63c0c7a923d1cbb0a0d7939d",
+  "prompts": {},
+  "sessions": {
+    "s_5c54d9bd1b8c82": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "19d63c0f-c5f3-49b4-8a25-75bcb25892b1",
+        "model": "grok-4.7-high-fast"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
