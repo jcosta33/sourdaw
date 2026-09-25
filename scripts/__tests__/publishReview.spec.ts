@@ -5434,7 +5434,7 @@ describe('fresh reviewer dossier publication', () => {
             expect(message).toMatch(/does not supply a usable review bundle context/);
             expect(message).toMatch(/incomplete in pr, baseRefName, baseSha, or headSha/);
             expect(message).not.toMatch(/no readable baseSha/);
-            expect(message).not.toMatch(/unverifiable base/);
+            expect(message).not.toMatch(/unverifiable/);
             expect(message).toMatch(/reassessment\.json/);
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
