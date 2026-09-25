@@ -1,0 +1,23 @@
+scripts/__tests__/publishLane.spec.ts
+  s_a33c5368acef99::t_dd3d807d90bef5 2882-2903
+  s_a33c5368acef99::t_5d3ba23d9067d2 538-562
+scripts/publishLane.ts
+  s_a33c5368acef99::t_cc26a1c54fa99d 1670-1674
+  s_a33c5368acef99::t_c5246b1cbc52a9 1334-1341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1cda7991ab995958ece31b43fb863bf87622cd02",
+  "prompts": {},
+  "sessions": {
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
