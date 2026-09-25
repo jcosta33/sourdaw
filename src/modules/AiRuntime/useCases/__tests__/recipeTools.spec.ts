@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { querySemanticProject } from '#/modules/Project/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
 
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 
@@ -9,6 +10,52 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     querySemanticProject: vi.fn(),
 }));
+
+type CanonicalRole = ReturnType<typeof getCanonicalTrackRoleOptions>[number];
+type RecipeRoleName = 'vocal' | 'drums' | 'bass' | 'guitar' | 'keys' | 'bus' | 'master';
+
+/**
+ * The recipe role every canonical track role resolves to, restated here as a literal
+ * expectation table independent of `CANONICAL_ROLE_TO_RECIPE_ROLE` in `discoverMixRecipes.ts`
+ * so a silent edit to that production table fails this spec instead of both agreeing.
+ * `Record<CanonicalRole, ...>` over the full role union fails typecheck if a canonical role
+ * this catalog can produce is ever left out.
+ */
+const CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE: Readonly<Record<CanonicalRole, RecipeRoleName | null>> = {
+    kick: 'drums',
+    snare: 'drums',
+    'hi-hat': 'drums',
+    tom: 'drums',
+    cymbal: 'drums',
+    percussion: 'drums',
+    drums: 'drums',
+    'lead vocal': 'vocal',
+    'backing vocal': 'vocal',
+    bass: 'bass',
+    guitar: 'guitar',
+    keys: 'keys',
+    synth: 'keys',
+    pad: 'keys',
+    bus: 'bus',
+    master: 'master',
+    fx: null,
+    unknown: null,
+};
+
+/**
+ * Authors `role` for `trackId` in the production brief, the real route a user takes to
+ * assign a track's role — including the literal `'unknown'` role, which is a normal
+ * member of the canonical role union and needs no synthetic stand-in.
+ */
+function authorProductionBriefRole(trackId: string, role: CanonicalRole): void {
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        productionBrief: {
+            ...structuredClone(defaultProjectStoreState.productionBrief),
+            trackRoles: [{ id: `role-${trackId}`, trackId, role, createdAt: 0 }],
+        },
+    });
+}
 
 function createTrack(overrides: Partial<Track>): Track {
     return {
@@ -94,6 +141,7 @@ describe('recipe.discover', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        projectStore.set(structuredClone(defaultProjectStoreState));
     });
 
     it('resolves "warmer" to the warm descriptor', async () => {
@@ -258,6 +306,49 @@ describe('recipe.discover', () => {
             role: { recipeRole: 'master', source: 'target', canonicalRole: 'master' },
         });
     });
+
+    it.each(getCanonicalTrackRoleOptions().map((role) => [role] as const))(
+        'resolves an authored "%s" canonical role to its recipe role through the tool loop',
+        async (canonicalRole) => {
+            if (!Object.hasOwn(CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE, canonicalRole)) {
+                throw new Error(
+                    `No expected recipe role recorded for canonical role "${canonicalRole}"; add it to CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE.`
+                );
+            }
+            const expectedRecipeRole = CANONICAL_ROLE_TO_EXPECTED_RECIPE_ROLE[canonicalRole];
+            const targetId = `role-target-${canonicalRole}`;
+            trackStore.set({
+                tracks: [createTrack({ id: targetId, name: 'Track' })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            authorProductionBriefRole(targetId, canonicalRole);
+
+            const receipt = await runRecipeDiscovery(`loop-role-${canonicalRole}`, {
+                descriptors: ['warmer'],
+                targetId,
+            });
+
+            expect(receipt.status).toBe('success');
+            expect(receipt.data).toMatchObject({
+                role: { recipeRole: expectedRecipeRole, source: 'target', canonicalRole },
+            });
+
+            if (expectedRecipeRole === null) {
+                // Matches the shape asserted by the FX Return case above: no recipe role
+                // means zero candidates and a warning naming the missing recipe role.
+                expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+                expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('recipe role'))).toBe(true);
+                return;
+            }
+
+            const data = receipt.data as { total: number; candidates: { roles: string[] }[] };
+            expect(data.total).toBeGreaterThan(0);
+            for (const candidate of data.candidates) {
+                expect(candidate.roles).toContain(expectedRecipeRole);
+            }
+        }
+    );
 
     it('returns zero candidates and a no-recipe-role warning for an FX Return with no role argument', async () => {
         trackStore.set({
