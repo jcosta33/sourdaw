@@ -4502,6 +4502,13 @@ pub async fn apply_graph_commands(
         }
     }
 
+    // The batch is on this engine's ring, so `working` names the strips the
+    // engine now has: a punch arm recorded before this engine booted, before a
+    // retire replaced the last one, or against a strip this batch registered
+    // under a new native id resolves here. Registry, then engine, then the
+    // recorded arm — the order the arm command takes them in too.
+    crate::commands::engine_retrospective::apply_desired_retrospective_arm(state, &working, engine);
+
     // The batch is fenced, so this call is `applied` and nothing below can turn
     // it into anything else. That is the whole reason a hosted plugin loaded
     // before the engine ran attaches *here* rather than beside the crumbs slot
