@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/semanticListPredicates.spec.ts
+  s_9e15f5b7ec3308::t_7a10c527ef3a5a 87,92
+  s_9e15f5b7ec3308::t_3787ae34bae846 383
+  s_9e15f5b7ec3308::t_59771844c3081a 269-283,673
+  s_9e15f5b7ec3308::t_3f001a8d318503 672,675-702
+  s_9e15f5b7ec3308::t_1da3c21dbbbfbf 667-671,674
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fe8b8c455f4b78e2439fa0c49a1c7fee8a9236dc",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
