@@ -24,6 +24,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
     gainEnvelopeStore,
+    type Device,
     type GainEnvelopePoint,
     type Track,
     type TrackStoreState,
@@ -36,7 +37,7 @@ import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/
 import { renderOffline } from '../../renderOffline';
 import { resolveOutputTarget } from '../resolveOutputTarget';
 import { type OfflineRenderContext } from '../resolveRenderContext';
-import { selectOfflineRenderEngine } from '../selectOfflineRenderEngine';
+import { selectOfflineRenderEngine, type SelectOfflineRenderEngineInput } from '../selectOfflineRenderEngine';
 
 import { createNullTestRenderHarness } from './nullTestRenderHarness';
 
@@ -134,14 +135,14 @@ function createClip(
 }
 
 /** A project the native engine can hold: no gate applies. */
-function cleanProject(): { renderableTracks: Track[]; scheduledTracks: Track[] } {
+function cleanProject(): { renderableTracks: Track[]; scheduledTracks: Track[]; sidechainRoutes: [] } {
     const track = createTrack({
         id: 'track-a',
         clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
         sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] as Track['sends'],
     });
     const bus = createTrack({ id: 'bus-1', name: 'Bus 1', kind: 'bus' });
-    return { renderableTracks: [track, bus], scheduledTracks: [track] };
+    return { renderableTracks: [track, bus], scheduledTracks: [track], sidechainRoutes: [] };
 }
 
 /** Seed one clip's envelope straight into the store the gates read. */
@@ -218,6 +219,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const selection = await selectOfflineRenderEngine({
             renderableTracks: [master, track, bus],
             scheduledTracks: [track],
+            sidechainRoutes: [],
         });
 
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
@@ -237,6 +239,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const { renderableTracks, scheduledTracks } = cleanProject();
         const project = {
             scheduledTracks,
+            sidechainRoutes: [],
             renderableTracks: renderableTracks.map((track) => (track.kind === 'bus' ? { ...track, ...bus } : track)),
         };
 
@@ -251,6 +254,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         const verb = createTrack({ id: 'bus-2', name: 'Verb', kind: 'bus' });
         const project = {
             scheduledTracks,
+            sidechainRoutes: [],
             renderableTracks: [
                 ...renderableTracks.map((track) =>
                     track.kind === 'bus'
@@ -287,7 +291,11 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             ],
         });
 
-        const selection = await selectOfflineRenderEngine({ renderableTracks: [track], scheduledTracks: [track] });
+        const selection = await selectOfflineRenderEngine({
+            renderableTracks: [track],
+            scheduledTracks: [track],
+            sidechainRoutes: [],
+        });
 
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
@@ -308,7 +316,11 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             ],
         });
 
-        const selection = await selectOfflineRenderEngine({ renderableTracks: [track], scheduledTracks: [track] });
+        const selection = await selectOfflineRenderEngine({
+            renderableTracks: [track],
+            scheduledTracks: [track],
+            sidechainRoutes: [],
+        });
 
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
@@ -321,7 +333,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
          */
         const cases: {
             name: string;
-            project: () => { renderableTracks: Track[]; scheduledTracks: Track[] };
+            project: () => SelectOfflineRenderEngineInput;
             reason: string;
         }[] = [
             {
@@ -333,29 +345,9 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         frozen: true,
                         freezeState: { status: 'frozen', frozenBufferId: 'freeze-1' },
                     });
-                    return { renderableTracks: [track], scheduledTracks: [track] };
+                    return { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [] };
                 },
                 reason: 'track "Frozen A" is frozen and replays a pre-rendered buffer',
-            },
-            {
-                name: 'a device chain',
-                project: () => {
-                    const track = createTrack({
-                        id: 'track-a',
-                        name: 'Chained A',
-                        devices: [
-                            {
-                                id: 'device-1',
-                                name: 'Gain',
-                                type: 'builtin-gain',
-                                bypassed: false,
-                                parameterValues: {},
-                            },
-                        ],
-                    });
-                    return { renderableTracks: [track], scheduledTracks: [track] };
-                },
-                reason: 'track "Chained A" carries a device chain',
             },
             {
                 name: 'MIDI programme',
@@ -365,7 +357,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         name: 'Keys A',
                         clips: [createClip({ id: 'clip-a', trackId: 'track-a', type: 'midi' })],
                     });
-                    return { renderableTracks: [track], scheduledTracks: [track] };
+                    return { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [] };
                 },
                 reason: 'track "Keys A" plays MIDI programme',
             },
@@ -381,7 +373,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         name: 'Env A',
                         clips: [createClip({ id: 'clip-env', trackId: 'track-a', audioBufferId: 'mat-a' })],
                     });
-                    return { renderableTracks: [track], scheduledTracks: [track] };
+                    return { renderableTracks: [track], scheduledTracks: [track], sidechainRoutes: [] };
                 },
                 reason: 'track "Env A" plays a clip gain envelope the native render does not apply',
             },
@@ -395,7 +387,7 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                         kind: 'bus',
                         outputId: 'track-a',
                     });
-                    return { renderableTracks: [track, bus], scheduledTracks: [] };
+                    return { renderableTracks: [track, bus], scheduledTracks: [], sidechainRoutes: [] };
                 },
                 reason: 'bus "Feeder" routes into a track, which the native engine refuses',
             },
@@ -405,6 +397,87 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
             mocks.availability = { available: true, transport: stubTransport };
 
             const selection = await selectOfflineRenderEngine(project());
+
+            expect(selection).toEqual({ engine: 'web-audio/offline', reason, degraded: true });
+        });
+    });
+
+    /**
+     * #3776 — a chain made only of native built-in bodies renders natively;
+     * every other chain names the device that keeps it on Web Audio. One case
+     * per exclusion, each with the reason the user reads on `onWarning`.
+     */
+    describe('device chains — native bodies render natively, anything else names its device', () => {
+        function device(overrides: Partial<Device> & Pick<Device, 'id' | 'type'>): Device {
+            return { name: overrides.type, bypassed: false, parameterValues: {}, ...overrides };
+        }
+
+        function chainedTrack(name: string, devices: Device[]): Track {
+            return createTrack({
+                id: 'track-a',
+                name,
+                devices,
+                clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
+            });
+        }
+
+        it('hands an audio track carrying a native built-in body to the native engine', async () => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const track = chainedTrack('Glued A', [
+                device({ id: 'glue-1', type: 'gluten', parameterValues: { inputGain: 0 } }),
+            ]);
+
+            const selection = await selectOfflineRenderEngine({
+                renderableTracks: [track],
+                scheduledTracks: [track],
+                sidechainRoutes: [],
+            });
+
+            expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+        });
+
+        const cases: { name: string; devices: Device[]; keyedDeviceId?: string; reason: string }[] = [
+            {
+                name: 'a hosted plugin',
+                devices: [device({ id: 'plug-1', type: 'external-plugin', externalInstanceId: 'instance-1' })],
+                reason: 'track "Chained A" carries device "external-plugin", which the native render has no body for',
+            },
+            {
+                name: 'a Crumbs sampler',
+                devices: [device({ id: 'crumbs-1', type: 'builtin-crumbs' })],
+                reason: 'track "Chained A" carries device "builtin-crumbs", which the native render has no body for',
+            },
+            {
+                // Bypassed, and still gated: the gate stays conservative.
+                name: 'a bypassed Web Audio-only built-in behind a native body',
+                devices: [
+                    device({ id: 'glue-1', type: 'gluten' }),
+                    device({ id: 'eq-1', type: 'builtin-eq', bypassed: true }),
+                ],
+                reason: 'track "Chained A" carries device "builtin-eq", which the native render has no body for',
+            },
+            {
+                name: 'an instrument the engine has a body for',
+                devices: [device({ id: 'toaster-1', type: 'toaster' })],
+                reason: 'track "Chained A" carries instrument "toaster", which renders through Web Audio',
+            },
+            {
+                name: 'a native body keyed by a sidechain',
+                devices: [device({ id: 'glue-1', type: 'gluten' })],
+                keyedDeviceId: 'glue-1',
+                reason: 'track "Chained A" carries device "gluten" keyed by a sidechain, which the native render does not wire',
+            },
+        ];
+
+        it.each(cases)('degrades $name with its own reason', async ({ devices, keyedDeviceId, reason }) => {
+            mocks.availability = { available: true, transport: stubTransport };
+            const track = chainedTrack('Chained A', devices);
+
+            const selection = await selectOfflineRenderEngine({
+                renderableTracks: [track],
+                scheduledTracks: [track],
+                sidechainRoutes: keyedDeviceId === undefined ? [] : [{ targetDeviceId: keyedDeviceId }],
+            });
 
             expect(selection).toEqual({ engine: 'web-audio/offline', reason, degraded: true });
         });

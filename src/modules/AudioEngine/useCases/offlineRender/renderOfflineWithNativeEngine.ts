@@ -11,6 +11,15 @@
  * (`createAutomationRecorder` → `convertRecordedAutomationEvents`), routing
  * through `resolveOutputTarget`.
  *
+ * ── Device parameter automation ───────────────────────────────────────────
+ *
+ * The engine selection admits only chains of native built-in bodies, and their
+ * parameter lanes ride `write-device-parameter` under exactly the law and the
+ * names the live writer stamps them with (`nativeBuiltinAutomation`, #3776).
+ * A lane naming a device on its strip that this law will not carry declines
+ * the render (`nativeRefusedDeviceLane`) rather than printing a file without
+ * it.
+ *
  * ── Decline versus fail ───────────────────────────────────────────────────
  *
  * A *refused batch* — the native side's own vocabulary for "I cannot render
@@ -68,12 +77,15 @@ import {
 import { STEREO_CHANNEL_COUNT } from '../../models/ChannelLaw';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
+import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
+import { nativeBuiltinAutomation } from '../livePlayback/nativeBuiltinAutomation';
+import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 // Project truth spells a built-in's parameters as the ids a panel authors; the
 // native mapper resolves them against the engine's own vocabulary and refuses
 // the whole batch, by strip, over one it cannot name (#3893).
@@ -83,9 +95,14 @@ import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeC
 import { automationWriteCommand } from './automationWriteCommand';
 import { type captureOfflineRenderInput } from './captureOfflineRenderInput';
 import { checkCancel } from './checkCancel';
+import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
-import { projectStripAutomationWrites } from './projectStripAutomationWrites';
+import {
+    projectStripAutomationWrites,
+    REFUSE_DEVICE_AUTOMATION,
+    type StripAutomationDeviceEntry,
+} from './projectStripAutomationWrites';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
 
@@ -142,6 +159,13 @@ function writeCommands(
     writes: readonly AudioGraphParameterWrite[]
 ): AudioGraphCommand[] {
     return writes.map((write) => automationWriteCommand(target, write));
+}
+
+/** The built-ins on this strip the native render builds a body for, in chain order. */
+function nativeBodyDeviceEntries(track: Track): readonly StripAutomationDeviceEntry[] {
+    return track.devices.flatMap((device) =>
+        nativeBuiltinBody(device.type) === null ? [] : [{ deviceId: device.id, deviceType: device.type }]
+    );
 }
 
 /**
@@ -217,6 +241,15 @@ export async function renderOfflineWithNativeEngine(
     // this projection's to count.
     const engineHostedStripIds: ReadonlySet<string> = new Set(renderableTracks.map((track) => track.id));
 
+    // The same lanes and the same declared law the web render reads, bound to
+    // the built-in half the live writer stamps under.
+    const automationLanes = input.captured?.scheduling.automationLanes ?? automationStore.value?.lanes ?? [];
+    const builtinAutomation = nativeBuiltinAutomation({
+        source: input.captured?.scheduling.deviceParameterLaw ?? offlineDeviceParameterLawState,
+        stripTracks: renderableTracks,
+    });
+    const deviceParameterLaw = builtinAutomation.law ?? REFUSE_DEVICE_AUTOMATION;
+
     // ── Strips, exactly as the web path seeds them ─────────────────────────
     const stripCommands = renderableTracks.map((track): AudioGraphCommand => {
         const state = {
@@ -274,6 +307,22 @@ export async function renderOfflineWithNativeEngine(
             : getCompensationDelay(track.id, undefined, engineHostedStripIds);
         const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
 
+        const deviceEntries = nativeBodyDeviceEntries(track);
+        const refusedLane = nativeRefusedDeviceLane({
+            track,
+            lanes: automationLanes,
+            deviceEntries,
+            law: deviceParameterLaw,
+        });
+        if (refusedLane !== null) {
+            return {
+                outcome: 'declined',
+                reason:
+                    `automation lane "${refusedLane.parameterName}" on track "${track.name}" names a device ` +
+                    `parameter the native render cannot carry`,
+            };
+        }
+
         // The same lane set, gate and grain the web scheduler reads
         // (`scheduleTrackClips`); the mixdown always includes mixer lanes.
         // `projectStripAutomationWrites` shares this projection with the live
@@ -282,7 +331,7 @@ export async function renderOfflineWithNativeEngine(
         const automation = projectStripAutomationWrites({
             track,
             admittedSendBusIds: sendCommands({ track, busStripIds: busIds }).map((command) => command.busId),
-            lanes: input.captured?.scheduling.automationLanes ?? automationStore.value?.lanes ?? [],
+            lanes: automationLanes,
             regionStartSeconds: regionStartSec,
             durationSeconds,
             defaultTempo,
@@ -299,11 +348,13 @@ export async function renderOfflineWithNativeEngine(
             // The native fold shares this scheduler with the Web Audio path,
             // so it takes the same lane law rather than a second copy.
             resolveLaneCeiling: getAutomationLaneCeiling,
+            deviceEntries,
+            deviceParameterLaw,
         });
         if (automation.outcome === 'declined') {
             return automation;
         }
-        for (const { target, writes } of automation.entries) {
+        for (const { target, writes } of automation.entries.map(builtinAutomation.addressNatively)) {
             commands.push(...writeCommands(target, writes));
         }
 
