@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     bounceInPlace: vi.fn(),
     captureTrackClipStates: vi.fn(),
+    removeTakesForClips: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -20,6 +21,10 @@ vi.mock('../../../useCases/freezeBounce/bounceInPlace', () => ({
 
 vi.mock('../../../useCases/captureTrackClipStates', () => ({
     captureTrackClipStates: mocks.captureTrackClipStates,
+}));
+
+vi.mock('../../../useCases/comping/removeTakesForClips', () => ({
+    removeTakesForClips: mocks.removeTakesForClips,
 }));
 
 const mixedTracks = () => [
@@ -150,7 +155,7 @@ describe('handleConsolidateAllTracks', () => {
 
             const desc = handleConsolidateAllTracks.describe({ type: 'consolidateAllTracks', payload: undefined });
 
-            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['t1', 't2']);
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['t1', 't2'], expect.any(Array));
             if (!desc.inverseAction || desc.inverseAction.type !== 'restoreTrackClipStates') {
                 throw new Error('expected a restoreTrackClipStates inverse action');
             }
@@ -234,6 +239,80 @@ describe('handleConsolidateAllTracks', () => {
 
         expect(describeCallArgs![0]).toEqual(['t1', 't2']);
         expect(executeTimeTrackIds).toEqual(['t1', 't2']);
+    });
+
+    describe('take retirement (#4518)', () => {
+        const takeTracks = () => [
+            TrackDummy.create({
+                id: 't1',
+                kind: 'audio',
+                clips: [ClipDummy.create({ id: 't1-clip', trackId: 't1' })],
+                alternatives: [
+                    {
+                        id: 'alt-1',
+                        name: 'Alternative 1',
+                        clips: [ClipDummy.create({ id: 't1-hidden', trackId: 't1' })],
+                    },
+                ],
+            }),
+            TrackDummy.create({ id: 't2', kind: 'midi', clips: [ClipDummy.create({ id: 't2-clip', trackId: 't2' })] }),
+        ];
+
+        it('retires the takes of every replaced clip — including hidden alternatives — after the bounces land', async () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: takeTracks() });
+
+            const result = await handleConsolidateAllTracks.execute({
+                type: 'consolidateAllTracks',
+                payload: undefined,
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(
+                expect.arrayContaining(['t1-clip', 't1-hidden', 't2-clip'])
+            );
+        });
+
+        it('retires nothing for a track whose bounce refused — its clips stayed, so its takes are still live', async () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: takeTracks() });
+            mocks.bounceInPlace.mockImplementation((trackId: string) => Promise.resolve(trackId === 't1'));
+
+            const result = await handleConsolidateAllTracks.execute({
+                type: 'consolidateAllTracks',
+                payload: undefined,
+            });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+            const [retiredIds] = mocks.removeTakesForClips.mock.calls[0]!;
+            expect(retiredIds).toEqual(expect.arrayContaining(['t1-clip', 't1-hidden']));
+            expect(retiredIds).not.toContain('t2-clip');
+        });
+
+        it('retires nothing when every bounce refuses', async () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: takeTracks() });
+            mocks.bounceInPlace.mockResolvedValue(false);
+
+            const result = await handleConsolidateAllTracks.execute({
+                type: 'consolidateAllTracks',
+                payload: undefined,
+            });
+
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+            expect(mocks.removeTakesForClips).toHaveBeenCalledWith([]);
+        });
+
+        it('names the replaced clip ids in the pre-consolidate capture so the inverse can restore the retired lanes', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: takeTracks() });
+
+            handleConsolidateAllTracks.describe({ type: 'consolidateAllTracks', payload: undefined });
+
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(
+                ['t1', 't2'],
+                expect.arrayContaining(['t1-clip', 't1-hidden', 't2-clip'])
+            );
+        });
     });
 
     describe('isNoop', () => {

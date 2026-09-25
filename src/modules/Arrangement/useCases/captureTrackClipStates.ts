@@ -49,19 +49,20 @@ import { getTrackStoreState } from './getTrackStoreState';
  * through `removeClip`, so the capture can carry the lanes that removal will
  * retire and undo can put them back; a capture that names any carries the
  * `retiredTakeLanes` key even when it found none, which is how the restore tells
- * a take-retiring route from one that never captured. `cutClip` is the only
- * caller that passes it: `pasteClip` removes only ids it minted moments earlier.
+ * a take-retiring route from one that never captured. `cutClip` passes it for
+ * the clips it removes directly; `flattenTrack` and `consolidateAllTracks` pass
+ * the clip ids their forwards replace and retire those takes through
+ * `removeTakesForClips`, since their collection rewrite never reaches
+ * `removeClip`. `pasteClip` removes only ids it minted moments earlier.
  *
- * Every other route that drops pre-existing clips leaves their takes behind, and
- * that gap is filed rather than covered here. `flattenTrack` and
- * `consolidateAllTracks` replace the clip collection directly without going
- * through `removeClip`; Delete Time and Delete Time Range drop clips through
- * `removeClipSatelliteData` alone; and undoing the `splitClip` action removes the
- * right half directly. None retires a take. The orphan comp region then advances
- * the comp cursor, so the replacement clip is silent over that span in live
- * playback and in the offline render. The clip-replacement routes are defect
- * #4518, the time routes are #4520, and the split action's undo is #4521; this
- * capture deliberately does not extend any of them.
+ * Two routes still drop pre-existing clips without retiring their takes, and
+ * that gap is filed rather than covered here: Delete Time and Delete Time Range
+ * drop clips through `removeClipSatelliteData` alone, and undoing the
+ * `splitClip` action removes the right half directly. The orphan comp region
+ * then advances the comp cursor, so the replacement clip is silent over that
+ * span in live playback and in the offline render. The time routes are defect
+ * #4520 and the split action's undo is #4521; this capture deliberately does
+ * not extend either of them.
  */
 export function captureTrackClipStates(
     trackIds: readonly string[],
