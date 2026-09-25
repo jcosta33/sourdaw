@@ -54,15 +54,12 @@ type ResolvedTarget = {
 };
 
 /**
- * Track kinds whose devices never gate their tracks' audio: a folder only changes the view and
- * its devices sit outside its child tracks' signal path (docs/manual/02-concepts.md:42), and a
- * VCA controls level only and refuses device adds (deviceStrategy.ts). Recipe discovery refuses
- * these targets instead of returning device recipes the planner could never apply there.
+ * A folder only changes the view; its devices sit outside its child tracks' signal path
+ * (docs/manual/02-concepts.md:42), so recipe discovery refuses a folder target instead of
+ * returning device recipes the planner could never apply there.
  */
-const NON_AUDIO_PROCESSING_TARGET_WARNINGS: Readonly<Partial<Record<string, string>>> = {
-    folder: "This target is a folder; it only changes the view and does not process its child tracks' audio. Target those tracks or a bus instead.",
-    vca: "This target is a VCA; it controls level only and does not process its tracks' audio. Target those tracks or a bus instead.",
-};
+const FOLDER_TARGET_WARNING =
+    "This target is a folder; it only changes the view and does not process its child tracks' audio. Target those tracks or a bus instead.";
 
 type ResolvedRole = {
     recipeRole: RecipeRole | null;
@@ -283,11 +280,10 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
     const role = resolveRole(catalog, input.role, target);
     const receiptTarget = target === null ? null : { id: target.id, deviceTypes: target.deviceTypes };
 
-    const nonAudioProcessingWarning = target === null ? undefined : NON_AUDIO_PROCESSING_TARGET_WARNINGS[target.kind];
-    if (nonAudioProcessingWarning !== undefined) {
+    if (target !== null && target.kind === 'folder') {
         return {
             status: 'ok',
-            warnings: [nonAudioProcessingWarning],
+            warnings: [FOLDER_TARGET_WARNING],
             data: {
                 schema: 'sourdaw.recipe-discovery',
                 schemaVersion: 1,
