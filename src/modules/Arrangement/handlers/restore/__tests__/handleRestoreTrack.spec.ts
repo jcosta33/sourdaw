@@ -40,6 +40,18 @@ const mocks = vi.hoisted(() => {
         setTakeLaneStore: vi.fn((nextState: TakeLaneStoreState): void => {
             takeLaneStoreState.value = nextState;
         }),
+        // Mimics the shared insert's append placement so index assertions stay
+        // honest; its merge/liveness/track-exists rules are pinned by the
+        // comping use case's own specs, not here.
+        insertTakeLane: vi.fn((lane: unknown, index: number): void => {
+            const state = takeLaneStoreState.value;
+            if (!state) {
+                return;
+            }
+            const lanes = [...state.lanes];
+            lanes.splice(Math.min(index, lanes.length), 0, lane as never);
+            takeLaneStoreState.value = { lanes };
+        }),
     };
 });
 
@@ -86,6 +98,10 @@ vi.mock('../../../stores/takeLaneStore', () => ({
         },
         set: mocks.setTakeLaneStore,
     },
+}));
+
+vi.mock('../../../useCases/comping/insertTakeLane', () => ({
+    insertTakeLane: mocks.insertTakeLane,
 }));
 
 vi.mock('../../../stores/clipSatelliteState', () => ({
@@ -181,7 +197,10 @@ describe('handleRestoreTrack', () => {
             controlChangeSnapshot: null,
             pitchBendSnapshot: action.payload.midiPitchBendByClipId['clip-d'],
         });
-        expect(mocks.setTakeLaneStore).toHaveBeenCalledWith({ lanes: action.payload.takeLaneSnapshots });
+        // Each captured lane goes through the shared insert, which owns the
+        // one-lane-per-track merge — never a blind append (#4527).
+        expect(mocks.insertTakeLane).toHaveBeenCalledTimes(1);
+        expect(mocks.insertTakeLane).toHaveBeenCalledWith(action.payload.takeLaneSnapshots[0], 0);
         expect(mocks.restoreTrackModulationReferences).toHaveBeenCalledWith({
             ownedModulators: action.payload.ownedModulatorSnapshots,
             incomingMappings: action.payload.incomingModulationMappingSnapshots,
@@ -204,7 +223,7 @@ describe('handleRestoreTrack', () => {
         if (finalMidiOrder === undefined) {
             throw new Error('Expected final MIDI restore call');
         }
-        const takeLaneOrder = requireCallOrder(mocks.setTakeLaneStore.mock.invocationCallOrder, 'take-lane restore');
+        const takeLaneOrder = requireCallOrder(mocks.insertTakeLane.mock.invocationCallOrder, 'take-lane restore');
 
         expect(trackOrder).toBeLessThan(automationOrder);
         expect(automationOrder).toBeLessThan(midiOrder);
@@ -243,7 +262,7 @@ describe('handleRestoreTrack', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.restoreAutomationLanes).not.toHaveBeenCalled();
         expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
-        expect(mocks.setTakeLaneStore).not.toHaveBeenCalled();
+        expect(mocks.insertTakeLane).not.toHaveBeenCalled();
         expect(mocks.restoreTrackModulationReferences).not.toHaveBeenCalled();
         expect(mocks.restoreSidechainRoutes).not.toHaveBeenCalled();
         expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
@@ -485,7 +504,7 @@ describe('handleRestoreTrack', () => {
         expect(handleRestoreTrack.undoable).toBe(false);
     });
 
-    it('skips the take-lane merge when the take-lane store holds no state', () => {
+    it('delegates to the shared insert, which itself no-ops when the take-lane store holds no state', () => {
         const action = createRestoreTrackAction({
             takeLaneSnapshots: [{ id: 'take-restored', trackId: 'track-1' }],
         });
@@ -495,7 +514,33 @@ describe('handleRestoreTrack', () => {
 
         void handleRestoreTrack.execute(action);
 
-        // No merge attempted because there is no prior state to extend.
+        // The handler delegates every snapshot; the absent-store guard lives in
+        // `insertTakeLane`, so no write reaches the store.
+        expect(mocks.insertTakeLane).toHaveBeenCalledTimes(1);
+        expect(mocks.insertTakeLane).toHaveBeenCalledWith(action.payload.takeLaneSnapshots[0], 0);
         expect(mocks.setTakeLaneStore).not.toHaveBeenCalled();
+    });
+
+    it('routes every captured take lane through the shared insert merge, in payload order (#4527)', async () => {
+        // A projection that gave the track a lane while it was removed must not
+        // end up sharing the track with a second appended lane: the handler
+        // delegates each snapshot to `insertTakeLane`, whose reconcile enforces
+        // one lane per track.
+        const action = createRestoreTrackAction({
+            takeLaneSnapshots: [
+                { id: 'lane-a', trackId: 'track-1' },
+                { id: 'lane-b', trackId: 'track-1' },
+            ] as RestoreTrackPayload['takeLaneSnapshots'],
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
+
+        const result = await handleRestoreTrack.execute(action);
+
+        if (!result || result.status !== 'written') {
+            throw new Error('expected a written result');
+        }
+        expect(mocks.insertTakeLane).toHaveBeenCalledTimes(2);
+        expect(mocks.insertTakeLane).toHaveBeenNthCalledWith(1, { id: 'lane-a', trackId: 'track-1' }, 0);
+        expect(mocks.insertTakeLane).toHaveBeenNthCalledWith(2, { id: 'lane-b', trackId: 'track-1' }, 1);
     });
 });

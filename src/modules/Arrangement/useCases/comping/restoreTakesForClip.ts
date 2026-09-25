@@ -22,9 +22,8 @@ import { takesWithLiveClips } from './takesWithLiveClips';
  * removal did not retire rides back in; if a lane for that track appeared while
  * the capture was absent, the retired takes merge into it instead, because a
  * second lane for one track is dead state no resolver can read and every route
- * that creates a lane forbids it — `handleRestoreTrack` remains the exception,
- * appending its captured lanes straight to the store, and can still leave two
- * for a track (#4527). Every other lane is left alone. A no-op when the store is
+ * that creates a lane forbids it — `handleRestoreTrack` included, which puts its
+ * captured lanes back through the same shared insert (`insertTakeLane`). Every other lane is left alone. A no-op when the store is
  * absent, nothing was retired, or the live state already holds everything the
  * capture would re-add.
  */
