@@ -46,10 +46,22 @@ const CANONICAL_ROLE_TO_RECIPE_ROLE: Readonly<Record<CanonicalRole, RecipeRole |
 
 type ResolvedTarget = {
     id: string;
+    kind: string;
     deviceTypes: readonly string[];
     devices: readonly { id: string; type: string; bypassed: boolean }[];
     canonicalRole: CanonicalRole;
     frozen: boolean;
+};
+
+/**
+ * Track kinds whose devices never gate their tracks' audio: a folder only changes the view and
+ * its devices sit outside its child tracks' signal path (docs/manual/02-concepts.md:42), and a
+ * VCA controls level only and refuses device adds (deviceStrategy.ts). Recipe discovery refuses
+ * these targets instead of returning device recipes the planner could never apply there.
+ */
+const NON_AUDIO_PROCESSING_TARGET_WARNINGS: Readonly<Partial<Record<string, string>>> = {
+    folder: "This target is a folder; it only changes the view and does not process its child tracks' audio. Target those tracks or a bus instead.",
+    vca: "This target is a VCA; it controls level only and does not process its tracks' audio. Target those tracks or a bus instead.",
 };
 
 type ResolvedRole = {
@@ -140,6 +152,7 @@ function resolveTarget(targetId: string | null, tracks: readonly ProjectContextT
         status: 'found',
         target: {
             id: track.id,
+            kind: track.kind,
             deviceTypes: track.devices.map((device) => device.type),
             devices: track.devices.map((device) => ({ id: device.id, type: device.type, bypassed: device.bypassed })),
             canonicalRole: resolveCanonicalRole(track.canonicalRole?.role),
@@ -269,6 +282,25 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
 
     const role = resolveRole(catalog, input.role, target);
     const receiptTarget = target === null ? null : { id: target.id, deviceTypes: target.deviceTypes };
+
+    const nonAudioProcessingWarning = target === null ? undefined : NON_AUDIO_PROCESSING_TARGET_WARNINGS[target.kind];
+    if (nonAudioProcessingWarning !== undefined) {
+        return {
+            status: 'ok',
+            warnings: [nonAudioProcessingWarning],
+            data: {
+                schema: 'sourdaw.recipe-discovery',
+                schemaVersion: 1,
+                catalogVersion: catalog.version,
+                terms,
+                role,
+                target: receiptTarget,
+                total: 0,
+                excludedForChain: 0,
+                candidates: [],
+            },
+        };
+    }
 
     const warnings: string[] = [];
     if (unresolvedTerms.length > 0) {

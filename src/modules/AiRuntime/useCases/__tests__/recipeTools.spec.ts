@@ -402,6 +402,92 @@ describe('recipe.discover', () => {
         expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('frozen'))).toBe(true);
     });
 
+    it('returns zero candidates and a non-audio-processing warning for a folder target', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack({ id: 'folder-drums', name: 'Drums', kind: 'folder' }),
+                createTrack({ id: 'kick-1', name: 'Kick', parentId: 'folder-drums' }),
+                createTrack({ id: 'snare-1', name: 'Snare', parentId: 'folder-drums' }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-folder-target', {
+            descriptors: ['punchy'],
+            targetId: 'folder-drums',
+        });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+        expect(receipt.warnings).toHaveLength(1);
+        expect(receipt.warnings[0]?.toLowerCase()).toContain('folder');
+        expect(receipt.warnings[0]?.toLowerCase()).toContain('does not process');
+    });
+
+    it('returns zero candidates and a non-audio-processing warning for a VCA target', async () => {
+        trackStore.set({
+            tracks: [
+                {
+                    ...createTrack({ id: 'vca-drums', name: 'Drums' }),
+                    // VCA is a dormant track kind: deviceStrategy.ts already refuses device
+                    // adds for it, but the compile-time TrackKind union does not carry it yet
+                    // (see VcaTrackMigration.ts). This fixture needs the same runtime value
+                    // production code already defends against, so the field is narrowed through
+                    // `unknown` rather than widening TrackKind itself.
+                    kind: 'vca' as unknown as Track['kind'],
+                },
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-vca-target', {
+            descriptors: ['punchy'],
+            targetId: 'vca-drums',
+        });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+        expect(receipt.warnings).toHaveLength(1);
+        expect(receipt.warnings[0]?.toLowerCase()).toContain('vca');
+        expect(receipt.warnings[0]?.toLowerCase()).toContain('does not process');
+    });
+
+    it('still returns candidates for a bus target named Drums, unlike a folder or VCA (control)', async () => {
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'bus-control',
+                    name: 'Drums',
+                    kind: 'bus',
+                    devices: [
+                        {
+                            id: 'device-comp-1',
+                            name: 'Compressor',
+                            type: 'builtin-compressor',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-bus-control', {
+            descriptors: ['punchy'],
+            targetId: 'bus-control',
+        });
+
+        expect(receipt.status).toBe('success');
+        const data = receipt.data as { total: number; candidates: { id: string }[] };
+        expect(data.total).toBeGreaterThan(0);
+        expect(data.candidates.some((candidate) => candidate.id === 'bus-punchy')).toBe(true);
+        expect(receipt.warnings).toHaveLength(0);
+    });
+
     it('fails with invalid-tool-arguments for an unknown targetId', async () => {
         const receipt = await runRecipeDiscovery('loop-unknown-target', {
             descriptors: ['warmer'],
