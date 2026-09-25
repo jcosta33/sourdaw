@@ -1,0 +1,39 @@
+src/modules/AudioEngine/repositories/retrospectiveCapture/disarmRetrospectiveCapture.ts
+  s_a33c5368acef99::t_5b047924560414 9-11
+src/modules/AudioEngine/repositories/retrospectiveCapture/armRetrospectiveCapture.ts
+  s_a33c5368acef99::t_a2d612338ad7c3 10-13
+src/modules/AudioEngine/services/retrospectiveCaptureRequestOrder.ts
+  s_a33c5368acef99::t_c25e0d51cc664d 1-30
+src/modules/AudioEngine/useCases/retrospectiveCapture/__tests__/retrospectiveCaptureRequestOrder.spec.ts
+  s_9e15f5b7ec3308::t_93ee58d8340b5a 1-80
+src/modules/AudioEngine/useCases/retrospectiveCapture/armRetrospectiveCapture.ts
+  s_a33c5368acef99::t_f9855462fa9ade 2,11-13,16
+src/modules/AudioEngine/useCases/retrospectiveCapture/disarmRetrospectiveCapture.ts
+  s_a33c5368acef99::t_2d205fe253dbd3 2,8-9,12
+src/modules/PunchRecording/useCases/punchRecording/__tests__/togglePunchRecordingRequestOrder.spec.ts
+  s_9e15f5b7ec3308::t_349883f5d81b9e 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "41d7d5a444de9f9096872eb00e66766872d54926",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_a33c5368acef99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21cc050b-1a3a-438b-ba93-29af1c7bab78",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
