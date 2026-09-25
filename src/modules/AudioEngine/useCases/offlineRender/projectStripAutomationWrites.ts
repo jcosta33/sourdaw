@@ -30,6 +30,14 @@
  * live writer and the native export (#3776) — decide on their own which lanes
  * that drop would lose, because only they know which devices the engine
  * actually carries.
+ *
+ * Two lanes driving one device parameter (a track lane plus a clip lane, or
+ * two clip lanes) reach this recorder as one `scheduleTrackAutomation` group.
+ * Disjoint lanes merge into the one schedule this recorder holds per
+ * parameter; overlapping ones cannot merge, and this recorder cannot hold two
+ * schedules for one parameter either, so the whole strip declines
+ * (`recordingDeviceEntry` below) rather than silently keeping whichever lane
+ * scheduled last.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -168,8 +176,23 @@ type RecordedDeviceSegments = Map<string, readonly OfflineAutomationSegment[]>;
  * settled by the caller's law — the binding's job is only to say how the curve
  * reaches the device, and for a device the backend addresses by name that is
  * the segment stream, never an `AudioParam` this side owns.
+ *
+ * `scheduleTrackAutomation` applies one `segments` group at most twice: once,
+ * merged, when every lane on this parameter is disjoint, or once per lane,
+ * in lane order, when any of them overlap (`mergeAutomationSegmentStreams`).
+ * This recorder holds one schedule per parameter, so a second `apply` for a
+ * parameter it has already recorded can only be that overlapping fallback —
+ * there is no lane order this recorder could apply both under, unlike a real
+ * `AudioParam` or worklet port that just takes the last write. It reports the
+ * clash through `onOverlap` instead of silently keeping whichever call came
+ * last, which is what let two lanes on one parameter lose all but the last
+ * before this recorder existed to notice.
  */
-function recordingDeviceEntry(entry: StripAutomationDeviceEntry, recorded: RecordedDeviceSegments) {
+function recordingDeviceEntry(
+    entry: StripAutomationDeviceEntry,
+    recorded: RecordedDeviceSegments,
+    onOverlap: (parameterId: string) => void
+) {
     return {
         deviceId: entry.deviceId,
         deviceType: entry.deviceType,
@@ -183,11 +206,38 @@ function recordingDeviceEntry(entry: StripAutomationDeviceEntry, recorded: Recor
             resolveOfflineAutomation: (parameterId: string) => ({
                 kind: 'segments' as const,
                 apply: (segments: readonly OfflineAutomationSegment[]): void => {
+                    if (recorded.has(parameterId)) {
+                        onOverlap(parameterId);
+                        return;
+                    }
                     recorded.set(parameterId, segments);
                 },
             }),
         },
     };
+}
+
+/**
+ * Every named device, wired to record rather than play, plus the recorder map
+ * they write into and the overlaps any of their parameters hit — the caller
+ * checks that list once, after scheduling, instead of every entry's own
+ * closure carrying its own decline.
+ */
+function recordingDeviceEntries(deviceEntries: readonly StripAutomationDeviceEntry[]): {
+    entries: ReturnType<typeof recordingDeviceEntry>[];
+    overlaps: { deviceId: string; parameterId: string }[];
+    recordedByDeviceId: ReadonlyMap<string, RecordedDeviceSegments>;
+} {
+    const recordedByDeviceId = new Map<string, RecordedDeviceSegments>(
+        deviceEntries.map((entry): [string, RecordedDeviceSegments] => [entry.deviceId, new Map()])
+    );
+    const overlaps: { deviceId: string; parameterId: string }[] = [];
+    const entries = deviceEntries.map((entry) =>
+        recordingDeviceEntry(entry, recordedByDeviceId.get(entry.deviceId)!, (parameterId) =>
+            overlaps.push({ deviceId: entry.deviceId, parameterId })
+        )
+    );
+    return { entries, overlaps, recordedByDeviceId };
 }
 
 /**
@@ -254,9 +304,15 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         sendAutomationParams.set(`send:${busId}`, recorder.param);
     }
 
-    const recordedByDeviceId = new Map<string, RecordedDeviceSegments>(
-        deviceEntries.map((entry): [string, RecordedDeviceSegments] => [entry.deviceId, new Map()])
-    );
+    // `overlaps` is what a parameter's second `apply` reports — the
+    // overlapping-lanes case the scheduler cannot merge away — checked once
+    // below, after scheduling, so the whole strip declines rather than
+    // silently keeping one lane's writes and dropping the other's.
+    const {
+        entries: recordingEntries,
+        overlaps: deviceParameterOverlaps,
+        recordedByDeviceId,
+    } = recordingDeviceEntries(deviceEntries);
 
     scheduleTrackAutomation({
         lanes: [...lanes],
@@ -264,9 +320,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         trackGainNode: { gain: gainRecorder.param },
         trackPanNode: { pan: panRecorder.param },
         sendAutomationParams,
-        deviceEntries: deviceEntries.map((entry) =>
-            recordingDeviceEntry(entry, recordedByDeviceId.get(entry.deviceId)!)
-        ),
+        deviceEntries: recordingEntries,
         durationSeconds,
         defaultTempo,
         changes: [...changes],
@@ -280,6 +334,14 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         vcaMultiplier,
         resolveLaneCeiling,
     });
+
+    if (deviceParameterOverlaps.length > 0) {
+        const { deviceId, parameterId } = deviceParameterOverlaps[0]!;
+        return {
+            outcome: 'declined',
+            reason: `automation on track "${track.name}": lanes on device "${deviceId}" overlap on parameter "${parameterId}"`,
+        };
+    }
 
     const conversions: {
         target: AudioGraphStripParameterTarget;

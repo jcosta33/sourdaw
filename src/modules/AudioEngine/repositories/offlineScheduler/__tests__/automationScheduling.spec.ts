@@ -1050,6 +1050,130 @@ function distinctRun(values: readonly number[]): number[] {
     return run;
 }
 
+/**
+ * Two lanes on one device parameter (#4600-ish — see `mergeAutomationSegmentStreams.ts`
+ * for the law). Before this, `binding.apply(segments)` ran once per lane and
+ * a `segments` consumer keeps only its last call, so the second lane silently
+ * erased the first. These pin `scheduleTrackAutomation`'s own grouping: one
+ * `apply` per (device, parameter), merged when the lanes are disjoint,
+ * applied per-lane in lane-array order when they overlap.
+ */
+describe('scheduleTrackAutomation — multiple lanes on one device parameter', () => {
+    // Identity beat→seconds and a sample rate of 100 keep every frame number
+    // in these fixtures small and exact: 1 beat = 1 second = 100 frames.
+    const identityBeat = (beat: number): number => beat;
+    const clipBounds = new Map([
+        ['clip-a', { startBeat: 0, endBeat: 0.4 }],
+        ['clip-b', { startBeat: 0.4, endBeat: 0.8 }],
+    ]);
+
+    function deviceEntryRecording(scheduleParam: (segments: unknown) => void) {
+        return {
+            deviceId: 'device-1',
+            deviceType: 'bacteria',
+            strategy: {
+                resolveOfflineAutomation: (name: string) =>
+                    name === 'param' ? { kind: 'segments' as const, apply: scheduleParam } : null,
+            },
+        };
+    }
+
+    it('applies two disjoint clip-scoped lanes as one merged stream, carrying both values (Fixture D)', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0.4, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            clipBoundsById: clipBounds,
+        });
+
+        // One call for the whole group: A's terminator (frame 0, value 3)
+        // becomes a hold across the gap to B's first frame (40), and B's own
+        // terminator (frame 40, value 9) closes the merged stream.
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([
+            { startFrame: 0, endFrame: 40, startValue: 3, endValue: 3 },
+            { startFrame: 40, endFrame: 40, startValue: 9, endValue: 9 },
+        ]);
+    });
+
+    it('applies overlapping lanes separately, in lane-array order, unchanged (Fixture O)', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // Track-level (no clipId): active for the whole render, so it
+                // spans past clip-b's own window below — genuinely
+                // overlapping, not merely two lanes compiled back to back.
+                makeLane({
+                    id: 'lane-track',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 0, value: 3, curve: 'step', tension: 0 },
+                        { beat: 1, value: 3, curve: 'step', tension: 0 },
+                    ],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0.4, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            clipBoundsById: clipBounds,
+        });
+
+        type Segment = { startFrame: number; endFrame: number; startValue: number; endValue: number };
+        expect(scheduleParam.mock.calls).toHaveLength(2);
+        // Lane-array order: the track lane resolved first, so its stream
+        // applies first — unchanged, still spanning the whole render.
+        const firstCall = scheduleParam.mock.calls[0]![0] as Segment[];
+        expect(firstCall[0]).toEqual({ startFrame: 0, endFrame: 10, startValue: 3, endValue: 3 });
+        expect(firstCall.at(-1)).toEqual({ startFrame: 100, endFrame: 100, startValue: 3, endValue: 3 });
+        expect(scheduleParam.mock.calls[1]![0]).toEqual([{ startFrame: 40, endFrame: 40, startValue: 9, endValue: 9 }]);
+    });
+});
+
 describe('scheduleTrackAutomation — stepped device parameters offline', () => {
     /** Arrangement's shipped law for `bacteria/bitDepth`, as bootstrap injects it. */
     const bitDepthLaw = {

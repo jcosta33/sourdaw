@@ -454,4 +454,43 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
 
         expect(result).toEqual({ outcome: 'converted', entries: [] });
     });
+
+    it('declines the whole strip when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O)', () => {
+        // clip-b[0.4, 0.8) holds `lane-clip-b`'s single point at its own
+        // start. The track-level lane (no clipId) carries a second point at
+        // beat 2 — past clip-b's start — so its own schedule genuinely spans
+        // across clip-b's window rather than merely compiling back to back
+        // with it; `scheduleTrackAutomation` cannot merge the two and this
+        // recorder cannot hold both, so the strip declines instead of
+        // silently keeping whichever lane scheduled last.
+        const scopedClip = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
+        const track = createTrack({ devices: [hostedDevice], clips: [scopedClip] });
+        const lanes: AutomationLane[] = [
+            lane({
+                id: 'lane-track',
+                parameterId: 'plugin-1:7',
+                points: [point(0, 0.6), point(2, 0.6)],
+            }),
+            lane({
+                id: 'lane-clip-b',
+                parameterId: 'plugin-1:7',
+                clipId: scopedClip.id,
+                points: [point(0.4, 0.9)],
+            }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            deviceEntries,
+            deviceParameterLaw,
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation on track "Track 1": lanes on device "plugin-1" overlap on parameter "7"',
+        });
+    });
 });

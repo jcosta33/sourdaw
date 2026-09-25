@@ -10,7 +10,7 @@ import { type OfflineCurveWriteTargets } from '../../models/OfflineCurveWriteTar
 import { beatToSeconds } from '../../services/beatConversion';
 import { clampRenderFrameCount } from '../clampRenderFrameCount';
 import { applyLimiterCeilingWrite } from '../devices/dynamics/applyLimiterCeilingWrite';
-import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
+import { type AudioDeviceStrategy, type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
 
 import {
     type CompiledAutomationEvent,
@@ -19,6 +19,7 @@ import {
 } from './compileAutomationEvents';
 import { compileAutomationSegments } from './compileAutomationSegments';
 import { type ScheduleCall } from './makeOfflineFrameScheduler';
+import { mergeAutomationSegmentStreams } from './mergeAutomationSegmentStreams';
 import { unrenderableAutomationRefusal } from './refuseUnrenderableAutomation';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
@@ -256,6 +257,20 @@ export function scheduleTrackAutomation({
     // existed, which normalizes to `enabled: true`, still renders.
     const trackLanes = lanes.filter((lane) => lane.trackId === trackId && lane.enabled !== false);
 
+    /**
+     * Every `segments`-bound lane on one (device, parameter) collects its
+     * compiled stream here instead of applying immediately, keyed by
+     * `${deviceId}::${parameterId}`. A `segments` consumer keeps only its
+     * most recent `apply` call, so two lanes driving one parameter — a track
+     * lane plus a clip lane, or two clip lanes on disjoint clips — used to
+     * lose every lane but the last; the group applies once, after the loop,
+     * through `mergeAutomationSegmentStreams` (see the call site below).
+     */
+    const segmentGroupsByKey = new Map<
+        string,
+        { apply: (segments: readonly OfflineAutomationSegment[]) => void; streams: OfflineAutomationSegment[][] }
+    >();
+
     for (const lane of trackLanes) {
         let activeWindowSeconds: { startSeconds: number; endSeconds: number } | undefined;
         if (lane.clipId) {
@@ -466,7 +481,17 @@ export function scheduleTrackAutomation({
                         valueScale: laneScale,
                     }
                 );
-                binding.apply(segments);
+                // Collected, not applied — see `segmentGroupsByKey` and the
+                // merge pass after this loop. `apply` is the same call on every
+                // lane that resolves this (device, parameter) pair, so the last
+                // one resolved is as good as any to hold it.
+                const groupKey = `${candidate.deviceId}::${parameterId}`;
+                const group = segmentGroupsByKey.get(groupKey);
+                if (group) {
+                    group.streams.push(segments);
+                } else {
+                    segmentGroupsByKey.set(groupKey, { apply: binding.apply, streams: [segments] });
+                }
                 continue;
             }
             if (binding.kind === 'curveWrite') {
@@ -618,6 +643,27 @@ export function scheduleTrackAutomation({
                     paramOptions
                 );
             }
+        }
+    }
+
+    // One `apply` per (device, parameter) group, now that every lane's stream
+    // is collected: disjoint streams (each one starting at or after the
+    // previous one's terminator frame) merge into the single stream a
+    // last-call-wins consumer can hold; overlapping streams keep today's
+    // per-lane behaviour, applied in lane-array order, because there is no
+    // general way to interleave two schedules that both claim the same frame.
+    for (const { apply, streams } of segmentGroupsByKey.values()) {
+        const merged = mergeAutomationSegmentStreams(streams);
+        if (merged.overlapping) {
+            for (const stream of streams) {
+                if (stream.length > 0) {
+                    apply(stream);
+                }
+            }
+            continue;
+        }
+        if (merged.segments.length > 0) {
+            apply(merged.segments);
         }
     }
 }
