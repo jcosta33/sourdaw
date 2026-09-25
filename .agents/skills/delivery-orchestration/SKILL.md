@@ -241,7 +241,12 @@ can neither widen nor narrow its own review.
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. Fresh reviewer publication also carries the head-bound dossier and
 refuses before any remote write when the plan or dossier is missing, malformed,
-or rebound from the head/base/pr it must bind; when the bundle carries
+or rebound from the head/base/pr it must bind; when the caller input omits
+`assessmentImpact` or carries a value outside the four tokens; when its recorded
+impact contradicts the round's own limitations or accepted findings; when a
+persisted record's claimed publication does not stand live and exact on this
+head, reported as that failure and never as a missing field;
+when the bundle carries
 `stances.json` and the dossier's `stances` entries do not correspond to that
 record as sets of stance names — every draw names a recorded stance and every
 recorded stance carries at least one draw, so several draws on one stance share
@@ -251,7 +256,8 @@ one-to-one; or when its recommendation disagrees with the document's event. It
 then persists the canonical record, `format: 'dossier-v1'`: an append-only event
 chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
 carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
-`dossierDigest` over the header identity, evidence and limitations.
+`dossierDigest` over the header identity, evidence, limitations, recommendation,
+and assessment impact.
 Re-publication of the same head replays that persisted record unchanged rather
 than minting a second one.
 
@@ -313,11 +319,35 @@ with its `reviewerModel`, `modelTier` of
 `economy`/`standard`/`strongest`, and `outcome` of
 `blocker-found`/`clean`, its `exhaustion` when that draw fell back to an
 authoring model (one line naming what made every other model unavailable for
-that draw), the bounded `evidence` claims, and `limitations`.
-The accepted findings are not declared there: they are the review document's own
-inline comments. `discarded.json` is the orchestrator's discard record and is
+that draw), the bounded `evidence` claims, `limitations`, and the required
+`assessmentImpact`. The accepted findings are not declared there: they are the
+review document's own inline comments. `discarded.json` is the orchestrator's
+discard record and is
 now actually read: an array of `{ finding, stance, reason }`, one entry per
 discarded candidate, each with a one-line reason.
+
+`assessmentImpact` records how the round's advisory semantic assessment
+influenced it, one token chosen honestly by the orchestrator for the round:
+`finding-led` only when the round carries an accepted finding the assessment
+surfaced, `stance-changed` only when it changed the dispatched stance
+enumeration, `limitation-only` when it produced a disclosed limitation without
+changing the round, and `none` when it had no effect. It records influence,
+never agreement: it is not a verdict, an approval, or merge authority. Any other
+value, a missing value, or a non-string is refused with the field and the four
+tokens named, and a spec pins the vocabulary to exactly those four. The record
+decides two of the tokens: `limitation-only` is refused when the round discloses
+no limitation and `finding-led` when it accepts no finding. `none` and
+`stance-changed` are the orchestrator's attestation, which the record cannot
+decide for or against. The caller input always carries the field. The bundle's
+own persisted record for the head may omit it — that is the shape every
+pre-field dossier on disk has — so re-publishing one keeps working; a persisted
+record that records a publication is not trusted on that claim alone, because
+the `review-published` event is the caller's, so the named review must stand
+live and exact or the publication is refused for that failure, never as a
+missing field. It is folded into the canonical record beside
+`recommendation` and covered by `dossierDigest`, so two records differing only
+in it have different digests, and records persisted before the field existed
+keep replaying byte-identically.
 
 Dossier evidence, limitations, and approval-claim values must be single-line,
 trimmed and bounded, and are refused when they carry a credential-shaped value,

@@ -17,11 +17,15 @@ import { fail } from './prContract.ts';
 import {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
+    assertAssessmentImpactConsistent,
     assertDossierSize,
     buildDossier,
     computeDossierDigest,
+    dossierPayload,
     headDigestOf,
+    readAssessmentImpact,
     reviewDossierEventDigest,
+    type AssessmentImpact,
 } from './reviewDossierChain.ts';
 import {
     REVIEW_REASSESSED_EVENT_KEYS,
@@ -38,6 +42,7 @@ export {
     authorizedEvidenceDigest,
     reviewDossierEventDigest,
     serializeReviewDossier,
+    type AssessmentImpact,
 } from './reviewDossierChain.ts';
 
 export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
@@ -103,6 +108,13 @@ export type ReviewDossier = {
     evidence: { observable: string; verification: string; observed: string }[];
     limitations: string[];
     recommendation: 'approve' | 'request-changes';
+    /**
+     * Required of the caller input and of a canonical record supplied for a fresh publication,
+     * enforced at that boundary; the read path tolerates its absence so a record persisted before the
+     * field existed keeps verifying rather than being refused for a field it never carried (the same
+     * historical tolerance `exhaustion` gets). Present, its value must be one of the four tokens.
+     */
+    assessmentImpact?: AssessmentImpact;
     headDigest: string;
     dossierDigest: string;
 };
@@ -549,6 +561,9 @@ function assertTotalMaps(payload: DossierPayload): void {
         own.add(event.findingId);
     }
     assertPublicationBindings(bindings, accepted);
+    // Wherever the impact is present, the record's own contents must not contradict it. Absence is
+    // the publication boundary's concern, not this shared payload assertion's.
+    assertAssessmentImpactConsistent(payload);
     for (const stance of payload.requiredStances) {
         if (!completed.has(stance)) {
             fail(`review dossier has no completed record for required stance: ${stance}`);
@@ -592,7 +607,12 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
     if (!isRecord(value)) {
         fail(`review dossier must be an object, found ${describeValue(value)}`);
     }
-    assertExactKeys(value, DOSSIER_KEYS, 'dossier');
+    // `assessmentImpact` is required of the input and of newly assembled records, but a record
+    // persisted before the field existed carries none: carry it out of the key-set check it would
+    // otherwise fail, and read it only when present so a historical digest keeps verifying.
+    const assessmentImpact = 'assessmentImpact' in value ? readAssessmentImpact(value.assessmentImpact) : undefined;
+    const { assessmentImpact: _optional, ...requiredKeys } = value;
+    assertExactKeys(requiredKeys, DOSSIER_KEYS, 'dossier');
     if (value.format !== REVIEW_DOSSIER_FORMAT) {
         fail(`review dossier format must be ${REVIEW_DOSSIER_FORMAT}, found ${describeValue(value.format)}`);
     }
@@ -614,6 +634,7 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
             isRecommendation,
             'approve or request-changes'
         ),
+        assessmentImpact,
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -654,6 +675,7 @@ export function assembleReviewDossier(input: {
     evidence: readonly { observable: string; verification: string; observed: string }[];
     limitations: readonly string[];
     recommendation: 'approve' | 'request-changes';
+    assessmentImpact: AssessmentImpact;
 }): ReviewDossier {
     const callerEvents = input.events.map((event, index) => readEventRecord(event, `event ${index}`, false).event);
     const payload: DossierPayload = {
@@ -671,6 +693,7 @@ export function assembleReviewDossier(input: {
             isRecommendation,
             'approve or request-changes'
         ),
+        assessmentImpact: readAssessmentImpact(input.assessmentImpact),
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -694,17 +717,7 @@ export function appendReviewDossierEvents(
     const appendedEvents = appended.map(
         (event, index) => readEventRecord(event, `appended event ${index}`, false).event
     );
-    const payload: DossierPayload = {
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events: [...dossier.events, ...appendedEvents],
-        evidence: dossier.evidence,
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-    };
+    const payload = dossierPayload(dossier, [...dossier.events, ...appendedEvents]);
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
     const result = buildDossier(payload);
