@@ -339,16 +339,8 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/confirmReviewRepairs.ts',
         'scripts/reviewRepair.ts',
-        'scripts/reviewDossier.ts',
-        'scripts/reviewDossierReassessed.ts',
-        'scripts/reviewDossierChain.ts',
         'scripts/evidenceSafety.ts',
         'scripts/canonicalRecord.ts',
-        'scripts/reviewRiskPolicy.ts',
-        'scripts/reviewDiffSummary.ts',
-        'scripts/wasm-artifacts.ts',
-        'scripts/wasmToolchainPins.ts',
-        'scripts/workspaceManifestFingerprint.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -1003,6 +995,36 @@ function localModuleDependencies(path: string, source: string): string[] {
         .filter((specifier) => specifier.startsWith('.'))
         .map((specifier) => posix.normalize(posix.join(posix.dirname(path), specifier)));
     return [...new Set(dependencies)];
+}
+
+/**
+ * The local modules `entry` actually executes, walked with the same import scan the graph check uses:
+ * everything reachable from `entry` through `./`-relative imports, transitively. The loader itself is
+ * deliberately absent — no executed source may import it, which `assertTrustedSourceGraph` refuses — so
+ * a command's declared set is exactly this closure plus the loader's own path. Exported so the specs
+ * that pin each command's declared set to its true closure can see over- and under-declaration, which
+ * the runtime check alone cannot: it only proves the declared set is closed under imports.
+ */
+export function trustedLocalImportClosure(entry: string, sources: ReadonlyMap<string, string>): ReadonlySet<string> {
+    const closure = new Set<string>();
+    const pending = [entry];
+    while (pending.length > 0) {
+        const path = pending.pop();
+        if (path === undefined || closure.has(path)) {
+            continue;
+        }
+        closure.add(path);
+        const source = sources.get(path);
+        if (source === undefined) {
+            continue;
+        }
+        for (const dependency of localModuleDependencies(path, source)) {
+            if (!closure.has(dependency)) {
+                pending.push(dependency);
+            }
+        }
+    }
+    return closure;
 }
 
 export async function runTrustedGithubWriteCommand(

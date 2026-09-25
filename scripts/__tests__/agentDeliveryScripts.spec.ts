@@ -66,8 +66,10 @@ import {
     resolveTrustedLauncherBinding,
     resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
-    trustedGitReadEnv,
+    trustedDependencyGraphs,
     trustedDependencyPaths,
+    trustedGitReadEnv,
+    trustedLocalImportClosure,
     trustedSnapshotEnv,
     type TrustedLauncherBinding,
 } from '../trustedGithubWriteBootstrap.ts';
@@ -1359,16 +1361,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/confirmReviewRepairs.ts',
                     'scripts/reviewRepair.ts',
-                    'scripts/reviewDossier.ts',
-                    'scripts/reviewDossierReassessed.ts',
-                    'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
-                    'scripts/reviewRiskPolicy.ts',
-                    'scripts/reviewDiffSummary.ts',
-                    'scripts/wasm-artifacts.ts',
-                    'scripts/wasmToolchainPins.ts',
-                    'scripts/workspaceManifestFingerprint.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1459,6 +1453,30 @@ describe('package scripts and gitignore', () => {
             expect(() => assertTrustedSourceGraph(command, unresolvable)).toThrow(
                 `${entry} imports unchecked local dependency scripts/unchecked.ts`
             );
+        }
+    });
+
+    /**
+     * The graph check above only proves the declared set is closed under imports — it walks the
+     * declared sources and refuses a missing or unexpected one — so it cannot see a source the graph
+     * declares but the command never reaches, nor one the command reaches but the graph omits. This
+     * check computes each command's true local-import closure from its entry with the same import
+     * scan, and requires the declared set to equal exactly that closure plus the loader. A source
+     * copied into the graph without a real import, or dropped from it while still imported, reddens.
+     */
+    it('declares exactly each command local import closure, so over- and under-declaration redden', () => {
+        const repositoryRoot = join(import.meta.dirname, '..', '..');
+        for (const [command, declared] of Object.entries(trustedDependencyGraphs)) {
+            const entry = declared[1];
+            if (entry === undefined) {
+                throw new Error(`trusted dependency graph for ${command} has no entry path`);
+            }
+            const sources = new Map(
+                declared.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')] as const)
+            );
+            const expected = new Set(trustedLocalImportClosure(entry, sources));
+            expected.add(BOOTSTRAP_PATH);
+            expect(new Set(declared), `${command} declared closure`).toEqual(expected);
         }
     });
 

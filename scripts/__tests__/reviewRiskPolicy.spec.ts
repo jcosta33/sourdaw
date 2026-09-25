@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { GOVERNANCE_TRANSITION_PATHS, parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
-import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+import { BOOTSTRAP_PATH, trustedDependencyGraphs, trustedLocalImportClosure } from '../trustedGithubWriteBootstrap.ts';
 
 import type { ReviewChangedPath } from '../reviewDiffSummary.ts';
 import type { ReviewRiskClass, ReviewRiskPlan, ReviewStanceId } from '../reviewRiskPolicy.ts';
@@ -162,6 +165,36 @@ describe('planReviewRisk', () => {
         for (const path of closurePaths) {
             const result = reviewPlan([handwritten(path, 1, 1)]);
             expect(result.riskClasses, path).toContain('native-security');
+        }
+    });
+
+    /**
+     * The union pin above is blind to per-command drift: removing one path from one command's closure
+     * leaves the union unchanged when another command still declares it, so only the exact-closure
+     * spec notices. This check asserts the per-command property the union cannot: every path in each
+     * command's declared closure is classified, and that closure equals exactly the set reachable from
+     * the command's entry — so a single command losing a closure entry, or gaining one it never
+     * reaches, reddens this check.
+     */
+    it('should classify each command own closure and pin it to its entry reachable imports, per command', () => {
+        const repositoryRoot = join(import.meta.dirname, '..', '..');
+
+        for (const [command, declared] of Object.entries(trustedDependencyGraphs)) {
+            for (const path of declared) {
+                const result = reviewPlan([handwritten(path, 1, 1)]);
+                expect(result.riskClasses, `${command}:${path}`).toContain('native-security');
+            }
+
+            const entry = declared[1];
+            if (entry === undefined) {
+                throw new Error(`trusted dependency graph for ${command} has no entry path`);
+            }
+            const sources = new Map(
+                declared.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')] as const)
+            );
+            const reachable = new Set(trustedLocalImportClosure(entry, sources));
+            reachable.add(BOOTSTRAP_PATH);
+            expect(new Set(declared), `${command} declared closure`).toEqual(reachable);
         }
     });
 
