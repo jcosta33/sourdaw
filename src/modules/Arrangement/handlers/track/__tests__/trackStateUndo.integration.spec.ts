@@ -30,6 +30,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -141,6 +142,7 @@ describe('track-state guarded undo integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set(null);
         clipSelectionStore.set(defaultClipSelectionState);
         // The guard reads both of these now, so a note or a retune left behind by one
         // case would decide the next one's conflict.
@@ -485,6 +487,62 @@ describe('track-state guarded undo integration', () => {
             await redo();
             expect(track('track-1')).toMatchObject({ kind: 'audio', devices: [], frozen: false });
             expect(track('track-1')?.clips).toEqual([flattenedClip]);
+        });
+
+        it('flatten: undo restores takes retired from a hidden alternative with their clips (#4518)', async () => {
+            const activeClip = ClipDummy.create({ id: 'clip-b', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            const hiddenClip = ClipDummy.create({ id: 'clip-a', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            divergeTrack('track-1', {
+                kind: 'midi',
+                clips: [activeClip],
+                frozen: true,
+                frozenBufferId: 'buffer-1',
+                freezeState: { status: 'frozen', freezeId: 'freeze-1', frozenBufferId: 'buffer-1' },
+                activeAlternativeId: 'alt-1',
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [activeClip] },
+                    { id: 'alt-a', name: 'Alternative A', clips: [hiddenClip] },
+                ],
+            });
+            // A take recorded while alt-a was showing still names its clip after the
+            // switch back — `handleSwitchTrackAlternative` never touches take lanes.
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [
+                            { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 4, selected: false },
+                            { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 4, selected: true },
+                        ],
+                        activeCompRegions: [],
+                    },
+                ],
+            });
+
+            await run({ type: 'flattenTrack', payload: { trackId: 'track-1' } });
+            // The flatten replaced both collections, so both takes retired.
+            expect(takeLaneStore.value?.lanes ?? []).toEqual([]);
+
+            await undo();
+            expect(track('track-1')?.clips).toEqual([activeClip]);
+            expect(track('track-1')?.alternatives?.map((alternative) => alternative.id)).toEqual(['alt-1', 'alt-a']);
+            // The decisive assertion: the hidden clip's take comes back with it — a
+            // capture intersecting retiring ids with the active collection alone
+            // retires take-a in the forward and never restores it here.
+            const restoredClipIds = (takeLaneStore.value?.lanes ?? [])
+                .flatMap((candidate) => candidate.takes)
+                .map((take) => take.clipId)
+                .sort();
+            expect(restoredClipIds).toEqual(['clip-a', 'clip-b']);
+
+            await redo();
+            expect(track('track-1')?.clips.map((clip) => clip.id)).not.toContain('clip-b');
+            // Redo re-retires what the forward retired — the hidden clip's take
+            // included — rather than stranding it on a clip no track holds.
+            expect(
+                (takeLaneStore.value?.lanes ?? []).flatMap((candidate) => candidate.takes).map((take) => take.id)
+            ).toEqual([]);
         });
     });
 

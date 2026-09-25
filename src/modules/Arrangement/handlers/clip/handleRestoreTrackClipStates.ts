@@ -749,10 +749,14 @@ function transitionRetiredTakeLanes(
         if (!expectedEntry || expectedEntry.retiredTakeLanes === undefined) {
             continue;
         }
-        const replacementClipIds = new Set(entry.clips.map((clip) => clip.id));
-        for (const clip of expectedEntry.clips) {
-            if (!replacementClipIds.has(clip.id)) {
-                retiringClipIds.add(clip.id);
+        // The clip universe spans the active collection AND every hidden
+        // alternative: a redo that drops a hidden clip must re-retire its takes
+        // just as the forward did, or the take survives naming a clip no track
+        // holds (#4518).
+        const replacementClipIds = new Set(snapshotClipIds(entry));
+        for (const clipId of snapshotClipIds(expectedEntry)) {
+            if (!replacementClipIds.has(clipId)) {
+                retiringClipIds.add(clipId);
             }
         }
     }
@@ -760,6 +764,14 @@ function transitionRetiredTakeLanes(
         return;
     }
     recordRedoTakeRetirement(action, removeTakesForClips([...retiringClipIds]));
+}
+
+/** Every clip a snapshot entry holds: the active collection plus each alternative's. */
+function snapshotClipIds(entry: TrackClipStateSnapshot): string[] {
+    return [
+        ...entry.clips.map((clip) => clip.id),
+        ...entry.trackFields.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
+    ];
 }
 
 /**

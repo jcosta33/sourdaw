@@ -3,7 +3,6 @@ import { createHandler } from '#/utils/createHandler';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
 import { type Track } from '../../models/Track';
-import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { bounceInPlace } from '../../useCases/freezeBounce/bounceInPlace';
@@ -39,15 +38,21 @@ function resolveEligibleTrackIds(): string[] {
 
 /**
  * The clip ids each eligible track's bounce replaces, read before any bounce
- * lands. A replace-destination bounce swaps the track's whole clip collection
- * for the rendered clip, so every replaced id must retire its takes through the
- * shared rule — otherwise the orphan take keeps naming a clip no track holds
- * and its comp region silences the rendered replacement (#4518).
+ * lands. A replace-destination bounce swaps only the track's ACTIVE clip
+ * collection for the rendered clip — `bounceTrack` leaves `alternatives` and
+ * `activeAlternativeId` untouched — so a hidden alternative's clips survive
+ * and their takes must not retire. Every replaced active id must retire its
+ * takes through the shared rule, though — otherwise the orphan take keeps
+ * naming a clip no track holds and its comp region silences the rendered
+ * replacement (#4518).
  */
 function collectReplacedClipIdsByTrack(): ReadonlyMap<string, readonly string[]> {
     const replaced = new Map<string, readonly string[]>();
     for (const track of (getTrackStoreState()?.tracks ?? []).filter(isConsolidateEligibleTrack)) {
-        replaced.set(track.id, collectTrackClipIds(track));
+        replaced.set(
+            track.id,
+            track.clips.map((clip) => clip.id)
+        );
     }
     return replaced;
 }
@@ -89,8 +94,14 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
         }
 
         // Retire takes only for tracks whose bounce landed: a refused track kept
-        // its clips, so its takes are still live and must not be removed.
-        removeTakesForClips(writtenTrackIds.flatMap((trackId) => replacedClipIds.get(trackId) ?? []));
+        // its clips, so its takes are still live and must not be removed. The
+        // retirement re-enters the captured transaction scope — an unscoped write
+        // after the loop's awaits would commit on its own frame and survive a
+        // commit-time abort that rolls the clip writes back, destroying takes on
+        // clips that survive with no undo entry behind the retirement.
+        transactionScope(() =>
+            removeTakesForClips(writtenTrackIds.flatMap((trackId) => replacedClipIds.get(trackId) ?? []))
+        );
 
         // A pure read settling the undo payload: `bounceInPlace` (via
         // `bounceTrack`) owns every write this loop produces, and each of those

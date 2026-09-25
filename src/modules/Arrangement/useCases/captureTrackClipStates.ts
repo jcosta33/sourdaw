@@ -106,9 +106,10 @@ export function captureTrackClipStates(
             .map((clipId) => readClipSatelliteEntry(clipId))
             .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null);
         const clipAutomationLanes = structuredClone(readClipScopedAutomationLanes(clipIds));
-        const trackRetiringClipIds = track.clips
-            .filter((clip) => retiringClipIdSet.has(clip.id))
-            .map((clip) => clip.id);
+        // Intersect against the track's whole clip universe, not the active
+        // collection: routes like flatten retire takes of hidden-alternative
+        // clips too, and an id dropped here is a take the undo never restores.
+        const trackRetiringClipIds = clipIds.filter((clipId) => retiringClipIdSet.has(clipId));
 
         const snapshot: TrackClipStateSnapshot = {
             trackId,

@@ -258,7 +258,7 @@ describe('handleConsolidateAllTracks', () => {
             TrackDummy.create({ id: 't2', kind: 'midi', clips: [ClipDummy.create({ id: 't2-clip', trackId: 't2' })] }),
         ];
 
-        it('retires the takes of every replaced clip — including hidden alternatives — after the bounces land', async () => {
+        it('retires the takes of every replaced clip — the active collection only — after the bounces land', async () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: takeTracks() });
 
             const result = await handleConsolidateAllTracks.execute({
@@ -268,9 +268,11 @@ describe('handleConsolidateAllTracks', () => {
 
             expect(result).toEqual({ status: 'written' });
             expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
-            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(
-                expect.arrayContaining(['t1-clip', 't1-hidden', 't2-clip'])
-            );
+            const [retiredIds] = mocks.removeTakesForClips.mock.calls[0]!;
+            // A replace-destination bounce swaps only track.clips: the hidden
+            // alternative's clip survives, so its takes must not retire.
+            expect(retiredIds).toEqual(expect.arrayContaining(['t1-clip', 't2-clip']));
+            expect(retiredIds).not.toContain('t1-hidden');
         });
 
         it('retires nothing for a track whose bounce refused — its clips stayed, so its takes are still live', async () => {
@@ -285,8 +287,9 @@ describe('handleConsolidateAllTracks', () => {
             expect(result).toEqual({ status: 'written' });
             expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
             const [retiredIds] = mocks.removeTakesForClips.mock.calls[0]!;
-            expect(retiredIds).toEqual(expect.arrayContaining(['t1-clip', 't1-hidden']));
+            expect(retiredIds).toEqual(['t1-clip']);
             expect(retiredIds).not.toContain('t2-clip');
+            expect(retiredIds).not.toContain('t1-hidden');
         });
 
         it('retires nothing when every bounce refuses', async () => {
@@ -308,10 +311,10 @@ describe('handleConsolidateAllTracks', () => {
 
             handleConsolidateAllTracks.describe({ type: 'consolidateAllTracks', payload: undefined });
 
-            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(
-                ['t1', 't2'],
-                expect.arrayContaining(['t1-clip', 't1-hidden', 't2-clip'])
-            );
+            const [, capturedRetiringIds] = mocks.captureTrackClipStates.mock.calls[0]!;
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['t1', 't2'], expect.any(Array));
+            expect(capturedRetiringIds).toEqual(expect.arrayContaining(['t1-clip', 't2-clip']));
+            expect(capturedRetiringIds).not.toContain('t1-hidden');
         });
     });
 
