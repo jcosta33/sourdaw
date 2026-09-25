@@ -1568,6 +1568,12 @@ const EXPECTED_GROUNDING = [
             'create bus track',
             'add a bus track',
             'create a bus track',
+            'add a new bus',
+            'create a new bus',
+            'make a bus',
+            'make a new bus',
+            'set up a bus',
+            'set up a new bus',
         ],
         targetRules: [],
         valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
@@ -2145,6 +2151,7 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'setTrackGain',
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
+        levelIntentPhrases: ['put', 'bring up', 'bring down'],
         targetRules: [{ argument: 'trackId', capability: 'track' }],
         valueRules: [
             { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
@@ -2407,6 +2414,14 @@ const EXPECTED_GROUNDING = [
             'set the master volume',
             'change master volume',
         ],
+        levelIntentPhrases: [
+            'set master',
+            'set the master',
+            'lower master',
+            'lower the master',
+            'raise master',
+            'raise the master',
+        ],
         targetRules: [],
         valueRules: [
             { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
@@ -2520,10 +2535,11 @@ const EXPECTED_GROUNDING = [
     ...['addSend', 'setSend', 'removeSend'].map((actionType, index) => ({
         actionType,
         intentPhrases: [
-            ['add send', 'create send', 'send'],
+            ['add send', 'create send', 'send', 'sends from', 'feed into'],
             ['adjust send', 'set send', 'change send'],
             ['remove send', 'delete send', 'disconnect send'],
         ][index],
+        ...(actionType === 'setSend' ? { levelIntentPhrases: ['lower send to', 'raise send to'] } : {}),
         targetRules: [
             { argument: 'busId', capability: 'bus', promptRole: 'destination' },
             { argument: 'trackId', capability: 'routable-source', distinctFrom: 'busId', promptRole: 'source' },

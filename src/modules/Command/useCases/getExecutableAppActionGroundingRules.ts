@@ -10,6 +10,7 @@ import { getExecutableCommandRegistration } from './getExecutableCommandRegistra
 type ExecutableAppActionGroundingRules = {
     actionType: string;
     intentPhrases: readonly string[];
+    levelIntentPhrases?: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
     mutationIdempotent: boolean;
@@ -30,6 +31,9 @@ export function getExecutableAppActionGroundingRules(actionType: string): Execut
         mutationIdentityRules: registration.mutationIdentityRules,
         valueRules: registration.valueRules,
     };
+    if (registration.levelIntentPhrases.length > 0) {
+        groundingRules.levelIntentPhrases = registration.levelIntentPhrases;
+    }
     if (registration.directionalIntent) {
         groundingRules.directionalIntent = registration.directionalIntent;
     }

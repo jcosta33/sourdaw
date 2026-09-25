@@ -1,8 +1,11 @@
 import { getIntentPhraseIndex } from './getIntentPhraseIndex';
 import { normalizePromptText } from './normalizePromptText';
 
-export function isNegatedIntent(text: string, intentPhrase: string): boolean {
-    const phraseIndex = getIntentPhraseIndex(text, intentPhrase);
+export function isNegatedIntent(
+    text: string,
+    intentPhrase: string,
+    phraseIndex = getIntentPhraseIndex(text, intentPhrase)
+): boolean {
     if (phraseIndex < 0) {
         return false;
     }
