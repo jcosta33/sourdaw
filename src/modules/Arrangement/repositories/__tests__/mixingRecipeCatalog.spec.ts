@@ -64,9 +64,12 @@ describe('mixingRecipeCatalog', () => {
     it('gives every descriptor a produces or removes effect, marking only muddy and thin as removes', () => {
         const missing = MIX_RECIPE_DESCRIPTORS.filter(
             (descriptor) =>
-                catalog.descriptorEffects[descriptor] !== 'produces' && catalog.descriptorEffects[descriptor] !== 'removes'
+                catalog.descriptorEffects[descriptor] !== 'produces' &&
+                catalog.descriptorEffects[descriptor] !== 'removes'
         );
-        const removing = MIX_RECIPE_DESCRIPTORS.filter((descriptor) => catalog.descriptorEffects[descriptor] === 'removes');
+        const removing = MIX_RECIPE_DESCRIPTORS.filter(
+            (descriptor) => catalog.descriptorEffects[descriptor] === 'removes'
+        );
 
         expect(missing).toEqual([]);
         expect(removing.sort()).toEqual(['muddy', 'thin']);

@@ -201,7 +201,10 @@ describe('recipe.discover', () => {
             ghostClips: [],
         });
 
-        const receipt = await runRecipeDiscovery('loop-lead-vocal', { descriptors: ['warmer'], targetId: 'lead-vocal-1' });
+        const receipt = await runRecipeDiscovery('loop-lead-vocal', {
+            descriptors: ['warmer'],
+            targetId: 'lead-vocal-1',
+        });
 
         expect(receipt.data).toMatchObject({
             role: { recipeRole: 'vocal', source: 'target', canonicalRole: 'lead vocal' },
@@ -246,7 +249,10 @@ describe('recipe.discover', () => {
             ghostClips: [],
         });
 
-        const receipt = await runRecipeDiscovery('loop-master-role', { descriptors: ['warmer'], targetId: 'master-role-1' });
+        const receipt = await runRecipeDiscovery('loop-master-role', {
+            descriptors: ['warmer'],
+            targetId: 'master-role-1',
+        });
 
         expect(receipt.data).toMatchObject({
             role: { recipeRole: 'master', source: 'target', canonicalRole: 'master' },
