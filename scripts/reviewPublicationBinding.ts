@@ -270,10 +270,14 @@ export function prepareReviewDossierPublication(input: {
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
         recordedStances,
     });
-    // A fresh caller input must acknowledge a delivered assessment with anything withheld or
-    // unresolved; a replayed persisted record is untouched, so a historical head still publishes.
-    if (!publication.fromPersisted) {
-        assertSemanticAssessmentAcknowledged(publication.dossier, readSemanticCiRecord(input.port, input.bundle));
+    // The gate bounds every publication that will actually post: a caller input, or a persisted
+    // canonical record whose publication was never recorded. Only a record that already binds a
+    // publication replays instead of posting, so it is exempt.
+    if (publishedReviewId(publication.dossier) === undefined) {
+        assertSemanticAssessmentAcknowledged(publication.dossier, readSemanticCiRecord(input.port, input.bundle), {
+            pr: plan.pr,
+            headSha: plan.headSha,
+        });
     }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
     return reassessment;

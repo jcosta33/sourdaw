@@ -8,12 +8,12 @@
  * merge authority: it can only force the round's record to acknowledge what it delivered, never
  * approve, request changes, resolve a thread, or merge (ADR 0047 still governs).
  *
- * "Citing" the assessment is `assessmentImpact` other than `none` — `finding-led` (an accepted
- * finding the assessment surfaced), `limitation-only` (a disclosed limitation it produced), or
- * `stance-changed` (it changed the dispatched stance enumeration) — each already validated against
- * the record. "Declaring it ignored" is `assessmentImpact: none` with an `assessmentIgnoredReason`.
- * A `none` with no reason, on a delivered assessment with anything withheld or unresolved, is the
- * silent ignore this module makes impossible.
+ * "Citing" the assessment is mechanical and specific: the round's own text — one of its
+ * `limitations` — names the assessment's artifact identity or one of the paths the assessment
+ * withheld. A non-`none` impact alone does not cite it, because the token claims influence the text
+ * never proves. "Declaring it ignored" is `assessmentImpact: none` with an `assessmentIgnoredReason`.
+ * Anything else, on a delivered assessment with anything withheld or unresolved, is the silent
+ * ignore this module makes impossible.
  */
 
 import { fail } from './prContract.ts';
@@ -57,35 +57,52 @@ function readArray(label: string, value: unknown): readonly unknown[] {
     return value;
 }
 
-/** The count of excluded, unassessed and truncated scope entries — the entries the assessment withheld. */
-function readScopeWithheld(value: unknown): number {
+/** The scope's withheld paths (excluded, unassessed, truncated) and their count. */
+function readScopeWithheld(value: unknown): { withheld: number; paths: string[] } {
     if (!isRecord(value)) {
         fail(`semantic-ci record scope must be an object, found ${describeValue(value)}`);
     }
+    const paths: string[] = [];
     const count = (field: string): number => {
         const entries = readArray(`semantic-ci record scope.${field}`, value[field]);
         for (const [index, entry] of entries.entries()) {
             if (!isRecord(entry)) {
                 fail(`semantic-ci record scope.${field}[${index}] must be an object, found ${describeValue(entry)}`);
             }
-            readNonBlankString(`semantic-ci record scope.${field}[${index}].path`, entry.path);
+            paths.push(readNonBlankString(`semantic-ci record scope.${field}[${index}].path`, entry.path));
             readNonBlankString(`semantic-ci record scope.${field}[${index}].reason`, entry.reason);
         }
         return entries.length;
     };
-    return count('excluded') + count('unassessed') + count('truncated');
+    return { withheld: count('excluded') + count('unassessed') + count('truncated'), paths };
+}
+
+/** The artifact identity a citation may name: the archive's own name, e.g. `semantic-review-42-1`. */
+function readArtifactName(value: unknown): string {
+    if (!isRecord(value)) {
+        fail(`semantic-ci record artifact must be an object, found ${describeValue(value)}`);
+    }
+    return readNonBlankString('semantic-ci record artifact.name', value.name);
 }
 
 /** The projection the acknowledgement gate consumes: delivered and how much it withheld, or not delivered. */
 export type SemanticAssessmentCoverage =
-    | { readonly state: 'assessed'; readonly withheld: number; readonly unresolved: number }
-    | { readonly state: 'no-assessment' };
+    | {
+          readonly state: 'assessed';
+          readonly pr: number;
+          readonly headSha: string;
+          readonly withheld: number;
+          readonly unresolved: number;
+          readonly artifactName: string;
+          readonly withheldPaths: readonly string[];
+      }
+    | { readonly state: 'no-assessment'; readonly pr: number; readonly headSha: string };
 
 /**
  * Reads the `semantic-ci.json` record `review:prepare` wrote, failing closed on any malformed shape.
- * The gate consumes only `state` and the withheld/unresolved counts, but the identity and scope
- * fields are validated so a partial or tampered file is refused here rather than being misread as an
- * assessment that withheld nothing.
+ * The gate consumes only `state`, the withheld/unresolved counts, the artifact identity, the
+ * withheld paths and the binding identity, but the scope entries are validated so a partial or
+ * tampered file is refused here rather than being misread as an assessment that withheld nothing.
  */
 export function parseSemanticAssessmentCoverage(value: unknown): SemanticAssessmentCoverage {
     if (!isRecord(value)) {
@@ -94,43 +111,74 @@ export function parseSemanticAssessmentCoverage(value: unknown): SemanticAssessm
     if (value.format !== SEMANTIC_CI_FORMAT) {
         fail(`semantic-ci record format must be ${SEMANTIC_CI_FORMAT}, found ${describeValue(value.format)}`);
     }
-    readPositiveInteger('semantic-ci record pr', value.pr);
-    readNonBlankString('semantic-ci record headSha', value.headSha);
+    const pr = readPositiveInteger('semantic-ci record pr', value.pr);
+    const headSha = readNonBlankString('semantic-ci record headSha', value.headSha);
     if (value.state === 'no-assessment') {
         readNonBlankString('semantic-ci record reason', value.reason);
-        return { state: 'no-assessment' };
+        return { state: 'no-assessment', pr, headSha };
     }
     if (value.state !== 'assessed') {
         fail(`semantic-ci record state must be assessed or no-assessment, found ${describeValue(value.state)}`);
     }
-    const withheld = readScopeWithheld(value.scope);
-    const unresolved = readNonNegativeInteger('semantic-ci record unresolvedQuestions', value.unresolvedQuestions);
-    return { state: 'assessed', withheld, unresolved };
+    const scope = readScopeWithheld(value.scope);
+    return {
+        state: 'assessed',
+        pr,
+        headSha,
+        withheld: scope.withheld,
+        unresolved: readNonNegativeInteger('semantic-ci record unresolvedQuestions', value.unresolvedQuestions),
+        artifactName: readArtifactName(value.artifact),
+        withheldPaths: scope.paths,
+    };
+}
+
+/** A limitation names the assessment when it names the artifact identity or one of the withheld paths. */
+function citesAssessment(
+    dossier: ReviewDossier,
+    coverage: Extract<SemanticAssessmentCoverage, { state: 'assessed' }>
+): boolean {
+    const tokens = [coverage.artifactName, ...coverage.withheldPaths];
+    return dossier.limitations.some((limitation) => tokens.some((token) => limitation.includes(token)));
 }
 
 /**
  * The publication gate: a delivered assessment with anything withheld or unresolved must be cited
- * (a non-`none` impact) or declared ignored (`none` plus `assessmentIgnoredReason`). A `none` with
- * no reason refuses, naming the field and the figure it contradicts. A bundle with no
- * `semantic-ci.json`, or a record that records no assessment at all, passes with no requirement.
+ * (a limitation naming the assessment's artifact identity or a withheld path) or declared ignored
+ * (`none` plus `assessmentIgnoredReason`). A `none` with no reason refuses, naming the field and the
+ * figure it contradicts; a non-`none` impact that never cites refuses the same way. A bundle with no
+ * `semantic-ci.json` passes with no requirement; a record naming another publication is refused.
  */
 export function assertSemanticAssessmentAcknowledged(
     dossier: ReviewDossier,
-    coverage: SemanticAssessmentCoverage | undefined
+    coverage: SemanticAssessmentCoverage | undefined,
+    expected: { pr: number; headSha: string }
 ): void {
-    if (coverage === undefined || coverage.state !== 'assessed') {
+    if (coverage === undefined) {
+        return;
+    }
+    if (coverage.pr !== expected.pr || coverage.headSha !== expected.headSha) {
+        fail(
+            `semantic-ci record pr ${coverage.pr} headSha ${coverage.headSha} does not match the publication pr ${expected.pr} headSha ${expected.headSha}`
+        );
+    }
+    if (coverage.state !== 'assessed') {
         return;
     }
     if (coverage.withheld === 0 && coverage.unresolved === 0) {
         return;
     }
-    if (dossier.assessmentImpact !== undefined && dossier.assessmentImpact !== 'none') {
+    if (citesAssessment(dossier, coverage)) {
         return;
     }
     if (dossier.assessmentImpact === 'none' && dossier.assessmentIgnoredReason !== undefined) {
         return;
     }
+    if (dossier.assessmentImpact === 'none') {
+        fail(
+            `review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld ${coverage.withheld} scope entries and left ${coverage.unresolved} questions unresolved`
+        );
+    }
     fail(
-        `review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld ${coverage.withheld} scope entries and left ${coverage.unresolved} questions unresolved`
+        `review dossier assessmentImpact ${dossier.assessmentImpact} does not cite the delivered semantic assessment, which withheld ${coverage.withheld} scope entries and left ${coverage.unresolved} questions unresolved: name its artifact or a withheld path in a limitation`
     );
 }
