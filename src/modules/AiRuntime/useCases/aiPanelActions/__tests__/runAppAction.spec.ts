@@ -23,6 +23,21 @@ function create_malformed_punch_action(type: 'setPunchIn' | 'setPunchOut', paylo
     return action;
 }
 
+function create_unknown_internal_replay_action(): RunAppActionInput {
+    const action: RunAppActionInput = { type: 'removeTrack', payload: { trackId: 'placeholder' } };
+    Reflect.set(action, 'type', 'restoreAutomationPointPresence');
+    Reflect.set(action, 'payload', {
+        laneId: 'lane-follower',
+        owner: { trackId: 'track-follower', parameterId: 'gain', linkedLaneId: 'lane-source' },
+        point: { id: 'invented-point', beat: 4, value: 0.7, curve: 'linear', tension: 0 },
+        equalBeatIndex: 0,
+        expectedEqualBeatPoints: [],
+        expectedPresence: 'absent',
+        replacementPresence: 'present',
+    });
+    return action;
+}
+
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
@@ -60,6 +75,13 @@ describe('runAppAction', () => {
         const result = await runAppAction(action);
         expect(result).toBeUndefined();
         expect(mocks.executeUserAppAction).toHaveBeenCalledWith(action);
+    });
+
+    it('rejects an internal automation replay action before command execution', async () => {
+        await runAppAction(create_unknown_internal_replay_action());
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalledWith('Unknown action type rejected: restoreAutomationPointPresence');
     });
 
     it.each(['setPunchIn', 'setPunchOut'] as const)(
