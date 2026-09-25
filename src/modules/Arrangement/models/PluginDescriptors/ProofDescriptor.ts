@@ -80,7 +80,7 @@ export const PROOF_DESCRIPTOR = applySingleDescriptorGuidance(
                 -6,
                 6,
                 [
-                    "Runs before lim_ceiling's limiter and before output_gain, so raising this changes how hard the limiter works without moving the final output level the way output_gain does.",
+                    "Moves the output level one-for-one, the same as output_gain, until the programme reaches lim_ceiling; only above that point does raising this trade output level for the limiter's gain reduction instead.",
                 ],
                 [
                     'Driving this up feeds the limiter harder without changing the final ceiling, so it can increase audible gain reduction even though lim_ceiling stays the same.',
