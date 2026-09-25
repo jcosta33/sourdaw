@@ -35,9 +35,11 @@
  * two clip lanes) reach this recorder as one `scheduleTrackAutomation` group.
  * Disjoint lanes merge into the one schedule this recorder holds per
  * parameter; overlapping ones cannot merge, and this recorder cannot hold two
- * schedules for one parameter either, so the whole strip declines
- * (`recordingDeviceEntry` below) rather than silently keeping whichever lane
- * scheduled last.
+ * schedules for one parameter either, so that one (device, parameter) entry
+ * is left out of the converted result rather than silently keeping whichever
+ * lane scheduled last — every other entry on the strip still converts, and
+ * the clash is reported on the result's `overlaps` field
+ * (`recordingDeviceEntry` below) for a caller that must account for it.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -81,8 +83,27 @@ export type StripAutomationWritesEntry = Readonly<{
 }>;
 
 export type StripAutomationWritesResult =
-    | Readonly<{ outcome: 'converted'; entries: readonly StripAutomationWritesEntry[] }>
+    | Readonly<{
+          outcome: 'converted';
+          entries: readonly StripAutomationWritesEntry[];
+          /**
+           * Every (device, parameter) whose lanes overlapped and could not
+           * merge — each one's entry is left out of `entries` above. Empty
+           * when nothing clashed. A caller that must not silently lose a
+           * clashing lane's writes (the live producer, the native export)
+           * reads this and decides on its own.
+           */
+          overlaps: readonly { deviceId: string; parameterId: string }[];
+      }>
     | Readonly<{ outcome: 'declined'; reason: string }>;
+
+/** The decline text a caller uses for the first overlap it is not prepared to keep pieces of. */
+export function deviceParameterOverlapReason(
+    trackName: string,
+    overlap: { deviceId: string; parameterId: string }
+): string {
+    return `automation on track "${trackName}": lanes on device "${overlap.deviceId}" overlap on parameter "${overlap.parameterId}"`;
+}
 
 export type StripAutomationWritesInput = Readonly<{
     track: Track;
@@ -221,7 +242,7 @@ function recordingDeviceEntry(
  * Every named device, wired to record rather than play, plus the recorder map
  * they write into and the overlaps any of their parameters hit — the caller
  * checks that list once, after scheduling, instead of every entry's own
- * closure carrying its own decline.
+ * closure carrying its own exclusion.
  */
 function recordingDeviceEntries(deviceEntries: readonly StripAutomationDeviceEntry[]): {
     entries: ReturnType<typeof recordingDeviceEntry>[];
@@ -245,18 +266,26 @@ function recordingDeviceEntries(deviceEntries: readonly StripAutomationDeviceEnt
  *
  * A parameter no lane touched recorded nothing and gets no entry, for the same
  * reason an untouched strip position gets none: "no entry" and "converted,
- * wrote nothing" then read the same to every caller.
+ * wrote nothing" then read the same to every caller. A parameter named in
+ * `overlaps` recorded only its first lane's segments — never a merged
+ * schedule any lane actually asked for — so it is left out here too; the
+ * caller reads `overlaps` itself to know why.
  */
 function deviceParameterEntries(input: {
     trackId: string;
     deviceEntries: readonly StripAutomationDeviceEntry[];
     recordedByDeviceId: ReadonlyMap<string, RecordedDeviceSegments>;
+    overlaps: readonly { deviceId: string; parameterId: string }[];
     sampleRate: number;
 }): StripAutomationWritesEntry[] {
-    const { trackId, deviceEntries, recordedByDeviceId, sampleRate } = input;
+    const { trackId, deviceEntries, recordedByDeviceId, overlaps, sampleRate } = input;
+    const overlapKeys = new Set(overlaps.map(({ deviceId, parameterId }) => `${deviceId}::${parameterId}`));
     const entries: StripAutomationWritesEntry[] = [];
     for (const entry of deviceEntries) {
         for (const [parameterId, segments] of recordedByDeviceId.get(entry.deviceId)!) {
+            if (overlapKeys.has(`${entry.deviceId}::${parameterId}`)) {
+                continue;
+            }
             const writes = convertRecordedAutomationSegments({ segments, sampleRate });
             if (writes.length > 0) {
                 entries.push({
@@ -291,7 +320,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
     // The same lane set, gate and grain the web scheduler reads
     // (`scheduleTrackClips`); the mixdown always includes mixer lanes.
     if (track.automationMode === 'off') {
-        return { outcome: 'converted', entries: [] };
+        return { outcome: 'converted', entries: [], overlaps: [] };
     }
 
     const gainRecorder = createAutomationRecorder();
@@ -305,9 +334,11 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
     }
 
     // `overlaps` is what a parameter's second `apply` reports — the
-    // overlapping-lanes case the scheduler cannot merge away — checked once
-    // below, after scheduling, so the whole strip declines rather than
-    // silently keeping one lane's writes and dropping the other's.
+    // overlapping-lanes case the scheduler cannot merge away. Below, it
+    // leaves that one (device, parameter) entry out of the converted result
+    // rather than silently keeping one lane's writes and dropping the
+    // other's, and is itself carried on the result for a caller that must
+    // account for the clash.
     const {
         entries: recordingEntries,
         overlaps: deviceParameterOverlaps,
@@ -334,14 +365,6 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         vcaMultiplier,
         resolveLaneCeiling,
     });
-
-    if (deviceParameterOverlaps.length > 0) {
-        const { deviceId, parameterId } = deviceParameterOverlaps[0]!;
-        return {
-            outcome: 'declined',
-            reason: `automation on track "${track.name}": lanes on device "${deviceId}" overlap on parameter "${parameterId}"`,
-        };
-    }
 
     const conversions: {
         target: AudioGraphStripParameterTarget;
@@ -382,6 +405,14 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
             entries.push({ target, writes: converted.writes });
         }
     }
-    entries.push(...deviceParameterEntries({ trackId: track.id, deviceEntries, recordedByDeviceId, sampleRate }));
-    return { outcome: 'converted', entries };
+    entries.push(
+        ...deviceParameterEntries({
+            trackId: track.id,
+            deviceEntries,
+            recordedByDeviceId,
+            overlaps: deviceParameterOverlaps,
+            sampleRate,
+        })
+    );
+    return { outcome: 'converted', entries, overlaps: deviceParameterOverlaps };
 }

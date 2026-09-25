@@ -127,6 +127,36 @@ describe('mergeAutomationSegmentStreams', () => {
         expect(mergeAutomationSegmentStreams([stream])).toEqual({ overlapping: false, segments: stream });
     });
 
+    it('sorts a same-frame zero-length terminator stream before a full stream that also starts at frame 0', () => {
+        // B is a real stream from frame 0; A is a clip whose window ended
+        // exactly at the region start, compiling to nothing but its own
+        // terminator at frame 0. Handed in reverse (full stream first), a
+        // start-frame-only sort would leave B first and read A's frame-0
+        // terminator as starting inside B's span.
+        const streamB: OfflineAutomationSegment[] = [
+            { startFrame: 0, endFrame: 40, startValue: 3, endValue: 9 },
+            terminator(40, 9),
+        ];
+        const streamA: OfflineAutomationSegment[] = [terminator(0, 3)];
+
+        const result = mergeAutomationSegmentStreams([streamB, streamA]);
+
+        expect(result).toEqual({ overlapping: false, segments: streamB });
+        expect(isContiguousAutomationSchedule(result.overlapping ? [] : result.segments)).toBe(true);
+    });
+
+    it('produces the identical merge when the zero-length stream is already given first', () => {
+        const streamA: OfflineAutomationSegment[] = [terminator(0, 3)];
+        const streamB: OfflineAutomationSegment[] = [
+            { startFrame: 0, endFrame: 40, startValue: 3, endValue: 9 },
+            terminator(40, 9),
+        ];
+
+        const result = mergeAutomationSegmentStreams([streamA, streamB]);
+
+        expect(result).toEqual({ overlapping: false, segments: streamB });
+    });
+
     it('drops empty streams before classifying, and reports nothing to apply when every stream is empty', () => {
         expect(mergeAutomationSegmentStreams([[], []])).toEqual({ overlapping: false, segments: [] });
 

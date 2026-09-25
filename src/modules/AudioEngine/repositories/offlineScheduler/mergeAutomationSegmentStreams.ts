@@ -36,6 +36,16 @@ export type MergedAutomationSegmentStreams =
  * Any streams found overlapping — the later one starts before the earlier
  * one's terminator — abandon the merge for the whole group: there is no
  * general way to interleave two schedules that both claim the same frame.
+ *
+ * A clip whose window ends exactly at the region start compiles to a
+ * zero-length stream — a lone terminator sitting at frame 0, carrying nothing
+ * but the value to hold. When another stream also starts at frame 0, sorting
+ * by start frame alone leaves their relative order wherever the caller's own
+ * array happened to put them, and a zero-length stream landing after a real
+ * one reads as starting inside it — an overlap that was never there. Ties on
+ * start frame break by terminator frame ascending instead: the stream that
+ * ends first (the zero-length one) sorts first, so it is what the next
+ * stream's first frame is checked against, order-independently.
  */
 export function mergeAutomationSegmentStreams(
     streams: ReadonlyArray<readonly OfflineAutomationSegment[]>
@@ -44,7 +54,10 @@ export function mergeAutomationSegmentStreams(
     if (nonEmpty.length === 0) {
         return { overlapping: false, segments: [] };
     }
-    const ordered = [...nonEmpty].sort((first, second) => first[0]!.startFrame - second[0]!.startFrame);
+    const ordered = [...nonEmpty].sort((first, second) => {
+        const startFrameDiff = first[0]!.startFrame - second[0]!.startFrame;
+        return startFrameDiff !== 0 ? startFrameDiff : first.at(-1)!.endFrame - second.at(-1)!.endFrame;
+    });
     for (let index = 1; index < ordered.length; index++) {
         const previousTerminator = ordered[index - 1]!.at(-1)!;
         const nextFirst = ordered[index]![0]!;

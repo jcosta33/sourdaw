@@ -99,6 +99,7 @@ import { nativeRefusedDeviceLane } from './nativeRefusedDeviceLane';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import {
+    deviceParameterOverlapReason,
     projectStripAutomationWrites,
     REFUSE_DEVICE_AUTOMATION,
     type StripAutomationDeviceEntry,
@@ -353,6 +354,14 @@ export async function renderOfflineWithNativeEngine(
         });
         if (automation.outcome === 'declined') {
             return automation;
+        }
+        // This export has no lane order to fall back on the way the live
+        // producer does — one merged schedule per parameter is the only
+        // shape it carries — so an overlap it cannot merge still declines
+        // the whole render rather than printing a file missing a clash the
+        // musician would hear.
+        if (automation.overlaps.length > 0) {
+            return { outcome: 'declined', reason: deviceParameterOverlapReason(track.name, automation.overlaps[0]!) };
         }
         for (const { target, writes } of automation.entries.map(builtinAutomation.addressNatively)) {
             commands.push(...writeCommands(target, writes));

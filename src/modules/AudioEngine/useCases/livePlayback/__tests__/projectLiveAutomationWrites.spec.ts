@@ -630,28 +630,86 @@ describe('projectLiveAutomationWrites — hosted device lanes', () => {
         );
     });
 
-    it('excludes the whole strip when a track-level lane overlaps a clip-scoped lane on one carried device parameter (Fixture O)', () => {
-        const clipB = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
-        const track = createTrack({ devices: [hostedDevice], clips: [clipB] });
+    it('merges rather than falsely reports an overlap when a clip ending exactly at the region start ties on frame 0 with the next clip (Fixture D)', () => {
+        // clip-a [0,2) ends exactly where the region starts, so its lane
+        // compiles to a zero-length stream sitting at frame 0 — nothing to
+        // merge, only a tie to break correctly against clip-b's real ramp,
+        // which also starts at frame 0 once shifted into the region. Lane
+        // order deliberately puts the full stream (clip-b) before the
+        // zero-length one (clip-a), the order `mergeAutomationSegmentStreams`
+        // must sort correctly rather than reading as an overlap.
+        const clipA = clip({ id: 'clip-a', startBeat: 0, endBeat: 2 });
+        const clipB = clip({ id: 'clip-b', startBeat: 2, endBeat: 4 });
+        const track = createTrack({ devices: [hostedDevice], clips: [clipA, clipB] });
         const lanes: AutomationLane[] = [
-            lane({
-                id: 'lane-track',
-                trackId: track.id,
-                parameterId: 'plugin-1:7',
-                // A second point past clip-b's start, so this track-level
-                // lane's own schedule genuinely spans across clip-b's
-                // window — a real overlap, not two lanes that merely
-                // compile back to back.
-                points: [point(0, 0.3, 'step'), point(2, 0.3, 'step')],
-            }),
             lane({
                 id: 'lane-clip-b',
                 trackId: track.id,
                 parameterId: 'plugin-1:7',
                 clipId: clipB.id,
-                points: [point(0.4, 0.9, 'step')],
+                points: [point(2, 0.2, 'linear'), point(3, 0.8, 'linear')],
+            }),
+            lane({
+                id: 'lane-clip-a',
+                trackId: track.id,
+                parameterId: 'plugin-1:7',
+                clipId: clipA.id,
+                points: [point(0, 0.3, 'step')],
+            }),
+            lane({
+                id: 'lane-gain',
+                trackId: track.id,
+                parameterId: 'gain',
+                points: [point(0, 0.5, 'linear'), point(4, 1, 'linear')],
             }),
         ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 2,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(true);
+        expect(result.entries.some((entry) => entry.target.kind === 'track-fader')).toBe(true);
+    });
+
+    it('excludes only the two clashing lanes, keeping the fader entry, when a track-level lane overlaps a clip-scoped lane on one carried device parameter (Fixture O)', () => {
+        const clipB = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
+        const track = createTrack({ devices: [hostedDevice], clips: [clipB] });
+        const trackLane = lane({
+            id: 'lane-track',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            // A second point past clip-b's start, so this track-level
+            // lane's own schedule genuinely spans across clip-b's
+            // window — a real overlap, not two lanes that merely
+            // compile back to back.
+            points: [point(0, 0.3, 'step'), point(2, 0.3, 'step')],
+        });
+        const clipLane = lane({
+            id: 'lane-clip-b',
+            trackId: track.id,
+            parameterId: 'plugin-1:7',
+            clipId: clipB.id,
+            points: [point(0.4, 0.9, 'step')],
+        });
+        // The overlap must not silence the rest of the strip — a gain lane
+        // on the same track has nothing to do with the clashing device
+        // parameter and must still convert.
+        const gainLane = lane({
+            trackId: track.id,
+            parameterId: 'gain',
+            minValue: 0,
+            maxValue: 2,
+            points: [point(0, 0.5, 'step'), point(1, 0.2, 'step')],
+        });
+        const lanes: AutomationLane[] = [trackLane, clipLane, gainLane];
 
         const result = projectLiveAutomationWrites({
             ...baseInput,
@@ -663,14 +721,19 @@ describe('projectLiveAutomationWrites — hosted device lanes', () => {
             regionEndSeconds: 4,
         });
 
+        const reason = `automation on track "${track.name}": lanes on device "${hostedDevice.id}" overlap on parameter "7"`;
         expect(result.exclusions).toEqual([
-            {
-                stripId: track.id,
-                subjectId: track.id,
-                reason: `automation on track "${track.name}": lanes on device "${hostedDevice.id}" overlap on parameter "7"`,
-            },
+            { stripId: track.id, subjectId: trackLane.id, reason },
+            { stripId: track.id, subjectId: clipLane.id, reason },
         ]);
+        expect(result.exclusions.some((exclusion) => exclusion.subjectId === track.id)).toBe(false);
         expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+        expect(faderEntry!.writes).toEqual([
+            { shape: 'step', value: 0.5, time: 0 },
+            { shape: 'step', value: 0.2, time: 1 },
+        ]);
     });
 
     it('still excludes a built-in device lane on a strip whose hosted device is carried', () => {

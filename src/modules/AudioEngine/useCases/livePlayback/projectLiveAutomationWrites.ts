@@ -60,9 +60,20 @@
  * same law `projectLiveGraphProgramme` applies to a clip it cannot carry. One
  * strip's automation failing to compile must not silence a session that
  * could otherwise play.
+ *
+ * Two lanes on one device parameter that overlap cannot merge into the one
+ * schedule the extraction's recorder holds (`projectStripAutomationWrites`),
+ * so that parameter's entry comes back on the result's `overlaps` field
+ * instead of in `entries`. Unlike the malformed-stream case above, this must
+ * not silence the rest of the strip either — the fader, pan and every other
+ * device parameter still converted. This producer names each clashing lane
+ * on its exclusion channel instead, resolving it the same way the scheduler
+ * itself resolves a lane against the carried devices, so the exclusion
+ * points at the lane a musician would need to fix rather than the strip.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
@@ -71,6 +82,7 @@ import { clipBoundsById } from '../offlineRender/clipBoundsById';
 import { deviceParameterLanes } from '../offlineRender/deviceParameterLanes';
 import { laneAddressesDevice } from '../offlineRender/laneAddressesDevice';
 import {
+    deviceParameterOverlapReason,
     projectStripAutomationWrites,
     type StripAutomationDeviceEntry,
     type StripAutomationWritesInput,
@@ -139,6 +151,32 @@ function nativeBodyDeviceEntries(track: Track): readonly StripAutomationDeviceEn
     });
 }
 
+/**
+ * The candidate device lanes on this strip that resolve — the way the
+ * scheduler itself resolves a lane, `resolveDeviceAutomationTargetIndex` over
+ * the carried entries under the same law — to the one (device, parameter)
+ * pair an overlap names. These are the lanes an omitted merged entry actually
+ * silences, so the exclusion this producer reports can name the lane rather
+ * than the whole strip.
+ */
+function lanesClashingOn(input: {
+    candidateLanes: readonly AutomationLane[];
+    carried: readonly StripAutomationDeviceEntry[];
+    overlap: { deviceId: string; parameterId: string };
+    law: OfflineDeviceAutomationLaw;
+}): readonly AutomationLane[] {
+    const { candidateLanes, carried, overlap, law } = input;
+    return candidateLanes.filter((lane) => {
+        if (getDeviceAutomationParameterId(lane.parameterId) !== overlap.parameterId) {
+            return false;
+        }
+        const index = resolveDeviceAutomationTargetIndex(lane.parameterId, carried, (candidate, parameterId) =>
+            law.acceptsAutomation({ deviceId: candidate.deviceId, deviceType: candidate.deviceType, parameterId })
+        );
+        return index >= 0 && carried[index]!.deviceId === overlap.deviceId;
+    });
+}
+
 function assertNever(value: never): never {
     throw new Error(`Unknown automation write shape: ${JSON.stringify(value)}`);
 }
@@ -187,6 +225,10 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
 
     for (const track of stripTracks) {
         const carried = carriedDeviceEntries(track.id);
+        // Only populated when automation is on (see the guard below); an
+        // overlap can never be reported for an off strip, so this stays
+        // empty and unread in that case.
+        let candidateLanes: readonly AutomationLane[] = [];
         // `automationMode: 'off'` produces no writes at all — enforced inside
         // `projectStripAutomationWrites` itself, and it reads no lane at all,
         // the orphan device lane included. So a strip with automation turned
@@ -194,7 +236,7 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         // and has no consumer for the clip-bounds map either.
         if (track.automationMode !== 'off') {
             const withNativeBody = nativeBodyDeviceEntries(track);
-            const candidateLanes = deviceParameterLanes({
+            candidateLanes = deviceParameterLanes({
                 lanes,
                 laneById,
                 trackId: track.id,
@@ -240,6 +282,12 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         if (projected.outcome === 'declined') {
             exclusions.push({ stripId: track.id, subjectId: track.id, reason: projected.reason });
             continue;
+        }
+        for (const overlap of projected.overlaps) {
+            const reason = deviceParameterOverlapReason(track.name, overlap);
+            for (const lane of lanesClashingOn({ candidateLanes, carried, overlap, law: deviceParameterLaw })) {
+                exclusions.push({ stripId: track.id, subjectId: lane.id, reason });
+            }
         }
         for (const entry of projected.entries) {
             entries.push({
