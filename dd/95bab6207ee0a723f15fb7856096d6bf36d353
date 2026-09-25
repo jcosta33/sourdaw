@@ -1,0 +1,23 @@
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/setBacteriaModAssignmentsWithAudio.spec.ts
+  s_2bfd55a4393d7c::t_431cfed14253a9 5
+src/modules/Bacteria/useCases/hydrateBacteriaPatchFromProject.ts
+  s_2bfd55a4393d7c::t_7510c4071d5ff6 256-265
+src/modules/Bacteria/useCases/__tests__/hydrateBacteriaPatchFromProject.spec.ts
+  s_2bfd55a4393d7c::t_04730599b20829 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dd95bab6207ee0a723f15fb7856096d6bf36d353",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
