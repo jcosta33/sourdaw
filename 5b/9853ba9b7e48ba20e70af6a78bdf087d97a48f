@@ -1,0 +1,49 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_9e15f5b7ec3308::t_4b0b3dd08c7901 376
+  s_9e15f5b7ec3308::t_170b45d6439771 557
+src/modules/Project/useCases/projectPersistence/setAgentMeasurementArtifactsClearer.ts
+  s_9e15f5b7ec3308::t_c6949f4eb5bdf1 1-13
+src/modules/Project/useCases/index.ts
+  s_9e15f5b7ec3308::t_47f22bf2235927 16
+src/modules/Project/useCases/projectPersistence/helpers/agentMeasurementArtifactClearingState.ts
+  s_9e15f5b7ec3308::t_b4e8037af66c69 1-16
+src/app/bootstrap.ts
+  s_9e15f5b7ec3308::t_6871e140ce78d2 64
+  s_9e15f5b7ec3308::t_80b3d7acfa761e 332-335
+  s_9e15f5b7ec3308::t_c3207694973d57 163
+src/modules/AudioRendering/stores/index.ts
+  s_9e15f5b7ec3308::t_950d90436bb808 2
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_9e15f5b7ec3308::t_cf4dc941a9ab66 24
+  s_9e15f5b7ec3308::t_cb92655be5038a 46-49
+  s_ef536aab624565::t_97fbc376fe0512 25
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_9e15f5b7ec3308::t_4cae3dca28acb4 229-233,243-262,264-265
+  s_9e15f5b7ec3308::t_2bd5f3f2c89711 234-242,263
+  s_9e15f5b7ec3308::t_b9fa91a2f1a698 114
+  s_9e15f5b7ec3308::t_6f9eb1f3230277 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5b9853ba9b7e48ba20e70af6a78bdf087d97a48f",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
