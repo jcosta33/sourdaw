@@ -9,6 +9,7 @@ import {
     ADVISORY_WORKFLOW_EVENT,
     ADVISORY_WORKFLOW_PATH,
     primaryCheckRunsQuery,
+    resolveCheckRunsPage,
     resolveSemanticReviewContext,
     SEMANTIC_CI_FORMAT,
     type SemanticActionRun,
@@ -507,13 +508,39 @@ describe('semantic review context', () => {
             ],
             actionRunsBySuite: (suiteId) =>
                 suiteId === 111 ? [RUN] : [{ id: 999, path: '.github/workflows/other.yml', event: 'pull_request' }],
-            artifactsByRun: (runId) => (runId === 456 ? [ARTIFACT] : []),
+            artifactsByRun: (runId) => {
+                if (runId === 456) {
+                    return [ARTIFACT];
+                }
+                return [{ id: 1, name: 'semantic-review-42-999', expiresAt: '2099-01-01T00:00:00.000Z' }];
+            },
             archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
         });
-        expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
-            state: 'assessed',
-            assessedHeadSha: HEAD,
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.artifact.name).toBe('semantic-review-42-456');
+        expect(result.artifact.id).toBe(789);
+    });
+
+    it.each([
+        ['path', { path: ADVISORY_WORKFLOW_PATH, event: 'workflow_dispatch' }],
+        ['event', { path: '.github/workflows/other.yml', event: ADVISORY_WORKFLOW_EVENT }],
+    ])('rejects a newer decoy matching only the %s half of the binding', (_label, decoyRun) => {
+        const { port } = makePort({
+            checkRuns: [
+                { id: 1, name: 'Semantic review', conclusion: 'success', checkSuiteId: 111 },
+                { id: 2, name: 'Semantic review', conclusion: 'success', checkSuiteId: 999 },
+            ],
+            actionRunsBySuite: (suiteId) => (suiteId === 111 ? [RUN] : [{ id: 999, ...decoyRun }]),
+            artifactsByRun: (runId) => {
+                if (runId === 456) {
+                    return [ARTIFACT];
+                }
+                return [{ id: 1, name: 'semantic-review-42-999', expiresAt: '2099-01-01T00:00:00.000Z' }];
+            },
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
         });
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.artifact.name).toBe('semantic-review-42-456');
     });
 
     it('refuses an artifact bound to a different pull request', () => {
@@ -668,5 +695,42 @@ describe('semantic review context', () => {
         expect(query).toContain('check_name=Semantic%20review');
         expect(query).toContain('filter=latest');
         expect(query).toContain('per_page=100');
+    });
+
+    it('trusts a complete empty by-name page without falling through to the full list', () => {
+        let fullQueried = false;
+        const runs = resolveCheckRunsPage((query) => {
+            if (query.includes('check_name')) {
+                return { runs: [], totalCount: 0 };
+            }
+            fullQueried = true;
+            return { runs: [], totalCount: 0 };
+        });
+        expect(runs).toEqual([]);
+        expect(fullQueried).toBe(false);
+    });
+
+    it('falls back to the full list when the by-name page is truncated', () => {
+        const queries: string[] = [];
+        const runs = resolveCheckRunsPage((query) => {
+            queries.push(query);
+            if (query.includes('check_name')) {
+                return { runs: [], totalCount: 101 };
+            }
+            return { runs: [GREEN_CHECK], totalCount: 1 };
+        });
+        expect(runs).toEqual([GREEN_CHECK]);
+        expect(queries).toHaveLength(2);
+    });
+
+    it('refuses a truncated full list', () => {
+        expect(() =>
+            resolveCheckRunsPage((query) => {
+                if (query.includes('check_name')) {
+                    return { runs: [], totalCount: 101 };
+                }
+                return { runs: [], totalCount: 101 };
+            })
+        ).toThrow(/check-runs list is truncated/);
     });
 });

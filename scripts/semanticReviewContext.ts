@@ -423,10 +423,27 @@ export function primaryCheckRunsQuery(checkName: string): string {
     return `check_name=${encodeURIComponent(checkName)}&filter=latest&per_page=100`;
 }
 
-type CheckRunsPage = {
+export type CheckRunsPage = {
     readonly runs: readonly SemanticCheckRun[];
     readonly totalCount: number;
 };
+
+/**
+ * The check-runs gate: trust a complete by-name page (empty or not), and fall back to the full list
+ * only when the page is truncated, refusing a full list that is itself truncated. An empty complete
+ * page is a real "no assessment" answer, never a prompt to go read the whole list.
+ */
+export function resolveCheckRunsPage(query: (query: string) => CheckRunsPage): readonly SemanticCheckRun[] {
+    const latest = query(primaryCheckRunsQuery(SEMANTIC_REVIEW_CHECK_NAME));
+    if (latest.runs.length === latest.totalCount) {
+        return latest.runs;
+    }
+    const full = query('filter=all&per_page=100');
+    if (full.runs.length < full.totalCount) {
+        throw new Error(`check-runs list is truncated (${String(full.runs.length)} of ${String(full.totalCount)})`);
+    }
+    return full.runs;
+}
 
 function queryCheckRuns(session: GhSession, cwd: string, headSha: string, query: string): CheckRunsPage {
     return ghJson<CheckRunsPage>(
@@ -470,24 +487,7 @@ function downloadArchive(session: GhSession, cwd: string, artifactId: number): B
 
 export function shellSemanticReviewContextPort(session: GhSession, cwd: string): SemanticReviewContextPort {
     return {
-        checkRuns: (headSha) => {
-            const latest = queryCheckRuns(session, cwd, headSha, primaryCheckRunsQuery(SEMANTIC_REVIEW_CHECK_NAME));
-            if (latest.runs.length > 0 && latest.runs.length === latest.totalCount) {
-                return latest.runs;
-            }
-            // The by-name query returns the latest run per check suite, so a head that re-ran the
-            // check many times can fill the page and push the advisory suite out of view. Only a
-            // complete page is trusted; an empty or truncated page falls through to the full list,
-            // which refuses when its own page is shorter than the total count rather than letting the
-            // resolver report `absent` from a partial list.
-            const full = queryCheckRuns(session, cwd, headSha, 'filter=all&per_page=100');
-            if (full.runs.length < full.totalCount) {
-                throw new Error(
-                    `check-runs list is truncated (${String(full.runs.length)} of ${String(full.totalCount)})`
-                );
-            }
-            return full.runs;
-        },
+        checkRuns: (headSha) => resolveCheckRunsPage((query) => queryCheckRuns(session, cwd, headSha, query)),
         actionRuns: (checkSuiteId) =>
             ghJson<readonly SemanticActionRun[]>(
                 session,

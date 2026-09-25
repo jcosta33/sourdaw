@@ -39,8 +39,9 @@ function localImportClosure(entryFile: string, readFile: (path: string) => strin
 
 /**
  * The repository-relative local-import closure of the entry: the entry, its direct imports, and
- * every module they import transitively. This is the set asserted against origin/main, so a drifted
- * copy of any module the entry can execute is refused rather than producing a forged record.
+ * every module they import transitively. This set is asserted against origin/main before the record
+ * is produced; the check runs after the entry's module graph is evaluated, so it guards the closure
+ * modules' behaviour, not their import-time side effects.
  */
 export function trustedExecutingPaths(
     executingFile: string,
@@ -99,8 +100,9 @@ async function main(): Promise<number> {
     }
     const executingFile = fileURLToPath(import.meta.url);
     const cwd = process.cwd();
-    // `review:prepare` runs only the default branch's revision of itself and of every module it can
-    // execute: a drifted copy of any asserted file must refuse rather than write a forged record.
+    // `review:prepare` runs only the default branch's revision of the closure it composes: before the
+    // record is written, a drifted copy of any asserted file refuses. The check runs after the module
+    // graph is evaluated, so it guards the modules' behaviour, not their import-time side effects.
     assertTrustedExecutingBlobs(collectTrustedExecutingBlobs(executingFile, cwd));
     const primaryRoot = resolvePrimaryRoot();
     const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
