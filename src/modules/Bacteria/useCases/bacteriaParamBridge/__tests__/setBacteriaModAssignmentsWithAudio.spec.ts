@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type BacteriaModAssignment } from '../../../models/BacteriaPatch';
 import { setBacteriaModAssignments } from '../../../stores/bacteriaStore';
+import { pushBacteriaModAssignmentsToEngine } from '../pushBacteriaModAssignmentsToEngine';
 import { setBacteriaModAssignmentsWithAudio } from '../setBacteriaModAssignmentsWithAudio';
 
 vi.mock('../../../stores/bacteriaStore', () => ({
@@ -24,8 +25,6 @@ vi.mock('../bacteriaParamBridgeDependencies', () => ({
 vi.mock('../pushBacteriaModAssignmentsToEngine', () => ({
     pushBacteriaModAssignmentsToEngine: vi.fn(),
 }));
-
-import { pushBacteriaModAssignmentsToEngine } from '../pushBacteriaModAssignmentsToEngine';
 
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';

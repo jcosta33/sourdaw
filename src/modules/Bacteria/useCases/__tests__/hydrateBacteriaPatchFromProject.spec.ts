@@ -11,6 +11,7 @@ import {
     setBacteriaParam,
     setBacteriaUiLevel,
 } from '../../stores/bacteriaStore';
+import { hydrateBacteriaPatchFromProject } from '../hydrateBacteriaPatchFromProject';
 
 // The routing push (#4756) resolves its write target and its engine door
 // through the shared bridge dependency object. Mocking only that object
@@ -30,8 +31,6 @@ vi.mock('../bacteriaParamBridge/bacteriaParamBridgeDependencies', () => ({
         updateDevicePatch: mocks.updateDevicePatch,
     },
 }));
-
-import { hydrateBacteriaPatchFromProject } from '../hydrateBacteriaPatchFromProject';
 
 const DEVICE_ID = 'bacteria-1';
 const TRACK_ID = 't1';

@@ -253,14 +253,19 @@ export function hydrateBacteriaPatchFromProject(deviceId: string): void {
         }
     }
 
+    commitHydratedPatch(deviceId, patch, changed, routingChanged);
+}
+
+/**
+ * Store-only unless the routing projection itself changed: an ineligible
+ * target must still take the projected rows so a later edit builds on them
+ * (#4756), but only a table the projection actually changed is worth a push —
+ * an equal or absent chunk pushes nothing new to the engine.
+ */
+function commitHydratedPatch(deviceId: string, patch: BacteriaPatch, changed: boolean, routingChanged: boolean): void {
     if (changed) {
         loadBacteriaPatch(deviceId, patch);
     }
-
-    // Store-only above: an ineligible target must still take the projected
-    // rows so a later edit builds on them (#4756). Only a table the
-    // projection actually changed is worth a push — an equal or absent chunk
-    // pushes nothing new to the engine.
     if (routingChanged) {
         pushBacteriaModAssignmentsToEngine(deviceId, patch.modAssignments);
     }
