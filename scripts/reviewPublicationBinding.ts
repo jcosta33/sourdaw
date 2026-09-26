@@ -97,18 +97,6 @@ function assertReviewRiskPlanBindsBundle(number: number, head: string, plan: Rev
 }
 
 /**
- * The bundle manifest, or `undefined` when no reader can make one out of it. Callers use it to defer
- * to the refusal that already names the repair for such a manifest instead of reporting their own.
- */
-function readBundleManifestOrUndefined(bundle: string): ReviewBundleContext | undefined {
-    try {
-        return readReviewBundleContext(bundle);
-    } catch {
-        return undefined;
-    }
-}
-
-/**
  * Approval claims are published evidence too, so they carry the same publication-safe shapes the
  * durable dossier enforces. The bounded review body and inline comments are deliberately excluded:
  * both are publication-fixed shapes with their own limits.
@@ -196,12 +184,10 @@ function observedReviewRoundCount(number: number, head: string, port: PublishRev
 /**
  * The round-cap decision on its own — the freeze, and the escalation duty read from the public
  * history — so a publication takes it before the approval context and the comment preflight it
- * would otherwise report instead. A fresh approval publication reads its approval context before
- * the dossier gate, and a manifest no approval context can be read from is exactly a state the
- * freeze refusal must still reach, because that refusal is the only text naming the routes out of
- * a frozen head (#4754). The escalation refusal for an absent reassessment is raised here too; an
- * unreadable manifest is left to the gate below, so the head that must repair its base is told
- * that instead.
+ * would otherwise report instead. A fresh approval publication reads its approval context before the
+ * dossier gate, and a manifest no approval context can be read from is exactly a state the round-cap
+ * refusal must still reach, because that refusal is the only text naming the reassessment an
+ * escalated head is missing and the routes out of a frozen one (#4754).
  */
 export function assertReviewRoundPublicationAdmitted(input: {
     number: number;
@@ -219,7 +205,9 @@ export function assertReviewRoundPublicationAdmitted(input: {
         return;
     }
     assertReviewRoundNotFrozen(observedCount);
-    if (readBundleManifestOrUndefined(input.bundle) === undefined) {
+    if (!hasRiskPlan(input.bundle, input.port)) {
+        // A bundle with no risk plan publishes exactly as before, and for it this refusal is already
+        // reachable through the gate below, which names the manifest a reassessment must bind.
         return;
     }
     const recorded = readBundleFile(input.port, join(input.bundle, REASSESSMENT_FILE_NAME));

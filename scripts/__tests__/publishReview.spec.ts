@@ -10,6 +10,7 @@ import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
+import { readReviewBundleContext } from '../prepareReview.ts';
 import {
     coordinatePublishReview,
     parseAcceptanceDocument,
@@ -5080,6 +5081,15 @@ describe('fresh reviewer dossier publication', () => {
         return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
     }
 
+    /**
+     * The escalation refusal the round-cap decision itself raises for a bundle that carries no
+     * reassessment, before any manifest, document or approval context is read. A plan-less bundle
+     * reaches the manifest-repair text above instead, and its own cases pin that.
+     */
+    function expectedMissingReassessmentRefusal(bundle: string, observedCount: number): string {
+        return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}; the orchestrator must record a reassessment at ${join(bundle, 'reassessment.json')} for head ${head} with roundsObserved ${observedCount} and one action from split, respec, continue`;
+    }
+
     function dossierFixture(
         input: {
             plan?: unknown;
@@ -5097,6 +5107,8 @@ describe('fresh reviewer dossier publication', () => {
             publicReviewComments?: PublicReviewComment[];
             diff?: string;
             semanticCi?: unknown;
+            /** Makes the approval context read the bundle manifest, as the production port does. */
+            approvalContextReadsManifest?: boolean;
         } = {}
     ) {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-dossier-'));
@@ -5131,7 +5143,15 @@ describe('fresh reviewer dossier publication', () => {
         const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
         const port: PublishReviewPort = {
             primaryRoot: () => root,
-            assertApprovalContext: (publishedNumber, publishedHead) => approvalContext(publishedHead, publishedNumber),
+            assertApprovalContext: (publishedNumber, publishedHead) => {
+                calls.push('approvalContext');
+                // The production port reads the bundle manifest here, so a case that wants to observe
+                // what runs ahead of this read opts into that read instead of the fixed stub.
+                if (input.approvalContextReadsManifest === true) {
+                    readReviewBundleContext(bundle);
+                }
+                return approvalContext(publishedHead, publishedNumber);
+            },
             pullRequest: () => ({ state: 'OPEN', head, labels: input.labels }),
             readReviewJson: (path) => {
                 calls.push(`read:${path}`);
@@ -6008,6 +6028,7 @@ describe('fresh reviewer dossier publication', () => {
             plan: riskPlan(),
             dossier: dossierInput(),
             manifest: { pr: number, baseRefName: 'main', headSha: head },
+            approvalContextReadsManifest: true,
             publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
                 id: index + 1,
                 state: 'CHANGES_REQUESTED',
@@ -6017,8 +6038,12 @@ describe('fresh reviewer dossier publication', () => {
             })),
         });
         try {
+            // This approval context reads the manifest the case leaves unusable, as the production
+            // port does, so the refusal below is the round-cap decision running ahead of it: without
+            // the early decision this run raises the reader's own manifest error (#4754).
             const message = refusalMessage(() => publishReview(number, fixture.port));
-            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(message).toBe(expectedMissingReassessmentRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.calls).not.toContain('approvalContext');
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
