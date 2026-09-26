@@ -999,9 +999,14 @@ describe('contract-carrying admission', () => {
     it('names a withheld region by its own content class rather than its admission tier', () => {
         // The qualifier is the region's own content class, never the admission tier. `vocabulary.ts` is a
         // source its contract-carrying spec covers, so it is ordered in that spec's tier, yet its withheld
-        // sides read the plain form because its own content carries no contract. The changed contract
+        // side reads the plain form because its own content carries no contract. The changed contract
         // document and the contract-context region keep the contract term. The tier is an attempt order
         // over the record, not part of its vocabulary.
+        //
+        // The covered source is planned, which is what the promotion into the spec's tier now asks: it is a
+        // copy whose empty source admits one region, so the predicate finds a unit for it, while its
+        // over-ceiling after side is still withheld. A covered source the planner would exclude ranks bulk,
+        // and its withheld sides read the plain form there too.
         const specSide =
             "import { describe, expect, it } from 'vitest';\nimport { vocabulary } from '../vocabulary.ts';\nconst workflow = '.github/workflows/semantic-review.yml';\n";
         const coveredSide = 'export const vocabulary = 1;\n'.repeat(4);
@@ -1011,12 +1016,18 @@ describe('contract-carrying admission', () => {
             port: fakeSource({
                 files: [
                     changedFile('scripts/semanticReview/__tests__/vocabulary.spec.ts'),
-                    changedFile('scripts/semanticReview/vocabulary.ts'),
+                    changedFile('scripts/semanticReview/vocabulary.ts', {
+                        kind: 'copied',
+                        previousPath: 'scripts/semanticReview/empty-vocabulary.ts',
+                        added: 4,
+                        deleted: 0,
+                    }),
                     changedFile('AGENTS.md'),
                 ],
                 blobs: {
                     [`${MERGE_BASE}:scripts/semanticReview/__tests__/vocabulary.spec.ts`]: specSide,
                     [`${HEAD}:scripts/semanticReview/__tests__/vocabulary.spec.ts`]: specSide,
+                    [`${MERGE_BASE}:scripts/semanticReview/empty-vocabulary.ts`]: '',
                     [`${MERGE_BASE}:scripts/semanticReview/vocabulary.ts`]: coveredSide,
                     [`${HEAD}:scripts/semanticReview/vocabulary.ts`]: coveredSide,
                     [`${MERGE_BASE}:AGENTS.md`]: contractSide,
@@ -1027,16 +1038,15 @@ describe('contract-carrying admission', () => {
             mergeBaseSha: MERGE_BASE,
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
-            // Every side exceeds the per-region ceiling, so one fixture records all three classes at once:
-            // the covered source reads the plain form while the contract document, carrying the contract
-            // term on its own sides, and the contract-context region keep theirs.
+            // Every withheld side exceeds the per-region ceiling, so one fixture records all three classes
+            // at once: the covered source reads the plain form while the contract document, carrying the
+            // contract term on its own sides, and the contract-context region keep theirs.
             limits: { maxRegionBytes: 40, maxTotalBytes: 1_000_000 },
             contractPaths: ['.agents/decisions/README.md'],
         });
         expect(set.truncated).toEqual([
             { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (before, contract)' },
             { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (after, contract)' },
-            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (before)' },
             { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
             {
                 path: 'scripts/semanticReview/__tests__/vocabulary.spec.ts',
@@ -1284,6 +1294,70 @@ describe('contract-carrying admission', () => {
         }
     });
 
+    it('ranks a covered source the planner excludes as bulk, so a planned reader keeps the context it charged', () => {
+        // The tier-0 promotion of a spec-covered source asked only whether a contract-carrying spec covers
+        // it, so a covered source the planner excludes as `no-applicable-rule` carried its bulk sides ahead
+        // of the documents a planned reader charged and the collector's total withheld them: measured at
+        // `local`, the merge base delivered `.agents/decisions/README.md` to the reader's unit and the
+        // ungated promotion withheld it. Both promotions into the contract tier now read the same
+        // `plannedPaths` predicate the charge does. Dropping the `plannedPaths` condition from the covered
+        // arm reddens this case: the promoted source's two sides take the total and the document is
+        // withheld, so the reader's unit carries no context.
+        const specPath = 'scripts/semanticReview/__tests__/covered.spec.ts';
+        const coveredPath = 'tools/helper.ts';
+        const readerPath = 'src/modules/Project/undo.ts';
+        const specSide =
+            "import { describe, expect, it } from 'vitest';\nimport { helper } from '../../../tools/helper.ts';\nconst workflow = '.github/workflows/semantic-review.yml';\n";
+        const coveredSide = 'export const helper = 1;\n'.repeat(200);
+        const readerBefore = 'export const before = 1;\n';
+        const readerAfter = 'export const after = 2;\n';
+        const document = '# Decisions\n'.repeat(666);
+        const files = [
+            changedFile(specPath, { added: 3, deleted: 0 }),
+            changedFile(coveredPath, { added: 200, deleted: 0 }),
+            changedFile(readerPath),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${specPath}`]: specSide,
+                    [`${HEAD}:${specPath}`]: specSide,
+                    [`${MERGE_BASE}:${coveredPath}`]: coveredSide,
+                    [`${HEAD}:${coveredPath}`]: coveredSide,
+                    [`${MERGE_BASE}:${readerPath}`]: readerBefore,
+                    [`${HEAD}:${readerPath}`]: readerAfter,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: document,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            // The spec's two sides, the reader's two sides and the document serialize to about 9.4 kB; the
+            // promoted source's two bulk sides add about 10 kB more. 11,000 B is above the first total and
+            // below the second, so the promotion is what decides whether the document is withheld.
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 11_000 },
+            includeDefaultContractContext: true,
+        });
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        // The covered source's unit does not exist: the planner excludes it for its empty rule set.
+        expect(planned.excluded).toContainEqual({ path: coveredPath, reason: 'no-applicable-rule' });
+        // The document the reader charged is admitted, and the unplanned covered source's bulk sides are
+        // what the total withholds.
+        expect(
+            set.references.some(
+                (reference) => reference.path === '.agents/decisions/README.md' && reference.side === 'context'
+            )
+        ).toBe(true);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === coveredPath && entry.reason.startsWith('total-evidence-budget-exhausted')
+            )
+        ).toBe(true);
+        const unit = planned.units.find((candidate) => candidate.path === readerPath);
+        expect(unit?.evidence.context.map((reference) => reference.path)).toEqual(['.agents/decisions/README.md']);
+    });
+
     it('withholds a contract-needing unit below its request while the documents it charged are sent', async () => {
         // The admission tier is an attempt order, not a protection. `fitUnitEvidence` reserves the
         // bounded context share of the request before it offers the unit's own regions, so on a 280-line
@@ -1331,45 +1405,6 @@ describe('contract-carrying admission', () => {
         });
     });
 
-    it("keeps the unit's own sides when the charged document is larger than the context share", async () => {
-        // B, larger-than-share regime, measured at the production `local` profile: the charged document
-        // `.agents/decisions/README.md` is 5,963 B serialized here and the real one is 11,981 B, both over
-        // the 4,401 B share this unit's request reserves — so reserving it bought nothing and cost the unit
-        // an own side. Reserving only for a document that fits the share leaves the own sides the whole
-        // request budget and the document is withheld by the fitter instead. Restoring the unconditional
-        // reserve drops the after side and sends the document, failing both arms of this case.
-        const path = 'src/modules/Project/undo.ts';
-        const own = 'const beforeValue = 1;\n'.repeat(175);
-        const document = '# Decisions\n'.repeat(440);
-        const result = await runScan({
-            ...scanPorts(
-                constantProvider(0.05),
-                fakeSource({
-                    files: [changedFile(path, { added: 175, deleted: 175 })],
-                    blobs: {
-                        [`${MERGE_BASE}:${path}`]: own,
-                        [`${HEAD}:${path}`]: own,
-                        // AGENTS.md is absent at this revision, so the one charged document is the README.
-                        [`${MERGE_BASE}:.agents/decisions/README.md`]: document,
-                    },
-                }),
-                fixedClock(1_000)
-            ),
-            limits: {
-                maxRegionBytes: SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes,
-                maxTotalBytes: SEMANTIC_BUDGET_PROFILES.local.maxTotalSubmittedBytes,
-            },
-        });
-        const unit = result.previews.find((preview) => preview.path === path);
-        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
-        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
-        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(false);
-        expect(result.report.scope.truncated).toContainEqual({
-            path,
-            reason: 'unit-evidence-reduced-below-request-budget (context)',
-        });
-    });
-
     it("sends the charged document when it fits the context share, even at an own side's expense", async () => {
         // B, smaller-than-share regime: the charged document is 2,713 B and fits the 4,401 B share, so the
         // reserve is taken and the document is sent while the unit's own after side is withheld below the
@@ -1406,14 +1441,16 @@ describe('contract-carrying admission', () => {
         });
     });
 
-    it('keeps an implementation context region in the fit but out of the reserve', () => {
-        // B, implementation regime: the reserve asked about the whole context array, so a 1,216 B
-        // implementation after side another unit contributed as context took the 2,560 B share of the
-        // 6,401 B request and withheld the charged reader's own sides — a region the reserve does not
-        // protect, paying for itself with the evidence the unit exists to supply. Keying the reserve on
-        // the charged contract documents alone leaves the own sides the request budget and still fits the
-        // implementation region out of what they leave. Reading the whole array again starves both own
-        // sides and the implementation token with them, failing every arm of this case.
+    it('reserves the share for the implementation context a unit carries, at its own regions expense', () => {
+        // The reserve protects the context the unit carries, contract or implementation, and it can reduce
+        // the unit's own evidence — the property the merge base already had. Keying it on charged contract
+        // documents alone handed an implementation-only unit the whole request: on this change's own diff
+        // at `ci` a unit went from 7 own and 5 context regions to 5 own and 0, and its rules needing
+        // `after implementation source` reported the evidence missing. Sized so the implementation region
+        // fits the 40% share and neither own side fits what the share leaves: the reserve empties the own
+        // fit, the implementation region is still fitted out of what the own fit leaves, and the token that
+        // needs it resolves. Reading the charged contract documents alone restores one own side and fails
+        // every arm below.
         const implPath = 'src/modules/Project/useCases/undoProject.ts';
         const specPath = 'src/modules/Project/__tests__/undo.spec.ts';
         const set = collectEvidence({
@@ -1446,15 +1483,16 @@ describe('contract-carrying admission', () => {
         }
         const largestOwn = Math.max(...own.map(cost));
         const smallestOwn = Math.min(...own.map(cost));
-        // Sized so the implementation region fits the share and neither own side does: the reserve
-        // starves the whole own set, while the whole budget carries one own side and the context region.
+        // The share carries the implementation region on its own; no own side fits what the share leaves.
         const budget = largestOwn + cost(implementation) + 128;
         expect(Math.floor(budget * 0.4)).toBeGreaterThanOrEqual(cost(implementation));
         expect(Math.floor(budget * 0.6)).toBeLessThan(smallestOwn);
         const fitted = fitUnitEvidence(set, own, context, budget);
-        // The reserve no longer reaches into the own fit: one own side survives the request, and the
-        // implementation region is still fitted out of what that side leaves.
-        expect(fitted.own.references).toHaveLength(1);
+        // The reserve reaches into the own fit, so the unit's own evidence is reduced below its request ...
+        expect(fitted.own.references).toEqual([]);
+        expect(fitted.own.droppedSides).toEqual(new Set<EvidenceSide>(['before', 'after']));
+        // ... while the context the reserve protects is fitted out of what the own fit leaves, and the
+        // rule that declared it is answered from there.
         expect(fitted.context.references).toEqual([implementation]);
         expect(
             missingRequiredEvidence(
@@ -1465,23 +1503,23 @@ describe('contract-carrying admission', () => {
                 fitted.own.droppedSides,
                 fitted.context.droppedSides
             )
-        ).toEqual(['before test source']);
+        ).toEqual(['before test source', 'after test source']);
     });
 
     it('plans the unit a charged contract document was charged for, with an own region inside its request budget', () => {
-        // C: the gate charged `.agents/decisions/README.md` for a unit the planner refused, so the total
-        // budget paid for a document no request read. Sized at the production local profile, the reader's
-        // two ~10,500 B sides serialize to 10,842 B and 10,841 B, inside its 11,003 B request budget, so
-        // an admissible own region reaches the request and the unit is planned; the README, 12,019 B
-        // serialized, is over both the 4,401 B share and what the own sides leave, so the fitter
-        // withholds it. Restoring the merge base's unconditional reserve takes the share from the own
-        // sides and the planner refuses the unit as `no-evidence-region-within-budget` again, which is
-        // the state this case pins.
+        // A preserved-behaviour control, not a repair witness: both arms hold identically under the merge
+        // base's unconditional reserve and under the reserve-fits rule a repair round introduced, so this
+        // case witnesses neither of them and stays green through the revert. What it pins, at the
+        // production local profile, is the charge and the request the charge bought: the document the gate
+        // charged for the reader is admitted as context, the unit is planned with an own region inside its
+        // request — the sides serialize to about 4,258 B and the reserve leaves 6,602 B of the 11,003 B
+        // request — and the document, 12,019 B serialized, is over both the 4,401 B share and what the own
+        // regions leave, so the fitter withholds it rather than a request reading it.
         const path = 'src/modules/Project/undo.ts';
-        const side = `${'x'.repeat(104)}\n`.repeat(100); // 10,500 B
+        const side = `${'x'.repeat(104)}\n`.repeat(38); // 3,990 B a side
         const readme =
             '| [0003](0003-engine-owned-plugin-runtime-owner.md) | decision text that names one owner |\n'.repeat(128);
-        const files = [changedFile(path, { added: 100, deleted: 100 })];
+        const files = [changedFile(path, { added: 38, deleted: 38 })];
         const source = fakeSource({
             files,
             blobs: {
@@ -1512,6 +1550,49 @@ describe('contract-carrying admission', () => {
         const unit = units.find((candidate) => candidate.path === path);
         expect(unit?.evidence.own.length).toBeGreaterThan(0);
         expect(unit?.evidence.context.map((reference) => reference.path)).toEqual([]);
+    });
+
+    it('excludes the unit a charged document was charged for when no own region fits its request', () => {
+        // The planned-unit predicate is a pre-admission proxy, not a promise that a request carries the
+        // unit: it asks the planner's own criteria — the screen keeps the path, the rules admit it, a side
+        // mints a region — and admission cannot know a unit's serialized request budget. The one side here
+        // is 15,001 B, under the 16,384 B per-region ceiling, so a region is minted and the gate charges
+        // the document the unit's rules declared; serialized it is about 15,200 B, over every request
+        // budget that remains, so the fitter keeps no own region, the document's 16,150 B fits none either,
+        // and the planner excludes the unit as `no-evidence-region-within-budget` with nothing sent. The
+        // charge is the residual this case pins; predicting the fitter is not the predicate's job.
+        const path = 'src/modules/Project/undo.ts';
+        const side = `${'x'.repeat(14_999)}\n`; // 15,000 B raw
+        const readme = '# Decisions\n'.repeat(1_334); // 14,674 B raw
+        const files = [changedFile(path, { added: 1, deleted: 1 })];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: side,
+                    [`${HEAD}:${path}`]: side,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: readme,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes,
+                maxTotalBytes: SEMANTIC_BUDGET_PROFILES.local.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        // The document was read and admitted: the charge the gate made stands.
+        expect(
+            set.references.some(
+                (reference) => reference.path === '.agents/decisions/README.md' && reference.side === 'context'
+            )
+        ).toBe(true);
+        const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        // No own region fits the unit's request, so it is excluded and the exclusion is recorded.
+        expect(units).toEqual([]);
+        expect(excluded).toContainEqual({ path, reason: 'no-evidence-region-within-budget' });
     });
 
     it('charges no contract context when the content screen drops the only reading unit', () => {
@@ -1780,6 +1861,45 @@ describe('contract-carrying admission', () => {
         const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
         expect(planned.units.map((unit) => unit.path)).toEqual([competitor]);
         expect(planned.units[0]?.evidence.own.map((reference) => reference.side)).toEqual(['before', 'after']);
+    });
+
+    it('charges the contract context for a unit whose only admissible region is empty', () => {
+        // The predicate's existence test is the slice admission mints, never the byte figure that ranks it:
+        // an emptied modification's after side holds zero bytes and still mints a region, so the planner
+        // plans the unit and the gate must charge the context its rules declare. Ranking the sides by bytes
+        // reported no unit here, so nothing was charged and the unit's contract rules reported the evidence
+        // missing. The before side is over the per-region ceiling, so the empty after side is the only
+        // admissible one.
+        const path = 'src/modules/Project/undo.ts';
+        const before = 'const goneValue = 1;\n'.repeat(400);
+        const files = [changedFile(path, { added: 0, deleted: 400 })];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: before,
+                    [`${HEAD}:${path}`]: '',
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        // The emptied file's empty after side is admitted, and the documents its rules declare are charged.
+        expect(set.references.some((reference) => reference.path === path && reference.side === 'after')).toBe(true);
+        expect(set.references.some((reference) => reference.side === 'context')).toBe(true);
+        const { units } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        const unit = units.find((candidate) => candidate.path === path);
+        expect(unit?.evidence.own.map((reference) => reference.side)).toEqual(['after']);
+        // The charged documents reach the unit its rules needed them for.
+        expect(unit?.evidence.context.map((reference) => reference.path)).toEqual([
+            '.agents/decisions/README.md',
+            'AGENTS.md',
+        ]);
     });
 
     it('charges no default contract context when the only contract-needing file cannot produce a unit', async () => {

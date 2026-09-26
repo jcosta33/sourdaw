@@ -15,20 +15,21 @@
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), a collected spec whose content imports a closure member or names one of those workflow
- * files, or a source such a spec covers — first, then a changed file whose unit the planner will plan
- * and whose rules declare a contract, decision or registration token, then each contract-context region
- * the caller supplies, then bulk sides. The ranking admits the change's own contract material ahead of
- * the context documents, and attempts a planned contract-needing file's own sides before the context
- * those rules charge. One predicate decides that whole clause — `plannedUnitPaths`, the files whose
- * unit the planner will plan with an admissible own region inside its request budget — so a file that
- * produces no unit neither charges a document, nor outranks one, nor takes a reserve for one. The order
- * decides what the collector's total withholds, not what a request carries: when that total binds
- * before the context tier the document is withheld at admission, no contract-context region reaches the
- * request fitter, and the reserve is zero. `fitUnitEvidence` reserves a bounded context share of the
- * request only when an admitted contract-context region fits that share — an implementation after side
- * offered as context is another file's own evidence and takes no reserve — and then the unit's own
- * sides can still be withheld below its request while the document it reserves for is sent. A region
- * over the per-region ceiling
+ * files, or a source such a spec covers and whose unit will be planned — first, then a changed file
+ * whose unit the planner will plan and whose rules declare a contract, decision or registration token,
+ * then each contract-context region the caller supplies, then bulk sides. The ranking admits the
+ * change's own contract material ahead of the context documents, and attempts a planned
+ * contract-needing file's own sides before the context those rules charge. One predicate decides that
+ * whole clause — `plannedUnitPaths`, the files whose own path the screen keeps, whose rules admit them,
+ * and which carry a side admission mints a region for — so a file that produces no unit neither
+ * charges a document, nor outranks one, nor takes a reserve for one. The predicate is a
+ * pre-admission proxy, not a promise of what a request carries: it cannot know a unit's serialized
+ * request budget, so a file it admits that the request fitter then leaves no region for is still
+ * excluded by `planUnits`, and the document that file charged is read by nothing. The order decides
+ * what the collector's total withholds, not what a request carries: when that total binds before the
+ * context tier the document is withheld at admission, no contract-context region reaches the request
+ * fitter, and the reserve that fitter takes whenever a unit carries context has nothing to hold.
+ * A region over the per-region ceiling
  * is never supplied: it is withheld and recorded, so a contract document larger than that ceiling is
  * never sent whatever its tier. Every withheld region is named, and that name carries the
  * region's own content class — contract-carrying per side, or a contract-context region — never its
@@ -709,9 +710,14 @@ function admitUnit(
 /**
  * Whether any file `plannedUnitPaths` admits plans a unit whose rules declare a contract, decision or
  * registration token. A file that produces no unit charges nothing: one whose own path the content
- * screen excluded, whose rules admit it no question, or whose every region is unchargeable — over the
- * per-region ceiling, or withheld by that screen — is not in the predicate's set, so it cannot charge
- * the contract documents no request will read.
+ * screen excluded, whose rules admit it no question, or whose every side holds no region admission can
+ * mint — over the per-region ceiling, or with no side to slice — is not in the predicate's set, so it
+ * cannot charge the contract documents.
+ *
+ * The predicate is pre-admission, so this gate is too: a file it admits can still be excluded by the
+ * request fitter as `no-evidence-region-within-budget`, and the document charged for it is then read by
+ * nothing. The gate trades that residual charge for the documents it would otherwise read for a file no
+ * request can carry.
  *
  * The own path decides, because that is what the planner skips on. A rename whose previous path was
  * excluded for a credential still plans a destination unit from its clean after side, so this gate
@@ -781,13 +787,15 @@ export function collectEvidence(input: {
     );
     const specCovered = specCoveredSources(assessed, contents);
     const credentialExcludedPaths = credentialShapedPaths(assessed, contents, hunksByPath);
-    // The one predicate the charge, the order, and the reserve all read: the files whose unit the
-    // planner will plan with an admissible own region inside its request budget.
-    const plannedPaths = plannedUnitPaths(assessed, bytesBySide, credentialExcludedPaths);
-    // The default contract documents are charged only when a planned unit that can actually exist — an
-    // eligible file the predicate admits, with contract-declaring rules — will read them. A rename's
-    // excluded previous path leaves that unit standing on its clean after side, so it still charges the
-    // context it declared.
+    // The one predicate the charge and the order both read: the files whose own path the screen keeps,
+    // whose rules admit them, and which carry a side admission mints a region for.
+    const regionCeiling = input.limits.maxRegionBytes;
+    const plannedPaths = plannedUnitPaths(assessed, contents, hunksByPath, regionCeiling, credentialExcludedPaths);
+    // The default contract documents are charged only when the predicate finds a planned unit that
+    // declares a contract token — an eligible file, with contract-declaring rules. That is the proxy and
+    // not a promise: a unit the per-request fitter then leaves no region for is excluded by the planner
+    // and the document charged for it is read by nothing. A rename's excluded previous path leaves that
+    // unit standing on its clean after side, so it still charges the context it declared.
     const contextPaths = new Set<string>();
     const includeDefault =
         input.includeDefaultContractContext === true && planNeedsContractContext(assessed, plannedPaths);
