@@ -38,6 +38,8 @@ import {
     COMMAND_HEADS,
     CHECK_COMMANDS,
     CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
+    CHECK_SCRIPT_FAMILIES,
+    TEST_SUBCOMMAND_HEADS,
 } from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -853,6 +855,56 @@ describe('product-scope test instructions', () => {
         expect(message).toContain(`"checked with pnpm ${member}"`);
     });
 
+    /**
+     * The suite-running heads, spec-owned on purpose: dropping any head reddens the equality pin and
+     * that head's behavioral case below. Several heads are also command heads, so a bare `<head> test`
+     * line would still refuse through the command rule without them.
+     */
+    const TEST_SUBCOMMAND_HEADS_UNDER_TEST = ['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright'];
+
+    it('pins the heads whose test subcommand the narration gate refuses', () => {
+        expect([...TEST_SUBCOMMAND_HEADS]).toEqual(TEST_SUBCOMMAND_HEADS_UNDER_TEST);
+    });
+
+    it.each(TEST_SUBCOMMAND_HEADS_UNDER_TEST)('refuses a prose-led step that runs the %s test suite', (head) => {
+        // The cue word rescues the clause from the command rule, bare `test` names no suite, and no
+        // check-only command rides beside, so only the head's test subcommand refuses it.
+        const instructions = `Open the mixer and confirm the fader moves; verified with ${head} test.`;
+
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain(`"verified with ${head} test"`);
+    });
+
+    /**
+     * The check-script families, spec-owned on purpose, each beside one colon script of that family
+     * that is not itself a check-only command: dropping any family reddens the equality pin and that
+     * family's behavioral case below.
+     */
+    const CHECK_SCRIPT_FAMILIES_UNDER_TEST: [family: string, script: string][] = [
+        ['test', 'test:coverage'],
+        ['typecheck', 'typecheck:scripts'],
+        ['lint', 'lint:fix'],
+        ['cargo', 'cargo:clippy'],
+    ];
+
+    it('pins the check-script families the narration gate refuses whatever prose rides beside', () => {
+        expect([...CHECK_SCRIPT_FAMILIES]).toEqual(CHECK_SCRIPT_FAMILIES_UNDER_TEST.map(([family]) => family));
+    });
+
+    it.each(CHECK_SCRIPT_FAMILIES_UNDER_TEST)(
+        'refuses a prose-led step that names a %s family script (%s)',
+        (_family, script) => {
+            const instructions = `Open the mixer and confirm the fader moves; verified with pnpm ${script}.`;
+
+            expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+            const message = refusal(() => assertObservableTestInstructions(instructions));
+            expect(message).toMatch(REFUSAL_PREFIX);
+            expect(message).toContain(`"verified with pnpm ${script}"`);
+        }
+    );
+
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
             '\n'
@@ -949,6 +1001,15 @@ describe('product-scope test instructions', () => {
         const instructions = "python -c 'import json; print(1)'";
 
         expect(narratingTestInstructionSegments(instructions)).toEqual([instructions]);
+    });
+
+    it('keeps a single-quoted argument open across an in-word apostrophe and a sentence separator', () => {
+        // An in-word apostrophe never closes the open single-quoted span, so the '. ' inside the
+        // quoted argument cannot split off a prose sentence that would rescue the launch.
+        const instructions = "echo 'the track's fader stays at -12 dB. Open the mixer and check.'";
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([instructions]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1445,6 +1506,11 @@ describe('product-scope test instructions', () => {
         ['an integration-test mention', 'Covered by integration tests.'],
         ['a mention of the existing tests', 'Covered by the existing tests.'],
         ['a test-suite mention', 'Covered by the test suite.'],
+        // The plural `tests` refuses the two qualified mentions above on its own, so each qualifier
+        // and the singular qualified test need a sentence where only the qualified suite decides.
+        ['an integration-suite mention', 'Covered by the integration suite.'],
+        ['a mention of the existing suite', 'Covered by the existing suite.'],
+        ['a singular unit-test mention', 'Covered by a unit test.'],
         ['a tests-folder mention with no spec filename', 'See src/modules/x/__tests__/README for context.'],
         // The runners as proper nouns: prose words rescue both sentences from the command rule,
         // so only the runner-name vocabulary refuses these two.

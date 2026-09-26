@@ -841,7 +841,7 @@ function namesTestSuite(segment: string): boolean {
 }
 
 /** Script families every member of which runs a check: `test:run`, `typecheck:scripts`, `lint:fix`, `cargo:test`. */
-const CHECK_SCRIPT_FAMILIES = new Set(['test', 'typecheck', 'lint', 'cargo']);
+export const CHECK_SCRIPT_FAMILIES = new Set(['test', 'typecheck', 'lint', 'cargo']);
 
 /** Check scripts and tools that run nothing but a check: a reviewer never launches one to use the app. */
 export const CHECK_COMMANDS = new Set([
@@ -865,7 +865,7 @@ export const CHECK_COMMANDS = new Set([
  * here rather than among the check-only commands: `playwright open` is a browser a reviewer drives,
  * and only `playwright test` runs the suite.
  */
-const TEST_SUBCOMMAND_HEADS = new Set(['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright']);
+export const TEST_SUBCOMMAND_HEADS = new Set(['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright']);
 
 /**
  * Whether the segment mentions a check command, whatever prose rides beside it: a check-family
