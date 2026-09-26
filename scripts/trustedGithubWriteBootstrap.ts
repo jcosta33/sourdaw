@@ -483,6 +483,12 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * computed specifier then resolves nothing there — the command dies mid-delivery with
  * `ERR_MODULE_NOT_FOUND` while every graph check reports coverage it does not have. Each such shape
  * is refused, naming the file and the shape.
+ *
+ * The decided shapes above are the ones a syntax walk can resolve. The shapes it cannot decide are
+ * filed as #4818 rather than claimed here: a callee bound to a name (`const load = require;
+ * load(expr)`), a specifier the lexer loses behind a statement-position regex literal, and a call
+ * the declaration-context rule cannot separate from a declaration (a block whose first statement is
+ * a call followed by another block). None weakens the claim for the decided shapes.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const shapes = new Set<string>();
@@ -571,7 +577,7 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
     if (isKeywordAt(source, index, 'import') && !isPrecededByDotAccess(source, index)) {
         const afterKeyword = skipWhitespace(source, index + 6);
         if (source[afterKeyword] === '(') {
-            return computedDynamicLoad(source, afterKeyword, COMPUTED_DYNAMIC_IMPORT_SHAPE);
+            return computedDynamicLoad(source, afterKeyword, COMPUTED_DYNAMIC_IMPORT_SHAPE, index, true);
         }
         return undefined;
     }
@@ -593,7 +599,7 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
             cursor = skipWhitespace(source, cursor + 2);
         }
         if (source[cursor] === '(') {
-            return computedDynamicLoad(source, cursor, COMPUTED_REQUIRE_SHAPE);
+            return computedDynamicLoad(source, cursor, COMPUTED_REQUIRE_SHAPE, index, true);
         }
         return undefined;
     }
@@ -610,7 +616,7 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
                     secondCallCursor = skipWhitespace(source, secondCallCursor + 2);
                 }
                 if (source[secondCallCursor] === '(') {
-                    return computedDynamicLoad(source, secondCallCursor, COMPUTED_CREATE_REQUIRE_SHAPE);
+                    return computedDynamicLoad(source, secondCallCursor, COMPUTED_CREATE_REQUIRE_SHAPE, index, false);
                 }
             }
         }
@@ -619,16 +625,20 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
     return undefined;
 }
 
-function computedDynamicLoad(source: string, openParen: number, shape: string): ComputedDynamicLoad | undefined {
+function computedDynamicLoad(
+    source: string,
+    openParen: number,
+    shape: string,
+    keywordIndex: number,
+    declarationCandidate: boolean
+): ComputedDynamicLoad | undefined {
     const callEnd = endOfBalancedCall(source, openParen);
     const contentEnd = callEnd - 1;
-    // A parameter list is a declaration's, never a call: no module load follows its argument list
-    // with a body or a type annotation, so a parenthesized list closed by `{` or `:` is a function,
-    // method, constructor, or call-signature declaration rather than a call. Deciding by that
-    // declaration context instead of one `name: type` annotation form admits untyped, default-valued,
-    // and destructured parameters, while an object-literal argument (`require({ specifier })`) —
-    // whose `)` is followed by a statement end, not `{` or `:` — stays a load.
-    if (isParameterListRegion(source, openParen + 1, contentEnd, callEnd)) {
+    // `import` and `require` can also name a declaration — a function, method, or parameter — in
+    // which case the parenthesized list is a parameter list and no module load follows.
+    // `createRequire(...)(...)` cannot: its second call is always a load. The declaration context
+    // that decides is described on `isParameterListRegion`.
+    if (declarationCandidate && isParameterListRegion(source, keywordIndex, openParen + 1, contentEnd, callEnd)) {
         return undefined;
     }
     // The specifier is static only when a string or static-template literal is the whole first
@@ -641,16 +651,66 @@ function computedDynamicLoad(source: string, openParen: number, shape: string): 
     return { shape, end: callEnd };
 }
 
-function isParameterListRegion(source: string, start: number, end: number, afterParen: number): boolean {
-    // A `{` body or a `:` return type right after the closing parenthesis marks the whole list as a
-    // declaration's parameter list whatever the parameters look like.
+function isParameterListRegion(
+    source: string,
+    keywordIndex: number,
+    start: number,
+    end: number,
+    afterParen: number
+): boolean {
+    // A `{` body or a `:` return type right after the closing parenthesis marks the list as a
+    // declaration only when the enclosing construct is a declaration — the token before the name is
+    // `function`, a method position, or a parameter position. The next token alone does not decide:
+    // `flag ? require(spec) : undefined`, `case require(spec):`, `class X extends require(spec) {}`,
+    // and `require(spec)\n{ … }` all close the parenthesis with `{` or `:` and are calls, and
+    // `isDeclarationContext` reads the name's position to refuse them.
     const afterClose = skipWhitespace(source, afterParen);
     if (source[afterClose] === '{' || source[afterClose] === ':') {
-        return true;
+        return isDeclarationContext(source, keywordIndex);
     }
     // An annotated parameter list is still recognized even when no body or return type follows it
-    // (for example an ambient overload `function require(name: string);`).
+    // (for example an ambient overload `declare function require(name: string);`).
     return isAnnotatedParameterListRegion(source, start, end);
+}
+
+function isDeclarationContext(source: string, keywordIndex: number): boolean {
+    // The name is declared when the token before it is `function` (a function declaration), `{` (a
+    // method in a class, object, or type body), or `(` / `,` (a parameter whose type is a call
+    // signature). Anything else — `?`, `case`, `extends`, a statement boundary — leaves the token a
+    // callee, so the parenthesized list is a call. A block whose first statement is a call followed
+    // by another block (`{ require(spec) { … } }`) is indistinguishable from an object method by
+    // this token look, and is filed as #4818 rather than silently misread as a declaration.
+    let cursor = keywordIndex - 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return false;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return false;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        if (character === '{' || character === '(' || character === ',') {
+            return true;
+        }
+        if (isIdentifierContinue(character)) {
+            let identifierStart = cursor;
+            while (identifierStart >= 0 && isIdentifierContinue(source[identifierStart])) {
+                identifierStart -= 1;
+            }
+            return source.slice(identifierStart + 1, cursor + 1) === 'function';
+        }
+        return false;
+    }
+    return false;
 }
 
 function isAnnotatedParameterListRegion(source: string, start: number, end: number): boolean {
@@ -798,20 +858,36 @@ function readStaticSpecifier(source: string, start: number, end: number): number
 
 const TYPE_TERMINATOR_CHARACTERS = new Set(['+', '-', '*', '/', '%', '^', '~', '!', '?', ':', '=', ';']);
 
+function isDecimalDigit(character: string | undefined): boolean {
+    return character !== undefined && character >= '0' && character <= '9';
+}
+
 /**
  * Consumes the type of an `as`/`satisfies` cast, whatever shape it takes: a plain or qualified name,
- * an array or tuple suffix, a generic, a function type, an object type, a union/intersection, or a
- * `typeof` query. The type is erased at run time, so the specifier value stays the literal, but the
- * scanner must know where the cast ends to tell it apart from an operator that follows the literal.
- * It walks to the argument-level comma or the closing parenthesis of the call, tracking balanced
- * `()`, `[]`, `{}`, and `<>` so a comma inside a generic, tuple, function, or object type does not
- * end the cast, and stops at a chained `as`/`satisfies` so the caller can chain it. A value-level
- * operator (`+`, member access, call, template substitution) is never part of a type, so the walk
- * ends before it and the caller still refuses the computed specifier.
+ * an array or tuple suffix, a generic, a function type, an object type, a union/intersection, a
+ * conditional type (`A extends B ? C : D`), a literal type (`-1`), or a `typeof` query. The type is
+ * erased at run time, so the specifier value stays the literal, but the scanner must know where the
+ * cast ends to tell it apart from an operator that follows the literal. It walks to the
+ * argument-level comma or the closing parenthesis of the call, tracking balanced `()`, `[]`, `{}`,
+ * and `<>` so a comma inside a generic, tuple, function, or object type does not end the cast, and
+ * stops at a chained `as`/`satisfies` so the caller can chain it.
+ *
+ * Three shapes would otherwise end the cast early or swallow the operator after it, and are decided
+ * here rather than by the terminator set alone: a `<` is a type-argument opener only when its level
+ * closes before the cast ends (otherwise it is a value comparison and the cast ends before it); a
+ * conditional type's `?` and `:` are type syntax once an `extends` precedes them at the same level
+ * (otherwise `?` is a value ternary and the cast ends before it); and a leading `-`/`+` on a numeric
+ * literal type is part of the type (otherwise the cast ends before a value `-`/`+` operator).
  */
 function skipTypeExpression(source: string, start: number, end: number): number {
     let cursor = skipWhitespace(source, start);
     const openers: Array<')' | ']' | '}' | '>'> = [];
+    // An `extends` seen at the top level since the last conditional `?`, arming the next `?` as the
+    // true-branch opener of a conditional type rather than a value ternary.
+    let armedExtends = false;
+    // Conditional branches opened by `?` and awaiting their `:`, so a branch separator is type
+    // syntax while a top-level `:` with no open conditional ends the cast.
+    let openConditionals = 0;
     while (cursor < end) {
         const commentEnd = skipComment(source, cursor);
         if (commentEnd !== undefined) {
@@ -834,7 +910,18 @@ function skipTypeExpression(source: string, start: number, end: number): number 
             cursor += 2;
             continue;
         }
-        if (character === '(' || character === '[' || character === '{' || character === '<') {
+        if (character === '<') {
+            // A `<` whose generic level never closes before the cast ends is a value comparison, not
+            // a type-argument opener: `as string < 'y' ? ...` compares the cast value, so the cast
+            // ends here and the ternary after it is expression syntax again.
+            if (skipTypeArguments(source, cursor, end) === undefined) {
+                return cursor;
+            }
+            openers.push('>');
+            cursor += 1;
+            continue;
+        }
+        if (character === '(' || character === '[' || character === '{') {
             openers.push(matchingTypeDelimiter(character));
             cursor += 1;
             continue;
@@ -856,6 +943,32 @@ function skipTypeExpression(source: string, start: number, end: number): number 
             if (isKeywordAt(source, cursor, 'as') || isKeywordAt(source, cursor, 'satisfies')) {
                 return cursor;
             }
+            if (isKeywordAt(source, cursor, 'extends')) {
+                armedExtends = true;
+                cursor += 'extends'.length;
+                continue;
+            }
+            if (character === '?') {
+                if (armedExtends) {
+                    armedExtends = false;
+                    openConditionals += 1;
+                    cursor += 1;
+                    continue;
+                }
+                return cursor;
+            }
+            if (character === ':') {
+                if (openConditionals > 0) {
+                    openConditionals -= 1;
+                    cursor += 1;
+                    continue;
+                }
+                return cursor;
+            }
+            if ((character === '-' || character === '+') && isDecimalDigit(source[cursor + 1])) {
+                cursor += 1;
+                continue;
+            }
             if (TYPE_TERMINATOR_CHARACTERS.has(character)) {
                 return cursor;
             }
@@ -863,6 +976,58 @@ function skipTypeExpression(source: string, start: number, end: number): number 
         cursor += 1;
     }
     return cursor;
+}
+
+/**
+ * The end of the type-argument list a `<` at `openIndex` opens, or `undefined` when no `>` closes it
+ * before `end`. `=>` is skipped so an arrow's `>` is not read as the close, and `>=` is skipped so a
+ * value comparison is not read as one either.
+ */
+function skipTypeArguments(source: string, openIndex: number, end: number): number | undefined {
+    let cursor = openIndex + 1;
+    let depth = 1;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        if (character === '=' && source[cursor + 1] === '>') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '<') {
+            depth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === '>') {
+            if (source[cursor + 1] === '=') {
+                cursor += 2;
+                continue;
+            }
+            depth -= 1;
+            cursor += 1;
+            if (depth === 0) {
+                return cursor;
+            }
+            continue;
+        }
+        cursor += 1;
+    }
+    return undefined;
 }
 
 function matchingTypeDelimiter(open: '(' | '[' | '{' | '<'): ')' | ']' | '}' | '>' {
@@ -1434,7 +1599,10 @@ function localModuleDependencies(path: string, source: string): string[] {
  * so the walk crosses an undeclared intermediate instead of stopping at it. The walk refuses rather
  * than silently truncates: a reached module with no source, or a computed `import(expr)` /
  * `require(expr)` / `createRequire(...)(expr)` specifier, throws — those shapes cannot be resolved from
- * a snapshot and must not be skipped. The loader itself is deliberately absent from a command's
+ * a snapshot and must not be skipped. The computed shapes it cannot decide — a callee bound to a name,
+ * a specifier the lexer loses behind a statement-position regex, and a call the declaration-context
+ * rule cannot separate from a declaration — are filed as #4818 and are not claimed here. The loader
+ * itself is deliberately absent from a command's
  * executed graph — no executed source may import it, which `assertTrustedSourceGraph` refuses — so a
  * command's declared set is exactly this closure plus the loader's own static-import closure. Exported
  * so the specs pinning each command's declared set to its static closure can see over- and

@@ -1850,6 +1850,86 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * A comparison inside a cast type — `'./checked.ts' as string < 'y' ? … : …` — is a value
+     * comparison whose result selects the specifier, not a generic argument list. Read as a type, the
+     * `<` opens a generic level that never closes, swallowing the whole ternary and missing the
+     * computed load. The `<` is a type-argument opener only when its level closes before the cast
+     * ends; otherwise the cast ends at the `<` and the remainder is expression syntax again.
+     */
+    it.each([
+        {
+            label: 'a comparison inside a cast type selecting the import specifier',
+            source: "await import('./checked.ts' as string < 'y' ? './other.ts' : './checked.ts');",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a comparison inside a cast type selecting the require specifier',
+            source: "require('./checked.ts' as string < 'y' ? './other.ts' : './checked.ts');",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a comparison inside a cast type selecting the createRequire specifier',
+            source: "createRequire(import.meta.url)('./checked.ts' as string < 'y' ? './other.ts' : './checked.ts');",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A cast type may carry type-only syntax that a value operator would mimic: a conditional type
+     * (`A extends B ? C : D`, including as a function type's return type) whose `?` and `:` are type
+     * syntax once an `extends` precedes them at the same level, and a numeric literal type (`-1`)
+     * with a leading sign. All three are erased at run time, so the specifier stays the literal and
+     * the cast is admitted rather than reported as a computed load. The value-ternary guard is the
+     * comparison case above: without `extends`, a `?` still ends the cast.
+     */
+    it.each([
+        {
+            label: 'a static dynamic import cast to a conditional type',
+            source: "await import('./checked.ts' as A extends B ? C : D);",
+        },
+        {
+            label: 'a static dynamic import cast to a function type returning a conditional type',
+            source: "await import('./checked.ts' as () => A extends B ? C : D);",
+        },
+        {
+            label: 'a static dynamic import cast to a negative literal type',
+            source: "await import('./checked.ts' as -1);",
+        },
+    ])('admits $label as a static specifier, never a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * A real call is admitted as a declaration when the rule reads the single token after the closing
+     * parenthesis instead of the enclosing construct. `flag ? require(spec) : undefined`,
+     * `case require(spec):`, `class X extends require(spec) {}`, and a call before an ASI block all
+     * close the parenthesis with `{` or `:` and are calls. The declaration-context rule reads the
+     * name's position — `function`, a method position, or a parameter position — and refuses them.
+     */
+    it.each([
+        {
+            label: 'a require call in a ternary consequent',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? require(spec) : undefined;",
+        },
+        {
+            label: 'a require call in a switch case',
+            source: 'switch (mode) {\n  case require(spec):\n    break;\n}',
+        },
+        {
+            label: 'a require call in a class heritage clause',
+            source: 'class Loaded extends require(spec) {}',
+        },
+        {
+            label: 'a require call before an asi block',
+            source: 'require(spec)\n{ run(); }',
+        },
+    ])('refuses $label as a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
      * A parenthesized list whose first argument is a parameter list — `name: type`, `name?: type`,
      * `...args: type`, or a destructuring pattern followed by a type — is a TypeScript declaration,
      * never a call: no module specifier can take that shape, so it must not be read as a computed
@@ -1905,6 +1985,14 @@ describe('package scripts and gitignore', () => {
         {
             label: 'a require-named function declaration with a destructured parameter',
             source: 'function require({ specifier }) { return specifier; }',
+        },
+        {
+            label: 'a require-named ambient overload with a typed parameter',
+            source: 'declare function require(name: string);',
+        },
+        {
+            label: 'a require-named ambient overload with an optional parameter',
+            source: 'declare function require(name?: string);',
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
