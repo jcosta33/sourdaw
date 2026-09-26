@@ -1355,15 +1355,12 @@ describe('match selector approval revalidation', () => {
             createColorableTrack('track-snare', 'Snare'),
             createColorableTrack('track-lead-vocal', 'Lead Vocal'),
         ]);
-        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal(
-            'color-drums-max-two',
-            {
-                targetArgument: 'trackId',
-                entity: 'track',
-                match: { all: [{ roleFamily: 'drums' }] },
-                quantity: { unit: 'targets', maximum: 2 },
-            }
-        );
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal('color-drums-max-two', {
+            targetArgument: 'trackId',
+            entity: 'track',
+            match: { all: [{ roleFamily: 'drums' }] },
+            quantity: { unit: 'targets', maximum: 2 },
+        });
         expect(trackIdsOf(actions).toSorted()).toEqual(['track-kick', 'track-snare']);
         propose('confirmation-max-exceeded', actions, matchSelectorPredicates, revision);
 
