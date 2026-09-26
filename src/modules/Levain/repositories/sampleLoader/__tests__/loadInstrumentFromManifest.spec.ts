@@ -434,6 +434,33 @@ describe('loadInstrumentFromManifest', () => {
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
+    it('rejects with the abort reason when the abort lands before buildZoneMap is posted, needing no worklet reply', async () => {
+        // `silenceAbortReply` proves this settles from the abort itself:
+        // `markZoneMapPosted` has not run yet (it only runs right after
+        // `buildZoneMap` is posted), so `onAbort` must reject locally rather
+        // than wait for a worklet answer that never comes.
+        const port = makePort({ autoComplete: false, silenceAbortReply: true });
+        const controller = new AbortController();
+        const originalPostMessage = port.postMessage;
+        port.postMessage = vi.fn((message: unknown) => {
+            originalPostMessage(message);
+            if (isRecord(message) && message.type === 'beginSampleBank') {
+                controller.abort();
+            }
+        });
+
+        const pending = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+            signal: controller.signal,
+        });
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(postedTypes(port)).not.toContain('buildZoneMap');
+    });
+
     describe('an abort after buildZoneMap defers to the worklet', () => {
         it('resolves with the committed bank when the worklet already committed before the abort lands', async () => {
             const twoMicManifest = {

@@ -18,7 +18,7 @@ vi.mock('../../repositories/sampleLoader/fetchAndDecode', () => {
     };
 });
 
-import { createDefaultPatch } from '../../models/LevainPatch';
+import { createDefaultPatch, type MicPositionType } from '../../models/LevainPatch';
 import { decodedBankResource } from '../../repositories/sampleLoader/decodedBankResource';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
@@ -210,13 +210,13 @@ function makeDeps(autoLoad: typeof autoLoadLevainSamples) {
         writeNativeBuiltinParameters: vi.fn(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         autoLoadLevainSamples: autoLoad,
-        setLoadedMicPositions: (id: string, positions: readonly string[] | null) => {
+        setLoadedMicPositions: (id: string, positions: readonly MicPositionType[] | null) => {
             const instances = levainStore.value ?? {};
             const state = instances[id];
             if (!state) {
                 return;
             }
-            levainStore.set({ ...instances, [id]: { ...state, loadedMicPositions: positions as never } });
+            levainStore.set({ ...instances, [id]: { ...state, loadedMicPositions: positions } });
         },
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => ({
             status: 'eligible',
@@ -310,5 +310,51 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
         await expect(cDone).resolves.toBe('failed');
 
         expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual(['room', 'close']);
+    });
+
+    describe('a superseded load whose worklet commit outlives its successor’s own rejection', () => {
+        it('still shows the superseded load’s bank once the fake port finally answers it', async () => {
+            const deviceId = 'device-1';
+            seedDevice(deviceId);
+            // Only A ever posts `buildZoneMap` — B's own manifest fetch fails
+            // before it reaches the port (see the `beforeEach` fetch mock's
+            // fallback for any unmocked instrument), so the sequenced port's
+            // call-index bookkeeping only needs an entry for A.
+            const { port, deferredToken } = makeSequencedPort(['defer']);
+            const autoLoadSpy = vi.fn(autoLoadLevainSamples);
+            const deps = makeDeps(autoLoadSpy);
+            const bridge = createLevainBridge(deps);
+
+            const device = { setParam: vi.fn(), handleCc: vi.fn() };
+            await bridge.registerLevainDevice(deviceId, device, port);
+            autoLoadSpy.mockClear();
+            port.postMessage.mockClear();
+
+            // A: worklet commit staged (`buildZoneMap` posted) but held back.
+            const loadA = bridge.loadSamplesForInstrument(deviceId, 'cello');
+            await vi.waitFor(() => {
+                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'buildZoneMap')).toBe(
+                    true
+                );
+            });
+            const aLoadPromise = autoLoadSpy.mock.results[0]?.value as ReturnType<typeof autoLoadLevainSamples>;
+            expect(aLoadPromise).toBeDefined();
+
+            // B supersedes (aborts) A, then rejects on its own — its manifest
+            // fetch fails before it ever reaches the worklet.
+            const loadB = bridge.loadSamplesForInstrument(deviceId, 'flute');
+
+            await expect(loadB).resolves.toBe('failed');
+            await expect(loadA).resolves.toBe('failed'); // A defers to its successor, B.
+
+            // A's worklet handshake commits after B already rejected. The
+            // commitment already happened in the engine, so the panel must
+            // still end up showing A's names rather than staying on whatever
+            // B's rejection last published.
+            port.emit({ type: 'sampleBankLoaded', loadToken: deferredToken(0) });
+            await aLoadPromise;
+
+            expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual(['close']);
+        });
     });
 });

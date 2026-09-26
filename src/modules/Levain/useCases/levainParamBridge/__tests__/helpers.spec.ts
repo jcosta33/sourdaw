@@ -657,6 +657,161 @@ describe('createLevainBridge', () => {
             // restore the pre-unregister 'close' bank instead of null.
             expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', null);
         });
+
+        it("lets a superseded load's late worklet commit update the record after its successor already rejected", async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['violin-1', Promise.resolve(['close'])],
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // B (the successor) rejects first; A's own worklet commit — which
+            // already happened in the engine — arrives only afterward.
+            second.reject(new Error('boom'));
+            first.resolve(['close', 'room']);
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close', 'room']);
+        });
+
+        it('keeps the panel cleared while the latest load is pending, even after an earlier load resolves', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            first.resolve(['room']);
+            await first.promise;
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', null);
+
+            second.resolve(['close', 'room']);
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close', 'room']);
+        });
+
+        it("restores the earlier load's own committed bank when the latest load rejects", async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            first.resolve(['room']);
+            second.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['room']);
+        });
+
+        it("never lets an earlier load's late resolution overwrite its successor's already-committed bank", async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            second.resolve(['close']);
+            await second.promise;
+
+            first.resolve(['room']);
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
+            expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['room']);
+        });
+
+        it("must not let a load resolving after unregister resurrect a dead node's bank on re-register", async () => {
+            const deferred = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const deps = makeDeps((_deviceId, _port, instrumentId) =>
+                instrumentId === 'violin-1' ? deferred.promise : Promise.reject(new Error('boom'))
+            );
+            const bridge = createLevainBridge(deps);
+            seedDevice('d1');
+            const registration = bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            bridge.unregisterLevainDevice('d1');
+            deps.setLoadedMicPositions.mockClear();
+
+            deferred.resolve(['close']);
+            await deferred.promise;
+            expect(deps.setLoadedMicPositions).not.toHaveBeenCalled();
+
+            levainStore.set({ d1: { ...defaultLevainState, patch: createDefaultPatch('cello') } });
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', null);
+            await expect(registration).resolves.toBe('cancelled');
+        });
+
+        it("treats a superseded load's late rejection as a pure no-op once its successor already resolved", async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            second.resolve(['room']);
+            await second.promise;
+            const callCountBeforeALateRejection = deps.setLoadedMicPositions.mock.calls.length;
+
+            first.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions.mock.calls.length).toBe(callCountBeforeALateRejection);
+        });
     });
 
     describe('fix — teardown cancels pending rAF batches before they persist', () => {
