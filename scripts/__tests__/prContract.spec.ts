@@ -1151,6 +1151,9 @@ describe('product-scope test instructions', () => {
         ['a make task pair', 'make test\nmake lint'],
         ['an electron launch', 'electron .'],
         ['a node script invocation', 'node scripts/check.ts'],
+        // The semicolon strands the check run as a clause of its own, which the command rule
+        // refuses before the check-command mention is consulted.
+        ['a cargo test clause behind an app step', 'Open the mixer; cargo test passes.'],
     ])('refuses %s', (_label, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
@@ -1367,7 +1370,9 @@ describe('product-scope test instructions', () => {
         ],
         ['a labelled check list', 'Checks: pnpm lint, pnpm typecheck.'],
         ['a ticked checklist of checks', '- [x] pnpm lint\n- [x] pnpm typecheck'],
-        ['a cargo test clause behind an app step', 'Open the mixer; cargo test passes.'],
+        ['a cargo test run inside an app step', 'Open the mixer and confirm cargo test passes.'],
+        ['a playwright test run inside an app step', 'Open the mixer and confirm playwright test passes.'],
+        ['a check-only tool behind an app step', 'Confirm the fader moves, then run tsc --noEmit.'],
     ])('refuses %s: a check-run mention narrates whatever prose rides beside it', (_label, instructions) => {
         // Cue words and UI nouns rescue a launch through the command rule, so these refuse only
         // through the check-command mention: no step a reviewer performs needs a check run.
