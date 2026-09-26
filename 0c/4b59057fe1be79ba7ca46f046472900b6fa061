@@ -4,6 +4,8 @@ scripts/__tests__/semanticReviewContext.spec.ts
   s_2bfd55a4393d7c::t_d459fc3f425142 21,32,36-47,239,342,528,533,551,556,563,579-580,590-643
 scripts/semanticReviewContext.ts
   s_2bfd55a4393d7c::t_279035bd0e12b4 262-269,275,281-285,288,291-297,303,306-310,313
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  s_2bfd55a4393d7c::t_dfcfc6cf9d5d7f 219-220
 ---
 {
   "schema_version": "authorship/3.0.0",

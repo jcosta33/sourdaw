@@ -5,6 +5,8 @@ src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
   s_2bfd55a4393d7c::t_7d31b4a4bbd3da 183-190,197,207
 src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
   s_2bfd55a4393d7c::t_3f5f0a514edf09 267-326
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  s_2bfd55a4393d7c::t_0e253f738a548d 219-220
 ---
 {
   "schema_version": "authorship/3.0.0",
