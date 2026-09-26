@@ -1,0 +1,50 @@
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_1c08b47ac3792f::t_716c842548e189 497,613-622,626,628-630,634,637-645,647-649,651,653-657,659-663,666-675,677-685,688-697,699-707,709-710
+  s_1c08b47ac3792f::t_dd5992d679581a 646,652,658,664-665
+  s_1c08b47ac3792f::t_64f42129ddfe9e 94
+  s_1c08b47ac3792f::t_ecfde72285ff10 113-115
+  s_1c08b47ac3792f::t_4adec24feb3df8 650
+  s_1c08b47ac3792f::t_cc1cd61fefdb46 623-625,631-633,635-636
+  s_1c08b47ac3792f::t_a8244737bcdf88 110-111
+  s_1c08b47ac3792f::t_edea8dc46160d2 451-458,460-471,480-495
+  s_1c08b47ac3792f::t_a74a7a1f18f1f1 93
+  s_1c08b47ac3792f::t_3382ee6c8207ba 627
+  s_1c08b47ac3792f::t_a455cc8eef4f53 26-32
+  s_1c08b47ac3792f::t_c310eab9a2d63d 84-85
+  s_1c08b47ac3792f::t_c19a638fdfd623 233-236,241-242,244-256
+  s_1c08b47ac3792f::t_3f92c647554d2a 698
+  s_1c08b47ac3792f::t_04889efe3430ba 686-687
+  s_1c08b47ac3792f::t_cf84f00c0c2add 708
+  s_1c08b47ac3792f::t_dd019ab2b4b0aa 16-17,21,23
+  s_1c08b47ac3792f::t_75c9a6825ac2ca 237-240,243
+  s_1c08b47ac3792f::t_bcec5d4d3ccd11 676
+  s_1c08b47ac3792f::t_9825da532fec3e 86-87,95-96,496,498,711-716
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_1c08b47ac3792f::t_0b29da32f97c97 1297-1332
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_1c08b47ac3792f::t_44c047c09efe96 2967-2979,2981-2986,2998-3005,3008-3009,3011
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_1c08b47ac3792f::t_5d1b5445741525 7599-7674,7678,7681
+  s_1c08b47ac3792f::t_187acda7d24dc3 7675-7677,7679-7680,7682-7686
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_1c08b47ac3792f::t_687bb0ad5798b6 106-118
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_1c08b47ac3792f::t_fec370c859ecda 4,8-9,18,30-44,52-55,59-78
+  s_1c08b47ac3792f::t_8f0b680757c338 19-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "207d989c1f390e92a4a413dfba572f8583708f8c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
