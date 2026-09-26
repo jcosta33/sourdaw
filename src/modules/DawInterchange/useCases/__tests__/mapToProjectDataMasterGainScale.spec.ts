@@ -18,8 +18,9 @@ function minimalParsed(): DawProjectParseResult {
     };
 }
 
-// `transport.masterGain` is the 0-100 master fader scale (100 = unity); the
-// transport restore hands `masterGain / 100` to the master GainNode.
+// `transport.masterGain` is the 0-100 master fader scale (100 = unity); how
+// the transport restore converts it to linear gain is outside this spec, which
+// observes only the imported value.
 describe('mapToProjectData — master gain scale', () => {
     it('opens an imported DAWproject at the default master level, not at -42 dB', () => {
         const data = mapToProjectData({
@@ -28,9 +29,6 @@ describe('mapToProjectData — master gain scale', () => {
             fileName: 'imported.dawproject',
         });
 
-        const appliedLinearGain = data.transport.masterGain / 100;
-
         expect(data.transport.masterGain).toBe(defaultTransportState.masterGain);
-        expect(appliedLinearGain).toBeCloseTo(defaultTransportState.masterGain / 100, 6);
     });
 });

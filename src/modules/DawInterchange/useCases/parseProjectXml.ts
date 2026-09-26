@@ -212,21 +212,36 @@ function parseClip(
     context: ParseContext,
     index: number
 ): DawProjectParsedClip | null {
-    const unit = readTimeUnit(clip, parentUnit);
+    // `time` and `duration` read in the clip's timeline unit: its own
+    // `timeUnit` attribute or the enclosing scope's. The generic
+    // `readTimeUnit` also accepts `contentTimeUnit`, which the DAWproject
+    // Reference scopes to the content positions (`playStart`, `playStop`) —
+    // letting it decide the timeline unit reads a beats-positioned window of a
+    // seconds-content clip as if it were seconds.
+    const rawUnit = clip.attr('timeUnit');
+    const unit = rawUnit === 'beats' || rawUnit === 'seconds' ? rawUnit : parentUnit;
     const rawStart = clip.attrNumber('time', 0);
+    const contentUnit = readContentTimeUnit(clip, unit);
     const explicitDuration = clip.attr('duration');
+    // An omitted duration is the content window `playStop - playStart` in the
+    // content unit; an explicit `duration` reads in the timeline unit like
+    // `time`. Absent endpoints default to 0, so a clip carrying neither infers
+    // a length of 0.
     const rawDuration =
         explicitDuration === null
-            ? Math.max(0, clip.attrNumber('playStop', rawStart) - rawStart)
+            ? Math.max(0, clip.attrNumber('playStop', 0) - clip.attrNumber('playStart', 0))
             : clip.attrNumber('duration', 0);
 
+    const durationUnit = explicitDuration === null ? contentUnit : unit;
     const startBeat = toBeats(rawStart, unit, context.tempo);
-    const endBeat = startBeat + toBeats(Math.max(0, rawDuration), unit, context.tempo);
+    const endBeat = startBeat + toBeats(Math.max(0, rawDuration), durationUnit, context.tempo);
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     // `playStart` is where the clip starts reading its media, in content time.
-    const playStartBeat = toBeats(clip.attrNumber('playStart', 0), readContentTimeUnit(clip, unit), context.tempo);
-    const playStart = playStartBeat > 0 ? { playStartBeat } : {};
+    // Kept whenever it differs from the default 0 — negative is the slip of a
+    // clip left of its media start.
+    const playStartBeat = toBeats(clip.attrNumber('playStart', 0), contentUnit, context.tempo);
+    const playStart = playStartBeat !== 0 ? { playStartBeat } : {};
 
     const notesNode = clip.child(NOTES);
     if (notesNode) {

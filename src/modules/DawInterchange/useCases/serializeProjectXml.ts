@@ -207,10 +207,12 @@ function renderClipXml(
 ): string {
     const duration = Math.max(0, clip.endBeat - clip.startBeat);
     // `playStart` carries the content offset — where the clip starts reading
-    // its media (a split right half, a left-trimmed clip). Omitted at 0, the
-    // DAWproject default, so offset-0 exports stay byte-identical.
+    // its media (a split right half, a left-trimmed clip). Written whenever it
+    // differs from the default, negative included: a clip slipped left of its
+    // media start. Omitted at 0, the DAWproject default, so offset-0 exports
+    // stay byte-identical.
     const playStart = clip.type === 'audio' ? (clip.sampleStartBeat ?? 0) : (clip.midiOffsetBeats ?? 0);
-    const playStartAttribute = playStart > 0 ? ` playStart="${formatNumber(playStart)}"` : '';
+    const playStartAttribute = playStart !== 0 ? ` playStart="${formatNumber(playStart)}"` : '';
     const header = `${indent}<${CLIP} time="${formatNumber(clip.startBeat)}" duration="${formatNumber(duration)}"${playStartAttribute} name="${escapeXml(clip.name)}"`;
     if (clip.type === 'audio') {
         const path = clip.bufferId ? audioPathByBufferId.get(clip.bufferId) : undefined;

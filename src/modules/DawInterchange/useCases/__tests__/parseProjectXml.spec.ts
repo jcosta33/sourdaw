@@ -258,7 +258,7 @@ describe('parseProjectXml — clip parsing', () => {
         expect(result.tracks[0]?.clips).toHaveLength(0);
     });
 
-    it('derives duration from playStop when duration is absent', () => {
+    it('derives an omitted duration from the playStop - playStart window', () => {
         const inner =
             '<Structure><Track id="t0" contentType="notes"/></Structure>' +
             '<Arrangement><Lanes><Clips track="t0">' +
@@ -266,9 +266,10 @@ describe('parseProjectXml — clip parsing', () => {
             '</Clips></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         const clip = result.tracks[0]?.clips[0];
-        // start 1, playStop 5 → duration 4 → end exactly 5
+        // The DAWproject Reference infers an omitted duration from the content
+        // window playStop - playStart: 5 - 0 = 5 → start 1, end 6.
         expect(clip?.startBeat).toBe(1);
-        expect(clip?.endBeat).toBe(5);
+        expect(clip?.endBeat).toBe(6);
     });
 
     it('falls back to a "Clip N" name when the clip has none', () => {

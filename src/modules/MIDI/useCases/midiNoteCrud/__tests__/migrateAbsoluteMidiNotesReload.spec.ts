@@ -11,19 +11,19 @@ import { migrateAbsoluteMidiNotes } from '../migrateAbsoluteMidiNotes';
 const TRACK_ID = 'track-drums';
 const CLIP_ID = 'clip-drums';
 
-function placeMidiClip(name: string, startBeat: number): void {
+function placeMidiClip(name: string, startBeat: number, endBeat = startBeat + 8): void {
     setTrackStoreState({
         ...defaultTrackState,
         tracks: [createTrack({ id: TRACK_ID, kind: 'midi', name: 'Drums' })],
     });
-    const clip = addClip({ id: CLIP_ID, trackId: TRACK_ID, startBeat, endBeat: startBeat + 8, name, type: 'midi' });
+    const clip = addClip({ id: CLIP_ID, trackId: TRACK_ID, startBeat, endBeat, name, type: 'midi' });
     if (clip === null) {
         throw new Error('Expected MIDI clip fixture');
     }
 }
 
-function setClipNotes(startBeats: readonly number[]): void {
-    midiStore.set({
+function setClipNotes(startBeats: readonly number[], noteCoordinateFormat?: 'clip-relative'): void {
+    const state: Parameters<typeof midiStore.set>[0] = {
         notesByClipId: {
             [CLIP_ID]: startBeats.map((startBeat, index) => ({
                 id: `note-${String(index)}`,
@@ -36,7 +36,11 @@ function setClipNotes(startBeats: readonly number[]): void {
         },
         ccByClipId: {},
         pitchBendByClipId: {},
-    });
+    };
+    if (noteCoordinateFormat !== undefined) {
+        state.noteCoordinateFormat = noteCoordinateFormat;
+    }
+    midiStore.set(state);
 }
 
 function clipNoteStarts(): number[] {
@@ -92,5 +96,31 @@ describe('migrateAbsoluteMidiNotes on project reload', () => {
         migrateAbsoluteMidiNotes();
 
         expect(clipNoteStarts()).toEqual([4, 6]);
+    });
+
+    it('leaves a trimmed clip holding its retained notes, although the geometry alone reads them as legacy absolute', () => {
+        // trimClipEnd shortens endBeat without pruning stored notes: a
+        // two-beat clip at bar 2 retaining notes at beats 4 and 6. Without
+        // the upper bound the geometric gate read those positions as legacy
+        // absolute data and shifted them a clip length earlier on every load
+        // (#4827).
+        placeMidiClip('Drums', 4, 6);
+        setClipNotes([4, 6]);
+
+        migrateAbsoluteMidiNotes();
+
+        expect(clipNoteStarts()).toEqual([4, 6]);
+    });
+
+    it('skips the pass outright for a store stamped with the current clip-relative format', () => {
+        // Notes at 8 and 10 in a two-bar clip at bar 2 are a shape the
+        // geometric gate alone would rewrite; the coordinate stamp, not the
+        // geometry, is what keeps current-format data untouched.
+        placeMidiClip('Drums', 4, 12);
+        setClipNotes([8, 10], 'clip-relative');
+
+        migrateAbsoluteMidiNotes();
+
+        expect(clipNoteStarts()).toEqual([8, 10]);
     });
 });

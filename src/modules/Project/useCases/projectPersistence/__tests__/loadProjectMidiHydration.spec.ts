@@ -60,6 +60,7 @@ function defaultMidiState(): MidiStoreState {
         notesByClipId: {},
         ccByClipId: {},
         pitchBendByClipId: {},
+        noteCoordinateFormat: 'clip-relative',
     };
 }
 

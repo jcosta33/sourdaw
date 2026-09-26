@@ -278,6 +278,13 @@ export type ProjectMidiPitchBend = {
 
 export type ProjectMidi = {
     probabilitySeed?: number;
+    /**
+     * Coordinate format of the stored note positions. Written by the current
+     * build once the store is clip-relative; absent means a file from before
+     * the stamp (or a foreign writer), which `migrateAbsoluteMidiNotes`
+     * re-derives from the note geometry on load.
+     */
+    noteCoordinateFormat?: 'clip-relative';
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
