@@ -1,0 +1,51 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_9e15f5b7ec3308::t_72491709608776 352-354,358-359,364-370
+AGENTS.md
+  s_9e15f5b7ec3308::t_8c0065daec54af 200-201,205,214
+scripts/__tests__/publishReview.spec.ts
+  s_9e15f5b7ec3308::t_f20a3101516139 71,5013-5040,5084,5111-5113,5300-5361,5432-5433
+scripts/__tests__/reviewDossier.spec.ts
+  s_9e15f5b7ec3308::t_6e7bf37765ef7c 18,23,346-406,1052
+scripts/__tests__/reviewDossierPublication.spec.ts
+  s_9e15f5b7ec3308::t_2b396acf1b2505 308-327,714-729,890-910
+scripts/reviewDossier.ts
+  s_9e15f5b7ec3308::t_712807e0bd6d8a 17,21,28,121-130,504-506,553,555-557,581,623,643-645
+scripts/reviewDossierBindings.ts
+  s_9e15f5b7ec3308::t_6de6e9f06ad7fc 1-86
+scripts/reviewDossierChain.ts
+  s_9e15f5b7ec3308::t_4f68a18fa2bc3a 8-9,16,87-118,235-239,264-266,303-305,314-315,329
+scripts/reviewDossierPublication.ts
+  s_9e15f5b7ec3308::t_0ccab5fe35837a 24,62-68,224,234-240,382
+scripts/reviewDossierSemanticAssessment.ts
+  s_9e15f5b7ec3308::t_afa6c59da12978 1-10,17-19,20-22,31-66,69-71,73-78,80-83,93-96,107-109,113-120,123-124,126-129,149-152,157-159,162,172-176,178-182,188,190-191
+scripts/reviewDossierViews.ts
+  s_9e15f5b7ec3308::t_45046dd1f638e1 18-26
+scripts/reviewPublicationBinding.ts
+  s_9e15f5b7ec3308::t_184177a2ba50cc 31-35,54,125-138,288
+scripts/__tests__/prepareReview.spec.ts
+  s_ef536aab624565::t_8aee1ab23fc032 223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4b1697208663d59732863b1222cc1a579251e7e9",
+  "prompts": {},
+  "sessions": {
+    "s_9e15f5b7ec3308": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9c4f11-e3ce-4886-89d6-a6ce97a544e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
