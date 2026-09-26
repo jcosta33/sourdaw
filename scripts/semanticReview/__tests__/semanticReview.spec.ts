@@ -412,6 +412,40 @@ describe('contract-carrying admission', () => {
         expect(set.truncated).toEqual([{ path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' }]);
     });
 
+    it("admits the change's contract-carrying side before a larger contract-context document", () => {
+        // D2: a contract-context document and the change's contract-carrying side shared the contract
+        // tier, where the non-spec document outranked the change's own spec side whatever its size, so a
+        // binding total charged the document and withheld the change's contract material. Contract-context
+        // now sits in its own tier behind the change's contract-carrying sides.
+        const specSide = `import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n${'const filler = 1;\n'.repeat(8)}`;
+        const context = '# AGENTS.md contract\n'.repeat(30);
+        const specBytes = Buffer.byteLength(specSide, 'utf8');
+        const contextBytes = Buffer.byteLength(context, 'utf8');
+        // The premise the ordering must defeat: the document is larger than the side, yet the non-spec
+        // tie-break admits the document first on the shared contract tier.
+        expect(contextBytes).toBeGreaterThan(specBytes);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('scripts/__tests__/closure.spec.ts', { kind: 'added', added: 1, deleted: 0 })],
+                blobs: {
+                    [`${HEAD}:scripts/__tests__/closure.spec.ts`]: specSide,
+                    [`${MERGE_BASE}:AGENTS.md`]: context,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: contextBytes, maxTotalBytes: contextBytes },
+            contractPaths: ['AGENTS.md'],
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'scripts/__tests__/closure.spec.ts:after',
+        ]);
+        expect(set.truncated).toEqual([
+            { path: 'AGENTS.md', reason: 'total-evidence-budget-exhausted (context, contract)' },
+        ]);
+    });
+
     it('names a withheld contract-carrying path instead of counting it as an anonymous trim', () => {
         const before = 'const contract = 1;\n';
         const set = collectEvidence({

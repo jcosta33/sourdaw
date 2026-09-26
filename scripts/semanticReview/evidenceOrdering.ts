@@ -4,22 +4,28 @@
  * The collector reads each changed path's sides once and hands the reads here, so classification,
  * sizing, and admission all consume one read per side. Ordering is over the admission units the
  * collector actually admits — each changed file's before and after side, plus each contract-context
- * region — in the order admission walks them, so a side that carries a contract and the contract
- * documents themselves are admitted before a bulk side of another change whatever the file order, and
- * the class a unit is ordered by is the class its withheld reason names.
+ * region — in the order admission walks them, in three tiers:
+ *
+ * 1. the change's own contract-carrying sides, the changed-file before/after units whose side is
+ *    contract-carrying, so the budget stays on the change the contract lives in;
+ * 2. contract-context units, the documents read at the contract source revision — ahead of bulk,
+ *    behind the change's own contract material;
+ * 3. bulk sides of the change.
  *
  * A side of a path that is contract-carrying on either side outranks a purely bulk side of another
  * path, so a collected spec whose after side imports a closure member keeps its bulk before side ahead
- * of an unrelated bulk competitor: the budget stays on the change the contract lives in. The withheld
- * reason still reads the side's own class, so a bulk after side of a contract-before rename is named
- * without the contract term.
+ * of an unrelated bulk competitor. The withheld reason still reads the side's own class, so a bulk after
+ * side of a contract-before rename is named without the contract term, while a contract-context region
+ * keeps its `contractCarrying` labelling and its `(context, contract)` withheld reason.
  *
- * The byte figure is an order-independent lower bound, a tie-break inside one class rather than a
+ * The byte figure is an order-independent lower bound, a tie-break inside one tier rather than a
  * promise of what each side pays. A region the content screen or the per-region budget withholds costs
  * zero, and a region shared by several changed paths (a copy or rename whose source is also changed) is
  * counted once and charged to whichever claimant admission reaches first; the first claimant can
  * therefore rank below the charge admission applies to it, and a smaller edit is not guaranteed to
- * survive when a region is shared.
+ * survive when a region is shared. The same holds when the total binds: a shared-region or
+ * contract-context unit still loses its region to the total budget, because the byte figure does not
+ * promise which unit the total charges.
  */
 
 import { isContractCarryingContent } from './contractCarrying.ts';
@@ -116,21 +122,29 @@ function unitSideOrder(unit: AdmissionUnit): number {
     return 2;
 }
 
+/** The admission tier: the change's contract-carrying sides, then contract-context, then bulk sides. */
+function admissionTier(unit: AdmissionUnit): number {
+    if (unit.kind === 'context') {
+        return 1;
+    }
+    return unit.contractCarrying ? 0 : 2;
+}
+
 /**
- * The admission order. Contract-carrying first — a contract-carrying side and every contract-context
- * region — then, inside each class, non-spec before collected spec, then a side of a contract-carrying
- * path before a purely bulk side, then ascending admission bytes — the order-independent lower bound a
- * side's sole regions cost, a tie-break rather than a promise of what the side pays — then path, then a
- * path's before side before its own after side. No spec can outrank the source it covers, and a
- * whole-file fallback cannot starve a smaller genuine edit; a region shared with another change is still
- * charged to whichever side admits it first, so the byte figure does not promise that every smaller
- * edit survives.
+ * The admission order. Three tiers — the change's own contract-carrying sides first, then
+ * contract-context regions, then bulk sides — and, inside each tier, non-spec before collected spec,
+ * then a side of a contract-carrying path before a purely bulk side, then ascending admission bytes —
+ * the order-independent lower bound a side's sole regions cost, a tie-break rather than a promise of
+ * what the side pays — then path, then a path's before side before its own after side. No spec can
+ * outrank the source it covers, and a whole-file fallback cannot starve a smaller genuine edit; a region
+ * shared with another change is still charged to whichever side admits it first, so the byte figure does
+ * not promise that every smaller edit survives.
  */
 export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit): number {
-    const leftContract = left.contractCarrying ? 0 : 1;
-    const rightContract = right.contractCarrying ? 0 : 1;
-    if (leftContract !== rightContract) {
-        return leftContract - rightContract;
+    const leftTier = admissionTier(left);
+    const rightTier = admissionTier(right);
+    if (leftTier !== rightTier) {
+        return leftTier - rightTier;
     }
     const leftSpec = isCollectedSpec(unitPath(left)) ? 1 : 0;
     const rightSpec = isCollectedSpec(unitPath(right)) ? 1 : 0;
@@ -156,8 +170,9 @@ export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit)
  * The admission units for one change, in admission order. A file contributes its before side first and
  * its after side second; each side is ordered by its own class, so a rename or copy out of a contract
  * surface admits its contract before side before a bulk side of another change while its bulk after
- * side stays ranked with bulk. Contract-context regions join the same ordering as contract class, so
- * they are admitted before bulk changed-file units.
+ * side stays ranked with bulk. Contract-context regions sit in their own tier — behind the change's own
+ * contract-carrying sides, ahead of bulk — so a document read at the contract source revision cannot
+ * outrank the change's contract material even when it is larger.
  */
 export function admissionUnits(
     changed: readonly SemanticChangedFile[],

@@ -11,15 +11,15 @@
  * context. The whole repository is never sent. When a region is dropped, truncated, or unavailable,
  * that is recorded as a limitation: an omitted region is not evidence that the region is safe.
  *
- * Admission is ranked so a contract-carrying side — a trusted GitHub-write closure member, a contract
- * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
+ * Admission is ranked in three tiers: a contract-carrying side — a trusted GitHub-write closure member,
+ * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), or a collected spec whose content imports a closure member or names one of those workflow
- * files — and every contract-context region the caller supplies are admitted before a bulk side and
- * named when a budget withholds them, so the same budget is spent where the contract lives. Each side
- * is classified from the path and content it carries, so a deleted or moved spec still counts from its
- * before side, and a side of a path that is contract-carrying on either side keeps its bulk companion
- * ahead of a purely bulk path.
+ * files — first, then each contract-context region the caller supplies, then bulk sides, and every
+ * withheld region is named, so the same budget is spent where the contract lives and the change's own
+ * contract material outranks the context documents. Each side is classified from the path and content it
+ * carries, so a deleted or moved spec still counts from its before side, and a side of a path that is
+ * contract-carrying on either side keeps its bulk companion ahead of a purely bulk path.
  */
 
 import {
