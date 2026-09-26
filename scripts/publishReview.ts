@@ -227,12 +227,15 @@ function prepareReviewPublication(
     // The acceptance identity never reads the dossier, and its diversity check is exempt anyway.
     const stanceDraws = actorNodeId === ORCHESTRATOR_USER_NODE_ID ? undefined : readDossierStanceDraws(port, bundle);
     assertReviewerModelDiversity({ actorNodeId, authorLabels: pullRequest.labels ?? [], document, stanceDraws });
-    const approvalContext = publicationApprovalContext(number, head, document, port);
-    assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
+    // The round-cap decision precedes every other publication precondition, so a frozen or escalated
+    // publication reports that refusal instead of a manifest, comment or approval-context failure
+    // (#4754, #4830).
     const reviewReassessment =
         actorNodeId !== ORCHESTRATOR_USER_NODE_ID
             ? prepareReviewDossierPublication({ number, head, bundle, document, port })
             : undefined;
+    assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
+    const approvalContext = publicationApprovalContext(number, head, document, port);
     return {
         head,
         document,

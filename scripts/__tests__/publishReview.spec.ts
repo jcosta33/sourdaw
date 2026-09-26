@@ -67,7 +67,11 @@ import {
     inspectReviewPublicationRemote,
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
-import { REASSESSMENT_FILE_NAME, REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
+import {
+    REASSESSMENT_FILE_NAME,
+    REVIEW_ROUND_ESCALATION_THRESHOLD,
+    REVIEW_ROUND_FREEZE_THRESHOLD,
+} from '../reviewRoundEscalation.ts';
 import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
 
 import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
@@ -5980,8 +5984,28 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('freezes a head at the freeze threshold even when its manifest cannot supply the base', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round freeze/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('names the round count it observed when the head has taken more rounds than the threshold', () => {
-        const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 4;
+        const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 1;
         const fixture = dossierFixture({
             manifest: { pr: number, baseRefName: 'main', headSha: head },
             publicReviews: Array.from({ length: observed }, (_, index) => ({

@@ -39,6 +39,7 @@ import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts'
 import {
     REASSESSMENT_FILE_NAME,
     REVIEW_ROUND_ESCALATION_THRESHOLD,
+    assertReviewRoundNotFrozen,
     countReviewerRequestChangesRounds,
     gateReviewRoundEscalation,
     type ReviewReassessment,
@@ -191,6 +192,9 @@ function readReviewRoundEscalation(
     if (observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return undefined;
     }
+    // The freeze decision precedes the manifest read, so a frozen publication is told it is frozen
+    // rather than being sent to repair a manifest for a reassessment the gate never reads.
+    assertReviewRoundNotFrozen(observedCount);
     const baseSha = readEscalationBaseSha(bundle, observedCount);
     return gateReviewRoundEscalation({
         observedCount,

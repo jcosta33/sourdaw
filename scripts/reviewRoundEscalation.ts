@@ -144,12 +144,29 @@ export function countReviewerRequestChangesRounds(reconstruction: ReviewReconstr
 export type ReviewReassessmentFile = { present: true; value: unknown } | { present: false };
 
 /**
+ * The freeze decision on its own, so every caller takes it before reading anything else it would
+ * otherwise report instead: a frozen pull request takes no caller document, and a publication that
+ * consults a manifest, an approval context or a comment first would surface that failure while the
+ * freeze refusal — the one naming the only routes out — never runs.
+ */
+export function assertReviewRoundNotFrozen(observedCount: number): void {
+    if (observedCount >= REVIEW_ROUND_FREEZE_THRESHOLD) {
+        fail(
+            `review round freeze: observed ${observedCount} reviewer request-changes rounds, at or above the freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}; ` +
+                `this pull request is frozen and no reassessment lifts it — close it, strand its lane, ` +
+                `or re-raise the change in a new lane as one consolidated diff`
+        );
+    }
+}
+
+/**
  * The escalation gate. Below the threshold it requires nothing and returns `undefined`; at or above
  * it the caller-authored reassessment must be present, must bind this pull request, head and base,
- * must record exactly the observed count, and must carry a known action and a safe reason. Below the
- * freeze threshold every refusal names the observed count, the threshold, the expected file path,
- * and the allowed actions; at or above it the refusal names the count, the freeze threshold and the
- * routes out, because a frozen pull request takes no caller document at all.
+ * must record exactly the observed count, and must carry a known action and a safe reason. A refusal
+ * for a missing file, an unknown action or an unsafe reason names the observed count, the threshold,
+ * the expected file path and the allowed actions; a refusal for a reassessment that does not bind
+ * names the field that disagrees; and the freeze refusal names the count, the freeze threshold and
+ * the routes out, because a frozen pull request takes no caller document at all.
  */
 export function gateReviewRoundEscalation(input: {
     observedCount: number;
@@ -159,13 +176,7 @@ export function gateReviewRoundEscalation(input: {
     bundle: string;
     reassessment: ReviewReassessmentFile;
 }): ReviewReassessment | undefined {
-    if (input.observedCount >= REVIEW_ROUND_FREEZE_THRESHOLD) {
-        fail(
-            `review round freeze: observed ${input.observedCount} reviewer request-changes rounds, at or above the freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}; ` +
-                `this pull request is frozen and no reassessment lifts it — close it, strand its lane, ` +
-                `or re-raise the change in a new lane as one consolidated diff`
-        );
-    }
+    assertReviewRoundNotFrozen(input.observedCount);
     if (input.observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return undefined;
     }
