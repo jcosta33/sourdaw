@@ -522,12 +522,19 @@ const computedDynamicSpecifiersCache = new Map<string, string[]>();
  * (`function f(load = require) { load(spec); }`, `const { load = require } = opts; load(spec);`) —
  * an erased non-null or angle-bracket assertion on the initializer
  * (`const asserted = require!;`, `const asserted = <NodeRequire>require;`), and a loader imported
- * from another file (`import { load } from './loaders.ts'; load(spec);`). The type-body rule also
- * still refuses grammar-legal declarations whose
- * `require`/`import` member sits in a position the header walk does not recognize — a nested property
- * type, a parameter, return, or class-property annotation, a conditional-type branch, a mapped type, a
- * decorator-preceded member, or a union with a negative literal type — a false positive that is
- * test-pinned rather than implied. All three sets stay filed as #4835.
+ * from another file (`import { load } from './loaders.ts'; load(spec);`).
+ *
+ * The type-body rule refuses a `require`/`import` member only in the position its header walk can
+ * place, and the position that decides is the enclosing body's, never the member's own spelling. A
+ * member of a class, interface, or type-literal body is a declaration of that body and is refused,
+ * first member or not (`type X = { require(…) }` and `type X = { a: string; require(…) }` decide
+ * alike); a member of a plain object literal is a call site and is admitted. The same rule then also
+ * refuses grammar-legal declarations whose `require`/`import` member sits in a position the header walk
+ * cannot place at all — a nested property type, a parameter, return, or class-property annotation, a
+ * conditional-type branch, a mapped type, a decorator-preceded member, or a union with a negative
+ * literal type — a false positive that is test-pinned rather than implied. Both readings are
+ * position-dependent rather than implied by the member's own shape. All three sets stay filed as
+ * #4835.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const cached = computedDynamicSpecifiersCache.get(source);
@@ -550,6 +557,13 @@ function scanComputedDynamicSpecifiers(
 ): number {
     let index = start;
     let depth = stopAtDepthZero ? 1 : null;
+    // The open template interpolations enclosing the cursor, innermost last. Each frame holds the
+    // brace depth at its `${`, because a `{` inside the hole is an object literal, not a block, and so
+    // is not counted by the frame that owns the hole. The walk pushes and pops these frames instead
+    // of recursing once per interpolation: a template nested a few thousand deep is a legal input,
+    // and the recursive walk threw `RangeError: Maximum call stack size exceeded` on it from both scan
+    // entry points.
+    const holes: { braceDepth: number }[] = [];
     while (index < end) {
         const commentEnd = skipComment(source, index);
         if (commentEnd !== undefined) {
@@ -562,8 +576,27 @@ function scanComputedDynamicSpecifiers(
             continue;
         }
         if (quote === '`') {
-            index = scanComputedTemplate(source, index, end, shapes);
+            holes.push({ braceDepth: depth ?? 0 });
+            index += 1;
             continue;
+        }
+        const openHole = holes.at(-1);
+        if (openHole !== undefined) {
+            const character = source[index];
+            if (character === '\\') {
+                index += 2;
+                continue;
+            }
+            if (character === '$' && source[index + 1] === '{') {
+                holes.push({ braceDepth: depth ?? 0 });
+                index += 2;
+                continue;
+            }
+            if (character === '}' && openHole.braceDepth === (depth ?? 0)) {
+                holes.pop();
+                index += 1;
+                continue;
+            }
         }
         const regexEnd = skipRegexLiteral(source, index);
         if (regexEnd !== undefined) {
@@ -594,26 +627,6 @@ function scanComputedDynamicSpecifiers(
         index += 1;
     }
     return index;
-}
-
-function scanComputedTemplate(source: string, index: number, end: number, shapes: Set<string>): number {
-    let cursor = index + 1;
-    while (cursor < end) {
-        const character = source[cursor];
-        if (character === '\\') {
-            cursor += 2;
-            continue;
-        }
-        if (character === '`') {
-            return cursor + 1;
-        }
-        if (character === '$' && source[cursor + 1] === '{') {
-            cursor = scanComputedDynamicSpecifiers(source, cursor + 2, end, shapes, true);
-            continue;
-        }
-        cursor += 1;
-    }
-    return end;
 }
 
 type ComputedDynamicLoad = { shape: string; end: number };
@@ -661,13 +674,52 @@ function nearestLoaderBinding(bindings: readonly LoaderBinding[], index: number)
 /**
  * Skip a template literal without recursing into the import scanner: scan to the closing backtick,
  * honouring escapes, and treat each `${…}` interpolation as an opaque balanced brace region. The
- * binding pass and the line-comment walk use this so collecting bindings never re-enters the
- * scanner that consults the bindings.
+ * binding pass and the line-comment walk use this so collecting bindings never re-enters the scanner
+ * that consults the bindings.
+ *
+ * The walk carries its own frame stack rather than calling the balanced-delimiter skip for each
+ * interpolation, which called this function for each template inside one: a template nested a few
+ * thousand holes deep is legal input, and that mutual recursion exhausted the stack.
  */
 function skipTemplateOpaque(source: string, index: number): number {
+    const interpolations: { braceDepth: number }[] = [];
     let cursor = index + 1;
     while (cursor < source.length) {
         const character = source[cursor];
+        const openInterpolation = interpolations.at(-1);
+        if (openInterpolation !== undefined) {
+            if (character === '\\') {
+                cursor += 2;
+                continue;
+            }
+            if (character === '$' && source[cursor + 1] === '{') {
+                interpolations.push({ braceDepth: 0 });
+                cursor += 2;
+                continue;
+            }
+            if (character === '}') {
+                openInterpolation.braceDepth -= 1;
+                if (openInterpolation.braceDepth === 0) {
+                    interpolations.pop();
+                    cursor += 1;
+                    continue;
+                }
+                cursor += 1;
+                continue;
+            }
+            if (character === '{') {
+                openInterpolation.braceDepth += 1;
+                cursor += 1;
+                continue;
+            }
+            if (character === '`') {
+                interpolations.push({ braceDepth: 1 });
+                cursor += 1;
+                continue;
+            }
+            cursor += 1;
+            continue;
+        }
         if (character === '\\') {
             cursor += 2;
             continue;
@@ -676,8 +728,8 @@ function skipTemplateOpaque(source: string, index: number): number {
             return cursor + 1;
         }
         if (character === '$' && source[cursor + 1] === '{') {
-            const after = skipBalancedDelimitedOpaque(source, cursor + 1, source.length, '{', '}');
-            cursor = after === undefined ? source.length : after;
+            interpolations.push({ braceDepth: 0 });
+            cursor += 2;
             continue;
         }
         cursor += 1;
@@ -1977,6 +2029,15 @@ function typeExpressionBodyOpenBefore(source: string, openIndex: number): boolea
             if (afterOpen === undefined) {
                 return false;
             }
+            // A `)` whose `(` is not part of this type expression is not a type-position operator: it
+            // closes a call, a parameter list, or a statement's group, so this `{` does not complete a
+            // type body and the walk stops rather than reading back into an earlier declaration. A `(`
+            // that follows an identifier, a member access, or a closing delimiter is one of those;
+            // without this, the body of `function f() { … }` read as a type context and refused the
+            // loads after it.
+            if (character === ')' && isCallParenthesisBefore(source, afterOpen)) {
+                return false;
+            }
             cursor = afterOpen;
             continue;
         }
@@ -2012,6 +2073,20 @@ function typeExpressionBodyOpenBefore(source: string, openIndex: number): boolea
         }
         return false;
     }
+}
+
+/**
+ * Whether the parenthesis whose `(` is one past `afterOpen` opens a call, a parameter list, or a
+ * statement's group rather than a grouped type. A `(` that follows an identifier, a member access, or
+ * a closing delimiter is one of those, so the parenthesis is an expression, not a type-position group.
+ */
+function isCallParenthesisBefore(source: string, afterOpen: number): boolean {
+    const before = skipBackwardTrivia(source, afterOpen);
+    if (before < 0) {
+        return false;
+    }
+    const character = source.charAt(before);
+    return isIdentifierContinue(character) || character === ')' || character === ']' || character === '}';
 }
 
 /**
@@ -2163,8 +2238,11 @@ function readWordBackward(source: string, cursor: number): string {
  * The index of the `//` that opens the line comment containing `cursor`, or `undefined` when the
  * cursor is not inside a `//` comment. Walking the line forward from its start — skipping string,
  * template, and regex literals and block comments — keeps a `//` inside a quoted value, a regex, or a
- * block comment from masking a real token. The walk is forward-only: it reads a regex by its shape,
- * never by the token before it, because this runs inside `previousSignificantCharacter`.
+ * block comment from masking a real token. The tokens it passes are read forward-only, but a `/` is
+ * read as a regex only at a genuine regex position, decided from the token before it. Reading every
+ * `/` by its shape alone made `a/b//of` a regex opening at the division, which swallowed the real
+ * `//` and let the token before the comment — not the token before the `/` — decide the next line.
+ * Asking for that token stays inside the backward walk, so it does not re-enter this scan.
  */
 function lineCommentOpenBefore(source: string, cursor: number): number | undefined {
     let lineStart = cursor;
@@ -2181,7 +2259,7 @@ function lineCommentOpenBefore(source: string, cursor: number): number | undefin
             index = commentEnd;
             continue;
         }
-        const regexEnd = skipRegexLiteral(source, index, false);
+        const regexEnd = skipRegexLiteral(source, index);
         if (regexEnd !== undefined) {
             index = regexEnd;
             continue;
@@ -2263,7 +2341,7 @@ function skipBalancedDelimited(
             continue;
         }
         if (quote === '`') {
-            cursor = scanTemplate(source, cursor, end, new Set());
+            cursor = scanImportTemplate(source, cursor, end, new Set());
             continue;
         }
         const regexEnd = skipRegexLiteral(source, cursor);
@@ -2423,7 +2501,7 @@ function skipTypeExpression(source: string, start: number, end: number): number 
             continue;
         }
         if (character === '`') {
-            cursor = scanTemplate(source, cursor, end, new Set());
+            cursor = scanImportTemplate(source, cursor, end, new Set());
             typeStarted = true;
             continue;
         }
@@ -2543,7 +2621,7 @@ function skipTypeArguments(source: string, openIndex: number, end: number): numb
             continue;
         }
         if (character === '`') {
-            cursor = scanTemplate(source, cursor, end, new Set());
+            cursor = scanImportTemplate(source, cursor, end, new Set());
             continue;
         }
         if (character === '=' && source[cursor + 1] === '>') {
@@ -2625,7 +2703,7 @@ function scanImportSpecifiers(
             continue;
         }
         if (quote === '`') {
-            index = scanTemplate(source, index, end, specifiers);
+            index = scanImportTemplate(source, index, end, specifiers);
             continue;
         }
         const regexEnd = skipRegexLiteral(source, index);
@@ -2694,20 +2772,108 @@ function scanImportSpecifiers(
     return index;
 }
 
-function scanTemplate(source: string, index: number, end: number, specifiers: Set<string>): number {
+/**
+ * Scan one template literal for import specifiers. Inside a `${…}` hole the hole is code, so the same
+ * `from`, `import(...)`, `require(...)`, and `createRequire(...)(...)` shapes are read there; the
+ * literal parts between holes contribute nothing. The walk carries an explicit frame stack instead of
+ * recursing once per interpolation — a template nested a few thousand holes deep is legal input, and
+ * the recursive form threw `RangeError: Maximum call stack size exceeded` out of this scan. Each frame
+ * records the brace depth inside its hole, because an object literal there is not a block and must not
+ * close it.
+ */
+function scanImportTemplate(source: string, index: number, end: number, specifiers: Set<string>): number {
+    // The open templates and interpolations enclosing the cursor, innermost last. A frame in template
+    // mode is literal text, so only a backtick or a `${` moves the walk on; a frame in hole mode is
+    // code. The stack replaces recursing once per interpolation.
+    const frames: { inTemplate: boolean; braceDepth: number }[] = [{ inTemplate: true, braceDepth: 0 }];
     let cursor = index + 1;
     while (cursor < end) {
         const character = source[cursor];
-        if (character === '\\') {
-            cursor += 2;
+        const top = frames.at(-1);
+        if (top === undefined) {
+            return cursor;
+        }
+        if (top.inTemplate) {
+            if (character === '\\') {
+                cursor += 2;
+                continue;
+            }
+            if (character === '`') {
+                frames.pop();
+                cursor += 1;
+                continue;
+            }
+            if (character === '$' && source[cursor + 1] === '{') {
+                frames.push({ inTemplate: false, braceDepth: 0 });
+                cursor += 2;
+                continue;
+            }
+            cursor += 1;
+            continue;
+        }
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
             continue;
         }
         if (character === '`') {
-            return cursor + 1;
-        }
-        if (character === '$' && source[cursor + 1] === '{') {
-            cursor = scanImportSpecifiers(source, cursor + 2, end, specifiers, true);
+            frames.push({ inTemplate: true, braceDepth: 0 });
+            cursor += 1;
             continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
+            continue;
+        }
+        if (character === '{') {
+            top.braceDepth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === '}') {
+            if (top.braceDepth === 0) {
+                frames.pop();
+            } else {
+                top.braceDepth -= 1;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (isKeywordAt(source, cursor, 'from')) {
+            const specifier = readModuleStringAfter(source, cursor + 4);
+            if (specifier !== undefined) {
+                specifiers.add(specifier.value);
+                cursor = specifier.end;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, cursor, 'import') && !isPrecededByDotAccess(source, cursor)) {
+            const staticSpecifier = readModuleStringAfter(source, cursor + 6);
+            if (staticSpecifier !== undefined) {
+                specifiers.add(staticSpecifier.value);
+                cursor = staticSpecifier.end;
+                continue;
+            }
+            const dynamic = readDynamicImportSpecifier(source, cursor + 6);
+            if (dynamic !== undefined) {
+                specifiers.add(dynamic.value);
+                cursor = dynamic.end;
+                continue;
+            }
+        }
+        const site = loadSiteAt(source, cursor);
+        if (site !== undefined) {
+            const spec = staticSpecifierForSite(source, site);
+            if (spec !== undefined) {
+                specifiers.add(spec.value);
+                cursor = spec.end;
+                continue;
+            }
         }
         cursor += 1;
     }
@@ -2784,17 +2950,116 @@ const REGEX_PREFIX_KEYWORDS = new Set([
 ]);
 
 /**
+ * The reserved words of JavaScript and TypeScript. A word that spells one of these continues an
+ * identifier but ends no expression, so a `!` after it is a prefix negation rather than a postfix
+ * assertion. Contextual keywords that are also ordinary names (`require`, `undefined`) stay out: each
+ * is a legal asserted operand in TypeScript, so reading one as a keyword would turn a real division
+ * into a regex.
+ */
+const JS_KEYWORDS: ReadonlySet<string> = new Set([
+    'abstract',
+    'any',
+    'as',
+    'asserts',
+    'async',
+    'await',
+    'bigint',
+    'boolean',
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'debugger',
+    'declare',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'enum',
+    'export',
+    'extends',
+    'false',
+    'finally',
+    'for',
+    'from',
+    'function',
+    'if',
+    'implements',
+    'import',
+    'in',
+    'infer',
+    'instanceof',
+    'interface',
+    'is',
+    'keyof',
+    'let',
+    'module',
+    'namespace',
+    'never',
+    'new',
+    'null',
+    'number',
+    'object',
+    'of',
+    'out',
+    'override',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'readonly',
+    'return',
+    'satisfies',
+    'static',
+    'string',
+    'super',
+    'switch',
+    'symbol',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'type',
+    'typeof',
+    'unique',
+    'unknown',
+    'var',
+    'void',
+    'while',
+    'with',
+    'yield',
+]);
+
+/**
  * Keywords whose parenthesised header is followed by a statement rather than an expression, so a
  * `/` after the closing parenthesis opens a regex (`if (x) /re/`). The parenthesis must be the
  * header's own — `if (x) foo() /re/` still divides, because the `)` before the `/` closes `foo()`.
  */
 const CONTROL_HEADER_KEYWORDS = new Set(['if', 'for', 'while', 'with', 'switch', 'catch']);
 
+/** The index of the first line terminator at or after `from`, or the source's length. */
+function lineEndAfter(source: string, from: number): number {
+    let cursor = from;
+    while (cursor < source.length && !isLineTerminator(source[cursor] ?? '')) {
+        cursor += 1;
+    }
+    return cursor;
+}
+
 function skipRegexLiteral(source: string, index: number, consultBackwardContext = true): number | undefined {
     if (source[index] !== '/') {
         return undefined;
     }
     if (consultBackwardContext && !canStartRegexLiteral(source, index)) {
+        return undefined;
+    }
+    // A regex literal cannot span a line. A `/` in regex position with no closing `/` on its own line
+    // is not one: reading `a/b//of` then a newline then `/require(spec)/g;` that way consumed the
+    // parser's real `require` call as the regex body. An unreadable `/` is left to the walk as
+    // division, the reading that admits rather than hides.
+    if (!source.slice(index + 1, lineEndAfter(source, index)).includes('/')) {
         return undefined;
     }
     let cursor = index + 1;
@@ -2851,6 +3116,19 @@ function skipRegexLiteral(source: string, index: number, consultBackwardContext 
  * admits rather than hides.
  */
 function previousSignificantCharacter(source: string, cursor: number): number | undefined {
+    return scanBackwardForToken(source, cursor, true);
+}
+
+/**
+ * The same walk with the line-comment scan left out. The line-comment scan asks whether a `/` opens
+ * a regex, which asks the backward walk for the token before that `/`, so a walk that consults it can
+ * re-enter the same scan. Callers that only read a token backward use this walk and stay total.
+ */
+function previousSignificantCharacterBackward(source: string, cursor: number): number | undefined {
+    return scanBackwardForToken(source, cursor, false);
+}
+
+function scanBackwardForToken(source: string, cursor: number, skipLineComments: boolean): number | undefined {
     while (cursor >= 0) {
         const character = source[cursor];
         if (character === undefined) {
@@ -2868,12 +3146,15 @@ function previousSignificantCharacter(source: string, cursor: number): number | 
             cursor = open - 1;
             continue;
         }
-        // A `//` comment's last word is not a token: `const t = 1 // of\n/re/` must read the `1`,
-        // not the comment's `of`. Skip back to before the `//` so the token before the name is read.
-        const lineComment = lineCommentOpenBefore(source, cursor);
-        if (lineComment !== undefined) {
-            cursor = lineComment - 1;
-            continue;
+        if (skipLineComments) {
+            // A `//` comment's last word is not a token: `const t = 1 // of\n/re/` must read the `1`,
+            // not the comment's `of`. Skip back to before the `//` so the token before the name is
+            // read.
+            const lineComment = lineCommentOpenBefore(source, cursor);
+            if (lineComment !== undefined) {
+                cursor = lineComment - 1;
+                continue;
+            }
         }
         return cursor;
     }
@@ -3001,9 +3282,17 @@ function matchingOpenParenBackward(source: string, closeParen: number): number |
  * literal quote, `)`, `]`, `}`, or a `++`/`--` — never the `/`'s own position, so `a! / require(x)`
  * keeps its load. A prefix `!` (`!!x`, `!x`) ends no expression, so the `/` after it is still a
  * regex.
+ *
+ * An identifier character alone is not enough: every keyword continues an identifier, so the word
+ * decides. A keyword before the `!` ends no expression, which makes the `!` a prefix and the `/`
+ * after it a regex — `return !/require(spec)/.test(x)` hid its load while `return` alone read as an
+ * expression end. A property or private name spelling a keyword (`cfg.return`, `this.#return`) is a
+ * member, not the keyword, and still ends an expression.
+ *
+ * The walk reads backward only, so this stays total for input the forward reader is already inside.
  */
 function tokenBeforeEndsExpression(source: string, bang: number): boolean {
-    const before = previousSignificantCharacter(source, bang - 1);
+    const before = previousSignificantCharacterBackward(source, bang - 1);
     if (before === undefined) {
         return false;
     }
@@ -3020,7 +3309,18 @@ function tokenBeforeEndsExpression(source: string, bang: number): boolean {
     if (character === '!') {
         return tokenBeforeEndsExpression(source, before);
     }
-    return isIdentifierContinue(character) || isDecimalDigit(character);
+    if (isDecimalDigit(character)) {
+        return true;
+    }
+    if (!isIdentifierContinue(character)) {
+        return false;
+    }
+    const word = readWordBackward(source, before);
+    const wordStart = before - word.length + 1;
+    if (isPrecededByDotAccess(source, wordStart) || isPrivateNameStart(source, wordStart)) {
+        return true;
+    }
+    return !JS_KEYWORDS.has(word);
 }
 
 /**
@@ -3073,15 +3373,23 @@ function closingParenAllowsRegex(source: string, closeParen: number): boolean {
  * `declare global {}`, and a `switch` case block, whose following regex the merge base admitted.
  */
 function closeBraceStartsStatement(source: string, closeBrace: number): boolean {
-    const open = skipBackwardBalancedDelimited(source, closeBrace, '{', '}');
-    if (open === undefined) {
+    const beforeOpen = skipBackwardBalancedDelimited(source, closeBrace, '{', '}');
+    if (beforeOpen === undefined) {
         return true;
     }
-    return !expressionBodyOpenBefore(source, open);
+    // The walk answers with the index before the opening brace; `expressionBodyOpenBefore` reads the
+    // brace at its own position, so `foo({} / require(spec) / 2)` is a body in operand position and
+    // the close before the division is an expression end.
+    return !expressionBodyOpenBefore(source, beforeOpen + 1);
 }
 
-/** Characters after which a `{` opens an object literal in operand position, not a statement block. */
-const OPERAND_POSITION_CHARACTERS = '=(?&|+-*/%^[_';
+/**
+ * Characters after which a `{` opens an object literal in operand position, not a statement block.
+ * Identifier characters are deliberately absent: a word ends a declaration header (`class C_`), and
+ * reading its last character as an operand position turned the following regex into code and hid the
+ * load behind it.
+ */
+const OPERAND_POSITION_CHARACTERS = '=(?&|+-*/%^[';
 
 /**
  * Whether the `{` at `openIndex` opens an expression-position body, whose close ends an expression:
@@ -3098,42 +3406,52 @@ function expressionBodyOpenBefore(source: string, openIndex: number): boolean {
     if (character === ':') {
         return !labelledBlockOpenBefore(source, openIndex);
     }
+    // A `=` at the end of a `type` alias header opens that alias's body, a declaration. An `=`
+    // anywhere else is an assignment, a value position where a `{` is an object literal: reading
+    // every `=` as an operand position read `type X = { … }` as an expression body, which let the
+    // type-body rule refuse load after load that a member-first body declares.
+    if (character === '=') {
+        return !isTypeAliasHeaderBefore(source, before);
+    }
     if (OPERAND_POSITION_CHARACTERS.includes(character)) {
         return true;
     }
     if (character === '>' && source.charAt(before - 1) === '=') {
         return true; // an arrow body is an expression
     }
-    if (character === '(') {
-        return expressionBodyAfterParenBefore(source, before);
+    // A `{` that directly follows a template hole's `${` is an operand-position body by the same
+    // reading as one that follows a `(`: the brace starts the hole's expression, so its close ends
+    // one and a following `/` is division. `const t = \`${ {a:1} / import(spec) / 2 }\`` hid its
+    // import while only the `${`-shaped hole without the trailing division was read.
+    if (character === '$' && source.charAt(before - 1) === '`') {
+        return true;
     }
     return classOrFunctionExpressionBefore(source, before);
 }
 
 /**
- * Whether the `{` at a `(`-preceded body opens an object literal in operand position — a grouped or
- * arrow expression whose own context is an operand — rather than the argument list of a call or
- * method (`f({ … })`, `{ foo() {} }`), whose close ends a statement.
+ * Whether the `=` at `equals` ends a `type` alias header, whose `{` is then a type body rather than an
+ * object literal. `type X = { … }` and `type X<T> = { … }` are declarations; `const x = { … }`, a
+ * parameter default, and every other `=` are value positions whose `{` is an expression body.
  */
-function expressionBodyAfterParenBefore(source: string, openParen: number): boolean {
-    const after = skipBalancedParensOpaque(source, openParen);
-    if (after === undefined) {
+function isTypeAliasHeaderBefore(source: string, equals: number): boolean {
+    let cursor = skipBackwardTrivia(source, equals - 1);
+    if (cursor < 0) {
         return false;
     }
-    const closer = after - 1;
-    if (source.charAt(closer) !== ')') {
+    if (source.charAt(cursor) === '>') {
+        const afterOpen = skipBackwardBalancedDelimited(source, cursor, '<', '>');
+        if (afterOpen === undefined) {
+            return false;
+        }
+        cursor = skipBackwardTrivia(source, afterOpen);
+    }
+    if (cursor < 0 || !isIdentifierContinue(source.charAt(cursor))) {
         return false;
     }
-    const before = skipBackwardTrivia(source, closer - 1);
-    if (before >= 0 && source.charAt(before) === '>' && source.charAt(before - 1) === '=') {
-        return true; // an arrow's parenthesised return
-    }
-    return operandPositionBefore(source, before);
-}
-
-/** Whether a `{` directly after the token ending at `end` is an object literal in operand position. */
-function operandPositionBefore(source: string, end: number): boolean {
-    return end >= 0 && OPERAND_POSITION_CHARACTERS.includes(source.charAt(end));
+    const name = readWordBackward(source, cursor);
+    const beforeName = skipBackwardTrivia(source, cursor - name.length);
+    return beforeName >= 0 && readWordBackward(source, beforeName) === 'type';
 }
 
 /** Characters that end a class, function, or method header scan without naming one. */
@@ -3214,11 +3532,77 @@ function matchingHeaderDelimiter(close: string): { open: string; close: string }
  * brace may be an object literal whose close ends an expression, so it is not read as a clause.
  */
 function labelledBlockOpenBefore(source: string, openIndex: number): boolean {
-    let cursor = skipBackwardTrivia(source, openIndex - 1);
-    if (cursor < 0 || source.charAt(cursor) !== ':') {
+    const colon = skipBackwardTrivia(source, openIndex - 1);
+    if (colon < 0 || source.charAt(colon) !== ':') {
         return false;
     }
-    cursor = skipBackwardTrivia(source, cursor - 1);
+    return clauseColonBefore(source, colon) || labelColonBefore(source, colon);
+}
+
+/** Characters an expression between a `case`/`default` keyword and its colon may contain. */
+const CLAUSE_EXPRESSION_CHARACTERS = '.+-*/%<>=!&|^~,:';
+
+/**
+ * Whether the `:` at `colon` ends a `case`/`default` clause, read from the clause's own shape rather
+ * than from the last character of its expression. Walking back over the clause's expression is what
+ * recognizes `case 1 + 2:`, `case f(x):`, `case a.b:`, `case 'k':`, `case [1]:`, and
+ * `case a ? b : c:`: each of those ends in a character that is not an identifier, so a walk that only
+ * skipped one name read every one of them as an annotation or a label and hid the load behind the
+ * block they introduce.
+ */
+function clauseColonBefore(source: string, colon: number): boolean {
+    let cursor = skipBackwardTrivia(source, colon - 1);
+    while (cursor >= 0) {
+        const character = source.charAt(cursor);
+        if (character === 'f' && readWordBackward(source, cursor) === 'default') {
+            return true;
+        }
+        if (character === 'e' && readWordBackward(source, cursor) === 'case') {
+            // `obj.case` and `this.#case` are members, never the keyword.
+            const wordStart = cursor - 'case'.length + 1;
+            return !isPrecededByDotAccess(source, wordStart) && !isPrivateNameStart(source, wordStart);
+        }
+        if (character === ')' || character === ']' || character === '}' || character === '>') {
+            const group = matchingHeaderDelimiter(character);
+            const open = skipBackwardBalancedDelimited(source, cursor, group.open, group.close);
+            if (open === undefined) {
+                return false;
+            }
+            cursor = skipBackwardTrivia(source, open - 1);
+            continue;
+        }
+        // A ternary's `?` belongs to the clause's own expression, never to the clause, so a `?` on the
+        // way back means the colon closed a ternary rather than the clause. The `?` of an optional
+        // property has a `:` of its own, which the `:` case below stops at.
+        if (character === '?') {
+            return false;
+        }
+        if (character === '"' || character === "'") {
+            const open = skipQuotedBackward(source, cursor, character);
+            if (open === undefined) {
+                return false;
+            }
+            cursor = skipBackwardTrivia(source, open - 1);
+            continue;
+        }
+        // A clause's expression is ordinary code: its atoms, its member access, its index and call
+        // results, and its operators all sit between the keyword and the colon. Walking them is what
+        // reads `case 1 + 2:`, `case f(x):`, `case a.b:`, `case [1]:`, and `case a ? b : c:`.
+        if (!isIdentifierContinue(character) && !CLAUSE_EXPRESSION_CHARACTERS.includes(character)) {
+            return false;
+        }
+        cursor = skipBackwardTrivia(source, cursor - 1);
+    }
+    return false;
+}
+
+/**
+ * Whether the `:` at `colon` ends a statement label (`foo:`), read from the label name alone: the name
+ * must be an identifier and the token before it a statement boundary or a control header's body. A
+ * `:` after a name inside a brace-delimited body is a property or member annotation.
+ */
+function labelColonBefore(source: string, colon: number): boolean {
+    const cursor = skipBackwardTrivia(source, colon - 1);
     if (cursor < 0 || !isIdentifierContinue(source.charAt(cursor))) {
         return false;
     }
@@ -3227,9 +3611,6 @@ function labelledBlockOpenBefore(source: string, openIndex: number): boolean {
     const beforeName = skipBackwardTrivia(source, nameStart - 1);
     if (name === 'default' && isIdentifierStart(source.charAt(nameStart))) {
         return true; // `default: { … }` — a switch clause, and a legal label
-    }
-    if (beforeName >= 0 && isKeywordAt(source, beforeName - 'case'.length + 1, 'case')) {
-        return true; // `case <expr>: { … }` — a switch clause
     }
     if (!isIdentifierStart(source.charAt(nameStart))) {
         return false; // the `:` ends no label name (`{ 1: {} }` is a property)
@@ -3280,8 +3661,14 @@ function isDeclarationStatementPosition(source: string, keywordStart: number): b
  * single preceding character. A `/` opens a regex after an operator, `(`, `[`, `{`, `,`, `;`, `:`,
  * `=`, `!`, `&`, `|`, `?`, `=>`, a keyword that expects an expression, or at the start of input;
  * it is division after an identifier, number, string, template, regex literal, `)`, `]`, `}`, or
- * `++`/`--`. The `)` case consults the control-header context so `if (x) /re/` is a regex while
- * `foo() / 2` divides.
+ * `++`/`--`. The reading of `)`, `]`, and `}` is position-dependent and precedence-ordered: the
+ * token alone never decides. A `)` consults the control-header context, so `if (x) /re/` is a regex
+ * while `foo() / 2` divides. A `}` consults the construct that owns it, so a declaration or statement
+ * block close (`class C {}`, `export {}`) is a statement end and a regex follows, while an object
+ * literal in operand position (`const r = { x: 1 }`, `foo({} / 2)`, a template hole's `${ {a:1}`)
+ * ends an expression and a division follows; the statement-end reading is the fallback for every
+ * close the walk does not model, and an operand-position reading is checked first wherever the walk
+ * can prove one. A `]` is always an expression end.
  */
 function canStartRegexLiteral(source: string, index: number): boolean {
     const previous = previousSignificantCharacter(source, index - 1);
@@ -3404,7 +3791,7 @@ function skipBalancedParens(source: string, index: number): number | undefined {
             continue;
         }
         if (character === '`') {
-            cursor = scanTemplate(source, cursor, source.length, new Set());
+            cursor = scanImportTemplate(source, cursor, source.length, new Set());
             continue;
         }
         const regexEnd = skipRegexLiteral(source, cursor);

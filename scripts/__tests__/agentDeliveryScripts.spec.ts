@@ -2324,8 +2324,8 @@ describe('package scripts and gitignore', () => {
      * The backward token walk is total: a template interpolation holding a `/` reaches the walk from
      * inside its own line-comment scan, so a regular-expression test that asks for the token before
      * the `/` recursed without bound and threw `RangeError: Maximum call stack size exceeded`, which
-     * escaped the synchronous graph assertion. The `/` is read by its shape alone there, so both
-     * inputs get a verdict: a division admits the template, and a computed load inside it is refused.
+     * escaped the synchronous graph assertion. A `/` is read only at a genuine regex position, and the
+     * token that position needs comes from a backward-only walk, so both inputs get a verdict.
      */
     it('reads a template interpolation division without exhausting the stack', () => {
         expect(snapshotComputedDynamicSpecifiers('const t = `${a / b}`;')).toEqual([]);
@@ -2335,6 +2335,39 @@ describe('package scripts and gitignore', () => {
     it('refuses a computed load inside a template interpolation division', () => {
         expect(snapshotComputedDynamicSpecifiers('const t = `${ {a:1} / import(spec) }`;')).toEqual(['import(...)']);
         expect(snapshotImportSpecifiers('const t = `${ {a:1} / import(spec) }`;')).toEqual([]);
+    });
+
+    /**
+     * A `/` is a regex opening only at a genuine regex position. Reading every `/` by its shape alone
+     * in the line-comment scan made the division in `a/b` the regex opening, which swallowed the real
+     * `//`: the token before the comment then decided the next line, so the statement-position regex
+     * there was read as code. A load inside it was refused, a static import behind it was dropped, and
+     * a bare specifier behind it was dropped. Each input below carries the division before the comment
+     * and the token the walk must read is the `b`.
+     */
+    /**
+     * A regex literal cannot span a line, so the token that decides whether a `/` opens one must be on
+     * that `/`'s own line. Reading past the line terminator let the `b` in `a/b` open the next line's
+     * regex, which hid the real `//` and the load the parser calls: the load was then found only by
+     * accident, or not at all. The line rule reads the load the parser really runs.
+     */
+    it('refuses the computed load behind a division before a line comment', () => {
+        expect(snapshotComputedDynamicSpecifiers('a/b//of\n/require(spec)/g;')).toEqual(['require(...)']);
+    });
+
+    it.each([
+        {
+            label: 'a static import behind a division before a line comment',
+            source: "a/b//of\nimport './helper.ts';",
+            specifier: './helper.ts',
+        },
+        {
+            label: 'a bare package import behind a division before a line comment',
+            source: "a/b//of\nimport 'left-pad';",
+            specifier: 'left-pad',
+        },
+    ])('keeps $label, dropping no specifier', ({ source, specifier }) => {
+        expect(snapshotImportSpecifiers(source)).toEqual([specifier]);
     });
 
     it('does not let a class-declaration-close regex hide a later static import', () => {
@@ -2397,6 +2430,107 @@ describe('package scripts and gitignore', () => {
         expect(snapshotComputedDynamicSpecifiers('const r = class extends foo() {} / import(spec) / 2;')).toEqual([
             'import(...)',
         ]);
+    });
+
+    /**
+     * A declaration header may end in an identifier character, and the close is still a statement end,
+     * so a `/` after it opens a regex and the `require` inside that regex is not a load. Reading an
+     * identifier character as an operand position turned the close into an expression end, and the
+     * regex body then supplied a false refusal. The heritage clause keeps its own reading either way.
+     */
+    it.each([
+        {
+            label: 'a load behind a regex after a class declaration whose name ends in an underscore',
+            source: "class C_ {} /'/; require(spec);",
+        },
+        {
+            label: 'a load behind a regex after an interface declaration whose name ends in an underscore',
+            source: "interface I_ {} /'/; require(spec);",
+        },
+        {
+            label: 'a load behind a regex after an enum declaration whose name ends in an underscore',
+            source: "enum E_ {} /'/; require(spec);",
+        },
+        {
+            label: 'a load behind a regex after a namespace declaration whose name ends in an underscore',
+            source: "namespace N_ {} /'/; require(spec);",
+        },
+        {
+            label: 'a load behind a regex after a heritage clause ending in an underscore',
+            source: "class C extends B_ {} /'/; require(spec);",
+        },
+    ])('reads the load after $label as a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    it('keeps the static import of a file whose declaration name ends in an underscore', () => {
+        const source = "class C_ {} /'/;\nimport { x } from './sib.ts';";
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toEqual(['./sib.ts']);
+    });
+
+    /**
+     * A `case`/`default` clause is recognized by its own shape, not by the last character of its
+     * expression, so a compound one closes its block as a statement and the regex after that block
+     * stays a regex. Reading only a trailing bare identifier made `case 1 + 2:` an annotation, whose
+     * block close ended an expression — and the regex body then supplied a false refusal. A clause
+     * whose expression does end in a bare identifier already read this way.
+     */
+    it.each([
+        {
+            label: 'a load behind a regex after a call-valued case clause block',
+            source: 'switch (x) { case f(x): {} /require(spec)/.test(x); }',
+        },
+        {
+            label: 'a load behind a regex after a member-valued case clause block',
+            source: 'switch (x) { case a.b: {} /require(spec)/.test(x); }',
+        },
+        {
+            label: 'a load behind a regex after a string-valued case clause block',
+            source: "switch (x) { case 'k': {} /require(spec)/.test(x); }",
+        },
+        {
+            label: 'a load behind a regex after an array-valued case clause block',
+            source: 'switch (x) { case [1]: {} /require(spec)/.test(x); }',
+        },
+    ])('reads a regex after $label, hiding no load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    it('reads a regex after a compound case clause block, hiding no load', () => {
+        expect(snapshotComputedDynamicSpecifiers('switch (x) { case 1 + 2: {} /require(spec)/.test(x); }')).toEqual([]);
+    });
+
+    it('reads the load after a ternary-valued case clause block as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers('switch (x) { case a ? b : c: {} /require(spec)/.test(x); }')).toEqual(
+            ['require(...)']
+        );
+    });
+
+    it('does not let a compound case clause read a regex after a bare-identifier clause block', () => {
+        expect(snapshotComputedDynamicSpecifiers('switch (x) { case label: {} /require(spec)/.test(x); }')).toEqual([]);
+    });
+
+    /**
+     * The static twin of each close above, with the same declaration and clause headers and the same
+     * regex seam: the file the regex follows is still collected, and the regex body around the seam
+     * contributes no specifier of its own.
+     */
+    it.each([
+        {
+            label: 'a declaration whose name ends in an underscore',
+            source: "class C_ {} /'/;\nimport { x } from './sib.ts';",
+        },
+        {
+            label: 'an interface declaration whose name ends in an underscore',
+            source: "interface I_ {} /'/;\nimport { x } from './sib.ts';",
+        },
+        {
+            label: 'a compound case clause block',
+            source: "switch (x) { case 1 + 2: {} /require(spec)/.test(x); }\nimport { x } from './sib.ts';",
+        },
+    ])('keeps the static import of $label, hiding no specifier', ({ source }) => {
+        expect(snapshotImportSpecifiers(source)).toEqual(['./sib.ts']);
     });
 
     /**
@@ -2467,7 +2601,7 @@ describe('package scripts and gitignore', () => {
     it.each([
         {
             label: 'a division after an arrow body',
-            source: 'const r = () => {} / import(spec) / 2;',
+            source: 'const r = (() => {}) / import(spec) / 2;',
         },
         {
             label: 'a division after an anonymous class expression',
@@ -2483,6 +2617,37 @@ describe('package scripts and gitignore', () => {
         },
     ])('keeps $label a division so the computed import is seen', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['import(...)']);
+    });
+
+    /**
+     * A `{` that directly follows a `(` starts that parenthesis's expression, so its close ends an
+     * expression and a `/` after it is division. Reading the token before the *matching* `)` instead
+     * classified the whole list by its last argument, so a list ending in a digit or under a division
+     * operator read the close as a statement end and the regex body supplied a false refusal. A `{`
+     * deeper inside the list is not read here, and a list whose brace is not first was already read
+     * this way.
+     */
+    it('refuses the computed load in a call argument division', () => {
+        expect(snapshotComputedDynamicSpecifiers('foo({} / require(spec) / 2);')).toEqual(['require(...)']);
+    });
+
+    /**
+     * The two shapes whose brace sits in the same position but whose seam a regex body would otherwise
+     * swallow: the merge base reads no computed load there, because it reads the `/` after the close
+     * by shape and takes the `/ require(spec) /` span — or the `/ import(spec) /` span — as a regex.
+     * Reading the brace from its own position keeps that reading.
+     */
+    it.each([
+        {
+            label: 'a division after a return-value body in a regex seam',
+            source: 'function f() { return {} / require(spec) / 2; }',
+        },
+        {
+            label: 'a division after a template hole body in a regex seam',
+            source: 'const t = `${ {a:1} / import(spec) / 2 }`;',
+        },
+    ])('reads no computed load after $label, the merge base reading', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 
     /**
@@ -2508,8 +2673,70 @@ describe('package scripts and gitignore', () => {
         expect(snapshotComputedDynamicSpecifiers('const y = !import(spec) / 2;')).toEqual(['import(...)']);
     });
 
+    /**
+     * A template interpolating another template is legal at any depth the source reaches, so the walk
+     * over one must be total. Recursing once per interpolation threw
+     * `RangeError: Maximum call stack size exceeded` out of both scan entry points on a template a few
+     * thousand holes deep — a synchronous throw the graph assertion could not catch, so the whole
+     * command died with a stack trace instead of a verdict.
+     */
+    const nestedTemplate = (depth: number): string => {
+        let source = '`${a}`';
+        for (let level = 1; level < depth; level += 1) {
+            source = `\`\${${source}}\``;
+        }
+        return source;
+    };
+
+    it('walks a template nested thousands of holes deep without exhausting the stack', () => {
+        const source = nestedTemplate(8000);
+        expect(source.length).toBeGreaterThan(13000);
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toEqual([]);
+    });
+
+    it('still refuses a computed load inside a deeply nested template', () => {
+        const source = `\`\${${nestedTemplate(4000).slice(0, -1)} / import(spec) }\``;
+        expect(snapshotComputedDynamicSpecifiers(source)).toContain('import(...)');
+    });
+
+    /**
+     * A `!` whose preceding word is a keyword is a prefix negation, so the `/` after it opens a regex
+     * and that regex's body is not code. The word, not the identifier character, decides: every
+     * keyword continues an identifier, so reading `return` as an expression end made the `/'/` body of
+     * a real statement-position regex into code, and it made a regex body's own `require` a false
+     * refusal. A `!` after a genuine expression end stays postfix, so its `/` stays division.
+     */
+    it.each([
+        {
+            label: 'a regex body holding a load after a return keyword',
+            source: 'return !/require(spec)/.test(x);',
+        },
+        {
+            label: 'a regex body holding a load after a typeof keyword',
+            source: 'const y = typeof !/require(spec)/.test(x);',
+        },
+    ])('reads a regex body after $label, refusing no load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * The same prefix reading leaves a real load behind the regex untouched: the load after the
+     * function is an ordinary computed load, and the regex test before it must not hide it. The merge
+     * base read the `/'/` body as code and swallowed the `require` inside it, reporting no load at all.
+     */
+    it('finds the load after a statement-position regex test behind a prefix negation', () => {
+        expect(snapshotComputedDynamicSpecifiers("function f() { return !/'/.test(x); } require(spec);")).toEqual([
+            'require(...)',
+        ]);
+    });
+
+    it('refuses a double prefix negation before a load', () => {
+        expect(snapshotComputedDynamicSpecifiers('const y = !!require(spec);')).toEqual(['require(...)']);
+    });
+
     it('does not swallow a literal require behind an expression-position body close', () => {
-        const source = "const r = () => {} / require('yaml') / 2;";
+        const source = "const r = (() => {}) / require('yaml') / 2;";
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
         expect(snapshotImportSpecifiers(source)).toEqual(['yaml']);
     });
@@ -2682,6 +2909,43 @@ describe('package scripts and gitignore', () => {
         },
     ])('pins the current refusal of $label as a computed load', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
+     * The two readings the type-body rule's contract states. A `}` close decides by the construct that
+     * owns it, so an object literal in operand position ends an expression and the division after it
+     * shows its load. A `require`/`import` member of a class, interface, or type-literal body is a
+     * declaration of that body and is refused whatever its own position inside the body: the
+     * member-preceded and first-member spellings decide alike, so neither the member's spelling nor a
+     * preceding member is what the rule reads.
+     */
+    it('keeps the division of an object literal in operand position', () => {
+        expect(snapshotComputedDynamicSpecifiers('const r = { x: 1 } / import(spec) / 2;')).toEqual(['import(...)']);
+    });
+
+    it.each([
+        {
+            label: 'a member-preceded require member of a type alias body',
+            source: 'type X = { a: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a first-member require member of a type alias body',
+            source: 'type X = { require(specifier: string): unknown }',
+        },
+        {
+            label: 'a first-member require member of an interface body',
+            source: 'interface L { require(specifier: string): unknown }',
+        },
+    ])('admits $label exactly as the type-body rule decides', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    it('refuses the same member where the header walk cannot place it', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'type X = { [K in keyof T]: { a: string; require(specifier: string): unknown } }'
+            )
+        ).toEqual(['require(...)']);
     });
 
     /**
@@ -3001,7 +3265,7 @@ describe('package scripts and gitignore', () => {
         },
         {
             label: 'a name bound to a bound loader member',
-            source: 'const r = load.resolve; r(spec);',
+            source: 'const load = require;\nconst r = load.resolve;\nr(spec);',
         },
         {
             label: 'a loader bound by a parameter default',
