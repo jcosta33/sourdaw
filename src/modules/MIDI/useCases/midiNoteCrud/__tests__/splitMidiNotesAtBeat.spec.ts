@@ -209,6 +209,49 @@ describe('splitMidiNotesAtBeat', () => {
         expect(right?.expression).toEqual({ pressure: [{ offsetBeats: 0.5, value: 30 }] });
     });
 
+    it("slices a curved note's recorded expression when the note starts inside the discard hole", () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                source: [
+                    {
+                        id: 'late',
+                        pitch: 60,
+                        startBeat: 4,
+                        duration: 6,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 1, value: 90 },
+                                { offsetBeats: 4, value: 40 },
+                                { offsetBeats: 5, value: 20 },
+                            ],
+                        },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 7, discardBeforeBeat: 3 });
+
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+
+        expect(written.notesByClipId.source).toHaveLength(0);
+
+        const [right] = written.notesByClipId.right!;
+        expect(right).toMatchObject({ startBeat: 0, duration: 3, pressure: 90 });
+        expect(right?.expression).toEqual({
+            pressure: [
+                { offsetBeats: 1, value: 40 },
+                { offsetBeats: 2, value: 20 },
+            ],
+        });
+    });
+
     it('keeps notes on the source clip when nothing crosses the split', () => {
         mocks.midiStoreValue.value = {
             notesByClipId: { source: [note(60, 0, 2, 'a'), note(62, 2, 1, 'b')] },
