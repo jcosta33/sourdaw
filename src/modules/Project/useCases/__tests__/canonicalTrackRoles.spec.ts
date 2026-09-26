@@ -88,6 +88,39 @@ describe('canonical track roles', () => {
         source.trackRoles = roles.map((role) => ({ trackId: 't', role }));
         expect(getCanonicalTrackRole(source)).toEqual({ role: 'unknown', source: 'authored', evidence });
     });
+    it.each(['Vocal', 'Vocals', 'Vox'])(
+        'keeps authored and structural authority above bare vocal names: %s',
+        (name) => {
+            const explicit = input(name);
+            explicit.trackRoles = [{ trackId: 't', role: 'pad' }];
+            expect(getCanonicalTrackRole(explicit)).toEqual({
+                role: 'pad',
+                source: 'authored',
+                evidence: 'authored-role',
+            });
+
+            const conflicting = input(name);
+            conflicting.trackRoles = [
+                { trackId: 't', role: 'kick' },
+                { trackId: 't', role: 'snare' },
+            ];
+            expect(getCanonicalTrackRole(conflicting)).toEqual({
+                role: 'unknown',
+                source: 'authored',
+                evidence: 'conflicting-authored-roles',
+            });
+
+            for (const kind of ['bus', 'master'] as const) {
+                const structural = input(name);
+                structural.track = { ...structural.track, kind };
+                expect(getCanonicalTrackRole(structural)).toEqual({
+                    role: kind,
+                    source: 'name-tags',
+                    evidence: 'structural-kind',
+                });
+            }
+        }
+    );
     it.each([
         ['Kick 01', 'kick'],
         ['SNARE top', 'snare'],
@@ -150,8 +183,15 @@ describe('canonical track roles', () => {
         { name: 'Bass & Drums', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Drums and Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Bass + Drums', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass Drum & Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass-Drum + Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass_Drum / Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass / Bass Drum', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass Drum and Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Drums & Perc', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Synth & Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Synth Pad, Synth', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Pad Synth + Synth', role: 'unknown', evidence: 'conflicting-name-tags' },
         { name: 'Drum Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
     ] as const)(
         'resolves a compound only when the two roles are directly adjacent: $name',

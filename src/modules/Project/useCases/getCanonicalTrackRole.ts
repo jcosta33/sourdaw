@@ -81,10 +81,16 @@ function compoundAdjacencyTokens(name: string): string {
     return name.normalize('NFKD').toLowerCase().replaceAll(/[-_]+/g, ' ');
 }
 
-function roleSpan(tokens: string, role: CanonicalTrackRole): { start: number; end: number } | null {
+function roleSpans(tokens: string, role: CanonicalTrackRole): Array<{ start: number; end: number }> {
     const entry = NAME_ROLES.find(([candidate]) => candidate === role);
-    const match = entry?.[1].exec(tokens);
-    return match ? { start: match.index, end: match.index + match[0].length } : null;
+    if (!entry) {
+        return [];
+    }
+    const pattern = new RegExp(entry[1].source, `${entry[1].flags.replace('g', '')}g`);
+    return Array.from(tokens.matchAll(pattern), (match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+    }));
 }
 
 /**
@@ -100,11 +106,13 @@ function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: st
     }
     const tokens = compoundAdjacencyTokens(name);
     const [roleA, roleB] = roles as [CanonicalTrackRole, CanonicalTrackRole];
-    const spanA = roleSpan(tokens, roleA);
-    const spanB = roleSpan(tokens, roleB);
-    if (!spanA || !spanB) {
+    const spansA = roleSpans(tokens, roleA);
+    const spansB = roleSpans(tokens, roleB);
+    if (spansA.length !== 1 || spansB.length !== 1) {
         return null;
     }
+    const spanA = spansA[0]!;
+    const spanB = spansB[0]!;
     // Order the pair by where each role actually appears in the name, not by pattern order.
     const aIsFirst = spanA.start <= spanB.start;
     const firstRole = aIsFirst ? roleA : roleB;
