@@ -41,11 +41,14 @@ import {
     COMMAND_HEADS,
     CHECK_COMMANDS,
     CHECK_SCRIPT_FAMILIES,
+    CHECK_RUN_NOUNS,
     CLOSED_CLASS_FUNCTION_WORDS,
+    COVERAGE_VERDICT_VERBS,
     ENGLISH_WORD_HEADS,
     GATE_CHECK_STATUSES,
     STATUS_ADVERBS,
     STEP_VERB_HEADS,
+    SUITE_OR_PIPELINE_VERDICT_VERBS,
     TEST_MODIFIED_NOUNS,
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
@@ -1191,15 +1194,134 @@ describe('product-scope test instructions', () => {
     });
 
     it.each([
+        ['a bare Gate verdict', 'Gate is green on this head.', ['Gate is green on this head']],
+        [
+            'a Gate verdict behind the article',
+            'The Gate is green on the latest push.',
+            ['The Gate is green on the latest push'],
+        ],
+    ])(
+        'refuses %s opening the segment: words behind the verdict keep it a status report',
+        (_label, instructions, segments) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    /** The nouns that make `Gate` the check anywhere, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_RUN_NOUNS_UNDER_TEST = ['check', 'job', 'jobs', 'workflow', 'workflows'];
+
+    it('pins the nouns that make Gate the check wherever they sit behind it', () => {
+        expect(CHECK_RUN_NOUNS).toEqual(CHECK_RUN_NOUNS_UNDER_TEST);
+    });
+
+    it.each([
         ['check', 'The Gate check passed.'],
         ['job', 'The Gate job passed.'],
         ['jobs', 'The Gate jobs passed.'],
-        ['run', 'The Gate run passed.'],
         ['workflow', 'The Gate workflow passed.'],
         ['workflows', 'The Gate workflows passed.'],
     ])('refuses the Gate check named by the %s noun', (_noun, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The verdict verbs a suite or the pipeline reports with, spec-owned on purpose: changing any member reddens the equality pin. */
+    const SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST = [
+        'validates',
+        'validated',
+        'passes',
+        'passed',
+        'fails',
+        'failed',
+    ];
+
+    it('pins the verdict verbs a suite or the pipeline reports with', () => {
+        expect(SUITE_OR_PIPELINE_VERDICT_VERBS).toEqual(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST);
+    });
+
+    it.each(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST)('refuses a suite status report closing on %s', (verb) => {
+        const instructions = `Confirm the suite ${verb}.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm the suite ${verb}`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The verdicts that end the existing-test DAW-noun exemption, spec-owned on purpose: changing any member reddens the equality pin. */
+    const COVERAGE_VERDICT_VERBS_UNDER_TEST = ['passes', 'passed', 'fails', 'failed', 'covers', 'covered'];
+
+    it('pins the verdict verbs that end the existing-test DAW-noun exemption', () => {
+        expect(COVERAGE_VERDICT_VERBS).toEqual(COVERAGE_VERDICT_VERBS_UNDER_TEST);
+    });
+
+    it.each(COVERAGE_VERDICT_VERBS_UNDER_TEST)('refuses an existing test project followed by %s', (verb) => {
+        const instructions = `The existing test project ${verb} this.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`The existing test project ${verb} this`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a Gate verdict closing a step', 'Confirm Gate is green.', ['Confirm Gate is green']],
+        [
+            'an existing test track that still passes',
+            'The existing test track still passes.',
+            ['The existing test track still passes'],
+        ],
+        [
+            'an existing test project that already passes',
+            'The existing test project already passes.',
+            ['The existing test project already passes'],
+        ],
+        [
+            'an existing test clip rerun until it passes',
+            'Rerun the existing test clip and confirm it still passes.',
+            ['Rerun the existing test clip and confirm it still passes'],
+        ],
+        [
+            'an existing test fixture',
+            'The existing test fixture covers this.',
+            ['The existing test fixture covers this'],
+        ],
+    ])('refuses %s: a status report or a verdict names coverage', (_label, instructions, segments) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        [
+            'the Gate green mid-step',
+            'Play the loop and confirm the Gate is green while the signal is above the threshold.',
+        ],
+        [
+            'the Gate turning green as it opens',
+            'Add a Noise Gate to the drum bus. Hit the pad and confirm the Gate turns green when it opens.',
+        ],
+        ['the Gate going green and red', 'Confirm the Gate goes green on each hit and red between them.'],
+        ['the Gate left to run', 'Let the Gate run for a bar and confirm it closes on the tail.'],
+        [
+            'a mastering suite passing audio',
+            'Load the Proof mastering suite on the master and confirm the suite passes audio.',
+        ],
+        [
+            'a mastering suite clean with its limiter bypassed',
+            'Confirm the mastering suite is clean with the limiter bypassed.',
+        ],
+        ['a MIDI suite passing MIDI', 'Load the Levain suite and confirm the suite is passing MIDI to the sampler.'],
+        ['a suite passing the test tone', 'Insert Proof and confirm the suite passes the test tone unclipped.'],
+        [
+            'an audio pipeline clean at the loop point',
+            'Confirm the audio pipeline is clean with no clicks at the loop point.',
+        ],
+        [
+            'a render pipeline passing the mix',
+            'Play the mix and confirm the render pipeline passes the full mix without dropouts.',
+        ],
+        ['a fixture project', 'Open the fixture project and confirm it loads.'],
+        ['a demo fixture song', 'Load the demo fixture song from Help and confirm the tracks appear.'],
+    ])('passes %s: DAW words mid-step are no status report', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
     it.each([
@@ -1232,6 +1354,26 @@ describe('product-scope test instructions', () => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
+
+    it.each([
+        ['a bare test fixture', 'Covered by the test fixture.', ['Covered by the test fixture']],
+        [
+            'a spaced test project fixture',
+            'Covered by the test project fixture.',
+            ['Covered by the test project fixture'],
+        ],
+        [
+            'hyphenated test-project fixtures',
+            'Covered by the test-project fixtures.',
+            ['Covered by the test-project fixtures'],
+        ],
+    ])(
+        'refuses %s: the test-fixture form alone names coverage, with no existing test or verdict',
+        (_label, instructions, segments) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
 
     it.each([
         ['validates', 'pipeline validates the current head'],

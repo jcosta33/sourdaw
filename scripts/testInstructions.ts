@@ -10,6 +10,7 @@ import {
     CHECK_COMMANDS,
     CHECK_SCRIPT_FAMILIES,
     CLOSED_CLASS_FUNCTION_WORDS,
+    COVERAGE_VERDICT_VERBS,
     COMMAND_HEADS,
     ENGLISH_WORD_HEADS,
     CHECK_RUN_NOUNS,
@@ -646,11 +647,13 @@ function isInWordApostrophe(characters: readonly string[], index: number): boole
  * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage. `existing`
  * names coverage on the plural, the suite, and a singular `test` that modifies none of the DAW
  * nouns in `TEST_MODIFIED_NOUNS`: `the existing test covers this` is coverage, while `an existing
- * test project` is something a reviewer opens. A test fixture is always coverage, whatever it
- * holds (`the existing test project fixture covers this`).
+ * test project` is something a reviewer opens (unless a verdict follows it, which
+ * `EXISTING_TEST_WITH_VERDICT` judges). A fixture names coverage only as a test fixture, with at
+ * most one word between (`test fixture`, `test project fixture`, `test-project fixture`): `the
+ * fixture project` and `the demo fixture song` are things a reviewer opens.
  */
 const TEST_SUITE_WORDS = new RegExp(
-    `\\b(?:specs?|e2e|fixtures?|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
+    `\\b(?:specs?|e2e|test[- ](?:\\w+[- ])?fixtures?|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
     'i'
 );
 
@@ -679,24 +682,52 @@ const CHECK_VERDICT_ONLY = new RegExp(`^${CHECK_VERDICT_SOURCE}$`);
 const EMPHASIS_AND_BACKTICKS = /[*_~`]/g;
 
 /**
- * The repository's own check names, matched case-sensitively as the proper nouns they are.
- * `HeavyGate` names nothing else, so it matches bare. `Gate` is also the DAW's noise-gate device
- * (`Add a Gate to track 1`, `confirm the Gate is passing signal`, `the Gate runs before the
- * compressor`), so it names the check only with a status phrase over `GATE_CHECK_STATUSES` (`Gate
- * is green`, `Gate is still green`) or a noun from `CHECK_RUN_NOUNS` (`the Gate check passed`)
- * directly behind it.
+ * A pattern for `subject` followed by `verdict` read as a status report, not as a DAW step that
+ * happens to contain the words: the report either opens the segment, behind at most the article
+ * `the` (`The suite passed on this head`), or closes it, followed by nothing but an optional status
+ * adverb (`Confirm Gate is green`, `Gate is green again`). The same words mid-step describe the
+ * device or the plugin (`confirm the Gate is green while the signal is above the threshold`).
  */
-const REPOSITORY_CHECK_NAMES = new RegExp(
-    `\\bHeavyGate\\b|\\bGate(?:\\s+${checkVerdictSource(GATE_CHECK_STATUSES)}|\\s+(?:${CHECK_RUN_NOUNS.join('|')})\\b)`
-);
+function statusReport(subject: string, verdict: string, flags = ''): RegExp {
+    const trailingAdverb = `(?:\\s+(?:${STATUS_ADVERBS.join('|')}))?`;
+    return new RegExp(`^(?:[Tt]he\\s+)?${subject}${verdict}|\\b${subject}${verdict}${trailingAdverb}\\W*$`, flags);
+}
+
+/**
+ * The repository's own check names that read as the check wherever they sit, matched
+ * case-sensitively as the proper nouns they are. `HeavyGate` names nothing else, so it matches
+ * bare. `Gate` is also the DAW's noise-gate device, so anywhere in a step it names the check only
+ * with a noun from `CHECK_RUN_NOUNS` directly behind it (`the Gate check passed`).
+ */
+const REPOSITORY_CHECK_NAMES = new RegExp(`\\bHeavyGate\\b|\\bGate\\s+(?:${CHECK_RUN_NOUNS.join('|')})\\b`);
+
+/**
+ * `Gate` reported with a status over `GATE_CHECK_STATUSES` (`Gate is green`, `Gate is still
+ * green`), only as a status report: the device turns green on its meter mid-step (`confirm the
+ * Gate turns green when it opens`).
+ */
+const GATE_STATUS_REPORT = statusReport('Gate', `\\s+${checkVerdictSource(GATE_CHECK_STATUSES)}`);
 
 /**
  * A suite or the pipeline reported with its status (`The suite is green`) or a verdict verb (`The
- * suite passed`, `pipeline validates the current head`), in any letter case. A bare `suite` stays
- * out: a plugin suite is something a reviewer loads.
+ * suite passed`, `pipeline validates the current head`), in any letter case, only as a status
+ * report: Proof and Levain are suites, and a step confirms `the suite passes audio` or `the render
+ * pipeline passes the full mix`. A bare `suite` stays out: a plugin suite is something a reviewer
+ * loads.
  */
-const SUITE_OR_PIPELINE_STATUS = new RegExp(
-    `\\b(?:suites?|pipeline)(?:${STATUS_PHRASE}|\\s+(?:${SUITE_OR_PIPELINE_VERDICT_VERBS.join('|')})\\b)`,
+const SUITE_OR_PIPELINE_STATUS_REPORT = statusReport(
+    '(?:suites?|pipeline)',
+    `(?:${STATUS_PHRASE}|\\s+(?:${SUITE_OR_PIPELINE_VERDICT_VERBS.join('|')})\\b)`,
+    'i'
+);
+
+/**
+ * `existing test` followed later in the segment by a coverage verdict: the DAW-noun exemption in
+ * `TEST_SUITE_WORDS` does not hold once the thing is said to pass or cover (`the existing test
+ * track still passes`, `rerun the existing test clip and confirm it still passes`).
+ */
+const EXISTING_TEST_WITH_VERDICT = new RegExp(
+    `\\bexisting[- ]test\\b.*\\b(?:${COVERAGE_VERDICT_VERBS.join('|')})\\b`,
     'i'
 );
 
@@ -711,13 +742,15 @@ const TEST_RUNNER_NAMES = /\b(?:Vitest|Playwright)\b/;
 const CI_WORD = /\bCI\b/;
 
 function namesTestSuite(segment: string): boolean {
-    const plain = segment.replace(EMPHASIS_AND_BACKTICKS, '');
+    const plain = segment.replace(EMPHASIS_AND_BACKTICKS, '').trim();
     return (
         TEST_SUITE_WORDS.test(segment) ||
+        EXISTING_TEST_WITH_VERDICT.test(segment) ||
         TEST_RUNNER_NAMES.test(segment) ||
         CI_WORD.test(segment) ||
         REPOSITORY_CHECK_NAMES.test(plain) ||
-        SUITE_OR_PIPELINE_STATUS.test(plain)
+        GATE_STATUS_REPORT.test(plain) ||
+        SUITE_OR_PIPELINE_STATUS_REPORT.test(plain)
     );
 }
 

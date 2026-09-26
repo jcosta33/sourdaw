@@ -430,11 +430,25 @@ export const CHECK_STATUSES = ['green', 'red', 'clean', 'passing', 'failing'];
 export const GATE_CHECK_STATUSES = ['green'];
 
 /**
- * The nouns that make `Gate` the repository's check rather than the DAW device: `the Gate check`,
- * `the Gate jobs`. Plurals are listed only where they cannot be a verb: `the Gate checks the
- * sidechain` and `the Gate runs before the compressor` describe the device.
+ * The nouns that make `Gate` the repository's check rather than the DAW device wherever they sit
+ * behind it: `the Gate check`, `the Gate jobs`. Only words that cannot be a verb qualify: `the Gate
+ * checks the sidechain`, `the Gate runs before the compressor`, and `let the Gate run for a bar`
+ * describe the device, so `checks`, `run`, and `runs` stay out. Exported so the specs can pin the
+ * inventory: changing any member reddens the equality pin and that member's case.
  */
-export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'run', 'workflow', 'workflows'];
+export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'workflow', 'workflows'];
 
-/** The verdict verbs a suite or the pipeline reports with: `the suite passed`, `the pipeline validates the head`. */
+/**
+ * The verdict verbs a suite or the pipeline reports with: `the suite passed`, `the pipeline
+ * validates the head`. Exported so the specs can pin the inventory: changing any member reddens
+ * the equality pin and that member's case.
+ */
 export const SUITE_OR_PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];
+
+/**
+ * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
+ * in the same segment: `the existing test track still passes`, `the existing test project covers
+ * this`. Exported so the specs can pin the inventory: changing any member reddens the equality pin
+ * and that member's case.
+ */
+export const COVERAGE_VERDICT_VERBS = ['passes', 'passed', 'fails', 'failed', 'covers', 'covered'];
