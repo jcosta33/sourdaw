@@ -359,7 +359,7 @@ describe('contract-carrying admission', () => {
             limits: { maxRegionBytes: 4_096, maxTotalBytes: Buffer.byteLength(before, 'utf8') },
         });
         expect(set.truncated).toEqual([
-            { path: 'scripts/reviewDossier.ts', reason: 'contract-evidence-withheld (after)' },
+            { path: 'scripts/reviewDossier.ts', reason: 'total-evidence-budget-exhausted (after, contract)' },
         ]);
     });
 
@@ -383,14 +383,236 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
-    it('derives contract-carrying from the closure, the contract documents, and closure-pinning specs', () => {
+    it('derives contract-carrying from the closure, the contract documents, and the workflow inventory', () => {
         expect(isContractCarryingPath('scripts/trustedGithubWriteBootstrap.ts')).toBe(true);
         expect(isContractCarryingPath('AGENTS.md')).toBe(true);
         expect(isContractCarryingPath('.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md')).toBe(true);
         expect(isContractCarryingPath('.agents/skills/delivery-orchestration/SKILL.md')).toBe(true);
-        expect(isContractCarryingPath('scripts/__tests__/reviewDossier.spec.ts')).toBe(true);
+        expect(isContractCarryingPath('.github/workflows/semantic-review.yml')).toBe(true);
+        expect(isContractCarryingPath('.github/workflows/unregistered.yml')).toBe(false);
+        // A collected spec is no longer classified by a same-stem sibling; its import/pin content decides.
+        expect(isContractCarryingPath('scripts/__tests__/reviewDossier.spec.ts')).toBe(false);
         expect(isContractCarryingPath('scripts/__tests__/checkReleaseInventory.spec.ts')).toBe(false);
         expect(isContractCarryingPath('src/modules/Project/undo.ts')).toBe(false);
+    });
+
+    it('admits a collected spec that imports a closure member before an equal-sized bulk spec', () => {
+        // R1: `agentDeliveryScripts.spec.ts` has no sibling `scripts/agentDeliveryScripts.ts`, so the
+        // same-stem heuristic ranked it bulk and a tight budget dropped the spec that pins the closure.
+        const before = 'const before = 1;\n';
+        const contractAfter = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('aaa/plain.spec.ts'),
+                    changedFile('scripts/__tests__/agentDeliveryScripts.spec.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/agentDeliveryScripts.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/agentDeliveryScripts.spec.ts`]: contractAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'scripts/__tests__/agentDeliveryScripts.spec.ts')
+        ).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+
+    it('admits a collected spec that names a pinned workflow file before an equal-sized bulk spec', () => {
+        // R1: `healthGatesWorkflow.spec.ts` imports no closure member, but its content pins the workflow
+        // inventory, so a change to it carries the Gate contract.
+        const before = 'const before = 1;\n';
+        const contractAfter = "const workflow = 'semantic-review.yml';\n";
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/plain.spec.ts'), changedFile('scripts/__tests__/healthGatesWorkflow.spec.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/healthGatesWorkflow.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/healthGatesWorkflow.spec.ts`]: contractAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'scripts/__tests__/healthGatesWorkflow.spec.ts')
+        ).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+
+    it('leaves a collected spec whose after side is unavailable unclassified, never an error', () => {
+        const set = collectEvidence({
+            port: fakeSource({ files: [changedFile('scripts/__tests__/missing.spec.ts')], blobs: {} }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        expect(set.references).toHaveLength(0);
+        expect(set.truncated.some((entry) => entry.reason === 'evidence-unavailable-at-revision')).toBe(true);
+    });
+
+    it('admits a pinned workflow file before a large bulk file under a one-path budget', () => {
+        // R2: the closure is trusted-graph scripts only, so `.github/workflows/semantic-review.yml` ranked
+        // bulk and a tight budget could drop the file that holds the advisory check's provider key.
+        const workflowBefore = 'name: semantic-review\n';
+        const workflowAfter = 'name: semantic-review\non: pull_request_target\n';
+        const bulk = 'const bulk = 1;\n'.repeat(40);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/bulk.ts'), changedFile('.github/workflows/semantic-review.yml')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/bulk.ts`]: bulk,
+                    [`${HEAD}:aaa/bulk.ts`]: bulk,
+                    [`${MERGE_BASE}:.github/workflows/semantic-review.yml`]: workflowBefore,
+                    [`${HEAD}:.github/workflows/semantic-review.yml`]: workflowAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: Buffer.byteLength(bulk, 'utf8'),
+                maxTotalBytes: Buffer.byteLength(workflowBefore, 'utf8') + Buffer.byteLength(workflowAfter, 'utf8'),
+            },
+        });
+        expect(set.references.some((reference) => reference.path === '.github/workflows/semantic-review.yml')).toBe(
+            true
+        );
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === 'aaa/bulk.ts' && entry.reason === 'total-evidence-budget-exhausted (before)'
+            )
+        ).toBe(true);
+    });
+
+    it('records the contract-marked reason when a closure-importing spec is displaced by the budget', () => {
+        const before = 'const before = 1;\n';
+        const after = `import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n${'const large = 1;\n'.repeat(
+            100
+        )}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('scripts/__tests__/agentDeliveryScripts.spec.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/__tests__/agentDeliveryScripts.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/agentDeliveryScripts.spec.ts`]: after,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: Buffer.byteLength(before, 'utf8') },
+        });
+        expect(set.truncated).toEqual([
+            {
+                path: 'scripts/__tests__/agentDeliveryScripts.spec.ts',
+                reason: 'total-evidence-budget-exhausted (after, contract)',
+            },
+        ]);
+    });
+
+    it('admits a closure source before its own spec when the spec would exhaust the budget', () => {
+        // R4: both paths are contract-carrying, but ranking by path put `scripts/__tests__/X.spec.ts`
+        // before `scripts/X.ts`, so the spec spent the budget and withheld the source the change is
+        // about. Non-spec before spec inside the contract group fixes it.
+        const sourceBefore = 'export const policy = 1;\n';
+        const sourceAfter = 'export const policy = 2;\n';
+        const specBefore = "import { planReviewRisk } from '../reviewRiskPolicy.ts';\n";
+        const specAfter = `${specBefore}${'const large = 1;\n'.repeat(200)}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('scripts/__tests__/reviewRiskPolicy.spec.ts'),
+                    changedFile('scripts/reviewRiskPolicy.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/reviewRiskPolicy.ts`]: sourceBefore,
+                    [`${HEAD}:scripts/reviewRiskPolicy.ts`]: sourceAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/reviewRiskPolicy.spec.ts`]: specBefore,
+                    [`${HEAD}:scripts/__tests__/reviewRiskPolicy.spec.ts`]: specAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(specBefore, 'utf8') + Buffer.byteLength(specAfter, 'utf8'),
+            },
+        });
+        expect(set.references.some((reference) => reference.path === 'scripts/reviewRiskPolicy.ts')).toBe(true);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'scripts/__tests__/reviewRiskPolicy.spec.ts' &&
+                    entry.reason === 'total-evidence-budget-exhausted (after, contract)'
+            )
+        ).toBe(true);
+    });
+
+    it('asserts the exact truncated entries when a binding budget forces the spec out', () => {
+        // R5: with a budget that admits only the source's two sides, the source is admitted and the
+        // spec — which would have sorted first by path — is withheld with its contract-marked cause.
+        const sourceBefore = 'export const policy = 1;\n';
+        const sourceAfter = 'export const policy = 2;\n';
+        const specBefore = "import { planReviewRisk } from '../reviewRiskPolicy.ts';\n";
+        const specAfter = `${specBefore}${'const large = 1;\n'.repeat(200)}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('scripts/__tests__/reviewRiskPolicy.spec.ts'),
+                    changedFile('scripts/reviewRiskPolicy.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/reviewRiskPolicy.ts`]: sourceBefore,
+                    [`${HEAD}:scripts/reviewRiskPolicy.ts`]: sourceAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/reviewRiskPolicy.spec.ts`]: specBefore,
+                    [`${HEAD}:scripts/__tests__/reviewRiskPolicy.spec.ts`]: specAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(sourceBefore, 'utf8') + Buffer.byteLength(sourceAfter, 'utf8'),
+            },
+        });
+        expect(new Set(set.references.map((reference) => reference.path))).toEqual(
+            new Set(['scripts/reviewRiskPolicy.ts'])
+        );
+        expect(set.truncated).toEqual([
+            {
+                path: 'scripts/__tests__/reviewRiskPolicy.spec.ts',
+                reason: 'total-evidence-budget-exhausted (before, contract)',
+            },
+            {
+                path: 'scripts/__tests__/reviewRiskPolicy.spec.ts',
+                reason: 'total-evidence-budget-exhausted (after, contract)',
+            },
+        ]);
     });
 });
 
@@ -4106,6 +4328,41 @@ describe('verify withholds a region over the per-region budget', () => {
             )
         ).toBe(true);
         expect(report.scope.unassessed[0]?.reason).toBe('no-admissible-evidence');
+    });
+
+    it('names an oversized contract-carrying reference with the shared contract qualifier', async () => {
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${HEAD}:scripts/reviewDossier.ts`]: 'const oversized = 1;\n'.repeat(8) },
+            limits: { maxRegionBytes: 32, maxTotalBytes: 8_192 },
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [
+                        {
+                            path: 'scripts/reviewDossier.ts',
+                            side: 'after',
+                            startLine: 1,
+                            endLine: Number.MAX_SAFE_INTEGER,
+                        },
+                    ],
+                },
+            ],
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'region-exceeds-per-region-budget (after, contract)' },
+        ]);
     });
 
     it('sends and judges a region that fits the budget', async () => {

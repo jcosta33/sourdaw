@@ -12,11 +12,14 @@
  * that is recorded as a limitation: an omitted region is not evidence that the region is safe.
  *
  * Admission is ranked so a contract-carrying path — a trusted GitHub-write closure member, a contract
- * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), or a collected spec whose sibling
- * source is a closure member — is admitted before bulk or generated material and named when a budget
- * withholds it, so the same budget is spent where the contract lives.
+ * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
+ * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
+ * boundary), or a collected spec whose after side imports a closure member or names one of those
+ * workflow files — is admitted before bulk or generated material and named when a budget withholds it,
+ * so the same budget is spent where the contract lives.
  */
 
+import { HEALTH_GATE_WORKFLOW_FILES } from '../healthGateWorkflowContract.ts';
 import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 import {
@@ -154,22 +157,87 @@ function baseName(path: string): string {
  */
 const TRUSTED_CLOSURE_PATHS: ReadonlySet<string> = new Set(Object.values(trustedDependencyGraphs).flat());
 
-/** A collected spec whose sibling source — the `scripts/<stem>.ts` its basename names — is a closure member. */
-function isTrustedClosureSpec(path: string): boolean {
-    if (!path.startsWith('scripts/__tests__/') || !isCollectedSpec(path)) {
-        return false;
-    }
-    const stem = baseName(path).replace(/\.(?:spec|test)\.[^.]+$/u, '');
-    return TRUSTED_CLOSURE_PATHS.has(`scripts/${stem}.ts`);
+/** The repo paths of the workflow files the repository declares as its gate boundary. */
+const PINNED_WORKFLOW_PATHS: ReadonlySet<string> = new Set(
+    HEALTH_GATE_WORKFLOW_FILES.map((name) => `.github/workflows/${name}`)
+);
+
+/** Whether a path is a workflow file under `.github/workflows/` named in the repository's declared inventory. */
+function isPinnedWorkflowPath(path: string): boolean {
+    return path.startsWith('.github/workflows/') && PINNED_WORKFLOW_PATHS.has(path);
 }
 
 /**
  * Contract-carrying paths are the trusted GitHub-write closure, the contract documents (`AGENTS.md`,
- * `.agents/decisions/`, `.agents/skills/`), and the collected specs whose sibling source is a closure
- * member; they are admitted before bulk material and named when a budget withholds them.
+ * `.agents/decisions/`, `.agents/skills/`), and the declared workflow boundary. A collected spec whose
+ * after side imports a closure member or names a pinned workflow file is classified separately in
+ * `collectEvidence`, where its read through the source port is available.
  */
 export function isContractCarryingPath(path: string): boolean {
-    return isContractPath(path) || TRUSTED_CLOSURE_PATHS.has(path) || isTrustedClosureSpec(path);
+    return isContractPath(path) || TRUSTED_CLOSURE_PATHS.has(path) || isPinnedWorkflowPath(path);
+}
+
+/** The directory of a repo-relative path, including the trailing slash; empty for a top-level file. */
+function directoryOf(path: string): string {
+    const index = path.lastIndexOf('/');
+    return index === -1 ? '' : path.slice(0, index + 1);
+}
+
+/** Resolves a relative import/export specifier against the importing file's directory to a repo path. */
+function resolveSpecifier(fromDir: string, specifier: string): string | undefined {
+    const segments = fromDir.split('/').filter((segment) => segment !== '' && segment !== '.');
+    for (const segment of specifier.split('/')) {
+        if (segment === '' || segment === '.') {
+            continue;
+        }
+        if (segment === '..') {
+            if (segments.pop() === undefined) {
+                return undefined;
+            }
+            continue;
+        }
+        segments.push(segment);
+    }
+    return segments.join('/');
+}
+
+/** The relative `import`/`export ... from` specifiers of one source file, in document order. */
+function relativeImportSpecifiers(source: string): string[] {
+    const specifiers: string[] = [];
+    const patterns: readonly RegExp[] = [/\bfrom\s*(['"])([^'"\n]+)\1/gu, /\bimport\s*(['"])([^'"\n]+)\1/gu];
+    for (const pattern of patterns) {
+        for (const match of source.matchAll(pattern)) {
+            const specifier = match[2];
+            if (specifier !== undefined && specifier.startsWith('.')) {
+                specifiers.push(specifier);
+            }
+        }
+    }
+    return specifiers;
+}
+
+/** Whether a collected spec's after-side content imports a trusted closure member or names a pinned workflow file. */
+function isContractCarryingSpecContent(afterContent: string, specPath: string): boolean {
+    for (const specifier of relativeImportSpecifiers(afterContent)) {
+        const resolved = resolveSpecifier(directoryOf(specPath), specifier);
+        if (resolved !== undefined && TRUSTED_CLOSURE_PATHS.has(resolved)) {
+            return true;
+        }
+    }
+    return HEALTH_GATE_WORKFLOW_FILES.some((name) => afterContent.includes(name));
+}
+
+/**
+ * Whether a changed collected spec is contract-carrying, classified from its after-side content read
+ * through the source port. A spec whose content is unavailable is simply not classified; the collector
+ * performs the read at most once per changed file.
+ */
+function classifyChangedSpecContract(port: SemanticSourcePort, headSha: string, path: string): boolean {
+    if (!isCollectedSpec(path)) {
+        return false;
+    }
+    const after = port.readFile(headSha, path);
+    return after !== undefined && isContractCarryingSpecContent(after, path);
 }
 
 /** The rule ids a path admits, sorted so two sets can be compared for equality. */
@@ -380,16 +448,115 @@ function admitSide(
     }
 }
 
+export type WithheldBudgetCause = 'region' | 'total';
+
 /**
- * The reason a budget withholds one region. A contract-carrying changed file is named as such, so the
- * coverage record can tell a trimmed bulk file from a contract that was not read; contract-context
- * regions (label `contract`) are already named by their qualifier.
+ * The one withheld-region vocabulary the scan and verify routes share. The budget cause stays the
+ * code — `region-exceeds-per-region-budget` or `total-evidence-budget-exhausted` — and `contract`
+ * joins the side qualifier for a contract-carrying changed path, so the same withheld reference reads
+ * the same whichever route produced it. Every other path keeps the plain `<code> (<side>)` form.
  */
-function withheldReason(request: RegionRequest, label: string, budget: 'region' | 'total'): string {
+export function withheldRegionReason(contractCarrying: boolean, side: string, budget: WithheldBudgetCause): string {
     const base = budget === 'region' ? 'region-exceeds-per-region-budget' : 'total-evidence-budget-exhausted';
+    return contractCarrying ? `${base} (${side}, contract)` : `${base} (${side})`;
+}
+
+/**
+ * The reason a budget withholds one region, from the contract-carrying classification the collector
+ * built. Contract-context regions (label `contract`) are already named by their qualifier.
+ */
+function withheldReason(
+    request: RegionRequest,
+    label: string,
+    budget: WithheldBudgetCause,
+    contractCarryingPaths: ReadonlySet<string>
+): string {
     const contractCarrying =
-        label !== 'contract' && request.changedPath !== undefined && isContractCarryingPath(request.changedPath);
-    return contractCarrying ? `contract-evidence-withheld (${label})` : `${base} (${label})`;
+        label !== 'contract' && request.changedPath !== undefined && contractCarryingPaths.has(request.changedPath);
+    return withheldRegionReason(contractCarrying, label, budget);
+}
+
+type RegionAdmissionState = {
+    readonly limits: SemanticEvidenceLimits;
+    readonly contractCarryingPaths: ReadonlySet<string>;
+    readonly references: EvidenceReference[];
+    readonly contents: Map<string, string>;
+    readonly attribution: Map<string, Set<string>>;
+    readonly excluded: SemanticScopeExclusion[];
+    readonly excludedPaths: Set<string>;
+    readonly truncated: SemanticScopeExclusion[];
+    readonly limitations: string[];
+    readonly ownWithheldSides: Map<string, Set<EvidenceSide>>;
+    readonly contextWithheldSides: Set<EvidenceSide>;
+    readonly identityToEvidenceId: Map<string, string>;
+    totalBytes: number;
+    ordinal: number;
+};
+
+/** Admits one region: the content screen, the two byte budgets, and the identifier. */
+function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: string, label: string): void {
+    // A region exists once per revision, path, side, and range. A copy whose source is itself changed
+    // in the same diff reads that source's before side a second time; admitting it twice would charge
+    // one region's bytes against the total budget in both units. The single minted region is instead
+    // attributed to both changed files.
+    const identity = regionIdentity(request, raw);
+    const existing = state.identityToEvidenceId.get(identity);
+    if (existing !== undefined) {
+        if (request.changedPath !== undefined) {
+            state.attribution.get(existing)?.add(request.changedPath);
+        }
+        return;
+    }
+    // Path classification runs before the read; this runs before admission, on the whole region rather
+    // than the prefix, because a credential later in the file is still a credential. An ordinary-looking
+    // filename is the case path patterns cannot see.
+    const unsafe = sensitiveContentReason(raw);
+    if (unsafe !== undefined) {
+        // One entry per path: the scope manifest counts paths, and both sides of a modified file would
+        // otherwise be counted as two discoveries. The side is kept in the limitation.
+        if (!state.excludedPaths.has(request.path)) {
+            state.excludedPaths.add(request.path);
+            state.excluded.push({ path: request.path, reason: 'credential-shaped-content-excluded' });
+        }
+        // Recorded as incomplete scope as well as a note: a unit whose evidence was withheld was not
+        // assessed, and a run that reported completion would have claimed otherwise.
+        state.truncated.push({ path: request.path, reason: 'evidence-withheld' });
+        state.limitations.push(`evidence for ${request.path} (${label}) was withheld: it contains ${unsafe}`);
+        recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
+        return;
+    }
+    if (!regionFits(raw, state.limits.maxRegionBytes)) {
+        state.truncated.push({
+            path: request.path,
+            reason: withheldReason(request, label, 'region', state.contractCarryingPaths),
+        });
+        state.limitations.push(
+            `evidence for ${request.path} (${label}) was not supplied: it exceeds the per-region budget`
+        );
+        recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
+        return;
+    }
+    const bytes = Buffer.byteLength(raw, 'utf8');
+    if (state.totalBytes + bytes > state.limits.maxTotalBytes) {
+        state.truncated.push({
+            path: request.path,
+            reason: withheldReason(request, label, 'total', state.contractCarryingPaths),
+        });
+        state.limitations.push(
+            `evidence for ${request.path} (${label}) was omitted: the total evidence budget was exhausted`
+        );
+        recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
+        return;
+    }
+    state.totalBytes += bytes;
+    const reference = makeReference(request, raw, state.ordinal);
+    state.references.push(reference);
+    state.contents.set(reference.evidenceId, raw);
+    state.identityToEvidenceId.set(identity, reference.evidenceId);
+    if (request.changedPath !== undefined) {
+        state.attribution.set(reference.evidenceId, new Set([request.changedPath]));
+    }
+    state.ordinal += 1;
 }
 
 /**
@@ -398,7 +565,10 @@ function withheldReason(request: RegionRequest, label: string, budget: 'region' 
  * It is a factory rather than part of the collector because the collector's job is deciding *which*
  * lines a question needs, and this is the separate job of deciding whether they may leave at all.
  */
-function createRegionAdmission(limits: SemanticEvidenceLimits): {
+function createRegionAdmission(
+    limits: SemanticEvidenceLimits,
+    contractCarryingPaths: ReadonlySet<string>
+): {
     admit: (request: RegionRequest, raw: string, label: string) => void;
     admitSide: (
         request: Omit<RegionRequest, 'range'>,
@@ -415,78 +585,23 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
     ownWithheldSides: Map<string, Set<EvidenceSide>>;
     contextWithheldSides: Set<EvidenceSide>;
 } {
-    const references: EvidenceReference[] = [];
-    const contents = new Map<string, string>();
-    const attribution = new Map<string, Set<string>>();
-    const excluded: SemanticScopeExclusion[] = [];
-    const excludedPaths = new Set<string>();
-    const truncated: SemanticScopeExclusion[] = [];
-    const limitations: string[] = [];
-    const ownWithheldSides = new Map<string, Set<EvidenceSide>>();
-    const contextWithheldSides = new Set<EvidenceSide>();
-    const identityToEvidenceId = new Map<string, string>();
-    let totalBytes = 0;
-    let ordinal = 1;
-
-    const admit = (request: RegionRequest, raw: string, label: string): void => {
-        // A region exists once per revision, path, side, and range. A copy whose source is itself
-        // changed in the same diff reads that source's before side a second time; admitting it twice
-        // would charge one region's bytes against the total budget in both units. The single minted
-        // region is instead attributed to both changed files.
-        const identity = regionIdentity(request, raw);
-        const existing = identityToEvidenceId.get(identity);
-        if (existing !== undefined) {
-            if (request.changedPath !== undefined) {
-                attribution.get(existing)?.add(request.changedPath);
-            }
-            return;
-        }
-        // Path classification runs before the read; this runs before admission, on the whole region
-        // rather than the prefix, because a credential later in the file is still a credential. An
-        // ordinary-looking filename is the case path patterns cannot see.
-        const unsafe = sensitiveContentReason(raw);
-        if (unsafe !== undefined) {
-            // One entry per path: the scope manifest counts paths, and both sides of a modified file
-            // would otherwise be counted as two discoveries. The side is kept in the limitation.
-            if (!excludedPaths.has(request.path)) {
-                excludedPaths.add(request.path);
-                excluded.push({ path: request.path, reason: 'credential-shaped-content-excluded' });
-            }
-            // Recorded as incomplete scope as well as a note: a unit whose evidence was withheld was
-            // not assessed, and a run that reported completion would have claimed otherwise.
-            truncated.push({ path: request.path, reason: 'evidence-withheld' });
-            limitations.push(`evidence for ${request.path} (${label}) was withheld: it contains ${unsafe}`);
-            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
-            return;
-        }
-        if (!regionFits(raw, limits.maxRegionBytes)) {
-            truncated.push({ path: request.path, reason: withheldReason(request, label, 'region') });
-            limitations.push(
-                `evidence for ${request.path} (${label}) was not supplied: it exceeds the per-region budget`
-            );
-            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
-            return;
-        }
-        const bytes = Buffer.byteLength(raw, 'utf8');
-        if (totalBytes + bytes > limits.maxTotalBytes) {
-            truncated.push({ path: request.path, reason: withheldReason(request, label, 'total') });
-            limitations.push(
-                `evidence for ${request.path} (${label}) was omitted: the total evidence budget was exhausted`
-            );
-            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
-            return;
-        }
-        totalBytes += bytes;
-        const reference = makeReference(request, raw, ordinal);
-        references.push(reference);
-        contents.set(reference.evidenceId, raw);
-        identityToEvidenceId.set(identity, reference.evidenceId);
-        if (request.changedPath !== undefined) {
-            attribution.set(reference.evidenceId, new Set([request.changedPath]));
-        }
-        ordinal += 1;
+    const state: RegionAdmissionState = {
+        limits,
+        contractCarryingPaths,
+        references: [],
+        contents: new Map(),
+        attribution: new Map(),
+        excluded: [],
+        excludedPaths: new Set(),
+        truncated: [],
+        limitations: [],
+        ownWithheldSides: new Map(),
+        contextWithheldSides: new Set(),
+        identityToEvidenceId: new Map(),
+        totalBytes: 0,
+        ordinal: 1,
     };
-
+    const admit = (request: RegionRequest, raw: string, label: string): void => admitRegion(state, request, raw, label);
     return {
         admit,
         admitSide: (request, raw, label, ranges): void =>
@@ -496,19 +611,19 @@ function createRegionAdmission(limits: SemanticEvidenceLimits): {
                 label,
                 ranges,
                 admit,
-                truncated,
-                limitations,
-                ownWithheldSides,
-                contextWithheldSides
+                state.truncated,
+                state.limitations,
+                state.ownWithheldSides,
+                state.contextWithheldSides
             ),
-        references,
-        contents,
-        attribution,
-        excluded,
-        truncated,
-        limitations,
-        ownWithheldSides,
-        contextWithheldSides,
+        references: state.references,
+        contents: state.contents,
+        attribution: state.attribution,
+        excluded: state.excluded,
+        truncated: state.truncated,
+        limitations: state.limitations,
+        ownWithheldSides: state.ownWithheldSides,
+        contextWithheldSides: state.contextWithheldSides,
     };
 }
 
@@ -520,6 +635,49 @@ function kindHasBeforeSide(kind: SemanticChangeKind): boolean {
 /** Whether a change kind has an after side at the reviewed head; a copy's new destination is one. */
 function kindHasAfterSide(kind: SemanticChangeKind): boolean {
     return kind === 'added' || kind === 'modified' || kind === 'renamed' || kind === 'copied';
+}
+
+/**
+ * The admission order for one change. Contract-carrying before bulk, and inside each group non-spec
+ * before collected spec, then ascending changed-line total, then path — so no spec can outrank the
+ * source it covers and no large path can starve a smaller one.
+ */
+function compareForAdmission(
+    left: SemanticChangedFile,
+    right: SemanticChangedFile,
+    contractCarrying: ReadonlySet<string>
+): number {
+    const leftContract = contractCarrying.has(left.path) ? 0 : 1;
+    const rightContract = contractCarrying.has(right.path) ? 0 : 1;
+    if (leftContract !== rightContract) {
+        return leftContract - rightContract;
+    }
+    const leftSpec = isCollectedSpec(left.path) ? 1 : 0;
+    const rightSpec = isCollectedSpec(right.path) ? 1 : 0;
+    if (leftSpec !== rightSpec) {
+        return leftSpec - rightSpec;
+    }
+    const leftLines = left.added + left.deleted;
+    const rightLines = right.added + right.deleted;
+    if (leftLines !== rightLines) {
+        return leftLines - rightLines;
+    }
+    return compareByPath(left, right);
+}
+
+/** The changed paths that are contract-carrying, each classified once from its path or after-side content. */
+function classifyContractCarryingPaths(
+    port: SemanticSourcePort,
+    headSha: string,
+    changed: readonly SemanticChangedFile[]
+): Set<string> {
+    const contractCarrying = new Set<string>();
+    for (const file of changed) {
+        if (isContractCarryingPath(file.path) || classifyChangedSpecContract(port, headSha, file.path)) {
+            contractCarrying.add(file.path);
+        }
+    }
+    return contractCarrying;
 }
 
 /**
@@ -535,13 +693,11 @@ export function collectEvidence(input: {
     limits: SemanticEvidenceLimits;
     contractPaths?: readonly string[];
 }): SemanticEvidenceSet {
-    // Contract-carrying paths are admitted before bulk or generated material, so a tight total budget
-    // is spent where the contract lives rather than in file order.
-    const files = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)].sort((left, right) => {
-        const leftRank = isContractCarryingPath(left.path) ? 0 : 1;
-        const rightRank = isContractCarryingPath(right.path) ? 0 : 1;
-        return leftRank - rightRank || compareByPath(left, right);
-    });
+    const changed = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)];
+    // Classify each changed file once: a pure-path contract member, or a collected spec whose after
+    // side imports a closure member or names a pinned workflow file. The spec read happens here, once.
+    const contractCarrying = classifyContractCarryingPaths(input.port, input.headSha, changed);
+    const files = changed.sort((left, right) => compareForAdmission(left, right, contractCarrying));
     // Read once for the whole change: one `git diff` answers for every path, and an empty map means
     // the hunks were unavailable and each changed file is supplied whole.
     let hunksByPath: ReadonlyMap<string, PathHunks>;
@@ -551,7 +707,7 @@ export function collectEvidence(input: {
         hunksByPath = new Map();
     }
 
-    const admission = createRegionAdmission(input.limits);
+    const admission = createRegionAdmission(input.limits, contractCarrying);
     const { admit, admitSide } = admission;
 
     for (const file of files) {

@@ -169,7 +169,11 @@ const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
     'unit-overhead-exceeds-request-budget',
 ]);
 
-/** Producer reason codes that carry a parenthesised qualifier, e.g. `region-exceeds-per-region-budget (after)`. */
+/**
+ * Producer reason codes that carry a parenthesised qualifier, e.g. `region-exceeds-per-region-budget (after)`.
+ * `contract-evidence-withheld` is retired as an emitted code but stays here so records persisted before
+ * the change keep reading.
+ */
 const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'hunk-beyond-file',
     'region-exceeds-per-region-budget',
@@ -177,14 +181,37 @@ const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'contract-evidence-withheld',
 ];
 
-/** The closed qualifier labels the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
+/** The closed single qualifier terms the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
 const PARAMETERIZED_REASON_QUALIFIERS: ReadonlySet<string> = new Set([...EVIDENCE_SIDES, 'contract']);
+
+/**
+ * Whether a parenthesised qualifier is a producer shape: a single side (or the context label
+ * `contract`), or a side optionally followed by `contract` — no duplicates, no unknown terms.
+ */
+function isParameterizedQualifierList(qualifier: string): boolean {
+    const terms = qualifier.split(',').map((term) => term.trim());
+    if (terms.length === 0 || terms.length > 2) {
+        return false;
+    }
+    if (terms.some((term) => term === '')) {
+        return false;
+    }
+    if (new Set(terms).size !== terms.length) {
+        return false;
+    }
+    if (terms.some((term) => !PARAMETERIZED_REASON_QUALIFIERS.has(term))) {
+        return false;
+    }
+    return terms.length === 1 || terms[1] === 'contract';
+}
 
 function isParameterizedReason(reason: string): boolean {
     for (const prefix of PARAMETERIZED_REASON_PREFIXES) {
         const start = `${prefix} (`;
         if (reason.startsWith(start) && reason.endsWith(')')) {
-            return PARAMETERIZED_REASON_QUALIFIERS.has(reason.slice(start.length, -1));
+            if (isParameterizedQualifierList(reason.slice(start.length, -1))) {
+                return true;
+            }
         }
     }
     return false;

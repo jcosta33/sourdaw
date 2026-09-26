@@ -27,7 +27,9 @@ import {
     assertEvidenceIntegrity,
     compareLexicographic,
     evidenceSidePrefix,
+    isContractCarryingPath,
     isSensitivePath,
+    withheldRegionReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
     type SemanticSourcePort,
@@ -395,7 +397,7 @@ function collectFindingEvidence(input: {
         if (regionCost(evidenceReference, region) > input.limits.maxRegionBytes) {
             truncated.push({
                 path: reference.path,
-                reason: `region-exceeds-per-region-budget (${reference.side})`,
+                reason: withheldRegionReason(isContractCarryingPath(reference.path), reference.side, 'region'),
             });
             limitations.push(
                 `finding evidence ${reference.path} (${reference.side}) was not supplied: it exceeds the per-region budget`
