@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_2bfd55a4393d7c::t_15306f6e02bbb0 196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "52f9145504083c43de9f7f76de1d3844e5c6920a",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
