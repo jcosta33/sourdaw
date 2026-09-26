@@ -723,7 +723,11 @@ pub struct DevicePayload {
     /// is read as an empty table, not as "leave whatever the engine already
     /// holds": construction always builds a fresh instance, so there is
     /// nothing to leave. `map_device` refuses the whole batch when this is
-    /// present on any device type other than bacteria.
+    /// present on any device that is not a plain built-in bacteria device —
+    /// one naming no `external_instance_id` or `external_plugin_id`, whose
+    /// type resolves to `BuiltinEffectType::Bacteria` — checked ahead of
+    /// every arm that could otherwise admit the device with the field
+    /// silently dropped.
     #[serde(default)]
     pub mod_assignments: Option<Vec<ModAssignmentPayload>>,
 }
@@ -2434,6 +2438,31 @@ fn map_device(
         return Err(format!("device id '{}' is already in a chain", device.id));
     }
 
+    // A modulation-assignment table only ever means something to a plain
+    // built-in bacteria device: every other device has no engine vocabulary
+    // to apply it against, whether it is hosted, a spliced Crumbs sampler, or
+    // a built-in of some other type. Checked here, ahead of every arm below
+    // that can return `Ok` on its own, so none of them admits the device with
+    // the field silently dropped — a producer that names one on a device it
+    // does not belong to has authored a batch this mapper cannot honestly
+    // build rather than one it should silently drop the field from. Refused
+    // unconditionally, the same as the bacteria-only row checks below:
+    // `modAssignments` on the wrong device is an authoring error the batch
+    // cannot honestly build, not a body a silent strip merely lacks, so
+    // `contributes_audio` plays no part in it.
+    if device.mod_assignments.is_some() {
+        let is_plain_builtin_bacteria = device.external_instance_id.is_none()
+            && device.external_plugin_id.is_none()
+            && builtin_device_type(&device.device_type) == Some(BuiltinEffectType::Bacteria);
+        if !is_plain_builtin_bacteria {
+            return Err(format!(
+                "device '{}' of type '{}' carries modAssignments, which only a bacteria device \
+                 may set",
+                device.id, device.device_type
+            ));
+        }
+    }
+
     if let Some(instance_id) = device.external_instance_id.as_deref() {
         let Some(&EngineOwnedDevice {
             engine_plugin_id: effect_id,
@@ -2545,19 +2574,13 @@ fn map_device(
     let builtin = builtin_device_type(&device.device_type)
         .expect("no_native_body refused every type with no built-in body");
 
-    // A modulation-assignment table only ever means something to bacteria:
-    // every other body has no engine vocabulary to apply it against, so a
-    // producer that names one on any other type has authored a batch this
-    // mapper cannot honestly build rather than one it should silently drop
-    // the field from.
+    // Only a plain built-in bacteria device reaches here still carrying a
+    // modulation-assignment table: every other device type already refused at
+    // the top of this function, ahead of every arm that could otherwise
+    // return first. What is left to check is each row's own shape — the
+    // table's size, whether the row names a route the engine has, and whether
+    // its amount is finite.
     if let Some(rows) = device.mod_assignments.as_ref() {
-        if builtin != BuiltinEffectType::Bacteria {
-            return Err(format!(
-                "device '{}' of type '{}' carries modAssignments, which only a bacteria device \
-                 may set",
-                device.id, device.device_type
-            ));
-        }
         if rows.len() > MAX_BACTERIA_MOD_ASSIGNMENTS {
             return Err(format!(
                 "device '{}' names {} mod assignments, past the engine's ceiling of \
@@ -14069,6 +14092,74 @@ mod tests {
 
         assert!(
             refusal.contains("d-glu") && refusal.contains("modAssignments"),
+            "the refusal must name the device and the field, got: {refusal}"
+        );
+    }
+
+    /// A hosted plugin returns before the builtin-only checks even run, so
+    /// the refusal above has to sit ahead of that arm too, not only ahead of
+    /// the builtin match — reviewer probe: an attached hosted instance must
+    /// not be allowed to carry `modAssignments` through untouched.
+    #[test]
+    fn mod_assignments_on_an_attached_hosted_device_refuses_naming_the_device() {
+        let refusal = map_bound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "lead",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-plugin", "name": "Pro-Q", "type": "plugin",
+                               "bypassed": false, "parameterValues": {},
+                               "externalPluginId": "com.fabfilter.proq",
+                               "externalInstanceId": "inst-1",
+                               "modAssignments": [
+                                   { "sourceId": 0, "targetParam": 1, "amount": 0.5 }
+                               ] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect_err("modAssignments on an attached hosted device must refuse");
+
+        assert!(
+            refusal.contains("d-plugin") && refusal.contains("modAssignments"),
+            "the refusal must name the device and the field, got: {refusal}"
+        );
+    }
+
+    /// Crumbs is spliced from its own attached instance and also returns
+    /// before the builtin match, so the same probe applies to it: an attached
+    /// Crumbs sampler must not be allowed to carry `modAssignments` through
+    /// untouched either.
+    #[test]
+    fn mod_assignments_on_an_attached_crumbs_device_refuses_naming_the_device() {
+        let refusal = map_crumbs_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "pads",
+                "name": "Pads",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-crumbs", "name": "Crumbs", "type": "builtin-crumbs",
+                               "bypassed": false, "parameterValues": json!({}),
+                               "modAssignments": [
+                                   { "sourceId": 0, "targetParam": 1, "amount": 0.5 }
+                               ] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_crumbs_lookup(),
+        )
+        .expect_err("modAssignments on an attached Crumbs device must refuse");
+
+        assert!(
+            refusal.contains("d-crumbs") && refusal.contains("modAssignments"),
             "the refusal must name the device and the field, got: {refusal}"
         );
     }
