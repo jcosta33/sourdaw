@@ -1,0 +1,20 @@
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 70-74,5987-6006,6008
+scripts/publishReview.ts
+  h_beb54bf43b47b7 230-232,237-238
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 42,195-197
+scripts/reviewRoundEscalation.ts
+  h_beb54bf43b47b7 146-161,165-169,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "51d4ed05f82d6ccdaa5ce0686007a5159420ad42",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
