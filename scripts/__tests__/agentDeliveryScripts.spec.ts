@@ -1605,6 +1605,23 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * The loader's static local imports must resolve inside the declared snapshot exactly like every
+     * other source's: a local import the snapshot cannot satisfy would die mid-delivery with
+     * `ERR_MODULE_NOT_FOUND` the moment the loader ran. The runtime graph assertion is the rule that
+     * refuses it, and this drives that assertion through `runTrustedGithubWriteCommand` with a
+     * synthetic loader whose local import is undeclared — exempting the loader from the runtime
+     * local-dependency rule would leave no case that reddens.
+     */
+    it('refuses a loader local import the declared snapshot cannot resolve', async () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+        const syntheticLoader = `${loader}\nimport './loaderOnlyLocal.ts';\n`;
+
+        await expect(runTrustedDeliverWithLoader(syntheticLoader)).rejects.toThrow(
+            /scripts\/trustedGithubWriteBootstrap\.ts imports unchecked local dependency scripts\/loaderOnlyLocal\.ts/
+        );
+    });
+
+    /**
      * The snapshot is a temporary directory holding nothing but `scripts/`, so Node resolves a bare
      * specifier upward from there, finds no `node_modules`, and kills the command with
      * `ERR_MODULE_NOT_FOUND` partway through a delivery. Checking only local specifiers left that
@@ -1713,6 +1730,11 @@ describe('package scripts and gitignore', () => {
                 "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('./canonicalRecord.ts'.replace('.ts', '.bak'));",
             shape: 'createRequire(...)(...)',
         },
+        {
+            label: 'a require call whose argument is an object literal',
+            poisoned: 'require({ specifier });',
+            shape: 'require(...)',
+        },
     ])('refuses $label in the graph assertion', async ({ poisoned, shape }) => {
         expect(await snapshotRefusalFor(poisoned)).toContain(
             `scripts/deliverPullRequest.ts loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
@@ -1753,6 +1775,71 @@ describe('package scripts and gitignore', () => {
             specifier: './checked.ts',
         },
         {
+            label: 'a static dynamic import narrowed with a chained as-cast',
+            source: "await import('./checked.ts' as unknown as string);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a generic cast type',
+            source: "await import('./checked.ts' as Record<string, unknown>);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with as-const then satisfies a generic',
+            source: "await import('./checked.ts' as const satisfies Record<string, unknown>);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with an array cast type',
+            source: "await import('./checked.ts' as string[]);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a generic named cast type',
+            source: "await import('./checked.ts' as Foo<Bar>);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a function cast type',
+            source: "await import('./checked.ts' as (a: string) => void);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a tuple cast type',
+            source: "await import('./checked.ts' as [string]);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a union cast type',
+            source: "await import('./checked.ts' as A | B);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with an object cast type',
+            source: "await import('./checked.ts' as { x: number });",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a typeof cast type',
+            source: "await import('./checked.ts' as typeof Foo);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal dynamic import',
+            source: "await import(('./checked.ts'));",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal require',
+            source: "require(('./checked.ts'));",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal createRequire specifier',
+            source: "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)(('./checked.ts'));",
+            specifier: './checked.ts',
+        },
+        {
             label: 'a static dynamic import with a trailing comma',
             source: "await import('./checked.ts',);",
             specifier: './checked.ts',
@@ -1777,7 +1864,7 @@ describe('package scripts and gitignore', () => {
         },
         {
             label: 'a require-named call-signature parameter',
-            source: 'declare function load(require(specifier: string): unknown): void;',
+            source: 'declare function load(require(specifier): unknown): void;',
         },
         {
             label: 'a require-named ambient function declaration',
@@ -1802,6 +1889,22 @@ describe('package scripts and gitignore', () => {
         {
             label: 'a require-named parameter list with a comment before the type annotation',
             source: 'declare function require(moduleName /* optional */ : string): unknown;',
+        },
+        {
+            label: 'a require-named function declaration with an untyped parameter',
+            source: 'function require(name) {}',
+        },
+        {
+            label: 'a require-named object method with a default-valued parameter',
+            source: "const o = { require(name = 'x') { return name; } }",
+        },
+        {
+            label: 'a require-named class method with an untyped parameter',
+            source: 'class C { require(name) {} }',
+        },
+        {
+            label: 'a require-named function declaration with a destructured parameter',
+            source: 'function require({ specifier }) { return specifier; }',
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);

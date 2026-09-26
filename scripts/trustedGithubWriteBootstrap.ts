@@ -622,16 +622,18 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
 function computedDynamicLoad(source: string, openParen: number, shape: string): ComputedDynamicLoad | undefined {
     const callEnd = endOfBalancedCall(source, openParen);
     const contentEnd = callEnd - 1;
-    // A parameter list is a declaration's, never a call: its first argument region is shaped like
-    // `name: type`, `name?: type`, `...args: type`, or a destructuring pattern followed by a type, or
-    // it is empty. No module specifier can take that shape, so such a match is not a load. An
-    // object-literal argument (`require({ specifier })`) has no type annotation and stays a load.
-    if (isParameterListRegion(source, openParen + 1, contentEnd)) {
+    // A parameter list is a declaration's, never a call: no module load follows its argument list
+    // with a body or a type annotation, so a parenthesized list closed by `{` or `:` is a function,
+    // method, constructor, or call-signature declaration rather than a call. Deciding by that
+    // declaration context instead of one `name: type` annotation form admits untyped, default-valued,
+    // and destructured parameters, while an object-literal argument (`require({ specifier })`) —
+    // whose `)` is followed by a statement end, not `{` or `:` — stays a load.
+    if (isParameterListRegion(source, openParen + 1, contentEnd, callEnd)) {
         return undefined;
     }
     // The specifier is static only when a string or static-template literal is the whole first
     // argument — the argument list's `)` or an argument-level `,` follows it, optionally through
-    // grouping parentheses and an `as`/`satisfies` cast. Anything after the literal that is not one
+    // grouping parentheses and `as`/`satisfies` casts. Anything after the literal that is not one
     // of those (an operator, member access, call, or concatenation) is computed.
     if (staticSpecifierEnd(source, openParen + 1, contentEnd) !== undefined) {
         return undefined;
@@ -639,7 +641,19 @@ function computedDynamicLoad(source: string, openParen: number, shape: string): 
     return { shape, end: callEnd };
 }
 
-function isParameterListRegion(source: string, start: number, end: number): boolean {
+function isParameterListRegion(source: string, start: number, end: number, afterParen: number): boolean {
+    // A `{` body or a `:` return type right after the closing parenthesis marks the whole list as a
+    // declaration's parameter list whatever the parameters look like.
+    const afterClose = skipWhitespace(source, afterParen);
+    if (source[afterClose] === '{' || source[afterClose] === ':') {
+        return true;
+    }
+    // An annotated parameter list is still recognized even when no body or return type follows it
+    // (for example an ambient overload `function require(name: string);`).
+    return isAnnotatedParameterListRegion(source, start, end);
+}
+
+function isAnnotatedParameterListRegion(source: string, start: number, end: number): boolean {
     let cursor = skipWhitespace(source, start);
     if (cursor >= end) {
         return true;
@@ -763,44 +777,105 @@ function readStaticSpecifier(source: string, start: number, end: number): number
     } else {
         return undefined;
     }
-    const afterLiteral = skipWhitespace(source, literalEnd);
-    if (isKeywordAt(source, afterLiteral, 'as')) {
-        return skipCastType(source, afterLiteral + 2, end);
+    // A literal may carry any number of chained `as`/`satisfies` casts. Each cast's type is erased at
+    // run time, so the value stays the literal, but the cast must be skipped so the caller can tell
+    // the specifier's end from a value-modifying operator that follows it.
+    let current = literalEnd;
+    while (true) {
+        const after = skipWhitespace(source, current);
+        let typeStart: number | undefined;
+        if (isKeywordAt(source, after, 'as')) {
+            typeStart = after + 2;
+        } else if (isKeywordAt(source, after, 'satisfies')) {
+            typeStart = after + 9;
+        } else {
+            break;
+        }
+        current = skipTypeExpression(source, typeStart, end);
     }
-    if (isKeywordAt(source, afterLiteral, 'satisfies')) {
-        return skipCastType(source, afterLiteral + 9, end);
-    }
-    return literalEnd;
+    return current;
 }
 
+const TYPE_TERMINATOR_CHARACTERS = new Set(['+', '-', '*', '/', '%', '^', '~', '!', '?', ':', '=', ';']);
+
 /**
- * Consumes the type of an `as`/`satisfies` cast only when it is a plain qualified identifier.
- * Richer casts — generics, unions, array suffixes — are refused rather than accepted unsoundly:
- * the cast's type is erased at run time, so the specifier value is the literal, but the scanner must
- * know where the cast ends to tell it apart from an operator that follows the literal.
+ * Consumes the type of an `as`/`satisfies` cast, whatever shape it takes: a plain or qualified name,
+ * an array or tuple suffix, a generic, a function type, an object type, a union/intersection, or a
+ * `typeof` query. The type is erased at run time, so the specifier value stays the literal, but the
+ * scanner must know where the cast ends to tell it apart from an operator that follows the literal.
+ * It walks to the argument-level comma or the closing parenthesis of the call, tracking balanced
+ * `()`, `[]`, `{}`, and `<>` so a comma inside a generic, tuple, function, or object type does not
+ * end the cast, and stops at a chained `as`/`satisfies` so the caller can chain it. A value-level
+ * operator (`+`, member access, call, template substitution) is never part of a type, so the walk
+ * ends before it and the caller still refuses the computed specifier.
  */
-function skipCastType(source: string, start: number, end: number): number | undefined {
+function skipTypeExpression(source: string, start: number, end: number): number {
     let cursor = skipWhitespace(source, start);
-    const first = source[cursor];
-    if (cursor >= end || first === undefined || !/[A-Za-z_$]/.test(first)) {
-        return undefined;
-    }
-    cursor += 1;
-    while (cursor < end && isIdentifierContinue(source[cursor])) {
-        cursor += 1;
-    }
+    const openers: Array<')' | ']' | '}' | '>'> = [];
     while (cursor < end) {
-        const after = skipWhitespace(source, cursor);
-        if (source[after] === '.' && /[A-Za-z_$]/.test(source[after + 1] ?? '')) {
-            cursor = after + 1;
-            while (cursor < end && isIdentifierContinue(source[cursor])) {
-                cursor += 1;
-            }
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
             continue;
         }
-        break;
+        const character = source[cursor];
+        if (character === undefined) {
+            return cursor;
+        }
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        if (character === '=' && source[cursor + 1] === '>') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '(' || character === '[' || character === '{' || character === '<') {
+            openers.push(matchingTypeDelimiter(character));
+            cursor += 1;
+            continue;
+        }
+        if (character === ')' || character === ']' || character === '}' || character === '>') {
+            const top = openers[openers.length - 1];
+            if (top === undefined || top !== character) {
+                // An unmatched closer ends the type before it; the caller then refuses.
+                return cursor;
+            }
+            openers.pop();
+            cursor += 1;
+            continue;
+        }
+        if (openers.length === 0) {
+            if (character === ',') {
+                return cursor;
+            }
+            if (isKeywordAt(source, cursor, 'as') || isKeywordAt(source, cursor, 'satisfies')) {
+                return cursor;
+            }
+            if (TYPE_TERMINATOR_CHARACTERS.has(character)) {
+                return cursor;
+            }
+        }
+        cursor += 1;
     }
     return cursor;
+}
+
+function matchingTypeDelimiter(open: '(' | '[' | '{' | '<'): ')' | ']' | '}' | '>' {
+    if (open === '(') {
+        return ')';
+    }
+    if (open === '[') {
+        return ']';
+    }
+    if (open === '{') {
+        return '}';
+    }
+    return '>';
 }
 
 function endOfBalancedCall(source: string, openParen: number): number {
