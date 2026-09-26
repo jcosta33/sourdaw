@@ -7,7 +7,12 @@ import {
 import { type sendNativeLiveMidiControl, type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { getArticulationId, isArticulationType, type LevainPatch, type MicPositionType } from '../../models/LevainPatch';
+import {
+    getArticulationId,
+    isArticulationType,
+    type LevainPatch,
+    type MicPositionType,
+} from '../../models/LevainPatch';
 import {
     defaultLevainState,
     levainStore,
