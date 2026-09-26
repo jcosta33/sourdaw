@@ -1583,6 +1583,7 @@ describe('product-scope test instructions', () => {
         'Export the mixdown. The format is unchanged.',
         'Export the mixdown. Find the new file.',
         'Delete an EQ band. Node 2 is gone.',
+        'Delete an EQ band. The node is unchanged.',
     ])('reads an unquoted English-word head as prose, not a command: %s', (instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(false);
         expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
