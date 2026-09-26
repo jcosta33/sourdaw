@@ -1,0 +1,390 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 144-148,193-201,358-383
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 57-64,324-342
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 35-38,79-93,512-536
+.github/pull_request_template.md
+  h_beb54bf43b47b7 7,16
+AGENTS.md
+  h_beb54bf43b47b7 200-219
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 453-485,962-963,1060-1061,1136,1246-1259,1262-1265,2962-2983,4546-4582,6483-6516,11850,12107-12144,12169,12261,12266,23512-23526,23569,23589,23902-24058
+crates/sourdaw-native/src/commands/graph.rs
+  h_beb54bf43b47b7 289-348,509-532,719-745,2441-2465,2577-2602,2691-2703,2707,3736-3796,13955-14833
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,374,527,623
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1210
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 63,70-72,74-75,77,586,590,651-681,1116,1147,1160,1256,1286,1297,1320,1331,1355,1368,1390,1507-1623,1663-2266
+scripts/__tests__/prContract.spec.ts
+  h_beb54bf43b47b7 8,36-37,39-44,74,81,482-486,730-733,820-821,824-946,952-953,961-962,968-969,977-978,984-985,998-999,1008-1009,1021-1022,1035-1180,1194-1195,1205-1206,1218-1219,1227-1230,1232,1250-1251,1257-1258,1275-1276,1283-1284,1293,1303,1317-1318,1329-1330,1340-1341,1350-1351,1380-1381,1389,1393-1395,1398-1399,1411,1413,1415,1422-1423,1431-1433,1435-1436,1444,1466,1484-1485,1495,1502,1512,1521,1531,1535-1536,1555-1556,1562-1563,1572,1574-1575,1578-1580,1582,1584-1688,1693-1774,1776,1780-1802,1830,1837-1950
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 223
+scripts/__tests__/publishLane.spec.ts
+  h_beb54bf43b47b7 84,557,1324,1356,1378-1394,1409
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 71,5013-5052,5067-5079,5096,5123-5125,5312-5541,5674,5682,5695,5704-6048
+scripts/__tests__/resourceGuard.spec.ts
+  h_beb54bf43b47b7 872-873,904,910
+scripts/__tests__/reviewDossier.spec.ts
+  h_beb54bf43b47b7 18,23,346-406,1052
+scripts/__tests__/reviewDossierPublication.spec.ts
+  h_beb54bf43b47b7 308-327,714-729,890-910
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  h_beb54bf43b47b7 1-322
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  h_beb54bf43b47b7 1-3,7-12,16,54-84,208-282
+scripts/__tests__/semanticReviewContext.spec.ts
+  h_beb54bf43b47b7 21,32,36-47,239,342,528,533,551,556,563,579-580,590-643,739,753-860
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_beb54bf43b47b7 205-214
+scripts/prContract.ts
+  h_beb54bf43b47b7 48,56-58,60-68,92-93,96
+scripts/publishLane.ts
+  h_beb54bf43b47b7 106
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 126
+scripts/reviewDossier.ts
+  h_beb54bf43b47b7 17,21,28,121-130,504-506,553,555-557,581,623,643-645
+scripts/reviewDossierBindings.ts
+  h_beb54bf43b47b7 1-86
+scripts/reviewDossierChain.ts
+  h_beb54bf43b47b7 8-9,16,87-118,235-239,264-266,303-305,314-315,329
+scripts/reviewDossierPublication.ts
+  h_beb54bf43b47b7 24,62-68,224,234-240,382
+scripts/reviewDossierSemanticAssessment.ts
+  h_beb54bf43b47b7 1-227
+scripts/reviewDossierViews.ts
+  h_beb54bf43b47b7 18-26
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 31-35,54,125-143,146-155,162,285-293
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 75-81,114,118
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 27,298-341,345-1278,1283-1286,1288-1671,4046-4063,5407-5494
+scripts/semanticReview/contractCarrying.ts
+  h_beb54bf43b47b7 1-143
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 13-22,32-42,45-49,317-318,327-334,343-480,487-490,507-521,523,533-537,539-546,550-569,572-631,647,657-679,681-682,684-704
+scripts/semanticReview/evidenceOrdering.ts
+  h_beb54bf43b47b7 1-395
+scripts/semanticReview/slicing.ts
+  h_beb54bf43b47b7 1-29
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 30,32,49,375-393,400-401,414
+scripts/semanticReviewContext.ts
+  h_beb54bf43b47b7 172-176,181,184,187-207,212-214,290-297,303,309-310,313-316,319-325,331,334-338,341
+scripts/testInstructions.ts
+  h_beb54bf43b47b7 3-5,7,10-13,17-26,63-88,90,93,96-100,102,365-366,369-375,387,395,399-400,436-440,445,494,496-501,505-558,626,693-694,697-701,707-709,712-731,733,741-743,746-748,764-767,770-771,782-785,793-794,796,813-826,828-833,835-900,904-931,934-939,942-956
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 163,226,237,261,272,297,310,333,376-1111,1113-1122,1125-1139,1142-1147,1149-1188,1190-1196,1200-1207,1209-1216,1218-1235,1237-1239,1241-1242,1245-1343,1345,1349-1351,1353-1415,1481,1495,1521,1740-1746,1848-1865,1963-2013
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 74-77,170-171,243-247,387,568,995-1008,1133-1154
+src/app/__tests__/nativeModAssignments.spec.ts
+  h_beb54bf43b47b7 1-72
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 64,164,211,334-337,527-531
+src/app/nativeModAssignments.ts
+  h_beb54bf43b47b7 1-74
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  h_beb54bf43b47b7 19
+src/modules/AiRuntime/models/AnalysisMeasureLimits.ts
+  h_beb54bf43b47b7 1-9
+src/modules/AiRuntime/models/DeviceManifestPageLimits.ts
+  h_beb54bf43b47b7 1-11
+src/modules/AiRuntime/models/IntentResult.ts
+  h_beb54bf43b47b7 8,36-37
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  h_beb54bf43b47b7 25-26,38-53,56-82,90-117,136-155,164,207-224,234-238,240,508-547,557-566
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicStrictSchemaProjection.spec.ts
+  h_beb54bf43b47b7 265-284
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiStrictSchemaProjection.spec.ts
+  h_beb54bf43b47b7 296-315
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  h_beb54bf43b47b7 4-11,544-645
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/selectAnthropicStrictTools.spec.ts
+  h_beb54bf43b47b7 1-141
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  h_beb54bf43b47b7 22,144-149,161-167
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/selectAnthropicStrictTools.ts
+  h_beb54bf43b47b7 1-109
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/toolSchemaProjectionCore.ts
+  h_beb54bf43b47b7 41-55,253-260
+src/modules/AiRuntime/services/semanticCommandListCandidates.ts
+  h_beb54bf43b47b7 1-378
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  h_beb54bf43b47b7 9,114-115,312,345,354
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  h_beb54bf43b47b7 6,13,198-225,275
+src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts
+  h_beb54bf43b47b7 1-693
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  h_beb54bf43b47b7 367,475-514,880,895-897,904-910,913-1533,1536
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  h_beb54bf43b47b7 1-359
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  h_beb54bf43b47b7 1-1585
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_beb54bf43b47b7 677-761
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  h_beb54bf43b47b7 19
+src/modules/AiRuntime/useCases/__tests__/semanticListPredicates.spec.ts
+  h_beb54bf43b47b7 1-977
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  h_beb54bf43b47b7 156-157,162-178
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  h_beb54bf43b47b7 1038-1065
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  h_beb54bf43b47b7 4-5,716-767
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  h_beb54bf43b47b7 12,16,33-35,57-59,187,430-462
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  h_beb54bf43b47b7 341
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  h_beb54bf43b47b7 32,79
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  h_beb54bf43b47b7 20,253-268
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revalidateApprovedMatchSelectors.ts
+  h_beb54bf43b47b7 1-81
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  h_beb54bf43b47b7 2,11,23,30,40,207-247,269,277-284,403
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 19,168-176,179-180,453-459,461,497-594,598,600,603-605,610-745,1044-1094,1327-1514,1733,1795-1802,1804-1816
+src/modules/AiRuntime/useCases/canonicalRoleFamilies.ts
+  h_beb54bf43b47b7 1-44
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  h_beb54bf43b47b7 17,20-24,38,52-64,175-176,180-185,187,190-202,205-206,215,218-229,886-887,1168-1171,1328
+src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts
+  h_beb54bf43b47b7 1-50
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  h_beb54bf43b47b7 3
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  h_beb54bf43b47b7 1-216
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  h_beb54bf43b47b7 12,122-133
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  h_beb54bf43b47b7 25-31,1285,1304,1307,1328-1330,1440-1567
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  h_beb54bf43b47b7 51,441-444,454-455
+src/modules/AiRuntime/useCases/parseAnalysisMeasureArguments.ts
+  h_beb54bf43b47b7 1-127
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 22,60,69-70,531-547,944-946,960
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  h_beb54bf43b47b7 10,20,134-207,221,354-361,363,384-392
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  h_beb54bf43b47b7 361
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  h_beb54bf43b47b7 7-10,22,142-146,172-196
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 721,724,752-776,786-793
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  h_beb54bf43b47b7 54,103-111,1221,1349
+src/modules/Arrangement/handlers/device/handleSetDeviceState.ts
+  h_beb54bf43b47b7 15,17-25
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  h_beb54bf43b47b7 43-54,103-106,200-203,226,265,507,517-520,523-545
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  h_beb54bf43b47b7 11,117-122
+src/modules/Arrangement/handlers/track/__tests__/flattenTrack.spec.ts
+  h_beb54bf43b47b7 3,10,23-26,109,178-228
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracks.spec.ts
+  h_beb54bf43b47b7 11,26-29,158,244-320
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracksTransaction.spec.ts
+  h_beb54bf43b47b7 14,159,239-294
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  h_beb54bf43b47b7 8-14,40,119-130,164,510-620
+src/modules/Arrangement/handlers/track/flattenTrack.ts
+  h_beb54bf43b47b7 4,7,46-53,55,70-74
+src/modules/Arrangement/handlers/track/handleConsolidateAllTracks.ts
+  h_beb54bf43b47b7 7,39-59,74,82,91-93,96-105,125-128
+src/modules/Arrangement/models/PluginDescriptors/CrustDescriptor.ts
+  h_beb54bf43b47b7 10-11,88-89,101-293
+src/modules/Arrangement/models/PluginDescriptors/KneadDescriptor.ts
+  h_beb54bf43b47b7 4,37-40
+src/modules/Arrangement/models/PluginDescriptors/ProofDescriptor.ts
+  h_beb54bf43b47b7 8-9,61-62,74-116
+src/modules/Arrangement/models/PluginDescriptors/YeastDescriptor.ts
+  h_beb54bf43b47b7 8-9,74-75,87-145
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  h_beb54bf43b47b7 87-99,103,226-229,242-250
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_beb54bf43b47b7 766-769
+src/modules/Arrangement/useCases/__tests__/agentBuiltinDeviceFactoryManifest.spec.ts
+  h_beb54bf43b47b7 143-156
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 77-79
+src/modules/Arrangement/useCases/__tests__/renderAgentMeasurementTarget.spec.ts
+  h_beb54bf43b47b7 1-73
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  h_beb54bf43b47b7 52-56,58-65,109-112
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  h_beb54bf43b47b7 20-22
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 25-26
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  h_beb54bf43b47b7 8,108-113,118
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  h_beb54bf43b47b7 24-25,68,79-82,85-99
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 44-45
+src/modules/Arrangement/useCases/renderAgentMeasurementTarget.ts
+  h_beb54bf43b47b7 1-45
+src/modules/Arrangement/useCases/resolveAgentMeasurementTargets.ts
+  h_beb54bf43b47b7 1-203
+src/modules/Arrangement/useCases/selectOfflineRenderSubgraph.ts
+  h_beb54bf43b47b7 1-82
+src/modules/AudioAnalysis/models/AgentMeasurementMetricIds.ts
+  h_beb54bf43b47b7 1-24
+src/modules/AudioAnalysis/useCases/getAgentMeasurementMetricIds.ts
+  h_beb54bf43b47b7 1-6
+src/modules/AudioAnalysis/useCases/index.ts
+  h_beb54bf43b47b7 14-15
+src/modules/AudioAnalysis/useCases/measureAgentScopeRender.ts
+  h_beb54bf43b47b7 1-47
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  h_beb54bf43b47b7 3,148-163,247
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  h_beb54bf43b47b7 146-162,165,167-171,173,179-182,593-612,852
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  h_beb54bf43b47b7 621-722
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  h_beb54bf43b47b7 54-56,61-63,76,147-152,205,347-414,416-418
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  h_beb54bf43b47b7 660-717,906-948,1322-1607
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
+  h_beb54bf43b47b7 267-326
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  h_beb54bf43b47b7 94-230
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  h_beb54bf43b47b7 483-489,498
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  h_beb54bf43b47b7 183-195,197,207
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  h_beb54bf43b47b7 20,39-64,66-77,82-83,89
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  h_beb54bf43b47b7 21,835-874
+src/modules/AudioEngine/useCases/deviceControls/__tests__/updateDevicePatch.spec.ts
+  h_beb54bf43b47b7 109-148
+src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts
+  h_beb54bf43b47b7 1,24-30,35-42,44
+src/modules/AudioEngine/useCases/index.ts
+  h_beb54bf43b47b7 158-159
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  h_beb54bf43b47b7 35-39,47-49,278-307
+src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeDeviceParameters.spec.ts
+  h_beb54bf43b47b7 19,136-187
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  h_beb54bf43b47b7 77,115-134,145,148,150-155
+src/modules/AudioEngine/useCases/livePlayback/sendNativeDeviceParameters.ts
+  h_beb54bf43b47b7 23-31,41-42,44,53-58,77-90
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  h_beb54bf43b47b7 433-465
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_beb54bf43b47b7 784-813
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderInput.ts
+  h_beb54bf43b47b7 55
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  h_beb54bf43b47b7 364-369
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  h_beb54bf43b47b7 40-45,49,51-54,56-60,62-66,68-74,117-126,161,298,404
+src/modules/AudioRendering/models/AgentMeasurementArtifact.ts
+  h_beb54bf43b47b7 1-15
+src/modules/AudioRendering/models/AgentMeasurementRetentionPolicy.ts
+  h_beb54bf43b47b7 1-5
+src/modules/AudioRendering/stores/agentMeasurementArtifactStore.ts
+  h_beb54bf43b47b7 1-11
+src/modules/AudioRendering/stores/index.ts
+  h_beb54bf43b47b7 2
+src/modules/AudioRendering/useCases/__tests__/agentMeasurementArtifactRetention.spec.ts
+  h_beb54bf43b47b7 1-137
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts
+  h_beb54bf43b47b7 1-140
+src/modules/AudioRendering/useCases/clearAgentMeasurementArtifacts.ts
+  h_beb54bf43b47b7 1-8
+src/modules/AudioRendering/useCases/getAgentMeasurementArtifact.ts
+  h_beb54bf43b47b7 1-6
+src/modules/AudioRendering/useCases/getAgentMeasurementArtifacts.ts
+  h_beb54bf43b47b7 1-9
+src/modules/AudioRendering/useCases/index.ts
+  h_beb54bf43b47b7 16-19
+src/modules/AudioRendering/useCases/pruneExpiredAgentMeasurementArtifacts.ts
+  h_beb54bf43b47b7 1-10
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  h_beb54bf43b47b7 1-229
+src/modules/AudioRendering/useCases/retainAgentMeasurementArtifacts.ts
+  h_beb54bf43b47b7 1-78
+src/modules/AudioRendering/useCases/scheduleAgentMeasurementArtifactExpiry.ts
+  h_beb54bf43b47b7 1-31
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  h_beb54bf43b47b7 491-612
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  h_beb54bf43b47b7 28-35,155,173-179,186,209-214,219-220,248
+src/modules/Bacteria/AGENTS.md
+  h_beb54bf43b47b7 10,23
+src/modules/Bacteria/models/BacteriaModulationIds.ts
+  h_beb54bf43b47b7 5-11,128-147,152-174
+src/modules/Bacteria/models/__tests__/BacteriaModulationIds.spec.ts
+  h_beb54bf43b47b7 78-97
+src/modules/Bacteria/useCases/index.ts
+  h_beb54bf43b47b7 5
+src/modules/Bacteria/useCases/prepareOfflineBacteria.ts
+  h_beb54bf43b47b7 2,38
+src/modules/Bacteria/useCases/resolveNativeBacteriaModAssignments.ts
+  h_beb54bf43b47b7 1-26
+src/modules/CommandInterface/useCases/commands/EditCommands.ts
+  h_beb54bf43b47b7 1-2,47-50
+src/modules/CommandInterface/useCases/commands/__tests__/EditCommandsDeep.spec.ts
+  h_beb54bf43b47b7 3-13,16,61-64,66-68
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  h_beb54bf43b47b7 84
+src/modules/MIDI/transformers/__tests__/quantizeMidiNotes.spec.ts
+  h_beb54bf43b47b7 60-63,95-115
+src/modules/MIDI/transformers/quantizeMidiNotes.ts
+  h_beb54bf43b47b7 1,3,25
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/quantizeNotes.spec.ts
+  h_beb54bf43b47b7 44-49,57-58,65-66,68-69,72,78
+src/modules/Project/useCases/index.ts
+  h_beb54bf43b47b7 16
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  h_beb54bf43b47b7 3,114,229-265
+src/modules/Project/useCases/projectPersistence/helpers/agentMeasurementArtifactClearingState.ts
+  h_beb54bf43b47b7 1-16
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  h_beb54bf43b47b7 24-25,46-49
+src/modules/Project/useCases/projectPersistence/setAgentMeasurementArtifactsClearer.ts
+  h_beb54bf43b47b7 1-13
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_beb54bf43b47b7 4-8,19,502-516
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 34,625-633
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  h_beb54bf43b47b7 20-21,23,212-215,424-713
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  h_beb54bf43b47b7 74-77
+src/modules/Transport/useCases/scheduling/applyAutomation/appliedAutomationBases.ts
+  h_beb54bf43b47b7 17-21
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  h_beb54bf43b47b7 35-37,41,209-213,246-290,368-388,391,400,427-428,433-435,437-444
+src/modules/Transport/useCases/scheduling/applyAutomation/deviceReadBeatByTrack.ts
+  h_beb54bf43b47b7 1-28
+src/utils/Music/__tests__/quantizeBeatToGrid.spec.ts
+  h_beb54bf43b47b7 1-94
+src/utils/Music/quantizeBeatToGrid.ts
+  h_beb54bf43b47b7 1-39
+tests/e2e/desktopRuntime.spec.ts
+  h_beb54bf43b47b7 180-183,185,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "11fb4d0d373e3b78f51a685768063be7c8381b9d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
