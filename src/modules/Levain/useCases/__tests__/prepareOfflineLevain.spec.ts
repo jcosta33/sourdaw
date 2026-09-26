@@ -271,9 +271,9 @@ describe('prepareOfflineLevain', () => {
         it('leaves the live loadedMicPositions in place when the offline load fails', async () => {
             mocks.autoLoadLevainSamples.mockRejectedValueOnce(new Error('offline bank rejected'));
 
-            await expect(
-                prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port })
-            ).rejects.toThrow('offline bank rejected');
+            await expect(prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port })).rejects.toThrow(
+                'offline bank rejected'
+            );
 
             expect(levainStore.value?.['device-a']?.loadedMicPositions).toEqual(['close']);
         });
