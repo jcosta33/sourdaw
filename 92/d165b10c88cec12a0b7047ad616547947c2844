@@ -1,0 +1,29 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_2bfd55a4393d7c::t_c627376157d7a0 1879-1906,1909-1915,1921,1926,1931-1941,1943,1945,1951-1957,1973,1976-1987
+scripts/trustedGithubWriteBootstrap.ts
+  s_ef536aab624565::t_d2c695f13e280b 701-707,723-757,917-924,929-938,949-952,955,960,965,992,1003-1004,1009-1012,1019-1021,1027-1031,1033-1042,1049
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92d165b10c88cec12a0b7047ad616547947c2844",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
