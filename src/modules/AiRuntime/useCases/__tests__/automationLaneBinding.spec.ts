@@ -13,12 +13,13 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { type AutomationLane, automationStore } from '#/modules/Automation/stores';
 import {
-    addAutomationLane as addLaneAsUser,
+    addAutomationLane as addLaneAsCollaborator,
     addAutomationPoint as addPointAsCollaborator,
     createAutomationLane,
     getAutomationHandlers,
     getAutomationValueAtBeat,
     removeAutomationLane as removeLaneAsUser,
+    removeAutomationPoint as removePointAsCollaborator,
     setAutomationParameterRangeResolver,
     updateAutomationPoint as updatePointAsCollaborator,
 } from '#/modules/Automation/useCases';
@@ -107,12 +108,11 @@ const EXISTING_GAIN_LANE_ID = 'lane-vocals-gain';
 const FOLLOWED_LANE_ID = 'lane-vocals-pan';
 const FOLLOWER_LANE_ID = 'lane-vocals-pan-follower';
 const PRIOR_LANE_ID = 'lane-vocals-prior-pan';
-const USER_GAIN_LANE_ID = 'lane-vocals-user-gain';
+const COLLABORATOR_GAIN_LANE_ID = 'lane-vocals-collaborator-gain';
 const COLLABORATOR_POINT_ID = 'collab-point';
 const DRIVE_TARGET = 'device-drive:dist-drive';
 const BATCH_LABEL = 'automate the Vocals track and write its points';
 const CONFLICT_NOTICE = `Cannot undo "${BATCH_LABEL}": project state has changed`;
-const STEP_OVER_NOTICE = `Skipped "${BATCH_LABEL}": project state has changed; undid "${BATCH_LABEL}"`;
 
 const DRIVE_DEVICE: Device = {
     id: 'device-drive',
@@ -238,6 +238,20 @@ function undoGroupIds(stack: 'past' | 'future'): (string | undefined)[] {
     return (undoHistoryStore.value?.[stack] ?? []).map((entry) => entry.groupId);
 }
 
+/** Every automation store write from now until `stop`, as the lane ids each write left. */
+function recordLaneWrites(): { readonly writes: string[][]; readonly stop: () => void } {
+    const writes: string[][] = [];
+    const stop = automationStore.subscribe(() => {
+        writes.push(automationStore.value?.lanes.map((lane) => lane.id) ?? []);
+    });
+    return { writes, stop };
+}
+
+function addCollaboratorPoint(laneId: string): void {
+    addPointAsCollaborator(laneId, { id: COLLABORATOR_POINT_ID, beat: 8, value: 0.5, curve: 'linear', tension: 0 });
+    flushAutomergeStorageWrites();
+}
+
 /** The lane removal undoing the newest batch runs, with the batch context it runs in: newest inverse first. */
 function getUndoLaneRemoval() {
     const past = undoHistoryStore.value?.past ?? [];
@@ -308,6 +322,16 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
 async function confirm(actions: ExecutableRuntimeAction[], id: string) {
     propose(actions, id);
     return confirmPendingChatActions({ confirmationId: id });
+}
+
+/** Confirms the agent batch creating the Vocals gain lane with its points at beats 0 and 16. */
+async function confirmGainLaneWithPoints(): Promise<void> {
+    await expect(
+        confirm(
+            [addLane('gain', 'Gain'), addPoint(LANE_ID, 0, { valueDb: -6 }), addPoint(LANE_ID, 16, { valueDb: 0 })],
+            'confirmation-gain-lane'
+        )
+    ).resolves.toEqual({ status: 'executed' });
 }
 
 function compileProviderPlan(prompt: string, items: readonly unknown[]) {
@@ -452,21 +476,18 @@ describe('automation lane binding in one agent batch', () => {
             addLane(DRIVE_TARGET, 'Distortion → Drive'),
             addPoint(LANE_ID, 0, { valueDb: -6 }),
         ];
-        const laneWrites: string[][] = [];
-        const unsubscribe = automationStore.subscribe(() => {
-            laneWrites.push(automationStore.value?.lanes.map((lane) => lane.id) ?? []);
-        });
+        const laneWrites = recordLaneWrites();
 
         // Validation names the owner's reason before the lane is created, so no member executes
         // and nothing has to be compensated.
         const refused = await executeAppActionBatch(decibelsOnDriveLane());
-        unsubscribe();
+        laneWrites.stop();
 
         expect(refused).toMatchObject({
             status: 'conflicted',
             reason: expect.stringContaining('Lane "Distortion → Drive" does not hold gain amplitudes'),
         });
-        expect(laneWrites).toEqual([]);
+        expect(laneWrites.writes).toEqual([]);
 
         const result = await confirm(decibelsOnDriveLane(), 'confirmation-drive-decibels');
 
@@ -610,16 +631,11 @@ describe('automation lane binding in one agent batch', () => {
         expect(findLane(LANE_ID)).toBeUndefined();
     });
 
-    it('steps undo over a batch whose lane the user already removed and still undoes the entry beneath', async () => {
+    it('consumes the undo of a batch whose lane the user already removed and still undoes the entry beneath', async () => {
         await expect(confirm([addLane('pan', 'Pan', PRIOR_LANE_ID)], 'confirmation-prior-pan')).resolves.toEqual({
             status: 'executed',
         });
-        await expect(
-            confirm(
-                [addLane('gain', 'Gain'), addPoint(LANE_ID, 0, { valueDb: -6 }), addPoint(LANE_ID, 16, { valueDb: 0 })],
-                'confirmation-gain-lane'
-            )
-        ).resolves.toEqual({ status: 'executed' });
+        await confirmGainLaneWithPoints();
         const [priorGroupId, ...batchGroupIds] = undoGroupIds('past');
         expect(batchGroupIds).toHaveLength(3);
         expect(new Set([priorGroupId, ...batchGroupIds]).size).toBe(2);
@@ -628,58 +644,117 @@ describe('automation lane binding in one agent batch', () => {
 
         await undo();
 
-        // The batch's point inverses refuse with its lane, so nothing of the batch is written back
-        // and the batch stays at the head, retryable, while the entry beneath is undone.
-        expect(notices()).toEqual([CONFLICT_NOTICE, STEP_OVER_NOTICE]);
+        // Nothing the batch wrote is left to undo, so its undo is satisfied without a write and
+        // leaves the head instead of wedging history above the entry beneath.
+        expect(notices()).toEqual([]);
+        expect(findLane(PRIOR_LANE_ID)).toMatchObject({ trackId: TRACK_ID, parameterId: 'pan' });
+        expect(undoGroupIds('past')).toEqual([priorGroupId]);
+        expect(undoGroupIds('future')).toEqual(batchGroupIds);
+
+        await undo();
+
         expect(automationStore.value?.lanes).toEqual([]);
-        expect(undoGroupIds('past')).toEqual(batchGroupIds);
-        expect(undoGroupIds('future')).toEqual([priorGroupId]);
+        expect(undoGroupIds('past')).toEqual([]);
     });
 
-    it('steps undo over a redone batch lane that folded into the lane the user created meanwhile', async () => {
-        await expect(confirm([addLane('pan', 'Pan', PRIOR_LANE_ID)], 'confirmation-prior-pan')).resolves.toEqual({
-            status: 'executed',
-        });
+    it('consumes the undo of a lane creation redo folded into a collaborator lane and still reverts the point edit beneath', async () => {
+        seedProject([createStoredLane({ id: PRIOR_LANE_ID, parameterId: 'pan', parameterName: 'Pan' })]);
+        const priorLaneBefore = structuredClone(findLane(PRIOR_LANE_ID));
+        await executeAppAction(addPoint(PRIOR_LANE_ID, 12, { value: 0.3 }));
+        flushAutomergeStorageWrites();
+        expect(findLane(PRIOR_LANE_ID)?.points.map((point) => point.beat)).toEqual([4, 12]);
         await expect(confirm([addLane('gain', 'Gain')], 'confirmation-gain-lane')).resolves.toEqual({
             status: 'executed',
         });
-        const [priorGroupId, batchGroupId] = undoGroupIds('past');
+        const [pointEditGroupId, laneGroupId] = undoGroupIds('past');
         await undo();
         expect(findLane(LANE_ID)).toBeUndefined();
-        addLaneAsUser(TRACK_ID, 'gain', 'Gain', USER_GAIN_LANE_ID);
-        flushAutomergeStorageWrites();
-        const userLane = structuredClone(findLane(USER_GAIN_LANE_ID));
-        expect(userLane).toMatchObject({ trackId: TRACK_ID, parameterId: 'gain' });
+        addLaneAsCollaborator(TRACK_ID, 'gain', 'Gain', COLLABORATOR_GAIN_LANE_ID);
+        addCollaboratorPoint(COLLABORATOR_GAIN_LANE_ID);
+        const collaboratorLane = structuredClone(findLane(COLLABORATOR_GAIN_LANE_ID));
+        expect(collaboratorLane?.points.map((point) => point.id)).toEqual([COLLABORATOR_POINT_ID]);
 
         await redo();
 
         expect(findLane(LANE_ID)).toBeUndefined();
-        expect(findLane(USER_GAIN_LANE_ID)).toEqual(userLane);
-        expect(undoGroupIds('past')).toEqual([priorGroupId, batchGroupId]);
+        expect(findLane(COLLABORATOR_GAIN_LANE_ID)).toEqual(collaboratorLane);
+        expect(undoGroupIds('past')).toEqual([pointEditGroupId, laneGroupId]);
 
         await undo();
 
-        expect(findLane(USER_GAIN_LANE_ID)).toEqual(userLane);
-        expect(findLane(PRIOR_LANE_ID)).toBeUndefined();
-        expect(notices()).toEqual([CONFLICT_NOTICE, STEP_OVER_NOTICE]);
-        expect(undoGroupIds('past')).toEqual([batchGroupId]);
+        expect(findLane(COLLABORATOR_GAIN_LANE_ID)).toEqual(collaboratorLane);
+        expect(notices()).toEqual([]);
+        expect(undoGroupIds('past')).toEqual([pointEditGroupId]);
+
+        await undo();
+
+        expect(findLane(PRIOR_LANE_ID)).toEqual(priorLaneBefore);
+        expect(findLane(COLLABORATOR_GAIN_LANE_ID)).toEqual(collaboratorLane);
+        expect(undoGroupIds('past')).toEqual([]);
+    });
+
+    it('removes the remaining point and the lane when undoing a batch after a collaborator deleted one of its points', async () => {
+        await confirmGainLaneWithPoints();
+        removePointAsCollaborator(LANE_ID, 16);
+        flushAutomergeStorageWrites();
+        expect(findLane(LANE_ID)?.points.map((point) => point.beat)).toEqual([0]);
+
+        await undo();
+
+        expect(automationStore.value?.lanes).toEqual([]);
+        expect(notices()).toEqual([]);
+        expect(undoGroupIds('past')).toEqual([]);
+    });
+
+    it('removes the emptied lane when undoing a batch after a collaborator deleted all of its points', async () => {
+        await confirmGainLaneWithPoints();
+        removePointAsCollaborator(LANE_ID, 0);
+        removePointAsCollaborator(LANE_ID, 16);
+        flushAutomergeStorageWrites();
+        expect(findLane(LANE_ID)?.points).toEqual([]);
+
+        await undo();
+
+        expect(automationStore.value?.lanes).toEqual([]);
+        expect(notices()).toEqual([]);
+        expect(undoGroupIds('past')).toEqual([]);
+    });
+
+    it('still refuses removing a missing point addressed only by its index', async () => {
+        seedProject([createStoredLane({ id: PRIOR_LANE_ID, parameterId: 'pan', parameterName: 'Pan' })]);
+        const documentBefore = projectSnapshot();
+
+        const refused = await executeAppActionBatch([
+            { type: 'removeAutomationPoint', payload: { laneId: PRIOR_LANE_ID, pointIndex: 3 } },
+        ]);
+
+        expect(refused).toMatchObject({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: removeAutomationPoint',
+        });
+        expect(projectSnapshot()).toBe(documentBefore);
+    });
+
+    it('refuses the undo at validation before any point removal writes when the lane holds a collaborator point', async () => {
+        await confirmGainLaneWithPoints();
+        addCollaboratorPoint(LANE_ID);
+        const divergedLanes = structuredClone(automationStore.value?.lanes);
+        const laneWrites = recordLaneWrites();
+
+        await undo();
+        laneWrites.stop();
+
+        // The lane removal refuses in the batch preflight, so the point removals ahead of it never
+        // run and nothing has to be written back by compensation.
+        expect(laneWrites.writes).toEqual([]);
+        expect(automationStore.value?.lanes).toEqual(divergedLanes);
+        expect(notices()).toEqual([CONFLICT_NOTICE]);
+        expect(undoGroupIds('past')).toHaveLength(3);
     });
 
     it('keeps the lane and a collaborator point on it when undoing the batch that created the lane', async () => {
-        await expect(
-            confirm(
-                [addLane('gain', 'Gain'), addPoint(LANE_ID, 0, { valueDb: -6 }), addPoint(LANE_ID, 16, { valueDb: 0 })],
-                'confirmation-gain-lane'
-            )
-        ).resolves.toEqual({ status: 'executed' });
-        addPointAsCollaborator(LANE_ID, {
-            id: COLLABORATOR_POINT_ID,
-            beat: 8,
-            value: 0.5,
-            curve: 'linear',
-            tension: 0,
-        });
-        flushAutomergeStorageWrites();
+        await confirmGainLaneWithPoints();
+        addCollaboratorPoint(LANE_ID);
         const divergedLanes = structuredClone(automationStore.value?.lanes);
         expect(findLane(LANE_ID)?.points.map((point) => point.beat)).toEqual([0, 8, 16]);
         const { removal, context } = getUndoLaneRemoval();
@@ -694,12 +769,7 @@ describe('automation lane binding in one agent batch', () => {
     });
 
     it('still removes the lane when undoing after a collaborator edited only the points the batch created', async () => {
-        await expect(
-            confirm(
-                [addLane('gain', 'Gain'), addPoint(LANE_ID, 0, { valueDb: -6 }), addPoint(LANE_ID, 16, { valueDb: 0 })],
-                'confirmation-gain-lane'
-            )
-        ).resolves.toEqual({ status: 'executed' });
+        await confirmGainLaneWithPoints();
         updatePointAsCollaborator(LANE_ID, 16, 0.25);
         flushAutomergeStorageWrites();
         expect(getAutomationValueAtBeat(LANE_ID, 16)).toBe(0.25);

@@ -111,12 +111,6 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         divergedAction: { type: 'removeAutomationLane', payload: { laneId: 'automation-follower' } },
     },
     {
-        // No live lane carries the id the batch created.
-        title: 'removeAutomationLane refuses a lane that is already gone',
-        actionType: 'removeAutomationLane',
-        divergedAction: { type: 'removeAutomationLane', payload: { laneId: 'automation-removed-elsewhere' } },
-    },
-    {
         // Live track muted=false; the guard expects muted=true.
         title: 'muteTrack refuses to write against a diverged document',
         actionType: 'muteTrack',

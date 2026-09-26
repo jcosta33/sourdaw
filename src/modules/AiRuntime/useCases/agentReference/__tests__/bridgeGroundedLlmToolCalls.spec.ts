@@ -7663,6 +7663,18 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect(unnamed.rejections[0]?.reason).toContain('parameterId');
         });
 
+        it('grounds neither device when one clause names both devices that carry the requested parameter', () => {
+            const devices = [createDistortion('device-a', 'Crunch'), createDistortion('device-b', 'Fuzz')];
+            const prompt = 'Add automation lane for Crunch or Fuzz Drive on Vocals';
+
+            for (const parameterId of ['device-a:dist-drive', 'device-b:dist-drive']) {
+                const result = bridgeDriveLane(parameterId, prompt, devices);
+
+                expect(result.actions).toEqual([]);
+                expect(result.rejections[0]?.reason).toContain('parameterId');
+            }
+        });
+
         it('grounds the only device on the track that carries the requested parameter', () => {
             const result = bridgeDriveLane(
                 'device-a:dist-drive',
