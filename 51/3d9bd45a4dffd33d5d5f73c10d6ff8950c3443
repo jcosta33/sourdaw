@@ -28,6 +28,14 @@ scripts/__tests__/publishReview.spec.ts
   "base_commit_sha": "513d9bd45a4dffd33d5d5f73c10d6ff8950c3443",
   "prompts": {},
   "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_2bfd55a4393d7c": {
       "agent_id": {
         "tool": "claude",
