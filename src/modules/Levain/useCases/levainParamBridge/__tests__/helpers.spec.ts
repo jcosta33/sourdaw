@@ -479,10 +479,16 @@ describe('createLevainBridge', () => {
         });
 
         it('restores the previously committed names when a live load rejects', async () => {
-            const deps = makeDeps(() => Promise.reject(new Error('boom')));
+            // 'close' is committed through an actual successful load (rather
+            // than seeded directly into the store) so the bridge's own
+            // committed-bank record — not the store's transient
+            // `loadedMicPositions` — is what the rejection below restores from.
+            const deps = makeDeps((_deviceId, _port, instrumentId) =>
+                instrumentId === 'violin-1' ? Promise.resolve(['close']) : Promise.reject(new Error('boom'))
+            );
             const bridge = createLevainBridge(deps);
-            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
-            seedDevice('d1', ['close']);
+            seedDevice('d1');
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
             deps.setLoadedMicPositions.mockClear();
 
             await bridge.loadSamplesForInstrument('d1', 'cello');
@@ -563,6 +569,81 @@ describe('createLevainBridge', () => {
 
             expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
             expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['room']);
+        });
+
+        it('restores the last committed bank when the load that supersedes an uncommitted resolution rejects', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['violin-1', Promise.resolve(['close'])],
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // A (superseded by B) resolves null — it never proved a
+            // commitment, so it must not erase what registration already
+            // committed. B (the current load) rejects afterward and must
+            // restore that still-standing commitment, not A's null.
+            first.resolve(null);
+            second.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
+        });
+
+        it('records a superseded load’s committed bank so a later rejection can restore it', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['violin-1', Promise.resolve(['close'])],
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // A's worklet handshake commits its bank after B already
+            // superseded (aborted) it. The commitment already happened in the
+            // engine, so it must still update the record B's own later
+            // rejection restores from.
+            first.resolve(['close', 'room']);
+            second.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close', 'room']);
+        });
+
+        it('starts a fresh committed record after unregister, so a rejecting first load after re-register restores null', async () => {
+            const deps = makeDeps((_deviceId, _port, instrumentId) =>
+                instrumentId === 'violin-1' ? Promise.resolve(['close']) : Promise.reject(new Error('boom'))
+            );
+            const bridge = createLevainBridge(deps);
+            seedDevice('d1');
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            bridge.unregisterLevainDevice('d1');
+            levainStore.set({ d1: { ...defaultLevainState, patch: createDefaultPatch('cello') } });
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            // Without clearing the committed record on unregister, this would
+            // restore the pre-unregister 'close' bank instead of null.
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', null);
         });
     });
 

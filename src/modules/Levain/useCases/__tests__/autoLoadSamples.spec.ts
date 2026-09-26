@@ -151,6 +151,27 @@ describe('autoLoadLevainSamples', () => {
             expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
         });
 
+        it('returns the committed bank names when the signal aborts after the loader resolves a bank', async () => {
+            // `loadInstrumentFromManifest` only resolves a bank once the
+            // worklet's `sampleBankLoaded` handshake message settles — the
+            // engine already committed it, so a later abort cannot un-commit
+            // it. The caller (`loadSamplesForInstrument`) needs these names to
+            // restore them if the load that superseded this one goes on to
+            // fail.
+            const controller = new AbortController();
+            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
+                controller.abort();
+                return Promise.resolve({
+                    micPositions: ['close', 'room'],
+                } as unknown as Awaited<ReturnType<typeof loadInstrumentFromManifest>>);
+            });
+
+            const result = await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);
+
+            expect(result).toEqual(['close', 'room']);
+            expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
+        });
+
         it('stays silent (no error) when an aborted load rejects', async () => {
             const controller = new AbortController();
             vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {

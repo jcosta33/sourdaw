@@ -22,13 +22,20 @@ import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore
  * without changing the committed bank or claiming completion, so the
  * last-started load — not the last-finishing one — owns engine state and UI.
  *
- * Returns the committed bank's mic position names, or `null` when the call
- * returns early (superseded before or during the load, or the loader resolved
- * no bank). This function never writes `loadedMicPositions` itself: an
- * offline render also drives this loader with the live device's id and an
- * offline render node's port, and writing the store here would let an export
- * or freeze clear or overwrite the live panel's rows. Only the live route
- * (`loadSamplesForInstrument`) owns that store field, using the return value.
+ * Returns the committed bank's mic position names whenever
+ * `loadInstrumentFromManifest` resolved a bank — including when `signal` has
+ * since become aborted, because that resolution only happens after the
+ * worklet's `sampleBankLoaded` handshake message, i.e. the engine already
+ * committed the bank before this function can observe the abort. Returns
+ * `null` only when no bank was ever committed (aborted before the handshake
+ * settled, or the loader resolved no bank). This function never writes
+ * `loadedMicPositions` itself: an offline render also drives this loader with
+ * the live device's id and an offline render node's port, and writing the
+ * store here would let an export or freeze clear or overwrite the live
+ * panel's rows. Only the live route (`loadSamplesForInstrument`) owns that
+ * store field, using the return value — recording the commitment for every
+ * resolved bank, but writing the store only when its own load was not
+ * superseded.
  */
 export async function autoLoadLevainSamples(
     deviceId: string,
@@ -79,17 +86,20 @@ export async function autoLoadLevainSamples(
         throw error;
     }
 
-    // Completed but superseded — don't claim 100%/Ready over the newer load.
-    if (signal?.aborted) {
-        return null;
+    // Completed but superseded — don't claim 100%/Ready over the newer load's
+    // progress UI. The bank itself is already committed in the engine (the
+    // handshake above only resolves after `sampleBankLoaded`), so the caller
+    // still needs its names below to restore them if the superseding load
+    // goes on to fail.
+    if (!signal?.aborted) {
+        setSampleLoadProgress(deviceId, 1.0);
+        setTimeout(() => {
+            if (signal?.aborted) {
+                return;
+            }
+            setSampleLoadProgress(deviceId, null);
+        }, 300); // clear after short delay
     }
-    setSampleLoadProgress(deviceId, 1.0);
-    setTimeout(() => {
-        if (signal?.aborted) {
-            return;
-        }
-        setSampleLoadProgress(deviceId, null);
-    }, 300); // clear after short delay
 
     return bank ? bank.micPositions : null;
 }

@@ -7,7 +7,7 @@ import {
 import { type sendNativeLiveMidiControl, type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
+import { getArticulationId, isArticulationType, type LevainPatch, type MicPositionType } from '../../models/LevainPatch';
 import {
     defaultLevainState,
     levainStore,
@@ -34,6 +34,11 @@ type SampleLoadOperation = {
     controller: AbortController;
     completion: Promise<LevainSampleLoadOutcome>;
     successor?: SampleLoadOperation;
+};
+
+type CommittedBank = {
+    sequence: number;
+    micPositions: readonly MicPositionType[];
 };
 
 export type LevainBridgeDeps = {
@@ -80,6 +85,32 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // the previous one so the last-started load — not the last-finishing one —
     // wins the worklet zone map and the UI progress.
     const loadOperations = new Map<string, SampleLoadOperation>();
+    // Per-device record of the mic names the engine last actually committed —
+    // independent of the store's `loadedMicPositions`, which a load's
+    // start-of-load clear (or a different device's unrelated update) leaves
+    // no trace to read back once a rejection needs to know what the engine is
+    // still sounding. `sequence` orders commits across overlapping loads so a
+    // late-resolving earlier load can never clobber a later one's commit —
+    // see `recordCommittedBank`. Unregistering the device deletes its entry.
+    const committedBanks = new Map<string, CommittedBank>();
+    let nextLoadSequence = 0;
+
+    // A resolved bank from `autoLoadLevainSamples` always means the worklet's
+    // handshake already committed it in the engine (see
+    // `loadInstrumentFromManifest`'s `sampleBankLoaded` message), even when
+    // the caller's own signal aborted afterward because a newer load
+    // superseded it. Record that commitment unconditionally, but never let an
+    // earlier-started load's late resolution overwrite a later one's —
+    // `sequence` is assigned once per call to `loadSamplesForInstrument`, in
+    // start order, so the guard below is a last-committed-wins check on
+    // start order rather than resolution order.
+    function recordCommittedBank(deviceId: string, sequence: number, micPositions: readonly MicPositionType[]): void {
+        const existing = committedBanks.get(deviceId);
+        if (existing && existing.sequence >= sequence) {
+            return;
+        }
+        committedBanks.set(deviceId, { sequence, micPositions });
+    }
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
@@ -190,16 +221,24 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // route drives the same loader with the live device's id and must never
         // touch the live panel's rows (see `autoLoadLevainSamples`'s own comment).
         // A rejected load never commits: the worklet only aborts the *pending*
-        // bank, so the previously committed bank keeps sounding. The rejection
-        // branch below restores these kept names rather than leaving the panel
-        // on the transient null.
-        const previousMicPositions = levainStore.value?.[deviceId]?.loadedMicPositions ?? null;
+        // bank, so the previously committed bank keeps sounding. `committedBanks`
+        // tracks that bank independently of this clear — reading the store here
+        // instead would see whatever a load that supersedes this one already
+        // wrote (including this same null), restoring the wrong names or none
+        // at all once the rejection branch below runs.
         deps.setLoadedMicPositions(deviceId, null);
 
+        const sequence = ++nextLoadSequence;
         const controller = new AbortController();
         const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal);
         const observedLoad = sampleLoad.then<LevainSampleLoadOutcome, LevainSampleLoadOutcome>(
             (micPositions) => {
+                // A resolved (non-null) bank is already committed in the
+                // engine regardless of whether this load has since been
+                // superseded — record it so a later rejection can restore it.
+                if (micPositions) {
+                    recordCommittedBank(deviceId, sequence, micPositions);
+                }
                 // A superseding load already owns the UI; don't set names over it.
                 if (controller.signal.aborted) {
                     return 'cancelled';
@@ -212,9 +251,13 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                     return 'cancelled';
                 }
                 logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
-                // Restore the previously committed bank's names: the engine
-                // kept sounding it, so the panel's rows must match.
-                deps.setLoadedMicPositions(deviceId, previousMicPositions);
+                // Restore the engine's last-committed bank: the engine kept
+                // sounding it, so the panel's rows must match. Read the live
+                // record rather than a value captured at this load's start —
+                // another load may have committed a newer bank while this one
+                // was in flight.
+                const committed = committedBanks.get(deviceId);
+                deps.setLoadedMicPositions(deviceId, committed ? committed.micPositions : null);
                 return 'failed';
             }
         );
@@ -287,6 +330,9 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // missing device, but cancelling avoids the wasted decode work).
         loadOperations.get(deviceId)?.controller.abort();
         loadOperations.delete(deviceId);
+        // The engine's committed bank for this device no longer exists once
+        // the device itself is torn down; a re-registration starts fresh.
+        committedBanks.delete(deviceId);
 
         // Cancel this device's pending rAF batches by their deterministic keys.
         // The `activeDevices` miss already guards `device.setParam`, but

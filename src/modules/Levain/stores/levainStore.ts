@@ -185,9 +185,14 @@ export function updateMicPosition(deviceId: string, index: number, updates: Part
 
 /**
  * Record the mic positions the currently-loaded bank carries, keyed by engine
- * index. Set to the loaded names on a successful load; clear to null when a
- * new load starts or the load fails, so the panel never shows a stale bank's
- * controls while a different one is loading or failed.
+ * index. Cleared to null when a new load starts, so the panel never shows a
+ * stale bank's controls while a different one is loading. `levainParamBridge`
+ * keeps its own record of the bank the engine last actually committed,
+ * independent of this field: on a successful load this is set to the loaded
+ * names, and on a failed load it is set to that committed record (or null
+ * when nothing was ever committed) rather than cleared, because the engine
+ * keeps sounding whatever bank it last committed regardless of how the
+ * replacement failed.
  */
 export function setLoadedMicPositions(deviceId: string, positions: readonly MicPositionType[] | null): void {
     const instances = levainStore.value ?? {};
