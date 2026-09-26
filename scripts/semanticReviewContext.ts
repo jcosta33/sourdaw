@@ -15,11 +15,16 @@
  * counts rather than `state` alone: a `skipped` execution with a zero scope is a complete
  * assessment of an empty scope, not a missing one.
  *
- * The projection is coverage-only. The report's signals, findings, reasoning, question text, and
- * probabilities never reach the bundle, and each scope entry's `reason` is validated against the
- * producer's vocabulary with anything unrecognised normalised to a fixed code: feeding a downstream
- * reviewer the assessment's judgements anchors it, so the bundle carries only the scope, the
- * abstentions, and the revision it covers.
+ * The projection is coverage plus the fired-signal disposal list. The report's findings, reasoning,
+ * question text, dispositions, and per-signal judgement text never reach the bundle, and each scope
+ * entry's `reason` is validated against the producer's vocabulary with anything unrecognised
+ * normalised to a fixed code: feeding a downstream reviewer the assessment's judgements anchors it,
+ * so the bundle carries the scope, the abstentions, and the revision it covers. One bounded carve-out
+ * carries the signals the assessment itself flagged for investigation (`recommend_investigation`),
+ * because a fired signal no one is forced to name is a fired signal an orchestrator can forget: the
+ * projection records at most their rule, path, and probability, publication-safe screened, and the
+ * publication gate refuses a fresh round that never disposes of one by name (ADR 0050). Everything
+ * else about the signals stays out.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -27,6 +32,7 @@ import { createHash } from 'node:crypto';
 
 import { unzipSync } from 'fflate';
 
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import {
     parseJson,
     REQUIRED_REPOSITORY,
@@ -35,7 +41,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { EVIDENCE_SIDES, isSemanticFailureCode } from './semanticReview/contracts.ts';
-import { parseReportJson, type SemanticReport } from './semanticReview/report.ts';
+import { MAX_SUMMARY_ITEMS, parseReportJson, type SemanticReport } from './semanticReview/report.ts';
 import { SEMANTIC_REVIEW_CHECK_NAME, SEMANTIC_REVIEW_WORKFLOW_FILE } from './semanticReviewWorkflowContract.ts';
 
 export const SEMANTIC_CI_FORMAT = 'semantic-ci-v1';
@@ -60,6 +66,41 @@ export type SemanticCiScope = {
     readonly truncated: readonly SemanticCiExclusion[];
 };
 
+/** One fired signal a fresh publication must dispose of by name: its rule, path, and probability. */
+export type SemanticCiFiredSignal = {
+    readonly ruleId: string;
+    readonly path: string;
+    readonly probability: number;
+};
+
+/**
+ * Fired signals are bounded like the report summary's actionable list: at most `MAX_SUMMARY_ITEMS`
+ * entries are recorded, and a scan firing more leaves the overflow in the artifact, which the
+ * record's `digest` binds. The measured fire rate on this repository is well under one per scan, so
+ * the cap is a publication-safety bound, not a working limit.
+ */
+const MAX_FIRED_SIGNALS = MAX_SUMMARY_ITEMS;
+
+/**
+ * The fired signals a fresh publication must dispose of by name: the scan's
+ * `recommend_investigation` entries, projected to their rule, path, and probability and capped at
+ * `MAX_FIRED_SIGNALS`. The projected strings are publication-safe screened, so a credential-shaped
+ * value refuses the record instead of reaching the bundle — the one projection failure that throws,
+ * because a value that must never be written cannot be softened into a `no-assessment` reason
+ * without hiding that the assessment fired.
+ */
+function firedSignalsOf(report: SemanticReport): readonly SemanticCiFiredSignal[] {
+    if (report.mode !== 'scan') {
+        return [];
+    }
+    const fired = report.signals.filter((signal) => signal.disposition === 'recommend_investigation');
+    return fired.slice(0, MAX_FIRED_SIGNALS).map((signal) => {
+        assertPublicationSafeEvidence('semantic-ci fired signal ruleId', [signal.ruleId]);
+        assertPublicationSafeEvidence('semantic-ci fired signal path', [signal.path]);
+        return { ruleId: signal.ruleId, path: signal.path, probability: signal.probability };
+    });
+}
+
 export type SemanticCiArtifact = {
     readonly id: number;
     readonly name: string;
@@ -78,6 +119,8 @@ export type SemanticCiAssessment = {
     readonly execution: SemanticReport['execution'];
     readonly scope: SemanticCiScope;
     readonly unresolvedQuestions: number;
+    /** The fired signals a fresh publication must dispose of by name; empty when none fired. */
+    readonly firedSignals: readonly SemanticCiFiredSignal[];
     readonly artifact: SemanticCiArtifact;
 };
 
@@ -454,6 +497,7 @@ export function resolveSemanticReviewContext(
             truncated: report.scope.truncated.map(projectionOf),
         },
         unresolvedQuestions: unresolvedQuestionCount(report),
+        firedSignals: firedSignalsOf(report),
         artifact: {
             id: selected.artifact.id,
             name: selected.artifact.name,

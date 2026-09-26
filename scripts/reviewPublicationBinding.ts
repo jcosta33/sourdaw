@@ -27,7 +27,7 @@ import {
     type ReviewDossierEvent,
 } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
-import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
+import { buildReviewDossier, recordedReviewStances, recordedStanceAdmissions } from './reviewDossierPublication.ts';
 import {
     assertSemanticAssessmentAcknowledged,
     parseSemanticAssessmentCoverage,
@@ -336,7 +336,11 @@ export function prepareReviewDossierPublication(input: {
     // dossier must correspond to it one-to-one, and when it is absent the publication carries no
     // stance-completeness constraint. The plan's mechanically derived list is never enforced.
     const stancesPath = join(input.bundle, REVIEW_STANCES_NAME);
-    const recordedStances = recordedReviewStances(readBundleFile(input.port, stancesPath), stancesPath);
+    const stancesRead = readBundleFile(input.port, stancesPath);
+    const recordedStances = recordedReviewStances(stancesRead, stancesPath);
+    // The admission lines travel to the semantic-assessment gate: a fired signal may be disposed of
+    // by naming its token in one stance's admittedBy.
+    const stanceAdmissions = recordedStanceAdmissions(stancesRead, stancesPath);
     const publication = buildReviewDossier({
         plan,
         raw: dossierRead.value,
@@ -349,10 +353,15 @@ export function prepareReviewDossierPublication(input: {
     // canonical record whose publication was never recorded. Only a record that already binds a
     // publication replays instead of posting, so it is exempt.
     if (publishedReviewId(publication.dossier) === undefined) {
-        assertSemanticAssessmentAcknowledged(publication.dossier, readSemanticCiRecord(input.port, input.bundle), {
-            pr: plan.pr,
-            headSha: plan.headSha,
-        });
+        assertSemanticAssessmentAcknowledged(
+            publication.dossier,
+            readSemanticCiRecord(input.port, input.bundle),
+            {
+                pr: plan.pr,
+                headSha: plan.headSha,
+            },
+            stanceAdmissions
+        );
     }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
     return reassessment;
