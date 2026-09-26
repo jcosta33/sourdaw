@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_1c08b47ac3792f::t_98357af5b3dd64 26-28
+  s_1c08b47ac3792f::t_97362a13964b40 224-252
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_3df2d926a7f8bb 985-1158
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_21a972acff1919 374
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_e69aeb36484913 1327,1339-1376,1384-1393,1405,1407-1414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fc217d84318848f83b74219c8bb6812821dbf3b9",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
