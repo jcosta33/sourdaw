@@ -1,0 +1,23 @@
+.agents/skills/review-stances/test-validity.md
+  s_2bfd55a4393d7c::t_31c195945fc138 494-518
+scripts/__tests__/semanticReviewContext.spec.ts
+  s_2bfd55a4393d7c::t_d459fc3f425142 21,32,36-47,239,342,528,533,551,556,563,579-580,590-643
+scripts/semanticReviewContext.ts
+  s_2bfd55a4393d7c::t_279035bd0e12b4 262-269,275,281-285,288,291-297,303,306-310,313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0c4b59057fe1be79ba7ca46f046472900b6fa061",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
