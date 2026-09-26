@@ -73,6 +73,7 @@ function assertDeclaredClosure(
     declared: readonly string[],
     readSource: (path: string) => string | undefined
 ): void {
+    expect(declared[0], `${command} declared loader`).toBe(BOOTSTRAP_PATH);
     expect(declared[1], `${command} declared entry`).toBe(commandEntries[command].path);
     const expected = new Set(trustedLocalImportClosure(commandEntries[command].path, readSource));
     for (const path of trustedLocalImportClosure(BOOTSTRAP_PATH, readSource)) {
@@ -224,14 +225,35 @@ describe('planReviewRisk', () => {
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from
      * the declared array itself: `declared[1]` is part of the value under test, so a declaration whose
-     * whole array is swapped for another command's — type-valid, every path declared elsewhere — would
-     * pass every check while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. Deriving the
-     * entry from `commandEntries` and asserting it equals `declared[1]` makes that swap redden.
+     * entry is swapped for another declared path — type-valid, the same set — would pass every check
+     * while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. A same-set permutation leaves
+     * the entry-position assertion as the only thing that can fail, so removing it reddens this case.
      */
     it('should refuse a command declaration whose entry is not its runtime entry', () => {
         const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const entry = declared[1]!;
+        const neighbour = declared[2]!;
+        declared[1] = neighbour;
+        declared[2] = entry;
 
-        expect(() => assertDeclaredClosure('deliver', trustedDependencyGraphs['review:confirm'], readSource)).toThrow();
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared entry/);
+    });
+
+    /**
+     * The loader must sit at `declared[0]`, not merely be present: the set comparison cannot see
+     * order, so a declaration that buries the loader still satisfies it. Swapping the loader out of
+     * position zero keeps the set identical, so only the loader-position assertion can fail.
+     */
+    it('should refuse a command declaration that does not start with the loader', () => {
+        const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const loader = declared[0]!;
+        const neighbour = declared[2]!;
+        declared[0] = neighbour;
+        declared[2] = loader;
+
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared loader/);
     });
 
     /**

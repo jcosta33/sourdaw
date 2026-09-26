@@ -670,6 +670,7 @@ function assertDeclaredClosure(
     declared: readonly string[],
     readSource: (path: string) => string | undefined
 ): void {
+    expect(declared[0], `${command} declared loader`).toBe(BOOTSTRAP_PATH);
     expect(declared[1], `${command} declared entry`).toBe(commandEntries[command].path);
     const expected = new Set(trustedLocalImportClosure(commandEntries[command].path, readSource));
     for (const path of trustedLocalImportClosure(BOOTSTRAP_PATH, readSource)) {
@@ -1522,14 +1523,35 @@ describe('package scripts and gitignore', () => {
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from
      * the declared array itself: `declared[1]` is part of the value under test, so a declaration whose
-     * whole array is swapped for another command's — type-valid, every path declared elsewhere — would
-     * pass every check while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. Deriving the
-     * entry from `commandEntries` and asserting it equals `declared[1]` makes that swap redden.
+     * entry is swapped for another declared path — type-valid, the same set — would pass every check
+     * while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. A same-set permutation leaves
+     * the entry-position assertion as the only thing that can fail, so removing it reddens this case.
      */
     it('refuses a declaration whose entry is not the command runtime entry', () => {
         const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const entry = declared[1]!;
+        const neighbour = declared[2]!;
+        declared[1] = neighbour;
+        declared[2] = entry;
 
-        expect(() => assertDeclaredClosure('deliver', trustedDependencyGraphs['review:confirm'], readSource)).toThrow();
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared entry/);
+    });
+
+    /**
+     * The loader must sit at `declared[0]`, not merely be present: the set comparison cannot see
+     * order, so a declaration that buries the loader still satisfies it. Swapping the loader out of
+     * position zero keeps the set identical, so only the loader-position assertion can fail.
+     */
+    it('refuses a declaration that does not start with the loader', () => {
+        const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const loader = declared[0]!;
+        const neighbour = declared[2]!;
+        declared[0] = neighbour;
+        declared[2] = loader;
+
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared loader/);
     });
 
     /**
@@ -1557,16 +1579,28 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
-     * The runtime graph assertion checks the loader's own local imports too, not just its presence in
-     * the declared set, so a loader-local import the graph declares passes and one it omits refuses —
-     * `ERR_MODULE_NOT_FOUND` would otherwise kill the command after every check reported coverage.
+     * The declared set must include the loader's whole static closure, not just the loader file. On
+     * this tree the loader imports only `prContract.ts`, which every command already declares, so
+     * pinning `{BOOTSTRAP_PATH}` and pinning `closure(BOOTSTRAP_PATH)` are indistinguishable. A
+     * synthetic loader whose closure adds a path no command reaches breaks the tie: the declared set
+     * must grow to include that path, or the closure assertion refuses.
      */
-    it('checks the loader own local imports against the declared graph', async () => {
+    it('pins the loader own static closure to the declared set, not just the loader file', () => {
+        const realRead = readRepositorySource();
         const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+        const syntheticLoader = `${loader}\nimport './loaderOnlyLocal.ts';\n`;
+        const readSource = (path: string): string | undefined => {
+            if (path === BOOTSTRAP_PATH) {
+                return syntheticLoader;
+            }
+            if (path === 'scripts/loaderOnlyLocal.ts') {
+                return 'export {};\n';
+            }
+            return realRead(path);
+        };
 
-        await expect(runTrustedDeliverWithLoader(`${loader}\nimport './githubAppIdentity.ts';\n`)).resolves.toBe(0);
-        await expect(runTrustedDeliverWithLoader(`${loader}\nimport './undeclaredLoaderImport.ts';\n`)).rejects.toThrow(
-            /scripts\/trustedGithubWriteBootstrap\.ts imports unchecked local dependency scripts\/undeclaredLoaderImport\.ts/
+        expect(() => assertDeclaredClosure('deliver', trustedDependencyGraphs.deliver, readSource)).toThrow(
+            /declared closure/
         );
     });
 
@@ -1642,6 +1676,43 @@ describe('package scripts and gitignore', () => {
             poisoned: "const name = 'unchecked';\nawait import(`./${name}.ts`);",
             shape: 'import(...)',
         },
+        {
+            label: 'a concatenated dynamic import specifier',
+            poisoned: "const suffix = '.bak';\nawait import('./canonicalRecord.ts' + suffix);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a member-called dynamic import specifier',
+            poisoned: "await import('./canonicalRecord.ts'.replace('.ts', '.bak'));",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a parenthesised literal concatenated with a suffix',
+            poisoned: "const suffix = '.bak';\nawait import(('./canonicalRecord.ts') + suffix);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a concatenated require specifier',
+            poisoned: "const suffix = '.bak';\nrequire('./canonicalRecord.ts' + suffix);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a member-called require specifier',
+            poisoned: "require('./canonicalRecord.ts'.replace('.ts', '.bak'));",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a concatenated createRequire specifier',
+            poisoned:
+                "import { createRequire } from 'node:module';\nconst suffix = '.bak';\ncreateRequire(import.meta.url)('./canonicalRecord.ts' + suffix);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a member-called createRequire specifier',
+            poisoned:
+                "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('./canonicalRecord.ts'.replace('.ts', '.bak'));",
+            shape: 'createRequire(...)(...)',
+        },
     ])('refuses $label in the graph assertion', async ({ poisoned, shape }) => {
         expect(await snapshotRefusalFor(poisoned)).toContain(
             `scripts/deliverPullRequest.ts loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
@@ -1672,6 +1743,16 @@ describe('package scripts and gitignore', () => {
             specifier: './checked.ts',
         },
         {
+            label: 'a static dynamic import narrowed with as-const',
+            source: "await import('./checked.ts' as const);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a satisfies-expression',
+            source: "await import('./checked.ts' satisfies string);",
+            specifier: './checked.ts',
+        },
+        {
             label: 'a static dynamic import with a trailing comma',
             source: "await import('./checked.ts',);",
             specifier: './checked.ts',
@@ -1682,10 +1763,12 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
-     * A type member or a parameter merely named `require` is not a load: its parenthesized list is a
-     * TypeScript parameter list, never a call whose first argument is an expression. The scan must not
-     * read `require(specifier: string)` in a type, a `require`-named function parameter, or an ambient
-     * `declare function require` as a computed load and refuse it.
+     * A parenthesized list whose first argument is a parameter list — `name: type`, `name?: type`,
+     * `...args: type`, or a destructuring pattern followed by a type — is a TypeScript declaration,
+     * never a call: no module specifier can take that shape, so it must not be read as a computed
+     * load. An object-literal argument (`require({ specifier })`) has no type annotation and stays a
+     * computed load. The scan decides by shape, not by one `identifier :` spelling, so optional,
+     * empty, rest, destructured, and comment-or-whitespace-separated parameter lists all pass.
      */
     it.each([
         {
@@ -1693,12 +1776,32 @@ describe('package scripts and gitignore', () => {
             source: 'type Sandbox = { require(specifier: string): unknown };',
         },
         {
-            label: 'a require-named function parameter',
-            source: 'function loadWith(require: (specifier: string) => unknown) { return require; }',
+            label: 'a require-named call-signature parameter',
+            source: 'declare function load(require(specifier: string): unknown): void;',
         },
         {
             label: 'a require-named ambient function declaration',
             source: 'declare function require(moduleName: string): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with an optional parameter',
+            source: 'declare function require(moduleName?: string): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with no parameters',
+            source: 'declare function require(): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with a rest parameter',
+            source: 'declare function require(...args: unknown[]): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with a destructured parameter',
+            source: 'declare function require({ resolve }: { resolve: unknown }): unknown;',
+        },
+        {
+            label: 'a require-named parameter list with a comment before the type annotation',
+            source: 'declare function require(moduleName /* optional */ : string): unknown;',
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);

@@ -620,35 +620,187 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
 }
 
 function computedDynamicLoad(source: string, openParen: number, shape: string): ComputedDynamicLoad | undefined {
-    let specifierStart = skipWhitespace(source, openParen + 1);
-    while (source[specifierStart] === '(') {
-        specifierStart = skipWhitespace(source, specifierStart + 1);
-    }
-    // A parameter list whose first token is an identifier immediately followed by `:` is a TypeScript
-    // declaration (`require(specifier: string)` in a type, an ambient `declare function require`),
-    // never a call — no expression argument can take that shape — so it is not a computed load.
-    if (isTypedParameterList(source, specifierStart)) {
+    const callEnd = endOfBalancedCall(source, openParen);
+    const contentEnd = callEnd - 1;
+    // A parameter list is a declaration's, never a call: its first argument region is shaped like
+    // `name: type`, `name?: type`, `...args: type`, or a destructuring pattern followed by a type, or
+    // it is empty. No module specifier can take that shape, so such a match is not a load. An
+    // object-literal argument (`require({ specifier })`) has no type annotation and stays a load.
+    if (isParameterListRegion(source, openParen + 1, contentEnd)) {
         return undefined;
     }
-    const literal = readModuleStringAfter(source, specifierStart);
-    if (literal !== undefined) {
-        // A literal first argument resolves from the snapshot whatever follows it — a second options
-        // argument, an `as` cast, a trailing comma — and `snapshotImportSpecifiers` already collects it.
+    // The specifier is static only when a string or static-template literal is the whole first
+    // argument — the argument list's `)` or an argument-level `,` follows it, optionally through
+    // grouping parentheses and an `as`/`satisfies` cast. Anything after the literal that is not one
+    // of those (an operator, member access, call, or concatenation) is computed.
+    if (staticSpecifierEnd(source, openParen + 1, contentEnd) !== undefined) {
         return undefined;
     }
-    return { shape, end: endOfBalancedCall(source, openParen) };
+    return { shape, end: callEnd };
 }
 
-function isTypedParameterList(source: string, start: number): boolean {
-    const first = source[start];
-    if (first === undefined || !/[A-Za-z_$]/.test(first)) {
+function isParameterListRegion(source: string, start: number, end: number): boolean {
+    let cursor = skipWhitespace(source, start);
+    if (cursor >= end) {
+        return true;
+    }
+    if (source.startsWith('...', cursor)) {
+        cursor = skipWhitespace(source, cursor + 3);
+    }
+    const afterBinding = skipBindingPattern(source, cursor, end);
+    if (afterBinding === undefined) {
         return false;
     }
-    let cursor = start + 1;
-    while (cursor < source.length && isIdentifierContinue(source[cursor])) {
-        cursor += 1;
+    cursor = skipWhitespace(source, afterBinding);
+    if (source[cursor] === '?') {
+        // An optional parameter's `?` is followed directly by `:`; a ternary's is not.
+        cursor = skipWhitespace(source, cursor + 1);
+        return source[cursor] === ':';
     }
     return source[cursor] === ':';
+}
+
+function skipBindingPattern(source: string, start: number, end: number): number | undefined {
+    const first = source[start];
+    if (first === undefined) {
+        return undefined;
+    }
+    if (/[A-Za-z_$]/.test(first)) {
+        let cursor = start + 1;
+        while (cursor < end && isIdentifierContinue(source[cursor])) {
+            cursor += 1;
+        }
+        return cursor;
+    }
+    if (first === '{') {
+        return skipBalancedDelimited(source, start, end, '{', '}');
+    }
+    if (first === '[') {
+        return skipBalancedDelimited(source, start, end, '[', ']');
+    }
+    return undefined;
+}
+
+function skipBalancedDelimited(
+    source: string,
+    start: number,
+    end: number,
+    open: string,
+    close: string
+): number | undefined {
+    let cursor = start;
+    let depth = 0;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const quote = source[cursor];
+        if (quote === "'" || quote === '"') {
+            cursor = skipQuoted(source, cursor, quote);
+            continue;
+        }
+        if (quote === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        const character = source[cursor];
+        if (character === open) {
+            depth += 1;
+        } else if (character === close) {
+            depth -= 1;
+            if (depth === 0) {
+                return cursor + 1;
+            }
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function staticSpecifierEnd(source: string, start: number, end: number): number | undefined {
+    const expressionEnd = readStaticSpecifier(source, start, end);
+    if (expressionEnd === undefined) {
+        return undefined;
+    }
+    const after = skipWhitespace(source, expressionEnd);
+    if (after === end || source[after] === ',') {
+        return expressionEnd;
+    }
+    return undefined;
+}
+
+function readStaticSpecifier(source: string, start: number, end: number): number | undefined {
+    const cursor = skipWhitespace(source, start);
+    if (cursor >= end) {
+        return undefined;
+    }
+    const first = source[cursor];
+    let literalEnd: number | undefined;
+    if (first === "'" || first === '"') {
+        const read = readQuotedValue(source, cursor, first);
+        if (read === undefined) {
+            return undefined;
+        }
+        literalEnd = read.end;
+    } else if (first === '`') {
+        const read = readStaticTemplateValue(source, cursor);
+        if (read === undefined) {
+            return undefined;
+        }
+        literalEnd = read.end;
+    } else if (first === '(') {
+        const closeParen = skipBalancedParens(source, cursor);
+        if (closeParen === undefined || closeParen - 1 > end) {
+            return undefined;
+        }
+        const innerEnd = readStaticSpecifier(source, cursor + 1, closeParen - 1);
+        if (innerEnd === undefined || skipWhitespace(source, innerEnd) !== closeParen - 1) {
+            return undefined;
+        }
+        literalEnd = closeParen;
+    } else {
+        return undefined;
+    }
+    const afterLiteral = skipWhitespace(source, literalEnd);
+    if (isKeywordAt(source, afterLiteral, 'as')) {
+        return skipCastType(source, afterLiteral + 2, end);
+    }
+    if (isKeywordAt(source, afterLiteral, 'satisfies')) {
+        return skipCastType(source, afterLiteral + 9, end);
+    }
+    return literalEnd;
+}
+
+/**
+ * Consumes the type of an `as`/`satisfies` cast only when it is a plain qualified identifier.
+ * Richer casts — generics, unions, array suffixes — are refused rather than accepted unsoundly:
+ * the cast's type is erased at run time, so the specifier value is the literal, but the scanner must
+ * know where the cast ends to tell it apart from an operator that follows the literal.
+ */
+function skipCastType(source: string, start: number, end: number): number | undefined {
+    let cursor = skipWhitespace(source, start);
+    const first = source[cursor];
+    if (cursor >= end || first === undefined || !/[A-Za-z_$]/.test(first)) {
+        return undefined;
+    }
+    cursor += 1;
+    while (cursor < end && isIdentifierContinue(source[cursor])) {
+        cursor += 1;
+    }
+    while (cursor < end) {
+        const after = skipWhitespace(source, cursor);
+        if (source[after] === '.' && /[A-Za-z_$]/.test(source[after + 1] ?? '')) {
+            cursor = after + 1;
+            while (cursor < end && isIdentifierContinue(source[cursor])) {
+                cursor += 1;
+            }
+            continue;
+        }
+        break;
+    }
+    return cursor;
 }
 
 function endOfBalancedCall(source: string, openParen: number): number {
