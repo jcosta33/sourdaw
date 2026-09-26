@@ -184,6 +184,80 @@ function compileDrumColorProposal(): {
     return { actions: materialized.actions, matchSelectorPredicates, revision };
 }
 
+/**
+ * Compiles a single `setTrackColor` item carrying the given selector directly through the compiler,
+ * the same way `parsePromptToActions` does. Generalizes `compileDrumColorProposal` for the
+ * revalidation-guard rows below, each of which needs a selector shape (a lower `maximum`, or `match`
+ * combined with `excludeIds`/`condition`/`where`) the fixed maximum-8 `roleFamily: drums` fixture
+ * does not cover.
+ */
+function compileDrumColorSelectorProposal(
+    itemId: string,
+    selector: Record<string, unknown>
+): {
+    actions: ExecutableRuntimeAction[];
+    matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[];
+    revision: string;
+} {
+    const context = getProjectContext();
+    const revision = captureProjectRevision();
+    const calls = [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    semantic: { classification: 'simple' as const, uncertainty: [] },
+                    objective: 'Color the selected drum-family tracks red.',
+                    constraints: ['Do not create, delete, or rename any track.'],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: ['setTrackColor'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [
+                        'Resolve the drum-family selector through the live project before coloring it.',
+                    ],
+                    stoppingConditions: ['Stop if the selector resolves more targets than its bound allows.'],
+                },
+                list: {
+                    schemaVersion: 1,
+                    items: [
+                        {
+                            id: itemId,
+                            name: 'setTrackColor',
+                            arguments: { color: DRUM_COLOR },
+                            selector,
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+    const compiled = compileArbitraryCommandList({ context, revision, calls });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        const reason = compiled.status === 'rejected' ? compiled.reason : 'missing compiler evidence';
+        throw new Error(`Expected the drum color selector batch to compile: ${reason}`);
+    }
+    const unguardedActions = compiled.compilerEvidence.commands.map((command) => {
+        if (
+            command.name !== 'setTrackColor' ||
+            typeof command.arguments.trackId !== 'string' ||
+            typeof command.arguments.color !== 'string'
+        ) {
+            throw new Error('Expected a canonical setTrackColor command.');
+        }
+        return {
+            type: 'setTrackColor' as const,
+            payload: { trackId: command.arguments.trackId, color: command.arguments.color },
+        };
+    });
+    const materialized = materializeActionStateGuards(unguardedActions, context);
+    if (materialized.status !== 'accepted') {
+        throw new Error(materialized.reason);
+    }
+    const matchSelectorPredicates = deriveMatchSelectorPredicates(compiled.compilerEvidence);
+    return { actions: materialized.actions, matchSelectorPredicates, revision };
+}
+
 function buildDrumAutomationModeCall() {
     return [
         {
@@ -1273,5 +1347,210 @@ describe('match selector approval revalidation', () => {
             DEFAULT_TRACK_COLOR,
             DEFAULT_TRACK_COLOR,
         ]);
+    });
+
+    it('invalidates a predicate-selected color batch when the live set exceeds the selector maximum before confirmation', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal(
+            'color-drums-max-two',
+            {
+                targetArgument: 'trackId',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 2 },
+            }
+        );
+        expect(trackIdsOf(actions).toSorted()).toEqual(['track-kick', 'track-snare']);
+        propose('confirmation-max-exceeded', actions, matchSelectorPredicates, revision);
+
+        // Tom joins the drums family, taking the live selector's resolved count to three, past its
+        // approved maximum of two: `resolveSemanticCommandListSelector`'s `checkQuantity` now refuses
+        // the live re-resolution outright (`ambiguous-target`), so `revalidateApprovedMatchSelectors`
+        // must invalidate from the `resolved.status !== 'accepted'` branch rather than ever reaching
+        // the id-set comparison below it.
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-max-exceeded' });
+
+        expect(result.status).toBe('invalidated');
+        expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+        ]);
+    });
+
+    it('rejects a re-preview and persists nothing when the live set exceeds the selector maximum before the repreview', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        registerReproposableRun();
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal(
+            'color-drums-max-two-repropose',
+            {
+                targetArgument: 'trackId',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 2 },
+            }
+        );
+        propose('confirmation-max-exceeded-repropose', actions, matchSelectorPredicates, revision);
+
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const result = await reproposePendingChatActions({ confirmationId: 'confirmation-max-exceeded-repropose' });
+
+        expect(result.status).toBe('rejected');
+        const original = getPendingActionConfirmation('confirmation-max-exceeded-repropose');
+        expect(original?.status).toBe('proposed');
+        expect(original?.supersededBy).toBeNull();
+        expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+        ]);
+    });
+
+    it('invalidates a predicate-selected color batch when every matched track stops matching before confirmation', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorProposal();
+        expect(trackIdsOf(actions).toSorted()).toEqual(['track-kick', 'track-snare']);
+        propose('confirmation-zero-match', actions, matchSelectorPredicates, revision);
+
+        // Both matched tracks leave the drums family through authored production-brief roles, so the
+        // live selector now resolves zero targets. `checkQuantity`'s `maximum` branch refuses a
+        // zero-candidate resolution outright as `missing-target`, so this exercises the
+        // `resolved.status !== 'accepted'` branch directly, the same branch the over-maximum rows
+        // above exercise from the opposite direction.
+        const currentProjectState = projectStore.value ?? defaultProjectStoreState;
+        projectStore.set({
+            ...currentProjectState,
+            productionBrief: {
+                ...currentProjectState.productionBrief,
+                trackRoles: [
+                    ...currentProjectState.productionBrief.trackRoles,
+                    { id: 'authored-role-kick-guitar', trackId: 'track-kick', role: 'guitar', createdAt: Date.now() },
+                    {
+                        id: 'authored-role-snare-guitar',
+                        trackId: 'track-snare',
+                        role: 'guitar',
+                        createdAt: Date.now(),
+                    },
+                ],
+            },
+        });
+        flushAutomergeStorageWrites();
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-zero-match' });
+
+        expect(result.status).toBe('invalidated');
+        expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+        ]);
+    });
+
+    it('reapproves rather than invalidates a match selector combined with excludeIds after an unrelated track is added', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal(
+            'color-drums-exclude-ids',
+            {
+                targetArgument: 'trackId',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                excludeIds: ['track-snare'],
+                quantity: { unit: 'targets', maximum: 8 },
+            }
+        );
+        expect(trackIdsOf(actions)).toEqual(['track-kick']);
+        propose('confirmation-exclude-ids-reapproval', actions, matchSelectorPredicates, revision);
+
+        // An unrelated track joins the project: the carried record still excludes the snare, so a
+        // revalidation that drops `excludeIds` anywhere in the pipeline would re-resolve the snare
+        // back in, diverge from the approved single-track set, and invalidate instead of rebinding.
+        const tracksBeforeKeys = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeKeys, createColorableTrack('track-keys', 'Keys')]);
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-exclude-ids-reapproval' });
+
+        expect(result.status).toBe('reapproval_required');
+    });
+
+    it('reapproves rather than invalidates a match selector combined with a condition after an unrelated track is added', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            { ...createColorableTrack('track-snare', 'Snare'), muted: true },
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal(
+            'color-drums-condition',
+            {
+                targetArgument: 'trackId',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                condition: { field: 'muted', equals: false },
+                quantity: { unit: 'targets', maximum: 8 },
+            }
+        );
+        expect(trackIdsOf(actions)).toEqual(['track-kick']);
+        propose('confirmation-condition-reapproval', actions, matchSelectorPredicates, revision);
+
+        // An unrelated track joins the project: the carried record still excludes the muted snare via
+        // its condition, so a revalidation that drops `condition` anywhere in the pipeline would
+        // re-resolve the snare back in, diverge from the approved single-track set, and invalidate
+        // instead of rebinding.
+        const tracksBeforeKeys = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeKeys, createColorableTrack('track-keys', 'Keys')]);
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-condition-reapproval' });
+
+        expect(result.status).toBe('reapproval_required');
+    });
+
+    it('reapproves rather than invalidates a match selector combined with where after an unrelated track is added', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorSelectorProposal('color-drums-where', {
+            targetArgument: 'trackId',
+            entity: 'track',
+            match: { all: [{ roleFamily: 'drums' }] },
+            where: { name: 'Kick' },
+            quantity: { unit: 'targets', maximum: 8 },
+        });
+        expect(trackIdsOf(actions)).toEqual(['track-kick']);
+        propose('confirmation-where-reapproval', actions, matchSelectorPredicates, revision);
+
+        // An unrelated track joins the project: the carried record still narrows to the kick by name
+        // via its `where`, so a revalidation that drops `where` anywhere in the pipeline would
+        // re-resolve the snare back in too, diverge from the approved single-track set, and
+        // invalidate instead of rebinding.
+        const tracksBeforeKeys = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeKeys, createColorableTrack('track-keys', 'Keys')]);
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-where-reapproval' });
+
+        expect(result.status).toBe('reapproval_required');
     });
 });

@@ -208,13 +208,16 @@ const plan = (targetIds: string[]) => ({
 function compileSelectorItem(input: {
     commandArguments?: Record<string, unknown>;
     commandName: string;
+    condition?: { field: string; equals: boolean };
     context?: ProjectContext;
     entity: string;
+    excludeIds?: string[];
     itemId?: string;
     match?: unknown;
     quantity?: unknown;
     revision?: string;
     targetArgument: string;
+    where?: Record<string, string>;
 }) {
     const itemId = input.itemId ?? 'select-item';
     const selector: Record<string, unknown> = {
@@ -224,6 +227,15 @@ function compileSelectorItem(input: {
     };
     if (input.match !== undefined) {
         selector.match = input.match;
+    }
+    if (input.where !== undefined) {
+        selector.where = input.where;
+    }
+    if (input.condition !== undefined) {
+        selector.condition = input.condition;
+    }
+    if (input.excludeIds !== undefined) {
+        selector.excludeIds = input.excludeIds;
     }
     return compileArbitraryCommandList({
         context: input.context ?? context,
@@ -824,6 +836,105 @@ describe('semantic command list set predicates', () => {
             status: 'accepted',
             targetOverridesByCallIndex: new Map([
                 [0, [{ argument: 'trackId', capability: 'track', cardinality: 'one', stableIds: ['track-vox'] }]],
+            ]),
+        });
+    });
+
+    it('accepts a compile-then-validate round trip for a match selector combined with excludeIds', () => {
+        const compiled = compileSelectorItem({
+            itemId: 'round-trip-exclude-ids',
+            commandName: 'muteTrack',
+            commandArguments: { muted: true },
+            entity: 'track',
+            targetArgument: 'trackId',
+            match: { all: [{ roleFamily: 'drums' }] },
+            excludeIds: ['track-snare'],
+        });
+        expect(compiled).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { selectors: [{ stableIds: ['track-kick'] }] },
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error('expected the fixture selector to compile');
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context,
+                revision: 'revision-predicates',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            targetOverridesByCallIndex: new Map([
+                [0, [{ argument: 'trackId', capability: 'track', cardinality: 'one', stableIds: ['track-kick'] }]],
+            ]),
+        });
+    });
+
+    it('accepts a compile-then-validate round trip for a match selector combined with a condition', () => {
+        const compiled = compileSelectorItem({
+            itemId: 'round-trip-condition',
+            commandName: 'muteTrack',
+            commandArguments: { muted: true },
+            entity: 'track',
+            targetArgument: 'trackId',
+            match: { all: [{ kind: 'audio' }] },
+            condition: { field: 'muted', equals: true },
+        });
+        expect(compiled).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { selectors: [{ stableIds: ['track-hat'] }] },
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error('expected the fixture selector to compile');
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context,
+                revision: 'revision-predicates',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            targetOverridesByCallIndex: new Map([
+                [0, [{ argument: 'trackId', capability: 'track', cardinality: 'one', stableIds: ['track-hat'] }]],
+            ]),
+        });
+    });
+
+    it('accepts a compile-then-validate round trip for a match selector combined with where', () => {
+        const compiled = compileSelectorItem({
+            itemId: 'round-trip-where',
+            commandName: 'muteTrack',
+            commandArguments: { muted: true },
+            entity: 'track',
+            targetArgument: 'trackId',
+            match: { all: [{ roleFamily: 'drums' }] },
+            where: { name: 'Kick' },
+        });
+        expect(compiled).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: { selectors: [{ stableIds: ['track-kick'] }] },
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error('expected the fixture selector to compile');
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                creativeAuthority: undefined,
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context,
+                revision: 'revision-predicates',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            targetOverridesByCallIndex: new Map([
+                [0, [{ argument: 'trackId', capability: 'track', cardinality: 'one', stableIds: ['track-kick'] }]],
             ]),
         });
     });
