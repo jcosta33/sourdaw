@@ -202,6 +202,16 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers("obj?.require?.resolve('yaml')")).toEqual([]);
     });
 
+    it('collects a require load hidden by a dot-ending line comment', () => {
+        expect(snapshotImportSpecifiers("// Fall back to the plugin entry.\nrequire('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("// Fall back to the plugin entry.\nrequire('yaml')")).toEqual(['yaml']);
+    });
+
+    it('collects a require load spread into an array', () => {
+        expect(snapshotImportSpecifiers("[...require('yaml')]")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("[...require('yaml')]")).toEqual(['yaml']);
+    });
+
     it('collects createRequire chained calls across quotes, grouping parens, and optional chaining', () => {
         expect(snapshotImportSpecifiers("createRequire(import.meta.url)('yaml')")).toEqual(['yaml']);
         expect(bareModuleSpecifiers("createRequire(import.meta.url)('yaml')")).toEqual(['yaml']);
