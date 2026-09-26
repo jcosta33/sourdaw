@@ -20,7 +20,6 @@
  * carries, so a deleted or moved spec still counts from its before side.
  */
 
-import { isContractCarryingContent } from './contractCarrying.ts';
 import {
     assertLineRange,
     semanticTextDigest,
@@ -30,12 +29,14 @@ import {
 } from './contracts.ts';
 import {
     admissionBytesByPath,
+    classifyContractCarryingSides,
     compareForAdmission,
     compareLexicographic,
+    contractCarryingPaths,
     kindHasAfterSide,
     kindHasBeforeSide,
     readChangedContents,
-    type ChangedFileContents,
+    type ContractCarryingSides,
 } from './evidenceOrdering.ts';
 import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
@@ -544,44 +545,6 @@ function createRegionAdmission(
     };
 }
 
-/** The contract-carrying classification of one changed path's two sides, decided per side from that side's own path and content. */
-type ContractCarryingSides = { readonly before: boolean; readonly after: boolean };
-
-/**
- * Classifies each changed path's sides from the path and content the side itself carries: the
- * pre-change path's before content for the before side, and the post-change path's after content for
- * the after side. A deleted or moved collected spec whose before side pins a closure member therefore
- * still classifies contract-carrying even though its after side is absent or unclassified.
- */
-function classifyContractCarryingSides(
-    changed: readonly SemanticChangedFile[],
-    contents: ReadonlyMap<string, ChangedFileContents>
-): ReadonlyMap<string, ContractCarryingSides> {
-    const sidesByPath = new Map<string, ContractCarryingSides>();
-    for (const file of changed) {
-        const beforePath = file.previousPath ?? file.path;
-        const entry = contents.get(file.path);
-        const before = entry?.before;
-        const after = entry?.after;
-        sidesByPath.set(file.path, {
-            before: before !== undefined && isContractCarryingContent(beforePath, before),
-            after: after !== undefined && isContractCarryingContent(file.path, after),
-        });
-    }
-    return sidesByPath;
-}
-
-/** The changed paths that are contract-carrying on either side, for the admission order. */
-function contractCarryingPaths(sidesByPath: ReadonlyMap<string, ContractCarryingSides>): ReadonlySet<string> {
-    const contractCarrying = new Set<string>();
-    for (const [path, sides] of sidesByPath) {
-        if (sides.before || sides.after) {
-            contractCarrying.add(path);
-        }
-    }
-    return contractCarrying;
-}
-
 /**
  * Records every screened-out path into the admission result, so an excluded path stays visible rather
  * than vanishing from the report. A withheld secret is evidence that never left the machine, not an
@@ -637,8 +600,15 @@ export function collectEvidence(input: {
     // path to at most one content read.
     const contents = readChangedContents(input.port, input.mergeBaseSha, input.headSha, assessed);
     const contractCarryingSides = classifyContractCarryingSides(assessed, contents);
-    const contractCarrying = contractCarryingPaths(contractCarryingSides);
-    const bytesByPath = admissionBytesByPath(assessed, contents, hunksByPath, input.limits.maxRegionBytes);
+    const contractCarrying = contractCarryingPaths(assessed, contractCarryingSides);
+    const bytesByPath = admissionBytesByPath(
+        assessed,
+        contents,
+        hunksByPath,
+        input.limits.maxRegionBytes,
+        input.mergeBaseSha,
+        input.headSha
+    );
     const files = [...assessed].sort((left, right) => compareForAdmission(left, right, contractCarrying, bytesByPath));
 
     const admission = createRegionAdmission(input.limits, contractCarryingSides);

@@ -9,7 +9,7 @@
  */
 
 import { HEALTH_GATE_WORKFLOW_FILES } from '../healthGateWorkflowContract.ts';
-import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+import { snapshotImportSpecifiers, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 import { isCollectedSpec } from './rules.ts';
 
@@ -116,17 +116,10 @@ function resolvesToClosureMember(base: string): boolean {
 
 /** The relative `import`/`export ... from` specifiers of one source file, in document order. */
 function relativeImportSpecifiers(source: string): string[] {
-    const specifiers: string[] = [];
-    const patterns: readonly RegExp[] = [/\bfrom\s*(['"])([^'"\n]+)\1/gu, /\bimport\s*(['"])([^'"\n]+)\1/gu];
-    for (const pattern of patterns) {
-        for (const match of source.matchAll(pattern)) {
-            const specifier = match[2];
-            if (specifier !== undefined && specifier.startsWith('.')) {
-                specifiers.push(specifier);
-            }
-        }
-    }
-    return specifiers;
+    // Collected by walking syntax, not by regex over raw source: comments and the contents of string
+    // and template literals cannot contribute, and a dynamic `import('...')` is a real import. Only the
+    // relative specifiers are relevant here, since a closure member is always reached by a relative path.
+    return snapshotImportSpecifiers(source).filter((specifier) => specifier.startsWith('.'));
 }
 
 /**

@@ -764,41 +764,48 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
-    it('orders a small genuine edit before a whole-file fallback of larger cost', () => {
-        // R6: the changed-line total ranked a zero-line copy (numstat `0 0`) first, so its whole before
-        // side spent the budget and the edit beside it was withheld on both sides. Ordering by the
-        // admission bytes keeps the copy's whole-file fallback from outranking the edit. The edit's file
-        // is larger than the copy, but its hunk is smaller, so a whole-side estimate would rank the copy
-        // first and this case would redden.
-        const copy = 'const copied = 1;\n'.repeat(50);
-        const editHead = 'const a = 1;\nconst b = 2;\nconst c = 3;\n';
-        const editTail = 'const filler = 0;\n'.repeat(197);
-        const editBefore = `${editHead}${editTail}`;
-        const editAfter = `const a = 2;\nconst b = 2;\nconst c = 3;\n${editTail}`;
+    it('orders a chargeable hunk before screened and over-budget hunks it cannot charge', () => {
+        // R5: the previous fixture pitted a clean copy against a clean edit, so reverting
+        // `chargeableRegionBytes` to raw bytes left it green and dropping the content-screen branch left
+        // the whole suite green. This fixture puts an in-budget hunk on one path beside a credential-shaped
+        // hunk and an over-budget hunk, so the path ranks by the hunk admission can charge; dropping either
+        // chargeability branch, or falling back to line counts, starves the material hunk and reddens.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const material = 'const mat = 1;\n';
+        const credentialBlock = `export const key = '${awsShaped}';\n`.repeat(10);
+        const oversized = 'const oversized = 1;\n'.repeat(60);
+        const competitor = 'const competitor = 123456789012345;\n';
+        const materialBytes = Buffer.byteLength(material, 'utf8') - 1;
+        const competitorBytes = Buffer.byteLength(competitor, 'utf8') - 1;
         const set = collectEvidence({
             port: fakeSource({
                 files: [
-                    changedFile('zzz/duplicated.ts', {
-                        kind: 'copied',
-                        previousPath: 'zzz/original.ts',
-                        added: 0,
-                        deleted: 0,
-                    }),
-                    changedFile('aaa/edit.ts', { added: 1, deleted: 1 }),
+                    changedFile('aaa/edit.ts', { kind: 'added', added: 71, deleted: 0 }),
+                    changedFile('bbb/competitor.ts', { kind: 'added', added: 1, deleted: 0 }),
                 ],
                 blobs: {
-                    [`${MERGE_BASE}:zzz/original.ts`]: copy,
-                    [`${HEAD}:zzz/duplicated.ts`]: copy,
-                    [`${MERGE_BASE}:aaa/edit.ts`]: editBefore,
-                    [`${HEAD}:aaa/edit.ts`]: editAfter,
+                    [`${HEAD}:aaa/edit.ts`]: `${material}${credentialBlock}${oversized}`,
+                    [`${HEAD}:bbb/competitor.ts`]: competitor,
                 },
                 hunks: new Map([
                     [
                         'aaa/edit.ts',
                         {
                             path: 'aaa/edit.ts',
-                            before: [{ startLine: 1, endLine: 3 }],
-                            after: [{ startLine: 1, endLine: 3 }],
+                            before: [],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 11 },
+                                { startLine: 12, endLine: 71 },
+                            ],
+                        },
+                    ],
+                    [
+                        'bbb/competitor.ts',
+                        {
+                            path: 'bbb/competitor.ts',
+                            before: [],
+                            after: [{ startLine: 1, endLine: 1 }],
                         },
                     ],
                 ]),
@@ -807,19 +814,24 @@ describe('contract-carrying admission', () => {
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
             limits: {
-                maxRegionBytes: 1_000_000,
-                maxTotalBytes: Buffer.byteLength(copy, 'utf8'),
+                maxRegionBytes: 1_000,
+                maxTotalBytes: materialBytes + competitorBytes - 1,
             },
         });
         expect(set.references.map((reference) => `${reference.path}:${reference.side}`).sort()).toEqual([
             'aaa/edit.ts:after',
-            'aaa/edit.ts:before',
         ]);
         expect(
-            set.references.some(
-                (reference) => reference.path === 'zzz/duplicated.ts' || reference.path === 'zzz/original.ts'
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'bbb/competitor.ts' && entry.reason === 'total-evidence-budget-exhausted (after)'
             )
-        ).toBe(false);
+        ).toBe(true);
+        expect(
+            set.excluded.some(
+                (entry) => entry.path === 'aaa/edit.ts' && entry.reason === 'credential-shaped-content-excluded'
+            )
+        ).toBe(true);
     });
 
     it('ranks a contract path by its chargeable hunks, not the over-budget hunk', () => {
@@ -953,6 +965,260 @@ describe('contract-carrying admission', () => {
         ).toBe(true);
         expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+
+    it('leaves a collected spec whose closure import is commented out bulk', () => {
+        // R4: a regex over raw source read a commented-out import as a real one and classified the spec
+        // contract-carrying. The syntax walker skips comments, so the spec stays bulk and the contract
+        // spec beside it is admitted first.
+        const before = 'const before = 1;\n';
+        const contractAfter = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+        const commentedAfter = "// import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/plain.spec.ts'), changedFile('scripts/__tests__/commented.spec.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: contractAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/commented.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/commented.spec.ts`]: commentedAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'scripts/__tests__/commented.spec.ts')).toBe(
+            false
+        );
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'scripts/__tests__/commented.spec.ts' &&
+                    entry.reason === 'total-evidence-budget-exhausted (before)'
+            )
+        ).toBe(true);
+    });
+
+    it('admits a collected spec that dynamically imports a closure member before an equal-sized bulk spec', () => {
+        // R4: the regex saw `import '...'` and `from '...'` but not `import('...')`, so a dynamic closure
+        // import classified bulk. The syntax walker reads dynamic import specifiers, so it is contract.
+        const before = 'const before = 1;\n';
+        const contractAfter = "await import('../trustedGithubWriteBootstrap.ts');\n";
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/plain.spec.ts'), changedFile('scripts/__tests__/dynamic.spec.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/dynamic.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/dynamic.spec.ts`]: contractAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(set.references.some((reference) => reference.path === 'scripts/__tests__/dynamic.spec.ts')).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+});
+
+describe('admission ordering counts a shared region once', () => {
+    it('admits a copy of a modified source before a larger bulk when the shared before region is counted once', () => {
+        // R1: `M a/source.ts` plus an exact copy `C a/source.ts z/copy.ts` mint the same before region.
+        // The per-path estimate charged that shared region twice, so both ranked 680 while admission
+        // charges the shared 339 once. The 496-byte bulk ranked below them and was admitted first,
+        // starving the copy's 339-byte after side. Counting a shared region once ranks the copy by its
+        // after side alone, so the smaller charge is admitted and the bulk is withheld.
+        const sourceLine = 'const shared = 1;\n';
+        const sourceBefore = sourceLine.repeat(20);
+        const sourceAfter = `const shared = 2;\n${sourceLine.repeat(19)}`;
+        const copyAfter = sourceBefore;
+        const bulk = 'const bulk = 1;\n'.repeat(31);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('a/source.ts', { added: 1, deleted: 1 }),
+                    changedFile('z/copy.ts', {
+                        kind: 'copied',
+                        previousPath: 'a/source.ts',
+                        added: 20,
+                        deleted: 0,
+                    }),
+                    changedFile('m/bulk.ts', { kind: 'added', added: 31, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:a/source.ts`]: sourceBefore,
+                    [`${HEAD}:a/source.ts`]: sourceAfter,
+                    [`${HEAD}:z/copy.ts`]: copyAfter,
+                    [`${HEAD}:m/bulk.ts`]: bulk,
+                },
+                hunks: new Map([
+                    [
+                        'a/source.ts',
+                        {
+                            path: 'a/source.ts',
+                            before: [{ startLine: 1, endLine: 20 }],
+                            after: [{ startLine: 1, endLine: 20 }],
+                        },
+                    ],
+                    [
+                        'z/copy.ts',
+                        {
+                            path: 'z/copy.ts',
+                            previousPath: 'a/source.ts',
+                            before: [{ startLine: 1, endLine: 20 }],
+                            after: [{ startLine: 1, endLine: 20 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(sourceBefore, 'utf8') * 3,
+            },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`).sort()).toEqual([
+            'a/source.ts:after',
+            'a/source.ts:before',
+            'z/copy.ts:after',
+        ]);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === 'm/bulk.ts' && entry.reason === 'total-evidence-budget-exhausted (after)'
+            )
+        ).toBe(true);
+    });
+
+    it('admits a copy and a rename of one unchanged source before a larger bulk when the shared before region is counted once', () => {
+        // R1: `C a/source.ts z/copy.ts` plus `R a/source.ts z/renamed.ts` from one unchanged source mint
+        // the same before region for both, and the per-path estimate charged it twice. Counting it once
+        // ranks each derived path by its after side, so both afters are admitted and the bulk withheld.
+        const sourceLine = 'const shared = 1;\n';
+        const sourceBefore = sourceLine.repeat(20);
+        const copyAfter = sourceBefore;
+        const renamedAfter = `const renamed = 1;\n${sourceLine.repeat(19)}`;
+        const bulk = 'const bulk = 1;\n'.repeat(31);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('z/copy.ts', {
+                        kind: 'copied',
+                        previousPath: 'a/source.ts',
+                        added: 20,
+                        deleted: 0,
+                    }),
+                    changedFile('z/renamed.ts', {
+                        kind: 'renamed',
+                        previousPath: 'a/source.ts',
+                        added: 20,
+                        deleted: 20,
+                    }),
+                    changedFile('m/bulk.ts', { kind: 'added', added: 31, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:a/source.ts`]: sourceBefore,
+                    [`${HEAD}:z/copy.ts`]: copyAfter,
+                    [`${HEAD}:z/renamed.ts`]: renamedAfter,
+                    [`${HEAD}:m/bulk.ts`]: bulk,
+                },
+                hunks: new Map([
+                    [
+                        'z/copy.ts',
+                        {
+                            path: 'z/copy.ts',
+                            previousPath: 'a/source.ts',
+                            before: [{ startLine: 1, endLine: 20 }],
+                            after: [{ startLine: 1, endLine: 20 }],
+                        },
+                    ],
+                    [
+                        'z/renamed.ts',
+                        {
+                            path: 'z/renamed.ts',
+                            previousPath: 'a/source.ts',
+                            before: [{ startLine: 1, endLine: 20 }],
+                            after: [{ startLine: 1, endLine: 20 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(sourceBefore, 'utf8') * 3,
+            },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`).sort()).toEqual([
+            'a/source.ts:before',
+            'z/copy.ts:after',
+            'z/renamed.ts:after',
+        ]);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === 'm/bulk.ts' && entry.reason === 'total-evidence-budget-exhausted (after)'
+            )
+        ).toBe(true);
+    });
+});
+
+describe('admission ordering follows the side that carries the contract', () => {
+    it('admits a contract side before a bulk side of another change regardless of file order', () => {
+        // R2: a rename out of `AGENTS.md` is contract on its before side and bulk on its 1700-byte after
+        // side. The union of the two classes ordered the whole path as contract, admitted its bulk after
+        // side first, and withheld the closure-importing spec's contract after side. Ordering each side
+        // by its own class admits the spec's after side and withholds the bulk after side without the
+        // contract term.
+        const docBefore = '# AGENTS.md\n';
+        const bulkAfter = 'const bulk = 1;\n'.repeat(106);
+        const specSide = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('aaa/bulk.ts', { kind: 'renamed', previousPath: 'AGENTS.md', added: 106, deleted: 1 }),
+                    changedFile('scripts/__tests__/closure.spec.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:AGENTS.md`]: docBefore,
+                    [`${HEAD}:aaa/bulk.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/closure.spec.ts`]: specSide,
+                    [`${HEAD}:scripts/__tests__/closure.spec.ts`]: specSide,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes:
+                    Buffer.byteLength(docBefore, 'utf8') +
+                    Buffer.byteLength(bulkAfter, 'utf8') +
+                    Buffer.byteLength(specSide, 'utf8'),
+            },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'scripts/__tests__/closure.spec.ts:before',
+            'scripts/__tests__/closure.spec.ts:after',
+            'AGENTS.md:before',
+        ]);
+        expect(set.truncated).toEqual([{ path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' }]);
     });
 });
 
@@ -3448,6 +3714,24 @@ describe('verify-path screening and identity', () => {
         expect(providerCalls).toBe(0);
         expect(result.report.findingAssessments).toHaveLength(0);
         expect(result.report.limitations.join(' ')).toContain('withheld');
+    });
+
+    it('records hunk-beyond-file when a finding names a range that starts past the file', async () => {
+        // R3: verify clamped a startLine past the file to the file's last line and sent that line as the
+        // finding's own evidence, while the scan records hunk-beyond-file and supplies nothing. Both
+        // routes now slice through `sliceLines` and refuse the same reference.
+        const { result, providerCalls } = await verifyWith(
+            [{ path: 'src/modules/Project/a.ts', side: 'after', startLine: 5000, endLine: 5001 }],
+            {
+                [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\nexport const b = 2;',
+            }
+        );
+        expect(providerCalls).toBe(0);
+        expect(result.report.findingAssessments).toHaveLength(0);
+        expect(result.report.scope.unassessed[0]?.reason).toBe('no-admissible-evidence');
+        expect(result.report.scope.truncated).toEqual([
+            { path: 'src/modules/Project/a.ts', reason: 'hunk-beyond-file (after)' },
+        ]);
     });
 
     it('gives a verify report its own question identity', async () => {

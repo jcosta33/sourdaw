@@ -46,6 +46,7 @@ import {
 import { computePolicyDigest, type SemanticBudgetProfile } from './rules.ts';
 import { asFailure, executionState, usageReport, type SemanticPorts } from './run.ts';
 import { sensitiveContentReason } from './sensitive.ts';
+import { sliceLines } from './slicing.ts';
 
 import type { SemanticVerifyReport } from './report.ts';
 
@@ -371,20 +372,33 @@ function collectFindingEvidence(input: {
         // The finding named a range, so the range is what leaves the machine. Reading and hashing the
         // whole file sent a scope wider than the one the caller asked about, and reported bounds the
         // request never used. The screen above still judges the whole file, because withholding has to
-        // be decided on everything the file holds rather than on the part being quoted.
-        const lines = text.split('\n');
-        const lastLine = Math.max(1, lines.length);
-        const startLine = Math.min(Math.max(1, reference.startLine), lastLine);
-        const endLine = Math.min(Math.max(startLine, reference.endLine), lastLine);
-        const region = lines.slice(startLine - 1, endLine).join('\n');
+        // be decided on everything the file holds rather than on the part being quoted. The same slice
+        // the scan path applies clamps the range, and a range that starts past the file names no line
+        // this revision holds: both routes then refuse and record the same hunk-beyond-file reference.
+        const sliced = sliceLines(text, { startLine: reference.startLine, endLine: reference.endLine });
+        if (sliced === undefined) {
+            truncated.push({
+                path: reference.path,
+                reason: withheldRegionReason(
+                    isContractCarryingContent(reference.path, text),
+                    reference.side,
+                    'hunk-beyond-file'
+                ),
+            });
+            limitations.push(
+                `finding evidence ${reference.path} (${reference.side}) names lines this revision does not hold`
+            );
+            continue;
+        }
+        const region = sliced.text;
         const evidenceId = `${evidenceSidePrefix(reference.side)}${String(ordinal)}`;
         const evidenceReference: EvidenceReference = {
             evidenceId,
             revisionSha: revision,
             path: reference.path,
             side: reference.side,
-            startLine,
-            endLine,
+            startLine: sliced.range.startLine,
+            endLine: sliced.range.endLine,
             contentHash: semanticDigest({ region }),
         };
         // A region is supplied whole or not at all, exactly as the scan path's admission does. Sending
