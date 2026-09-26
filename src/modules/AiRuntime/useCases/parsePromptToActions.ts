@@ -938,6 +938,15 @@ const planPromptIntent = inject({ logger })(
                             if (selector.predicate === undefined) {
                                 return [];
                             }
+                            const actionPositions = actionPositionsByItemId.get(selector.itemId);
+                            if (actionPositions === undefined) {
+                                // Selectors and items both come from the same compiler evidence, so a selector
+                                // whose item is missing there is a broken invariant, not a case to paper over
+                                // with an empty position list a later coverage check would silently accept.
+                                throw new Error(
+                                    `Compiler evidence has no item "${selector.itemId}" for its own match selector.`
+                                );
+                            }
                             return [
                                 {
                                     itemId: selector.itemId,
@@ -948,7 +957,7 @@ const planPromptIntent = inject({ logger })(
                                     excludeIds: selector.predicate.excludeIds,
                                     quantity: selector.predicate.quantity,
                                     stableIds: [...selector.stableIds],
-                                    actionPositions: actionPositionsByItemId.get(selector.itemId) ?? [],
+                                    actionPositions,
                                 },
                             ];
                         }) ?? [];

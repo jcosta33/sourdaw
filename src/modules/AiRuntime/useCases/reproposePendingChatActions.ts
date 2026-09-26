@@ -131,15 +131,6 @@ function compileSelectedSubset(
     }
 }
 
-/**
- * The subset route can drop actions a carried selector's own list item produced: keep a record
- * only when every one of its `actionPositions` survived into the subset, then rewrite those
- * positions to their new indexes in the replacement's `actions`. Coverage is checked against the
- * record's own positions rather than its `stableIds` because a *different* item's kept action can
- * touch the same ids the record resolved to (for example, a `where`-selected command targeting the
- * same track a `match` selector also resolved) — comparing ids alone would carry the record forward
- * for a subset that dropped every action the record's item produced.
- */
 /** Rewrites every position to its new index, or returns `null` when any position was dropped. */
 function rewriteActionPositions(
     positions: readonly number[],
@@ -156,6 +147,15 @@ function rewriteActionPositions(
     return rewritten;
 }
 
+/**
+ * The subset route can drop actions a carried selector's own list item produced: keep a record
+ * only when every one of its `actionPositions` survived into the subset, then rewrite those
+ * positions to their new indexes in the replacement's `actions`. Coverage is checked against the
+ * record's own positions rather than its `stableIds` because a *different* item's kept action can
+ * touch the same ids the record resolved to (for example, a `where`-selected command targeting the
+ * same track a `match` selector also resolved) — comparing ids alone would carry the record forward
+ * for a subset that dropped every action the record's item produced.
+ */
 function filterCarriedMatchSelectorPredicates(
     matchSelectorPredicates: readonly SemanticCommandListMatchSelectorRecord[] | undefined,
     includedActionIndexes: readonly number[]
