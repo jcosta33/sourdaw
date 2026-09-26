@@ -23944,6 +23944,115 @@ mod timeline_tests {
         );
     }
 
+    /// The live-apply arms themselves — `AudioScheduler::apply_command`'s
+    /// `GraphCommand::ClearModAssignments` and `GraphCommand::AddModAssignment`
+    /// — rather than the [`BacteriaBody`] methods the test above calls
+    /// directly. This sends the same fenced batch a real edit does
+    /// (`EngineHandle::send_graph_batch`, mirrored by [`Harness::send_in_one_drain`])
+    /// through the command ring so the drain path itself is exercised, not
+    /// just the DSP it forwards to.
+    ///
+    /// Three fresh harnesses, mutated before their first render, for the same
+    /// reason the test above builds three fresh bodies: a bit-exact clear
+    /// comparison must not depend on internal filter/envelope state a mid-stream
+    /// mutation could leave diverging from a body that was never modulated.
+    #[test]
+    fn a_fenced_mod_assignment_batch_reaches_the_live_topology_through_the_command_ring() {
+        const FRAMES: usize = 8192;
+
+        let patch = bacteria_patch(&[("bandCount", 1.0)]);
+        let material = bacteria_burst_material(FRAMES);
+
+        let mut untouched = Harness::new(32);
+        track_with_bacteria(&mut untouched, material.clone(), &patch);
+        untouched.playing();
+        let (untouched_render, _) = untouched.render(FRAMES);
+
+        let mut modulated = Harness::new(32);
+        track_with_bacteria(&mut modulated, material.clone(), &patch);
+        modulated.send_in_one_drain([
+            GraphCommand::ClearModAssignments(7),
+            GraphCommand::AddModAssignment {
+                effect_id: 7,
+                source_id: 0,
+                target_param: 1,
+                amount: 0.8,
+            },
+        ]);
+        modulated.playing();
+        let (modulated_render, _) = modulated.render(FRAMES);
+
+        let mut cleared = Harness::new(32);
+        track_with_bacteria(&mut cleared, material, &patch);
+        cleared.send_in_one_drain([
+            GraphCommand::ClearModAssignments(7),
+            GraphCommand::AddModAssignment {
+                effect_id: 7,
+                source_id: 0,
+                target_param: 1,
+                amount: 0.8,
+            },
+        ]);
+        cleared.send_in_one_drain([GraphCommand::ClearModAssignments(7)]);
+        cleared.playing();
+        let (cleared_render, _) = cleared.render(FRAMES);
+
+        assert!(
+            untouched_render.iter().any(|sample| *sample != 0.0),
+            "the untouched render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            modulated_render, untouched_render,
+            "the live AddModAssignment arm left the render unchanged, so it never reached the body"
+        );
+        assert_eq!(
+            cleared_render, untouched_render,
+            "a fenced clear-only batch through the live ClearModAssignments arm did not clear the row"
+        );
+    }
+
+    /// Both arms address an id that resolves to a real, non-Bacteria body
+    /// (a detached Knead, registered but never placed on a track): the same
+    /// refusal path `apply_command`'s doc comment describes for a
+    /// non-Bacteria id, counted through `record_unmapped_set_param_call` the
+    /// way an unmapped `SetParam` is. This proves the ring-level drain
+    /// reaches that refusal without panicking, rather than trusting the two
+    /// arms' shared doc comment.
+    #[test]
+    fn a_fenced_mod_assignment_batch_aimed_at_a_non_bacteria_effect_id_is_refused_without_panic() {
+        const KNEAD_ID: usize = 11;
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddDetachedEffect(
+            KNEAD_ID,
+            knead_instance(),
+            None,
+        ));
+        harness.send_in_one_drain([
+            GraphCommand::ClearModAssignments(KNEAD_ID),
+            GraphCommand::AddModAssignment {
+                effect_id: KNEAD_ID,
+                source_id: 0,
+                target_param: 1,
+                amount: 0.8,
+            },
+        ]);
+        harness.playing();
+        let (left, right) = harness.render(256);
+
+        assert!(
+            left.iter()
+                .chain(right.iter())
+                .all(|sample| sample.is_finite()),
+            "a refused mod-assignment command left the render producing non-finite samples"
+        );
+        assert_eq!(
+            midi_diagnostics(&harness).unmapped_set_param_calls,
+            2,
+            "both commands aimed at a non-Bacteria id must be counted the way an unmapped SetParam is"
+        );
+    }
+
     /// A body built from the shipped default record reports the engine's own
     /// figure, and a stage that moves that figure moves it.
     ///

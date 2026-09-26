@@ -75,6 +75,22 @@ describe('mapBacteriaModAssignments', () => {
     it('maps an empty table to an empty engine table', () => {
         expect(mapBacteriaModAssignments([])).toEqual([]);
     });
+
+    // The wire and the live worklet both carry `amount` as an `f32`. A scaled
+    // amount this far out of range would otherwise reach the native door as a
+    // finite JSON double that only turns into `f32::INFINITY` once the far
+    // side narrows it — refusing the whole batch that carries it, not just
+    // this table (#4685 slice 2). Refusing here first keeps that a per-table
+    // refusal on both carriers.
+    it('rejects the whole table when a scaled amount overflows f32 range', () => {
+        const table: BacteriaModAssignment[] = [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 1e39, bipolar: true }];
+        expect(mapBacteriaModAssignments(table)).toBeNull();
+    });
+
+    it('keeps a scaled amount exactly within f32 range unchanged', () => {
+        const table: BacteriaModAssignment[] = [{ sourceId: 'lfo1', targetParam: 'band0_gain', amount: 3e38, bipolar: true }];
+        expect(mapBacteriaModAssignments(table)).toEqual([{ sourceId: 0, targetParam: 1, amount: 3e38 }]);
+    });
 });
 
 describe('bacteriaModulationTargetChoices', () => {

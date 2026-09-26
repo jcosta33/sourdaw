@@ -125,7 +125,26 @@ export function mapBacteriaModAssignments(assignments: BacteriaModAssignment[]):
             );
             return null;
         }
-        mapped.push({ sourceId, targetParam: targetId, amount: assignment.amount * range });
+        const amount = assignment.amount * range;
+        // The wire and the live worklet both carry `amount` as an `f32`
+        // (`ModAssignmentPayload.amount`, `crates/sourdaw-native/src/commands/graph.rs`;
+        // the wasm boundary here). A JS number is a finite f64 all the way up
+        // to ~1.8e308, so an amount this door would otherwise let through —
+        // one whose UI depth times `MODULATION_TARGET_RANGE` overflows f32 —
+        // stays finite over the wire and only turns into `f32::INFINITY` once
+        // the far side narrows it, tripping the native `finite()` guard after
+        // the fact and refusing the whole batch that carries it rather than
+        // just this table. Refusing here, before either carrier is asked to
+        // send it, keeps that failure a per-table refusal instead of a
+        // whole-session or whole-export one.
+        if (!Number.isFinite(Math.fround(amount))) {
+            logger.warn(
+                `[bacteriaParamBridge] mapBacteriaModAssignments: scaled amount for source "${assignment.sourceId}" ` +
+                    `→ target "${assignment.targetParam}" is out of f32 range; the whole table was not pushed.`
+            );
+            return null;
+        }
+        mapped.push({ sourceId, targetParam: targetId, amount });
     }
     return mapped;
 }

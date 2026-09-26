@@ -2520,7 +2520,8 @@ fn map_device(
             ));
         }
         for row in rows {
-            finite(row.amount as f64, "device modAssignments amount")?;
+            finite(row.amount as f64, "modAssignments amount")
+                .map_err(|reason| format!("device '{}' {reason}", device.id))?;
         }
     }
 
@@ -14038,12 +14039,15 @@ mod tests {
         );
     }
 
-    /// JSON cannot carry a non-finite number at all — `serde_json` refuses an
-    /// out-of-range literal like `1e400` while decoding, before any field of
-    /// this batch is ever read, so there is no wire batch the finite check
-    /// below could ever see in the field. This constructs the payload
-    /// directly to prove the type-level guard still refuses, in case a future
-    /// caller ever builds one without going through JSON.
+    /// JSON syntax has no token for `NaN` or `Infinity` at all, so no wire
+    /// batch can ever spell this field non-finite directly that way. A finite
+    /// JSON double past `f32`'s range is a different story: it decodes to a
+    /// finite `f64` and only becomes an infinite `f32` once serde narrows it
+    /// into [`ModAssignmentPayload::amount`], which is exactly the wire path
+    /// [`a_bacteria_device_naming_a_mod_assignment_amount_past_f32_range_at_construction_refuses`]
+    /// exercises below with a literal `1e39`. This test instead constructs
+    /// the `f32::NAN` payload directly — the one non-finite value no JSON
+    /// literal can produce — to prove the type-level guard still refuses it.
     #[test]
     fn a_non_finite_mod_assignment_amount_refuses_at_the_type_level() {
         assert!(
@@ -14082,6 +14086,43 @@ mod tests {
         assert!(
             refusal.contains("finite"),
             "the refusal must name the reason, got: {refusal}"
+        );
+    }
+
+    /// A finite JSON double past `f32`'s range reaches this door on the wire:
+    /// `1e39` decodes cleanly into [`ModAssignmentPayload::amount`]'s `f64`
+    /// intermediate and only becomes `f32::INFINITY` once serde narrows the
+    /// field, so this refusal — unlike the type-level one above — is one a
+    /// real batch can actually trigger. The shared TypeScript helper
+    /// (`resolveMappedBacteriaModAssignments`/`mapBacteriaModAssignments`,
+    /// `src/modules/Bacteria/models/BacteriaModulationIds.ts`) is what keeps
+    /// a well-behaved caller from ever sending one — refusing the whole table
+    /// itself once a scaled amount is not finite as `f32` — so this door's
+    /// own refusal is defence in depth for untrusted IPC, not the mechanism a
+    /// product caller relies on (#4685 slice 2).
+    #[test]
+    fn a_bacteria_device_naming_a_mod_assignment_amount_past_f32_range_at_construction_refuses() {
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Bus",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": false,
+                               "parameterValues": json!({}),
+                               "modAssignments": [{ "sourceId": 0, "targetParam": 1, "amount": 1e39 }] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a mod-assignment amount past f32 range must refuse");
+
+        assert!(
+            refusal.contains("d-bac") && refusal.contains("finite"),
+            "the refusal must name the device and the reason, got: {refusal}"
         );
     }
 
