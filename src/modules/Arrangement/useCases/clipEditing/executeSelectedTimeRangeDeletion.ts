@@ -11,6 +11,10 @@ import {
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { type AutomationLaneValue } from '../clip/readClipScopedAutomationLanes';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
+import { removeTakesForClips } from '../comping/removeTakesForClips';
+import { restoreTakesForClip } from '../comping/restoreTakesForClip';
+import { createTakeLaneTransitionPlan } from '../timeOperations/createTakeLaneTransitionPlan';
 import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
@@ -1054,6 +1058,10 @@ function publishHandles(handles: readonly PreparedHandle[], removedClipIds: read
         // drag-preview and active-recording refs, none of which participate in
         // undo. Every removal is a no-op for an id already dropped.
         removeClipSatelliteData(removedClipIds);
+        // Take-lane state is keyed by clip id too (#4520): a take whose clip the
+        // range fully removed is a comp no resolver can play, and its orphan
+        // region keeps advancing the comp cursor over the freed span.
+        removeTakesForClips(removedClipIds);
         return true;
     });
 }
@@ -1123,6 +1131,7 @@ function createCombinedInversePlan(input: {
     midiPreparation: MidiPreparation;
     automationPreparation: AutomationPreparation;
     clipSatellitePreparation: { hasChanges: boolean; inversePlan: Record<string, unknown> | null };
+    takeLanes: Record<string, unknown> | null;
 }): Record<string, unknown> | null {
     const expectedTrackState = timeOperationStateCodec.encodeTrackState(input.expectedTrackState);
     const replacementTrackState = timeOperationStateCodec.encodeTrackState(input.replacementTrackState);
@@ -1155,6 +1164,7 @@ function createCombinedInversePlan(input: {
         midi,
         timelineMap: null,
         clipSatellites,
+        takeLanes: input.takeLanes,
     };
 }
 
@@ -1358,6 +1368,11 @@ export function executeSelectedTimeRangeDeletion(
         };
     }
 
+    // The clips this deletion removes take their takes and comp regions with
+    // them (#4520), captured before any handle publishes so the undo closure
+    // and the inverse plan restore exactly what the publish sweep retires.
+    const retiredTakeLanes = captureRetiredTakeLanes(removedClipIds);
+
     const inversePlan = createCombinedInversePlan({
         expectedTrackState: local.trackState,
         replacementTrackState: trackState,
@@ -1373,6 +1388,7 @@ export function executeSelectedTimeRangeDeletion(
                   }
                 : null,
         },
+        takeLanes: createTakeLaneTransitionPlan(removedClipIds, retiredTakeLanes),
     });
     if (!inversePlan) {
         return rejectResult();
@@ -1387,6 +1403,15 @@ export function executeSelectedTimeRangeDeletion(
         hasChanges: true,
         replayPlan,
         inversePlan,
-        undo: () => undoAppliedHandles(handles),
+        undo: () => {
+            const undone = undoAppliedHandles(handles);
+            // The capture above names exactly what the forward retired; put it
+            // back only when the track-state undo actually landed, so a failed
+            // undo cannot resurrect takes whose clips are still gone.
+            if (undone) {
+                restoreTakesForClip(retiredTakeLanes);
+            }
+            return undone;
+        },
     };
 }

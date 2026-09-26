@@ -66,9 +66,18 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
     };
 });
 
+// The take-lane handle's restore guards read the store-facing accessor rather
+// than the repository: point it at the same state so a plan's clip restore is
+// visible when the lane leg runs after it.
+vi.mock('../../getTrackStoreState', () => ({
+    getTrackStoreState: () => mocks.trackState.value,
+}));
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { __resetGainEnvelopesForTest, getEnvelope } from '../../../stores/gainEnvelopeStore';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import {
     prepareTimeOperationStateRestore,
     UnrecoveredTimeOperationStateError,
@@ -289,6 +298,7 @@ function createPlan(input: {
     midi?: unknown;
     timelineMap?: unknown;
     clipSatellites?: unknown;
+    takeLanes?: unknown;
 }) {
     let expectedMarkerState: unknown = null;
     let replacementMarkerState: unknown = null;
@@ -296,7 +306,7 @@ function createPlan(input: {
         expectedMarkerState = requireEncodedMarkerState(input.expectedMarkerState);
         replacementMarkerState = requireEncodedMarkerState(input.replacementMarkerState);
     }
-    return {
+    const plan = {
         version: 1 as const,
         scope: input.scope,
         local: {
@@ -315,6 +325,12 @@ function createPlan(input: {
         timelineMap: input.timelineMap ?? null,
         clipSatellites: input.clipSatellites ?? null,
     };
+    // Optional on purpose: plans written before #4520 carry no key at all,
+    // and those must still decode.
+    if (input.takeLanes !== undefined) {
+        return { ...plan, takeLanes: input.takeLanes };
+    }
+    return plan;
 }
 
 function setCurrentState(trackState: unknown, markerState: unknown): void {
@@ -349,11 +365,13 @@ describe('prepareTimeOperationStateRestore', () => {
         mocks.trackWriteEffect = null;
         mocks.markerWriteEffect = null;
         __resetGainEnvelopesForTest();
+        takeLaneStore.set({ lanes: [] });
         setTimeOperationDependencies(null);
     });
 
     afterEach(() => {
         __resetGainEnvelopesForTest();
+        takeLaneStore.set({ lanes: [] });
         setTimeOperationDependencies(null);
         vi.restoreAllMocks();
     });
@@ -1041,5 +1059,100 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(applied.apply()).toBe(true);
         expect(applied.apply()).toBe(false);
         expect(applied.revert()).toBe(false);
+    });
+
+    // #4520 — the take-lane slot: applying a restore plan puts the retired
+    // lanes back, and reverting it (the reversed plan, as redo uses) retires
+    // them again.
+    it('restores the plan’s retired take lanes on apply and retires them again on revert', () => {
+        const expectedTrackState = createTrackState(2);
+        // The pre-delete state the plan restores holds the clip the retired
+        // take names: the restore only re-adds takes whose clips are live.
+        const replacementTrackState = createTrackState(1, 0, {
+            clips: [ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4 })],
+        });
+        const expectedMarkerState = createMarkerState(8);
+        const replacementMarkerState = createMarkerState(4);
+        setCurrentState(expectedTrackState, expectedMarkerState);
+        installDependencies();
+        const retiredTake = createTake('clip-1', 'Retired take', 0, 4);
+        const retiredLane = {
+            ...createTakeLane('track-1'),
+            takes: [retiredTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }],
+        };
+        const plan = createPlan({
+            scope: 'global',
+            expectedTrackState,
+            replacementTrackState,
+            expectedMarkerState,
+            replacementMarkerState,
+            takeLanes: {
+                version: 1,
+                appliedEffect: 'restore',
+                removedClipIds: ['clip-1'],
+                retiredLanes: [{ laneIndex: 0, lane: retiredLane, retiredTakeIds: [retiredTake.id] }],
+            },
+        });
+        const transaction = prepareTimeOperationStateRestore(JSON.parse(JSON.stringify(plan)));
+
+        expect(transaction.status).toBe('ready');
+        expect(transaction.hasChanges).toBe(true);
+        expect(transaction.apply()).toBe(true);
+        expect(mocks.trackState.value).toEqual(replacementTrackState);
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.id).toBe(retiredLane.id);
+        expect(restoredLane?.takes.map((take) => take.id)).toEqual([retiredTake.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: retiredTake.id }]);
+
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.trackState.value).toEqual(expectedTrackState);
+        // The lane held only the retired take, so retiring it again retires
+        // the lane whole.
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
+
+    it('rejects a plan whose take-lane slot is malformed without touching the store', () => {
+        const expectedTrackState = createTrackState(2);
+        const replacementTrackState = createTrackState(1);
+        const expectedMarkerState = createMarkerState(8);
+        const replacementMarkerState = createMarkerState(4);
+        setCurrentState(expectedTrackState, expectedMarkerState);
+        installDependencies();
+        const retiredTake = createTake('clip-1', 'Retired take', 0, 4);
+        const retiredLane = {
+            ...createTakeLane('track-1'),
+            takes: [retiredTake],
+            activeCompRegions: [],
+        };
+        const wellFormed = {
+            version: 1,
+            appliedEffect: 'restore',
+            removedClipIds: ['clip-1'],
+            retiredLanes: [{ laneIndex: 0, lane: retiredLane, retiredTakeIds: [retiredTake.id] }],
+        };
+        const malformedSlots: unknown[] = [
+            { ...wellFormed, appliedEffect: 'sideways' },
+            { ...wellFormed, version: 2 },
+            { ...wellFormed, removedClipIds: [''] },
+            { ...wellFormed, retiredLanes: [{ laneIndex: 0, lane: { id: 'broken' }, retiredTakeIds: [] }] },
+            { ...wellFormed, extra: true },
+            'takeLanes',
+        ];
+
+        for (const takeLanes of malformedSlots) {
+            expectRejected(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState,
+                    replacementTrackState,
+                    expectedMarkerState,
+                    replacementMarkerState,
+                    takeLanes,
+                })
+            );
+        }
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expect(mocks.trackState.value).toEqual(expectedTrackState);
     });
 });
