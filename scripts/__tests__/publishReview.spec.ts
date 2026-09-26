@@ -5072,10 +5072,9 @@ describe('fresh reviewer dossier publication', () => {
      * The escalation refusal is the operator's diagnostic wherever it is reached, and the same text
      * serves every state that reaches it, so the cases that reach it pin its exact contract text: any
      * rewording that changes what it blames fails them. Phrase-level negatives could not hold that
-     * claim, because a synonym for the same field walked past them. In production this refusal is
-     * reachable for a request-changes publication: a fresh approval publication reads its approval
-     * context first and surfaces the raw manifest error there (#4754), so these cases pin the
-     * refusal's contract through the publication port rather than the approval path.
+     * claim, because a synonym for the same field walked past them. The publication takes the
+     * round-cap decision before its approval context, documents and files, so the refusal is reached
+     * by a fresh approval publication exactly as by a request-changes one (#4754).
      */
     function expectedEscalationRefusal(bundle: string, observedCount: number): string {
         return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
@@ -5997,6 +5996,29 @@ describe('fresh reviewer dossier publication', () => {
         });
         try {
             expect(() => publishReview(number, fixture.port)).toThrow(/review round freeze/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses an escalated approval publication whose manifest cannot supply the base it needs', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedEscalationRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
