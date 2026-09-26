@@ -1339,6 +1339,24 @@ describe('product-scope test instructions', () => {
     });
 
     it.each([
+        ['a whole-sentence report closed by other punctuation', 'Gate is green!', ['Gate is green!']],
+        ['a whole-sentence report with a trailing adverb', 'Gate is green again.', ['Gate is green again']],
+        [
+            'a suite report with a trailing adverb after a step',
+            'Press Play. The suite is green again.',
+            ['The suite is green again'],
+        ],
+        [
+            'a check context with a run of whitespace inside a phrase',
+            'Confirm Gate is green for the  latest push.',
+            ['Confirm Gate is green for the  latest push'],
+        ],
+    ])('refuses %s: the report shape holds beyond a bare full stop', (_label, instructions, segments) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
         'The Gate turns green when the kick hits.',
         'Lower the threshold until the Gate turns green.',
         'Press Play and confirm the Noise Gate is green.',
