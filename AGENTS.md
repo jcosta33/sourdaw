@@ -221,9 +221,11 @@ A pull request that has taken the reviewer change-request escalation threshold â
 `REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` â€” of reviewer
 `REQUEST_CHANGES` rounds refuses the next fresh reviewer publication until the orchestrator records an
 explicit reassessment for that head in the bundle's `reassessment.json` beside the other caller
-documents. The observed count is reconstructed from the pull request's public review history and
-flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; at or above the threshold
-the same log names the reassessment duty. The consumed reassessment enters the durable record as one
+documents, while the count stays below the freeze threshold. The observed count is reconstructed from
+the pull request's public review history and
+flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; between the escalation
+threshold and the freeze the same log names the reassessment duty, and from the freeze it names the
+freeze instead. The consumed reassessment enters the durable record as one
 addition-only `review-reassessed` dossier event. `review:repair` is never blocked by this: unresolved
 threads must stay resolvable, so it logs the flag and never refuses on it.
 

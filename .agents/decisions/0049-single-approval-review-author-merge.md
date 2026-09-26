@@ -73,9 +73,11 @@ reassessment for that head in the bundle's `reassessment.json`, bound to the obs
 head, and the base, with one action from `split`, `respec`, and `continue` and a one-line,
 evidence-safe reason. The consumed reassessment is persisted as one addition-only
 `review-reassessed` dossier event in the same write as the publication bindings and the delivery
-authorization. Past the threshold every further round needs its own reassessment: the count is
+authorization. Past the threshold every further round needs its own reassessment while the count stays
+below the freeze threshold (#4825): the count is
 recomputed from the public history at each publication, so a fresh `REQUEST_CHANGES` round itself
-advances the count, and the reassessment the next publication consumes is a new one. `review:repair`
+advances the count, and the reassessment the next publication consumes is a new one; from the freeze
+on, no reassessment is read at all. `review:repair`
 is never blocked — unresolved threads must stay resolvable — so it logs the escalation flag and
 never refuses on it.
 
