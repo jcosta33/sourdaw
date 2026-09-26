@@ -1,0 +1,20 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  h_beb54bf43b47b7 3,305,316,327,357-375
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.spec.ts
+  h_beb54bf43b47b7 120-125
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  h_beb54bf43b47b7 105-109
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 11,98-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a40831708bd024ee7bc7e92519dbf462439845d4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
