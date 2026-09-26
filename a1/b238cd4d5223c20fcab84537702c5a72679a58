@@ -1,0 +1,40 @@
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_2bfd55a4393d7c::t_0854711d3e2179 49-57,60-61,81-85
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  s_2bfd55a4393d7c::t_3625736846eb31 161-171
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_2bfd55a4393d7c::t_df051aeb903546 265-278
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_2bfd55a4393d7c::t_9653f02db0b38d 52-61
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_2bfd55a4393d7c::t_ca723fefdc050d 133-136
+  s_2bfd55a4393d7c::t_3ad2bee7465aba 349-351
+  s_2bfd55a4393d7c::t_78ccaa7e65f552 391-394
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_2bfd55a4393d7c::t_f90666c27800c2 438-449
+  s_2bfd55a4393d7c::t_8102db28d209cb 20
+  s_2bfd55a4393d7c::t_6422bec95fc9c4 211-215
+  s_2bfd55a4393d7c::t_48f74f06525ed4 549-552
+  s_2bfd55a4393d7c::t_979931d485bd50 478-523,528-536,543-548,553-581
+  s_2bfd55a4393d7c::t_08cee4bd26bd40 524-527,537-542
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_2bfd55a4393d7c::t_a9967d31fe5db4 524-546,561-562
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_2bfd55a4393d7c::t_f275dd603f0f5a 1279-1331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a1b238cd4d5223c20fcab84537702c5a72679a58",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
