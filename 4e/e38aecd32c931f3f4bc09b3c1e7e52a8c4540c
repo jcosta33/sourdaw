@@ -1,0 +1,32 @@
+src/utils/Music/__tests__/quantizeBeatToGrid.spec.ts
+  s_1c08b47ac3792f::t_bad179fc07359c 76-93
+src/utils/Music/quantizeBeatToGrid.ts
+  s_1c08b47ac3792f::t_7f6e50f290cf3b 25-26
+  s_1c08b47ac3792f::t_47e6c97b7a8b4f 12-17,23,28,30,36
+  s_1c08b47ac3792f::t_dcaa01af9c851f 33
+  s_ef536aab624565::t_5eb884e8e0c6e2 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4ee38aecd32c931f3f4bc09b3c1e7e52a8c4540c",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
