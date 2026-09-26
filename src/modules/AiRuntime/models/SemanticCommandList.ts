@@ -97,6 +97,13 @@ export type SemanticCommandListSelector = {
  * that moment. Carried on the pending confirmation's approval snapshot so an approval-time project
  * change can re-resolve the same selector against the live project before rebinding the batch,
  * rather than trusting a fingerprint check that only covers ids already in the resolved set.
+ *
+ * `actionPositions` names the indexes, in the confirmation's `actions`, of every planned action the
+ * record's own list item compiled to — not the indexes of every action touching one of `stableIds`,
+ * which a different item's action can also touch. A subset re-preview keeps this record only when it
+ * keeps every one of these positions, and rewrites them to the kept positions' new indexes; keeping
+ * the record whenever the subset merely still touches `stableIds` would carry it forward for a subset
+ * that dropped the item's own actions entirely but happened to keep another item touching the same ids.
  */
 export type SemanticCommandListMatchSelectorRecord = {
     itemId: string;
@@ -107,6 +114,7 @@ export type SemanticCommandListMatchSelectorRecord = {
     excludeIds?: string[];
     quantity: SemanticCommandListQuantity;
     stableIds: string[];
+    actionPositions: number[];
 };
 
 export type SemanticCommandListItem = {

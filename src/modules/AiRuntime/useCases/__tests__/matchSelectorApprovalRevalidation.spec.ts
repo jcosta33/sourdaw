@@ -105,6 +105,23 @@ function trackIdsOf(actions: readonly ExecutableRuntimeAction[]): string[] {
     return actions.flatMap((action) => (action.type === 'setTrackColor' ? [action.payload.trackId] : []));
 }
 
+/**
+ * Mirrors `parsePromptToActions.ts`'s own derivation: a record's `actionPositions` come from its
+ * item's compiled command range, never from `stableIds`, so a helper compiling selector evidence by
+ * hand must derive them the same way the real production path does.
+ */
+function actionPositionsByItemId(
+    compiled: ReturnType<typeof compileArbitraryCommandList>
+): ReadonlyMap<string, number[]> {
+    const items = compiled.status === 'accepted' ? (compiled.compilerEvidence?.items ?? []) : [];
+    return new Map(
+        items.map((item) => [
+            item.itemId,
+            Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset),
+        ])
+    );
+}
+
 function buildDrumColorCall() {
     return [
         {
@@ -179,6 +196,7 @@ function compileDrumColorProposal(): {
     if (materialized.status !== 'accepted') {
         throw new Error(materialized.reason);
     }
+    const positionsByItemId = actionPositionsByItemId(compiled);
     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
         compiled.compilerEvidence.selectors.flatMap((selector) => {
             if (selector.predicate === undefined) {
@@ -194,6 +212,7 @@ function compileDrumColorProposal(): {
                     excludeIds: selector.predicate.excludeIds,
                     quantity: selector.predicate.quantity,
                     stableIds: [...selector.stableIds],
+                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
                 },
             ];
         });
@@ -271,6 +290,7 @@ function compileDrumAutomationModeProposal(): {
             payload: { trackId: command.arguments.trackId, mode: command.arguments.mode as Track['automationMode'] },
         };
     });
+    const positionsByItemId = actionPositionsByItemId(compiled);
     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
         compiled.compilerEvidence.selectors.flatMap((selector) => {
             if (selector.predicate === undefined) {
@@ -286,6 +306,7 @@ function compileDrumAutomationModeProposal(): {
                     excludeIds: selector.predicate.excludeIds,
                     quantity: selector.predicate.quantity,
                     stableIds: [...selector.stableIds],
+                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
                 },
             ];
         });
@@ -294,6 +315,144 @@ function compileDrumAutomationModeProposal(): {
 
 function automationModeTrackIdsOf(actions: readonly ExecutableRuntimeAction[]): string[] {
     return actions.flatMap((action) => (action.type === 'setAutomationMode' ? [action.payload.trackId] : []));
+}
+
+function createMasterTrack(id: string): Track {
+    return { ...createColorableTrack(id, 'Master'), kind: 'master' };
+}
+
+/**
+ * A batch mixing two `where`-selected `setTrackOutput` items with a `match`-selected
+ * `setAutomationMode` item, both kinds targeting the same two tracks (Kick, Snare). The `where`
+ * items never populate `matchSelectorPredicates` (only a `match` selector does), so this
+ * reproduces the defect the fix corrects: a subset that keeps only the `setTrackOutput` commands
+ * still leaves their affected ids (`track-kick`, `track-snare`) identical to the automation
+ * record's `stableIds`, which is exactly what let the old id-coverage check keep a record whose
+ * own item contributed no kept action at all. `setTrackOutput` supports isolated preview and, like
+ * `setAutomationMode`, is not forced into a singleton batch, so a subset re-preview of this batch
+ * does not reject before reaching the selector-coverage filter under test.
+ */
+function buildDrumRoutingAndAutomationCall() {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    semantic: { classification: 'simple' as const, uncertainty: [] },
+                    objective:
+                        'Route the kick and snare to master, then put every drum-family track into automation write mode.',
+                    constraints: ['Do not create, delete, or rename any track.'],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: ['setTrackOutput', 'setAutomationMode'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [
+                        'Route the kick and snare tracks by name, then resolve the drum-family selector.',
+                    ],
+                    stoppingConditions: ['Stop if the selector resolves more than its maximum of 8 tracks.'],
+                },
+                list: {
+                    schemaVersion: 1,
+                    items: [
+                        {
+                            id: 'route-kick',
+                            name: 'setTrackOutput',
+                            arguments: { outputId: 'track-master' },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Kick' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                        {
+                            id: 'route-snare',
+                            name: 'setTrackOutput',
+                            arguments: { outputId: 'track-master' },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Snare' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                        {
+                            id: 'automation-drums',
+                            name: 'setAutomationMode',
+                            arguments: { mode: DRUM_AUTOMATION_MODE },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                match: { all: [{ roleFamily: 'drums' }] },
+                                quantity: { unit: 'targets', maximum: 8 },
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+}
+
+function compileDrumRoutingAndAutomationProposal(): {
+    actions: ExecutableRuntimeAction[];
+    matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[];
+    revision: string;
+} {
+    const context = getProjectContext();
+    const revision = captureProjectRevision();
+    const compiled = compileArbitraryCommandList({ context, revision, calls: buildDrumRoutingAndAutomationCall() });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        const reason = compiled.status === 'rejected' ? compiled.reason : 'missing compiler evidence';
+        throw new Error(`Expected the drum routing-and-automation batch to compile: ${reason}`);
+    }
+    const actions: ExecutableRuntimeAction[] = compiled.compilerEvidence.commands.map((command) => {
+        if (command.name === 'setTrackOutput') {
+            if (typeof command.arguments.trackId !== 'string' || typeof command.arguments.outputId !== 'string') {
+                throw new TypeError('Expected a canonical setTrackOutput command.');
+            }
+            return {
+                type: 'setTrackOutput' as const,
+                payload: { trackId: command.arguments.trackId, outputId: command.arguments.outputId },
+            };
+        }
+        if (
+            command.name !== 'setAutomationMode' ||
+            typeof command.arguments.trackId !== 'string' ||
+            typeof command.arguments.mode !== 'string'
+        ) {
+            throw new Error('Expected a canonical setAutomationMode command.');
+        }
+        return {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: command.arguments.trackId, mode: command.arguments.mode as Track['automationMode'] },
+        };
+    });
+    const positionsByItemId = actionPositionsByItemId(compiled);
+    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
+        compiled.compilerEvidence.selectors.flatMap((selector) => {
+            if (selector.predicate === undefined) {
+                return [];
+            }
+            return [
+                {
+                    itemId: selector.itemId,
+                    entity: selector.predicate.entity,
+                    where: selector.predicate.where,
+                    match: selector.predicate.match,
+                    condition: selector.predicate.condition,
+                    excludeIds: selector.predicate.excludeIds,
+                    quantity: selector.predicate.quantity,
+                    stableIds: [...selector.stableIds],
+                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
+                },
+            ];
+        });
+    return { actions, matchSelectorPredicates, revision };
+}
+
+function trackOutputTrackIdsOf(actions: readonly ExecutableRuntimeAction[]): string[] {
+    return actions.flatMap((action) => (action.type === 'setTrackOutput' ? [action.payload.trackId] : []));
 }
 
 function propose(
@@ -735,6 +894,222 @@ describe('match selector approval revalidation', () => {
         const original = getPendingActionConfirmation('confirmation-repair-state-repropose');
         expect(original?.status).toBe('proposed');
         expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+        ]);
+    });
+
+    it('drops the drum-automation record from an output-only subset re-preview even after a new track starts matching it too', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+            createMasterTrack('track-master'),
+        ]);
+        registerReproposableRun();
+        const { actions, matchSelectorPredicates, revision } = compileDrumRoutingAndAutomationProposal();
+        expect(trackOutputTrackIdsOf(actions)).toEqual(['track-kick', 'track-snare']);
+        expect(automationModeTrackIdsOf(actions)).toEqual(['track-kick', 'track-snare']);
+        propose('confirmation-subset-output-only', actions, matchSelectorPredicates, revision);
+
+        const original = getPendingActionConfirmation('confirmation-subset-output-only');
+        const commandBatch = original?.approvalSnapshot.commandBatch;
+        if (!commandBatch) {
+            throw new Error('Expected the proposed confirmation to carry a command batch.');
+        }
+        const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedOriginal.status === 'invalid') {
+            throw new Error(parsedOriginal.reason);
+        }
+        const outputCommandIds = parsedOriginal.envelope.commands
+            .filter((command) => command.operation === 'setTrackOutput')
+            .map((command) => command.commandId);
+        expect(outputCommandIds).toHaveLength(2);
+
+        // A new drum-family track appears before the re-preview: the old id-coverage check would see
+        // this subset's setTrackOutput actions still touching track-kick/track-snare — the same ids
+        // the automation record resolved — and wrongly keep the record even though none of the
+        // record's own setAutomationMode actions survive the subset at all.
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const repropose = await reproposePendingChatActions({
+            confirmationId: 'confirmation-subset-output-only',
+            selectedIntentGroupIds: outputCommandIds,
+        });
+
+        expect(repropose.status).toBe('reproposed');
+        if (repropose.status !== 'reproposed') {
+            throw new Error('Expected the output-only subset re-preview to succeed.');
+        }
+        const subsetConfirmation = getPendingActionConfirmation(repropose.confirmationId);
+        expect(subsetConfirmation?.approvalSnapshot.matchSelectorPredicates).toBeUndefined();
+        expect(trackOutputTrackIdsOf(subsetConfirmation?.actions ?? [])).toEqual(['track-kick', 'track-snare']);
+    });
+
+    it('carries the drum-automation record forward with rewritten positions when a subset keeps every one of its actions', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+            createMasterTrack('track-master'),
+        ]);
+        registerReproposableRun();
+        const { actions, matchSelectorPredicates, revision } = compileDrumRoutingAndAutomationProposal();
+        propose('confirmation-subset-keeps-record', actions, matchSelectorPredicates, revision);
+
+        const original = getPendingActionConfirmation('confirmation-subset-keeps-record');
+        const commandBatch = original?.approvalSnapshot.commandBatch;
+        if (!commandBatch) {
+            throw new Error('Expected the proposed confirmation to carry a command batch.');
+        }
+        const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedOriginal.status === 'invalid') {
+            throw new Error(parsedOriginal.reason);
+        }
+        const routeKickCommand = parsedOriginal.envelope.commands.find(
+            (command) => command.operation === 'setTrackOutput' && command.arguments.trackId === 'track-kick'
+        );
+        const automationCommandIds = parsedOriginal.envelope.commands
+            .filter((command) => command.operation === 'setAutomationMode')
+            .map((command) => command.commandId);
+        if (!routeKickCommand) {
+            throw new Error('Expected a setTrackOutput command targeting the kick track.');
+        }
+        expect(automationCommandIds).toHaveLength(2);
+
+        // Keeps one unrelated command (route-kick) alongside both of the record's own actions, so the
+        // kept subset is not a contiguous prefix: the record's original positions [2, 3] must be
+        // rewritten to their new indexes [1, 2], not carried forward unchanged.
+        const repropose = await reproposePendingChatActions({
+            confirmationId: 'confirmation-subset-keeps-record',
+            selectedIntentGroupIds: [routeKickCommand.commandId, ...automationCommandIds],
+        });
+
+        expect(repropose.status).toBe('reproposed');
+        if (repropose.status !== 'reproposed') {
+            throw new Error('Expected the subset re-preview to succeed.');
+        }
+        const subsetConfirmation = getPendingActionConfirmation(repropose.confirmationId);
+        expect(trackOutputTrackIdsOf(subsetConfirmation?.actions ?? [])).toEqual(['track-kick']);
+        expect(automationModeTrackIdsOf(subsetConfirmation?.actions ?? [])).toEqual(['track-kick', 'track-snare']);
+        expect(subsetConfirmation?.approvalSnapshot.matchSelectorPredicates).toEqual([
+            {
+                itemId: 'automation-drums',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 8 },
+                stableIds: ['track-kick', 'track-snare'],
+                actionPositions: [1, 2],
+            },
+        ]);
+
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const outcome = await confirmPendingChatActions({ confirmationId: repropose.confirmationId });
+        expect(outcome.status).toBe('invalidated');
+    });
+
+    it('rejects a subset re-preview that keeps the drum-automation item once a new track already matches it', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+            createMasterTrack('track-master'),
+        ]);
+        registerReproposableRun();
+        const { actions, matchSelectorPredicates, revision } = compileDrumRoutingAndAutomationProposal();
+        propose('confirmation-subset-invalid-before-repropose', actions, matchSelectorPredicates, revision);
+
+        const original = getPendingActionConfirmation('confirmation-subset-invalid-before-repropose');
+        const commandBatch = original?.approvalSnapshot.commandBatch;
+        if (!commandBatch) {
+            throw new Error('Expected the proposed confirmation to carry a command batch.');
+        }
+        const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedOriginal.status === 'invalid') {
+            throw new Error(parsedOriginal.reason);
+        }
+        const automationCommandIds = parsedOriginal.envelope.commands
+            .filter((command) => command.operation === 'setAutomationMode')
+            .map((command) => command.commandId);
+        expect(automationCommandIds).toHaveLength(2);
+
+        // Tom joins the drums family before the re-preview itself, so `resolveCarriedSelection` must
+        // reject the subset before persisting anything derived from the now-stale selector.
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const repropose = await reproposePendingChatActions({
+            confirmationId: 'confirmation-subset-invalid-before-repropose',
+            selectedIntentGroupIds: automationCommandIds,
+        });
+
+        expect(repropose.status).toBe('rejected');
+        const stillPending = getPendingActionConfirmation('confirmation-subset-invalid-before-repropose');
+        expect(stillPending?.status).toBe('proposed');
+        expect(stillPending?.supersededBy).toBeNull();
+    });
+
+    it('reapproves a selector-free batch after a revision change even while the project needs repair', async () => {
+        setTracks([createColorableTrack('track-kick', 'Kick')]);
+        const revision = captureProjectRevision();
+        const action: ExecutableRuntimeAction = {
+            type: 'setTrackColor',
+            payload: { trackId: 'track-kick', color: DRUM_COLOR },
+        };
+        propose('confirmation-no-selector-repair-state', [action], [], revision);
+
+        const tracksBeforeKeys = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeKeys, createColorableTrack('track-keys', 'Keys')]);
+        agentProjectRepairStateStore.set({
+            status: 'repair-required',
+            detectedRevision: captureProjectRevision(),
+            audioGraphValid: false,
+            projectInvariantsValid: false,
+            inspectionAvailable: true,
+            rawProjectRetained: true,
+            repairCandidates: [],
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-no-selector-repair-state' });
+
+        expect(result.status).toBe('reapproval_required');
+        expect(trackColorsById().get('track-kick')).toBe(DEFAULT_TRACK_COLOR);
+    });
+
+    it('rebinds a drums record through refreshPendingActionConfirmationApproval on an unrelated change, then invalidates it once a new track matches', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorProposal();
+        propose('confirmation-drum-color-rebind-then-invalidate', actions, matchSelectorPredicates, revision);
+
+        const tracksBeforeKeys = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeKeys, createColorableTrack('track-keys', 'Keys')]);
+
+        const first = await confirmPendingChatActions({
+            confirmationId: 'confirmation-drum-color-rebind-then-invalidate',
+        });
+        expect(first.status).toBe('reapproval_required');
+
+        const rebound = getPendingActionConfirmation('confirmation-drum-color-rebind-then-invalidate');
+        expect(rebound?.approvalSnapshot.matchSelectorPredicates).toEqual(matchSelectorPredicates);
+
+        const tracksBeforeTom = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeTom, createColorableTrack('track-tom', 'Tom')]);
+
+        const second = await confirmPendingChatActions({
+            confirmationId: 'confirmation-drum-color-rebind-then-invalidate',
+        });
+        expect(second.status).toBe('invalidated');
+        expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
             DEFAULT_TRACK_COLOR,
             DEFAULT_TRACK_COLOR,
             DEFAULT_TRACK_COLOR,

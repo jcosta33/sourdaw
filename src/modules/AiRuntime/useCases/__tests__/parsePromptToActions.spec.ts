@@ -754,6 +754,7 @@ describe('parsePromptToActions', () => {
                 match: { all: [{ kind: 'audio' }] },
                 quantity: { unit: 'targets', exactly: 2 },
                 stableIds: ['track-vocals', 'track-guitar'],
+                actionPositions: [0, 1],
             },
         ]);
     });

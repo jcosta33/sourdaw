@@ -924,6 +924,15 @@ const planPromptIntent = inject({ logger })(
                     // Every `match` selector the compiled list carried, with the stable ids it resolved to,
                     // so `resolveConfirmationAdmission` can re-resolve each one before rebinding an
                     // approval that changed revision instead of trusting only its fingerprint check.
+                    // `actionPositions` is read from the same item's compiled command range, not from
+                    // `stableIds`, so a subset re-preview can tell "this item's own actions survived"
+                    // apart from "some other item touching the same ids survived".
+                    const actionPositionsByItemId = new Map(
+                        (compiledList.compilerEvidence?.items ?? []).map((item) => [
+                            item.itemId,
+                            Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset),
+                        ])
+                    );
                     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
                         compiledList.compilerEvidence?.selectors.flatMap((selector) => {
                             if (selector.predicate === undefined) {
@@ -939,6 +948,7 @@ const planPromptIntent = inject({ logger })(
                                     excludeIds: selector.predicate.excludeIds,
                                     quantity: selector.predicate.quantity,
                                     stableIds: [...selector.stableIds],
+                                    actionPositions: actionPositionsByItemId.get(selector.itemId) ?? [],
                                 },
                             ];
                         }) ?? [];

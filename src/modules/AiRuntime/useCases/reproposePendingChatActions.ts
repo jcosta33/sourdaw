@@ -132,22 +132,44 @@ function compileSelectedSubset(
 }
 
 /**
- * The subset route can drop actions a carried selector needed: keep a record only when the
- * included actions still cover every id in its `stableIds`, derived through the same
- * `getPlannedActionAffectedIds` computation the subset route already uses for `affectedIds`. A
- * record that loses coverage would otherwise reach `revalidateApprovedMatchSelectors` and the
- * persisted confirmation for a selector the reproposed batch no longer fully targets.
+ * The subset route can drop actions a carried selector's own list item produced: keep a record
+ * only when every one of its `actionPositions` survived into the subset, then rewrite those
+ * positions to their new indexes in the replacement's `actions`. Coverage is checked against the
+ * record's own positions rather than its `stableIds` because a *different* item's kept action can
+ * touch the same ids the record resolved to (for example, a `where`-selected command targeting the
+ * same track a `match` selector also resolved) — comparing ids alone would carry the record forward
+ * for a subset that dropped every action the record's item produced.
  */
+/** Rewrites every position to its new index, or returns `null` when any position was dropped. */
+function rewriteActionPositions(
+    positions: readonly number[],
+    newPositionByOriginalIndex: ReadonlyMap<number, number>
+): number[] | null {
+    const rewritten: number[] = [];
+    for (const position of positions) {
+        const newPosition = newPositionByOriginalIndex.get(position);
+        if (newPosition === undefined) {
+            return null;
+        }
+        rewritten.push(newPosition);
+    }
+    return rewritten;
+}
+
 function filterCarriedMatchSelectorPredicates(
     matchSelectorPredicates: readonly SemanticCommandListMatchSelectorRecord[] | undefined,
-    includedAffectedIds: ReadonlySet<string>
+    includedActionIndexes: readonly number[]
 ): SemanticCommandListMatchSelectorRecord[] | undefined {
     if (!matchSelectorPredicates) {
         return undefined;
     }
-    const kept = matchSelectorPredicates.filter((record) =>
-        record.stableIds.every((id) => includedAffectedIds.has(id))
+    const newPositionByOriginalIndex = new Map(
+        includedActionIndexes.map((originalIndex, newIndex) => [originalIndex, newIndex])
     );
+    const kept = matchSelectorPredicates.flatMap((record) => {
+        const actionPositions = rewriteActionPositions(record.actionPositions, newPositionByOriginalIndex);
+        return actionPositions === null ? [] : [{ ...record, actionPositions }];
+    });
     return kept.length === 0 ? undefined : kept;
 }
 
@@ -167,14 +189,14 @@ type CarriedSelectionResult =
 function resolveCarriedSelection(
     confirmation: PendingAppActionConfirmation,
     actions: PendingAppActionConfirmation['actions'],
+    includedActionIndexes: readonly number[],
     selectsSubset: boolean
 ): CarriedSelectionResult {
     let affectedIds = confirmation.affectedIds;
     let matchSelectorPredicates = confirmation.approvalSnapshot.matchSelectorPredicates;
     if (selectsSubset) {
-        const includedAffectedIds = new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)));
-        affectedIds = [...includedAffectedIds];
-        matchSelectorPredicates = filterCarriedMatchSelectorPredicates(matchSelectorPredicates, includedAffectedIds);
+        affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
+        matchSelectorPredicates = filterCarriedMatchSelectorPredicates(matchSelectorPredicates, includedActionIndexes);
     }
     const revalidation = revalidateApprovedMatchSelectors(matchSelectorPredicates ?? []);
     if (revalidation.status === 'invalidated') {
@@ -196,6 +218,7 @@ function selectIncludedPlan(
         includedCommandIds.has(commandId) ? [index] : []
     );
     return {
+        includedActionIndexes,
         actions: includedActionIndexes.flatMap((index) => {
             const action = confirmation.actions[index];
             return action ? [action] : [];
@@ -328,8 +351,12 @@ export async function reproposePendingChatActions(
     }
     const { approval, parsed: parsedRefreshed, refreshed } = rebound;
 
-    const { actions, actionLabels } = selectIncludedPlan(confirmation, originalCommandIds, includedOriginalCommandIds);
-    const carriedSelection = resolveCarriedSelection(confirmation, actions, selectsSubset);
+    const { actions, actionLabels, includedActionIndexes } = selectIncludedPlan(
+        confirmation,
+        originalCommandIds,
+        includedOriginalCommandIds
+    );
+    const carriedSelection = resolveCarriedSelection(confirmation, actions, includedActionIndexes, selectsSubset);
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
     }

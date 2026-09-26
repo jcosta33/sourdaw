@@ -436,6 +436,7 @@ describe('resolveConfirmationAdmission', () => {
                 match: { all: [{ roleFamily: 'drums' }] },
                 quantity: { unit: 'targets', maximum: 8 },
                 stableIds: ['track-kick', 'track-snare'],
+                actionPositions: [0, 1],
             },
         ];
         const baseConfirmation = createConfirmation({ commandBatch });

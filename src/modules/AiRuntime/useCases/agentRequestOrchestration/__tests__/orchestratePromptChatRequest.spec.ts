@@ -722,6 +722,7 @@ describe('orchestratePromptChatRequest', () => {
                 match: { all: [{ roleFamily: 'drums' }] },
                 quantity: { unit: 'targets', maximum: 8 },
                 stableIds: ['track-kick'],
+                actionPositions: [0],
             },
         ];
         mocks.planPromptActions.mockResolvedValue({

@@ -1044,6 +1044,7 @@ describe('submitAdmittedPromptRequest', () => {
                 match: { all: [{ roleFamily: 'drums' as const }] },
                 quantity: { unit: 'targets' as const, maximum: 8 },
                 stableIds: ['track-kick'],
+                actionPositions: [0],
             },
         ];
         mocks.planPromptActions.mockResolvedValue({
