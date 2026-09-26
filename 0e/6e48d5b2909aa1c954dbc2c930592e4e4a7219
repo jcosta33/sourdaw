@@ -1,0 +1,93 @@
+src/modules/Levain/stores/levainStore.ts
+  s_2bfd55a4393d7c::t_624c6b21f03b19 18
+  s_2bfd55a4393d7c::t_31cd71a7570f85 39-44,57
+  s_2bfd55a4393d7c::t_d1427b54aef971 184-198
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_2bfd55a4393d7c::t_cf04d1ab344446 22,31
+  s_2bfd55a4393d7c::t_452ad33fbcdb4b 102-131
+  s_2bfd55a4393d7c::t_82db21c9304c90 14
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_2bfd55a4393d7c::t_f55d4111097a23 4
+  s_2bfd55a4393d7c::t_0de461f352f9ef 318
+  s_2bfd55a4393d7c::t_90bb90cb30c80e 161-163,173,186,192
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_2bfd55a4393d7c::t_db10867e936781 81-87,95,99
+  s_2bfd55a4393d7c::t_8b3e44afd3bb9f 88-94,97
+  s_2bfd55a4393d7c::t_552844f00d4647 96,98
+  s_2bfd55a4393d7c::t_3b0646d9d57581 389-393
+  s_2bfd55a4393d7c::t_edd286d41dbac6 14-18
+  s_2bfd55a4393d7c::t_3365eaeaf8f7a7 297
+src/modules/Levain/stores/__tests__/levainStore.spec.ts
+  s_2bfd55a4393d7c::t_9f6d048f2854a3 116-134
+  s_2bfd55a4393d7c::t_15f10461e26f70 9
+  s_2bfd55a4393d7c::t_5212d8ae32f80a 69-73
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_2bfd55a4393d7c::t_48bb2f390f8947 12-31,42
+  s_2bfd55a4393d7c::t_0f0ac89dec7d2b 1,5
+  s_2bfd55a4393d7c::t_2d6f500ba499b4 321
+  s_2bfd55a4393d7c::t_4a6d1dc38d970b 294-320,322-342
+  s_2bfd55a4393d7c::t_4ce05173ab48da 170-191
+  s_2bfd55a4393d7c::t_f8d7d079b74215 56
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_e01e152ab29a0f 245-246,260-287
+  s_2bfd55a4393d7c::t_e2adf88cb4a94b 53-59,61
+  s_2bfd55a4393d7c::t_83a10db253f9dd 5
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_2bfd55a4393d7c::t_09539e62a85b13 368-384,386
+src/modules/Levain/models/LevainPatch.ts
+  s_2bfd55a4393d7c::t_ae89b90382600c 176-201
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx
+  s_2bfd55a4393d7c::t_4a262c275ef261 45-53
+  s_2bfd55a4393d7c::t_b27821dfdb39ce 108-134
+src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts
+  s_2bfd55a4393d7c::t_442862e8ee336a 234-242
+src/modules/Levain/useCases/__tests__/decodedBankToNativeSampleBank.spec.ts
+  s_2bfd55a4393d7c::t_8f8e0cb9b3f6c4 65
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_2bfd55a4393d7c::t_c4598e24efd591 6
+  s_2bfd55a4393d7c::t_a1bda93743f9c9 30-34
+  s_2bfd55a4393d7c::t_3cda5d5d653428 50,52,75,83-84
+  s_ef536aab624565::t_c517a9b0675d51 85
+src/modules/Levain/repositories/sampleLoader/sampleManifest.ts
+  s_2bfd55a4393d7c::t_717835232314e4 5,8
+  s_2bfd55a4393d7c::t_3381141af26866 377,379-382,386-387
+  s_2bfd55a4393d7c::t_116961c2e1eb46 423
+  s_2bfd55a4393d7c::t_9108b54df961ee 100
+  s_ef536aab624565::t_c09ef38abf5ba9 388
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_2bfd55a4393d7c::t_4770c30a2633e7 96-109
+  s_2bfd55a4393d7c::t_bec30d68a8a88f 129-131,133-135
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_2bfd55a4393d7c::t_4b7f4e1e1c8200 11
+  s_2bfd55a4393d7c::t_5ea5042f39972e 41-42
+  s_2bfd55a4393d7c::t_868d0973f36797 597
+  s_2bfd55a4393d7c::t_36e1bbdf6b15f8 527
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_2bfd55a4393d7c::t_1052828d742703 11
+  s_2bfd55a4393d7c::t_a74fa472b1e3a3 81,86,92
+  s_2bfd55a4393d7c::t_0735cb54971cfa 164-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0e6e48d5b2909aa1c954dbc2c930592e4e4a7219",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
