@@ -313,3 +313,22 @@ whether the cleared receipt was the one recovery began from, or whether the remo
 Probe that would have caught it: write a replacement receipt for the same lane inside the recovery
 child before it returns code 0 and require recovery to return non-zero with the replacement bytes
 preserved; then make the unlink throw and require recovery to report the failure.
+
+### 2026-09-26 — quantize swing ignored the grid and a spec pinned the deviation (introduced in 6fa76ee35e; fixed in #4788)
+
+A bulk MIDI remediation commit made quantize swing always delay the eighth-note "and" by a fixed
+half-beat unit, whatever grid the user chose, and added a spec row asserting exactly that. On a 1/16
+grid the swung positions therefore never moved and beat 0.5 moved instead, which no established DAW
+does: Logic, Ableton and Pro Tools swing every second step of the selected grid. The pinned row made
+the deviation look like a contract to every later reader.
+
+Blind spot: review checked that the spec discriminated the code and never asked whether the pinned
+musical law matched professional convention; a green, mutation-sensitive row proved only
+self-consistency.
+
+Probe that would have caught it: for any timing, quantize, swing, or grid semantic, state the law an
+established DAW applies and evaluate the change at two grids (1/16 and 1/4 here); a result that
+cannot be reproduced in a reference DAW is a finding unless a decision record names the deliberate
+difference. Then quantize the output a second time: a destructive quantize must leave its own output
+in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
+an offset.

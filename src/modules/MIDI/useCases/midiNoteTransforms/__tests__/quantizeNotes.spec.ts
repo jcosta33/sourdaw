@@ -41,11 +41,12 @@ describe('quantizeNotes', () => {
         expect(midiStore.value).toBeNull();
     });
 
-    it('should treat the half-beat "and" as the swung offbeat regardless of grid size', () => {
-        // A note on beat 0.5 (the eighth-note "and") must be delayed by swing on any
-        // grid. Previously the offbeat was the parity of the raw grid-line index, so
-        // beat 0.5 was step 1 (offbeat) on a 1/2 grid but step 2 (onbeat) on a 1/4
-        // grid, inverting the swing direction with the grid resolution.
+    it('swings the eighth-note "and" on a 1/8 grid, but not the same beat position on a 1/16 grid', () => {
+        // A note on beat 0.5 is step index 1 (odd, offbeat) on a 1/8 grid (gridSize
+        // 0.5), so swing delays it there. On a 1/16 grid (gridSize 0.25) the same
+        // beat is step index 2 (even) — the start of the second sixteenth-pair, not
+        // its offbeat — so it must stay put; the swung sixteenths on that grid are
+        // 0.25 and 0.75 instead (see quantizeBeatToGrid and quantizeMidiNotes specs).
         const swing = 1;
 
         midiStore.set({
@@ -53,29 +54,28 @@ describe('quantizeNotes', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
-        quantizeNotes('clip1', 0.5, 1, swing); // 1/2 grid
-        const halfGridStart = midiStore.value?.notesByClipId.clip1?.[0]?.startBeat;
+        quantizeNotes('clip1', 0.5, 1, swing); // 1/8 grid
+        const eighthGridStart = midiStore.value?.notesByClipId.clip1?.[0]?.startBeat;
 
         midiStore.set({
             notesByClipId: { clip1: [note('half', 0.5)] },
             ccByClipId: {},
             pitchBendByClipId: {},
         });
-        quantizeNotes('clip1', 0.25, 1, swing); // 1/4 grid
-        const quarterGridStart = midiStore.value?.notesByClipId.clip1?.[0]?.startBeat;
+        quantizeNotes('clip1', 0.25, 1, swing); // 1/16 grid
+        const sixteenthGridStart = midiStore.value?.notesByClipId.clip1?.[0]?.startBeat;
 
-        // Both grids must delay beat 0.5 (offbeat) — neither leaves it un-swung at 0.5.
-        expect(halfGridStart).toBeGreaterThan(0.5);
-        expect(quarterGridStart).toBeGreaterThan(0.5);
+        expect(eighthGridStart).toBeGreaterThan(0.5);
+        expect(sixteenthGridStart).toBe(0.5);
     });
 
-    it('should not swing the on-beat (whole-beat position) on any grid', () => {
+    it('should not swing beat 1 on a 1/16 grid, where it lands on an even grid step', () => {
         midiStore.set({
             notesByClipId: { clip1: [note('beat', 1)] },
             ccByClipId: {},
             pitchBendByClipId: {},
         });
-        quantizeNotes('clip1', 0.25, 1, 1); // beat 1 -> step 4, swing unit 2 (even => on-beat)
+        quantizeNotes('clip1', 0.25, 1, 1); // beat 1 -> step 4 on a 0.25 grid, an even step (no swing)
         expect(midiStore.value?.notesByClipId.clip1?.[0]?.startBeat).toBe(1);
     });
 });
