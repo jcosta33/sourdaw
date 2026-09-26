@@ -1,0 +1,20 @@
+crates/daw-engine/src/scheduler.rs
+  s_2bfd55a4393d7c::t_2a3435a745473f 460-465
+  s_2bfd55a4393d7c::t_c322cfe290b6c2 472-476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "384299231db6bbb91f346d0953221d45cfcadabc",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
