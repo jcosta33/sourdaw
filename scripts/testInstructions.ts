@@ -467,21 +467,28 @@ function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
     return (COMMAND_HEADS.has(lead) || ENV_ASSIGNMENT_TOKEN.test(lead)) && !LEADING_ARTICLES.has(follower);
 }
 
-/** A plain capitalized word: the casing a sentence gives its first word, never a typed command. */
-const TITLE_CASE_WORD = /^[A-Z][a-z]+$/;
+/**
+ * The command heads that are also ordinary English imperative verbs a DAW step can open with
+ * (`Go to Settings`, `sort by name`, `make track 2 mono`). Heads whose English use is itself check
+ * narration (`lint`, `typecheck`, the colon-bearing scripts) and tool names stay out, so they open
+ * an argument run whatever their letter case.
+ */
+const STEP_VERB_HEADS = new Set(['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail']);
 
 /**
- * Whether the peeled lead is the step's own sentence-initial verb rather than a launch: an unquoted
- * Title-case word (`Go to Settings`, `Find Reverb`) in a segment carrying no command-shaped token.
- * Shells are case-sensitive, so a typed launch is lower-case; a capitalized head is a sentence
- * start unless a flag, path, colon suffix, filename, or env assignment beside it shows the segment
- * is a command line after all (`Cargo test --package daw-engine`). Letter-free tokens (`bar 9`,
- * `1.5`) never count as that evidence. A quoted head was typed as a command, so it stays a launch
- * whatever its case. The head itself still drops from the prose, so a Title-case head followed only
- * by annotation (`Make test`) keeps narrating through `mentionsCommandHead`.
+ * Whether the peeled lead is the step's own verb rather than a launch: an unquoted member of
+ * `STEP_VERB_HEADS`, in any letter case and wherever the peel exposes it (behind a stripped filler
+ * word, at the start of a `;` or `.` clause), in a segment carrying no command-shaped token. The
+ * word class decides, never the casing: a sentence may open lower-case (`Then go to bar 9`) and a
+ * tool line may be capitalized (`Pnpm dev`, `Cargo build succeeds`), so a tool head opens its
+ * argument run exactly as its lower-case spelling does. A flag, path, colon suffix, filename, or env
+ * assignment beside a verb head shows the segment is a command line after all (`go test ./...`);
+ * letter-free tokens (`bar 9`, `-6`, `1.5`) never count as that evidence. A quoted head was typed as
+ * a command, so it stays a launch. The head itself still drops from the prose, so a verb head
+ * followed only by annotation (`make test`) keeps narrating through `mentionsCommandHead`.
  */
 function isStepVerbLead(launch: PeeledLaunch, segment: string): boolean {
-    if (launch.spanLead || !TITLE_CASE_WORD.test(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, ''))) {
+    if (launch.spanLead || !STEP_VERB_HEADS.has(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
         return false;
     }
     return !unwrappedTokens(segment).some((token) => !isNumberOrPunctuation(token) && isCommandShapedToken(token));

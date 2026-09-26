@@ -1317,8 +1317,10 @@ describe('product-scope test instructions', () => {
         ['an end-to-end-suite mention', 'Covered by the end-to-end suite.'],
         ['an integration-test mention', 'Covered by integration tests.'],
         ['a mention of the existing tests', 'Covered by the existing tests.'],
-        // The runners as proper nouns: a capitalized Vitest leads as the step-verb exemption
-        // would read any Title-case head, so only the suite vocabulary refuses these two.
+        ['a test-suite mention', 'Covered by the test suite.'],
+        ['a tests-folder mention with no spec filename', 'See src/modules/x/__tests__/README for context.'],
+        // The runners as proper nouns: prose words rescue both sentences from the command rule,
+        // so only the runner-name vocabulary refuses these two.
         ['a test-runner mention', 'Vitest covers the transport scheduler.'],
         ['a browser-runner mention', 'Covered by Playwright.'],
     ])('refuses %s even with no command token', (_label, instructions) => {
@@ -1380,10 +1382,19 @@ describe('product-scope test instructions', () => {
             'a step-verb sentence between app steps',
             'Open the arrangement view. Go to bar 9. Press Play; the clip starts on the downbeat.',
         ],
-    ])('passes %s whose sentence-initial Title-case verb is also a command head', (_label, step) => {
-        // Shells are case-sensitive, so a capitalized head with no flag, path, colon suffix,
-        // filename, or env assignment beside it is the step's verb, not a launch opening an
-        // argument run that would eat the UI nouns behind it.
+        // The word class decides, not the casing: a lower-case verb behind a stripped filler word
+        // or opening a clause is still the step's verb.
+        ['a lower-case navigation verb behind a filler word', 'Press Play. Then go to bar 9.'],
+        [
+            'a lower-case sorting verb opening a semicolon clause',
+            'Open the browser; sort by name; the list reorders alphabetically.',
+        ],
+        ['a lower-case channel verb behind a filler word', 'Press Play. Then make track 2 mono.'],
+        ['a lower-case navigation verb behind another filler word', 'Press Stop. Also go to bar 1.'],
+    ])('passes %s whose leading verb is also a command head', (_label, step) => {
+        // An English imperative head with no flag, path, colon suffix, filename, or env
+        // assignment beside it is the step's verb, not a launch opening an argument run that
+        // would eat the UI nouns behind it.
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
@@ -1393,15 +1404,24 @@ describe('product-scope test instructions', () => {
         ['a capitalized launch carrying a flag', 'Cargo test --package daw-engine'],
         ['a lower-case find sweep', 'find . -name x'],
         ['a lower-case go test run', 'go test ./...'],
-        // The Title-case head still drops from the prose, so with nothing but annotation behind
-        // it the head mention keeps the segment narrating.
+        // The verb head still drops from the prose, so with nothing but annotation behind it the
+        // head mention keeps the segment narrating.
         ['a capitalized head followed only by annotation', 'Make test'],
-        // A quoted head was typed as a command, so its Title case exempts nothing.
-        ['a backticked Title-case launch', '`Make` release'],
-    ])('refuses %s: the step-verb exemption needs Title case and no command-shaped token', (_label, instructions) => {
-        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
-    });
+        // A quoted head was typed as a command, so its verb reading exempts nothing.
+        ['a backticked verb-head launch', '`Make` release'],
+        // Tool names are never step verbs, so a capitalized tool line classifies exactly like its
+        // lower-case spelling.
+        ['a lower-case tool launch', 'pnpm dev'],
+        ['a capitalized tool launch', 'Pnpm dev'],
+        ['a capitalized build line citing its result', 'Cargo build succeeds.'],
+        ['a capitalized git line citing its result', 'Git diff is empty.'],
+    ])(
+        'refuses %s: the step-verb exemption needs an English verb head and no command-shaped token',
+        (_label, instructions) => {
+            expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        }
+    );
 
     it('passes None.', () => {
         expect(testInstructionsNarrateChecks('None.')).toBe(false);
@@ -1425,9 +1445,12 @@ describe('product-scope test instructions', () => {
         // A launch folded into the step that uses it passes (pinned below); on its own line it is
         // a command segment like any other.
         const steps = '1. pnpm dev\n2. Open the mixer and confirm the send knob reads -12 dB.';
+        const capitalized = '1. Pnpm dev\n2. Open the mixer and confirm the send knob reads -12 dB.';
 
         expect(testInstructionsNarrateChecks(steps)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(steps))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(capitalized)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(capitalized))).toBe(REFUSAL);
     });
 
     it.each([
