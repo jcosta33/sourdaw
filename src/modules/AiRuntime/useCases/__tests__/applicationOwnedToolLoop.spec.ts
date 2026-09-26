@@ -1392,6 +1392,84 @@ describe('application-owned tool loop', () => {
         );
     });
 
+    it('carries a turn-classified refusal through a second reclassification pass once an earlier demotion shrinks the remainder', async () => {
+        // Two filler turns leave 24,400 run bytes charged before the target turn. Two 15,604-byte
+        // reads (wide-1, wide-2) admit for real, then read X and read Y both refuse. X's own retry
+        // does not fit the remainder left after the walk, so the first reclassification pass demotes
+        // it to the run form — and because the run stand-in always serializes 24 bytes longer than
+        // the turn stand-in, that demotion alone shrinks the remainder further. Y's retry fits the
+        // first pass's remainder but not the smaller, post-demotion one: a loop that stops after one
+        // pass instead of iterating to a fixed point leaves Y wrongly retryable for a retry the run
+        // can never actually honor.
+        let callIndex = 0;
+        function nameLenForCall(index: number): number {
+            if (index <= 4) {
+                return 5_380;
+            }
+            if (index <= 6) {
+                return 14_995;
+            }
+            if (index === 7) {
+                return 8_200;
+            }
+            return 8_018;
+        }
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            callIndex += 1;
+            const nameLen = nameLenForCall(callIndex);
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('fill-a') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('fill-b') })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'wide-1', name: 'project.query', arguments: { type: 'project-summary' } },
+                    { id: 'wide-2', name: 'project.query', arguments: { type: 'project-summary' } },
+                    { id: 'x-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                    { id: 'y-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-fixed-point-second-pass',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxTurns: 5 },
+        });
+
+        expect(result.status).not.toBe('rejected');
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'y-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+    });
+
     it('does not disclose a command schema from a catalog discovery receipt replaced for the turn receipt budget', async () => {
         // Two project.query fillers sized against this turn's own receipt-context serialization so
         // admitting both still fits the turn's receipt budget, but admitting the real catalog
