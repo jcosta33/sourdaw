@@ -89,6 +89,45 @@ describe('prepareMidiClipGlueState', () => {
         expect(mocks.state.value.migratedAbsoluteNoteClipIds).toEqual(['unrelated', 'unrelated']);
     });
 
+    it('folds a curve point into the scalar and rebases remaining points when the visible window starts after the first point', () => {
+        mocks.state.value = {
+            notesByClipId: {
+                'source-a': [
+                    {
+                        id: 'curved-note',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 2,
+                        velocity: 100,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1.5, value: 90 },
+                            ],
+                        },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        const glueSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 1, visibleEndBeat: 2 },
+            { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 0, visibleEndBeat: 4 },
+        ];
+
+        const plan = prepareMidiClipGlueState({ sources: glueSources, targetClipId: 'target' });
+        const glued = plan?.next.clips.at(-1)?.data.notes.value.find((note) => note.id === 'curved-note');
+
+        expect(glued).toMatchObject({
+            startBeat: 1,
+            duration: 1,
+            pressure: 40,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+        });
+    });
+
     it('orders equal-time Unicode row ids by UTF-16 code unit', () => {
         mocks.state.value = {
             notesByClipId: {

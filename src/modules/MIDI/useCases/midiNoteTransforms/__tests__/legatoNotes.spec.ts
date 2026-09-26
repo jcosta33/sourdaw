@@ -57,6 +57,35 @@ describe('legatoNotes', () => {
         expect(noteC?.duration).toBe(0.5);
     });
 
+    it('drops a curve point outside the new span when legato shortens a note', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        id: 'a',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 2,
+                        velocity: 100,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 40 },
+                                { offsetBeats: 1.5, value: 90 },
+                            ],
+                        },
+                    },
+                    note('b', 60, 1, 0.5),
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        legatoNotes('clip1', ['a']);
+        const noteA = midiStore.value?.notesByClipId.clip1?.find((node) => node.id === 'a');
+        expect(noteA?.duration).toBe(1);
+        expect(noteA?.expression).toEqual({ pressure: [{ offsetBeats: 0.5, value: 40 }] });
+    });
+
     it('should stop the cross-pitch fallback at an unselected note in between', () => {
         // Selected note 'a' has no later same-pitch note. The fallback must extend to
         // the next note on ANY pitch in the clip — including the unselected 'mid' at
