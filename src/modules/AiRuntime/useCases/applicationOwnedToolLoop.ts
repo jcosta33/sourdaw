@@ -1324,7 +1324,7 @@ function serializeRemainingBudgetNote(
     ].join('\n');
 }
 
-/** The compact stand-in for a read whose real receipt would not fit the turn's receipt budget. */
+/** The compact stand-in for a read whose real receipt would not fit the turn's own receipt budget. */
 function turnReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
     return failureReceipt({
         callId: receipt.callId,
@@ -1337,12 +1337,60 @@ function turnReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): Applica
 }
 
 /**
+ * The compact stand-in for a read whose real receipt would not fit the run's own receipt budget.
+ * The run's budget only grows turn over turn, so a read this large is refused for good: retrying
+ * cannot free space a later turn will not also have already spent.
+ */
+function runReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    return failureReceipt({
+        callId: receipt.callId,
+        toolName: receipt.toolName,
+        turn: receipt.turn,
+        code: 'run-receipt-budget-spent',
+        safeMessage: "The run's receipt budget cannot hold this read; plan with the receipts already delivered.",
+        retryable: false,
+    });
+}
+
+function receiptByteLength(receipt: ApplicationToolReceipt): number {
+    return byteLength(JSON.stringify(receipt));
+}
+
+/** Whichever of two receipts serializes smaller, by the same measure `boundReceipt` uses. */
+function smallerReceipt(first: ApplicationToolReceipt, second: ApplicationToolReceipt): ApplicationToolReceipt {
+    return receiptByteLength(first) <= receiptByteLength(second) ? first : second;
+}
+
+/**
+ * A later read's worst-case footprint for the walk below: whichever of its two possible refusals
+ * serializes larger, or its real receipt when that is smaller still. Reserving at this size means
+ * a later read's eventual final form — real receipt or refusal, whichever the walk lands on — can
+ * never exceed what this walk already reserved for it here.
+ */
+function reservedLaterReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    const turnStandin = turnReceiptBudgetSpentReceipt(receipt);
+    const runStandin = runReceiptBudgetSpentReceipt(receipt);
+    const largerStandin = receiptByteLength(turnStandin) >= receiptByteLength(runStandin) ? turnStandin : runStandin;
+    return smallerReceipt(receipt, largerStandin);
+}
+
+/**
  * Substitutes a compact budget-spent failure for every read whose real receipt would push the
  * turn — or the run — past the context budget once every later call in the turn is also
  * accounted for. Walked in call order, so a turn of several paged reads keeps as many real reads
  * as the budget allows instead of failing the whole turn on the first receipt that would tip it
  * over: the device manifest tool's own paging guidance ("read one type at a time") only helps a
  * provider that follows it if reading several pages in one turn still lands a partial turn.
+ *
+ * Each read's refusal is never larger than the real receipt it replaces — the smaller of the two,
+ * by the same measure `boundReceipt` uses — and a later read reserves space at that same smaller
+ * size, so admitting a read's real receipt here can never make an earlier reservation in the same
+ * walk turn out to have been too small. A read's real receipt is therefore admitted whenever the
+ * whole real turn actually fits both budgets. The refusal itself is classified by whichever cap
+ * the candidate fails: the run's own budget only grows, so a candidate that overflows it earns the
+ * non-retryable `run-receipt-budget-spent` failure regardless of the turn cap, while a candidate
+ * that overflows only the turn's own budget earns the retryable `turn-receipt-budget-spent`
+ * failure a later turn can still satisfy.
  */
 function admitTurnReadReceipts(input: {
     realReceipts: readonly ApplicationToolReceipt[];
@@ -1354,11 +1402,16 @@ function admitTurnReadReceipts(input: {
     const { realReceipts, turn, totalReceiptBytesSoFar, maxReceiptBytesPerTurn, maxTotalReceiptBytes } = input;
     const admitted: ApplicationToolReceipt[] = [];
     for (const [index, receipt] of realReceipts.entries()) {
-        const candidate = [...admitted, receipt, ...realReceipts.slice(index + 1).map(turnReceiptBudgetSpentReceipt)];
+        const candidate = [...admitted, receipt, ...realReceipts.slice(index + 1).map(reservedLaterReceipt)];
         const candidateBytes = byteLength(serializeReceiptContext(candidate, turn));
-        const fits =
-            candidateBytes <= maxReceiptBytesPerTurn && totalReceiptBytesSoFar + candidateBytes <= maxTotalReceiptBytes;
-        admitted.push(fits ? receipt : turnReceiptBudgetSpentReceipt(receipt));
+        const fitsTurn = candidateBytes <= maxReceiptBytesPerTurn;
+        const fitsRun = totalReceiptBytesSoFar + candidateBytes <= maxTotalReceiptBytes;
+        if (fitsTurn && fitsRun) {
+            admitted.push(receipt);
+            continue;
+        }
+        const standin = fitsRun ? turnReceiptBudgetSpentReceipt(receipt) : runReceiptBudgetSpentReceipt(receipt);
+        admitted.push(smallerReceipt(receipt, standin));
     }
     return admitted;
 }

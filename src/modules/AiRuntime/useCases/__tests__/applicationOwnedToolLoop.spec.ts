@@ -982,6 +982,180 @@ describe('application-owned tool loop', () => {
         );
     });
 
+    it('admits every real receipt under production limits when a turn of unconditional stand-ins would not fit the run budget', async () => {
+        // Two filler turns spend enough of the run budget that a turn of 26 unconditional
+        // stand-ins for these reads would overflow it, while the real turn — every one of these
+        // reads is far smaller than either stand-in — still fits comfortably.
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'project-summary',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(12_800) }],
+            nextCursor: null,
+            warnings: [],
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+        const readCalls = Array.from({ length: 26 }, (_, index) => ({
+            id: `unknown-read-${String(index)}`,
+            name: 'device.factory-manifest.read',
+            arguments: { types: ['no-such-device-type'] },
+        }));
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('filler-a') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('filler-b') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: readCalls })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-production-limits-reservation',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxCallsPerTurn: 26, maxTotalCalls: 40, maxTurns: 5 },
+        });
+
+        expect(result.status).toBe('complete');
+        for (const call of readCalls) {
+            expect(result.receipts).toContainEqual(expect.objectContaining({ callId: call.id, status: 'success' }));
+        }
+    });
+
+    it('reserves a later read at its worst-case size so an earlier large read is refused instead of crowding them out', async () => {
+        // The first read's own real receipt sits well under the per-call budget, and would fit the
+        // turn and the run if the 25 reads after it cost nothing — but each of those later reads
+        // reserves real space, and that reservation alone is what tips this turn past the run's
+        // remaining budget, so the first read is the one refused rather than one of the later ones.
+        let projectQueryCallIndex = 0;
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            projectQueryCallIndex += 1;
+            const nameLen = projectQueryCallIndex <= 4 ? 9_200 : 15_680;
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+        const laterReads = Array.from({ length: 25 }, (_, index) => ({
+            id: `tiny-read-${String(index)}`,
+            name: 'device.factory-manifest.read',
+            arguments: { types: ['no-such-device-type'] },
+        }));
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('item4-filler-a') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('item4-filler-b') })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'large-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                    ...laterReads,
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-later-read-reservation',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxCallsPerTurn: 26, maxTotalCalls: 40, maxTurns: 5 },
+        });
+
+        expect(result.status).not.toBe('rejected');
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'large-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+        for (const call of laterReads) {
+            expect(result.receipts).toContainEqual(expect.objectContaining({ callId: call.id, status: 'success' }));
+        }
+    });
+
+    it('refuses a read that fits the turn cap but not the run cap with a non-retryable stand-in, and continues the run', async () => {
+        // Two filler turns spend most of the run's budget. The next read's own receipt is well
+        // under the turn cap by itself, but combined with what the run has already spent it no
+        // longer fits the run's own budget, so it must be classified and refused on that cap alone
+        // rather than admitted because the turn cap alone still had room.
+        let projectQueryCallIndex = 0;
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            projectQueryCallIndex += 1;
+            const nameLen = projectQueryCallIndex <= 4 ? 14_000 : 11_000;
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('item5-filler-a') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('item5-filler-b') })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'run-cap-read', name: 'project.query', arguments: { type: 'project-summary' } }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-run-cap-term',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxTurns: 5 },
+        });
+
+        expect(result.status).not.toBe('rejected');
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'run-cap-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+    });
+
     it('does not disclose a command schema from a catalog discovery receipt replaced for the turn receipt budget', async () => {
         // Two project.query fillers sized against this turn's own receipt-context serialization so
         // admitting both still fits the turn's receipt budget, but admitting the real catalog

@@ -23,7 +23,9 @@ function receiptByteLength(receipt: unknown): number {
 const WORST_CASE_CALL_ID_LENGTH = 256;
 const WORST_CASE_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 
-type ForgedManifestCursor = { schemaVersion: 1; type: string; version: string; offset: number };
+// `schemaVersion` stays a plain `number`, not the production cursor's literal `1`, so a forged
+// cursor can carry a schema version the decoder does not recognize.
+type ForgedManifestCursor = { schemaVersion: number; type: string; version: string; offset: number };
 
 /**
  * Builds a `device.factory-manifest.read` parameter cursor the same base64url way the loop's own
@@ -214,6 +216,35 @@ describe('device.factory-manifest.read paging', () => {
         const replay = await callDeviceManifest({
             callId: 'cross-type-cursor-replay',
             arguments: { types: ['gluten'], page: { cursor: forgedCursor } },
+        });
+
+        expect(replay).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
+    });
+
+    it('refuses a forged parameter cursor whose schema version the decoder does not recognize', async () => {
+        // The type and version comparisons alone would already refuse most tampering; forging a
+        // cursor that keeps crust's own live type, version and a valid offset isolates the
+        // `schemaVersion !== 1` check as the only thing standing between this replay and a page.
+        const source = await callDeviceManifest({
+            callId: 'schema-version-source',
+            arguments: { types: ['crust'], page: {} },
+        });
+        const sourceData = source.data as ManifestPageData;
+        const device = sourceData.devices[0];
+        if (!device) {
+            throw new Error('Expected a crust manifest entry.');
+        }
+
+        const forgedCursor = encodeManifestCursor({
+            schemaVersion: 2,
+            type: 'crust',
+            version: device.version,
+            offset: 1,
+        });
+
+        const replay = await callDeviceManifest({
+            callId: 'schema-version-replay',
+            arguments: { types: ['crust'], page: { cursor: forgedCursor } },
         });
 
         expect(replay).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
