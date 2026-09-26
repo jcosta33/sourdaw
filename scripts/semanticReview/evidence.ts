@@ -15,9 +15,11 @@
  * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), or a collected spec whose content imports a closure member or names one of those workflow
- * files — is admitted before a bulk side and named when a budget withholds it, so the same budget is
- * spent where the contract lives. Each side is classified from the path and content it carries, so a
- * deleted or moved spec still counts from its before side.
+ * files — and every contract-context region the caller supplies are admitted before a bulk side and
+ * named when a budget withholds them, so the same budget is spent where the contract lives. Each side
+ * is classified from the path and content it carries, so a deleted or moved spec still counts from its
+ * before side, and a side of a path that is contract-carrying on either side keeps its bulk companion
+ * ahead of a purely bulk path.
  */
 
 import {
@@ -30,9 +32,12 @@ import {
 import {
     admissionBytesBySide,
     admissionUnits,
+    chargeableRegionBytes,
     classifyContractCarryingSides,
     compareLexicographic,
     readChangedContents,
+    type AdmissionUnit,
+    type ChangedFileContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
 import { applicableRules, isCollectedSpec } from './rules.ts';
@@ -565,6 +570,68 @@ function recordScreenExclusions(
 }
 
 /**
+ * Admits one unit in admission order. A contract-context region is admitted whole; a changed side is
+ * admitted hunk by hunk or whole. Content was read before admission — changed sides once in
+ * `readChangedContents`, each contract-context region once when its chargeable bytes were computed — so
+ * admission consumes that shared read rather than reading again.
+ */
+function admitUnit(
+    unit: AdmissionUnit,
+    input: {
+        readonly admission: ReturnType<typeof createRegionAdmission>;
+        readonly hunksByPath: ReadonlyMap<string, PathHunks>;
+        readonly contents: ReadonlyMap<string, ChangedFileContents>;
+        readonly contractContextContent: ReadonlyMap<string, string>;
+        readonly mergeBaseSha: string;
+        readonly headSha: string;
+        readonly contractSourceSha: string;
+    }
+): void {
+    const { admission, hunksByPath, contents, contractContextContent } = input;
+    if (unit.kind === 'context') {
+        const raw = contractContextContent.get(unit.path);
+        if (raw === undefined) {
+            admission.truncated.push({ path: unit.path, reason: 'evidence-unavailable-at-revision' });
+            admission.limitations.push(`contract ${unit.path} was unavailable at the contract source revision`);
+            return;
+        }
+        admission.admit({ revisionSha: input.contractSourceSha, path: unit.path, side: 'context' }, raw, 'context');
+        return;
+    }
+    const file = unit.file;
+    const hunks = hunksByPath.get(file.path);
+    const entry = contents.get(file.path);
+    if (unit.side === 'before') {
+        const beforePath = file.previousPath ?? file.path;
+        const before = entry?.before;
+        if (before === undefined) {
+            admission.truncated.push({ path: beforePath, reason: 'evidence-unavailable-at-revision' });
+            admission.limitations.push(`before-side content for ${beforePath} was unavailable at the merge base`);
+        } else {
+            admission.admitSide(
+                { revisionSha: input.mergeBaseSha, path: beforePath, side: 'before', changedPath: file.path },
+                before,
+                'before',
+                hunks?.before
+            );
+        }
+    } else {
+        const after = entry?.after;
+        if (after === undefined) {
+            admission.truncated.push({ path: file.path, reason: 'evidence-unavailable-at-revision' });
+            admission.limitations.push(`after-side content for ${file.path} was unavailable at the reviewed head`);
+        } else {
+            admission.admitSide(
+                { revisionSha: input.headSha, path: file.path, side: 'after', changedPath: file.path },
+                after,
+                'after',
+                hunks?.after
+            );
+        }
+    }
+}
+
+/**
  * Collects bounded evidence for one change. `mergeBaseSha` supplies before-side content and
  * `contractSourceSha` supplies the contracts used as semantic context; `headSha` supplies after-side
  * content. Deleted code keeps its before-side identity.
@@ -605,55 +672,36 @@ export function collectEvidence(input: {
         input.mergeBaseSha,
         input.headSha
     );
-    const units = admissionUnits(assessed, contractCarryingSides, bytesBySide);
+    // Read each contract-context region once, so its chargeable bytes rank it with the contract class
+    // and its content is admitted from that same read. A region that cannot be read still mints a unit,
+    // so its unavailability is recorded in admission order rather than after every changed-file unit.
+    const contractContextContent = new Map<string, string>();
+    const contractContexts = (input.contractPaths ?? []).map((path) => {
+        const raw = regionFor(input.port, input.contractSourceSha, path);
+        if (raw !== undefined) {
+            contractContextContent.set(path, raw);
+        }
+        return {
+            path,
+            admissionBytes: raw === undefined ? 0 : chargeableRegionBytes(raw, input.limits.maxRegionBytes),
+        };
+    });
+    const units = admissionUnits(assessed, contractCarryingSides, bytesBySide, contractContexts);
 
     const admission = createRegionAdmission(input.limits, contractCarryingSides);
-    const { admit, admitSide } = admission;
 
     recordScreenExclusions(screened, admission);
 
     for (const unit of units) {
-        const file = unit.file;
-        const hunks = hunksByPath.get(file.path);
-        const entry = contents.get(file.path);
-        if (unit.side === 'before') {
-            const beforePath = file.previousPath ?? file.path;
-            const before = entry?.before;
-            if (before === undefined) {
-                admission.truncated.push({ path: beforePath, reason: 'evidence-unavailable-at-revision' });
-                admission.limitations.push(`before-side content for ${beforePath} was unavailable at the merge base`);
-            } else {
-                admitSide(
-                    { revisionSha: input.mergeBaseSha, path: beforePath, side: 'before', changedPath: file.path },
-                    before,
-                    'before',
-                    hunks?.before
-                );
-            }
-        } else {
-            const after = entry?.after;
-            if (after === undefined) {
-                admission.truncated.push({ path: file.path, reason: 'evidence-unavailable-at-revision' });
-                admission.limitations.push(`after-side content for ${file.path} was unavailable at the reviewed head`);
-            } else {
-                admitSide(
-                    { revisionSha: input.headSha, path: file.path, side: 'after', changedPath: file.path },
-                    after,
-                    'after',
-                    hunks?.after
-                );
-            }
-        }
-    }
-
-    for (const path of input.contractPaths ?? []) {
-        const raw = regionFor(input.port, input.contractSourceSha, path);
-        if (raw === undefined) {
-            admission.truncated.push({ path, reason: 'evidence-unavailable-at-revision' });
-            admission.limitations.push(`contract ${path} was unavailable at the contract source revision`);
-            continue;
-        }
-        admit({ revisionSha: input.contractSourceSha, path, side: 'context' }, raw, 'context');
+        admitUnit(unit, {
+            admission,
+            hunksByPath,
+            contents,
+            contractContextContent,
+            mergeBaseSha: input.mergeBaseSha,
+            headSha: input.headSha,
+            contractSourceSha: input.contractSourceSha,
+        });
     }
 
     if (admission.references.length === 0) {

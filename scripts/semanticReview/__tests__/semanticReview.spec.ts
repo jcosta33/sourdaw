@@ -387,6 +387,31 @@ describe('contract-carrying admission', () => {
         expect(set.truncated.some((entry) => entry.path === 'aaa/bulk.ts')).toBe(true);
     });
 
+    it('admits a contract document before a bulk side that would otherwise take its budget', () => {
+        // D1: contract-context regions were admitted after every changed-file unit, so a bulk side
+        // bought the total budget first and the contract document was withheld as
+        // total-evidence-budget-exhausted (context, contract) — a contract term for an ordering the
+        // collector never used. Contract-context regions now sort with the contract class, before bulk.
+        const bulk = 'const bulk = 1;\n'.repeat(30);
+        const contract = '# AGENTS.md contract\n'.repeat(5);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/bulk.ts', { kind: 'added', added: 30, deleted: 0 })],
+                blobs: {
+                    [`${HEAD}:aaa/bulk.ts`]: bulk,
+                    [`${MERGE_BASE}:AGENTS.md`]: contract,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: Buffer.byteLength(bulk, 'utf8'), maxTotalBytes: Buffer.byteLength(bulk, 'utf8') },
+            contractPaths: ['AGENTS.md'],
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['AGENTS.md:context']);
+        expect(set.truncated).toEqual([{ path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' }]);
+    });
+
     it('names a withheld contract-carrying path instead of counting it as an anonymous trim', () => {
         const before = 'const contract = 1;\n';
         const set = collectEvidence({
@@ -505,9 +530,7 @@ describe('contract-carrying admission', () => {
                     reference.path === 'scripts/__tests__/agentDeliveryScripts.spec.ts' && reference.side === 'after'
             )
         ).toBe(true);
-        expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
-        ).toBe(false);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -542,9 +565,7 @@ describe('contract-carrying admission', () => {
                     reference.path === 'scripts/__tests__/githubAppIdentity.spec.ts' && reference.side === 'after'
             )
         ).toBe(true);
-        expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
-        ).toBe(false);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -578,9 +599,7 @@ describe('contract-carrying admission', () => {
                     reference.path === 'scripts/__tests__/healthGatesWorkflow.spec.ts' && reference.side === 'after'
             )
         ).toBe(true);
-        expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
-        ).toBe(false);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -984,9 +1003,7 @@ describe('contract-carrying admission', () => {
                     reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts' && reference.side === 'after'
             )
         ).toBe(true);
-        expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
-        ).toBe(false);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -1026,9 +1043,7 @@ describe('contract-carrying admission', () => {
                     reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts' && reference.side === 'after'
             )
         ).toBe(true);
-        expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
-        ).toBe(false);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -1100,9 +1115,7 @@ describe('contract-carrying admission', () => {
                 (reference) => reference.path === 'scripts/__tests__/dynamic.spec.ts' && reference.side === 'after'
             )
         ).toBe(true);
-        expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
-        ).toBe(false);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 });

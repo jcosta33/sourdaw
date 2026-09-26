@@ -3,9 +3,16 @@
  *
  * The collector reads each changed path's sides once and hands the reads here, so classification,
  * sizing, and admission all consume one read per side. Ordering is over the admission units the
- * collector actually admits — each changed file's before and after side, in the order admission walks
- * them — so a side that carries a contract is admitted before a bulk side of another change whatever
- * the file order, and the class a side is ordered by is the class its withheld reason names.
+ * collector actually admits — each changed file's before and after side, plus each contract-context
+ * region — in the order admission walks them, so a side that carries a contract and the contract
+ * documents themselves are admitted before a bulk side of another change whatever the file order, and
+ * the class a unit is ordered by is the class its withheld reason names.
+ *
+ * A side of a path that is contract-carrying on either side outranks a purely bulk side of another
+ * path, so a collected spec whose after side imports a closure member keeps its bulk before side ahead
+ * of an unrelated bulk competitor: the budget stays on the change the contract lives in. The withheld
+ * reason still reads the side's own class, so a bulk after side of a contract-before rename is named
+ * without the contract term.
  *
  * The byte figure is an order-independent lower bound, a tie-break inside one class rather than a
  * promise of what each side pays. A region the content screen or the per-region budget withholds costs
@@ -68,20 +75,51 @@ export function classifyContractCarryingSides(
     return sidesByPath;
 }
 
-/** One side the collector admits: a changed file's before or after side, with its own class and byte figure. */
-export type AdmissionUnit = {
+/** A changed file's side the collector admits as one unit. */
+export type ChangedSideUnit = {
+    readonly kind: 'changed';
     readonly file: SemanticChangedFile;
     readonly side: AdmissionSide;
     readonly contractCarrying: boolean;
+    /** Whether the path is contract-carrying on either side, so its bulk side still outranks a purely bulk path. */
+    readonly pathContractCarrying: boolean;
     readonly admissionBytes: number;
 };
+
+/** A contract-context region the collector admits with the contract class. */
+export type ContractContextUnit = {
+    readonly kind: 'context';
+    readonly path: string;
+    readonly side: 'context';
+    readonly contractCarrying: true;
+    readonly pathContractCarrying: true;
+    readonly admissionBytes: number;
+};
+
+/** One admission unit: a changed file's side or a contract-context region. */
+export type AdmissionUnit = ChangedSideUnit | ContractContextUnit;
 
 /** The admission byte figure for one changed path, split by side. */
 export type AdmissionSideBytes = { readonly before: number; readonly after: number };
 
+function unitPath(unit: AdmissionUnit): string {
+    return unit.kind === 'context' ? unit.path : unit.file.path;
+}
+
+function unitSideOrder(unit: AdmissionUnit): number {
+    if (unit.side === 'before') {
+        return 0;
+    }
+    if (unit.side === 'after') {
+        return 1;
+    }
+    return 2;
+}
+
 /**
- * The admission order for one change's sides. Contract-carrying before bulk, and inside each class
- * non-spec before collected spec, then ascending admission bytes — the order-independent lower bound a
+ * The admission order. Contract-carrying first — a contract-carrying side and every contract-context
+ * region — then, inside each class, non-spec before collected spec, then a side of a contract-carrying
+ * path before a purely bulk side, then ascending admission bytes — the order-independent lower bound a
  * side's sole regions cost, a tie-break rather than a promise of what the side pays — then path, then a
  * path's before side before its own after side. No spec can outrank the source it covers, and a
  * whole-file fallback cannot starve a smaller genuine edit; a region shared with another change is still
@@ -94,54 +132,73 @@ export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit)
     if (leftContract !== rightContract) {
         return leftContract - rightContract;
     }
-    const leftSpec = isCollectedSpec(left.file.path) ? 1 : 0;
-    const rightSpec = isCollectedSpec(right.file.path) ? 1 : 0;
+    const leftSpec = isCollectedSpec(unitPath(left)) ? 1 : 0;
+    const rightSpec = isCollectedSpec(unitPath(right)) ? 1 : 0;
     if (leftSpec !== rightSpec) {
         return leftSpec - rightSpec;
+    }
+    const leftPathContract = left.pathContractCarrying ? 0 : 1;
+    const rightPathContract = right.pathContractCarrying ? 0 : 1;
+    if (leftPathContract !== rightPathContract) {
+        return leftPathContract - rightPathContract;
     }
     if (left.admissionBytes !== right.admissionBytes) {
         return left.admissionBytes - right.admissionBytes;
     }
-    const byPath = compareByPath(left.file, right.file);
+    const byPath = compareLexicographic(unitPath(left), unitPath(right));
     if (byPath !== 0) {
         return byPath;
     }
-    if (left.side === right.side) {
-        return 0;
-    }
-    return left.side === 'before' ? -1 : 1;
+    return unitSideOrder(left) - unitSideOrder(right);
 }
 
 /**
  * The admission units for one change, in admission order. A file contributes its before side first and
  * its after side second; each side is ordered by its own class, so a rename or copy out of a contract
  * surface admits its contract before side before a bulk side of another change while its bulk after
- * side stays ranked with bulk.
+ * side stays ranked with bulk. Contract-context regions join the same ordering as contract class, so
+ * they are admitted before bulk changed-file units.
  */
 export function admissionUnits(
     changed: readonly SemanticChangedFile[],
     sidesByPath: ReadonlyMap<string, ContractCarryingSides>,
-    admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>
+    admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>,
+    contractContexts: readonly { path: string; admissionBytes: number }[]
 ): readonly AdmissionUnit[] {
     const units: AdmissionUnit[] = [];
     for (const file of changed) {
         const sides = sidesByPath.get(file.path);
+        const pathContractCarrying = (sides?.before ?? false) || (sides?.after ?? false);
         if (kindHasBeforeSide(file.kind)) {
             units.push({
+                kind: 'changed',
                 file,
                 side: 'before',
                 contractCarrying: sides?.before ?? false,
+                pathContractCarrying,
                 admissionBytes: admissionBytesBySide.get(file.path)?.before ?? 0,
             });
         }
         if (kindHasAfterSide(file.kind)) {
             units.push({
+                kind: 'changed',
                 file,
                 side: 'after',
                 contractCarrying: sides?.after ?? false,
+                pathContractCarrying,
                 admissionBytes: admissionBytesBySide.get(file.path)?.after ?? 0,
             });
         }
+    }
+    for (const context of contractContexts) {
+        units.push({
+            kind: 'context',
+            path: context.path,
+            side: 'context',
+            contractCarrying: true,
+            pathContractCarrying: true,
+            admissionBytes: context.admissionBytes,
+        });
     }
     return units.sort(compareAdmissionUnits);
 }
@@ -185,7 +242,7 @@ export function readChangedContents(
 }
 
 /** The raw bytes of one region, or zero when admission cannot charge it: the content screen or the per-region budget withholds it. */
-function chargeableRegionBytes(raw: string, maxRegionBytes: number): number {
+export function chargeableRegionBytes(raw: string, maxRegionBytes: number): number {
     if (sensitiveContentReason(raw) !== undefined) {
         return 0;
     }
