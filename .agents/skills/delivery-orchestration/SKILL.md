@@ -274,8 +274,8 @@ required before the next publication, and once `<n>` reaches the freeze threshol
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` instead and stops naming that
 action, because a frozen pull request takes no caller document. The thresholds are the
 constants `REVIEW_ROUND_ESCALATION_THRESHOLD` and `REVIEW_ROUND_FREEZE_THRESHOLD` in
-`scripts/reviewRoundEscalation.ts`. A fresh
-reviewer publication at or above it refuses before any remote write until the caller
+`scripts/reviewRoundEscalation.ts`. Between the escalation threshold and the freeze, a fresh
+reviewer publication refuses before any remote write until the caller
 writes `reassessment.json` beside `dossier.json`, `format: 'reassessment-v1'`, carrying
 `pr`, `headSha`, `baseSha`, `roundsObserved`, `threshold`, `action` of
 `split` | `respec` | `continue`, and a single-line, trimmed, bounded, evidence-safe
