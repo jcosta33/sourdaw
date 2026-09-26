@@ -253,6 +253,8 @@ describe('snapshotImportSpecifiers', () => {
         // A nested argument comma must not end the `.call` specifier walk: the first argument is the
         // `this` value, and the second is the specifier.
         expect(snapshotImportSpecifiers("require.call(fn(1, 2), 'yaml')")).toEqual(['yaml']);
+        // `bind` returns a bound require, so the specifier is the second call's argument.
+        expect(snapshotImportSpecifiers("require.bind(null)('yaml')")).toEqual(['yaml']);
         expect(bareModuleSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
     });
 

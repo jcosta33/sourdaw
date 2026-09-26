@@ -2282,6 +2282,49 @@ describe('package scripts and gitignore', () => {
         expect(snapshotComputedDynamicSpecifiers('function f() {}\n/require(spec)/.test(line);')).toEqual([]);
     });
 
+    it('reads a regex after an interface, enum, namespace, or modifier-prefixed declaration close', () => {
+        expect(snapshotComputedDynamicSpecifiers('interface I {}\n/require(spec)/.test(line);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('enum E {}\n/require(spec)/.test(line);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('namespace N {}\n/require(spec)/.test(line);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('abstract class C {}\n/require(spec)/.test(line);')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('export default function f() {}\n/require(spec)/.test(line);')
+        ).toEqual([]);
+    });
+
+    /**
+     * A `}` that closes an expression-position body — an arrow body, a class or function expression,
+     * or an object literal in operand position — ends an expression, so a `/` after it is division and
+     * a computed load inside is still seen. Only a `}` that closes a declaration (class, interface,
+     * enum, namespace, function declaration, or statement block) ends a statement.
+     */
+    it.each([
+        {
+            label: 'a division after an arrow body',
+            source: 'const r = () => {} / import(spec) / 2;',
+        },
+        {
+            label: 'a division after an anonymous class expression',
+            source: 'const r = class {} / import(spec) / 2;',
+        },
+        {
+            label: 'a division after a named function expression',
+            source: 'const r = function g() {} / import(spec) / 2;',
+        },
+        {
+            label: 'a division after an object literal in an operand',
+            source: 'const r = flag && { x: 1 } / import(spec) / 2;',
+        },
+    ])('keeps $label a division so the computed import is seen', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['import(...)']);
+    });
+
+    it('does not swallow a literal require behind an expression-position body close', () => {
+        const source = "const r = () => {} / require('yaml') / 2;";
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toEqual(['yaml']);
+    });
+
     /**
      * `do` is a regex-prefix keyword (`do /re/.test(x); while (y);`), while `extends` is deliberately
      * not: a division after a heritage clause stays division, never a regex. A label before a block
@@ -2355,6 +2398,11 @@ describe('package scripts and gitignore', () => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
     });
 
+    it('refuses a require call inside an arrow function body', () => {
+        const source = 'const f = () => { doSetup(); require(spec) { run(); } };';
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
     it.each([
         {
             label: 'a require-named member of a generic class after a preceding method',
@@ -2402,6 +2450,49 @@ describe('package scripts and gitignore', () => {
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * Grammar-legal declarations the type-body rule still refuses: a `require`/`import` member in a
+     * position the header walk does not recognize reports a computed load although nothing loads.
+     * These are latent — no closure source carries them — but the limitation is pinned here rather
+     * than implied, and named in the contract (#4818).
+     */
+    it.each([
+        {
+            label: 'a require member of a nested property type',
+            source: 'type Sandbox = { nested: { a: string; require(specifier: string): unknown } }',
+        },
+        {
+            label: 'a require member of a parameter type annotation',
+            source: 'function f(cb: { a: string; require(specifier: string): unknown }) {}',
+        },
+        {
+            label: 'a require member of a return type annotation',
+            source: 'function f(): { a: string; require(specifier: string): unknown } {}',
+        },
+        {
+            label: 'a require member of a class property type annotation',
+            source: 'class C { cb: { a: string; require(specifier: string): unknown } }',
+        },
+        {
+            label: 'a require member of a conditional-type branch',
+            source: 'type X = A extends B ? { a: string; require(specifier: string): unknown } : C',
+        },
+        {
+            label: 'a require member of a mapped type value',
+            source: 'type X = { [K in keyof T]: { a: string; require(specifier: string): unknown } }',
+        },
+        {
+            label: 'a decorator-preceded require class member',
+            source: 'class C { @dec require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require member of a union object type with a negative literal member',
+            source: 'type X = Base | -1 | { a: string; require(specifier: string): unknown }',
+        },
+    ])('pins the current refusal of $label as a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
     });
 
     /**
@@ -2457,6 +2548,36 @@ describe('package scripts and gitignore', () => {
             source: 'require.apply(null, args);',
             shape: 'require(...)',
         },
+        {
+            label: 'a require bound to a const across an asi newline',
+            source: 'const load = require\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require bound to a let across an asi newline',
+            source: 'let load = require\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require bound to a var across an asi newline',
+            source: 'var load = require\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a createRequire result bound to a const across an asi newline',
+            source: 'const load = createRequire(import.meta.url)\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require.bind chained call with a computed specifier',
+            source: 'require.bind(null)(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a bound loader bind chained call with a computed specifier',
+            source: 'const load = require;\nload.bind(null)(spec);',
+            shape: 'require(...)',
+        },
     ])('refuses $label as a computed load', ({ source, shape }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
     });
@@ -2467,6 +2588,38 @@ describe('package scripts and gitignore', () => {
     it('refuses a call through a loader binding shadowed in a nested scope', () => {
         const source = 'const load = require;\nfunction run() { const load = createLoader(); load(spec); }';
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
+     * The binding lookup must match the whole identifier, not a tail of a longer one: after
+     * `const load = require;`, a call named `payload` or `reload` contains `load` but is not the
+     * loader, so it must not resolve to the binding. The left boundary is checked exactly as the
+     * literal-keyword check does.
+     */
+    it.each([
+        {
+            label: 'a call whose name merely ends with the binding name',
+            source: 'const load = require;\npayload(spec);',
+        },
+        {
+            label: 'a call whose name merely ends with the binding name and a literal argument',
+            source: "const load = require;\nreload('./other.ts');",
+        },
+        {
+            label: 'a method declaration whose name merely ends with the binding name',
+            source: 'const load = require;\nclass C { reload(specifier: string) { return specifier; } }',
+        },
+    ])('admits $label without a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    it('does not fabricate a dependency from a name that merely ends with the binding name', () => {
+        expect(snapshotImportSpecifiers("const load = require;\nreload('./other.ts');")).toEqual([]);
+    });
+
+    it('keeps the exact plain binding call admitted as a static load', () => {
+        expect(snapshotComputedDynamicSpecifiers("const load = require;\nload('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
     });
 
     /**
@@ -2491,6 +2644,37 @@ describe('package scripts and gitignore', () => {
             source: "const yaml = createRequire(import.meta.url)('yaml');\nyaml(source);",
         },
     ])('admits $label without a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * Shapes the single-file binding pass does not decide are admitted, not refused, and are named
+     * here as undecided (#4818): a loader reached through a `node:module` namespace import, a loader
+     * assigned after its declaration, and a parenthesised initializer. Each is a real load the scan
+     * misses; the pinned cases record the gap rather than implying it.
+     */
+    it.each([
+        {
+            label: 'a namespace-qualified createRequire bound to a const',
+            source: "import * as nodeModule from 'node:module';\nconst load = nodeModule.createRequire(import.meta.url);\nload(spec);",
+        },
+        {
+            label: 'a namespace-qualified createRequire chained call',
+            source: "import * as nodeModule from 'node:module';\nnodeModule.createRequire(import.meta.url)(spec);",
+        },
+        {
+            label: 'a loader assigned after declaration',
+            source: 'let load;\nload = require;\nload(spec);',
+        },
+        {
+            label: 'a parenthesised require initializer',
+            source: 'const load = (require);\nload(spec);',
+        },
+        {
+            label: 'a comma-parenthesised require initializer',
+            source: 'const load = (0, require);\nload(spec);',
+        },
+    ])('names $label as undecided and admits it without a computed load', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 

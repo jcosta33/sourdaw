@@ -495,7 +495,19 @@ const computedDynamicSpecifiersCache = new Map<string, string[]>();
  * is refused, naming the file and the shape. Wrapped and bound callees — `(0, require)(expr)`,
  * `(require)(expr)`, `const load = require; load(expr)`, an aliased `createRequire` import, and
  * `require.call(null, expr)` — are resolved through the single-file binding pass, so they are
- * refused too rather than silently skipped.
+ * refused too rather than silently skipped. `require.bind(null)(expr)` is resolved the same way: the
+ * second call carries the specifier.
+ *
+ * Shapes this scan does not decide are admitted, not refused, and are named here as undecided rather
+ * than implied: a loader reached through a `node:module` namespace import
+ * (`import * as ns from 'node:module'` then `ns.createRequire(expr)`), a loader assigned after its
+ * declaration (`let load; load = require;`), and a parenthesised initializer
+ * (`const load = (require);`, `const load = (0, require);`). The type-body rule also still refuses
+ * grammar-legal declarations whose `require`/`import` member sits in a position the header walk does
+ * not recognize — a nested property type, a parameter, return, or class-property annotation, a
+ * conditional-type branch, a mapped type, a decorator-preceded member, or a union with a negative
+ * literal type — a false positive that is test-pinned rather than implied. Both sets stay filed as
+ * #4818.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const cached = computedDynamicSpecifiersCache.get(source);
@@ -743,9 +755,12 @@ function skipBalancedParensOpaque(source: string, index: number): number | undef
  * The bounded single-file binding pass. A `const`/`let`/`var` whose initializer is the `require`
  * identifier or a `createRequire(<expr>)` call binds a require function; a `createRequire` specifier
  * imported (optionally aliased) from `node:module` binds the createRequire function itself. Only
- * declaration initializers are read. A scope that shadows a loader in a way this pass cannot see —
- * a parameter, or any binding this pass does not record — leaves the name resolved to the loader,
- * which is the fail-closed reading: the call is refused rather than guessed.
+ * declaration initializers are read. A name recorded as a loader that is later shadowed in a scope
+ * this pass cannot see still resolves to the loader, so the call is refused — the fail-closed
+ * reading. A name the pass never records is not a loader, so a call through it is admitted: that is
+ * fail-open, and covers an assignment after declaration (`let load; load = require;`) and a
+ * parenthesised initializer (`const load = (require);`), both named in the contract as undecided
+ * (#4818).
  */
 function collectLoaderBindings(source: string): LoaderBindingTable {
     const bindings = new Map<string, LoaderBinding[]>();
@@ -878,8 +893,7 @@ function readLoaderDeclaration(
     if (isKeywordAt(source, cursor, 'require') && !isPrecededByDotAccess(source, cursor)) {
         // Only the bare `require` identifier binds a require function; anything after it — a call,
         // member access, or chained call — names the loaded module or a method of it instead.
-        const after = skipWhitespace(source, cursor + 'require'.length);
-        if (isInitializerEnd(source, after)) {
+        if (isInitializerEnd(source, cursor + 'require'.length)) {
             return { name, kind: 'require', end: cursor + 'require'.length };
         }
     }
@@ -890,8 +904,7 @@ function readLoaderDeclaration(
             if (after !== undefined) {
                 // A complete `createRequire(<expr>)` binds the require function it returns; a
                 // chained `('…')` after it names the loaded module, so only a statement end binds.
-                const afterCall = skipWhitespace(source, after);
-                if (isInitializerEnd(source, afterCall)) {
+                if (isInitializerEnd(source, after)) {
                     return { name, kind: 'require', end: after };
                 }
             }
@@ -900,10 +913,54 @@ function readLoaderDeclaration(
     return undefined;
 }
 
-/** Whether the initializer ends at `index`: a statement end, a declarator comma, or end of input. */
+/**
+ * Whether the loader initializer ends at `index` — the position right after the `require` identifier
+ * or the `)` of a `createRequire(<expr>)` call — so the name binds a loader. The initializer ends at
+ * an explicit `;`, a declarator comma, end of input, or a line terminator that ASI turns into a
+ * statement end (the next significant character does not continue the expression). A line terminator
+ * before `(`, `.`, `[`, or `?.` continues the expression (`require\n('yaml')`), so the name holds a
+ * module or a method of it, not a loader, and no binding forms. The ASI reading fails closed: any
+ * token that is not an unambiguous continuation ends the initializer, so the binding forms and a
+ * later call through the name is refused.
+ */
 function isInitializerEnd(source: string, index: number): boolean {
-    const character = source[index];
-    return character === ';' || character === ',' || character === undefined || isLineTerminator(character);
+    let cursor = index;
+    let crossedLineTerminator = false;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character !== undefined && isWhiteSpace(character)) {
+            cursor += 1;
+            continue;
+        }
+        if (character !== undefined && isLineTerminator(character)) {
+            crossedLineTerminator = true;
+            cursor += 1;
+            continue;
+        }
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            if (source.startsWith('//', cursor)) {
+                crossedLineTerminator = true;
+            }
+            cursor = commentEnd;
+            continue;
+        }
+        break;
+    }
+    const character = source[cursor];
+    if (character === ';' || character === ',' || character === undefined) {
+        return true;
+    }
+    if (!crossedLineTerminator) {
+        return false;
+    }
+    if (character === '(' || character === '.' || character === '[') {
+        return false;
+    }
+    if (character === '?' && source[cursor + 1] === '.') {
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -1008,9 +1065,38 @@ function resolveLoadSite(
                 declarationCandidate: false,
             };
         }
-        // Not `.call`/`.apply`; fall through to the call-open walk, which admits `?.` optional calls
-        // and refuses plain member access such as `require.resolve` here is only reached after the
-        // caller already moved past `resolve`.
+        if (method === 'bind') {
+            // `bind` returns a bound require function, so the load is the second call — the first
+            // call's arguments are a bound `this` and partial arguments, never the specifier.
+            const openParen = callOpenParen(source, afterDot + method.length, afterDot);
+            if (openParen === undefined) {
+                return undefined;
+            }
+            const afterFirstCall = skipBalancedParens(source, openParen);
+            if (afterFirstCall === undefined) {
+                return undefined;
+            }
+            let second = skipWhitespace(source, afterFirstCall);
+            if (source.startsWith('?.', second) && source[skipWhitespace(source, second + 2)] === '(') {
+                second = skipWhitespace(source, second + 2);
+            }
+            if (source[second] !== '(') {
+                return undefined;
+            }
+            const callEnd = endOfBalancedCall(source, second);
+            return {
+                shape: COMPUTED_REQUIRE_SHAPE,
+                openParen: second,
+                callEnd,
+                specifierStart: skipWhitespace(source, second + 1),
+                specifierEnd: callEnd - 1,
+                keywordIndex: calleeIndex,
+                declarationCandidate: false,
+            };
+        }
+        // Not `.call`/`.apply`/`.bind`; fall through to the call-open walk, which admits `?.` optional
+        // calls and refuses plain member access such as `require.resolve` here is only reached after
+        // the caller already moved past `resolve`.
     }
     const openParen = callOpenParen(source, calleeEnd, calleeIndex);
     if (openParen === undefined) {
@@ -1085,7 +1171,7 @@ function loadSiteAt(source: string, index: number): LoadSite | undefined {
         }
         return resolveLoadSite(source, index, index + 'createRequire'.length, 'createRequire', false);
     }
-    if (isIdentifierStart(source[index])) {
+    if (isIdentifierStart(source[index]) && !isIdentifierContinue(source[index - 1])) {
         const word = readWordForward(source, index);
         const bindings = loaderBindingsFor(source).get(word);
         if (bindings !== undefined) {
@@ -1577,7 +1663,7 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
         // `=>` continues a type (a function return type); a generic-close `>` ends a class/interface
         // header, so the two are read differently.
         return source[before - 1] === '='
-            ? typeExpressionBodyOpenBefore(source, openIndex)
+            ? arrowReturnBodyOpenBefore(source, openIndex)
             : classInterfaceBodyOpenBefore(source, openIndex);
     }
     if (isIdentifierStart(character)) {
@@ -1778,6 +1864,50 @@ function classInterfaceBodyOpenBefore(source: string, openIndex: number): boolea
         }
         return false;
     }
+}
+
+/**
+ * Whether the `{` at `openIndex` completes an arrow *type* — a function type whose return type is the
+ * object type `{` opens — rather than an arrow *function body*. `type X = () => {` and
+ * `const f: () => {` are types, so a `require`/`import` member inside is a declaration; `const f =
+ * () => {` is a value, so the body is a function body and a `require`/`import` name inside is a call.
+ */
+function arrowReturnBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = skipBackwardTrivia(source, openIndex - 1);
+    if (cursor < 1 || source[cursor] !== '>' || source[cursor - 1] !== '=') {
+        return false;
+    }
+    cursor = skipBackwardTrivia(source, cursor - 2);
+    if (cursor < 0 || source[cursor] !== ')') {
+        return false;
+    }
+    const afterParams = skipBackwardBalancedDelimited(source, cursor, '(', ')');
+    if (afterParams === undefined) {
+        return false;
+    }
+    cursor = skipBackwardTrivia(source, afterParams);
+    if (cursor < 0) {
+        return false;
+    }
+    const character = source[cursor];
+    if (character === ':') {
+        // A return-type or property annotation (`f(): () => {`, `const f: () => {`) is a type.
+        return true;
+    }
+    if (character === '=') {
+        // `type X = () => {` is a type alias; `const f = () => {` is a value arrow.
+        const beforeEqual = skipBackwardTrivia(source, cursor - 1);
+        if (beforeEqual < 0 || !isIdentifierContinue(source[beforeEqual])) {
+            return false;
+        }
+        const name = readWordBackward(source, beforeEqual);
+        const beforeName = skipBackwardTrivia(source, beforeEqual - name.length);
+        if (beforeName < 0) {
+            return false;
+        }
+        return readWordBackward(source, beforeName) === 'type';
+    }
+    return false;
 }
 
 /** The opening quote of the string literal whose closing quote is at `index`, or `undefined`. */
@@ -2682,19 +2812,91 @@ function closingParenAllowsRegex(source: string, closeParen: number): boolean {
 }
 
 /**
- * Whether the `{` at `openIndex` opens a `function` declaration body (possibly generator, generic,
- * or modifier-prefixed), whose closing `}` ends a statement rather than an expression.
+ * Whether a `}` at `closeBrace` closes a declaration body — a class, interface, enum, namespace, or
+ * function declaration, or a statement block — which ends a statement so a following `/` opens a
+ * regex. A `}` that closes an expression-position body (an object literal, a class or function
+ * expression, or an arrow function body) ends an expression, so a following `/` is division.
  */
-function functionBodyOpenBefore(source: string, openIndex: number): boolean {
-    let cursor = skipBackwardTrivia(source, openIndex - 1);
-    if (cursor < 0 || source[cursor] !== ')') {
+function closeBraceStartsStatement(source: string, closeBrace: number): boolean {
+    const open = skipBackwardBalancedDelimited(source, closeBrace, '{', '}');
+    if (open === undefined) {
         return false;
     }
-    const afterParams = skipBackwardBalancedDelimited(source, cursor, '(', ')');
+    return declarationBodyOpenBefore(source, open + 1);
+}
+
+/**
+ * Whether the `{` at `openIndex` opens a statement-level declaration body or a bare statement block,
+ * whose closing `}` ends a statement. The header's own tokens decide it — not merely that the header
+ * looks like a type — so an expression-position `{` stays expression-ending.
+ */
+function declarationBodyOpenBefore(source: string, openIndex: number): boolean {
+    const before = skipBackwardTrivia(source, openIndex - 1);
+    if (before < 0) {
+        return true; // start of input: a bare block statement
+    }
+    const character = source[before];
+    if (character === ';' || character === '{' || character === '}') {
+        return true; // a bare block statement after a statement boundary
+    }
+    if (character === ')') {
+        // A control header's `)` opens a block statement; a `function f()` header opens a function
+        // declaration. An arrow body is a `>` preceded by `=`, handled below.
+        return closingParenAllowsRegex(source, before) || functionDeclarationBodyOpenBefore(source, before);
+    }
+    if (character === '>') {
+        // `=>` is an arrow body (an expression); a generic close belongs to a class/interface header.
+        return source[before - 1] !== '=' && classInterfaceDeclarationBodyOpenBefore(source, openIndex);
+    }
+    if (isIdentifierContinue(character)) {
+        return classInterfaceDeclarationBodyOpenBefore(source, openIndex);
+    }
+    return false;
+}
+
+/** Modifiers that can precede a declaration keyword at statement position. */
+const DECLARATION_MODIFIER_KEYWORDS: ReadonlySet<string> = new Set([
+    'abstract',
+    'async',
+    'export',
+    'default',
+    'declare',
+]);
+
+/**
+ * Whether the declaration keyword starting at `keywordStart` sits at statement position: the token
+ * before it, after skipping leading modifiers, is a statement boundary or the start of input. A
+ * `class`/`function` after `=`, `(`, `,`, `return`, or another expression token is an expression.
+ */
+function isDeclarationStatementPosition(source: string, keywordStart: number): boolean {
+    let before = skipBackwardTrivia(source, keywordStart - 1);
+    while (before >= 0 && isIdentifierContinue(source[before])) {
+        const word = readWordBackward(source, before);
+        if (DECLARATION_MODIFIER_KEYWORDS.has(word)) {
+            before = skipBackwardTrivia(source, before - word.length);
+            continue;
+        }
+        return false;
+    }
+    if (before < 0) {
+        return true;
+    }
+    const character = source[before];
+    return character === ';' || character === '{' || character === '}';
+}
+
+/**
+ * Whether the `{` whose header's parameter list closes at `closeParen` opens a `function`
+ * declaration body — `function f() {`, including generator, generic, and modifier-prefixed forms —
+ * at statement position. A function *expression* (`const r = function g() {}`) has `function` after
+ * `=`, not a statement boundary, so it is refused.
+ */
+function functionDeclarationBodyOpenBefore(source: string, closeParen: number): boolean {
+    const afterParams = skipBackwardBalancedDelimited(source, closeParen, '(', ')');
     if (afterParams === undefined) {
         return false;
     }
-    cursor = skipBackwardTrivia(source, afterParams);
+    let cursor = skipBackwardTrivia(source, afterParams);
     if (cursor < 0) {
         return false;
     }
@@ -2722,35 +2924,68 @@ function functionBodyOpenBefore(source: string, openIndex: number): boolean {
             return false;
         }
     }
-    while (isIdentifierContinue(source[cursor])) {
-        const word = readWordBackward(source, cursor);
-        if (word === 'function') {
-            return true;
+    if (readWordBackward(source, cursor) !== 'function') {
+        return false;
+    }
+    return isDeclarationStatementPosition(source, cursor - 'function'.length);
+}
+
+/**
+ * Whether the `{` at `openIndex` opens a `class`/`interface`/`enum`/`namespace` declaration body at
+ * statement position, including generic and heritage headers. An anonymous `class {}` is always an
+ * expression, and a named class after `=` (`const r = class C {}`) has `class` after `=`, so both are
+ * refused.
+ */
+function classInterfaceDeclarationBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = openIndex - 1;
+    while (true) {
+        cursor = skipBackwardTrivia(source, cursor);
+        if (cursor < 0) {
+            return false;
         }
-        if (word === 'async' || word === 'export' || word === 'default' || word === 'declare') {
-            cursor = skipBackwardTrivia(source, cursor - word.length);
-            if (cursor < 0) {
+        const character = source[cursor];
+        if (character === '>') {
+            if (cursor >= 1 && source[cursor - 1] === '=') {
+                return false; // `=>` arrow body
+            }
+            const afterOpen = skipBackwardBalancedDelimited(source, cursor, '<', '>');
+            if (afterOpen === undefined) {
                 return false;
             }
+            cursor = afterOpen;
+            continue;
+        }
+        if (character === ')' || character === ']') {
+            const afterOpen = skipBackwardBalancedDelimited(source, cursor, character === ')' ? '(' : '[', character);
+            if (afterOpen === undefined) {
+                return false;
+            }
+            cursor = afterOpen;
+            continue;
+        }
+        if (isIdentifierContinue(character)) {
+            const word = readWordBackward(source, cursor);
+            if (
+                word === 'class' ||
+                word === 'interface' ||
+                word === 'enum' ||
+                word === 'namespace' ||
+                word === 'module'
+            ) {
+                return isDeclarationStatementPosition(source, cursor - word.length);
+            }
+            if (BLOCK_INTRODUCER_KEYWORDS.has(word)) {
+                return false;
+            }
+            cursor -= word.length;
+            continue;
+        }
+        if (character === '.' || character === ',') {
+            cursor -= 1;
             continue;
         }
         return false;
     }
-    return false;
-}
-
-/**
- * Whether a `}` at `closeBrace` closes a class, interface, or function declaration body, which ends
- * a statement so a following `/` opens a regex. An object-literal or statement-block close ends an
- * expression, so a following `/` is division.
- */
-function closeBraceStartsStatement(source: string, closeBrace: number): boolean {
-    const open = skipBackwardBalancedDelimited(source, closeBrace, '{', '}');
-    if (open === undefined) {
-        return false;
-    }
-    const openIndex = open + 1;
-    return classLikeBodyOpenBefore(source, openIndex) || functionBodyOpenBefore(source, openIndex);
 }
 
 /**
