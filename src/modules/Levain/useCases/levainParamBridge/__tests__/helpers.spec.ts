@@ -279,6 +279,23 @@ describe('createLevainBridge', () => {
             expect(device.setParam).not.toHaveBeenCalledWith('mic_2_volume', expect.any(Number));
         });
 
+        it('writes Close on mic_1_volume and Room on mic_0_volume when the loaded bank orders room first', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', ['room', 'close']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            // Room sits at index 0 here, Close at index 1 — the reverse of the
+            // decca-tree-omitted case above — so each type's volume must still
+            // follow its own loaded index, not the fixed index that case used.
+            expect(device.setParam).toHaveBeenCalledWith('mic_1_volume', 0.7);
+            expect(device.setParam).toHaveBeenCalledWith('mic_0_volume', 0.6);
+        });
+
         it('writes no mic parameter when the loaded bank carries no room mic', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);

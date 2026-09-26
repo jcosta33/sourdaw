@@ -124,6 +124,23 @@ describe('MicBlendSlider — resolves close/room by loaded type, not fixed index
         expect(onSend).not.toHaveBeenCalledWith(2, expect.anything(), expect.anything());
     });
 
+    it('writes Close on mic_1 and Room on mic_0 when the loaded bank orders room first', () => {
+        const onUpdate = vi.fn();
+        const onSend = vi.fn();
+        render(
+            <MicBlendSlider
+                micPositions={loadedMics(['room', 'close'])}
+                onSendMicParam={onSend}
+                onUpdateMicPosition={onUpdate}
+            />
+        );
+        fireEvent.change(screen.getByTestId('blend-knob'), { target: { value: '0.6' } });
+        expect(onUpdate).toHaveBeenCalledWith(1, { volume: 0.4 });
+        expect(onUpdate).toHaveBeenCalledWith(0, expect.objectContaining({ volume: 0.6 }));
+        expect(onSend).toHaveBeenCalledWith(1, 'volume', 0.4);
+        expect(onSend).toHaveBeenCalledWith(0, 'volume', 0.6);
+    });
+
     it('renders no compact blend when the loaded bank carries no room mic', () => {
         const { container } = render(
             <MicBlendSlider
