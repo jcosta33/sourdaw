@@ -270,8 +270,11 @@ than minting a second one.
 `review:prepare` logs `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`
 reconstructed from the pull request's public review history; once `<n>` reaches the
 escalation threshold it also names the bundle's `reassessment.json` as the action
-required before the next publication. The threshold is the single constant
-`REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts`. A fresh
+required before the next publication, and once `<n>` reaches the freeze threshold it logs
+`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` instead and stops naming that
+action, because a frozen pull request takes no caller document. The thresholds are the
+constants `REVIEW_ROUND_ESCALATION_THRESHOLD` and `REVIEW_ROUND_FREEZE_THRESHOLD` in
+`scripts/reviewRoundEscalation.ts`. A fresh
 reviewer publication at or above it refuses before any remote write until the caller
 writes `reassessment.json` beside `dossier.json`, `format: 'reassessment-v1'`, carrying
 `pr`, `headSha`, `baseSha`, `roundsObserved`, `threshold`, `action` of

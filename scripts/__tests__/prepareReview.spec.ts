@@ -208,9 +208,10 @@ describe('review prepare', () => {
     });
 
     it.each([
+        [REVIEW_ROUND_ESCALATION_THRESHOLD, undefined, true],
         [REVIEW_ROUND_FREEZE_THRESHOLD - 1, 'review-round-freeze-warning', true],
         [REVIEW_ROUND_FREEZE_THRESHOLD, 'review-round-freeze', false],
-    ])('logs %s rounds with the freeze signal', (rounds, flag, directsReassessment) => {
+    ])('logs %s rounds with the freeze signal it has earned', (rounds, flag, directsReassessment) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
         const { port, logs } = fakePort(root);
         port.reviews = () =>
@@ -224,7 +225,14 @@ describe('review prepare', () => {
         port.reviewComments = () => [];
         try {
             prepareReview(42, port);
-            expect(logs).toContain(`${flag}:42:request-changes=${rounds}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`);
+            const freezeLines = logs.filter((line) => line.includes('review-round-freeze'));
+            if (flag === undefined) {
+                expect(freezeLines).toEqual([]);
+            } else {
+                expect(freezeLines).toEqual([
+                    `${flag}:42:request-changes=${rounds}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`,
+                ]);
+            }
             expect(logs.some((line) => line.includes('before the next publication'))).toBe(directsReassessment);
         } finally {
             removeTempRoot(root);
