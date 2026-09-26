@@ -276,6 +276,18 @@ describe('assertSemanticAssessmentAcknowledged', () => {
         ).toThrow(/semantic-ci absent/);
     });
 
+    it('refuses a limitation-only round whose limitation cites the wrong reason for the no-assessment record', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
     it('passes a no-assessment record when the impact is limitation-only with a citing limitation', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(

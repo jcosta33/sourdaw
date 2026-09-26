@@ -5462,6 +5462,24 @@ describe('fresh reviewer dossier publication', () => {
             }
         });
 
+        it('refuses a no-assessment record whose limitation cites the wrong reason, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
+                }),
+                semanticCi: noAssessmentSemanticCi({ reason: 'absent' }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(/semantic-ci absent/u);
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
         it('publishes a no-assessment record whose limitation cites it', () => {
             const fixture = dossierFixture({
                 plan: riskPlan(),
