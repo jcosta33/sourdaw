@@ -258,7 +258,7 @@ describe('parseProjectXml — clip parsing', () => {
         expect(result.tracks[0]?.clips).toHaveLength(0);
     });
 
-    it('derives duration from playStop when duration is absent', () => {
+    it('derives an omitted duration from the playStop - playStart window', () => {
         const inner =
             '<Structure><Track id="t0" contentType="notes"/></Structure>' +
             '<Arrangement><Lanes><Clips track="t0">' +
@@ -266,9 +266,10 @@ describe('parseProjectXml — clip parsing', () => {
             '</Clips></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
         const clip = result.tracks[0]?.clips[0];
-        // start 1, playStop 5 → duration 4 → end exactly 5
+        // The DAWproject Reference infers an omitted duration from the content
+        // window playStop - playStart: 5 - 0 = 5 → start 1, end 6.
         expect(clip?.startBeat).toBe(1);
-        expect(clip?.endBeat).toBe(5);
+        expect(clip?.endBeat).toBe(6);
     });
 
     it('falls back to a "Clip N" name when the clip has none', () => {
@@ -311,6 +312,31 @@ describe('parseProjectXml — time-unit conversion', () => {
         const note = clip && clip.type === 'midi' ? clip.notes?.[0] : undefined;
         expect(note?.startBeat).toBe(120);
     });
+
+    it('reads clip note times in the clip content unit, not the timeline unit', () => {
+        // The clip sits on a beats arrangement but declares
+        // contentTimeUnit="seconds". Per the DAWproject Reference,
+        // contentTimeUnit affects the content — the Notes here — but not the
+        // clip's time and duration, which stay in beats.
+        const transport = '<Transport><Tempo value="120"/></Transport>';
+        const inner =
+            '<Structure><Track id="t0" contentType="notes"/></Structure>' +
+            '<Arrangement><Lanes><Clips track="t0">' +
+            '<Clip time="0" duration="8" contentTimeUnit="seconds"><Notes>' +
+            '<Note time="2.5" duration="0.5" key="60"/>' +
+            '</Notes></Clip>' +
+            '</Clips></Lanes></Arrangement>';
+        const result = parseProjectXml(project(inner, transport));
+        const clip = result.tracks[0]?.clips[0];
+        // Clip window stays in the timeline unit: 0..8 beats.
+        expect(clip?.startBeat).toBe(0);
+        expect(clip?.endBeat).toBe(8);
+        const note = clip && clip.type === 'midi' ? clip.notes?.[0] : undefined;
+        // 2.5s at 120bpm = 5 beats; 0.5s = 1 beat. A timeline-unit fallback
+        // would leave the note at beat 2.5 with duration 0.5.
+        expect(note?.startBeat).toBe(5);
+        expect(note?.duration).toBe(1);
+    });
 });
 
 describe('parseProjectXml — master-track automation', () => {
@@ -321,7 +347,7 @@ describe('parseProjectXml — master-track automation', () => {
             '<RealPoint time="4" value="140"/>' +
             '</Points></Automation></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
-        expect(result.tempoChanges).toEqual([{ beat: 4, tempo: 140 }]);
+        expect(result.tempoChanges).toEqual([{ beat: 4, tempo: 140, curve: 'instant' }]);
     });
 
     it('parses time-signature automation points', () => {

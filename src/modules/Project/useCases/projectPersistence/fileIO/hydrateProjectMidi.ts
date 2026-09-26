@@ -86,5 +86,9 @@ export function hydrateProjectMidi(midi: ProjectMidi): HydratedProjectMidi {
         hydrated.probabilitySeed = midi.probabilitySeed;
     }
 
+    if (midi.noteCoordinateFormat !== undefined) {
+        hydrated.noteCoordinateFormat = midi.noteCoordinateFormat;
+    }
+
     return hydrated;
 }

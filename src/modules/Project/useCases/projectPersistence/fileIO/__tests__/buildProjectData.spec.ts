@@ -44,12 +44,13 @@ const chordTrackStoreMock = vi.hoisted(() => ({
         events: [{ id: 'chord-1', beat: 0, root: 9, quality: 'minor' as const, duration: 4 }],
     },
 }));
+const midiStoreMock = vi.hoisted((): { value: Record<string, unknown> } => ({
+    value: { probabilitySeed: 0xdecafbad, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+}));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     chordTrackStore: chordTrackStoreMock,
-    midiStore: {
-        value: { probabilitySeed: 0xdecafbad, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-    },
+    midiStore: midiStoreMock,
 }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { value: { tempo: 120 } },
@@ -121,6 +122,12 @@ describe('buildProjectData', () => {
     beforeEach(() => {
         agentProjectRepairStateStoreMock.value = null;
         trackStoreMock.value.tracks = [];
+        midiStoreMock.value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
         for (const key of Object.keys(yeastRacksMock)) {
             delete yeastRacksMock[key];
         }
@@ -638,5 +645,53 @@ describe('buildProjectData', () => {
         expect(built?.data.midi.probabilitySeed).toBe(0xdecafbad);
         expect(arrangementMidi).toEqual({ notesByClipId: { legacy: [] }, ccByClipId: {}, pitchBendByClipId: {} });
         expect(arrangementMidi).not.toHaveProperty('probabilitySeed');
+    });
+
+    // The serialization route for the coordinate stamp: the live store's stamp
+    // becomes the top-level midi block and every arrangement snapshot keeps
+    // its own, so a reopened project restores stamped stores instead of
+    // re-arming the legacy coordinate migration. Mutation: dropping the
+    // arrangements-block stamp hunk reds the stamped-arrangement assertion
+    // only; dropping serializeProjectMidi's passthrough reds both blocks.
+    it('carries the clip-relative coordinate stamp into the top-level and per-arrangement midi blocks', async () => {
+        arrangementStoreMock.value = {
+            arrangements: [
+                {
+                    id: 'arrangement-stamped',
+                    name: 'Stamped',
+                    tracks: { tracks: [], selectedTrackId: null },
+                    automation: { lanes: [] },
+                    midi: {
+                        notesByClipId: {},
+                        ccByClipId: {},
+                        pitchBendByClipId: {},
+                        noteCoordinateFormat: 'clip-relative',
+                    },
+                },
+                {
+                    id: 'arrangement-legacy',
+                    name: 'Legacy',
+                    tracks: { tracks: [], selectedTrackId: null },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+            ],
+            activeArrangementId: 'arrangement-stamped',
+        };
+        midiStoreMock.value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            noteCoordinateFormat: 'clip-relative',
+        };
+
+        const built = await buildProjectData();
+
+        expect(built?.data.midi.noteCoordinateFormat).toBe('clip-relative');
+        const stamped = built?.data.arrangements?.find((arrangement) => arrangement.id === 'arrangement-stamped');
+        const legacy = built?.data.arrangements?.find((arrangement) => arrangement.id === 'arrangement-legacy');
+        expect(stamped?.midi).toHaveProperty('noteCoordinateFormat', 'clip-relative');
+        expect(legacy?.midi).not.toHaveProperty('noteCoordinateFormat');
     });
 });
