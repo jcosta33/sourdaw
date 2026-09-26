@@ -1,0 +1,26 @@
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectDrumPreviewCandidateNotes.spec.ts
+  s_2bfd55a4393d7c::t_50b5a4ae76c708 3
+  s_2bfd55a4393d7c::t_05188d94c197eb 65-81,83-84,86-89,91-94
+  s_2bfd55a4393d7c::t_d5789f06126361 62-64,82,85,90
+  s_2bfd55a4393d7c::t_1ce7da6167585d 61
+src/modules/MIDI/useCases/midiNoteTransforms/projectDrumPreviewCandidateNotes.ts
+  s_2bfd55a4393d7c::t_8f70998ccd25c7 63
+  s_2bfd55a4393d7c::t_047dc06e1113c1 93
+  s_2bfd55a4393d7c::t_c706aa9560de5c 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5471b45db55d45b98b435830a1a3ce0b1e68abdf",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
