@@ -1,0 +1,27 @@
+scripts/testInstructions.ts
+  s_ef536aab624565::t_2181bd488efb15 578-579
+  s_ef536aab624565::t_99d77f44be51a6 374
+  s_ef536aab624565::t_3f885872c856df 445-452
+  s_ef536aab624565::t_5e8419a6bc2bcb 45-60,444
+scripts/__tests__/prContract.spec.ts
+  s_ef536aab624565::t_f9ad281b91dadc 1079-1089
+  s_ef536aab624565::t_62ebe6725f5207 1078,1116-1127
+scripts/testInstructionVocabulary.ts
+  s_ef536aab624565::t_8a63649fa30eed 42-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4892600906d4fb06515a33808cb582f14b4c8b44",
+  "prompts": {},
+  "sessions": {
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
