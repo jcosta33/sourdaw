@@ -365,8 +365,12 @@ record beside `assessmentImpact` and covered by `dossierDigest`, so the
 acknowledgement is bound to what was accepted; records persisted before it
 existed keep replaying byte-identically. It records an acknowledgement, never
 agreement, and confers no verdict, approval or merge authority — ADR 0047 still
-governs. A bundle with no `semantic-ci.json` — a historical bundle, or a head
-whose assessment was never delivered — carries no such requirement.
+governs. When the record instead shows `no-assessment` — CI ran and delivered
+nothing for the head — `review:publish` refuses `assessmentImpact: none`
+outright, with or without a reason, and refuses any dossier with no
+limitations regardless of impact: there is nothing to cite, so the round must
+disclose the gap as a limitation instead. A bundle with no `semantic-ci.json`
+file at all — a historical bundle — still carries no such requirement.
 
 Dossier evidence, limitations, and approval-claim values must be single-line,
 trimmed and bounded, and are refused when they carry a credential-shaped value,

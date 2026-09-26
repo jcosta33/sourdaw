@@ -30,13 +30,22 @@ const STANCE: ReviewDossierEvent = {
     outcome: 'clean',
 };
 
+/** Satisfies `finding-led`'s own construction-time requirement for at least one accepted finding. */
+const FINDING_ACCEPTED: ReviewDossierEvent = {
+    kind: 'finding-accepted',
+    findingId: 'finding-1',
+    path: 'scripts/reviewDossierSemanticAssessment.ts',
+    line: 1,
+    side: 'RIGHT',
+};
+
 function dossierWith(
     impact: AssessmentImpact,
-    options: { reason?: string; limitations?: string[] } = {}
+    options: { reason?: string; limitations?: string[]; events?: ReviewDossierEvent[] } = {}
 ): ReviewDossier {
     return assembleReviewDossier({
         plan: PLAN,
-        events: [STANCE],
+        events: options.events ?? [STANCE],
         discarded: [],
         evidence: [],
         limitations: options.limitations ?? [],
@@ -215,13 +224,67 @@ describe('assertSemanticAssessmentAcknowledged', () => {
         ).not.toThrow();
     });
 
-    it('passes a no-assessment record', () => {
+    it('refuses a no-assessment record when the impact is none, even with a limitation', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(
-                dossierWith('none'),
+                dossierWith('none', { limitations: ['ci delivered no semantic assessment for this head'] }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/assessmentImpact none/);
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { limitations: ['ci delivered no semantic assessment for this head'] }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/no semantic assessment/);
+    });
+
+    it('refuses a no-assessment record when the impact is none plus an assessmentIgnoredReason', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'ci ran red on this head' }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/assessmentImpact none/);
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'ci ran red on this head' }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/no semantic assessment/);
+    });
+
+    it('passes a no-assessment record when the impact is limitation-only with a disclosing limitation', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', { limitations: ['ci delivered no semantic assessment for this head'] }),
                 parseSemanticAssessmentCoverage(NO_ASSESSMENT),
                 EXPECTED
             )
         ).not.toThrow();
+    });
+
+    it('refuses a no-assessment record with no limitations though the impact is finding-led', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('finding-led', { events: [STANCE, FINDING_ACCEPTED] }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/records no limitations/);
+    });
+
+    it('refuses a no-assessment record bound to another publication before the impact is checked', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none'),
+                parseSemanticAssessmentCoverage({ ...NO_ASSESSMENT, pr: 99, headSha: 'f'.repeat(40) }),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci record pr 99 headSha f{40} does not match the publication pr 42 headSha a{40}/);
     });
 });
