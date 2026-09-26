@@ -1,0 +1,32 @@
+.agents/decisions/0050-fired-semantic-signals-carry-a-disposal-duty.md
+  h_beb54bf43b47b7 1-80
+.agents/decisions/README.md
+  h_beb54bf43b47b7 17-66
+AGENTS.md
+  h_beb54bf43b47b7 156-160,164-165
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 5469-5591
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  h_beb54bf43b47b7 6,43-51,54-59,64,117,130,134-157,364-497
+scripts/__tests__/semanticReviewContext.spec.ts
+  h_beb54bf43b47b7 255-344
+scripts/reviewDossierPublication.ts
+  h_beb54bf43b47b7 49,245-248,257,262-266,282-299
+scripts/reviewDossierSemanticAssessment.ts
+  h_beb54bf43b47b7 24-34,38,114-149,160,167-169,196,223-268,272-284,289-290,314
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 30,339-343,356-364
+scripts/semanticReviewContext.ts
+  h_beb54bf43b47b7 18-27,35,44,69-103,122-123,500
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1a8f398996d6570086bd8a2bf9b81e2b2233eff1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
