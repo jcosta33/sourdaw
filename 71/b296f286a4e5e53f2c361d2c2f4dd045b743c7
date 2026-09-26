@@ -1,0 +1,59 @@
+src/modules/Arrangement/useCases/__tests__/renderAgentMeasurementTarget.spec.ts
+  s_1c08b47ac3792f::t_3ee674913b5143 5
+  s_1c08b47ac3792f::t_61b121cffc0a81 1-4,6-73
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_1c08b47ac3792f::t_75a3065a50b422 40-45,49,51-54,56-60,62-66,68-74
+  s_1c08b47ac3792f::t_eaa4c6361bde11 298
+  s_1c08b47ac3792f::t_36245e5b65978c 404
+  s_1c08b47ac3792f::t_cd09ada3a50d26 161
+  s_1c08b47ac3792f::t_772fde3c4dee9d 117-126
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_1c08b47ac3792f::t_316ed65961e7c8 122-125
+src/modules/AudioEngine/useCases/index.ts
+  s_1c08b47ac3792f::t_e276d619f1d188 158-159
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_1c08b47ac3792f::t_7474b5a6e689d3 784-813
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts
+  s_1c08b47ac3792f::t_05291663733b60 98-104,106-112
+  s_1c08b47ac3792f::t_6d7a4a068bef58 5
+  s_1c08b47ac3792f::t_32ec65ccceff4a 1-4,6-60,65-97,105,113-140
+  s_1c08b47ac3792f::t_3006a7ce963b4e 61-64
+src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts
+  s_1c08b47ac3792f::t_df3c45d6f7c660 372-380
+  s_1c08b47ac3792f::t_310d58df883fea 503-513,533,544-584
+  s_1c08b47ac3792f::t_978165d3f71037 323-332
+  s_1c08b47ac3792f::t_0346433afbaca3 193-211,213,216
+  s_1c08b47ac3792f::t_ea570d10ed714c 364-371,381
+  s_1c08b47ac3792f::t_30e7af882fbb7a 514-532,534-543
+src/modules/Arrangement/useCases/resolveAgentMeasurementTargets.ts
+  s_1c08b47ac3792f::t_8d256a753a7516 19
+  s_1c08b47ac3792f::t_cac25f6c311bb2 40-43
+  s_1c08b47ac3792f::t_bc87d5f664056f 49,63-65,75-79,85-90
+  s_1c08b47ac3792f::t_0ce4b1e8d76ce7 146-151
+  s_1c08b47ac3792f::t_dd869ad3fdf09f 167-172
+  s_1c08b47ac3792f::t_0c299478f3f4fb 31,33
+src/modules/AudioRendering/useCases/__tests__/agentMeasurementArtifactRetention.spec.ts
+  s_1c08b47ac3792f::t_8980dc4ebe3b7a 15
+  s_1c08b47ac3792f::t_dbfae11562d530 1-14,16-139
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  s_1c08b47ac3792f::t_454a0dc7d4fe1b 81-87,99-110
+  s_1c08b47ac3792f::t_9cd0c60283d662 2
+src/modules/Arrangement/useCases/renderAgentMeasurementTarget.ts
+  s_1c08b47ac3792f::t_a44796ececb82d 38-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "71b296f286a4e5e53f2c361d2c2f4dd045b743c7",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
