@@ -27,6 +27,7 @@ import {
     COMMAND_BATCH_DECLINE_MAX_QUESTIONS,
     COMMAND_BATCH_DECLINE_MAX_REASON_LENGTH,
 } from '../models/CommandBatchDecline';
+import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
@@ -265,13 +266,21 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         getCommandIndexSearchSchema(),
         tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            'Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority.',
+            `Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority. A large descriptor's receipt can exceed the per-call budget and come back as tool-receipt-too-large; when that happens, request that one type alone with page: { cursor, limit } (limit up to ${String(DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT)}) to read its parameters — including any declared legal value set and operating guidance — one bounded window at a time, following nextCursor until it is null.`,
             {
                 types: {
                     type: 'array',
                     minItems: 1,
                     maxItems: 8,
                     items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+                page: {
+                    type: 'object',
+                    properties: {
+                        limit: { type: 'integer', minimum: 1, maximum: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT },
+                        cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
+                    },
+                    additionalProperties: false,
                 },
             },
             ['types']

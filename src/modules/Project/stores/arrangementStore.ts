@@ -330,6 +330,8 @@ export type ProjectMidiState = {
     /** Durable MIDI store field the sync writer embeds wholesale into this
      * section (see syncArrangement); absent in the explicit 3-key build. */
     probabilitySeed?: number;
+    /** Coordinate format of the stored note positions; absent means a pre-stamp snapshot. */
+    noteCoordinateFormat?: 'clip-relative';
 };
 
 export type ArrangementSnapshot = {
@@ -374,7 +376,7 @@ const SNAPSHOT_OPTIONAL_KEYS = ['tempoMap', 'timeSignatureMap', 'markers', 'take
 const TRACKS_SECTION_KEYS = ['tracks', 'selectedTrackId'] as const;
 const AUTOMATION_SECTION_KEYS = ['lanes'] as const;
 const MIDI_SECTION_KEYS = ['notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
-const MIDI_SECTION_OPTIONAL_KEYS = ['probabilitySeed'] as const;
+const MIDI_SECTION_OPTIONAL_KEYS = ['probabilitySeed', 'noteCoordinateFormat'] as const;
 const CHANGES_SECTION_KEYS = ['changes'] as const;
 const MARKERS_SECTION_KEYS = ['markers', 'sections'] as const;
 const TAKE_LANES_SECTION_KEYS = ['lanes'] as const;
@@ -688,7 +690,11 @@ function is_exact_midi_section(value: unknown): value is ProjectMidiState {
         // The live MIDI store guarantees a valid seed on every write path, so
         // a present-but-invalid one is content this build cannot read and
         // must not pass exact (it falls through to normalize, which drops it).
-        (!Object.hasOwn(value, 'probabilitySeed') || isValidMidiProbabilitySeed(value.probabilitySeed))
+        (!Object.hasOwn(value, 'probabilitySeed') || isValidMidiProbabilitySeed(value.probabilitySeed)) &&
+        // Same trust boundary for the coordinate stamp: only the one format
+        // this build reads may pass exact; anything else falls through to
+        // normalize, which drops it rather than letting the migration guess.
+        (!Object.hasOwn(value, 'noteCoordinateFormat') || value.noteCoordinateFormat === 'clip-relative')
     );
 }
 
@@ -701,6 +707,10 @@ function normalize_midi_section(value: unknown): ProjectMidiState | null {
         ccByClipId: normalize_midi_clip_map<ProjectMidiCC>(value.ccByClipId),
         pitchBendByClipId: normalize_midi_clip_map<ProjectMidiPitchBend>(value.pitchBendByClipId),
         ...(isValidMidiProbabilitySeed(value.probabilitySeed) ? { probabilitySeed: value.probabilitySeed } : {}),
+        // A degraded section keeps a stamp that itself survived validation;
+        // dropping a valid one would re-arm the coordinate migration over
+        // data it must never rewrite.
+        ...(value.noteCoordinateFormat === 'clip-relative' ? { noteCoordinateFormat: value.noteCoordinateFormat } : {}),
     };
 }
 

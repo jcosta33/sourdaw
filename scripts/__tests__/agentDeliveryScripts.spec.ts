@@ -60,15 +60,21 @@ import { runRulesetHardeningCli } from '../rulesetHardening.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
+    commandEntries,
     defaultPort,
     executeTrustedSnapshot,
     fetchOriginMain,
     resolveTrustedLauncherBinding,
     resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
-    trustedGitReadEnv,
+    snapshotComputedDynamicSpecifiers,
+    snapshotImportSpecifiers,
+    trustedDependencyGraphs,
     trustedDependencyPaths,
+    trustedGitReadEnv,
+    trustedLocalImportClosure,
     trustedSnapshotEnv,
+    type TrustedGithubWriteCommand,
     type TrustedLauncherBinding,
 } from '../trustedGithubWriteBootstrap.ts';
 
@@ -640,6 +646,37 @@ function runTrustedDeliverWithLoader(loader: string): Promise<number> {
         readOriginSource: (_commit, candidate) => (candidate === BOOTSTRAP_PATH ? loader : 'trusted'),
         executeSnapshot: async () => 0,
     });
+}
+
+function readRepositorySource(): (path: string) => string | undefined {
+    const repositoryRoot = join(import.meta.dirname, '..', '..');
+    return (path: string): string | undefined => {
+        try {
+            return readFileSync(join(repositoryRoot, path), 'utf8');
+        } catch {
+            return undefined;
+        }
+    };
+}
+
+/**
+ * The per-command closure contract: the declared set must start with the loader, carry the runtime's
+ * own entry path at `[1]`, and equal exactly the static local-import closure of that entry plus the
+ * loader's own static closure. Entry and closure are both derived from the runtime, never from the
+ * declared array under test, so a swapped or truncated declaration reddens.
+ */
+function assertDeclaredClosure(
+    command: TrustedGithubWriteCommand,
+    declared: readonly string[],
+    readSource: (path: string) => string | undefined
+): void {
+    expect(declared[0], `${command} declared loader`).toBe(BOOTSTRAP_PATH);
+    expect(declared[1], `${command} declared entry`).toBe(commandEntries[command].path);
+    const expected = new Set(trustedLocalImportClosure(commandEntries[command].path, readSource));
+    for (const path of trustedLocalImportClosure(BOOTSTRAP_PATH, readSource)) {
+        expected.add(path);
+    }
+    expect(new Set(declared), `${command} declared closure`).toEqual(expected);
 }
 
 type WorkflowRecord = Record<string, unknown>;
@@ -1372,17 +1409,8 @@ describe('package scripts and gitignore', () => {
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/confirmReviewRepairs.ts',
                     'scripts/reviewRepair.ts',
-                    'scripts/reviewDossier.ts',
-                    'scripts/reviewDossierBindings.ts',
-                    'scripts/reviewDossierReassessed.ts',
-                    'scripts/reviewDossierChain.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
-                    'scripts/reviewRiskPolicy.ts',
-                    'scripts/reviewDiffSummary.ts',
-                    'scripts/wasm-artifacts.ts',
-                    'scripts/wasmToolchainPins.ts',
-                    'scripts/workspaceManifestFingerprint.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1477,6 +1505,123 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * The graph check above only proves the declared set is closed under imports — it walks the
+     * declared sources and refuses a missing or unexpected one — so it cannot see a source the graph
+     * declares but the command never reaches, nor one the command reaches but the graph omits. This
+     * check computes each command's static local-import closure (type-only edges included) from its
+     * runtime entry with the same import scan, and requires the declared set to equal exactly that
+     * closure plus the loader's own static closure. A source copied into the graph without a real
+     * import, or dropped from it while still imported, reddens.
+     */
+    it('declares exactly each command static local import closure, so over- and under-declaration redden', () => {
+        const readSource = readRepositorySource();
+        for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
+            assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+        }
+    });
+
+    /**
+     * The entry the closure is walked from must come from the runtime's own command table, never from
+     * the declared array itself: `declared[1]` is part of the value under test, so a declaration whose
+     * entry is swapped for another declared path — type-valid, the same set — would pass every check
+     * while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. A same-set permutation leaves
+     * the entry-position assertion as the only thing that can fail, so removing it reddens this case.
+     */
+    it('refuses a declaration whose entry is not the command runtime entry', () => {
+        const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const entry = declared[1]!;
+        const neighbour = declared[2]!;
+        declared[1] = neighbour;
+        declared[2] = entry;
+
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared entry/);
+    });
+
+    /**
+     * The loader must sit at `declared[0]`, not merely be present: the set comparison cannot see
+     * order, so a declaration that buries the loader still satisfies it. Swapping the loader out of
+     * position zero keeps the set identical, so only the loader-position assertion can fail.
+     */
+    it('refuses a declaration that does not start with the loader', () => {
+        const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const loader = declared[0]!;
+        const neighbour = declared[2]!;
+        declared[0] = neighbour;
+        declared[2] = loader;
+
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared loader/);
+    });
+
+    /**
+     * The static closure is a deliberate superset of the executed graph: `import type` and
+     * `export type ... from` edges are counted even though Node's type stripping erases them, because
+     * the same union feeds the governance risk classification and must not shrink. This pins that
+     * over-approximation so a future scanner that dropped type-only edges would redden.
+     */
+    it('includes type-only import edges in the static closure', () => {
+        const readSource = (path: string): string | undefined => {
+            const fixtures: Record<string, string> = {
+                'scripts/entry.ts':
+                    "import type { A } from './typeOnly.ts';\nexport type { B } from './reExported.ts';",
+                'scripts/typeOnly.ts': 'export type A = string;',
+                'scripts/reExported.ts': 'export type B = number;',
+            };
+            return fixtures[path];
+        };
+
+        expect([...trustedLocalImportClosure('scripts/entry.ts', readSource)].sort()).toEqual([
+            'scripts/entry.ts',
+            'scripts/reExported.ts',
+            'scripts/typeOnly.ts',
+        ]);
+    });
+
+    /**
+     * The declared set must include the loader's whole static closure, not just the loader file. On
+     * this tree the loader imports only `prContract.ts`, which every command already declares, so
+     * pinning `{BOOTSTRAP_PATH}` and pinning `closure(BOOTSTRAP_PATH)` are indistinguishable. A
+     * synthetic loader whose closure adds a path no command reaches breaks the tie: the declared set
+     * must grow to include that path, or the closure assertion refuses.
+     */
+    it('pins the loader own static closure to the declared set, not just the loader file', () => {
+        const realRead = readRepositorySource();
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+        const syntheticLoader = `${loader}\nimport './loaderOnlyLocal.ts';\n`;
+        const readSource = (path: string): string | undefined => {
+            if (path === BOOTSTRAP_PATH) {
+                return syntheticLoader;
+            }
+            if (path === 'scripts/loaderOnlyLocal.ts') {
+                return 'export {};\n';
+            }
+            return realRead(path);
+        };
+
+        expect(() => assertDeclaredClosure('deliver', trustedDependencyGraphs.deliver, readSource)).toThrow(
+            /declared closure/
+        );
+    });
+
+    /**
+     * The loader's static local imports must resolve inside the declared snapshot exactly like every
+     * other source's: a local import the snapshot cannot satisfy would die mid-delivery with
+     * `ERR_MODULE_NOT_FOUND` the moment the loader ran. The runtime graph assertion is the rule that
+     * refuses it, and this drives that assertion through `runTrustedGithubWriteCommand` with a
+     * synthetic loader whose local import is undeclared — exempting the loader from the runtime
+     * local-dependency rule would leave no case that reddens.
+     */
+    it('refuses a loader local import the declared snapshot cannot resolve', async () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+        const syntheticLoader = `${loader}\nimport './loaderOnlyLocal.ts';\n`;
+
+        await expect(runTrustedDeliverWithLoader(syntheticLoader)).rejects.toThrow(
+            /scripts\/trustedGithubWriteBootstrap\.ts imports unchecked local dependency scripts\/loaderOnlyLocal\.ts/
+        );
+    });
+
+    /**
      * The snapshot is a temporary directory holding nothing but `scripts/`, so Node resolves a bare
      * specifier upward from there, finds no `node_modules`, and kills the command with
      * `ERR_MODULE_NOT_FOUND` partway through a delivery. Checking only local specifiers left that
@@ -1513,6 +1658,610 @@ describe('package scripts and gitignore', () => {
         expect(await snapshotRefusalFor("import { BOOTSTRAP_PATH } from './trustedGithubWriteBootstrap.ts';")).toMatch(
             /scripts\/deliverPullRequest\.ts imports scripts\/trustedGithubWriteBootstrap\.ts, which the trusted snapshot never executes/
         );
+    });
+
+    /**
+     * A dynamic module load whose specifier is computed — `import(expr)`, `require(expr)`, or
+     * `createRequire(...)(expr)` — is not a literal the graph can check, and the snapshot writes only
+     * the declared sources, so it resolves nothing at delivery time. The graph assertion must refuse
+     * it, naming the file and the shape, rather than silently skipping it while reporting coverage it
+     * does not have.
+     */
+    it.each([
+        {
+            label: 'a computed dynamic import',
+            poisoned: "const specifier = './unchecked.ts';\nawait import(specifier);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a computed require',
+            poisoned: "const specifier = './unchecked.ts';\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a computed createRequire specifier',
+            poisoned: "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)(someVariable);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a computed require.resolve',
+            poisoned: "const specifier = './unchecked.ts';\nrequire.resolve(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import template with a substitution',
+            poisoned: "const name = 'unchecked';\nawait import(`./${name}.ts`);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a concatenated dynamic import specifier',
+            poisoned: "const suffix = '.bak';\nawait import('./canonicalRecord.ts' + suffix);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a member-called dynamic import specifier',
+            poisoned: "await import('./canonicalRecord.ts'.replace('.ts', '.bak'));",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a parenthesised literal concatenated with a suffix',
+            poisoned: "const suffix = '.bak';\nawait import(('./canonicalRecord.ts') + suffix);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a concatenated require specifier',
+            poisoned: "const suffix = '.bak';\nrequire('./canonicalRecord.ts' + suffix);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a member-called require specifier',
+            poisoned: "require('./canonicalRecord.ts'.replace('.ts', '.bak'));",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a concatenated createRequire specifier',
+            poisoned:
+                "import { createRequire } from 'node:module';\nconst suffix = '.bak';\ncreateRequire(import.meta.url)('./canonicalRecord.ts' + suffix);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a member-called createRequire specifier',
+            poisoned:
+                "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('./canonicalRecord.ts'.replace('.ts', '.bak'));",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a require call whose argument is an object literal',
+            poisoned: 'require({ specifier });',
+            shape: 'require(...)',
+        },
+    ])('refuses $label in the graph assertion', async ({ poisoned, shape }) => {
+        expect(await snapshotRefusalFor(poisoned)).toContain(
+            `scripts/deliverPullRequest.ts loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
+        );
+    });
+
+    /**
+     * The computed-load refusal must never fire when the first argument is a literal the snapshot can
+     * resolve, whatever follows it: a second options argument, an options object on `require.resolve`,
+     * an `as` cast, or a trailing comma all leave the specifier static, and `snapshotImportSpecifiers`
+     * already collects that literal. Refusing here would split one specifier across the two scanners —
+     * the graph check would reject a source the import scan declares resolved.
+     */
+    it.each([
+        {
+            label: 'a static dynamic import with a second argument',
+            source: "await import('./checked.ts', { with: { type: 'json' } });",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static require.resolve with an options object',
+            source: "require.resolve('./checked.ts', { paths: ['/tmp'] });",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with an as-expression',
+            source: "await import('./checked.ts' as string);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with as-const',
+            source: "await import('./checked.ts' as const);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a satisfies-expression',
+            source: "await import('./checked.ts' satisfies string);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a chained as-cast',
+            source: "await import('./checked.ts' as unknown as string);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a generic cast type',
+            source: "await import('./checked.ts' as Record<string, unknown>);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with as-const then satisfies a generic',
+            source: "await import('./checked.ts' as const satisfies Record<string, unknown>);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with an array cast type',
+            source: "await import('./checked.ts' as string[]);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a generic named cast type',
+            source: "await import('./checked.ts' as Foo<Bar>);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a function cast type',
+            source: "await import('./checked.ts' as (a: string) => void);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a tuple cast type',
+            source: "await import('./checked.ts' as [string]);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a union cast type',
+            source: "await import('./checked.ts' as A | B);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with an object cast type',
+            source: "await import('./checked.ts' as { x: number });",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with a typeof cast type',
+            source: "await import('./checked.ts' as typeof Foo);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal dynamic import',
+            source: "await import(('./checked.ts'));",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal require',
+            source: "require(('./checked.ts'));",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal createRequire specifier',
+            source: "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)(('./checked.ts'));",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import with a trailing comma',
+            source: "await import('./checked.ts',);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a require specifier narrowed with a leading angle-bracket assertion',
+            source: "require(<string>'./checked.ts');",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a dynamic import specifier narrowed with a leading angle-bracket assertion',
+            source: "await import(<string>'./checked.ts');",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a createRequire specifier narrowed with a leading angle-bracket assertion',
+            source: "createRequire(import.meta.url)(<string>'./checked.ts');",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal require with a non-null assertion',
+            source: "require(('./checked.ts')!);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a literal require with a non-null assertion',
+            source: "require('./checked.ts'!);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal require narrowed and non-null asserted',
+            source: "require(<string>('./checked.ts')!);",
+            specifier: './checked.ts',
+        },
+    ])('admits $label as a static specifier, never a computed load', ({ source, specifier }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toContain(specifier);
+    });
+
+    /**
+     * The erased wrappers above are admitted only around a literal specifier. The same wrappers on a
+     * computed operand — an angle-bracket assertion or non-null assertion applied to a variable — must
+     * stay refused, because the value is still computed.
+     */
+    it('keeps angle-bracket and non-null assertions on a computed operand refused', () => {
+        expect(snapshotComputedDynamicSpecifiers('require(<string>specifier)')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('require(specifier!)')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('await import(<string>specifier)')).toEqual(['import(...)']);
+        expect(snapshotComputedDynamicSpecifiers('createRequire(import.meta.url)(<string>specifier)')).toEqual([
+            'createRequire(...)(...)',
+        ]);
+    });
+
+    /**
+     * A comparison inside a cast type — `'./checked.ts' as string < 'y' ? … : …` — is a value
+     * comparison whose result selects the specifier, not a generic argument list. Read as a type, the
+     * `<` opens a generic level that never closes, swallowing the whole ternary and missing the
+     * computed load. The `<` is a type-argument opener only when its level closes before the cast
+     * ends; otherwise the cast ends at the `<` and the remainder is expression syntax again.
+     */
+    it.each([
+        {
+            label: 'a comparison inside a cast type selecting the import specifier',
+            source: "await import('./checked.ts' as string < 'y' ? './other.ts' : './checked.ts');",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a comparison inside a cast type selecting the require specifier',
+            source: "require('./checked.ts' as string < 'y' ? './other.ts' : './checked.ts');",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a comparison inside a cast type selecting the createRequire specifier',
+            source: "createRequire(import.meta.url)('./checked.ts' as string < 'y' ? './other.ts' : './checked.ts');",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A value operator after a completed cast type is value syntax, not part of the erased type, so a
+     * specifier built from it is computed. Word operators (`&&`, `||`, `instanceof`, `in`) and a
+     * `+`/`-` directly before a digit all follow the type and must end the cast; otherwise the
+     * scanner swallows the operator and its right operand as type syntax and reports a static load
+     * the source never performs. The comparison case above ends the cast at the `<`; these end it at
+     * the operator itself.
+     */
+    it.each([
+        {
+            label: 'a word-and operator after a cast type building the require specifier',
+            source: "const loaded = require('./checked.ts' as string && './other.ts');",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a binary plus after a cast type building the require specifier',
+            source: "const loaded = require('./checked.ts' as string +2);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a word-or operator after a conditional cast type building the require specifier',
+            source: "const loaded = require('./checked.ts' as A extends string ? R : never || './other.ts');",
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A cast type may carry type-only syntax that a value operator would mimic: a conditional type
+     * (`A extends B ? C : D`, including nested conditional types and a function type's return type)
+     * whose `?` and `:` are type syntax once an `extends` precedes them at the same level, and a
+     * numeric literal type (`-1`) with a leading sign. These are erased at run time, so the specifier
+     * stays the literal and the cast is admitted rather than reported as a computed load. The
+     * value-ternary guard is the comparison case above: without `extends`, a `?` still ends the cast.
+     * Each case asserts both halves of admission — no computed shape and the literal still collected —
+     * so a scanner that stopped refusing the computed load without collecting the literal would fail.
+     */
+    it.each([
+        {
+            label: 'a static dynamic import cast to a conditional type',
+            source: "await import('./checked.ts' as A extends B ? C : D);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import cast to a function type returning a conditional type',
+            source: "await import('./checked.ts' as () => A extends B ? C : D);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import cast to a negative literal type',
+            source: "await import('./checked.ts' as -1);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import cast to a conditional type with a function-returning-conditional extends type',
+            source: "await import('./checked.ts' as A extends () => B extends C ? D : E ? F : G);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import cast to a function type returning a conditional with a function-returning-conditional extends type',
+            source: "await import('./checked.ts' as () => A extends () => B extends C ? D : E ? F : G);",
+            specifier: './checked.ts',
+        },
+    ])('admits $label as a static specifier, never a computed load', ({ source, specifier }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toContain(specifier);
+    });
+
+    // Pins the unarmed `?` arm of `skipTypeExpression`: a top-level `?` with no armed `extends` is a
+    // value ternary, so the cast ends before it and the specifier is computed.
+    it('refuses a plain value ternary after a cast type as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers("require('./checked.ts' as string ? './a.ts' : './b.ts')")).toEqual([
+            'require(...)',
+        ]);
+    });
+
+    // Pins the word-operator arm of `skipTypeExpression`: `instanceof` and `in` are never type
+    // syntax, so the cast ends before them and the specifier is computed.
+    it('refuses instanceof and in after a cast type as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as string instanceof Foo)")).toEqual([
+            'import(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as string in obj)")).toEqual([
+            'import(...)',
+        ]);
+    });
+
+    // Pins the leading-sign arm of `skipTypeExpression`: a `-` before a digit is the sign of a
+    // numeric literal type only where a type atom begins; after a completed type it is a value
+    // operator, so the cast ends before it and the specifier is computed.
+    it('refuses a minus before a digit after a cast type as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers("require('./checked.ts' as string -2)")).toEqual(['require(...)']);
+    });
+
+    // Pins the union/intersection and arrow resets of `skipTypeExpression`: `|`, `&`, and `=>` clear
+    // the type-atom marker, so the `-1` after either is the sign of a new numeric literal type and
+    // the cast stays a type, admitting the literal with its specifier still collected.
+    it('admits a cast whose union or arrow reset reopens a literal type, with the literal collected', () => {
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as A | -1)")).toEqual([]);
+        expect(snapshotImportSpecifiers("await import('./checked.ts' as A | -1)")).toContain('./checked.ts');
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as () => -1)")).toEqual([]);
+        expect(snapshotImportSpecifiers("await import('./checked.ts' as () => -1)")).toContain('./checked.ts');
+    });
+
+    /**
+     * A real call is admitted as a declaration when the rule reads the single token after the closing
+     * parenthesis instead of the enclosing construct. `flag ? require(spec) : undefined`,
+     * `case require(spec):`, `class X extends require(spec) {}`, and a statement-start call before an
+     * ASI block all close the parenthesis with `{` or `:` and are calls. The declaration-context rule
+     * reads the name's position — `function`, a method position, or a parameter position — and refuses
+     * them. The block case pins only the statement-start form: a function body whose first statement
+     * is the call and whose second is a block (`function load() { require(spec) { run(); } }`) is
+     * indistinguishable from an object method by this token look, and stays filed as #4818 beside the
+     * callee-bound and regex-lost shapes.
+     */
+    it.each([
+        {
+            label: 'a require call in a ternary consequent',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? require(spec) : undefined;",
+        },
+        {
+            label: 'a require call in a switch case',
+            source: 'switch (mode) {\n  case require(spec):\n    break;\n}',
+        },
+        {
+            label: 'a require call in a class heritage clause',
+            source: 'class Loaded extends require(spec) {}',
+        },
+        {
+            label: 'a statement-start require call before an asi block',
+            source: 'require(spec)\n{ run(); }',
+        },
+        {
+            label: 'a require call after a line comment ending in a brace',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? // {\nrequire(spec) : undefined;",
+        },
+        {
+            label: 'a require call after a line comment ending in a parenthesis',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? // (\nrequire(spec) : undefined;",
+        },
+        {
+            label: 'a require call after a line comment ending in a comma',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? // ,\nrequire(spec) : undefined;",
+        },
+    ])('refuses $label as a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
+     * A dot-ending line comment and a spread's three dots are not member access, so a load behind
+     * either is still refused as computed: `isPrecededByDotAccess` walks back over whitespace and
+     * comments to decide whether `import`, `require`, or `createRequire` is a member call, and a `.`
+     * that ends a line comment or belongs to a `...` spread must not hide the load from the scan.
+     * Without the line-comment walk the comment's final `.` is read as the member-access dot; without
+     * the spread rule the third dot of `...` is.
+     */
+    it.each([
+        {
+            label: 'a require load after a dot-ending line comment',
+            source: "const specifier = './unchecked.ts';\n// Fall back to the plugin entry.\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import after a dot-ending line comment',
+            source: "const specifier = './unchecked.ts';\n// Fall back to the plugin entry.\nimport(specifier);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a createRequire load after a dot-ending line comment',
+            source: "import { createRequire } from 'node:module';\n// Fall back to the plugin entry.\ncreateRequire(import.meta.url)(specifier);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a require load spread into an array',
+            source: "const specifier = './unchecked.ts';\n[...require(specifier)];",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import spread into an array',
+            source: "const specifier = './unchecked.ts';\n[...import(specifier)];",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a createRequire load spread into an array',
+            source: "import { createRequire } from 'node:module';\n[...createRequire(import.meta.url)(specifier)];",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A `//` inside a regex literal is a character class, not a comment opener, so the line-comment
+     * walk must not read it as one. `const re = /[.//]/;` ends with a `;` whose preceding `.` belongs
+     * to the regex body; without skipping the regex the back-walk jumps over the `;` to that `.` and
+     * reads the following `require`, `import`, or `createRequire` as a member call, hiding the
+     * computed load.
+     */
+    it.each([
+        {
+            label: 'a require load after a regex literal whose body holds a dot and slashes',
+            source: 'const re = /[.//]/;\nrequire(specifier);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import after a regex literal whose body holds a dot and slashes',
+            source: 'const re = /[.//]/;\nimport(specifier);',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a createRequire load after a regex literal whose body holds a dot and slashes',
+            source: "import { createRequire } from 'node:module';\nconst re = /[.//]/;\ncreateRequire(import.meta.url)(specifier);",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A parenthesized list whose first argument is a parameter list — `name: type`, `name?: type`,
+     * `...args: type`, or a destructuring pattern followed by a type — is a TypeScript declaration,
+     * never a call: no module specifier can take that shape, so it must not be read as a computed
+     * load. An object-literal argument (`require({ specifier })`) has no type annotation and stays a
+     * computed load. The scan decides by shape, not by one `identifier :` spelling, so optional,
+     * empty, rest, destructured, and comment-or-whitespace-separated parameter lists all pass.
+     */
+    it.each([
+        {
+            label: 'a require-typed object member',
+            source: 'type Sandbox = { require(specifier: string): unknown };',
+        },
+        {
+            label: 'a require-named call-signature parameter',
+            source: 'declare function load(require(specifier): unknown): void;',
+        },
+        {
+            label: 'a require-named ambient function declaration',
+            source: 'declare function require(moduleName: string): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with an optional parameter',
+            source: 'declare function require(moduleName?: string): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with no parameters',
+            source: 'declare function require(): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with a rest parameter',
+            source: 'declare function require(...args: unknown[]): unknown;',
+        },
+        {
+            label: 'a require-named ambient declaration with a destructured parameter',
+            source: 'declare function require({ resolve }: { resolve: unknown }): unknown;',
+        },
+        {
+            label: 'a require-named parameter list with a comment before the type annotation',
+            source: 'declare function require(moduleName /* optional */ : string): unknown;',
+        },
+        {
+            label: 'a require-named function declaration with an untyped parameter',
+            source: 'function require(name) {}',
+        },
+        {
+            label: 'a require-named object method with a default-valued parameter',
+            source: "const o = { require(name = 'x') { return name; } }",
+        },
+        {
+            label: 'a require-named class method with an untyped parameter',
+            source: 'class C { require(name) {} }',
+        },
+        {
+            label: 'a require-named function declaration with a destructured parameter',
+            source: 'function require({ specifier }) { return specifier; }',
+        },
+        {
+            label: 'a require-named ambient overload with a typed parameter',
+            source: 'declare function require(name: string);',
+        },
+        {
+            label: 'a require-named ambient overload with an optional parameter',
+            source: 'declare function require(name?: string);',
+        },
+        {
+            label: 'a require-named static class method',
+            source: 'class ModuleLoader { static require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named async class method',
+            source: 'class ModuleLoader { async require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named public class method',
+            source: 'class ModuleLoader { public require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named protected class method',
+            source: 'class ModuleLoader { protected require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named class getter',
+            source: 'class ModuleLoader { get require() { return undefined; } }',
+        },
+        {
+            label: 'a require-named class setter',
+            source: 'class ModuleLoader { set require(value: string) {} }',
+        },
+        {
+            label: 'a require-named abstract class method',
+            source: 'abstract class ModuleLoader { abstract require(specifier: string): unknown; }',
+        },
+        {
+            label: 'a require-named generator class method',
+            source: 'class ModuleLoader { *require() { yield 1; } }',
+        },
+        {
+            label: 'a require-named async generator class method',
+            source: 'class ModuleLoader { async *require() { yield 1; } }',
+        },
+        {
+            label: 'a require-named generator function declaration',
+            source: 'function* require() { yield 1; }',
+        },
+        {
+            label: 'a require-named class method after a preceding class method',
+            source: 'class ModuleLoader { load() {} require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named class method after a preceding class method with an untyped parameter',
+            source: 'class ModuleLoader { load() {} require(name) {} }',
+        },
+        {
+            label: 'a require-named interface member after a preceding property',
+            source: 'interface Loader { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named type-literal member after a preceding property',
+            source: 'type Loader = { version: string; require(specifier: string): unknown }',
+        },
+    ])('admits $label that names require without loading anything', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 
     /**

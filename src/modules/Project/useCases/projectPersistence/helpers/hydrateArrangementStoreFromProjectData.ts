@@ -70,6 +70,11 @@ function hydrateMidiWithInlineNotes({
         ccByClipId: hydratedMidi.ccByClipId,
         pitchBendByClipId: hydratedMidi.pitchBendByClipId,
     };
+    // The source block's coordinate stamp rides along, so the snapshot
+    // restores a stamped store instead of re-arming the migration.
+    if (midi?.noteCoordinateFormat !== undefined) {
+        arrangementMidi.noteCoordinateFormat = midi.noteCoordinateFormat;
+    }
 
     for (const track of tracks) {
         const clips = [...track.clips, ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips)];

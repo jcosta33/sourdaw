@@ -62,6 +62,23 @@ describe('midiTimeStateCodec — round-trip fidelity', () => {
         const decoded = decodeState(encoded);
         expect(decoded).toEqual(state);
     });
+
+    it('round-trips the noteCoordinateFormat stamp instead of rejecting it on decode', () => {
+        // The stamp is default-on store state; a decode allowlist that drops it
+        // makes every stamped time-operation restore fail.
+        const state = makeState({
+            noteCoordinateFormat: 'clip-relative',
+            notesByClipId: {
+                clip1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+            },
+        });
+        const encoded = encodeState(state);
+        expect(encoded).not.toBeNull();
+        const decoded = decodeState(encoded);
+        expect(decoded).not.toBeNull();
+        expect(decoded?.noteCoordinateFormat).toBe('clip-relative');
+        expect(decoded).toEqual(state);
+    });
 });
 
 describe('midiTimeStateCodec — negative-zero distinction', () => {
@@ -171,6 +188,25 @@ describe('midiTimeStateCodec — decode rejection paths', () => {
             };
             expect(decodeState(tampered)).toBeNull();
         }
+    });
+
+    it('rejects a decoded state carrying an unknown noteCoordinateFormat value', () => {
+        // Only the exact 'clip-relative' stamp decodes; anything else is
+        // non-canonical state.
+        const encoded = encodeState(makeState({ noteCoordinateFormat: 'clip-relative' }))!;
+        if (encoded.type !== 'object') {
+            throw new Error('expected an object-encoded state');
+        }
+        const tampered = {
+            ...encoded,
+            entries: encoded.entries.map((entry) => {
+                if (entry.key !== 'noteCoordinateFormat') {
+                    return entry;
+                }
+                return { ...entry, value: { type: 'string', value: 'absolute' } };
+            }),
+        };
+        expect(decodeState(tampered)).toBeNull();
     });
 });
 

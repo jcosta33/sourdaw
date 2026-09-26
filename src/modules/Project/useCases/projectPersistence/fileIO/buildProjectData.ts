@@ -11,6 +11,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { cvGateStore } from '#/modules/CvGate/stores';
@@ -246,6 +247,17 @@ export async function buildProjectData({
         cvGateState = structuredClone(liveCvGate);
     }
 
+    // The CRDT slot's durable projection verbatim: `toCrdt` keeps exactly
+    // these two fields, so the named-project JSON carries the same truth the
+    // document does and the three JSON-rebuild routes lose nothing (#4600).
+    const liveMidiLearn = midiLearnStore.value;
+    const midiLearn: ProjectData['midiLearn'] | undefined = liveMidiLearn
+        ? {
+              mappingsSchemaVersion: liveMidiLearn.mappingsSchemaVersion,
+              mappings: structuredClone(liveMidiLearn.mappings),
+          }
+        : undefined;
+
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
         meta: {
@@ -318,20 +330,29 @@ export async function buildProjectData({
             name: message.name || (message as { label?: string }).label || 'Untitled',
             color: message.color,
         })),
+        midiLearn,
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
-        arrangements: arrState.arrangements.map((snapshot) => ({
-            ...snapshot,
-            tracks: {
-                ...snapshot.tracks,
-                tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
-            },
-            midi: serializeProjectMidi({
+        arrangements: arrState.arrangements.map((snapshot) => {
+            const snapshotMidi: Parameters<typeof serializeProjectMidi>[0] = {
                 notesByClipId: snapshot.midi.notesByClipId,
                 ccByClipId: snapshot.midi.ccByClipId,
                 pitchBendByClipId: snapshot.midi.pitchBendByClipId,
-            }),
-        })),
+            };
+            // Per-arrangement stamp, so every arrangement keeps its own
+            // coordinate format the way the top-level midi block does.
+            if (snapshot.midi.noteCoordinateFormat !== undefined) {
+                snapshotMidi.noteCoordinateFormat = snapshot.midi.noteCoordinateFormat;
+            }
+            return {
+                ...snapshot,
+                tracks: {
+                    ...snapshot.tracks,
+                    tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
+                },
+                midi: serializeProjectMidi(snapshotMidi),
+            };
+        }),
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
         adjustmentLayers: { layers: adjustmentLayerStore.value?.layers ?? [] },

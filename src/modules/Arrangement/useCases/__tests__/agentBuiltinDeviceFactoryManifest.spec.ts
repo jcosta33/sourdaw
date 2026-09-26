@@ -140,6 +140,20 @@ describe('built-in descriptor manifest law', () => {
         expect(manifest.find((device) => device.type === 'builtin-distortion')?.characterTags).toEqual([]);
     });
 
+    it('carries a descriptor-declared legal set as legalValues, and omits it when none is declared', () => {
+        const manifest = getAgentBuiltinDeviceFactoryManifest();
+        const crust = manifest.find((device) => device.type === 'crust');
+        const dutchOven = manifest.find((device) => device.type === 'dutch-oven');
+
+        expect(crust?.parameters.find((parameter) => parameter.id === 'oversampling')).toMatchObject({
+            legalValues: [1, 2, 4, 8, 16, 32],
+        });
+        expect(dutchOven?.parameters.find((parameter) => parameter.id === 'algorithm')).toMatchObject({
+            legalValues: [0, 1, 2, 3, 6],
+        });
+        expect(crust?.parameters.find((parameter) => parameter.id === 'gain')).not.toHaveProperty('legalValues');
+    });
+
     it('versions descriptor character associations separately from command replay', () => {
         const descriptor = getPluginById('builtin-distortion');
         if (!descriptor) {

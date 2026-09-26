@@ -32,11 +32,17 @@ export type DawProjectParsedClip = {
     type: 'audio' | 'midi';
     audioAssetPath?: string;
     notes?: DawProjectParsedMidiNote[];
+    /** Where the clip starts reading its media (`Clip@playStart`), in beats.
+     * Absent means the file carries no content offset. */
+    playStartBeat?: number;
 };
 
 export type DawProjectTempoChange = {
     beat: number;
     tempo: number;
+    /** Segment shape into the next point (`RealPoint@interpolation`). The
+     * DAWproject default `hold` maps to an instant step. */
+    curve: 'instant' | 'linear';
 };
 
 export type DawProjectTimeSignatureChange = {

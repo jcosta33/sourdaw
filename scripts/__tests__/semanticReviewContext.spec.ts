@@ -736,6 +736,7 @@ describe('semantic review context', () => {
                                 { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after)' },
                                 { path: 'src/d.ts', reason: 'total-evidence-budget-exhausted (context)' },
                                 { path: 'src/e.ts', reason: 'region-exceeds-per-region-budget (contract)' },
+                                { path: 'src/f.ts', reason: 'hunk-beyond-file (after, contract)' },
                             ],
                         },
                     })
@@ -749,6 +750,114 @@ describe('semantic review context', () => {
             'region-exceeds-per-region-budget (after)',
             'total-evidence-budget-exhausted (context)',
             'region-exceeds-per-region-budget (contract)',
+            'hunk-beyond-file (after, contract)',
+        ]);
+    });
+
+    it('keeps a withheld contract-carrying path named as such, apart from an anonymous bulk trim', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'total-evidence-budget-exhausted (after, contract)',
+                                },
+                                { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'total-evidence-budget-exhausted (after, contract)' },
+            { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('accepts the contract-marked comma qualifier and the retired withheld code for reading', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'region-exceeds-per-region-budget (after, contract)',
+                                },
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'total-evidence-budget-exhausted (before, contract)',
+                                },
+                                { path: 'scripts/old.ts', reason: 'contract-evidence-withheld (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated.map((entry) => entry.reason)).toEqual([
+            'region-exceeds-per-region-budget (after, contract)',
+            'total-evidence-budget-exhausted (before, contract)',
+            'contract-evidence-withheld (after)',
+        ]);
+    });
+
+    it('normalises a parameterised reason with an unknown or duplicated qualifier term', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                { path: 'src/b.ts', reason: 'region-exceeds-per-region-budget (after, bogus)' },
+                                { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after, after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'src/b.ts', reason: 'unrecognized-reason' },
+            { path: 'src/c.ts', reason: 'unrecognized-reason' },
         ]);
     });
 

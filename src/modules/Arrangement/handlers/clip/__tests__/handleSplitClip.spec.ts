@@ -117,6 +117,12 @@ describe('handleSplitClip', () => {
                 payload: { clipId: 'c1', rightClipId: 'right-clip', expected: previous, replacement: next },
             },
         });
+        // The undo leg fills this array in place and the redo reads it, so both
+        // payloads must carry the SAME instance or the legs disagree (#4521).
+        const inverse = desc.inverseAction as Extract<AppAction, { type: 'restoreClipSplitState' }>;
+        const redo = desc.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>;
+        expect(inverse.payload.retiredTakeLanes).toEqual([]);
+        expect(inverse.payload.retiredTakeLanes).toBe(redo.payload.retiredTakeLanes);
     });
 
     it('describes the actual zero-crossing-adjusted split beat', async () => {

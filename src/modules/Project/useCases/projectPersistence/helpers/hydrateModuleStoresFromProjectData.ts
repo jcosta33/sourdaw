@@ -5,6 +5,7 @@ import {
     restoreAdjustmentLayerSnapshot,
 } from '#/modules/Arrangement/useCases';
 import { hydrateModulationState } from '#/modules/Automation/useCases';
+import { midiLearnStore, sanitizeMidiLearnState } from '#/modules/ControlSurface/stores';
 import { hydrateCvGateState } from '#/modules/CvGate/useCases';
 import { hydrateGrooveTemplates, replaceChordTrackState } from '#/modules/MIDI/useCases';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
@@ -33,6 +34,10 @@ export function hydrateModuleStoresFromProjectData(data: HydratableProjectData):
     hydrateClipWarpStates(data.warpStates);
     hydrateModulationState(data.modulation);
     hydrateCvGateState(data.cvGate);
+    // The owner's sanitizer validates here: one malformed mapping degrades to
+    // an empty table instead of rejecting the whole project file, and it
+    // always disarms `isLearning` so a foreign file cannot capture the next CC.
+    midiLearnStore.set(sanitizeMidiLearnState(data.midiLearn));
 
     setSidechainRoutes(data.sidechainRoutes ?? []);
 }

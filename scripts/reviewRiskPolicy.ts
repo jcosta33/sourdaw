@@ -72,10 +72,13 @@ const REALTIME_TIMING_PREFIXES = ['src/modules/Transport/useCases/playheadSchedu
 const NATIVE_SECURITY_PREFIXES = ['electron/', 'crates/', '.github/workflows/'] as const;
 const NATIVE_SECURITY_PATHS = ['src/utils/desktopBridge.ts'] as const;
 /**
- * Privileged governance-transition surfaces (#3377 AC-009 calibration): every file in a trusted
- * GitHub-write closure executes with a role identity, so a change to one can move a privileged
- * transition while classifying `small` on size alone. Listed explicitly rather than by prefix —
- * most of `scripts/` is unprivileged tooling — and a spec pins this list to the closure union in
+ * Privileged governance-transition surfaces (#3377 AC-009 calibration): a change to any member of
+ * the pinned-origin trusted-write closure set — the union of what the privileged commands run from
+ * the snapshot — can move a privileged transition while classifying `small` on size alone. The
+ * justification is set membership, not per-file execution: the declared closure is a deliberate
+ * superset of what a command executes (type-only edges included), and the loader is declared though
+ * it never mints a role identity. Listed explicitly rather than by prefix — most of `scripts/` is
+ * unprivileged tooling — and a spec pins this list to the closure union in
  * `trustedGithubWriteBootstrap.ts`, so adding a file to a closure without listing it here reddens
  * that spec.
  */

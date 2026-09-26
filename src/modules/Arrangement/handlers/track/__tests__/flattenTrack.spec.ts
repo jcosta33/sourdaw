@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { handleFlattenTrack } from '../flattenTrack';
 
 const mocks = vi.hoisted(() => ({
     flattenTrack: vi.fn(),
     captureTrackClipStates: vi.fn(),
+    removeTakesForClips: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     getTrackStoreState: vi.fn(),
 }));
@@ -16,6 +18,10 @@ vi.mock('../../../useCases/freezeBounce/flattenTrack', () => ({
 
 vi.mock('../../../useCases/captureTrackClipStates', () => ({
     captureTrackClipStates: mocks.captureTrackClipStates,
+}));
+
+vi.mock('../../../useCases/comping/removeTakesForClips', () => ({
+    removeTakesForClips: mocks.removeTakesForClips,
 }));
 
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
@@ -100,7 +106,7 @@ describe('handleFlattenTrack', () => {
 
             const desc = handleFlattenTrack.describe({ type: 'flattenTrack', payload: { trackId: 't1' } });
 
-            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['t1']);
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(['t1'], []);
             if (!desc.inverseAction || desc.inverseAction.type !== 'restoreTrackClipStates') {
                 throw new Error('expected a restoreTrackClipStates inverse action');
             }
@@ -167,6 +173,57 @@ describe('handleFlattenTrack', () => {
         expect(desc.inverseAction.payload.replacement).toEqual(preFlattenState);
         expect(desc.redoAction.payload.expected).toEqual(preFlattenState);
         expect(desc.redoAction.payload.replacement).toEqual(postFlattenState);
+    });
+
+    describe('take retirement (#4518)', () => {
+        function frozenTrackWithTakes() {
+            return frozenTrack({
+                clips: [
+                    ClipDummy.create({ id: 'clip-a', trackId: 't1' }),
+                    ClipDummy.create({ id: 'clip-b', trackId: 't1' }),
+                ],
+                alternatives: [
+                    {
+                        id: 'alt-1',
+                        name: 'Alternative 1',
+                        clips: [ClipDummy.create({ id: 'clip-hidden', trackId: 't1' })],
+                    },
+                ],
+            });
+        }
+
+        it('retires the takes of every replaced clip — including hidden alternatives — after the flatten lands', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [frozenTrackWithTakes()] });
+
+            const result = handleFlattenTrack.execute({ type: 'flattenTrack', payload: { trackId: 't1' } });
+
+            expect(result).toEqual({ status: 'written' });
+            expect(mocks.removeTakesForClips).toHaveBeenCalledTimes(1);
+            expect(mocks.removeTakesForClips).toHaveBeenCalledWith(
+                expect.arrayContaining(['clip-a', 'clip-b', 'clip-hidden'])
+            );
+        });
+
+        it('retires nothing when the flatten refuses', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [frozenTrackWithTakes()] });
+            mocks.flattenTrack.mockReturnValue(false);
+
+            const result = handleFlattenTrack.execute({ type: 'flattenTrack', payload: { trackId: 't1' } });
+
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.removeTakesForClips).not.toHaveBeenCalled();
+        });
+
+        it('names the replaced clip ids in the pre-flatten capture so the inverse can restore the retired lanes', () => {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [frozenTrackWithTakes()] });
+
+            handleFlattenTrack.describe({ type: 'flattenTrack', payload: { trackId: 't1' } });
+
+            expect(mocks.captureTrackClipStates).toHaveBeenCalledWith(
+                ['t1'],
+                expect.arrayContaining(['clip-a', 'clip-b', 'clip-hidden'])
+            );
+        });
     });
 
     describe('isNoop', () => {
