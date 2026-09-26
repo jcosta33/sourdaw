@@ -1,0 +1,32 @@
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 315-339
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 254-258
+src/modules/MIDI/useCases/__tests__/mergeImportedMidiClipNotes.spec.ts
+  h_beb54bf43b47b7 71
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/migrateAbsoluteMidiNotesReload.spec.ts
+  h_beb54bf43b47b7 126-154
+src/modules/Project/stores/arrangementStore.ts
+  h_beb54bf43b47b7 333-334,379,693-697,710-713
+src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts
+  h_beb54bf43b47b7 130-146
+src/modules/Project/useCases/arrangement/loadSnapshot.ts
+  h_beb54bf43b47b7 11,15-21
+src/modules/Project/useCases/arrangement/takeSnapshot.ts
+  h_beb54bf43b47b7 20,25-30
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  h_beb54bf43b47b7 336-337,341-355
+src/modules/Project/useCases/projectPersistence/helpers/hydrateArrangementStoreFromProjectData.ts
+  h_beb54bf43b47b7 73-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d1443a01880c09f7260affd549233a6cf30cb584",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
