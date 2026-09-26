@@ -996,6 +996,63 @@ describe('contract-carrying admission', () => {
         ).toBe(true);
     });
 
+    it('names a withheld region by its own content class rather than its admission tier', () => {
+        // The qualifier is the region's own content class, never the admission tier. `vocabulary.ts` is a
+        // source its contract-carrying spec covers, so it is ordered in that spec's tier, yet its withheld
+        // sides read the plain form because its own content carries no contract. The changed contract
+        // document and the contract-context region keep the contract term. The tier is an attempt order
+        // over the record, not part of its vocabulary.
+        const specSide =
+            "import { describe, expect, it } from 'vitest';\nimport { vocabulary } from '../vocabulary.ts';\nconst workflow = '.github/workflows/semantic-review.yml';\n";
+        const coveredSide = 'export const vocabulary = 1;\n'.repeat(4);
+        const contractSide = 'const contract = 1;\n'.repeat(4);
+        const contextSide = '# Decisions\n'.repeat(4);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('scripts/semanticReview/__tests__/vocabulary.spec.ts'),
+                    changedFile('scripts/semanticReview/vocabulary.ts'),
+                    changedFile('AGENTS.md'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/semanticReview/__tests__/vocabulary.spec.ts`]: specSide,
+                    [`${HEAD}:scripts/semanticReview/__tests__/vocabulary.spec.ts`]: specSide,
+                    [`${MERGE_BASE}:scripts/semanticReview/vocabulary.ts`]: coveredSide,
+                    [`${HEAD}:scripts/semanticReview/vocabulary.ts`]: coveredSide,
+                    [`${MERGE_BASE}:AGENTS.md`]: contractSide,
+                    [`${HEAD}:AGENTS.md`]: contractSide,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: contextSide,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            // Every side exceeds the per-region ceiling, so one fixture records all three classes at once:
+            // the covered source reads the plain form while the contract document, carrying the contract
+            // term on its own sides, and the contract-context region keep theirs.
+            limits: { maxRegionBytes: 40, maxTotalBytes: 1_000_000 },
+            contractPaths: ['.agents/decisions/README.md'],
+        });
+        expect(set.truncated).toEqual([
+            { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (before, contract)' },
+            { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (after, contract)' },
+            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (before)' },
+            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
+            {
+                path: 'scripts/semanticReview/__tests__/vocabulary.spec.ts',
+                reason: 'region-exceeds-per-region-budget (before, contract)',
+            },
+            {
+                path: 'scripts/semanticReview/__tests__/vocabulary.spec.ts',
+                reason: 'region-exceeds-per-region-budget (after, contract)',
+            },
+            {
+                path: '.agents/decisions/README.md',
+                reason: 'region-exceeds-per-region-budget (context, contract)',
+            },
+        ]);
+    });
+
     it('leaves a large non-spec source that merely imports a closure member bulk', () => {
         // Only a collected spec's content classifies by closure import, and only a source a
         // contract-carrying spec covers is ordered in that spec's tier. A large source no spec covers
@@ -1062,10 +1119,10 @@ describe('contract-carrying admission', () => {
     });
 
     it('admits and attaches contract context to a unit whose rules declare a contract token', async () => {
-        // The gate's true branch, observed through the new `includeDefaultContractContext` route: a
-        // contract-needing file whose sides are admissible survives planning and receives the default
-        // contract documents, while a bulk competitor in the same change does not. Dropping the flag, or
-        // attaching the context to a file that declared no token, breaks this.
+        // The gate's true branch, observed through `includeDefaultContractContext`: a contract-needing
+        // file whose sides are admissible survives planning and receives the default contract documents,
+        // while a bulk competitor in the same change does not. Dropping the flag, or attaching the context
+        // to a file that declared no token, breaks this.
         const source = fakeSource({
             files: [changedFile('src/modules/Project/undo.ts'), changedFile('crates/daw-dsp/src/b.rs')],
             blobs: {
@@ -1092,8 +1149,9 @@ describe('contract-carrying admission', () => {
         // D2: a bulk file whose rules declare a contract token charged the default context documents,
         // which then admitted first (their tier) and starved the file's own bulk sides under a binding
         // total, so the charge removed the very unit it was charged for. Ordering the contract-needing
-        // file's own sides ahead of the context keeps the charge from starving its reader, while the
-        // context stays ahead of unrelated bulk material.
+        // file's own sides ahead of the context keeps the charge from starving its reader. The tier is an
+        // attempt order, not a promise: admission is a greedy accumulator, so a smaller lower-tier region
+        // can still survive ahead of a larger context document.
         const aSide = 'const a = 1;\n'.repeat(382); // 4,966 B per side
         const competitor = 'const c = 1;\n'.repeat(7); // 91 B per side
         const agents = '# AGENTS.md contract\n'.repeat(95); // 1,995 B
@@ -1135,6 +1193,19 @@ describe('contract-carrying admission', () => {
         expect(
             set.truncated.some((entry) => entry.reason === 'total-evidence-budget-exhausted (context, contract)')
         ).toBe(true);
+        // The measured outcome at this total: the two context documents are withheld and the smaller
+        // tier-3 bulk competitor still admits both of its sides behind them, so the context did not stay
+        // ahead of unrelated bulk material.
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'src/modules/Project/a.ts:before',
+            'src/modules/Project/a.ts:after',
+            'crates/daw-dsp/src/b.rs:before',
+            'crates/daw-dsp/src/b.rs:after',
+        ]);
+        expect(set.truncated).toEqual([
+            { path: 'AGENTS.md', reason: 'total-evidence-budget-exhausted (context, contract)' },
+            { path: '.agents/decisions/README.md', reason: 'total-evidence-budget-exhausted (context, contract)' },
+        ]);
     });
 
     it('charges no contract context when the content screen drops the only reading unit', () => {
@@ -1152,6 +1223,139 @@ describe('contract-carrying admission', () => {
                     [`${HEAD}:src/modules/Project/undo.ts`]: after,
                     [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n'.repeat(600),
                 },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        expect(set.references.some((reference) => reference.side === 'context')).toBe(false);
+        expect(
+            set.excluded.some(
+                (entry) =>
+                    entry.path === 'src/modules/Project/undo.ts' &&
+                    entry.reason === 'credential-shaped-content-excluded'
+            )
+        ).toBe(true);
+    });
+
+    it('excludes a path whose credential lies inside its hunks and charges no contract context', () => {
+        // The content screen's per-hunk arm, reached the way production reaches it: `gitSource.ts` reads a
+        // real `git diff --unified`, so each side is screened hunk by hunk rather than whole. The
+        // credential sits in the lines this change touches, so admission excludes the path and the gate
+        // must not charge contract documents no surviving unit will read.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const before = 'export const undo = true;\n';
+        const after = `export const undo = false;\nexport const key = '${awsShaped}';\n`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('src/modules/Project/undo.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/undo.ts`]: before,
+                    [`${HEAD}:src/modules/Project/undo.ts`]: after,
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n',
+                },
+                hunks: new Map([
+                    [
+                        'src/modules/Project/undo.ts',
+                        {
+                            path: 'src/modules/Project/undo.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 2 },
+                            ],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        expect(set.references.some((reference) => reference.side === 'context')).toBe(false);
+        expect(
+            set.excluded.some(
+                (entry) =>
+                    entry.path === 'src/modules/Project/undo.ts' &&
+                    entry.reason === 'credential-shaped-content-excluded'
+            )
+        ).toBe(true);
+    });
+
+    it('keeps a path whose credential lies outside its hunks and charges the default contract context', () => {
+        // The per-hunk arm's other outcome: the file holds a credential, but not in the lines this change
+        // touches, so screening the hunks admission reads finds nothing and the path keeps its unit.
+        // Screening the whole side instead would exclude this path and drop the context charge its rules
+        // declared.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const before = 'export const undo = true;\n';
+        const after = `export const undo = false;\nexport const key = '${awsShaped}';\n`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('src/modules/Project/undo.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/undo.ts`]: before,
+                    [`${HEAD}:src/modules/Project/undo.ts`]: after,
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n',
+                },
+                hunks: new Map([
+                    [
+                        'src/modules/Project/undo.ts',
+                        {
+                            path: 'src/modules/Project/undo.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [{ startLine: 1, endLine: 1 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        expect(set.references.some((reference) => reference.side === 'context')).toBe(true);
+        expect(
+            set.references.some(
+                (reference) => reference.path === 'src/modules/Project/undo.ts' && reference.side === 'after'
+            )
+        ).toBe(true);
+        expect(set.excluded.some((entry) => entry.path === 'src/modules/Project/undo.ts')).toBe(false);
+    });
+
+    it('excludes a path whose before side is credential-shaped and charges no contract context', () => {
+        // The before-side arm: a rotation replaces the credential, so the after side is clean and a screen
+        // reading only it would keep the path and charge context for it. The before hunk is what admission
+        // reads, and the credential in it excludes the path, so the documents stay unread.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const before = `export const key = '${awsShaped}';\nexport const undo = true;\n`;
+        const after = 'export const key = process.env.PROJECT_KEY;\nexport const undo = false;\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('src/modules/Project/undo.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:src/modules/Project/undo.ts`]: before,
+                    [`${HEAD}:src/modules/Project/undo.ts`]: after,
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n',
+                },
+                hunks: new Map([
+                    [
+                        'src/modules/Project/undo.ts',
+                        {
+                            path: 'src/modules/Project/undo.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [{ startLine: 1, endLine: 1 }],
+                        },
+                    ],
+                ]),
             }),
             mergeBaseSha: MERGE_BASE,
             headSha: HEAD,
@@ -1227,6 +1431,44 @@ describe('contract-carrying admission', () => {
                 (reference) => reference.path === 'src/modules/Project/undo.ts' && reference.side === 'before'
             )
         ).toBe(true);
+    });
+
+    it('keeps a rename contract-needing from its path pair rather than its destination alone', () => {
+        // The rename arm of `contractNeedingPaths`: a move out of a surface whose rules declare a contract
+        // still needs the context those rules charge, even though the destination's own rules do not.
+        // Reading the new path alone drops the file to bulk and drops the charge with it, so its sides
+        // would fall behind the documents they charged.
+        const before = 'export const legacy = 1;\n';
+        const after = 'export const moved = 11;\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('crates/daw-dsp/src/moved.ts', {
+                        kind: 'renamed',
+                        previousPath: 'scripts/legacy.ts',
+                        added: 1,
+                        deleted: 1,
+                    }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/legacy.ts`]: before,
+                    [`${HEAD}:crates/daw-dsp/src/moved.ts`]: after,
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        // Both own sides rank ahead of the context its rules charge — the moved file's before side is
+        // referenced under its pre-change path — and the charge is made.
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'scripts/legacy.ts:before',
+            'crates/daw-dsp/src/moved.ts:after',
+            'AGENTS.md:context',
+        ]);
     });
 
     it('orders a chargeable hunk before screened and over-budget hunks it cannot charge', () => {

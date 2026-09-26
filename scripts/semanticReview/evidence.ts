@@ -20,10 +20,13 @@
  * sides. The ranking admits the change's own contract material ahead of the context documents and keeps
  * a contract-needing file ahead of the context its own rules charge, but a region over the per-region
  * ceiling is never supplied: it is withheld and recorded, so a contract document larger than that
- * ceiling is never sent whatever its tier. Every withheld region is named. Each side is classified from
- * the path and content it carries, so a deleted or moved spec still counts from its before side, and a
- * side of a path that is contract-carrying on either side keeps its bulk companion ahead of a purely
- * bulk path.
+ * ceiling is never sent whatever its tier. Every withheld region is named, and that name carries the
+ * region's own content class — contract-carrying per side, or a contract-context region — never its
+ * admission tier: a tier-0 spec-covered source and a tier-1 contract-needing file read the plain side
+ * qualifier, because the tier is only the order admission attempts the record in. Each side is
+ * classified from the path and content it carries, so a deleted or moved spec still counts from its
+ * before side, and a side of a path that is contract-carrying on either side keeps its bulk companion
+ * ahead of a purely bulk path.
  */
 
 import {
@@ -384,6 +387,12 @@ function isContractCarryingRegion(
  * `region-exceeds-per-region-budget`, `total-evidence-budget-exhausted`, or `hunk-beyond-file` — and
  * `contract` joins the side qualifier for a contract-carrying region, so the same withheld reference
  * reads the same whichever route produced it. Every other region keeps the plain `<code> (<side>)` form.
+ *
+ * The qualifier names the region's own content class — the side's `contractCarrying` classification, or
+ * the contract-context class — and never the admission tier. A source a contract-carrying spec covers
+ * ranks in that spec's tier and a contract-needing file ranks above the context its rules charge, yet
+ * both are recorded with the plain side form because their own content carries no contract. The tier is
+ * the order admission attempts the record in, not a property of what was withheld.
  */
 export function withheldRegionReason(contractCarrying: boolean, side: string, cause: WithheldRegionCause): string {
     const base = withheldCauseCode(cause);

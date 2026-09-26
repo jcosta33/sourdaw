@@ -942,6 +942,56 @@ describe('semantic review context', () => {
         ]);
     });
 
+    it('keeps the withheld qualifier to the region classes the producer emits', () => {
+        // `withheldRegionReason` names the region's own content class: a spec-covered source's own side
+        // reads plain, a contract-carrying side and a contract-context region carry the contract term.
+        // The tier is an attempt order over the record and never joins the qualifier; a tier term here
+        // would project to `unrecognized-reason` and stop the scan and verify references reading alike.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/semanticReview/vocabulary.ts',
+                                    reason: 'region-exceeds-per-region-budget (after)',
+                                },
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'region-exceeds-per-region-budget (after, contract)',
+                                },
+                                {
+                                    path: '.agents/decisions/README.md',
+                                    reason: 'region-exceeds-per-region-budget (context, contract)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
+            { path: 'scripts/reviewDossier.ts', reason: 'region-exceeds-per-region-budget (after, contract)' },
+            {
+                path: '.agents/decisions/README.md',
+                reason: 'region-exceeds-per-region-budget (context, contract)',
+            },
+        ]);
+    });
+
     it('pins the advisory workflow path and event literals from the captured run', () => {
         expect(ADVISORY_WORKFLOW_PATH).toBe('.github/workflows/semantic-review.yml');
         expect(ADVISORY_WORKFLOW_EVENT).toBe('pull_request_target');
