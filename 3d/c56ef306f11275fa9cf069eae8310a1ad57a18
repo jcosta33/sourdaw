@@ -1,0 +1,31 @@
+src/modules/Bacteria/models/__tests__/BacteriaModulationIds.spec.ts
+  s_2bfd55a4393d7c::t_afb03de71ad957 78-93
+crates/daw-engine/src/scheduler.rs
+  s_2bfd55a4393d7c::t_7a0c88637f7d96 23947-24049,24052
+  s_2bfd55a4393d7c::t_33e61ba41b9bf6 24050-24051,24053-24055
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_2bfd55a4393d7c::t_992565b3ae0bad 835-874
+  s_2bfd55a4393d7c::t_dc8949084e647e 21
+crates/sourdaw-native/src/commands/graph.rs
+  s_2bfd55a4393d7c::t_5b03ee3b38228b 2523-2524
+  s_2bfd55a4393d7c::t_f70803d5daea25 14042-14050
+  s_2bfd55a4393d7c::t_5058596c1425e8 14092-14128
+src/modules/Bacteria/models/BacteriaModulationIds.ts
+  s_2bfd55a4393d7c::t_982468e1099560 128-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3dc56ef306f11275fa9cf069eae8310a1ad57a18",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
