@@ -5,6 +5,20 @@
  * the former for a product-scope change; everything here is pure text judgment with no I/O.
  */
 import { fail, PULL_REQUEST_BODY_BYTE_LIMIT } from './prContract.ts';
+import {
+    ARTICLES,
+    CHECK_COMMANDS,
+    CHECK_SCRIPT_FAMILIES,
+    CLOSED_CLASS_FUNCTION_WORDS,
+    COMMAND_HEADS,
+    ENGLISH_WORD_HEADS,
+    FILLER_WORDS,
+    OBSERVATION_CUE_STEMS,
+    REMAINDER_VOCABULARY,
+    TEST_SUBCOMMAND_HEADS,
+    TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
+    TEST_SUBCOMMAND_PREFIX_WORDS,
+} from './testInstructionVocabulary.ts';
 
 /**
  * The refusal for a product-scope publish whose `--test` narrates checks anywhere. Reviewers verify
@@ -25,97 +39,8 @@ const QUOTED_SEGMENT_LIMIT = 3;
 /** The length, in characters, past which a quoted segment is cut and marked with an ellipsis. */
 const QUOTED_SEGMENT_MAX_CHARACTERS = 120;
 
-/**
- * The filler words that may precede or join command tokens without making a segment anything but
- * narration. One list feeds both the leading-filler pattern and the annotation vocabulary, so the
- * two can never disagree about a word.
- */
-const FILLER_WORDS = [
-    'run',
-    'runs',
-    'ran',
-    'execute',
-    'executes',
-    'executed',
-    'same',
-    'for',
-    'ditto',
-    'then',
-    'and',
-    'also',
-    'again',
-];
-
 /** Leading list markers a How-to-test bullet may carry: dash, asterisk, bullet, `1.`, `1)`, `a)`. */
 const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
-
-/**
- * Articles whose presence directly behind a quoted or tool command head keeps the argument run
- * closed: '`make` a MIDI track' is the step's own verb naming its object. Only articles do this
- * there: behind a head typed as a command, a copula makes the command the sentence's subject
- * ('`diff` is empty', `Git is empty`), which is narration whose words the run must still eat.
- */
-const ARTICLES = ['a', 'an', 'the'];
-
-/**
- * English closed-class function words — articles, pronouns and determiners, prepositions and
- * particles, auxiliary and copular verbs — whose presence directly behind an English-word lead
- * shows English syntax, so the lead is no launch material: `Make a MIDI track`, `Make it the
- * same`, `Go to 1.1.1`, and `Echo is still on` are the step's own verb or subject followed by its
- * sentence. A bare argument (`make test`) is still the launch it reads as. Exported so the specs
- * can pin the inventory: dropping any member reddens the equality pin and that member's
- * behavioral case.
- */
-export const CLOSED_CLASS_FUNCTION_WORDS = new Set([
-    ...ARTICLES,
-    'it',
-    'its',
-    'this',
-    'that',
-    'these',
-    'those',
-    'them',
-    'everything',
-    'nothing',
-    'all',
-    'both',
-    'each',
-    'to',
-    'back',
-    'by',
-    'as',
-    'at',
-    'in',
-    'into',
-    'on',
-    'onto',
-    'off',
-    'from',
-    'with',
-    'through',
-    'over',
-    'under',
-    'up',
-    'down',
-    'out',
-    'past',
-    'around',
-    'before',
-    'after',
-    'is',
-    'are',
-    'was',
-    'were',
-    'be',
-    'stays',
-    'remains',
-    'should',
-    'must',
-    'will',
-    'can',
-    'sounds',
-    'still',
-]);
 
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
@@ -176,238 +101,8 @@ const TOKEN_EDGE_PUNCTUATION = /^[,;:()*_~]+|[,;:()*_~]+$/g;
  */
 const ENV_ASSIGNMENT_TOKEN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
-/**
- * The command heads whose mention alone reads as CI or author check narration, not an app step.
- * Exported so the specs can pin the inventory: dropping any head reddens the equality pin, a bare
- * head's behavioral iteration reddens too, and for a colon-bearing head the equality pin is the
- * only net — the path rule still classifies the dropped token.
- */
-export const COMMAND_HEADS = new Set([
-    'bash',
-    'biome',
-    'bun',
-    'cargo',
-    'cat',
-    'cd',
-    'cmake',
-    'curl',
-    'deno',
-    'diff',
-    'docker',
-    'dotnet',
-    'echo',
-    'electron',
-    'electron-builder',
-    'env',
-    'eslint',
-    'find',
-    'flutter',
-    'format',
-    'gh',
-    'git',
-    'go',
-    'gradle',
-    'grep',
-    'guard',
-    'head',
-    'jest',
-    'knip',
-    'less',
-    'lint',
-    'ls',
-    'make',
-    'mvn',
-    'node',
-    'npm',
-    'npx',
-    'oxlint',
-    'pip',
-    'pnpm',
-    'playwright',
-    'prettier',
-    'pytest',
-    'python',
-    'python3',
-    'rg',
-    'rustc',
-    'sh',
-    'sort',
-    'tail',
-    'tee',
-    'test:barrel-mocks',
-    'test:e2e',
-    'test:run',
-    'deps:validate',
-    'tsx',
-    'tsc',
-    'typecheck',
-    'uv',
-    'vite',
-    'vitest',
-    'wasm:all',
-    'wasm-bindgen',
-    'wasm-pack',
-    'wasm:verify',
-    'wc',
-    'which',
-    'xargs',
-    'yarn',
-]);
-
 /** A trailing `.ts`-style extension: a token shaped like a filename is command material no prose rides on. */
 const FILE_EXTENSION_SUFFIX = /\.[A-Za-z0-9]+$/;
-
-/**
- * The closed vocabulary a command-only segment's leftover words may draw from before it stops
- * being narration: the result statuses a command line cites, and the command-annotation words
- * (the filler set plus the copula, prepositions, and scope words). Anything beyond it is real
- * instruction.
- */
-const REMAINDER_VOCABULARY = new Set([
-    ...FILLER_WORDS,
-    'passed',
-    'passes',
-    'passing',
-    'failed',
-    'failing',
-    'green',
-    'clean',
-    'ok',
-    'okay',
-    'pass',
-    'fail',
-    'fails',
-    'skipped',
-    'unchanged',
-    'red',
-    'reds',
-    'reddens',
-    'errors',
-    'is',
-    'it',
-    'they',
-    'be',
-    'are',
-    'was',
-    'should',
-    'still',
-    'stays',
-    'as',
-    'no',
-    'see',
-    'ci',
-    'expected',
-    'both',
-    'on',
-    'with',
-    'the',
-    'a',
-    'an',
-    'in',
-    'of',
-    'to',
-    'from',
-    'every',
-    'all',
-    'each',
-    'files',
-    'file',
-    'suite',
-    'suites',
-    'spec',
-    'specs',
-    'test',
-    'tests',
-    'touched',
-    'changed',
-    'focused',
-    'modules',
-    'module',
-    'broad',
-    'extended',
-    'profile',
-    'output',
-    'over',
-    'new',
-    'old',
-    'only',
-    'plus',
-    'via',
-    'using',
-]);
-
-/**
- * The observation-cue stems, in one list so the cue regex and the bare-stem test behind the
- * material check can never disagree: inflected stems, matched at word start so `confirm` reaches
- * `confirms`/`confirmed` and `play` reaches `plays`, `played`, and `playback`. Tested in two
- * places: the prose remainder's words, and — through the material-behind check — the raw tokens a
- * run is split into, where a bare cue stem stays non-material. Command text is still safe:
- * `wasm:verify` and `checkModelCached.spec.ts` carry their stems inside command tokens the
- * remainder drops before the cue test sees them.
- */
-const OBSERVATION_CUE_STEMS = [
-    'confirm',
-    'verif',
-    'observ',
-    'check',
-    'watch',
-    'listen',
-    'hear',
-    'notice',
-    'open',
-    'click',
-    'appear',
-    'render',
-    'show',
-    'display',
-    'audible',
-    'drag',
-    'play',
-    'press',
-    'select',
-    'type',
-    'toggle',
-    'choose',
-    'create',
-    'remove',
-    'delete',
-    'move',
-    'resize',
-    'scroll',
-    'hover',
-    'arm',
-    'record',
-    'restart',
-    'start',
-    'stop',
-    'save',
-    'undo',
-    'redo',
-    'zoom',
-    'nudge',
-    'cut',
-    'copy',
-    'paste',
-    'split',
-    'duplicate',
-    'rename',
-    'edit',
-    'adjust',
-    'switch',
-    'connect',
-    'disconnect',
-    'enable',
-    'disable',
-    'import',
-    'export',
-    'load',
-    'reload',
-    'clear',
-    'reset',
-    'apply',
-    'add',
-    'set',
-];
 
 const OBSERVATION_CUE = new RegExp(`\\b(?:${OBSERVATION_CUE_STEMS.join('|')})\\w*`, 'i');
 
@@ -569,32 +264,6 @@ function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
 function launchFollower(launch: PeeledLaunch): string {
     return launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
 }
-
-/**
- * The command heads that are also ordinary English imperative verbs a DAW step can open with
- * (`Go to Settings`, `sort by name`, `make track 2 mono`). Heads whose English use is itself check
- * narration (`lint`, `typecheck`, the colon-bearing scripts) and tool names stay out, so they open
- * an argument run whatever their letter case.
- */
-export const STEP_VERB_HEADS = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail'];
-
-/**
- * The command heads that are also ordinary English words a DAW step or its expected result can
- * carry: the step verbs, plus the nouns and pronouns a result sentence names (`Node 2 is gone`,
- * `the cat`, `which track`). Their mere presence is no command evidence; only a quoted spelling or
- * a command-shaped token beside them shows the segment is a command line. Tool names (`pnpm`,
- * `git`, `cargo`) stay out, so their presence alone keeps reading as a launch.
- */
-export const ENGLISH_WORD_HEADS = new Set([
-    ...STEP_VERB_HEADS,
-    'node',
-    'env',
-    'which',
-    'electron',
-    'guard',
-    'tee',
-    'cat',
-]);
 
 /**
  * Whether the peeled lead is an English word rather than a launch: an unquoted member of
@@ -976,47 +645,6 @@ function namesTestSuite(segment: string): boolean {
         SUITE_OR_PIPELINE_STATUS.test(segment)
     );
 }
-
-/** Script families every member of which runs a check: `test:run`, `typecheck:scripts`, `lint:fix`, `cargo:test`. */
-export const CHECK_SCRIPT_FAMILIES = new Set(['test', 'typecheck', 'lint', 'cargo']);
-
-/** Check scripts and tools that run nothing but a check: a reviewer never launches one to use the app. */
-export const CHECK_COMMANDS = new Set([
-    'deps:validate',
-    'wasm:verify',
-    'typecheck',
-    'lint',
-    'tsc',
-    'eslint',
-    'prettier',
-    'oxlint',
-    'biome',
-    'knip',
-    'jest',
-    'pytest',
-    'vitest',
-]);
-
-/**
- * Heads whose `test` subcommand runs a suite (`pnpm test`, `cargo test`, `go test`). Playwright rides
- * here rather than among the check-only commands: `playwright open` is a browser a reviewer drives,
- * and only `playwright test` runs the suite.
- */
-export const TEST_SUBCOMMAND_HEADS = new Set(['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright']);
-
-/**
- * The runner words and flags that may stand alone between a suite-running head and its `test`
- * subcommand without changing what runs: `pnpm run test`, `pnpm -r test`. Exported so the specs
- * can pin the inventory: dropping any member reddens the equality pin and that member's case.
- */
-export const TEST_SUBCOMMAND_PREFIX_WORDS = new Set(['run', '-r', '--recursive']);
-
-/**
- * The runner options that take a value between a suite-running head and its `test` subcommand,
- * written either as the next token (`pnpm --filter x test`, `pnpm -F x test`) or behind `=`
- * (`pnpm --filter=x test`). Exported so the specs can pin the inventory like the prefix words.
- */
-export const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS = new Set(['--filter', '-F']);
 
 /**
  * Whether the segment mentions a check command, whatever prose rides beside it: a check-family

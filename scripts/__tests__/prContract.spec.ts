@@ -35,9 +35,11 @@ import {
     assertObservableTestInstructions,
     narratingTestInstructionSegments,
     testInstructionsNarrateChecks,
+    CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
+} from '../testInstructions.ts';
+import {
     COMMAND_HEADS,
     CHECK_COMMANDS,
-    CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
     CHECK_SCRIPT_FAMILIES,
     CLOSED_CLASS_FUNCTION_WORDS,
     ENGLISH_WORD_HEADS,
@@ -45,7 +47,7 @@ import {
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
     TEST_SUBCOMMAND_PREFIX_WORDS,
-} from '../testInstructions.ts';
+} from '../testInstructionVocabulary.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
