@@ -5,7 +5,10 @@ import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { resolveClipsWithComping } from '../../resolveComping';
 import {
     setTimeOperationDependencies,
     type TimeOperationDependencies,
@@ -150,12 +153,14 @@ describe('executeSelectedTimeRangeDeletion', () => {
             ghostClips: [],
         });
         midiStore.set(EMPTY_MIDI_STATE);
+        takeLaneStore.set({ lanes: [] });
         installRealMidiPreparation();
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('12345678-1234-4123-8123-123456789abc');
     });
 
     afterEach(() => {
         setTimeOperationDependencies(null);
+        takeLaneStore.set({ lanes: [] });
         vi.restoreAllMocks();
     });
 
@@ -1091,5 +1096,135 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(observations.every((observation) => observation.arrangementRestored && observation.midiRestored)).toBe(
             true
         );
+    });
+
+    // #4520 — the deletion must retire the take-lane state of the clips it
+    // fully removes, or an orphan comp region keeps advancing the comp cursor
+    // over the freed span.
+    it('retires the takes and comp regions of clips the range fully removes', () => {
+        const comped = createClip({ id: 'comped', trackId: 'target', startBeat: 2, endBeat: 6 });
+        const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 8, endBeat: 12 });
+        setArrangement([createTrack('target', [comped, keeper])]);
+        // The spec pins crypto.randomUUID to a constant, so takes built here
+        // carry explicit ids — retirement matches takes by id.
+        const compedTake = { ...createTake('comped', 'Comped take', 2, 6), id: 'take-comped' };
+        const keeperTake = { ...createTake('keeper', 'Keeper take', 8, 12), id: 'take-keeper' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [compedTake, keeperTake],
+            activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: compedTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 2,
+                endBeat: 6,
+                trackIds: ['target'],
+            })
+        );
+
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['keeper']);
+        // The lane survives on its other take; the removed clip's take and the
+        // region naming it are gone.
+        const lanes = takeLaneStore.value?.lanes ?? [];
+        expect(lanes).toHaveLength(1);
+        expect(lanes[0]?.id).toBe(lane.id);
+        expect(lanes[0]?.takes.map((take) => take.id)).toEqual([keeperTake.id]);
+        expect(lanes[0]?.activeCompRegions).toEqual([]);
+        // The capture rides the inverse plan, like every other retired state.
+        expect(JSON.parse(JSON.stringify(result.inversePlan))).toEqual(result.inversePlan);
+        expect(result.inversePlan).toMatchObject({
+            takeLanes: {
+                version: 1,
+                appliedEffect: 'restore',
+                removedClipIds: ['comped'],
+                retiredLanes: [{ laneIndex: 0, retiredTakeIds: [compedTake.id] }],
+            },
+        });
+    });
+
+    it('lets a clip landing on the freed span resolve instead of going silent behind an orphan region', () => {
+        const comped = createClip({ id: 'comped', trackId: 'target', startBeat: 2, endBeat: 6 });
+        setArrangement([createTrack('target', [comped])]);
+        const compedTake = createTake('comped', 'Comped take', 2, 6);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...createTakeLane('target'),
+                    takes: [compedTake],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: compedTake.id }],
+                },
+            ],
+        });
+
+        requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
+
+        // A clip drawn over the freed span afterwards: before the fix the orphan
+        // region [2,6] still advanced the comp cursor and swallowed it whole.
+        const drawn = createClip({ id: 'drawn', trackId: 'target', startBeat: 2, endBeat: 6 });
+        const resolved = resolveClipsWithComping('target', [drawn]);
+        expect(resolved.map((fragment) => [fragment.startBeat, fragment.endBeat])).toEqual([[2, 6]]);
+    });
+
+    it('restores the retired lanes on undo and retires them again on replay redo', () => {
+        const comped = createClip({ id: 'comped', trackId: 'target', startBeat: 2, endBeat: 6 });
+        const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 8, endBeat: 12 });
+        const originalState = setArrangement([createTrack('target', [comped, keeper])]);
+        // The spec pins crypto.randomUUID to a constant, so takes built here
+        // carry explicit ids — retirement matches takes by id.
+        const compedTake = { ...createTake('comped', 'Comped take', 2, 6), id: 'take-comped' };
+        const keeperTake = { ...createTake('keeper', 'Keeper take', 8, 12), id: 'take-keeper' };
+        const lane: TakeLane = {
+            ...createTakeLane('target'),
+            takes: [compedTake, keeperTake],
+            activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: compedTake.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+
+        const first = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([keeperTake.id]);
+
+        expect(first.undo()).toBe(true);
+        expect(trackStore.value).toBe(originalState);
+        const restoredLane = takeLaneStore.value?.lanes[0];
+        expect(restoredLane?.id).toBe(lane.id);
+        expect(restoredLane?.takes.map((take) => take.id)).toEqual([compedTake.id, keeperTake.id]);
+        expect(restoredLane?.activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: compedTake.id }]);
+
+        // Redo re-runs the deletion with the captured replay plan; its own undo
+        // closure carries the lanes that replay retired.
+        const replay = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 2,
+                endBeat: 6,
+                trackIds: ['target'],
+                replayPlan: first.replayPlan,
+            })
+        );
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['keeper']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([keeperTake.id]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([]);
+
+        expect(replay.undo()).toBe(true);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([compedTake.id, keeperTake.id]);
+    });
+
+    it('does not rewrite the take-lane store when no take names a removed clip', () => {
+        const drop = createClip({ id: 'drop', trackId: 'target', startBeat: 2, endBeat: 6 });
+        setArrangement([createTrack('target', [drop])]);
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane('target'), takes: [createTake('unrelated', 'Unrelated', 0, 4)] }],
+        });
+        const laneStateBefore = takeLaneStore.value;
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+
+        expect(takeLaneStore.value).toBe(laneStateBefore);
+        expect(result.inversePlan).toMatchObject({ takeLanes: null });
     });
 });
