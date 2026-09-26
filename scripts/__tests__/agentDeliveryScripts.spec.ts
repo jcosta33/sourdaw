@@ -1945,6 +1945,42 @@ describe('package scripts and gitignore', () => {
         expect(snapshotImportSpecifiers(source)).toContain(specifier);
     });
 
+    // Pins the unarmed `?` arm of `skipTypeExpression`: a top-level `?` with no armed `extends` is a
+    // value ternary, so the cast ends before it and the specifier is computed.
+    it('refuses a plain value ternary after a cast type as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers("require('./checked.ts' as string ? './a.ts' : './b.ts')")).toEqual([
+            'require(...)',
+        ]);
+    });
+
+    // Pins the word-operator arm of `skipTypeExpression`: `instanceof` and `in` are never type
+    // syntax, so the cast ends before them and the specifier is computed.
+    it('refuses instanceof and in after a cast type as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as string instanceof Foo)")).toEqual([
+            'import(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as string in obj)")).toEqual([
+            'import(...)',
+        ]);
+    });
+
+    // Pins the leading-sign arm of `skipTypeExpression`: a `-` before a digit is the sign of a
+    // numeric literal type only where a type atom begins; after a completed type it is a value
+    // operator, so the cast ends before it and the specifier is computed.
+    it('refuses a minus before a digit after a cast type as a computed load', () => {
+        expect(snapshotComputedDynamicSpecifiers("require('./checked.ts' as string -2)")).toEqual(['require(...)']);
+    });
+
+    // Pins the union/intersection and arrow resets of `skipTypeExpression`: `|`, `&`, and `=>` clear
+    // the type-atom marker, so the `-1` after either is the sign of a new numeric literal type and
+    // the cast stays a type, admitting the literal with its specifier still collected.
+    it('admits a cast whose union or arrow reset reopens a literal type, with the literal collected', () => {
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as A | -1)")).toEqual([]);
+        expect(snapshotImportSpecifiers("await import('./checked.ts' as A | -1)")).toContain('./checked.ts');
+        expect(snapshotComputedDynamicSpecifiers("await import('./checked.ts' as () => -1)")).toEqual([]);
+        expect(snapshotImportSpecifiers("await import('./checked.ts' as () => -1)")).toContain('./checked.ts');
+    });
+
     /**
      * A real call is admitted as a declaration when the rule reads the single token after the closing
      * parenthesis instead of the enclosing construct. `flag ? require(spec) : undefined`,
@@ -1987,6 +2023,49 @@ describe('package scripts and gitignore', () => {
         },
     ])('refuses $label as a computed load', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
+     * A dot-ending line comment and a spread's three dots are not member access, so a load behind
+     * either is still refused as computed: `isPrecededByDotAccess` walks back over whitespace and
+     * comments to decide whether `import`, `require`, or `createRequire` is a member call, and a `.`
+     * that ends a line comment or belongs to a `...` spread must not hide the load from the scan.
+     * Without the line-comment walk the comment's final `.` is read as the member-access dot; without
+     * the spread rule the third dot of `...` is.
+     */
+    it.each([
+        {
+            label: 'a require load after a dot-ending line comment',
+            source: "const specifier = './unchecked.ts';\n// Fall back to the plugin entry.\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import after a dot-ending line comment',
+            source: "const specifier = './unchecked.ts';\n// Fall back to the plugin entry.\nimport(specifier);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a createRequire load after a dot-ending line comment',
+            source: "import { createRequire } from 'node:module';\n// Fall back to the plugin entry.\ncreateRequire(import.meta.url)(specifier);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a require load spread into an array',
+            source: "const specifier = './unchecked.ts';\n[...require(specifier)];",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import spread into an array',
+            source: "const specifier = './unchecked.ts';\n[...import(specifier)];",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a createRequire load spread into an array',
+            source: "import { createRequire } from 'node:module';\n[...createRequire(import.meta.url)(specifier)];",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
     });
 
     /**
@@ -2053,6 +2132,46 @@ describe('package scripts and gitignore', () => {
         {
             label: 'a require-named ambient overload with an optional parameter',
             source: 'declare function require(name?: string);',
+        },
+        {
+            label: 'a require-named static class method',
+            source: 'class ModuleLoader { static require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named async class method',
+            source: 'class ModuleLoader { async require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named public class method',
+            source: 'class ModuleLoader { public require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named protected class method',
+            source: 'class ModuleLoader { protected require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named class getter',
+            source: 'class ModuleLoader { get require() { return undefined; } }',
+        },
+        {
+            label: 'a require-named class setter',
+            source: 'class ModuleLoader { set require(value: string) {} }',
+        },
+        {
+            label: 'a require-named abstract class method',
+            source: 'abstract class ModuleLoader { abstract require(specifier: string): unknown; }',
+        },
+        {
+            label: 'a require-named generator class method',
+            source: 'class ModuleLoader { *require() { yield 1; } }',
+        },
+        {
+            label: 'a require-named async generator class method',
+            source: 'class ModuleLoader { async *require() { yield 1; } }',
+        },
+        {
+            label: 'a require-named generator function declaration',
+            source: 'function* require() { yield 1; }',
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);

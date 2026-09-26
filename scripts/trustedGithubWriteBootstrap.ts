@@ -673,13 +673,35 @@ function isParameterListRegion(
     return isAnnotatedParameterListRegion(source, start, end);
 }
 
+/**
+ * Modifiers that can precede a declaration name. A modifier is skipped while walking back from the
+ * name so the enclosing construct — `function`, `{`, `(`, or `,` — decides the declaration, never the
+ * modifier alone: `static require(...)` is a method, but `case require(x):` and `default require(x)`
+ * stay calls because `case` and `default` are not modifiers.
+ */
+const DECLARATION_MODIFIERS: ReadonlySet<string> = new Set([
+    'static',
+    'async',
+    'public',
+    'protected',
+    'private',
+    'abstract',
+    'readonly',
+    'get',
+    'set',
+    'override',
+    'declare',
+]);
+
 function isDeclarationContext(source: string, keywordIndex: number): boolean {
     // The name is declared when the token before it is `function` (a function declaration), `{` (a
     // method in a class, object, or type body), or `(` / `,` (a parameter whose type is a call
-    // signature). Anything else — `?`, `case`, `extends`, a statement boundary — leaves the token a
-    // callee, so the parenthesized list is a call. A block whose first statement is a call followed
-    // by another block (`{ require(spec) { … } }`) is indistinguishable from an object method by
-    // this token look, and is filed as #4818 rather than silently misread as a declaration.
+    // signature). A modifier or a generator asterisk before the name is skipped so the enclosing
+    // construct decides, never the modifier alone. Anything else — `?`, `case`, `extends`, a
+    // statement boundary — leaves the token a callee, so the parenthesized list is a call. A block
+    // whose first statement is a call followed by another block (`{ require(spec) { … } }`) is
+    // indistinguishable from an object method by this token look, and is filed as #4818 rather than
+    // silently misread as a declaration.
     let cursor = keywordIndex - 1;
     while (cursor >= 0) {
         const character = source[cursor];
@@ -708,12 +730,26 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
         if (character === '{' || character === '(' || character === ',') {
             return true;
         }
+        // A generator asterisk sits between the enclosing construct and the name; skip it and keep
+        // walking so the construct before it decides.
+        if (character === '*') {
+            cursor -= 1;
+            continue;
+        }
         if (isIdentifierContinue(character)) {
             let identifierStart = cursor;
             while (identifierStart >= 0 && isIdentifierContinue(source[identifierStart])) {
                 identifierStart -= 1;
             }
-            return source.slice(identifierStart + 1, cursor + 1) === 'function';
+            const word = source.slice(identifierStart + 1, cursor + 1);
+            if (word === 'function') {
+                return true;
+            }
+            if (DECLARATION_MODIFIERS.has(word)) {
+                cursor = identifierStart - 1;
+                continue;
+            }
+            return false;
         }
         return false;
     }
@@ -1186,12 +1222,7 @@ function scanImportSpecifiers(
             }
             const dynamic = readDynamicImportSpecifier(source, afterKeyword);
             if (dynamic !== undefined) {
-                const before = index === 0 ? undefined : source[index - 1];
-                if (
-                    before !== '.' &&
-                    (index < 2 || source.slice(index - 2, index) !== '?.') &&
-                    !isPrecededByDotAccess(source, index)
-                ) {
+                if (!isPrecededByDotAccess(source, index)) {
                     specifiers.add(dynamic.value);
                 }
                 index = dynamic.end;
@@ -1205,12 +1236,7 @@ function scanImportSpecifiers(
             }
         }
         if (isKeywordAt(source, index, 'require')) {
-            const before = index === 0 ? undefined : source[index - 1];
-            if (
-                before !== '.' &&
-                (index < 2 || source.slice(index - 2, index) !== '?.') &&
-                !isPrecededByDotAccess(source, index)
-            ) {
+            if (!isPrecededByDotAccess(source, index)) {
                 let cursor = skipWhitespace(source, index + 7);
                 if (source[cursor] === '.') {
                     const afterDot = skipWhitespace(source, cursor + 1);
@@ -1236,12 +1262,7 @@ function scanImportSpecifiers(
             }
         }
         if (isKeywordAt(source, index, 'createRequire')) {
-            const before = index === 0 ? undefined : source[index - 1];
-            if (
-                before !== '.' &&
-                (index < 2 || source.slice(index - 2, index) !== '?.') &&
-                !isPrecededByDotAccess(source, index)
-            ) {
+            if (!isPrecededByDotAccess(source, index)) {
                 const afterKeyword = skipWhitespace(source, index + 13);
                 if (source[afterKeyword] === '(') {
                     const afterFirstCall = skipBalancedParens(source, afterKeyword);
@@ -1546,10 +1567,6 @@ function readImportMetaResolveSpecifier(source: string, index: number): ReadSpec
 }
 
 function isPrecededByDotAccess(source: string, index: number): boolean {
-    const before = index === 0 ? undefined : source[index - 1];
-    if (before === '.' || (index >= 2 && source.slice(index - 2, index) === '?.')) {
-        return true;
-    }
     let cursor = index - 1;
     while (cursor >= 0) {
         const character = source[cursor]!;
@@ -1565,7 +1582,24 @@ function isPrecededByDotAccess(source: string, index: number): boolean {
             cursor = open - 1;
             continue;
         }
-        return character === '.';
+        // A `//` comment's last character is not a token: a comment ending in `.` would otherwise be
+        // read as the member-access dot. Skip back to before the `//` so the token before the name is
+        // read, matching the declaration-context walk.
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
+            continue;
+        }
+        if (character === '.') {
+            // A spread's three dots are not member access; skip the whole token so the token before
+            // the spread decides.
+            if (cursor >= 2 && source.slice(cursor - 2, cursor + 1) === '...') {
+                cursor -= 3;
+                continue;
+            }
+            return true;
+        }
+        return false;
     }
     return false;
 }
