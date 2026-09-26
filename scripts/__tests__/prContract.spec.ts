@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    PULL_REQUEST_BODY_BYTE_LIMIT,
     REQUIRED_BODY_HEADINGS,
     REVIEW_COMMENT_MAX_BYTES,
     assertConventionalSubject,
@@ -32,9 +33,15 @@ import {
 } from '../prContract.ts';
 import {
     assertObservableTestInstructions,
-    commandOnlyTestInstructions,
+    narratingTestInstructionSegments,
+    testInstructionsNarrateChecks,
     COMMAND_HEADS,
-    COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL,
+    CHECK_COMMANDS,
+    CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
+    CHECK_SCRIPT_FAMILIES,
+    ENGLISH_WORD_HEADS,
+    STEP_VERB_HEADS,
+    TEST_SUBCOMMAND_HEADS,
 } from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -64,17 +71,14 @@ describe('pull-request contract', () => {
         expect(() => assertConventionalSubject('WIP identities', 'title')).toThrow(/not conventional/);
     });
 
-    it('composes a body with Closes, every required heading, and the offered Screenshots one', () => {
+    it('composes a body with Closes and every required heading, and no retired Screenshots one', () => {
         const body = composePublishBody(2164, TITLE, SUMMARY, TEST_INSTRUCTIONS);
         expect(body).toContain('Closes #2164');
-        // The old name of this test claimed four headings but asserted only that the body was
-        // valid, so the count was never observed. Assert the list itself, and assert separately
-        // that composing still offers Screenshots even though it no longer gates the merge.
         for (const heading of REQUIRED_BODY_HEADINGS) {
             expect(body).toContain(heading);
         }
         expect(REQUIRED_BODY_HEADINGS).not.toContain(SCREENSHOTS_HEADING);
-        expect(body).toContain(`${SCREENSHOTS_HEADING}\nNone.`);
+        expect(body).not.toContain(SCREENSHOTS_HEADING);
         expect(body).toContain(`${HOW_HEADING}\n${TEST_INSTRUCTIONS}`);
         expect(body).toContain(`${WHAT_HEADING}\n${SUMMARY}`);
         expect(body).not.toContain(`${WHAT_HEADING}\n${TITLE}`);
@@ -456,8 +460,6 @@ describe('pull-request contract', () => {
 
     it.each([
         ['missing heading', '### 🎯 What does this PR do?\nChange.\n'],
-        // Emptying Screenshots no longer proves anything, because Screenshots is no longer
-        // required. This empties a required section instead, which is what the case is named for.
         ['empty section', composePublishBody(1, 'feat: x', SUMMARY, TEST_INSTRUCTIONS).replace(TEST_INSTRUCTIONS, '')],
         ['oversized', `${composePublishBody(1, 'feat: x', SUMMARY, TEST_INSTRUCTIONS)}${'a'.repeat(4000)}`],
     ])('rejects a %s body', (_case, body) => {
@@ -465,8 +467,6 @@ describe('pull-request contract', () => {
     });
 
     it('accepts a body with no Screenshots heading at all', () => {
-        // Screenshots is offered, not required: its canonical content is the literal `None.` that
-        // composing writes into every body, so gating the merge on it gated nothing.
         const body = `${WHAT_HEADING}\nChange.\n\n${HOW_HEADING}\nRun it.\n\n${RELATED_HEADING}\nCloses #1\n`;
 
         expect(() => assertPullRequestBody(body, 'body')).not.toThrow();
@@ -479,11 +479,11 @@ describe('pull-request contract', () => {
         expect(refusal(() => assertPullRequestBody(without, 'body'))).toBe(`body is missing: ${heading}`);
     });
 
-    it('still terminates a required section at the offered Screenshots heading', () => {
-        // Screenshots left the required list, so it no longer bounds a section by being in that
-        // list. If it stopped bounding sections altogether, How-to-test's content span would run
-        // past it to Related issues and swallow `### 🖼️ Screenshots\nNone.`, so an empty
-        // How-to-test section would read as full and merge.
+    it('still terminates a required section at the retired Screenshots heading', () => {
+        // Bodies published before the template dropped Screenshots still carry it. If it stopped
+        // bounding sections, How-to-test's content span would run past it to Related issues and
+        // swallow `### 🖼️ Screenshots\nNone.`, so an empty How-to-test section would read as full
+        // and merge.
         const body = `${WHAT_HEADING}\nChange.\n\n${HOW_HEADING}\n\n${SCREENSHOTS_HEADING}\nNone.\n\n${RELATED_HEADING}\nCloses #1\n`;
 
         expect(refusal(() => assertPullRequestBody(body, 'body'))).toBe(`body section is empty: ${HOW_HEADING}`);
@@ -727,7 +727,10 @@ describe('pull-request contract', () => {
 describe('product-scope test instructions', () => {
     // The gate's refusal, imported rather than copied: the exported literal is the single owner,
     // so rewording it reddens every pin in this file and in publishLane.spec.ts from one place.
-    const REFUSAL = COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL;
+    const REFUSAL = CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL;
+    // The refusal is the fixed sentence followed by the judged segments, so a verdict pin matches
+    // the sentence as the message's prefix and the quoting pins below own the rest.
+    const REFUSAL_PREFIX = new RegExp(`^${REFUSAL.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 
     /**
      * The full head inventory, spec-owned on purpose: dropping any head reddens the equality pin.
@@ -814,17 +817,140 @@ describe('product-scope test instructions', () => {
     it.each(COMMAND_HEADS_UNDER_TEST)('refuses the annotation-only inventory line for the %s head', (head) => {
         const line = `${head} run all (green)`;
 
-        expect(commandOnlyTestInstructions(line)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
     });
+
+    /**
+     * The check-only inventory, spec-owned on purpose: dropping any member reddens the equality pin
+     * and that member's behavioral case below. Several members are also command heads, so a bare
+     * command line would still refuse through the command rule without them.
+     */
+    const CHECK_COMMANDS_UNDER_TEST = [
+        'deps:validate',
+        'wasm:verify',
+        'typecheck',
+        'lint',
+        'tsc',
+        'eslint',
+        'prettier',
+        'oxlint',
+        'biome',
+        'knip',
+        'jest',
+        'pytest',
+        'vitest',
+    ];
+
+    it('pins the check-only command inventory the narration gate refuses whatever prose rides beside', () => {
+        expect([...CHECK_COMMANDS]).toEqual(CHECK_COMMANDS_UNDER_TEST);
+    });
+
+    it.each(CHECK_COMMANDS_UNDER_TEST)('refuses a prose-led step that mentions the %s check', (member) => {
+        // The app step's cue words rescue the segment from the command rule, so only the
+        // check-only inventory refuses the clause naming the member.
+        const instructions = `Open the mixer and confirm the fader moves; checked with pnpm ${member}.`;
+
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain(`"checked with pnpm ${member}"`);
+    });
+
+    /**
+     * The suite-running heads, spec-owned on purpose: dropping any head reddens the equality pin and
+     * that head's behavioral case below. Several heads are also command heads, so a bare `<head> test`
+     * line would still refuse through the command rule without them.
+     */
+    const TEST_SUBCOMMAND_HEADS_UNDER_TEST = ['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright'];
+
+    it('pins the heads whose test subcommand the narration gate refuses', () => {
+        expect([...TEST_SUBCOMMAND_HEADS]).toEqual(TEST_SUBCOMMAND_HEADS_UNDER_TEST);
+    });
+
+    it.each(TEST_SUBCOMMAND_HEADS_UNDER_TEST)('refuses a prose-led step that runs the %s test suite', (head) => {
+        // The cue word rescues the clause from the command rule, bare `test` names no suite, and no
+        // check-only command rides beside, so only the head's test subcommand refuses it.
+        const instructions = `Open the mixer and confirm the fader moves; verified with ${head} test.`;
+
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain(`"verified with ${head} test"`);
+    });
+
+    /**
+     * The check-script families, spec-owned on purpose, each beside one colon script of that family
+     * that is not itself a check-only command: dropping any family reddens the equality pin and that
+     * family's behavioral case below.
+     */
+    const CHECK_SCRIPT_FAMILIES_UNDER_TEST: [family: string, script: string][] = [
+        ['test', 'test:coverage'],
+        ['typecheck', 'typecheck:scripts'],
+        ['lint', 'lint:fix'],
+        ['cargo', 'cargo:clippy'],
+    ];
+
+    it('pins the check-script families the narration gate refuses whatever prose rides beside', () => {
+        expect([...CHECK_SCRIPT_FAMILIES]).toEqual(CHECK_SCRIPT_FAMILIES_UNDER_TEST.map(([family]) => family));
+    });
+
+    it.each(CHECK_SCRIPT_FAMILIES_UNDER_TEST)(
+        'refuses a prose-led step that names a %s family script (%s)',
+        (_family, script) => {
+            const instructions = `Open the mixer and confirm the fader moves; verified with pnpm ${script}.`;
+
+            expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+            const message = refusal(() => assertObservableTestInstructions(instructions));
+            expect(message).toMatch(REFUSAL_PREFIX);
+            expect(message).toContain(`"verified with pnpm ${script}"`);
+        }
+    );
+
+    /**
+     * The command heads that double as English words, spec-owned on purpose: dropping any member
+     * reddens the equality pins and that member's behavioral case below. The step verbs feed the
+     * English-word inventory, so a step verb dropped from its own list reddens both.
+     */
+    const STEP_VERB_HEADS_UNDER_TEST = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail'];
+    const ENGLISH_WORD_HEADS_UNDER_TEST = [
+        ...STEP_VERB_HEADS_UNDER_TEST,
+        'node',
+        'env',
+        'which',
+        'electron',
+        'guard',
+        'tee',
+        'cat',
+    ];
+
+    it('pins the step-verb and English-word head inventories the narration gate reads as prose', () => {
+        expect(STEP_VERB_HEADS).toEqual(STEP_VERB_HEADS_UNDER_TEST);
+        expect([...ENGLISH_WORD_HEADS]).toEqual(ENGLISH_WORD_HEADS_UNDER_TEST);
+    });
+
+    it.each(ENGLISH_WORD_HEADS_UNDER_TEST)(
+        'reads the unquoted %s head in a result sentence as prose and its quoted spelling as a command',
+        (head) => {
+            // Every word beside the head is annotation vocabulary, so only the English-word exemption
+            // keeps the bare mention from launching the sentence; the quoted twin was typed as a command.
+            const prose = `Play the clip. The ${head} is unchanged.`;
+            const quoted = `Play the clip. The \`${head}\` is unchanged.`;
+
+            expect(testInstructionsNarrateChecks(prose)).toBe(false);
+            expect(() => assertObservableTestInstructions(prose)).not.toThrow();
+            expect(narratingTestInstructionSegments(quoted)).toEqual([`The \`${head}\` is unchanged`]);
+            expect(refusal(() => assertObservableTestInstructions(quoted))).toMatch(REFUSAL_PREFIX);
+        }
+    );
 
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
             '\n'
         );
 
-        expect(commandOnlyTestInstructions(list)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(list))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(list)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(list))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses an inventory whose lead is an ordinary shell-tool sweep', () => {
@@ -832,15 +958,15 @@ describe('product-scope test instructions', () => {
         // rescues its own line, laundering the whole inventory behind it.
         const sweep = "- grep -rn 'handleClip' src/modules/ (ok)\n- pnpm typecheck (clean)";
 
-        expect(commandOnlyTestInstructions(sweep)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(sweep))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(sweep)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(sweep))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses one semicolon-joined line of commands', () => {
         const line = 'pnpm test:run src/x.spec.ts; pnpm typecheck; pnpm lint';
 
-        expect(commandOnlyTestInstructions(line)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses numbered lines whose commands ride in backticks behind a filler word', () => {
@@ -848,15 +974,15 @@ describe('product-scope test instructions', () => {
         // is narration like the bare command would be — the markers never rescue it.
         const steps = ['1. Run `pnpm test:run x`', '2. Run `pnpm typecheck`'].join('\n');
 
-        expect(commandOnlyTestInstructions(steps)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(steps))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(steps)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(steps))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses filler-led segments alongside command-led ones', () => {
         const mixed = ['- `pnpm lint` (clean)', '- same for pnpm typecheck:test (OK)'].join('\n');
 
-        expect(commandOnlyTestInstructions(mixed)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(mixed))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(mixed)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(mixed))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -869,8 +995,8 @@ describe('product-scope test instructions', () => {
         // no single-rule deletion reddens this fixture.
         ['a launch of an extension-less path', 'node ./scripts/seed'],
     ])('refuses %s as the only content', (_label, instructions) => {
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses a prose-position slash token only through the path rule', () => {
@@ -879,8 +1005,8 @@ describe('product-scope test instructions', () => {
         // reddens this fixture.
         const line = 'the web/console spec and pnpm lint (clean)';
 
-        expect(commandOnlyTestInstructions(line)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -892,8 +1018,8 @@ describe('product-scope test instructions', () => {
         // A head inside the argument run is command material the run continues through, and prose
         // quoted inside the run drops with the run in every shell quote kind — neither can rescue
         // the launch it belongs to.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -906,8 +1032,152 @@ describe('product-scope test instructions', () => {
         // fragment whose stray words rescue the line. The double-quoted pair and the single-quoted
         // node shape each redden the deletion of their own quote kind's tracking in
         // splitOutsideQuotedSpans.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('keeps a single-quoted argument after whitespace one segment', () => {
+        const instructions = "python -c 'import json; print(1)'";
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([instructions]);
+    });
+
+    it('keeps a single-quoted argument open across an in-word apostrophe and a sentence separator', () => {
+        // An in-word apostrophe never closes the open single-quoted span, so the '. ' inside the
+        // quoted argument cannot split off a prose sentence that would rescue the launch.
+        const instructions = "echo 'the track's fader stays at -12 dB. Open the mixer and check.'";
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([instructions]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        [
+            'a possessive before a launch sentence',
+            "Open the mixer and confirm the track's fader moves. pnpm dev. Press Stop.",
+            'pnpm dev',
+        ],
+        [
+            'a contraction before a launch sentence',
+            "Drag the clip; it doesn't snap. pnpm format on every touched file (clean, staged). Press Play.",
+            'pnpm format on every touched file (clean, staged)',
+        ],
+    ])('splits the sentences behind %s', (_label, instructions, judged) => {
+        // An apostrophe between two letters is part of its word, not an opening quote, so the
+        // sentences behind it split and the launch sentence is judged on its own.
+        expect(narratingTestInstructionSegments(instructions)).toEqual([judged]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('quotes the check line behind a possessive, not the app step before it', () => {
+        const instructions =
+            "Assign two armed audio tracks different inputs, enable On or Auto monitoring, then record: each track's " +
+            'monitor and capture now come from its own endpoint. Turning monitoring off for one track leaves the ' +
+            'other monitoring. Covered by pnpm test:run src/modules/AudioEngine/__tests__/recording.spec.ts.';
+
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain('Covered by pnpm test:run');
+        expect(message).not.toContain('Assign two armed');
+    });
+
+    it('quotes the check sentence behind a plural possessive, not the app step before it', () => {
+        const instructions = "Trim the clips' ends. Covered by pnpm test:run x.spec.ts.";
+
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain('Covered by pnpm test:run x.spec.ts');
+        expect(message).not.toContain('Trim the clips');
+    });
+
+    it('judges the launch sentence behind a plural possessive on its own', () => {
+        // An apostrophe directly after a letter ends its word, so it opens no quoted span that
+        // would hold the rest of the line open against the sentence split.
+        const instructions = "Solo both tracks' sends. Then run pnpm dev.";
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['Then run pnpm dev']);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('passes a step carrying a plural possessive', () => {
+        const step = "Solo both tracks' sends and confirm the meters move.";
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('passes a step whose possessive and contraction sit on either side of a separator', () => {
+        const step = "Open the mixer and confirm the track's fader moves; the meter doesn't clip.";
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        // A quote directly after a digit ends its word like one after a letter: an inch mark opens
+        // no span that would hold the launch sentence behind it inside the step.
+        ['an inch mark after a digit', 'Nudge the clip 12" to the right. Then run pnpm dev.'],
+        // Only an apostrophe is ever part of a word: a backtick between two letters still closes
+        // its span, so a plural code name cannot hold the rest of its line open.
+        ['a plural code name', 'Solo both `Track`s. Then run pnpm dev.'],
+        // An in-word apostrophe needs a letter or digit on both sides: a closing quote after a
+        // letter and before the separator closes its span, and so does a quote opening a word.
+        ['a quoted command name closing before the separator', "Click 'Cut Clip'. Then run pnpm dev."],
+        ['a quote opening a word inside an open span', "Rename the clip to 'Take 'Two. Then run pnpm dev."],
+    ])('judges the launch sentence behind %s on its own', (_label, instructions) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['Then run pnpm dev']);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('passes a launch possessive whose quote pairs with no later plural possessive', () => {
+        // A quote directly after a letter opens no span in the quoted-span patterns either, so the
+        // apostrophe of `dev's` cannot pair with the one after `tracks` and hide the observation
+        // between them.
+        const step = "pnpm dev's mixer shows both tracks' meters.";
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('refuses a single-quoted leading launch carrying a possessive', () => {
+        // The leading-span pattern reads an in-word apostrophe as part of the quoted launch, so
+        // the launch's words never strand behind a span cut short at the possessive.
+        const launch = "'echo the track's level'";
+
+        expect(testInstructionsNarrateChecks(launch)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(launch))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        // An unterminated quote is no span, and a span never closes at an in-word apostrophe.
+        ['an unterminated quote carrying a possessive', "git commit -m 'confirm the track's level"],
+        // A quote after whitespace is no in-word apostrophe, so it closes the open span early.
+        ['a nested quote closing its span early', "git commit -m 'keep the 'Cut Clip' label'"],
+    ])('keeps the prose of %s in the remainder, the fail-open margin', (_label, instructions) => {
+        // The words outside every span stay prose, where the cue word ends the argument run; a
+        // span stretched past them would hide that cue and leave only the commit's arguments.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(false);
+        expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
+    });
+
+    it('unwraps nothing from an empty leading quoted span', () => {
+        // An empty span is no launch shell: the sentence glued behind it keeps its first word as
+        // its lead, rather than an empty lead the command-material test would read as a launch.
+        const sentence = '``The tail is unchanged.';
+
+        expect(testInstructionsNarrateChecks(sentence)).toBe(false);
+        expect(() => assertObservableTestInstructions(sentence)).not.toThrow();
+    });
+
+    it.each([
+        ['a contraction inside a quoted commit message', "git commit -m 'don't reset the mixer'"],
+        ['a possessive inside a quoted echo argument', "echo 'the track's meter moves'"],
+    ])('refuses %s', (_label, instructions) => {
+        // The quoted-span removal reads the in-word apostrophe as part of the argument, so the
+        // whole quoted argument drops with the launch; pairing it as a closing quote would strand
+        // the prose behind it as rescuing words.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -921,8 +1191,8 @@ describe('product-scope test instructions', () => {
     ])('refuses %s', (_label, instructions) => {
         // The stems ride inside command tokens — the colon suffix, the path — which the remainder
         // drops before any cue or vocabulary test sees them, so these stay narration.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -932,8 +1202,8 @@ describe('product-scope test instructions', () => {
     ])('refuses %s', (_label, instructions) => {
         // The colon-bearing head is the same launch's script name: the argument run continues
         // through it, so the bare arguments behind it stay narration.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -945,8 +1215,8 @@ describe('product-scope test instructions', () => {
     ])('refuses %s', (_label, instructions) => {
         // Annotation vocabulary between the filler and the launch must not defeat the head check:
         // a head anywhere in an all-annotation segment narrates it.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('strips see-verb annotations and keeps a see-verb step that carries its own verb', () => {
@@ -954,12 +1224,12 @@ describe('product-scope test instructions', () => {
         const stripped = '`pnpm typecheck` (see CI)';
         const step = 'See the channel meter follow the level';
 
-        expect(commandOnlyTestInstructions(annotation)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(annotation))).toBe(REFUSAL);
-        expect(commandOnlyTestInstructions(stripped)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(stripped))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(annotation)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotation))).toMatch(REFUSAL_PREFIX);
+        expect(testInstructionsNarrateChecks(stripped)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(stripped))).toMatch(REFUSAL_PREFIX);
         // Without a see stem, a see-verb observation is rescued by its leading non-head word.
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -977,15 +1247,15 @@ describe('product-scope test instructions', () => {
         // prefix, so deleting FILE_EXTENSION_SUFFIX leaves it a prose word that rescues.
         ['a data-file lead', 'data.json lint all (green)'],
     ])('refuses %s', (_label, instructions) => {
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses a launched extension-bearing data file', () => {
         const line = 'node data.json (green)';
 
-        expect(commandOnlyTestInstructions(line)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1002,16 +1272,16 @@ describe('product-scope test instructions', () => {
         // rule treats as annotation, and a pronoun clause like 'it is clean' is annotation behind
         // a launch the run never opened — either way the segment keeps narrating instead of
         // ending in a rescuing word.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses a bare launch quoted or bare, subcommand and all', () => {
         // The token after a leading command head is that launch's subcommand, so quoting the
         // launch cannot change the verdict — and 'pnpm build' refuses the same way.
         for (const launch of ['pnpm dev', '`pnpm dev`', 'pnpm build']) {
-            expect(commandOnlyTestInstructions(launch)).toBe(true);
-            expect(refusal(() => assertObservableTestInstructions(launch))).toBe(REFUSAL);
+            expect(testInstructionsNarrateChecks(launch)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(launch))).toMatch(REFUSAL_PREFIX);
         }
     });
 
@@ -1020,7 +1290,7 @@ describe('product-scope test instructions', () => {
         // 'and', and the drag cue rescues the rest.
         const step = 'pnpm dev and drag a clip onto a lane, it lands quantized';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1030,7 +1300,7 @@ describe('product-scope test instructions', () => {
         // kept, so the rest of the step rescues the segment.
         const step = 'pnpm exec playwright open the app and see the mixer render';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1044,8 +1314,8 @@ describe('product-scope test instructions', () => {
         // segment's last token it is the command's trailing argument and drops, and a word
         // followed by nothing but annotation drops with it — while 'open' above keeps the
         // segment's rescue because the step's words follow it.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses the ast-grep form the repository mandates', () => {
@@ -1056,8 +1326,8 @@ describe('product-scope test instructions', () => {
         // drag step still passes.
         const line = "pnpm exec ast-grep run --lang ts -p 'executeAppAction($$$ARGS)' src";
 
-        expect(commandOnlyTestInstructions(line)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(line))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(line)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1067,8 +1337,8 @@ describe('product-scope test instructions', () => {
     ])('refuses %s: an env assignment cannot lead a launch as prose', (_label, instructions) => {
         // A NAME=value token is command material, so the launch behind it cannot be rescued by
         // reading the assignment as the segment's leading prose word.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1077,8 +1347,8 @@ describe('product-scope test instructions', () => {
     ])('refuses %s', (_label, instructions) => {
         // This repository's own binaries narrate bare like every other head; the inventory
         // iteration above already reddens any dropped spelling of these two.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1107,8 +1377,8 @@ describe('product-scope test instructions', () => {
     ])('refuses %s', (_label, instructions) => {
         // The subcommand slot drops the token behind the leading head whatever it is, and the
         // argument run behind the slot stays annotation-only — none of these teach a step.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('passes a prose-led action list as the fail-open margin', () => {
@@ -1116,19 +1386,17 @@ describe('product-scope test instructions', () => {
         // whatever follows — the documented margin where the gate judges inventories, not quality.
         const step = 'Open the app and drag';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
-    it('passes a launch-less annotation clause split off by a semicolon', () => {
-        // The semicolon splits the line, and the pronoun clause left behind carries no launch:
-        // annotation without a launch is the fail-open margin (an external semantic judgment
-        // scores it 0.08 for teaching a step), while the same clause attached to its launch —
-        // the three-line inventory fixture — refuses.
+    it('refuses a launch whose annotation clause a semicolon splits off', () => {
+        // The pronoun clause left behind carries no launch and narrates nothing by itself, but the
+        // launch segment before the semicolon still does, and one narrating segment refuses.
         const split = 'pnpm typecheck; it is clean';
 
-        expect(commandOnlyTestInstructions(split)).toBe(false);
-        expect(() => assertObservableTestInstructions(split)).not.toThrow();
+        expect(testInstructionsNarrateChecks(split)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(split))).toMatch(REFUSAL_PREFIX);
     });
 
     it('keeps noun-clause parentheticals that name UI state', () => {
@@ -1140,19 +1408,19 @@ describe('product-scope test instructions', () => {
         const lands = '1. `pnpm dev` (the clip lands quantized to the grid)';
         const landsShort = '1. `pnpm dev` (the clip lands quantized)';
 
-        expect(commandOnlyTestInstructions(tracks)).toBe(false);
+        expect(testInstructionsNarrateChecks(tracks)).toBe(false);
         expect(() => assertObservableTestInstructions(tracks)).not.toThrow();
-        expect(commandOnlyTestInstructions(lands)).toBe(false);
+        expect(testInstructionsNarrateChecks(lands)).toBe(false);
         expect(() => assertObservableTestInstructions(lands)).not.toThrow();
-        expect(commandOnlyTestInstructions(landsShort)).toBe(false);
+        expect(testInstructionsNarrateChecks(landsShort)).toBe(false);
         expect(() => assertObservableTestInstructions(landsShort)).not.toThrow();
     });
 
     it('refuses a launch whose argument run stays annotation', () => {
         const annotations = 'pnpm lint on every touched file (clean)';
 
-        expect(commandOnlyTestInstructions(annotations)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(annotations))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(annotations)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotations))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1160,9 +1428,12 @@ describe('product-scope test instructions', () => {
         ['a make task pair', 'make test\nmake lint'],
         ['an electron launch', 'electron .'],
         ['a node script invocation', 'node scripts/check.ts'],
+        // The semicolon strands the check run as a clause of its own, which the command rule
+        // refuses before the check-command mention is consulted.
+        ['a cargo test clause behind an app step', 'Open the mixer; cargo test passes.'],
     ])('refuses %s', (_label, instructions) => {
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('passes a manual step whose leading verb is also a command head', () => {
@@ -1170,7 +1441,7 @@ describe('product-scope test instructions', () => {
         // first word a reader reads, leaving the step's nouns to rescue the segment as usual.
         const step = 'Format the disk name in the export dialog';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1192,7 +1463,7 @@ describe('product-scope test instructions', () => {
         // the step's own verb naming its object — so the UI nouns reach the rescue check instead
         // of being eaten as the launch's arguments. A bare argument behind the same head stays a
         // launch: 'make test' and 'make lint' are pinned refusing by the make-task fixture.
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1210,8 +1481,8 @@ describe('product-scope test instructions', () => {
             // article-free twins (`pnpm test:run everything (140 passed)`, pinned above) always have.
             // Reverting the strict material rule reddens this fixture while the launched drag-step
             // pass rides its cue and clause unchanged.
-            expect(commandOnlyTestInstructions(instructions)).toBe(true);
-            expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+            expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
         }
     );
 
@@ -1221,14 +1492,14 @@ describe('product-scope test instructions', () => {
         ['a navigation step', 'go to the mixer'],
         ['a search step', 'find the missing plugin'],
     ])('passes a manual %s whose head-verb opens onto a preposition', (_label, step) => {
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
     it('passes a comma-joined observation no conjunction introduces', () => {
         const step = 'pnpm dev, drag a clip onto a lane, it lands quantized';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1238,7 +1509,7 @@ describe('product-scope test instructions', () => {
         // beyond-vocabulary nouns, not the cue stems.
         const step = 'Run the app with the flag and the meter follows';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1247,7 +1518,7 @@ describe('product-scope test instructions', () => {
         // single-quoted launch rescues the segment exactly as the backtick spelling does.
         const step = "'pnpm dev' and drag a clip onto a lane, it lands quantized";
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
@@ -1257,12 +1528,12 @@ describe('product-scope test instructions', () => {
         // is command material exactly like its single-quoted spelling.
         const step = '"pnpm dev" and drag a clip onto a lane, it lands quantized';
 
-        expect(commandOnlyTestInstructions(step)).toBe(false);
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
 
         const doubleQuotedLead = '"data.json" (green)';
-        expect(commandOnlyTestInstructions(doubleQuotedLead)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(doubleQuotedLead))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(doubleQuotedLead)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(doubleQuotedLead))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1281,53 +1552,254 @@ describe('product-scope test instructions', () => {
         // remainder drops, and a quoted lead opens the argument run exactly like the bare
         // spelling — its content is the launch whose subcommand slot and arguments keep
         // narrating behind it.
-        expect(commandOnlyTestInstructions(instructions)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('refuses a filler word joining two commands mid-segment', () => {
         const joined = 'pnpm typecheck and then pnpm lint';
 
-        expect(commandOnlyTestInstructions(joined)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(joined))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(joined)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(joined))).toMatch(REFUSAL_PREFIX);
     });
 
     it('reads a cue-bearing parenthetical as part of the step and a bare one as annotation', () => {
         // A parenthetical carrying an observation cue keeps its content in the prose the cue check
         // reads; a cue-free one is the annotation it looks like and strips away.
         const teaches = '1. `pnpm dev` (confirm the transport play button toggles)';
-        const watches = '1. `pnpm test:e2e tests/transport.spec.ts` (reviewer watches the headed run)';
         const annotates = '`pnpm typecheck` (clean)';
 
-        expect(commandOnlyTestInstructions(teaches)).toBe(false);
+        expect(testInstructionsNarrateChecks(teaches)).toBe(false);
         expect(() => assertObservableTestInstructions(teaches)).not.toThrow();
-        expect(commandOnlyTestInstructions(watches)).toBe(false);
-        expect(() => assertObservableTestInstructions(watches)).not.toThrow();
-        expect(commandOnlyTestInstructions(annotates)).toBe(true);
-        expect(refusal(() => assertObservableTestInstructions(annotates))).toBe(REFUSAL);
+        expect(testInstructionsNarrateChecks(annotates)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(annotates))).toMatch(REFUSAL_PREFIX);
     });
 
-    it('passes any single prose sentence, including one a filler word opens', () => {
-        // "Run" leads the existing fixtures' own How-to-test sentence: filler stripping must stop
-        // at the command list, not read the sentence's next word as one.
-        const prose = 'Run the focused publisher specs and confirm they pass.';
+    it('passes a prose step a filler word opens', () => {
+        // Filler stripping must stop at a command list, not read the sentence's next word as one.
+        const prose = 'Run the arrangement view at 200% zoom and confirm the new clip handle appears.';
 
-        expect(commandOnlyTestInstructions(prose)).toBe(false);
+        expect(testInstructionsNarrateChecks(prose)).toBe(false);
         expect(() => assertObservableTestInstructions(prose)).not.toThrow();
-        expect(commandOnlyTestInstructions('Open the arrangement view and confirm the new clip handle appears.')).toBe(
+        expect(
+            testInstructionsNarrateChecks('Open the arrangement view and confirm the new clip handle appears.')
+        ).toBe(false);
+    });
+
+    it.each([
+        ['a prose sentence narrating the specs', 'Run the focused publisher specs and confirm they pass.'],
+        ['a spec path inside prose', 'The census in src/x/__tests__/census.spec.ts fails if two controls share text.'],
+        ['a spec file named without its folder', 'authoredParameterGuidance.spec.ts covers every control.'],
+        ['a unit-test mention', 'Unit tests cover the undo path.'],
+        ['an end-to-end mention', 'The e2e smoke set exercises the mixer.'],
+        ['a CI mention', 'CI runs the native graph tests on every push.'],
+        // Only CI_WORD refuses these two: no other suite word, runner name, or command rides beside.
+        ['a bare CI mention', 'CI blocks the merge.'],
+        ['a CI mention behind an app step', 'Open the mixer and confirm the fader moves. CI blocks the merge.'],
+        ['a unit-suite mention', 'Covered by the unit suite.'],
+        ['an end-to-end-suite mention', 'Covered by the end-to-end suite.'],
+        ['an integration-test mention', 'Covered by integration tests.'],
+        ['a mention of the existing tests', 'Covered by the existing tests.'],
+        ['a test-suite mention', 'Covered by the test suite.'],
+        // The plural `tests` refuses the two qualified mentions above on its own, so each qualifier
+        // and the singular qualified test need a sentence where only the qualified suite decides.
+        ['an integration-suite mention', 'Covered by the integration suite.'],
+        ['a mention of the existing suite', 'Covered by the existing suite.'],
+        ['a singular unit-test mention', 'Covered by a unit test.'],
+        ['a hyphenated singular unit-test mention', 'Covered by a unit-test.'],
+        // The suite vocabulary ignores letter case: only the upper-case spelling of e2e decides.
+        ['an upper-case E2E mention', 'Covered by the E2E suite.'],
+        ['a tests-folder mention with no spec filename', 'See src/modules/x/__tests__/README for context.'],
+        // The runners as proper nouns: prose words rescue both sentences from the command rule,
+        // so only the runner-name vocabulary refuses these two.
+        ['a test-runner mention', 'Vitest covers the transport scheduler.'],
+        ['a browser-runner mention', 'Covered by Playwright.'],
+        // The bare plural names coverage where a bare singular names audio: only `tests` refuses.
+        ['a bare plural tests mention', 'Covered by tests.'],
+        ['a passing-tests claim', 'All tests pass.'],
+    ])('refuses %s even with no command token', (_label, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a spectrum step', 'Open the spectrum analyzer and confirm the peak sits at 1 kHz.'],
+        ['ci letters inside a longer word', 'Play the acid loop and confirm the circuit saturates.'],
+        // CI_WORD is case-sensitive on purpose: a lower-case standalone 'ci' is a name the step
+        // types, not the pipeline.
+        ['a standalone lower-case ci token', 'Rename the clip to ci and confirm the label updates.'],
+        ['a special-effects step', 'Load a special preset and confirm the reverb tail rings out.'],
+        // A bare 'test' qualifies nothing: a test tone or a test take is audio the reviewer
+        // plays or records.
+        ['a test-tone step', 'Play the test tone and confirm the meter reads -18 dBFS.'],
+        ['a test-tone peak step', 'Play the test tone and confirm the meter peaks at -6 dB.'],
+        ['a test-take step', 'Record a test take and confirm it lands on the take lane.'],
+    ])('passes %s that only brushes the test-suite vocabulary', (_label, step) => {
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        [
+            'a coverage note beside an app step',
+            'Open the mixer and confirm the send knob reads -12 dB. Automated coverage: pnpm test:run src/modules/PunchRecording.',
+        ],
+        ['a developer aside naming a focused run', 'Developers can run pnpm test:run src/modules/Mixer.'],
+        ['a verification claim naming two checks', 'Verified with pnpm typecheck and pnpm lint on the changed files.'],
+        ['a lint claim', 'Checked with pnpm lint.'],
+        ['a labelled cargo check', 'Focused checks: pnpm cargo:test --package daw-engine capture.'],
+        [
+            'a typecheck ahead of an app step',
+            'Run pnpm typecheck, then open the mixer and confirm the send knob reads -12 dB.',
+        ],
+        [
+            'a typecheck parenthetical inside an app step',
+            'Open the mixer and confirm the hint shows (pnpm typecheck clean).',
+        ],
+        ['a labelled check list', 'Checks: pnpm lint, pnpm typecheck.'],
+        ['a ticked checklist of checks', '- [x] pnpm lint\n- [x] pnpm typecheck'],
+        ['a cargo test run inside an app step', 'Open the mixer and confirm cargo test passes.'],
+        ['a playwright test run inside an app step', 'Open the mixer and confirm playwright test passes.'],
+        ['a check-only tool behind an app step', 'Confirm the fader moves, then run tsc --noEmit.'],
+    ])('refuses %s: a check-run mention narrates whatever prose rides beside it', (_label, instructions) => {
+        // Cue words and UI nouns rescue a launch through the command rule, so these refuse only
+        // through the check-command mention: no step a reviewer performs needs a check run.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a dev launch folded into the step', 'Run pnpm dev, open the mixer, and confirm the send knob reads -12 dB.'],
+        ['a parenthesized desktop launch', 'Launch the desktop app (pnpm desktop:dev) and open the mixer.'],
+        ['a format verb naming its object', 'Format the clip name and confirm it reads Take 2.'],
+    ])('passes %s: launches, bare format, and bare test are not check runs', (_label, step) => {
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('scans an unclosed-parenthesis flood in linear time and keeps flat parenthetical verdicts', () => {
+        // A parenthetical match that could span another '(' rescans to the end of the value from
+        // every unclosed one — quadratic, tens of seconds on this input.
+        expect(testInstructionsNarrateChecks('(a '.repeat(200_000))).toBe(false);
+        expect(testInstructionsNarrateChecks('`pnpm test:run everything` (140 passed)')).toBe(true);
+        expect(
+            testInstructionsNarrateChecks('Press the loop shortcut (Cmd+L) and confirm the loop brace appears.')
+        ).toBe(false);
+        expect(testInstructionsNarrateChecks('Launch the desktop app (pnpm desktop:dev) and open the mixer.')).toBe(
             false
         );
     });
 
+    it.each([
+        ['a two-step inline list', '1. Press Play. 2. Press Stop; the playhead returns to bar 1.'],
+        [
+            'a three-step inline list',
+            "1. Record or comp a clip so its take lane holds a take, select the clip, and invoke 'Cut Clip' from the command palette. 2. Press Undo: the clip and its take lane return (previously the history was empty and undo did nothing). 3. Redo reapplies the cut.",
+        ],
+    ])('passes %s whose later markers strand as letter-free segments', (_label, steps) => {
+        // Only a line's leading marker leaves before the sentence split, so '2' and '3' strand as
+        // segments of their own; a segment with no letters names no command and never narrates.
+        expect(testInstructionsNarrateChecks(steps)).toBe(false);
+        expect(() => assertObservableTestInstructions(steps)).not.toThrow();
+    });
+
+    it('refuses an inline numbered list of commands', () => {
+        // The letter-free guard exempts only the stranded markers: the command segments between
+        // them still narrate.
+        const steps = '1. pnpm lint. 2. pnpm typecheck.';
+
+        expect(testInstructionsNarrateChecks(steps)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(steps))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a navigation step', 'Go to Settings.'],
+        ['a back step', 'Go back.'],
+        ['a channel step naming a bare number', 'Make track 2 mono.'],
+        // A letter-free token is never command-shaped evidence, even when it leads with a dash
+        // the flag rule would otherwise read.
+        ['a level observation naming a signed number', 'Echo at -6 dB is audible.'],
+        ['a sorting step', 'Sort by name.'],
+        ['a search step', 'Find Reverb.'],
+        ['a display step', 'Format as bars.'],
+        ['an audible-effect observation', 'Echo should be audible.'],
+        ['a noise comparison', 'Less hiss than before.'],
+        [
+            'a step-verb sentence between app steps',
+            'Open the arrangement view. Go to bar 9. Press Play; the clip starts on the downbeat.',
+        ],
+        // The word class decides, not the casing: a lower-case verb behind a stripped filler word
+        // or opening a clause is still the step's verb.
+        ['a lower-case navigation verb behind a filler word', 'Press Play. Then go to bar 9.'],
+        [
+            'a lower-case sorting verb opening a semicolon clause',
+            'Open the browser; sort by name; the list reorders alphabetically.',
+        ],
+        ['a lower-case channel verb behind a filler word', 'Press Play. Then make track 2 mono.'],
+        ['a lower-case navigation verb behind another filler word', 'Press Stop. Also go to bar 1.'],
+    ])('passes %s whose leading verb is also a command head', (_label, step) => {
+        // An English imperative head with no flag, path, colon suffix, filename, or env
+        // assignment beside it is the step's verb, not a launch opening an argument run that
+        // would eat the UI nouns behind it.
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a lower-case make launch', 'make test'],
+        ['a capitalized launch carrying a flag', 'Cargo test --package daw-engine'],
+        ['a lower-case find sweep', 'find . -name x'],
+        ['a lower-case go test run', 'go test ./...'],
+        // A flag beside a verb head is command-shaped evidence: the trailing non-vocabulary word
+        // is the command's argument, never a UI noun that rescues a step.
+        ['a verb head carrying a flag and a bare argument', 'sort -r results'],
+        // The verb head still drops from the prose, so with nothing but annotation behind it the
+        // head mention keeps the segment narrating.
+        ['a capitalized head followed only by annotation', 'Make test'],
+        // A quoted head was typed as a command, so its verb reading exempts nothing.
+        ['a backticked verb-head launch', '`Make` release'],
+        // Tool names are never step verbs, so a capitalized tool line classifies exactly like its
+        // lower-case spelling.
+        ['a lower-case tool launch', 'pnpm dev'],
+        ['a capitalized tool launch', 'Pnpm dev'],
+        ['a capitalized build line citing its result', 'Cargo build succeeds.'],
+        ['a capitalized git line citing its result', 'Git diff is empty.'],
+    ])(
+        'refuses %s: the step-verb exemption needs an English verb head and no command-shaped token',
+        (_label, instructions) => {
+            expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
     it('passes None.', () => {
-        expect(commandOnlyTestInstructions('None.')).toBe(false);
+        expect(testInstructionsNarrateChecks('None.')).toBe(false);
         expect(() => assertObservableTestInstructions('None.')).not.toThrow();
     });
 
-    it('passes when any segment is prose, even inside an otherwise command-only list', () => {
-        expect(
-            commandOnlyTestInstructions('- `pnpm lint` (clean)\n- No user-visible change; this only touches scripts.')
-        ).toBe(false);
+    it('refuses a command list that a prose line sits beside', () => {
+        // The #4422 gate passed any value holding one prose sentence, so a spec run followed by a
+        // sentence describing what the spec asserts published unchanged. Every segment is judged.
+        const mixed = '- `pnpm lint` (clean)\n- No user-visible change; this only touches scripts.';
+        const narratedCensus =
+            'Run pnpm test:run src/modules/Arrangement/x.spec.ts. Open the device panel and confirm each knob reads its own hint.';
+
+        expect(testInstructionsNarrateChecks(mixed)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(mixed))).toMatch(REFUSAL_PREFIX);
+        expect(testInstructionsNarrateChecks(narratedCensus)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(narratedCensus))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('refuses a bare launch standing as its own step ahead of the app steps', () => {
+        // A launch folded into the step that uses it passes (pinned below); on its own line it is
+        // a command segment like any other.
+        const steps = '1. pnpm dev\n2. Open the mixer and confirm the send knob reads -12 dB.';
+        const capitalized = '1. Pnpm dev\n2. Open the mixer and confirm the send knob reads -12 dB.';
+
+        expect(testInstructionsNarrateChecks(steps)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(steps))).toMatch(REFUSAL_PREFIX);
+        expect(testInstructionsNarrateChecks(capitalized)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(capitalized))).toMatch(REFUSAL_PREFIX);
     });
 
     it.each([
@@ -1355,17 +1827,127 @@ describe('product-scope test instructions', () => {
     ])('passes %s', (_label, instructions) => {
         // The launch head alone does not make these narration: each teaches what to observe, so
         // the remainder rule keeps them acceptable for a product-scope change.
-        expect(commandOnlyTestInstructions(instructions)).toBe(false);
+        expect(testInstructionsNarrateChecks(instructions)).toBe(false);
         expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
     });
 
     it('drops empty segments from separators and blank lines instead of counting them', () => {
         // Whitespace-only text has no segment at all, so it is not command narration — the emptiness
         // gate lives in composePublishBody, not here.
-        expect(commandOnlyTestInstructions('   \n\t  ')).toBe(false);
-        expect(commandOnlyTestInstructions('  `pnpm typecheck`  \n')).toBe(true);
-        expect(commandOnlyTestInstructions('pnpm typecheck; ; ;')).toBe(true);
-        expect(commandOnlyTestInstructions('pnpm typecheck.\n\n')).toBe(true);
+        expect(testInstructionsNarrateChecks('   \n\t  ')).toBe(false);
+        expect(testInstructionsNarrateChecks('  `pnpm typecheck`  \n')).toBe(true);
+        expect(testInstructionsNarrateChecks('pnpm typecheck; ; ;')).toBe(true);
+        expect(testInstructionsNarrateChecks('pnpm typecheck.\n\n')).toBe(true);
+    });
+
+    it('quotes the judged segment in the refusal and not the step beside it', () => {
+        const instructions = 'Open the mixer and drag the reverb send to -6 dB.\npnpm lint is clean.';
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['pnpm lint is clean']);
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain('"pnpm lint is clean"');
+        expect(message).not.toContain('drag the reverb send');
+    });
+
+    it('bounds each quoted segment and counts the segments past the quoting limit', () => {
+        const long = `pnpm lint ${'x'.repeat(200)}`;
+        const instructions = [long, 'pnpm typecheck', 'cargo build', 'git status', 'pnpm knip'].join('\n');
+
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toContain(`"${long.slice(0, 120)}…"`);
+        expect(message).not.toContain(long);
+        expect(message).toContain('"pnpm typecheck", "cargo build" and 2 more');
+        expect(message).not.toContain('git status');
+    });
+
+    it('composes the refusal from the sentence and the quoted segments alone when none is left to count', () => {
+        const instructions = 'Open the mixer and drag the reverb send to -6 dB.\npnpm lint is clean.';
+
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(
+            `${REFUSAL}; judged: "pnpm lint is clean"`
+        );
+    });
+
+    it('quotes a segment at the quoting bound whole and cuts a longer one by code point', () => {
+        const atBound = `pnpm lint ${'x'.repeat(110)}`;
+        const astral = `pnpm lint ${'𝄞'.repeat(115)}`;
+
+        expect([...atBound]).toHaveLength(120);
+        expect(refusal(() => assertObservableTestInstructions(atBound))).toBe(`${REFUSAL}; judged: "${atBound}"`);
+        expect(refusal(() => assertObservableTestInstructions(astral))).toBe(
+            `${REFUSAL}; judged: "pnpm lint ${'𝄞'.repeat(110)}…"`
+        );
+    });
+
+    it('bounds the value in UTF-8 bytes, admitting a value exactly at the limit', () => {
+        const step = 'Press Play and confirm the meter moves ';
+        const atLimit = `${step}${'a'.repeat(PULL_REQUEST_BODY_BYTE_LIMIT - step.length)}`;
+        const multiByte = `${step}${'é'.repeat(PULL_REQUEST_BODY_BYTE_LIMIT / 2)}`;
+        const limitRefusal = `pull-request --test exceeds the ${PULL_REQUEST_BODY_BYTE_LIMIT}-byte pull-request body limit`;
+
+        expect(Buffer.byteLength(atLimit, 'utf8')).toBe(PULL_REQUEST_BODY_BYTE_LIMIT);
+        expect(() => assertObservableTestInstructions(atLimit)).not.toThrow();
+        expect(refusal(() => assertObservableTestInstructions(`${atLimit}a`))).toBe(limitRefusal);
+        // Under the limit in characters, over it in bytes.
+        expect(multiByte.length).toBeLessThan(PULL_REQUEST_BODY_BYTE_LIMIT);
+        expect(refusal(() => assertObservableTestInstructions(multiByte))).toBe(limitRefusal);
+    });
+
+    it.each([
+        'Play the reverb clip and stop at bar 3. The tail is unchanged.',
+        'Export the mixdown. The format is unchanged.',
+        'Export the mixdown. Find the new file.',
+        'Delete an EQ band. Node 2 is gone.',
+        'Delete an EQ band. The node is unchanged.',
+    ])('reads an unquoted English-word head as prose, not a command: %s', (instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(false);
+        expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
+    });
+
+    it.each([
+        'Open the mixer. Git diff is empty.',
+        'Open the mixer. `diff` is empty.',
+        'find . -name x',
+        'make test',
+        'Make test',
+    ])('still refuses a tool head, a quoted head, or a command-shaped line: %s', (instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        // Past the lead, only the head mention launches these all-annotation sentences: a quoted
+        // English-word head, one beside a command-shaped token, and a tool head by presence alone.
+        ['a quoted English-word head mid-sentence', 'It is unchanged and `tail` is clean.'],
+        ['an English-word head beside a flag mid-sentence', 'It is clean with tail -f.'],
+        ['a bare tool head mid-sentence', 'Same with cargo.'],
+        // An env assignment is command-shaped evidence beside an English-word lead.
+        ['an English-word lead carrying an env assignment', 'env NO_HMR=1 electron .'],
+        // The letter test that exempts stranded list markers reads upper-case letters too.
+        ['an upper-case launch', 'PNPM DEV'],
+    ])('refuses %s', (_label, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        // The lead's edge punctuation strips before the English-word test, exactly as it does
+        // before the command-head test, so a colon never turns the word into a launch.
+        ['an English-word lead trailing a colon', 'Tail: 2 seconds.'],
+        // A check family names a colon script: a bare word that merely starts with one is prose.
+        ['a clip name starting with a check family', 'Rename the clip to test2 and confirm the label updates.'],
+    ])('passes %s', (_label, step) => {
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('refuses a value larger than a pull-request body before classifying it', () => {
+        const oversized = `pnpm x ${'the '.repeat(300_000)}`;
+
+        expect(refusal(() => assertObservableTestInstructions(oversized))).toBe(
+            `pull-request --test exceeds the ${PULL_REQUEST_BODY_BYTE_LIMIT}-byte pull-request body limit`
+        );
     });
 });
 
