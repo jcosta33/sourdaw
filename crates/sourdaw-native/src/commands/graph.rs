@@ -14098,8 +14098,8 @@ mod tests {
 
     /// A hosted plugin returns before the builtin-only checks even run, so
     /// the refusal above has to sit ahead of that arm too, not only ahead of
-    /// the builtin match — reviewer probe: an attached hosted instance must
-    /// not be allowed to carry `modAssignments` through untouched.
+    /// the builtin match: an attached hosted instance must not be allowed to
+    /// carry `modAssignments` through untouched.
     #[test]
     fn mod_assignments_on_an_attached_hosted_device_refuses_naming_the_device() {
         let refusal = map_bound_batch(
@@ -14132,9 +14132,9 @@ mod tests {
     }
 
     /// Crumbs is spliced from its own attached instance and also returns
-    /// before the builtin match, so the same probe applies to it: an attached
-    /// Crumbs sampler must not be allowed to carry `modAssignments` through
-    /// untouched either.
+    /// before the builtin match, so the same refusal must sit ahead of it
+    /// too: an attached Crumbs sampler must not be allowed to carry
+    /// `modAssignments` through untouched either.
     #[test]
     fn mod_assignments_on_an_attached_crumbs_device_refuses_naming_the_device() {
         let refusal = map_crumbs_batch(
