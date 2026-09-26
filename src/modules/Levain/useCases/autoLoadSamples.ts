@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { type MicPositionType } from '../models/LevainPatch';
 import { WEB_LOD } from '../repositories/sampleLoader/helpers';
 import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
 import { resolveSampleBasePath } from '../repositories/sampleLoader/resolveSampleBasePath';
-import { setLoadedMicPositions, setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
+import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
@@ -20,18 +21,21 @@ import { setLoadedMicPositions, setSampleLoadError, setSampleLoadProgress } from
  * has superseded. When aborted, this function cancels the staged replacement
  * without changing the committed bank or claiming completion, so the
  * last-started load — not the last-finishing one — owns engine state and UI.
+ *
+ * Returns the committed bank's mic position names, or `null` when the call
+ * returns early (superseded before or during the load, or the loader resolved
+ * no bank). This function never writes `loadedMicPositions` itself: an
+ * offline render also drives this loader with the live device's id and an
+ * offline render node's port, and writing the store here would let an export
+ * or freeze clear or overwrite the live panel's rows. Only the live route
+ * (`loadSamplesForInstrument`) owns that store field, using the return value.
  */
 export async function autoLoadLevainSamples(
     deviceId: string,
     nodePort: MessagePort,
     instrumentId: string,
     signal?: AbortSignal
-): Promise<void> {
-    // A new load starting immediately invalidates whatever bank the panel
-    // last showed — the Stage card must stop rendering the previous bank's
-    // mic rows while this one is in flight, not carry them over stale.
-    setLoadedMicPositions(deviceId, null);
-
+): Promise<readonly MicPositionType[] | null> {
     // The repository owns the desktop IPC: on desktop it resolves the bundled
     // resource directory (massive sample banks straight from OS resources); on
     // web it returns the public `/samples/levain/<id>` path.
@@ -40,7 +44,7 @@ export async function autoLoadLevainSamples(
     // A newer load may have superseded this one while the resource path
     // resolved. Bail before touching the UI so we don't clobber its state.
     if (signal?.aborted) {
-        return;
+        return null;
     }
 
     const manifestUrl = `${manifestBase}/manifest.json`;
@@ -66,22 +70,18 @@ export async function autoLoadLevainSamples(
     } catch (error) {
         // A superseding load aborted this one; it owns the UI now, stay silent.
         if (signal?.aborted) {
-            return;
+            return null;
         }
         logger.warn(`[Levain] Failed to load samples for ${instrumentId}:`, error);
         // Fallback sine tone will continue to work. Surface the failure instead
         // of flashing a synthetic 100% then "Ready".
         setSampleLoadError(deviceId, error instanceof Error ? error.message : 'Sample load failed');
-        setLoadedMicPositions(deviceId, null);
         throw error;
     }
 
     // Completed but superseded — don't claim 100%/Ready over the newer load.
     if (signal?.aborted) {
-        return;
-    }
-    if (bank) {
-        setLoadedMicPositions(deviceId, bank.micPositions);
+        return null;
     }
     setSampleLoadProgress(deviceId, 1.0);
     setTimeout(() => {
@@ -90,4 +90,6 @@ export async function autoLoadLevainSamples(
         }
         setSampleLoadProgress(deviceId, null);
     }, 300); // clear after short delay
+
+    return bank ? bank.micPositions : null;
 }

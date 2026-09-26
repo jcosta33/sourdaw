@@ -15,7 +15,8 @@ describe('levainParamBridge', () => {
     it('registers a device by id and exposes it through the bridge singleton', async () => {
         const getAllTracks = vi.fn(() => []);
         const persistDeviceParam = vi.fn();
-        const autoLoadLevainSamples = vi.fn().mockResolvedValue(undefined);
+        const autoLoadLevainSamples = vi.fn().mockResolvedValue(null);
+        const setLoadedMicPositions = vi.fn();
         const resolveEligibleDeviceWriteTarget = vi.fn((deviceId: string) => ({
             status: 'eligible' as const,
             trackId: 'track-1',
@@ -25,6 +26,7 @@ describe('levainParamBridge', () => {
             getAllTracks,
             persistDeviceParam,
             autoLoadLevainSamples,
+            setLoadedMicPositions,
             resolveEligibleDeviceWriteTarget,
             writeNativeBuiltinParameters: vi.fn(),
             sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),

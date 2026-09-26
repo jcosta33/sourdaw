@@ -13,6 +13,7 @@ import {
     levainStore,
     setCurrentArticulation,
     setLevainParam,
+    type setLoadedMicPositions,
     setMacro,
 } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
@@ -39,6 +40,12 @@ export type LevainBridgeDeps = {
     getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
+    /**
+     * The panel's loaded-bank readout. `loadSamplesForInstrument` is the only
+     * caller — see its own comment for why the shared `autoLoadLevainSamples`
+     * loader must not write this itself.
+     */
+    setLoadedMicPositions: typeof setLoadedMicPositions;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
     /**
      * The native session's door for values already spelled in the engine's own
@@ -176,10 +183,25 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             return Promise.resolve('failed');
         }
 
+        // A new load starting immediately invalidates whatever bank the panel
+        // last showed — the Stage card must stop rendering the previous bank's
+        // mic rows while this one is in flight, not carry them over stale. This
+        // is the only route that writes `loadedMicPositions`: the offline export
+        // route drives the same loader with the live device's id and must never
+        // touch the live panel's rows (see `autoLoadLevainSamples`'s own comment).
+        deps.setLoadedMicPositions(deviceId, null);
+
         const controller = new AbortController();
         const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal);
         const observedLoad = sampleLoad.then<LevainSampleLoadOutcome, LevainSampleLoadOutcome>(
-            () => (controller.signal.aborted ? 'cancelled' : 'ready'),
+            (micPositions) => {
+                // A superseding load already owns the UI; don't set names over it.
+                if (controller.signal.aborted) {
+                    return 'cancelled';
+                }
+                deps.setLoadedMicPositions(deviceId, micPositions);
+                return 'ready';
+            },
             (error) => {
                 if (controller.signal.aborted) {
                     return 'cancelled';

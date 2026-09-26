@@ -11,10 +11,15 @@ import { createLevainBridge, type LevainDevice } from '../helpers';
 // createLevainBridge — engine forwarding behaviour
 // ---------------------------------------------------------------------------
 
-type AutoLoad = (deviceId: string, port: MessagePort, instrumentId: string, signal?: AbortSignal) => Promise<void>;
+type AutoLoad = (
+    deviceId: string,
+    port: MessagePort,
+    instrumentId: string,
+    signal?: AbortSignal
+) => Promise<readonly MicPositionType[] | null>;
 
 function makeDeps(
-    autoLoad: AutoLoad = vi.fn(() => Promise.resolve()),
+    autoLoad: AutoLoad = vi.fn(() => Promise.resolve(null)),
     initialResolutionStatus: DeviceWriteTargetResolution['status'] = 'eligible'
 ) {
     let resolutionStatus = initialResolutionStatus;
@@ -25,6 +30,7 @@ function makeDeps(
             vi.fn<(trackId: string, deviceId: string, values: Record<string, number>) => void>(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
+        setLoadedMicPositions: vi.fn<(deviceId: string, positions: readonly MicPositionType[] | null) => void>(),
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => {
             if (resolutionStatus !== 'eligible') {
                 return { status: resolutionStatus };
@@ -118,7 +124,7 @@ describe('createLevainBridge', () => {
                     if (signal) {
                         signals.push(signal);
                     }
-                    return new Promise<void>(() => {
+                    return new Promise<readonly MicPositionType[] | null>(() => {
                         // Intentionally remains pending so cancellation is observable.
                     });
                 });
@@ -195,7 +201,7 @@ describe('createLevainBridge', () => {
                     if (signal) {
                         signals.push(signal);
                     }
-                    return new Promise<void>(() => {
+                    return new Promise<readonly MicPositionType[] | null>(() => {
                         // Intentionally remains pending so unregister must abort it.
                     });
                 });
@@ -226,7 +232,7 @@ describe('createLevainBridge', () => {
             let engineCallsWhenLoading: Parameters<LevainDevice['setParam']>[] = [];
             const deps = makeDeps(() => {
                 engineCallsWhenLoading = [...device.setParam.mock.calls];
-                return Promise.resolve();
+                return Promise.resolve(null);
             });
             const bridge = createLevainBridge(deps);
             const patch = createDefaultPatch('violin-1');
@@ -368,9 +374,9 @@ describe('createLevainBridge', () => {
                 _port: MessagePort,
                 _instrumentId: string,
                 signal?: AbortSignal
-            ): Promise<void> {
+            ): Promise<readonly MicPositionType[] | null> {
                 signals.push(signal);
-                return new Promise<void>(() => {
+                return new Promise<readonly MicPositionType[] | null>(() => {
                     // never resolves — simulates a long-running load
                 });
             }
@@ -396,9 +402,9 @@ describe('createLevainBridge', () => {
                 _port: MessagePort,
                 _instrumentId: string,
                 signal?: AbortSignal
-            ): Promise<void> {
+            ): Promise<readonly MicPositionType[] | null> {
                 signals.push(signal);
-                return new Promise<void>(() => {});
+                return new Promise<readonly MicPositionType[] | null>(() => {});
             }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
@@ -410,9 +416,9 @@ describe('createLevainBridge', () => {
         });
 
         it('settles registration from the successor when its initial bank load is superseded', async () => {
-            const loads: PromiseWithResolvers<void>[] = [];
+            const loads: PromiseWithResolvers<readonly MicPositionType[] | null>[] = [];
             const deps = makeDeps(() => {
-                const load = Promise.withResolvers<void>();
+                const load = Promise.withResolvers<readonly MicPositionType[] | null>();
                 loads.push(load);
                 return load.promise;
             });
@@ -420,10 +426,81 @@ describe('createLevainBridge', () => {
             const registration = bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
 
             const replacement = bridge.loadSamplesForInstrument('d1', 'cello');
-            loads[1]?.resolve();
+            loads[1]?.resolve(null);
 
             await expect(registration).resolves.toBe('ready');
             await expect(replacement).resolves.toBe('ready');
+        });
+    });
+
+    describe('loadedMicPositions — only loadSamplesForInstrument (the live route) writes it', () => {
+        it('clears loadedMicPositions before invoking autoLoadLevainSamples', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+            deps.autoLoadLevainSamples.mockClear();
+
+            void bridge.loadSamplesForInstrument('d1', 'cello');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', null);
+            expect(deps.autoLoadLevainSamples).toHaveBeenCalledTimes(1);
+            const clearOrder = deps.setLoadedMicPositions.mock.invocationCallOrder[0];
+            const loadOrder = deps.autoLoadLevainSamples.mock.invocationCallOrder[0];
+            expect(clearOrder).toBeLessThan(loadOrder as number);
+        });
+
+        it('sets loadedMicPositions to the resolved bank names on a successful load', async () => {
+            const deps = makeDeps(() => Promise.resolve(['close', 'room']));
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            await bridge.loadSamplesForInstrument('d1', 'cello');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', ['close', 'room']);
+        });
+
+        it('leaves loadedMicPositions at its clear when the load rejects', async () => {
+            const deps = makeDeps(() => Promise.reject(new Error('boom')));
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            await bridge.loadSamplesForInstrument('d1', 'cello');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledTimes(1);
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', null);
+        });
+
+        it('keeps the successor’s names when a load superseded before it resolves settles later', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            // Keyed by instrument id rather than call order, so registration's
+            // own initial load (a different instrument id) doesn't consume
+            // either resolver meant for the two explicit calls below.
+            const responsesByInstrument = new Map([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // B (the successor) settles first; A settles afterward but its
+            // controller was already aborted when B started.
+            second.resolve(['close']);
+            first.resolve(['room']);
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
+            expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['room']);
         });
     });
 
