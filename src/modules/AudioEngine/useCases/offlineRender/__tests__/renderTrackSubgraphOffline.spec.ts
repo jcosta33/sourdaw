@@ -781,6 +781,36 @@ describe('renderTrackSubgraphOffline', () => {
             expect(mocks.builtFaderGains.get(stripKeyForGain(target.gain))).toBeCloseTo(target.gain, 10);
         });
 
+        it('bakes the group gain into the target only when a measurement asks for it, never by default', async () => {
+            const { target } = seedVcaSubgraph();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            // Freeze and bounce never set `includeTargetVca` — their default must
+            // stay exactly what the sibling test above already proves.
+            expect(mocks.builtFaderGains.get(stripKeyForGain(target.gain))).toBeCloseTo(target.gain, 10);
+
+            mocks.builtFaderGains.clear();
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+                includeTargetVca: true,
+            });
+
+            // A measurement's buffer is never replayed through a live strip, so
+            // its target has to carry the group master itself or the figure loses it.
+            const live = getEffectiveGain(target.id, target.gain);
+            expect(live).toBeCloseTo(target.gain * GROUP_GAIN, 10);
+            expect(mocks.builtFaderGains.get(stripKeyForGain(target.gain))).toBeCloseTo(live, 10);
+        });
+
         it('leaves an upstream contributor outside every group at its own fader', async () => {
             const upstream = TrackDummy.create({ id: 'up-1', kind: 'audio', gain: 0.6, outputId: 'track-1' });
             const target = TrackDummy.create({ id: 'track-1', kind: 'audio', gain: 0.5 });

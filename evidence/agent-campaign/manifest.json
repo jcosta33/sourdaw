@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "75d21403ec16415959059dd0fc9536d734f44e890199a0831bfb216dbb3d87a3"
+                    "digest": "3be6027fb20e35950cc35822a426997d4ec53311cdf66cdf461810e2660f2681"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "ac8a76fdfdb937d9e667fd6f8f47f6c2b2023a012c795a308ceb39910426cff0"
+                    "digest": "63eb606fd95fae0387682c1e1f150e5fdb5b02bc019a207997cd6d289d23fea5"
                 }
             ]
         },

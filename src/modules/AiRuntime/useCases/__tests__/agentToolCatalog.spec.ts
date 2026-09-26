@@ -242,6 +242,7 @@ describe('agent tool catalog', () => {
             'command.history',
             'render.request',
             'analysis.request',
+            'analysis.measure',
             'recipe.discover',
         ]);
 

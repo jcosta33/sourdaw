@@ -349,6 +349,25 @@ missing field. It is folded into the canonical record beside
 in it have different digests, and records persisted before the field existed
 keep replaying byte-identically.
 
+When the bundle's `semantic-ci.json` records a delivered assessment that withheld
+any scope entry or left any question unresolved, `review:publish` refuses a fresh
+publication unless the dossier cites the assessment or declares it ignored.
+Citing it is a `limitation` naming the assessment's artifact identity or one of
+the paths it withheld — the round's own text, never a non-`none` impact token by
+itself. Declaring it ignored is
+`assessmentImpact: none` with an `assessmentIgnoredReason`: one bounded,
+single-line, evidence-safe reason the orchestrator records for why the
+assessment had no effect. A `none` with no reason is refused naming
+`assessmentIgnoredReason` and the withheld figure; a reason beside a non-`none`
+token is refused naming `assessmentIgnoredReason` and the token it contradicts.
+The reason is folded into the canonical
+record beside `assessmentImpact` and covered by `dossierDigest`, so the
+acknowledgement is bound to what was accepted; records persisted before it
+existed keep replaying byte-identically. It records an acknowledgement, never
+agreement, and confers no verdict, approval or merge authority — ADR 0047 still
+governs. A bundle with no `semantic-ci.json` — a historical bundle, or a head
+whose assessment was never delivered — carries no such requirement.
+
 Dossier evidence, limitations, and approval-claim values must be single-line,
 trimmed and bounded, and are refused when they carry a credential-shaped value,
 a private-key header, a JWT, a bearer token, or raw session-transcript markers.
