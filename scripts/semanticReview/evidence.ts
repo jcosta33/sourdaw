@@ -14,14 +14,14 @@
  * Admission is ranked in three tiers: a contract-carrying side — a trusted GitHub-write closure member,
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
- * boundary), or any source whose content imports a closure member or names one of those workflow
- * files — first, then each contract-context region the caller supplies, then bulk sides. The ranking
- * admits the change's own contract material ahead of the context documents, but a region over the
- * per-region ceiling is never supplied: it is withheld and recorded, so a contract document larger than
- * that ceiling is never sent whatever its tier. Every withheld region is named. Each side is classified
- * from the path and content it carries, so a deleted or moved spec still counts from its before side,
- * and a side of a path that is contract-carrying on either side keeps its bulk companion ahead of a
- * purely bulk path.
+ * boundary), a collected spec whose content imports a closure member or names one of those workflow
+ * files, or a source such a spec covers — first, then each contract-context region the caller supplies,
+ * then bulk sides. The ranking admits the change's own contract material ahead of the context documents,
+ * but a region over the per-region ceiling is never supplied: it is withheld and recorded, so a contract
+ * document larger than that ceiling is never sent whatever its tier. Every withheld region is named. Each
+ * side is classified from the path and content it carries, so a deleted or moved spec still counts from
+ * its before side, and a side of a path that is contract-carrying on either side keeps its bulk
+ * companion ahead of a purely bulk path.
  */
 
 import {
@@ -38,6 +38,8 @@ import {
     classifyContractCarryingSides,
     compareLexicographic,
     readChangedContents,
+    specCoveredSources,
+    type AdmissionSideBytes,
     type AdmissionUnit,
     type ChangedFileContents,
     type ContractCarryingSides,
@@ -633,10 +635,22 @@ function admitUnit(
     }
 }
 
-/** Whether any eligible changed file plans a unit whose rules declare a contract, decision or registration token. */
-function planNeedsContractContext(files: readonly SemanticChangedFile[]): boolean {
+/**
+ * Whether any eligible changed file that can contribute admissible evidence plans a unit whose rules
+ * declare a contract, decision or registration token. A file whose every side is over the per-region
+ * ceiling — or was screened out before admission — produces no unit, so it must not charge the contract
+ * documents no request will read.
+ */
+function planNeedsContractContext(
+    files: readonly SemanticChangedFile[],
+    admissionBytes: ReadonlyMap<string, AdmissionSideBytes>
+): boolean {
     for (const file of files) {
         if (exclusionReason(file) !== undefined) {
+            continue;
+        }
+        const bytes = admissionBytes.get(file.path);
+        if ((bytes?.before ?? 0) === 0 && (bytes?.after ?? 0) === 0) {
             continue;
         }
         const rules = applicableRules(file.previousPath === undefined ? [file.path] : [file.path, file.previousPath]);
@@ -654,23 +668,6 @@ function contractContextCandidates(port: SemanticSourcePort, contractSourceSha: 
 }
 
 /**
- * The contract-context paths the caller should collect: the default candidates plus the caller's, or
- * none when no planned unit will receive them, so a change whose rules need no contract evidence is
- * not charged for a context document no request reads.
- */
-export function contractContextPathsFor(
-    files: readonly SemanticChangedFile[],
-    port: SemanticSourcePort,
-    contractSourceSha: string,
-    extraPaths: readonly string[]
-): string[] {
-    if (!planNeedsContractContext(files)) {
-        return [];
-    }
-    return [...new Set([...contractContextCandidates(port, contractSourceSha), ...extraPaths])];
-}
-
-/**
  * Collects bounded evidence for one change. `mergeBaseSha` supplies before-side content and
  * `contractSourceSha` supplies the contracts used as semantic context; `headSha` supplies after-side
  * content. Deleted code keeps its before-side identity.
@@ -682,6 +679,8 @@ export function collectEvidence(input: {
     contractSourceSha: string;
     limits: SemanticEvidenceLimits;
     contractPaths?: readonly string[];
+    /** Whether to add the default contract documents, gated on a planned unit that will actually read them. */
+    includeDefaultContractContext?: boolean;
 }): SemanticEvidenceSet {
     const changed = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)];
     // Read once for the whole change: one `git diff` answers for every path, and an empty map means
@@ -711,11 +710,23 @@ export function collectEvidence(input: {
         input.mergeBaseSha,
         input.headSha
     );
+    const specCovered = specCoveredSources(assessed, contents);
+    // The default contract documents are charged only when a planned unit that can actually exist — an
+    // eligible file with at least one admissible side and contract-declaring rules — will read them.
+    const contextPaths = new Set<string>();
+    if (input.includeDefaultContractContext === true && planNeedsContractContext(assessed, bytesBySide)) {
+        for (const path of contractContextCandidates(input.port, input.contractSourceSha)) {
+            contextPaths.add(path);
+        }
+    }
+    for (const path of input.contractPaths ?? []) {
+        contextPaths.add(path);
+    }
     // Read each contract-context region once, so its chargeable bytes rank it with the contract class
     // and its content is admitted from that same read. A region that cannot be read still mints a unit,
     // so its unavailability is recorded in admission order rather than after every changed-file unit.
     const contractContextContent = new Map<string, string>();
-    const contractContexts = (input.contractPaths ?? []).map((path) => {
+    const contractContexts = Array.from(contextPaths).map((path) => {
         const raw = regionFor(input.port, input.contractSourceSha, path);
         if (raw !== undefined) {
             contractContextContent.set(path, raw);
@@ -725,7 +736,7 @@ export function collectEvidence(input: {
             admissionBytes: raw === undefined ? 0 : chargeableRegionBytes(raw, input.limits.maxRegionBytes),
         };
     });
-    const units = admissionUnits(assessed, contractCarryingSides, bytesBySide, contractContexts);
+    const units = admissionUnits(assessed, contractCarryingSides, bytesBySide, contractContexts, specCovered);
 
     const admission = createRegionAdmission(input.limits, contractCarryingSides);
 

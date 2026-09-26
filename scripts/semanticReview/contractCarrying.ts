@@ -2,14 +2,16 @@
  * Which changed paths and which source contents are contract-carrying.
  *
  * Contract-carrying paths are the trusted GitHub-write closure, the contract documents (`AGENTS.md`,
- * `.agents/decisions/`, `.agents/skills/`), and the declared workflow boundary. Any changed source
- * whose content imports a closure member or names a pinned workflow file is contract-carrying too —
- * a spec or an implementation alike — decided from the same rule by both the scan and verify routes
- * so one withheld reference reads the same whichever route produced it.
+ * `.agents/decisions/`, `.agents/skills/`), and the declared workflow boundary. A collected spec whose
+ * content imports a closure member or names a pinned workflow file is contract-carrying too, decided
+ * from the same rule by both the scan and verify routes so one withheld reference reads the same
+ * whichever route produced it.
  */
 
 import { HEALTH_GATE_WORKFLOW_FILES } from '../healthGateWorkflowContract.ts';
 import { snapshotImportSpecifiers, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+
+import { isCollectedSpec } from './rules.ts';
 
 const CONTRACT_PATH_PATTERNS: readonly RegExp[] = [
     /(?:^|\/)AGENTS\.md$/u,
@@ -50,7 +52,7 @@ function directoryOf(path: string): string {
 
 /**
  * Resolves a relative import/export specifier against the importing file's directory to a repo path,
- * leaving the extension off. The extension is added by `resolvesToClosureMember`, matching how the
+ * leaving the extension off. The extension is added by `resolvedSpecifierCandidates`, matching how the
  * runtime resolves an extensionless import.
  */
 function resolveSpecifier(fromDir: string, specifier: string): string | undefined {
@@ -90,7 +92,7 @@ function stripModulePostfix(base: string): string {
 }
 
 /** The repo paths a resolved specifier could name, after the runtime's postfix strip and JS-to-TS substitution. */
-function closureMemberCandidates(base: string): string[] {
+function resolvedSpecifierCandidates(base: string): string[] {
     const stripped = stripModulePostfix(base);
     const candidates = [stripped];
     for (const extension of SOURCE_MODULE_EXTENSIONS) {
@@ -107,11 +109,6 @@ function closureMemberCandidates(base: string): string[] {
     return candidates;
 }
 
-/** Whether a resolved specifier path names a trusted closure member, with or without a source extension. */
-function resolvesToClosureMember(base: string): boolean {
-    return closureMemberCandidates(base).some((candidate) => TRUSTED_CLOSURE_PATHS.has(candidate));
-}
-
 /** The relative `import`/`export ... from` specifiers of one source file, in document order. */
 function relativeImportSpecifiers(source: string): string[] {
     // Collected by walking syntax, not by regex over raw source: comments and the contents of string
@@ -121,21 +118,35 @@ function relativeImportSpecifiers(source: string): string[] {
 }
 
 /**
- * Whether a changed source's content imports a trusted closure member or names a pinned workflow file.
- * The workflow pin matches the pinned repo path rather than the bare filename, so prose that merely
- * mentions a workflow name cannot classify a source.
+ * The repo paths one source's relative import/export specifiers could resolve to, in document order,
+ * with the runtime's postfix strip and extension substitution applied. These are the files the source
+ * imports, so a collected spec's candidates are the non-spec sources it covers.
  */
-function isContractCarryingSourceContent(content: string, sourcePath: string): boolean {
+export function resolvedRelativeImportCandidates(content: string, sourcePath: string): string[] {
+    const dir = directoryOf(sourcePath);
+    const candidates: string[] = [];
     for (const specifier of relativeImportSpecifiers(content)) {
-        const resolved = resolveSpecifier(directoryOf(sourcePath), specifier);
-        if (resolved !== undefined && resolvesToClosureMember(resolved)) {
-            return true;
+        const resolved = resolveSpecifier(dir, specifier);
+        if (resolved !== undefined) {
+            candidates.push(...resolvedSpecifierCandidates(resolved));
         }
+    }
+    return candidates;
+}
+
+/**
+ * Whether a collected spec's content imports a trusted closure member or names a pinned workflow file.
+ * The workflow pin matches the pinned repo path rather than the bare filename, so prose that merely
+ * mentions a workflow name cannot classify a spec.
+ */
+function isContractCarryingSpecContent(content: string, specPath: string): boolean {
+    if (resolvedRelativeImportCandidates(content, specPath).some((candidate) => TRUSTED_CLOSURE_PATHS.has(candidate))) {
+        return true;
     }
     return HEALTH_GATE_WORKFLOW_FILES.some((name) => content.includes(`.github/workflows/${name}`));
 }
 
-/** Whether a path is contract-carrying, decided from the path alone or from the content it carries. */
+/** Whether a path is contract-carrying, decided from the path alone or, for a collected spec, from its content. */
 export function isContractCarryingContent(path: string, content: string): boolean {
-    return isContractCarryingPath(path) || isContractCarryingSourceContent(content, path);
+    return isContractCarryingPath(path) || (isCollectedSpec(path) && isContractCarryingSpecContent(content, path));
 }

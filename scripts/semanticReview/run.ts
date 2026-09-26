@@ -26,7 +26,6 @@ import {
     assertEvidenceIntegrity,
     collectEvidence,
     compareByPath,
-    contractContextPathsFor,
     exclusionReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
@@ -604,19 +603,14 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
     });
     const files = input.ports.source.changedFiles(context.mergeBaseSha, context.headSha);
 
-    const contractPaths = contractContextPathsFor(
-        files,
-        input.ports.source,
-        context.contractSourceSha,
-        input.contractPaths
-    );
     const evidenceSet = collectEvidence({
         port: input.ports.source,
         mergeBaseSha: context.mergeBaseSha,
         headSha: context.headSha,
         contractSourceSha: context.contractSourceSha,
         limits: input.limits,
-        contractPaths,
+        contractPaths: input.contractPaths,
+        includeDefaultContractContext: true,
     });
     assertEvidenceIntegrity(evidenceSet.references);
 

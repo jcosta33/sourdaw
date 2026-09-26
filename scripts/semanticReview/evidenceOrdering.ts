@@ -7,7 +7,8 @@
  * region — in the order admission walks them, in three tiers:
  *
  * 1. the change's own contract-carrying sides, the changed-file before/after units whose side is
- *    contract-carrying, so the budget stays on the change the contract lives in;
+ *    contract-carrying — or a source a contract-carrying spec covers — so the budget stays on the
+ *    change the contract lives in and no spec outranks the source it covers;
  * 2. contract-context units, the documents read at the contract source revision — ahead of bulk,
  *    behind the change's own contract material;
  * 3. bulk sides of the change.
@@ -28,7 +29,7 @@
  * promise which unit the total charges.
  */
 
-import { isContractCarryingContent } from './contractCarrying.ts';
+import { isContractCarryingContent, resolvedRelativeImportCandidates } from './contractCarrying.ts';
 import { isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
@@ -81,6 +82,49 @@ export function classifyContractCarryingSides(
     return sidesByPath;
 }
 
+/**
+ * The changed non-spec sources a changed collected spec covers — the files that spec imports and
+ * therefore tests. A contract-carrying spec must not outrank the source it covers, so these sources
+ * are ordered in the spec's contract tier; a source no spec covers stays bulk whatever its own content
+ * imports.
+ */
+export function specCoveredSources(
+    changed: readonly SemanticChangedFile[],
+    contents: ReadonlyMap<string, ChangedFileContents>
+): ReadonlySet<string> {
+    const changedPaths = new Set(changed.map((file) => file.path));
+    const covered = new Set<string>();
+    for (const file of changed) {
+        if (!isCollectedSpec(file.path)) {
+            continue;
+        }
+        const entry = contents.get(file.path);
+        const beforePath = file.previousPath ?? file.path;
+        const before = entry?.before;
+        const after = entry?.after;
+        const contractByContent =
+            (before !== undefined && isContractCarryingContent(beforePath, before)) ||
+            (after !== undefined && isContractCarryingContent(file.path, after));
+        if (!contractByContent) {
+            continue;
+        }
+        for (const side of [
+            { content: before, path: beforePath },
+            { content: after, path: file.path },
+        ]) {
+            if (side.content === undefined) {
+                continue;
+            }
+            for (const candidate of resolvedRelativeImportCandidates(side.content, side.path)) {
+                if (changedPaths.has(candidate) && !isCollectedSpec(candidate)) {
+                    covered.add(candidate);
+                }
+            }
+        }
+    }
+    return covered;
+}
+
 /** A changed file's side the collector admits as one unit. */
 export type ChangedSideUnit = {
     readonly kind: 'changed';
@@ -89,6 +133,8 @@ export type ChangedSideUnit = {
     readonly contractCarrying: boolean;
     /** Whether the path is contract-carrying on either side, so its bulk side still outranks a purely bulk path. */
     readonly pathContractCarrying: boolean;
+    /** Whether a contract-carrying collected spec covers this source, so it ranks in the spec's tier. */
+    readonly specCovered: boolean;
     readonly admissionBytes: number;
 };
 
@@ -127,7 +173,7 @@ function admissionTier(unit: AdmissionUnit): number {
     if (unit.kind === 'context') {
         return 1;
     }
-    return unit.contractCarrying ? 0 : 2;
+    return unit.contractCarrying || unit.specCovered ? 0 : 2;
 }
 
 /**
@@ -135,10 +181,12 @@ function admissionTier(unit: AdmissionUnit): number {
  * contract-context regions, then bulk sides — and, inside each tier, non-spec before collected spec,
  * then a side of a contract-carrying path before a purely bulk side, then ascending admission bytes —
  * the order-independent lower bound a side's sole regions cost, a tie-break rather than a promise of
- * what the side pays — then path, then a path's before side before its own after side. No spec can
- * outrank the source it covers; the ascending-byte order is a lower-bound tie-break, not a promise that
- * a smaller side survives — a region shared with another change is charged to whichever side admits it
- * first, and a whole-file fallback can still starve a smaller edit when the total budget binds.
+ * what the side pays — then path, then a path's before side before its own after side. A source a
+ * contract-carrying spec covers is ordered in the spec's tier, so the non-spec-before-spec tie-break
+ * keeps the source ahead of its own spec without promoting a file no spec covers. The ascending-byte
+ * order is a lower-bound tie-break, not a promise that a smaller side survives — a region shared with
+ * another change is charged to whichever side admits it first, and a whole-file fallback can still
+ * starve a smaller edit when the total budget binds.
  */
 export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit): number {
     const leftTier = admissionTier(left);
@@ -178,12 +226,14 @@ export function admissionUnits(
     changed: readonly SemanticChangedFile[],
     sidesByPath: ReadonlyMap<string, ContractCarryingSides>,
     admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>,
-    contractContexts: readonly { path: string; admissionBytes: number }[]
+    contractContexts: readonly { path: string; admissionBytes: number }[],
+    specCovered: ReadonlySet<string>
 ): readonly AdmissionUnit[] {
     const units: AdmissionUnit[] = [];
     for (const file of changed) {
         const sides = sidesByPath.get(file.path);
         const pathContractCarrying = (sides?.before ?? false) || (sides?.after ?? false);
+        const covered = specCovered.has(file.path);
         if (kindHasBeforeSide(file.kind)) {
             units.push({
                 kind: 'changed',
@@ -191,6 +241,7 @@ export function admissionUnits(
                 side: 'before',
                 contractCarrying: sides?.before ?? false,
                 pathContractCarrying,
+                specCovered: covered,
                 admissionBytes: admissionBytesBySide.get(file.path)?.before ?? 0,
             });
         }
@@ -201,6 +252,7 @@ export function admissionUnits(
                 side: 'after',
                 contractCarrying: sides?.after ?? false,
                 pathContractCarrying,
+                specCovered: covered,
                 admissionBytes: admissionBytesBySide.get(file.path)?.after ?? 0,
             });
         }
