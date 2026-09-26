@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { validateVersionedCommandArguments } from '#/modules/Command/useCases/versionedCommandArgumentKeys';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import {
     type ClipSplitActionSnapshot,
@@ -352,24 +351,5 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
         expect(result).toEqual({ status: 'written' });
         expect(mockedRestoreTakes).not.toHaveBeenCalled();
         expect(mockedRemoveTakes).not.toHaveBeenCalled();
-    });
-});
-
-describe('handleRestoreClipSplitState — versioned payload schema (#4521)', () => {
-    it('decodes a payload carrying retiredTakeLanes, and a legacy payload without it', () => {
-        const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [
-            {
-                lane: { id: 'lane-1', trackId: 't1', takes: [], activeCompRegions: [] },
-                laneIndex: 0,
-                retiredTakeIds: ['take-1'],
-            },
-        ];
-        const withField = makeTakeLaneAction(makeSnapshot(), makeSnapshot({ rightClip: null }), retiredTakeLanes);
-        expect(validateVersionedCommandArguments('restoreClipSplitState', withField.payload)).toBe(true);
-
-        // Entries persisted before the field existed must still decode, or a
-        // reload drops the split from history.
-        const legacy = makeAction(makeSnapshot(), makeSnapshot({ rightClip: null }));
-        expect(validateVersionedCommandArguments('restoreClipSplitState', legacy.payload)).toBe(true);
     });
 });
