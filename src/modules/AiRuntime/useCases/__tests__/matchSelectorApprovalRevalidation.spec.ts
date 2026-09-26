@@ -854,6 +854,38 @@ describe('match selector approval revalidation', () => {
         ]);
     });
 
+    it('reapproves rather than invalidates when the matched tracks resolve in non-id-sorted store order', async () => {
+        setTracks([
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        const { actions, matchSelectorPredicates, revision } = compileDrumColorProposal();
+        expect(trackIdsOf(actions).toSorted()).toEqual(['track-kick', 'track-snare']);
+        propose('confirmation-drum-color-unsorted-order', actions, matchSelectorPredicates, revision);
+
+        // Snare precedes kick in live track-store order here, so the approved batch's stable ids were
+        // recorded in that same non-id-sorted order. Adding an unrelated, non-drum track moves the
+        // revision without touching the matched set or its store-relative order; comparing the
+        // approved and re-resolved id sets without sorting both sides would report a spurious
+        // membership change for this reorder alone.
+        const tracksBeforeKeys = trackStore.value?.tracks ?? [];
+        setTracks([...tracksBeforeKeys, createColorableTrack('track-keys', 'Keys')]);
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirmation-drum-color-unsorted-order' });
+
+        expect(result.status).toBe('reapproval_required');
+        if (result.status === 'reapproval_required') {
+            expect(result.divergence.kind).toBe('non-overlapping');
+        }
+        expect([...trackColorsById().values()]).toEqual([
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+            DEFAULT_TRACK_COLOR,
+        ]);
+    });
+
     it('rejects a re-preview and persists nothing when a new track starts matching before the repreview', async () => {
         setTracks([
             createColorableTrack('track-kick', 'Kick'),

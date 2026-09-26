@@ -152,7 +152,11 @@ const context: ProjectContext = {
             id: 'track-vox',
             name: 'Lead Vox',
             kind: 'audio',
-            canonicalRole: { role: 'lead vocal', source: 'derived', evidence: 'chain' },
+            // `getCanonicalTrackRole` (Project/useCases) resolves an authored production-brief role
+            // before it ever consults name tags, and 'Doubler' (this fixture's own brief role for
+            // this track, above) is not a member of `CANONICAL_TRACK_ROLES` — so the real derivation
+            // is 'unknown', never 'lead vocal', regardless of this track's name.
+            canonicalRole: { role: 'unknown', source: 'authored', evidence: 'unsupported-authored-role' },
             muted: false,
             frozen: false,
             soloed: false,
@@ -171,6 +175,27 @@ const context: ProjectContext = {
             name: 'Group Bus',
             kind: 'bus',
             canonicalRole: { role: 'bus', source: 'derived', evidence: 'chain' },
+            muted: false,
+            frozen: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            gain: 1,
+            pan: 0,
+            automationMode: 'read',
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+        },
+        {
+            id: 'track-bgv',
+            name: 'Backing Vocals',
+            kind: 'audio',
+            // Carries no authored production-brief role, so `getCanonicalTrackRole` falls through to
+            // name tags: 'Backing Vocals' matches the `backing vocal` pattern, the same value this
+            // fixture asserts — a reachable state, unlike `track-vox` above.
+            canonicalRole: { role: 'backing vocal', source: 'name-tags', evidence: 'name-tokens' },
             muted: false,
             frozen: false,
             soloed: false,
@@ -819,7 +844,7 @@ describe('semantic command list set predicates', () => {
         });
         expect(compiled).toMatchObject({
             status: 'accepted',
-            compilerEvidence: { selectors: [{ stableIds: ['track-vox'] }] },
+            compilerEvidence: { selectors: [{ stableIds: ['track-bgv'] }] },
         });
         if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
             throw new Error('expected the fixture selector to compile');
@@ -835,7 +860,7 @@ describe('semantic command list set predicates', () => {
         ).toMatchObject({
             status: 'accepted',
             targetOverridesByCallIndex: new Map([
-                [0, [{ argument: 'trackId', capability: 'track', cardinality: 'one', stableIds: ['track-vox'] }]],
+                [0, [{ argument: 'trackId', capability: 'track', cardinality: 'one', stableIds: ['track-bgv'] }]],
             ]),
         });
     });
