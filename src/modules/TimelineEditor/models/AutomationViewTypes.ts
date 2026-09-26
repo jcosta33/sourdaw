@@ -6,6 +6,8 @@
 export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
 
 export type AutomationPoint = {
+    /** Stable identity for points whose undo history must address them alone. */
+    id?: string;
     beat: number;
     value: number;
     curve: AutomationCurveType;

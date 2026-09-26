@@ -5,6 +5,7 @@ import { handleGenerateDrumPattern } from '../handleGenerateDrumPattern';
 const mocks = vi.hoisted(() => ({
     applyDrumPatternToTrack: vi.fn(),
     resolveOrCreateMidiTrack: vi.fn<() => string | null>(() => 't1'),
+    resolveGenerationTrackPlan: vi.fn(() => ({ kind: 'existing', trackId: 't1' })),
     getPlayheadBeat: vi.fn(() => 8),
 }));
 
@@ -15,6 +16,7 @@ vi.mock('../../../useCases/generateDrumPattern/applyToTrack', () => ({
 vi.mock('../generationHandlerHelpers', () => ({
     getPlayheadBeat: mocks.getPlayheadBeat,
     resolveOrCreateMidiTrack: mocks.resolveOrCreateMidiTrack,
+    resolveGenerationTrackPlan: mocks.resolveGenerationTrackPlan,
     VALID_DRUM_STYLES: new Set(['rock', 'house']),
     VALID_MELODY_STYLES: new Set(['simple', 'arpeggiated', 'stepwise', 'rhythmic', 'ambient']),
     VALID_SCALES: new Set(['major', 'minor', 'pentatonic', 'minor-pentatonic', 'blues', 'dorian', 'mixolydian']),

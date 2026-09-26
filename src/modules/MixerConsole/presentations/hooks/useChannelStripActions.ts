@@ -13,6 +13,7 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
@@ -127,12 +128,18 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     const gainGestureOpen = useRef(false);
     const displayedGain = useRef<number | null>(null);
     const pendingGainCommit = useRef<Promise<void>>(Promise.resolve());
+    // Recency stamp arming the double-click reset's coalescing. A settle arms
+    // it only when its commit actually recorded an undo entry: a jittered
+    // first click re-committing the unchanged gain is swallowed as a no-op, so
+    // the reset that follows must be its own undo step rather than join
+    // whatever entry is on top of the stack (#4616).
     const lastGainSettleTime = useRef(0);
 
     const panGestureToken = useRef(0);
     const panGestureOpen = useRef(false);
     const displayedPan = useRef<number | null>(null);
     const pendingPanCommit = useRef<Promise<void>>(Promise.resolve());
+    // Same no-op-settle rule as `lastGainSettleTime`.
     const lastPanSettleTime = useRef(0);
 
     let displayGain = track.gain;
@@ -225,10 +232,25 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         }
     };
 
-    const commitGain = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
+    /**
+     * The coalescing decision runs at commit time, not at event time: the
+     * pending-commit chain serializes it behind the settle it would merge
+     * with, so that settle's stamp — if it recorded anything — is already
+     * visible here. The stamp itself is written only when the dispatch left a
+     * new entry on the undo stack, read as a changed stack top; a no-op or
+     * conflicted settle records nothing and must not arm the reset that
+     * follows (#4616).
+     */
+    const commitGain = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
+        let coalesceWithPrevious = false;
+        if (!wasGestureSettle && performance.now() - lastGainSettleTime.current <= 500) {
+            coalesceWithPrevious = true;
+            lastGainSettleTime.current = 0;
+        }
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedGain = currentTrack?.gain ?? track.gain;
+            const stackTopBefore = undoHistoryStore.value?.past.at(-1);
             const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
             if (options) {
                 await executeAppAction(
@@ -244,6 +266,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                     payload: { trackId: track.id, gain: value, expectedGain },
                 });
             }
+            if (undoHistoryStore.value?.past.at(-1) !== stackTopBefore) {
+                lastGainSettleTime.current = performance.now();
+            }
         } catch (error) {
             logger.error(new Error('Channel strip commit failed for action: setTrackGain', { cause: error }));
             if (gainGestureToken.current === token) {
@@ -257,10 +282,16 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         }
     };
 
-    const commitPan = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
+    const commitPan = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
+        let coalesceWithPrevious = false;
+        if (!wasGestureSettle && performance.now() - lastPanSettleTime.current <= 500) {
+            coalesceWithPrevious = true;
+            lastPanSettleTime.current = 0;
+        }
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedPan = currentTrack?.pan ?? track.pan;
+            const stackTopBefore = undoHistoryStore.value?.past.at(-1);
             const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
             if (options) {
                 await executeAppAction(
@@ -275,6 +306,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                     type: 'setTrackPan',
                     payload: { trackId: track.id, pan: value, expectedPan },
                 });
+            }
+            if (undoHistoryStore.value?.past.at(-1) !== stackTopBefore) {
+                lastPanSettleTime.current = performance.now();
             }
         } catch (error) {
             logger.error(new Error('Channel strip commit failed for action: setTrackPan', { cause: error }));
@@ -347,16 +381,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             if (!wasOpen) {
                 setTrackGain(track.id, value, true);
             }
-            let coalesceWithPrevious = false;
-            if (wasOpen) {
-                lastGainSettleTime.current = performance.now();
-            } else if (performance.now() - lastGainSettleTime.current <= 500) {
-                coalesceWithPrevious = true;
-                lastGainSettleTime.current = 0;
-            }
             pendingGainCommit.current = pendingGainCommit.current
                 .catch(() => undefined)
-                .then(() => commitGain(value, token, coalesceWithPrevious));
+                .then(() => commitGain(value, token, wasOpen));
         },
         setPan: (value, isTransient = false) => {
             if (isTransient) {
@@ -378,16 +405,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             if (!wasOpen) {
                 setTrackPan(track.id, value, true);
             }
-            let coalesceWithPrevious = false;
-            if (wasOpen) {
-                lastPanSettleTime.current = performance.now();
-            } else if (performance.now() - lastPanSettleTime.current <= 500) {
-                coalesceWithPrevious = true;
-                lastPanSettleTime.current = 0;
-            }
             pendingPanCommit.current = pendingPanCommit.current
                 .catch(() => undefined)
-                .then(() => commitPan(value, token, coalesceWithPrevious));
+                .then(() => commitPan(value, token, wasOpen));
         },
         setColor: (color) => {
             void executeUserAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });

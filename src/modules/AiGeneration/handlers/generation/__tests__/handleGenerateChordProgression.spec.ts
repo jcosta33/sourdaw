@@ -5,6 +5,7 @@ import { handleGenerateChordProgression } from '../handleGenerateChordProgressio
 const mocks = vi.hoisted(() => ({
     applyChordProgressionToTrack: vi.fn(),
     resolveOrCreateMidiTrack: vi.fn<() => string | null>(() => 't1'),
+    resolveGenerationTrackPlan: vi.fn(() => ({ kind: 'existing', trackId: 't1' })),
     getPlayheadBeat: vi.fn(() => 4),
 }));
 
@@ -15,6 +16,7 @@ vi.mock('../../../useCases/generateChordProgression/applyToTrack', () => ({
 vi.mock('../generationHandlerHelpers', () => ({
     getPlayheadBeat: mocks.getPlayheadBeat,
     resolveOrCreateMidiTrack: mocks.resolveOrCreateMidiTrack,
+    resolveGenerationTrackPlan: mocks.resolveGenerationTrackPlan,
     VALID_CHORD_STYLES: new Set(['pop', 'jazz']),
     VALID_VOICINGS: new Set(['close', 'open']),
     VALID_MELODY_STYLES: new Set(['simple', 'arpeggiated', 'stepwise', 'rhythmic', 'ambient']),

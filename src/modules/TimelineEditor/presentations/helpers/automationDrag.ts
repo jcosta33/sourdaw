@@ -8,7 +8,7 @@ import { type MouseEvent as ReactMouseEvent } from 'react';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     addAutomationPoint,
-    removeAutomationPoint,
+    removeAutomationPointById,
     updateAutomationPoint,
     setAutomationPointCurve,
     beginDrawSession,
@@ -132,12 +132,16 @@ export const onRubberBandStart = (
             } else if (!isShift) {
                 const beat = Math.max(0, coords.xToBeat(x));
                 const value = coords.yToValue(y);
-                const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
+                // The id is what makes the undo side remove exactly the point
+                // this click added; removing by beat would also take any other
+                // point already sitting at the same beat.
+                const pointId = `auto-point-${crypto.randomUUID()}`;
+                const point: AutomationPoint = { id: pointId, beat, value, curve: 'linear', tension: 0 };
                 addAutomationPoint(lane.id, point);
                 pushUndoEntry(
                     'Add automation point',
                     () => {
-                        removeAutomationPoint(lane.id, beat);
+                        removeAutomationPointById(lane.id, pointId);
                     },
                     () => {
                         addAutomationPoint(lane.id, point);

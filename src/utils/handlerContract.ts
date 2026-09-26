@@ -2748,6 +2748,7 @@ export type AppAction =
     | { type: 'toggleNodeView'; payload?: undefined }
     | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
     | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }
+    | { type: 'removeCvOutput'; payload: { outputId: string } }
     | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
     | { type: 'disconnectPush'; payload?: undefined }
     | { type: 'exportDawProject'; payload?: undefined }
