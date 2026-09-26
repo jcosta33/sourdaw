@@ -73,4 +73,22 @@ describe('quantizeBeatToGrid', () => {
 
         expect(result).toBe(0);
     });
+
+    it('keeps the half-up rounding straight quantize had before on triplet and other non-dyadic grids', () => {
+        // Comparing candidate distances in beats let the grid division's own
+        // floating-point error decide these near-exact midpoints, moving a note a
+        // full step away from where plain nearest-step rounding puts it. Comparing
+        // in step units must agree with that oracle on every grid, dyadic or not.
+        const cases = [
+            { beat: 5 * ((2 / 3) * 0.25), gridSize: 1 / 3 },
+            { beat: 0.25, gridSize: 0.1 },
+            { beat: 20.8125, gridSize: 0.333 },
+        ];
+
+        for (const { beat, gridSize } of cases) {
+            const result = quantizeBeatToGrid({ beat, gridSize, strength: 1, swing: 0 });
+
+            expect(result).toBe(Math.round(beat / gridSize) * gridSize);
+        }
+    });
 });
