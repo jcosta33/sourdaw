@@ -1,0 +1,53 @@
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_2bfd55a4393d7c::t_db30b5f624a15a 47
+  s_2bfd55a4393d7c::t_f94799e9405056 73,84,93-94
+  s_2bfd55a4393d7c::t_0575834f4a192b 3,7,24-31,38
+src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx
+  s_2bfd55a4393d7c::t_60defc896b3d9e 221
+  s_2bfd55a4393d7c::t_ed56d5f910246d 22-23
+  s_2bfd55a4393d7c::t_584a6563e68827 147-148,162
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_2bfd55a4393d7c::t_01878cbcec1f0f 104-108,124
+  s_2bfd55a4393d7c::t_211d5677fba5f4 21
+  s_2bfd55a4393d7c::t_119396243a41bd 100-103,113,115,118-121
+  s_2bfd55a4393d7c::t_5f79058cbe8d48 122-123
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_2bfd55a4393d7c::t_9d9d8fd770c2a5 305,312
+  s_2bfd55a4393d7c::t_2e84a35f30be71 102
+  s_2bfd55a4393d7c::t_0d46324ea21615 204-205
+  s_2bfd55a4393d7c::t_4f7b7ff5f49145 26
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_a8db87def63b87 235
+  s_2bfd55a4393d7c::t_cd9ce3406c670a 127
+  s_2bfd55a4393d7c::t_f4af2f7c003a82 204
+  s_2bfd55a4393d7c::t_e589d3bfd991b0 405,407
+  s_2bfd55a4393d7c::t_b7ece864a4eeb5 14-19,22,33
+  s_2bfd55a4393d7c::t_4dd4cd2c23304b 436-478,489-506
+  s_2bfd55a4393d7c::t_3b1a67c8d7ab7e 419,421,429
+  s_2bfd55a4393d7c::t_ecd4d7eb029652 377,379
+  s_2bfd55a4393d7c::t_2b1485f7475c77 479-488
+src/modules/Levain/useCases/__tests__/levainParamBridge.spec.ts
+  s_2bfd55a4393d7c::t_08fb3ca41d7ecd 18-19,29
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  s_2bfd55a4393d7c::t_02ff61f20f9052 9,20
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_2bfd55a4393d7c::t_74940749132da4 16
+  s_2bfd55a4393d7c::t_d9dee17137d870 43-48
+  s_2bfd55a4393d7c::t_6ce1c2662cff83 186-193,197-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "77aefb23eca05eff6cc9f4e52254728e62df6263",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
