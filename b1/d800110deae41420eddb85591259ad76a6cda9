@@ -1,0 +1,64 @@
+src/modules/Bacteria/models/__tests__/BacteriaModulationIds.spec.ts
+  s_2bfd55a4393d7c::t_afb03de71ad957 78-85,89-92,96-97
+  s_2bfd55a4393d7c::t_0d2521515bca8d 86-88,93-95
+crates/daw-engine/src/scheduler.rs
+  s_2bfd55a4393d7c::t_7a0c88637f7d96 23950-24052,24055
+  s_2bfd55a4393d7c::t_33e61ba41b9bf6 24053-24054,24056-24058
+  s_2bfd55a4393d7c::t_2a3435a745473f 460-465
+  s_2bfd55a4393d7c::t_c322cfe290b6c2 472-476
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_2bfd55a4393d7c::t_992565b3ae0bad 835-874
+  s_2bfd55a4393d7c::t_dc8949084e647e 21
+crates/sourdaw-native/src/commands/graph.rs
+  s_2bfd55a4393d7c::t_5b03ee3b38228b 2598-2599
+  s_2bfd55a4393d7c::t_f70803d5daea25 14271-14279
+  s_2bfd55a4393d7c::t_5058596c1425e8 14321-14357
+  s_2bfd55a4393d7c::t_31df22282d31cc 14668-14694
+  s_2bfd55a4393d7c::t_fb1392583f82f7 302-348
+  s_2bfd55a4393d7c::t_deee2f65c9fd99 2593-2597
+  s_2bfd55a4393d7c::t_558a26a676f534 3762-3776
+  s_2bfd55a4393d7c::t_ef84b3f0692341 14733-14793,14796-14833
+  s_2bfd55a4393d7c::t_0e5b95f4e04eaf 14200-14270
+  s_2bfd55a4393d7c::t_6d514101e9457e 14578-14667
+  s_2bfd55a4393d7c::t_89760f955f34f5 14794-14795
+  s_2bfd55a4393d7c::t_542cd7d4d469c4 2577-2582
+  s_2bfd55a4393d7c::t_85ec4d98fdd243 2441-2465
+  s_2bfd55a4393d7c::t_b329d5d25a7366 726-730
+  s_2bfd55a4393d7c::t_5f5e22fed8e771 14099-14100,14103-14134,14138-14166
+  s_2bfd55a4393d7c::t_8004472633b6c0 14135-14137
+  s_2bfd55a4393d7c::t_995025e2eb9707 14101-14102
+src/modules/Bacteria/models/BacteriaModulationIds.ts
+  s_2bfd55a4393d7c::t_982468e1099560 128-147
+evidence/agent-campaign/manifest.json
+  s_2bfd55a4393d7c::t_90a02ce8534c02 623
+src/modules/Arrangement/handlers/device/handleSetDeviceState.ts
+  s_2bfd55a4393d7c::t_259c0ff3fd8081 15,17-25
+src/app/__tests__/bootstrap.spec.ts
+  s_2bfd55a4393d7c::t_db872b55f284e2 1134-1154
+  s_2bfd55a4393d7c::t_08eed7e4f166b4 74-77
+  s_ef536aab624565::t_bb029d252e2785 1133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b1d800110deae41420eddb85591259ad76a6cda9",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
