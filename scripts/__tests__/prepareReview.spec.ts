@@ -220,6 +220,7 @@ describe('review prepare', () => {
             'scripts/reviewBundleLocator.ts',
             'scripts/reviewDiffSummary.ts',
             'scripts/reviewDossier.ts',
+            'scripts/reviewDossierBindings.ts',
             'scripts/reviewDossierChain.ts',
             'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierViews.ts',

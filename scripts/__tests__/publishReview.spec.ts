@@ -68,6 +68,7 @@ import {
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
 import { REASSESSMENT_FILE_NAME, REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
+import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
 
 import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
@@ -5009,6 +5010,34 @@ describe('fresh reviewer dossier publication', () => {
         reviewerModel: 'glm-5.3-flash',
     };
 
+    /** A delivered `semantic-ci.json` record whose scope withheld two entries and left one unresolved. */
+    function deliveredSemanticCi(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+        return {
+            format: SEMANTIC_CI_FORMAT,
+            pr: number,
+            headSha: head,
+            state: 'assessed',
+            assessedHeadSha: head,
+            execution: 'partial',
+            scope: {
+                discovered: 3,
+                eligible: 2,
+                assessed: 1,
+                excluded: [{ path: 'scripts/a.ts', reason: 'binary' }],
+                unassessed: [{ path: 'scripts/b.ts', reason: 'evidence-withheld' }],
+                truncated: [],
+            },
+            unresolvedQuestions: 1,
+            artifact: {
+                id: 1,
+                name: `semantic-review-${number}-1`,
+                expiresAt: '2030-01-01T00:00:00Z',
+                digest: 'f'.repeat(64),
+            },
+            ...overrides,
+        };
+    }
+
     function readJsonFile(path: string): unknown {
         const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
         return parsed;
@@ -5052,6 +5081,7 @@ describe('fresh reviewer dossier publication', () => {
             publicReviews?: PublicReview[];
             publicReviewComments?: PublicReviewComment[];
             diff?: string;
+            semanticCi?: unknown;
         } = {}
     ) {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-dossier-'));
@@ -5077,6 +5107,9 @@ describe('fresh reviewer dossier publication', () => {
         }
         if (input.discarded !== undefined) {
             writeFileSync(join(bundle, 'discarded.json'), JSON.stringify(input.discarded));
+        }
+        if (input.semanticCi !== undefined) {
+            writeFileSync(join(bundle, 'semantic-ci.json'), JSON.stringify(input.semanticCi));
         }
         const calls: string[] = [];
         const writes: { path: string; contents: string }[] = [];
@@ -5262,6 +5295,140 @@ describe('fresh reviewer dossier publication', () => {
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
+    });
+
+    describe('delivered semantic assessment acknowledgement', () => {
+        it('refuses a delivered assessment with withheld entries, a none impact and no reason, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes the same dossier with the assessmentIgnoredReason present, binding it into the record', () => {
+            const REASON = 'the withheld audio module is outside this change’s blast radius';
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: REASON }),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                const persisted = parseReviewDossier(fixture.readDossier());
+                expect(persisted.assessmentIgnoredReason).toBe(REASON);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a reason beside a non-none impact, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'stance-changed',
+                    assessmentIgnoredReason: 'the assessment surfaced nothing actionable',
+                }),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /assessmentIgnoredReason requires assessmentImpact none, found stance-changed/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a bundle with no semantic-ci.json without the field', () => {
+            const fixture = dossierFixture({ plan: riskPlan(), dossier: dossierInput() });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                expect(parseReviewDossier(fixture.readDossier()).assessmentIgnoredReason).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a limitation-only round whose limitation names the assessment', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
+                }),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a limitation-only round whose limitation never names the assessment, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['the native audio path is not exercised on this head'],
+                }),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /review dossier assessmentImpact limitation-only does not cite the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved: name its artifact or a withheld path in a limitation/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a semantic-ci record bound to another head, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the withheld paths are outside scope' }),
+                semanticCi: deliveredSemanticCi({ headSha: 'f'.repeat(40) }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /semantic-ci record pr 42 headSha f{40} does not match the publication pr 42 headSha c{40}/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a persisted canonical record with no publication event that never acknowledges the assessment', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: persistedDossier([
+                    { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
+                    { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
+                ]),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
     });
 
     it('publishes below the escalation threshold without recording a review-reassessed event', () => {

@@ -28,6 +28,11 @@ import {
 } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
 import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
+import {
+    assertSemanticAssessmentAcknowledged,
+    parseSemanticAssessmentCoverage,
+    type SemanticAssessmentCoverage,
+} from './reviewDossierSemanticAssessment.ts';
 import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
 import { exactPublishedReview } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
@@ -46,6 +51,7 @@ const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
 const REVIEW_STANCES_NAME = 'stances.json';
 const REVIEW_DOSSIER_NAME = 'dossier.json';
 const REVIEW_DISCARDED_NAME = 'discarded.json';
+const SEMANTIC_CI_NAME = 'semantic-ci.json';
 
 type BundleFileRead = { present: true; value: unknown } | { present: false };
 
@@ -114,6 +120,20 @@ function persistCanonicalReviewDossier(
         fail(`review publication cannot write ${join(bundle, REVIEW_DOSSIER_NAME)}: the port has no bundle writer`);
     }
     port.writeBundleText(join(bundle, REVIEW_DOSSIER_NAME), publication.canonical);
+}
+
+/**
+ * The bundle's `semantic-ci.json` record, parsed, or `undefined` when the bundle carries none — a
+ * historical bundle prepared before `review:prepare` wrote the projection, or a head whose
+ * assessment was never delivered. A present but malformed file is refused, exactly like every other
+ * bundle file.
+ */
+function readSemanticCiRecord(port: PublishReviewPort, bundle: string): SemanticAssessmentCoverage | undefined {
+    const read = readBundleFile(port, join(bundle, SEMANTIC_CI_NAME));
+    if (!read.present) {
+        return undefined;
+    }
+    return parseSemanticAssessmentCoverage(read.value);
 }
 
 /**
@@ -257,6 +277,15 @@ export function prepareReviewDossierPublication(input: {
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
         recordedStances,
     });
+    // The gate bounds every publication that will actually post: a caller input, or a persisted
+    // canonical record whose publication was never recorded. Only a record that already binds a
+    // publication replays instead of posting, so it is exempt.
+    if (publishedReviewId(publication.dossier) === undefined) {
+        assertSemanticAssessmentAcknowledged(publication.dossier, readSemanticCiRecord(input.port, input.bundle), {
+            pr: plan.pr,
+            headSha: plan.headSha,
+        });
+    }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
     return reassessment;
 }
