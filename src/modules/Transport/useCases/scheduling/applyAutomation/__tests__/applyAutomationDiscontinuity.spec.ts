@@ -71,6 +71,10 @@ function seedDeviceLane(deviceId: string, laneId: string): void {
                 clips: [],
                 midiFx: [],
                 devices: [{ id: deviceId, type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                // #4684: every device-family lane now reads the compensated
+                // beat, which calls the real getCompensationDelay (unmocked in
+                // this file) on every tick — it walks a real Track's `sends`.
+                sends: [],
             },
         ],
     };
