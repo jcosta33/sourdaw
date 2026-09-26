@@ -36,6 +36,7 @@ import {
     narratingTestInstructionSegments,
     testInstructionsNarrateChecks,
     COMMAND_HEADS,
+    CHECK_COMMANDS,
     CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
 } from '../testInstructions.ts';
 
@@ -816,6 +817,42 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
     });
 
+    /**
+     * The check-only inventory, spec-owned on purpose: dropping any member reddens the equality pin
+     * and that member's behavioral case below. Several members are also command heads, so a bare
+     * command line would still refuse through the command rule without them.
+     */
+    const CHECK_COMMANDS_UNDER_TEST = [
+        'deps:validate',
+        'wasm:verify',
+        'typecheck',
+        'lint',
+        'tsc',
+        'eslint',
+        'prettier',
+        'oxlint',
+        'biome',
+        'knip',
+        'jest',
+        'pytest',
+        'vitest',
+    ];
+
+    it('pins the check-only command inventory the narration gate refuses whatever prose rides beside', () => {
+        expect([...CHECK_COMMANDS]).toEqual(CHECK_COMMANDS_UNDER_TEST);
+    });
+
+    it.each(CHECK_COMMANDS_UNDER_TEST)('refuses a prose-led step that mentions the %s check', (member) => {
+        // The app step's cue words rescue the segment from the command rule, so only the
+        // check-only inventory refuses the clause naming the member.
+        const instructions = `Open the mixer and confirm the fader moves; checked with pnpm ${member}.`;
+
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain(`"checked with pnpm ${member}"`);
+    });
+
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
             '\n'
@@ -1400,6 +1437,9 @@ describe('product-scope test instructions', () => {
         ['a unit-test mention', 'Unit tests cover the undo path.'],
         ['an end-to-end mention', 'The e2e smoke set exercises the mixer.'],
         ['a CI mention', 'CI runs the native graph tests on every push.'],
+        // Only CI_WORD refuses these two: no other suite word, runner name, or command rides beside.
+        ['a bare CI mention', 'CI blocks the merge.'],
+        ['a CI mention behind an app step', 'Open the mixer and confirm the fader moves. CI blocks the merge.'],
         ['a unit-suite mention', 'Covered by the unit suite.'],
         ['an end-to-end-suite mention', 'Covered by the end-to-end suite.'],
         ['an integration-test mention', 'Covered by integration tests.'],

@@ -844,7 +844,7 @@ function namesTestSuite(segment: string): boolean {
 const CHECK_SCRIPT_FAMILIES = new Set(['test', 'typecheck', 'lint', 'cargo']);
 
 /** Check scripts and tools that run nothing but a check: a reviewer never launches one to use the app. */
-const CHECK_COMMANDS = new Set([
+export const CHECK_COMMANDS = new Set([
     'deps:validate',
     'wasm:verify',
     'typecheck',
