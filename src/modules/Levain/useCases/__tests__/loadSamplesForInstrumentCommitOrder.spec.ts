@@ -18,8 +18,8 @@ vi.mock('../../repositories/sampleLoader/fetchAndDecode', () => {
     };
 });
 
-import { decodedBankResource } from '../../repositories/sampleLoader/decodedBankResource';
 import { createDefaultPatch } from '../../models/LevainPatch';
+import { decodedBankResource } from '../../repositories/sampleLoader/decodedBankResource';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
 import { createLevainBridge } from '../levainParamBridge/helpers';
@@ -112,7 +112,7 @@ type ReplyMode = 'auto' | 'defer' | 'fail';
  * `sampleBankError` instead of committing.
  */
 function makeSequencedPort(replies: ReplyMode[]): {
-    port: MessagePort & { postMessage: ReturnType<typeof vi.fn> };
+    port: MessagePort & { postMessage: ReturnType<typeof vi.fn>; emit: (message: unknown) => void };
     deferredToken: (callIndex: number) => number;
 } {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
@@ -186,7 +186,7 @@ function makeSequencedPort(replies: ReplyMode[]): {
                 }
             },
             emit,
-        } as unknown as MessagePort & { postMessage: ReturnType<typeof vi.fn> },
+        } as unknown as MessagePort & { postMessage: ReturnType<typeof vi.fn>; emit: (message: unknown) => void },
         deferredToken: (index: number): number => {
             const token = deferredTokens.get(index);
             if (token === undefined) {
@@ -218,9 +218,11 @@ function makeDeps(autoLoad: typeof autoLoadLevainSamples) {
             }
             levainStore.set({ ...instances, [id]: { ...state, loadedMicPositions: positions as never } });
         },
-        resolveEligibleDeviceWriteTarget: vi.fn(
-            (deviceId: string): DeviceWriteTargetResolution => ({ status: 'eligible', trackId: 'track-1', deviceId })
-        ),
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        })),
     };
 }
 
