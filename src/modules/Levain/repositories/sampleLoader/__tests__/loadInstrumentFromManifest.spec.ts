@@ -76,10 +76,27 @@ type MakePortOptions = {
     uploadRequired?: boolean;
     autoComplete?: boolean;
     commitError?: string;
+    /**
+     * Model the processor's own commit timing: `buildZoneMap` clears the
+     * pending token synchronously (as `_completeSampleBankLoad` does,
+     * levainProcessor.ts ~:285-291) but the test emits the terminal
+     * `sampleBankLoaded` itself, later — so a race between an abort and that
+     * still-unset reply can be driven deterministically instead of via timers.
+     */
+    deferCommit?: boolean;
 };
 
+/**
+ * A fake worklet port modelled on `levainProcessor.ts`'s own token bookkeeping
+ * (~:178, ~:285-343, ~:513-517): it tracks the one load token it considers
+ * pending and only answers a matched `abortSampleBank` — exactly like the
+ * real processor's `abortSampleBank` case, which is a no-op once
+ * `_bankLoadToken` no longer matches (already committed, or a different
+ * load).
+ */
 function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    let pendingToken: number | null = null;
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -91,6 +108,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
             return;
         }
         if (message.type === 'beginSampleBank') {
+            pendingToken = message.loadToken;
             queueMicrotask(() => {
                 emit({
                     type: 'sampleBankUploadDecision',
@@ -100,13 +118,40 @@ function makePort(options: MakePortOptions = {}): FakePort {
             });
             return;
         }
-        if (message.type === 'buildZoneMap' && options.autoComplete !== false) {
+        if (message.type === 'buildZoneMap') {
+            if (options.autoComplete === false) {
+                // Models a commit still in flight (e.g. a shared-bank
+                // follower awaiting its owner) — the token stays pending.
+                return;
+            }
+            // The real processor clears its token synchronously on commit,
+            // before the reply is even queued.
+            pendingToken = null;
+            if (options.deferCommit) {
+                return;
+            }
             queueMicrotask(() => {
                 if (options.commitError) {
                     emit({ type: 'sampleBankError', loadToken: message.loadToken, message: options.commitError });
                     return;
                 }
                 emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
+            });
+            return;
+        }
+        if (message.type === 'abortSampleBank') {
+            if (message.loadToken !== pendingToken) {
+                // Matches `msg.loadToken === this._bankLoadToken` failing on
+                // the real processor: already committed, or a stale token.
+                return;
+            }
+            pendingToken = null;
+            queueMicrotask(() => {
+                emit({
+                    type: 'sampleBankError',
+                    loadToken: message.loadToken,
+                    message: 'Levain sample bank load was aborted',
+                });
             });
         }
     });
@@ -351,6 +396,11 @@ describe('loadInstrumentFromManifest', () => {
     });
 
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
+        // The token is still pending on this fake port when the abort lands
+        // (buildZoneMap has not committed — `autoComplete: false`), so the
+        // port answers `abortSampleBank` with `sampleBankError` the way the
+        // real processor's matched abort does; the promise settles from that
+        // answer rather than from an immediate local rejection.
         const port = makePort({ autoComplete: false });
         const controller = new AbortController();
         const pending = loadInstrumentFromManifest({
@@ -369,6 +419,97 @@ describe('loadInstrumentFromManifest', () => {
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(postedTypes(port)).toContain('abortSampleBank');
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+    });
+
+    describe('an abort after buildZoneMap defers to the worklet', () => {
+        it('resolves with the committed bank when the worklet already committed before the abort lands', async () => {
+            const twoMicManifest = {
+                ...MANIFEST,
+                micPositions: ['close', 'room'],
+                articulations: [
+                    {
+                        ...MANIFEST.articulations[0],
+                        zones: [
+                            { ...MANIFEST.articulations[0]!.zones[0], file: 'a.wav', micId: 0 },
+                            { ...MANIFEST.articulations[0]!.zones[0], file: 'b.wav', micId: 1 },
+                        ],
+                    },
+                ],
+            };
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve(twoMicManifest),
+                })
+            );
+            // `deferCommit` clears the port's pending token synchronously on
+            // `buildZoneMap` (as the real processor's commit does) but leaves
+            // the terminal `sampleBankLoaded` reply for this test to deliver,
+            // so the abort-vs-reply race is driven deterministically instead
+            // of by timer ordering.
+            const port = makePort({ deferCommit: true });
+            const controller = new AbortController();
+            const pending = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('buildZoneMap');
+            });
+            const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
+                return isRecord(message) && message.type === 'buildZoneMap';
+            })?.[0];
+            if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
+                throw new Error('Expected a buildZoneMap message');
+            }
+
+            controller.abort();
+            // The token was already cleared by the commit above, so the
+            // abort's `abortSampleBank` finds no match and gets no answer —
+            // only the worklet's own delayed reply below may settle this.
+            expect(postedTypes(port)).toContain('abortSampleBank');
+
+            port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage.loadToken });
+
+            const bank = await pending;
+            expect(bank?.micPositions).toEqual(['close', 'room']);
+        });
+
+        // "abort after buildZoneMap while the fake worklet has not committed;
+        // it answers the abort with sampleBankError → rejects with the abort
+        // reason" is the same scenario the pre-existing
+        // 'aborts the active worklet transaction while waiting for its commit
+        // acknowledgement' test above already covers — its sequence didn't
+        // change, only `makePort`'s abort handling gained the answer that now
+        // drives its rejection.
+
+        it.each(['disposed', 'error'] as const)(
+            'rejects without a pending promise when the worklet reports %s after the abort',
+            async (type) => {
+                const port = makePort({ autoComplete: false });
+                const controller = new AbortController();
+                const pending = loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    basePath: '/base',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal: controller.signal,
+                });
+                await vi.waitFor(() => {
+                    expect(postedTypes(port)).toContain('buildZoneMap');
+                });
+
+                controller.abort();
+                port.emit({ type });
+
+                await expect(pending).rejects.toThrow();
+            }
+        );
     });
 
     it('hydrates two concurrent instances from one manifest fetch and one decoded sample', async () => {

@@ -357,6 +357,12 @@ describe('LevainPanel', () => {
             render(<LevainPanel deviceId="test-device" />);
 
             expect(screen.queryAllByTestId('fader')).toHaveLength(0);
+            expect(screen.getByText('Stage')).toBeInTheDocument();
+            const rows = screen.getAllByTestId('readout-row');
+            const spaceRow = rows.find((row) => row.textContent?.includes('Space'));
+            // Exact match: guards against a stale "3 mics" (or any other
+            // count) surviving a rewrite of the no-bank fallback text.
+            expect(within(spaceRow as HTMLElement).getByText('0 mics', { exact: true })).toBeInTheDocument();
         });
     });
 
