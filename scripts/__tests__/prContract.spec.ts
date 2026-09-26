@@ -1116,8 +1116,12 @@ describe('product-scope test instructions', () => {
     it.each([
         ['a launch introduced by a Latin example abbreviation', 'E.g. pnpm dev', 'E.g. pnpm dev'],
         ['a launch introduced by a restatement abbreviation', 'Press Play. i.e. pnpm dev', 'i.e. pnpm dev'],
-        ['an abbreviation between annotation words', 'CI, i.e. pnpm dev, is green.', 'CI, i.e. pnpm dev, is green'],
-        ['an abbreviation behind a run-ending cue word', 'Run gh run watch, i.e. CI.', 'Run gh run watch, i.e. CI'],
+        ['an abbreviation behind a step-verb launch', 'make all, i.e. every module.', 'make all, i.e. every module'],
+        [
+            'an abbreviation behind a run-ending cue word',
+            'Run pnpm dev and watch the output, i.e. clean.',
+            'Run pnpm dev and watch the output, i.e. clean',
+        ],
     ])('refuses %s: a dotted abbreviation neither rescues nor launches', (_label, instructions, segment) => {
         // A leading abbreviation strips like filler, exposing the launch behind it; elsewhere it
         // drops from the prose remainder and counts as no material behind a run-ending word.
