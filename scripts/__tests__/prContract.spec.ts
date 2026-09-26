@@ -944,6 +944,31 @@ describe('product-scope test instructions', () => {
         expect(message).not.toContain('Assign two armed');
     });
 
+    it('quotes the check sentence behind a plural possessive, not the app step before it', () => {
+        const instructions = "Trim the clips' ends. Covered by pnpm test:run x.spec.ts.";
+
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain('Covered by pnpm test:run x.spec.ts');
+        expect(message).not.toContain('Trim the clips');
+    });
+
+    it('judges the launch sentence behind a plural possessive on its own', () => {
+        // An apostrophe directly after a letter ends its word, so it opens no quoted span that
+        // would hold the rest of the line open against the sentence split.
+        const instructions = "Solo both tracks' sends. Then run pnpm dev.";
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['Then run pnpm dev']);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('passes a step carrying a plural possessive', () => {
+        const step = "Solo both tracks' sends and confirm the meters move.";
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it('passes a step whose possessive and contraction sit on either side of a separator', () => {
         const step = "Open the mixer and confirm the track's fader moves; the meter doesn't clip.";
 
