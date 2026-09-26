@@ -491,6 +491,31 @@ before `Storage.setItem` failed. Use the real lifecycle and cancellation control
 storage write once, then cancel the same confirmation again. Removing the persistence retry must
 leave the saved run nonterminal and fail the assertion, both with and without cleanup assets.
 
+### 2026-09-25 — a two-part artifact reader outlived the producer's move to an attempt-scoped name (escaped via PR #4577, introduced the gap PR #4582 widened)
+
+PR #4577 added `scripts/semanticReviewContext.ts`'s `artifactIdentity`, parsing
+`semantic-review-<pr>-<runId>` with a hand-written two-part fixture. PR #4582 moved the workflow's
+`Upload the advisory report` step to the attempt-scoped `semantic-review-<pr>-<runId>-<attempt>`
+(`.github/workflows/semantic-review.yml`) and pinned that three-part template in
+`semanticReviewWorkflowContract.ts`, but never touched the reader. Every delivered assessment's
+artifact then failed the reader's two-part regex, so `selectAssessmentArtifact` found nothing and
+`resolveSemanticReviewContext` recorded `no-assessment` / `absent` for a check that was green: run
+36217869489 carried artifact `semantic-review-4793-36217869489-1`, and `review:prepare 4793` wrote
+`absent`.
+
+Blind spot: the reader's own spec fixtures were hand-written to the reader's regex rather than
+derived from the producer's upload-name template, so a producer-side rename could not turn the
+reader's suite red; the producer and consumer of a CI-generated name lived in unrelated diffs, and
+no case tied either side to the other.
+
+Probe that would have caught it: for a consumer of a CI-produced artifact, check, or payload name,
+derive the spec's fixture from the producer's own definition — here, `SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME`
+in `scripts/semanticReviewWorkflowContract.ts`, itself pinned against the live workflow YAML by
+`healthGatesWorkflow.spec.ts` — with concrete values substituted for its template placeholders, and
+assert the reader selects an artifact under that derived name; then mutate the producer's shape (add
+or drop a segment, as the attempt scoping did) and require the derived case to fail rather than the
+hand-written fixture staying silently valid.
+
 ### 2026-09-21 — unlinked command fixtures missed inaudible follower writes (escaped via PRs #931 and #4392; fixed in #4506)
 
 PR #931 tested point delegation with a mocked unlinked writer, and PR #4392 tested decibel forms only on unlinked lanes.
