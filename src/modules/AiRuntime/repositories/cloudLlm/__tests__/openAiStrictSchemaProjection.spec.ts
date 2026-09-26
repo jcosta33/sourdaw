@@ -293,6 +293,26 @@ describe('projectOpenAiStrictToolSchema', () => {
         }
     });
 
+    it.each(['not', 'dependentRequired', 'if'] as const)(
+        'rejects a nested "%s" keyword the strict wire schema cannot forward',
+        (unsupportedKeyword) => {
+            const schema = tool({
+                type: 'object',
+                properties: {
+                    value: { type: 'string', [unsupportedKeyword]: { type: 'string' } },
+                },
+                required: ['value'],
+            });
+
+            expect(() => projectOpenAiStrictToolSchema(schema)).toThrowError();
+            try {
+                projectOpenAiStrictToolSchema(schema);
+            } catch (error) {
+                expect(isToolSchemaProjectionError(error)).toBe(true);
+            }
+        }
+    );
+
     it('projects the full production planning catalog without throwing or leaving a bound keyword', () => {
         const catalog = getPlanningProviderToolSchemas();
         expect(catalog.length).toBeGreaterThan(0);
