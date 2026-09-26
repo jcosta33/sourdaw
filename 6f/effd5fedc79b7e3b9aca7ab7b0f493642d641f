@@ -1,0 +1,45 @@
+scripts/__tests__/semanticReviewContext.spec.ts
+  s_1c08b47ac3792f::t_00e96c48d287cd 672,686
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_1c08b47ac3792f::t_bbeb320dfc293f 28,387-398,446-477,482,509-540,555-557,560,575,579-583,656-662,664,666,688-691,703-756,4508-4560
+scripts/semanticReview/evidence.ts
+  s_2bfd55a4393d7c::t_63b9d673001e80 32-40,43-46,196-200,218-228,244-248,252,256,260-262,264-265,428-429,438-445,454-474,477-481,483-484,495,498,639-640,653,655-656,660-665,695-702,721,723,737
+scripts/semanticReview/evidenceOrdering.ts
+  s_1c08b47ac3792f::t_83a58fa96f4dad 1-134
+scripts/semanticReview/slicing.ts
+  s_2bfd55a4393d7c::t_9127f5f1f70134 1-23
+scripts/semanticReview/verify.ts
+  s_ef536aab624565::t_2499a67119efc0 30,400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6feffd5fedc79b7e3b9aca7ab7b0f493642d641f",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
