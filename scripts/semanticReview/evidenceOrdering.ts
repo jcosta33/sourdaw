@@ -10,10 +10,13 @@
  *    contract-carrying or a source a contract-carrying spec covers — so the budget stays on the change
  *    the contract lives in and no spec outranks the source it covers;
  * 2. a changed file whose rules need contract evidence — its own sides, attempted before the context
- *    units those rules charge, while the side stays behind genuine contract material. That attempt order
- *    is the whole guarantee: `fitUnitEvidence` reserves a bounded context share of the request
- *    (`CONTEXT_BUDGET_SHARE`) before it offers these sides, so the unit's own sides can still be
- *    withheld below its request while the charged documents are sent;
+ *    units those rules charge, while the side stays behind genuine contract material. The attempt order
+ *    is what keeps the charge from taking its reader's place at admission: when the collector's total
+ *    binds before the context tier, the document is withheld there and no context region reaches the
+ *    request fitter at all, so the reserve is zero and the request budget is spent on the own sides the
+ *    collector admitted. The fitter reserves `CONTEXT_BUDGET_SHARE` only when an admitted context region
+ *    fits that share; then the unit's own sides can still be withheld below its request while the
+ *    document it reserves for is sent;
  * 3. contract-context units, the documents read at the contract source revision — ahead of bulk,
  *    behind the change's own contract material;
  * 4. bulk sides of the change.
@@ -90,9 +93,11 @@ export function classifyContractCarryingSides(
 /**
  * The changed paths whose rules declare a contract, decision or registration token. A file's own sides
  * are attempted ahead of the context documents its rules charge, so the order keeps the charge from
- * taking the reader's place — and that is all it keeps: the request fitter reserves the bounded context
- * share before it offers these sides, so under a binding total the documents can still be sent while
- * the unit's own sides are withheld below its request.
+ * taking the reader's place — and that is what it keeps: the order decides which side the collector's
+ * total withholds, never what a request carries. When the total binds before the context tier the
+ * document is withheld at admission, the fitter sees no context region, and the reserve is zero, so the
+ * request budget is spent on the own sides the collector admitted; the fitter reserves
+ * `CONTEXT_BUDGET_SHARE` only when an admitted context region fits that share.
  */
 export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): ReadonlySet<string> {
     const needing = new Set<string>();
@@ -222,9 +227,11 @@ function unitSideOrder(unit: AdmissionUnit): number {
  * 0. the change's own contract-carrying sides and the sources a contract-carrying spec covers;
  * 1. a changed file whose rules declare a contract, decision or registration token — its own
  *    before/after sides are attempted ahead of the context documents those rules charge, while the side
- *    stays behind genuine contract material. The tier is an attempt order, not a protection: the request
- *    fitter reserves the bounded context share before it offers these sides, so under a binding total
- *    the charged documents can still be sent while this unit's own sides are withheld below its request;
+ *    stays behind genuine contract material. The tier is an attempt order, not a protection: it orders
+ *    what the collector's total withholds, and the request fitter reserves the bounded context share
+ *    only when an admitted context region fits that share, so a context region the collector withheld
+ *    under a binding total costs the fitter nothing and the request budget is spent on the own sides the
+ *    collector admitted;
  * 2. contract-context units;
  * 3. bulk sides.
  *
@@ -527,10 +534,13 @@ export function admissionBytesBySide(
  * The set is keyed the way admission keys a region, not by the change: a before side is admitted under
  * its previous path and an after side under the change's own path, so a rename whose previous side is
  * credential-shaped records the previous path. That distinction is what the context gate reads. The
- * planner skips a changed file only when its own path is in the excluded set, so this rename still
- * plans a destination unit from its clean after side and must charge the context its rules declare,
- * while a modified file — whose two sides share one path — is skipped by either side. This mirrors
- * `admitSide`'s slicing rather than reading again: the content was already read once for admission.
+ * planner skips a changed file only when its own path is in the excluded set, so a rename credentialed
+ * on its previous side alone still plans a destination unit from its clean after side and must charge
+ * the context its rules declare, while a modified file — whose two sides share one path — is skipped by
+ * either side. Both sides are therefore judged independently and neither short-circuits the other: a
+ * rename credentialed on *both* sides records its destination path as well, so the gate sees no unit to
+ * charge, exactly as the planner plans none. This mirrors `admitSide`'s slicing rather than reading
+ * again: the content was already read once for admission.
  */
 export function credentialShapedPaths(
     changed: readonly SemanticChangedFile[],
@@ -553,13 +563,15 @@ export function credentialShapedPaths(
     for (const file of changed) {
         const entry = contents.get(file.path);
         const hunks = hunksByPath.get(file.path);
+        // Both sides are judged on their own content and neither skips the other: a rename or copy
+        // credentialed on each side keys the previous path from its before side and the change's own
+        // path from its after side.
         if (
             kindHasBeforeSide(file.kind) &&
             entry?.before !== undefined &&
             sideHasCredential(entry.before, hunks?.before)
         ) {
             credential.add(file.previousPath ?? file.path);
-            continue;
         }
         if (kindHasAfterSide(file.kind) && entry?.after !== undefined && sideHasCredential(entry.after, hunks?.after)) {
             credential.add(file.path);

@@ -26,9 +26,11 @@ import {
 import {
     assertEvidenceIntegrity,
     compareLexicographic,
+    CREDENTIAL_SHAPED_WITHHELD_CODE,
     evidenceSidePrefix,
     isContractCarryingContent,
     isSensitivePath,
+    SENSITIVE_PATH_WITHHELD_CODE,
     withheldRegionCarriesContract,
     withheldRegionReason,
     type SemanticEvidenceLimits,
@@ -349,7 +351,7 @@ function collectFindingEvidence(input: {
         if (isSensitivePath(reference.path)) {
             // Recorded as incomplete scope: a finding's evidence is not a unit of its own, so counting
             // it as an exclusion would break the manifest's arithmetic as well as the completion state.
-            truncated.push({ path: reference.path, reason: 'evidence-withheld-sensitive-path' });
+            truncated.push({ path: reference.path, reason: SENSITIVE_PATH_WITHHELD_CODE });
             limitations.push(`finding evidence ${reference.path} was withheld: it is on the sensitive-path list`);
             continue;
         }
@@ -366,7 +368,10 @@ function collectFindingEvidence(input: {
         }
         const unsafe = sensitiveContentReason(text);
         if (unsafe !== undefined) {
-            truncated.push({ path: reference.path, reason: 'evidence-withheld-credential-shaped' });
+            // Before any bounds decision, matching the scan route's order: content that must not leave
+            // the machine names the credential cause on both routes even when the named range is also
+            // past the file, because that is why nothing left.
+            truncated.push({ path: reference.path, reason: CREDENTIAL_SHAPED_WITHHELD_CODE });
             limitations.push(`finding evidence ${reference.path} was withheld: it contains ${unsafe}`);
             continue;
         }
@@ -375,7 +380,8 @@ function collectFindingEvidence(input: {
         // request never used. The screen above still judges the whole file, because withholding has to
         // be decided on everything the file holds rather than on the part being quoted. The same slice
         // the scan path applies clamps the range, and a range that starts past the file names no line
-        // this revision holds: both routes then refuse and record the same hunk-beyond-file reference.
+        // this revision holds: both routes then refuse and record the same hunk-beyond-file reference,
+        // a side the screen kept.
         const sliced = sliceLines(text, { startLine: reference.startLine, endLine: reference.endLine });
         if (sliced === undefined) {
             truncated.push({

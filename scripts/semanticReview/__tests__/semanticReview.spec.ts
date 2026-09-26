@@ -1255,6 +1255,81 @@ describe('contract-carrying admission', () => {
         });
     });
 
+    it("keeps the unit's own sides when the charged document is larger than the context share", async () => {
+        // B, larger-than-share regime, measured at the production `local` profile: the charged document
+        // `.agents/decisions/README.md` is 5,963 B serialized here and the real one is 11,981 B, both over
+        // the 4,401 B share this unit's request reserves — so reserving it bought nothing and cost the unit
+        // an own side. Reserving only for a document that fits the share leaves the own sides the whole
+        // request budget and the document is withheld by the fitter instead. Restoring the unconditional
+        // reserve drops the after side and sends the document, failing both arms of this case.
+        const path = 'src/modules/Project/undo.ts';
+        const own = 'const beforeValue = 1;\n'.repeat(175);
+        const document = '# Decisions\n'.repeat(440);
+        const result = await runScan({
+            ...scanPorts(
+                constantProvider(0.05),
+                fakeSource({
+                    files: [changedFile(path, { added: 175, deleted: 175 })],
+                    blobs: {
+                        [`${MERGE_BASE}:${path}`]: own,
+                        [`${HEAD}:${path}`]: own,
+                        // AGENTS.md is absent at this revision, so the one charged document is the README.
+                        [`${MERGE_BASE}:.agents/decisions/README.md`]: document,
+                    },
+                }),
+                fixedClock(1_000)
+            ),
+            limits: {
+                maxRegionBytes: SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes,
+                maxTotalBytes: SEMANTIC_BUDGET_PROFILES.local.maxTotalSubmittedBytes,
+            },
+        });
+        const unit = result.previews.find((preview) => preview.path === path);
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('b'))).toBe(true);
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(false);
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'unit-evidence-reduced-below-request-budget (context)',
+        });
+    });
+
+    it("sends the charged document when it fits the context share, even at an own side's expense", async () => {
+        // B, smaller-than-share regime: the charged document is 2,713 B and fits the 4,401 B share, so the
+        // reserve is taken and the document is sent while the unit's own after side is withheld below the
+        // request. Dropping the reserve hands the own sides the whole budget and the document is dropped
+        // instead, failing this case's first arm; that is the opposite rule, and the previous case fails
+        // under the reserve this one depends on.
+        const path = 'src/modules/Project/undo.ts';
+        const own = 'const beforeValue = 1;\n'.repeat(175);
+        const document = '# Decisions\n'.repeat(190);
+        const result = await runScan({
+            ...scanPorts(
+                constantProvider(0.05),
+                fakeSource({
+                    files: [changedFile(path, { added: 175, deleted: 175 })],
+                    blobs: {
+                        [`${MERGE_BASE}:${path}`]: own,
+                        [`${HEAD}:${path}`]: own,
+                        [`${MERGE_BASE}:.agents/decisions/README.md`]: document,
+                    },
+                }),
+                fixedClock(1_000)
+            ),
+            limits: {
+                maxRegionBytes: SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes,
+                maxTotalBytes: SEMANTIC_BUDGET_PROFILES.local.maxTotalSubmittedBytes,
+            },
+        });
+        const unit = result.previews.find((preview) => preview.path === path);
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(false);
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'unit-evidence-reduced-below-request-budget (after)',
+        });
+    });
+
     it('charges no contract context when the content screen drops the only reading unit', () => {
         // D3: a modified contract-needing file whose after side is credential-shaped is excluded by the
         // content screen and skipped by the planner, yet the gate charged the context documents from the
@@ -1448,6 +1523,79 @@ describe('contract-carrying admission', () => {
                 (entry) => entry.path === previousPath && entry.reason === 'credential-shaped-content-excluded'
             )
         ).toBe(true);
+    });
+
+    it('charges no contract context when a rename is credentialed on both sides', () => {
+        // Both sides key their own path: the previous side's credential records the previous path, the
+        // destination side's records the change's own path. Short-circuiting the before side left the
+        // destination path unkeyed, so the gate read a unit worth charging for and spent the collector's
+        // total on documents the planner excludes every reader of. That total is charged in raw bytes:
+        // 26 + 27 for the rename's clean hunks, then the two documents (804 B) in the context tier, then
+        // the competitor's sides (13 + 200). At 960 B the competitor's before side is admitted and its
+        // after side withheld once the documents are charged; with no charge all 266 B are admitted.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const previousPath = 'src/modules/Project/legacy-key.ts';
+        const path = 'src/modules/Project/undo.ts';
+        const competitor = 'crates/daw-dsp/src/b.rs';
+        const beforeClean = 'export const undo = true;\n';
+        const afterClean = 'export const undo = false;\n';
+        const credentialLine = `export const key = '${awsShaped}';\n`;
+        const competitorBefore = 'const c = 1;\n';
+        const competitorAfter = 'const competitorValue = 1;\n'.repeat(8);
+        const files = [
+            changedFile(path, { kind: 'renamed', previousPath, added: 1, deleted: 1 }),
+            changedFile(competitor),
+        ];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${previousPath}`]: `${beforeClean}${credentialLine}`,
+                    [`${HEAD}:${path}`]: `${afterClean}${credentialLine}`,
+                    [`${MERGE_BASE}:${competitor}`]: competitorBefore,
+                    [`${HEAD}:${competitor}`]: competitorAfter,
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n'.repeat(24),
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n'.repeat(25),
+                },
+                // Each side carries a clean hunk the planner could charge for beside its credential hunk,
+                // which is what let the unkeyed destination read as a unit worth charging.
+                hunks: new Map([
+                    [
+                        path,
+                        {
+                            path,
+                            previousPath,
+                            before: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 2 },
+                            ],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 2 },
+                            ],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 960 },
+            includeDefaultContractContext: true,
+        });
+        // Nothing was charged: no context region exists for the gate to have bought.
+        expect(set.truncated).toEqual([
+            { path: previousPath, reason: 'evidence-withheld-credential-shaped' },
+            { path, reason: 'evidence-withheld-credential-shaped' },
+        ]);
+        expect(set.excluded).toEqual([
+            { path: previousPath, reason: 'credential-shaped-content-excluded' },
+            { path, reason: 'credential-shaped-content-excluded' },
+        ]);
+        // No unit is planned for either credentialed path, and the clean bulk competitor keeps both sides.
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        expect(planned.units.map((unit) => unit.path)).toEqual([competitor]);
+        expect(planned.units[0]?.evidence.own.map((reference) => reference.side)).toEqual(['before', 'after']);
     });
 
     it('charges no default contract context when the only contract-needing file cannot produce a unit', async () => {
@@ -4826,6 +4974,79 @@ describe('verify-path screening and identity', () => {
         expect(providerCalls).toBe(0);
         expect(result.report.findingAssessments).toHaveLength(0);
         expect(result.report.limitations.join(' ')).toContain('withheld');
+    });
+
+    it('names a withheld credential with one code on both routes', async () => {
+        // The scan recorded `evidence-withheld` while verify recorded `evidence-withheld-credential-shaped`
+        // for the same reference, so the projection carried both and one withheld reference read two
+        // reasons. Both routes now emit the specific code, shared through `CREDENTIAL_SHAPED_WITHHELD_CODE`,
+        // while `credential-shaped-content-excluded` stays the scan's separate scope-exclusion vocabulary.
+        const path = 'src/modules/Project/notes.ts';
+        const credentialSide = `const url = '${CONNECTION_SHAPED}';\n`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(path)],
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: 'const url = 1;\n',
+                    [`${HEAD}:${path}`]: credentialSide,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { result, providerCalls } = await verifyWith([{ path, side: 'after' }], {
+            [`${HEAD}:${path}`]: credentialSide,
+        });
+        const scanReason = set.truncated.find((entry) => entry.path === path)?.reason;
+        expect(scanReason).toBe('evidence-withheld-credential-shaped');
+        expect(providerCalls).toBe(0);
+        expect(result.report.scope.truncated.find((entry) => entry.path === path)?.reason).toBe(scanReason);
+        // The scope exclusion is the other vocabulary, and only the scan records it: the planner skips on
+        // an exclusion, while a finding's evidence is not a unit of its own and has no exclusion to carry.
+        expect(set.excluded).toEqual([{ path, reason: 'credential-shaped-content-excluded' }]);
+        expect(result.report.scope.excluded).toEqual([]);
+    });
+
+    it('names the credential cause over hunk-beyond-file when both apply to one reference', async () => {
+        // A credential-shaped side whose hunk names lines past the file has both causes available. The
+        // scan recorded hunk-beyond-file there while verify recorded the credential cause, so the same
+        // reference read two reasons; the content screen now decides first on both routes, because that is
+        // why nothing left the machine. The path is not excluded either: its clean slices may still leave,
+        // and `credentialShapedPaths` keys the context gate from those same slices.
+        const path = 'src/modules/Project/notes.ts';
+        const credentialSide = `const url = '${CONNECTION_SHAPED}';\nconst trailing = 1;\n`;
+        const files = [changedFile(path)];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: 'const url = 1;\nconst trailing = 1;\n',
+                    [`${HEAD}:${path}`]: credentialSide,
+                },
+                hunks: new Map([[path, { path, before: [], after: [{ startLine: 5_000, endLine: 5_001 }] }]]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        const { result, providerCalls } = await verifyWith(
+            [{ path, side: 'after', startLine: 5_000, endLine: 5_001 }],
+            { [`${HEAD}:${path}`]: credentialSide }
+        );
+        const scanReason = set.truncated.find((entry) => entry.path === path)?.reason;
+        expect(scanReason).toBe('evidence-withheld-credential-shaped');
+        expect(providerCalls).toBe(0);
+        expect(result.report.scope.truncated.find((entry) => entry.path === path)?.reason).toBe(scanReason);
+        // The path is not excluded, so the planner still plans it from the clean before side it admitted:
+        // the gate's credential set and the planner's skip set stay equal here, where a scope exclusion
+        // would have claimed a whole path the change's own clean slice still supplies.
+        expect(set.excluded).toEqual([]);
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        expect(planned.units.map((unit) => unit.path)).toEqual([path]);
+        expect(planned.units[0]?.evidence.own.map((reference) => reference.side)).toEqual(['before']);
     });
 
     it('records hunk-beyond-file when a finding names a range that starts past the file', async () => {

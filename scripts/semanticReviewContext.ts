@@ -147,6 +147,11 @@ const UNRECOGNIZED_PATH = '(unrecognized-path)';
  * The producer's fixed scope-entry reason codes. Mirrored here rather than imported because the
  * collector and verifier spread them across three modules without a single exported vocabulary; the
  * two sides must stay equal, and a code the producer has not yet grown is normalised, never leaked.
+ * `evidence-withheld` is retired as an emitted code — the content screen names its cause
+ * `evidence-withheld-credential-shaped` on both routes — but stays here so records persisted before the
+ * change keep reading. `credential-shaped-content-excluded` is the scope-exclusion vocabulary the scan
+ * records in `excluded`; the `evidence-withheld*` codes are the withheld vocabulary and say why no
+ * reference left the machine.
  */
 const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
     'sensitive-content-excluded',
