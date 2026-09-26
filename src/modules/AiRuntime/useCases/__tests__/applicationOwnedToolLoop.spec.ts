@@ -1412,7 +1412,7 @@ describe('application-owned tool loop', () => {
             if (index === 7) {
                 return 8_200;
             }
-            return 8_018;
+            return 7_991;
         }
         vi.mocked(querySemanticProject).mockImplementation(() => {
             callIndex += 1;
