@@ -106,6 +106,46 @@ describe('updateDevicePatch', () => {
         expect(sendNativeDeviceParameters).not.toHaveBeenCalled();
     });
 
+    // A Bacteria patch's `modAssignments` rides the same native batch as its
+    // parameter records (#4685 slice 2), read through the same
+    // `extractBacteriaModAssignments` the Web Audio worklet's own patch door
+    // uses, so both carriers agree on what counts as a well-formed table.
+    it('carries a well-formed modAssignments table into the same native send as the patch', () => {
+        projectHolding(createDevice({ id: 'd1', type: 'bacteria' }));
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        const row = { sourceId: 0, targetParam: 1, amount: 0.9 };
+        const patch = { mix: 0.5, modAssignments: [row] };
+
+        updateDevicePatch('t1', 'd1', patch);
+
+        expect(audioEngine.updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', patch);
+        expect(sendNativeDeviceParameters).toHaveBeenCalledWith({
+            trackId: 't1',
+            deviceId: 'd1',
+            values: { mix: 0.5 },
+            modAssignments: [row],
+        });
+    });
+
+    // A malformed table must never travel as a partial or coerced one — the
+    // native send leaves the engine's routing untouched, exactly as an absent
+    // table does.
+    it('sends no modAssignments for a malformed table, leaving the patch write otherwise unchanged', () => {
+        projectHolding(createDevice({ id: 'd1', type: 'bacteria' }));
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        const patch = { mix: 0.5, modAssignments: 'not a table' };
+
+        updateDevicePatch('t1', 'd1', patch);
+
+        expect(sendNativeDeviceParameters).toHaveBeenCalledWith({
+            trackId: 't1',
+            deviceId: 'd1',
+            values: { mix: 0.5 },
+        });
+        const sent = vi.mocked(sendNativeDeviceParameters).mock.calls[0]?.[0];
+        expect(sent).not.toHaveProperty('modAssignments');
+    });
+
     it('keeps the web write for a carried device the engine builds no built-in body for', () => {
         projectHolding(
             createDevice({

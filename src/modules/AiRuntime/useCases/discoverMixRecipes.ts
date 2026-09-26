@@ -1,6 +1,6 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
-import { getCanonicalTrackRoleOptions } from '#/modules/Project/useCases';
 
+import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE, type CanonicalRole } from './canonicalRoleFamilies';
 import { getProjectContext, type ProjectContextTrack } from './getProjectContext';
 import { type RecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 
@@ -10,39 +10,6 @@ type MixRecipeStep = MixRecipe['steps'][number];
 type RecipeDescriptor = MixRecipeCatalog['descriptors'][number];
 type RecipeRole = MixRecipeCatalog['roles'][number];
 type RecipeDescriptorEffect = MixRecipeCatalog['descriptorEffects'][RecipeDescriptor];
-type CanonicalRole = ReturnType<typeof getCanonicalTrackRoleOptions>[number];
-
-/** Every role this module can narrow a project track's raw evidence string down to. */
-const CANONICAL_ROLE_OPTIONS = getCanonicalTrackRoleOptions();
-
-/**
- * Every canonical track role this catalog can resolve to a recipe role.
- *
- * `fx` and `unknown` map to no recipe role: a track holding either needs an
- * explicit `role` argument before a candidate can be filtered by role at all.
- * Keyed by the complete `CanonicalRole` union, so a role this catalog forgets
- * to place fails typecheck rather than silently resolving to no recipe role.
- */
-const CANONICAL_ROLE_TO_RECIPE_ROLE: Readonly<Record<CanonicalRole, RecipeRole | null>> = {
-    kick: 'drums',
-    snare: 'drums',
-    'hi-hat': 'drums',
-    tom: 'drums',
-    cymbal: 'drums',
-    percussion: 'drums',
-    drums: 'drums',
-    'lead vocal': 'vocal',
-    'backing vocal': 'vocal',
-    bass: 'bass',
-    guitar: 'guitar',
-    keys: 'keys',
-    synth: 'keys',
-    pad: 'keys',
-    bus: 'bus',
-    master: 'master',
-    fx: null,
-    unknown: null,
-};
 
 type ResolvedTarget = {
     id: string;

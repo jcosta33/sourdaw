@@ -32,9 +32,13 @@ import {
 } from '#/utils/automationDeviceTarget';
 import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_EPSILON, slewStep } from '#/utils/automationSlew';
 
+import { secondsBetweenBeats, samplesToBeat } from '../../../models/TempoMap';
+import { tempoMapStore } from '../../../stores/tempoMapStore';
+import { DEFAULT_TEMPO_BPM, transportStore } from '../../../stores/transportStore';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
+import { clearDeviceReadBeatByTrack, deviceReadBeatByTrack } from './deviceReadBeatByTrack';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 import { scheduleComposedTrackGainAutomation } from './scheduleComposedTrackGainAutomation';
 
@@ -202,6 +206,11 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // param that is both automated and modulated combines onto the value
     // automation actually applied rather than a separately recomputed one.
     clearAppliedAutomationBases();
+    // This tick's device-family read beat per track, handed to
+    // applyModulationToEngine so indexAutomatedBases gates and reads on the
+    // same compensated clock this pass does (#4684) instead of the raw
+    // playhead beat.
+    clearDeviceReadBeatByTrack();
     // Each device's bypass-release edge, resolved on the first lane of this
     // tick that reaches it and read by every lane after that.
     const bypassReleaseEdges = new Map<string, boolean>();
@@ -232,6 +241,51 @@ export function applyAutomation(currentBeat: number): Set<string> {
         const compensation = getCompensationDelay(trackId);
         compensationByTrack.set(trackId, compensation);
         return compensation;
+    }
+
+    // #4684: the musical position whose audio is entering this track's
+    // devices right now, for every lane family that writes immediately
+    // instead of being scheduled ahead (see the RT-5/#4684 param-family split
+    // below) — the playhead's beat minus `compensationFor(trackId)` seconds,
+    // converted back to a beat through the project's tempo map.
+    // `secondsBetweenBeats`/`samplesToBeat` are the map's own forward/inverse
+    // pair, the same idiom `readNativeEngineCursorBeats` uses to turn a
+    // seconds coordinate into a beat one — never a hand-rolled constant-tempo
+    // division, which would read the wrong beat under a tempo ramp inside the
+    // compensation window.
+    const compensatedBeatByTrack = new Map<string, number>();
+    function compensatedBeatFor(trackId: string): number {
+        const cached = compensatedBeatByTrack.get(trackId);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const compensation = compensationFor(trackId);
+        let beat = currentBeat;
+        if (compensation > 0) {
+            const changes = tempoMapStore.value?.changes ?? [];
+            const defaultTempo = transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM;
+            const currentSeconds = secondsBetweenBeats(changes, 0, currentBeat, defaultTempo);
+            // Before the arrangement start reads the start value — the same
+            // held-value boundary `getAutomationValueAtBeat` and the offline
+            // compiler (`compileAutomationEvents`) both hold at their own
+            // edges. Bounded above by `currentBeat`: this clock only ever
+            // looks backward from the playhead.
+            //
+            // After any landing (play/resume, seek while playing, loop wrap,
+            // follow-action jump) `scheduleAudioClips.ts` backdates a clip
+            // spanning the landing beat P by the track's compensation D, so
+            // the audio entering the devices from that instant onward is
+            // P − D, advancing forward from there — never the landing beat
+            // itself. This read follows that backdated material rather than
+            // clamping to the landing beat, which would read ahead of what
+            // is actually sounding.
+            beat = Math.min(
+                currentBeat,
+                Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1))
+            );
+        }
+        compensatedBeatByTrack.set(trackId, beat);
+        return beat;
     }
 
     const trackState = trackStore.value;
@@ -311,9 +365,30 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
+        // RT-5/#4684 param-family split, resolved before the clip-bounds gate
+        // below so the gate and the curve read agree on one beat for this
+        // lane. `gain`, `pan` and an existing send are the AudioParam-backed
+        // families scheduled ahead at `now + compensationFor` (further down);
+        // they keep reading the playhead's own `currentBeat`, unchanged.
+        // Every other lane — device parameters, MIDI-FX parameters, Fermenter
+        // runtime parameters — writes immediately rather than being scheduled
+        // ahead, so it reads `compensatedBeatFor`: the beat whose audio is
+        // entering the device chain right now, one PDC delay behind the
+        // playhead.
+        const sendBusId = getSendAutomationBusId(lane.parameterId);
+        const readsCompensatedClock = lane.parameterId !== 'gain' && lane.parameterId !== 'pan' && sendBusId === null;
+        const readBeat = readsCompensatedClock ? compensatedBeatFor(lane.trackId) : currentBeat;
+        // Record this track's device-family read beat before any clip gating,
+        // so a lane skipped below only because the compensated beat has not
+        // yet reached its clip still leaves modulation the beat to agree on
+        // (#4684) — see deviceReadBeatByTrack.ts.
+        if (readsCompensatedClock) {
+            deviceReadBeatByTrack.set(lane.trackId, readBeat);
+        }
+
         if (lane.clipId) {
             const clip = track.clips.find((context) => context.id === lane.clipId);
-            if (!clip || currentBeat < clip.startBeat || currentBeat > clip.endBeat) {
+            if (!clip || readBeat < clip.startBeat || readBeat > clip.endBeat) {
                 continue;
             }
         }
@@ -322,7 +397,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
-        const curveValue = getAutomationValueAtBeat(lane.id, currentBeat);
+        const curveValue = getAutomationValueAtBeat(lane.id, readBeat);
         if (curveValue === null) {
             continue;
         }
@@ -349,20 +424,24 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // above will restore this lane's manual base on the tick it stops.
         automationState.drivingLanes.set(lane.id, lane);
 
-        // RT-5 param-family split. `gain`, `pan`, and an existing send are backed
-        // by native AudioParams (fader GainNode.gain / StereoPannerNode.pan /
+        // RT-5/#4684 param-family split. `gain`, `pan`, and an existing send are
+        // backed by native AudioParams (fader GainNode.gain / StereoPannerNode.pan /
         // send GainNode.gain), so they adopt sample-accurate, PDC-aligned
         // scheduling: the value lands at `getCurrentTime() +
         // getCompensationDelay(track)` — the same delayed clock scheduleAudioClips
         // places the compensated audio on — and ramps a-rate instead of stepping
-        // at the tick grid. Device params (below) and MIDI-FX params reach their
-        // DSP through worklet MessagePort writes (updateDeviceParam /
+        // at the tick grid; they read `currentBeat`, the playhead's own position.
+        // Device params (below), MIDI-FX params and Fermenter runtime params reach
+        // their DSP through worklet MessagePort writes (updateDeviceParam /
         // applyFermenterRuntimeParam / updateMidiFxParam), which apply on the next
-        // render block and cannot be JS-scheduled a-rate here — they keep the
-        // tick-grid apply + exponential slew (with the #746 discontinuity snap).
-        // Offline export already schedules every family a-rate
-        // (scheduleAutomationOnParam); this closes the live half for the
-        // AudioParam-backed families only.
+        // render block and cannot be JS-scheduled a-rate here, so they cannot be
+        // delayed the way the AudioParam families are. Instead they are read one
+        // PDC delay earlier — `readBeat` above is `compensatedBeatFor(lane.trackId)`
+        // for exactly these families — so the value this tick writes is the one
+        // whose audio is entering the device chain right now, not the value at the
+        // playhead. Offline export already schedules every family a-rate
+        // (scheduleAutomationOnParam); this closes the live half, on its own clock
+        // per family.
         if (lane.parameterId === 'gain') {
             scheduleComposedTrackGainAutomation({
                 trackId: lane.trackId,
@@ -375,7 +454,6 @@ export function applyAutomation(currentBeat: number): Set<string> {
         } else if (lane.parameterId === 'pan') {
             scheduleTrackPan(lane.trackId, fromStereoPan(value), now + compensationFor(lane.trackId));
         } else {
-            const sendBusId = getSendAutomationBusId(lane.parameterId);
             if (sendBusId !== null) {
                 const send = track.sends.find((candidate) => candidate.busId === sendBusId);
                 if (send) {

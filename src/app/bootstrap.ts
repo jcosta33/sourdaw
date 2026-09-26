@@ -61,7 +61,7 @@ import {
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
+import { clearAgentMeasurementArtifacts, stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -161,6 +161,7 @@ import {
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
+    setAgentMeasurementArtifactsClearer,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -207,6 +208,7 @@ import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
+import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
 import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
@@ -329,6 +331,10 @@ setWorkspaceEventBus(eventBus);
 // AudioRendering's barrel, which Arrangement cannot import without a module
 // cycle, so the composition root supplies the stager.
 setClipAudioAssetStager(stageAudioBufferAsset);
+// Same seam shape as the stager above: AudioRendering's WAV export path
+// imports Project's use cases, so Project cannot import AudioRendering's
+// barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
+setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -518,6 +524,11 @@ configureAudioDeviceRuntimeSink({
     // gets folded into the record `projectDeviceForNativeBody` sends. See
     // `projectNativeDeviceState`.
     projectNativeDeviceState,
+    // The modulation-assignment mirror of the row above: Bacteria's routing
+    // table also never crosses the wire on its own, so this is where it gets
+    // folded into the record `projectDeviceForNativeBody` sends, at build and
+    // on every edit alike. See `nativeModAssignments`.
+    nativeModAssignments,
     // The bank door beside the row above. One body is built from staged
     // material rather than from its record, so the same opaque state that is
     // projected into `parameterValues` also names the bank the engine must

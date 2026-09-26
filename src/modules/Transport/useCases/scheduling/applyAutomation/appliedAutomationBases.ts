@@ -14,6 +14,11 @@
  * passes the map to `applyModulationToEngine`, and modulation adds its delta on
  * top of that instead of a value nothing ever wrote. It is transport-owned
  * scheduler state (the same pattern as `schedulerSession`), not project truth.
+ * `deviceReadBeatByTrack` (same file pattern, same directory) is its sibling
+ * for the *clock* the two passes read on, rather than the value one of them
+ * wrote — both exist because `applyAutomation` and `applyModulationToEngine`
+ * are two passes over the same device-family lanes that must agree with each
+ * other on the same tick.
  *
  * Lifecycle: `applyAutomation` clears it at the top of every tick, so a reader
  * only ever sees the current tick's writes. It is cleared by emptying the inner

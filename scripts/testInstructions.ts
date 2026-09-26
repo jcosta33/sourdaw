@@ -1,21 +1,29 @@
 /**
  * The How-to-test classifier behind the product-scope `--test` gate: whether a pull request's test
- * instructions are nothing but command narration (the checks an author or CI already ran) or teach
- * a reviewer a step they can perform in the app. `publishLane` refuses the former for a
- * product-scope change; everything here is pure text judgment with no I/O.
+ * instructions narrate checks (commands an author or CI already ran, or the test suite that covers
+ * the change) instead of teaching only steps a reviewer performs in the app. `publishLane` refuses
+ * the former for a product-scope change; everything here is pure text judgment with no I/O.
  */
-import { fail } from './prContract.ts';
+import { fail, PULL_REQUEST_BODY_BYTE_LIMIT } from './prContract.ts';
 
 /**
- * The refusal for a product-scope publish whose `--test` is nothing but command narration. Reviewers
- * verify a product change in the app, so the section has to teach steps they can perform and the
- * result they should observe; the checks an author or CI already ran prove nothing a reviewer can see.
+ * The refusal for a product-scope publish whose `--test` narrates checks anywhere. Reviewers verify
+ * a product change in the app, so the section has to teach steps they can perform and the result
+ * they should observe; the checks an author or CI already ran prove nothing a reviewer can see, and
+ * a list of them beside the steps is padding a reader has to skip.
  * Exported so the specs can pin against the literal without owning a copy: rewording it reddens every
  * refusal pin in one place, exactly like the head inventory's export-for-pin treatment.
  */
-export const COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL =
-    'pull-request --test for a product-scope change must teach user/reviewer-observable steps and their ' +
-    'expected result; automated author or CI check narration is not a substitute';
+export const CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL =
+    'pull-request --test for a product-scope change must teach only user/reviewer-observable steps and ' +
+    'their expected result; drop every line that narrates a command, spec, or CI check, and fold an app ' +
+    'launch into the step that uses it';
+
+/** How many judged segments a refusal quotes before it counts the rest. */
+const QUOTED_SEGMENT_LIMIT = 3;
+
+/** The length, in characters, past which a quoted segment is cut and marked with an ellipsis. */
+const QUOTED_SEGMENT_MAX_CHARACTERS = 120;
 
 /**
  * The filler words that may precede or join command tokens without making a segment anything but
@@ -52,18 +60,46 @@ const LEADING_ARTICLES = new Set(['a', 'an', 'the']);
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
 
-/** Leading quoted spans (backtick, single quote, or double quote), for peeling the launch off a segment's front. */
-const LEADING_QUOTED_SPAN = /^(`[^`]*`|'[^']*'|"[^"]*")/;
+/**
+ * A letter or digit. An apostrophe with one immediately on both sides (`track's`, `doesn't`) is
+ * part of the word and never opens or closes a single-quoted span. A quote of any kind directly
+ * after one (`clips' ends`, `12"`) ends a word rather than starting a quotation, so it never opens a
+ * span, though it still closes an open span of its own kind. Opening quotes in ordinary text follow
+ * whitespace, punctuation, or the line start: `click 'Cut Clip'` and
+ * `python -c 'import json; print(1)'` each stay one quoted span. The sentence split
+ * (`isInWordApostrophe`, `followsWordCharacter`) and both quoted-span patterns read quotes the same
+ * way, so a possessive can neither hold the rest of its line open against the split nor pair with a
+ * later quote into a span that hides the prose between them.
+ */
+const WORD_CHARACTER = '[\\p{L}\\p{N}]';
 
-/** Any terminated quoted span (backtick, single quote, or double quote), for removing quoted commands from a segment's prose remainder. */
-const QUOTED_SPAN = /(`[^`]*`|'[^']*'|"[^"]*")/g;
+/** An apostrophe inside a word, as a pattern fragment. */
+const IN_WORD_APOSTROPHE = `(?<=${WORD_CHARACTER})'(?=${WORD_CHARACTER})`;
 
 /**
- * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. Deliberately
- * not balance-aware: nested parentheses leave the unmatched remainder in the prose, and whatever
- * survives can only fail a segment open, never shut.
+ * A terminated quoted span (backtick, single quote, or double quote) whose opening quote follows no
+ * letter or digit. A single-quoted span carries in-word apostrophes inside and closes on the first
+ * apostrophe that is not one.
  */
-const PARENTHETICAL = /\([^)]*\)/g;
+const QUOTED_SPAN_SOURCE = `(?<!${WORD_CHARACTER})(\`[^\`]*\`|'(?:[^']|${IN_WORD_APOSTROPHE})*(?!${IN_WORD_APOSTROPHE})'|"[^"]*")`;
+
+/** One code point that is a letter or digit, for the sentence split's per-character quote tests. */
+const WORD_CHARACTER_ONLY = new RegExp(`^${WORD_CHARACTER}$`, 'u');
+
+/** Leading quoted spans (backtick, single quote, or double quote), for peeling the launch off a segment's front. */
+const LEADING_QUOTED_SPAN = new RegExp(`^${QUOTED_SPAN_SOURCE}`, 'u');
+
+/** Any terminated quoted span (backtick, single quote, or double quote), for removing quoted commands from a segment's prose remainder. */
+const QUOTED_SPAN = new RegExp(QUOTED_SPAN_SOURCE, 'gu');
+
+/**
+ * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. A match
+ * never spans another open parenthesis, so an unclosed `(` costs one scan to the next `(` rather
+ * than one to the end of the value, keeping the scan linear. Deliberately not balance-aware: in a
+ * nested group the innermost pair matches first, the outer remainder stays in the prose, and
+ * whatever survives can only fail a segment open, never shut.
+ */
+const PARENTHETICAL = /\([^()]*\)/g;
 
 /**
  * Edge punctuation a first token may trail or lead with (`vitest:`, `pnpm,`). Parentheses ride
@@ -326,13 +362,16 @@ function stripRepeated(value: string, pattern: RegExp): string {
  * the value unchanged when it has none.
  */
 function leadingQuotedSpanContent(value: string): string {
-    const quote = value[0];
-    if (quote !== '`' && quote !== "'" && quote !== '"') {
-        return value;
-    }
-    const closing = value.indexOf(quote, 1);
-    return closing > 1 ? value.slice(1, closing) : value;
+    const span = leadingQuotedSpan(value);
+    return span.length > 2 ? span.slice(1, -1) : value;
 }
+
+/** The leading terminated quoted span itself, quotes included, or empty when the value has none. */
+function leadingQuotedSpan(value: string): string {
+    return LEADING_QUOTED_SPAN.exec(value)?.[0] ?? '';
+}
+
+type PeeledLaunch = { lead: string; follower: string; spanLead: boolean; spanTokens: number };
 
 /**
  * The launch a segment's peel exposes, with what the argument-run scan needs around it: the head
@@ -345,7 +384,7 @@ function leadingQuotedSpanContent(value: string): string {
  * first token behind a head-only span — '`make` a MIDI track' reads its article exactly where the
  * bare spelling does, while a bare argument behind the span ('`make` test') still opens the run.
  */
-function peeledLaunch(segment: string): { lead: string; follower: string; spanLead: boolean; spanTokens: number } {
+function peeledLaunch(segment: string): PeeledLaunch {
     let rest = stripRepeated(segment, LEADING_LIST_MARKER);
     let spanLead = false;
     let spanTokens = 0;
@@ -353,12 +392,12 @@ function peeledLaunch(segment: string): { lead: string; follower: string; spanLe
     for (;;) {
         const quote = rest[0];
         if (quote === '`' || quote === "'" || quote === '"') {
-            const closing = rest.indexOf(quote, 1);
+            const span = leadingQuotedSpan(rest);
             const content = leadingQuotedSpanContent(rest).trim();
             spanLead = true;
             spanTokens = content === '' ? 0 : content.split(/\s+/).length;
-            if (spanTokens === 1 && closing > 1) {
-                const behind = rest.slice(closing + 1).trim();
+            if (spanTokens === 1 && span.length > 2) {
+                const behind = rest.slice(span.length).trim();
                 spanFollower = behind === '' ? '' : (behind.split(/\s+/)[0] ?? '');
             }
         }
@@ -394,13 +433,16 @@ function proseRemainder(segment: string): string {
 
 /** Whether a token is command material no prose can ride on: heads, paths, flags, filenames, env assignments. */
 function isCommandToken(token: string): boolean {
+    return COMMAND_HEADS.has(token) || isCommandShapedToken(token) || isNumberOrPunctuation(token);
+}
+
+/** Whether a token has a command's shape whatever its words: a path, a colon suffix, a filename, a flag, or an env assignment. */
+function isCommandShapedToken(token: string): boolean {
     return (
-        COMMAND_HEADS.has(token) ||
         /[/\\:]/.test(token) ||
         FILE_EXTENSION_SUFFIX.test(token) ||
         token.startsWith('-') ||
-        ENV_ASSIGNMENT_TOKEN.test(token) ||
-        isNumberOrPunctuation(token)
+        ENV_ASSIGNMENT_TOKEN.test(token)
     );
 }
 
@@ -449,10 +491,69 @@ function isMaterialBehindRun(token: string, strict: boolean): boolean {
  * Whether the peel's lead opens the segment's argument run: a command head or an env assignment
  * leads it (`SOURDAW_E2E_PORT=4010 pnpm test:e2e …`), while an article directly behind the head
  * keeps the run closed — `Make a MIDI track` is the step's own verb naming its object, not a
- * launch.
+ * launch — and so does an English-word lead.
  */
-function opensArgumentRun(lead: string, follower: string): boolean {
+function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
+    if (isEnglishWordLead(launch, segment)) {
+        return false;
+    }
+    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const follower = launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return (COMMAND_HEADS.has(lead) || ENV_ASSIGNMENT_TOKEN.test(lead)) && !LEADING_ARTICLES.has(follower);
+}
+
+/**
+ * The command heads that are also ordinary English imperative verbs a DAW step can open with
+ * (`Go to Settings`, `sort by name`, `make track 2 mono`). Heads whose English use is itself check
+ * narration (`lint`, `typecheck`, the colon-bearing scripts) and tool names stay out, so they open
+ * an argument run whatever their letter case.
+ */
+export const STEP_VERB_HEADS = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail'];
+
+/**
+ * The command heads that are also ordinary English words a DAW step or its expected result can
+ * carry: the step verbs, plus the nouns and pronouns a result sentence names (`Node 2 is gone`,
+ * `the cat`, `which track`). Their mere presence is no command evidence; only a quoted spelling or
+ * a command-shaped token beside them shows the segment is a command line. Tool names (`pnpm`,
+ * `git`, `cargo`) stay out, so their presence alone keeps reading as a launch.
+ */
+export const ENGLISH_WORD_HEADS = new Set([
+    ...STEP_VERB_HEADS,
+    'node',
+    'env',
+    'which',
+    'electron',
+    'guard',
+    'tee',
+    'cat',
+]);
+
+/**
+ * Whether the peeled lead is an English word rather than a launch: an unquoted member of
+ * `ENGLISH_WORD_HEADS`, in any letter case and wherever the peel exposes it (behind a stripped
+ * filler word, at the start of a `;` or `.` clause), in a segment carrying no command-shaped token.
+ * The word class decides, never the casing: a sentence may open lower-case (`Then go to bar 9`) and
+ * a tool line may be capitalized (`Pnpm dev`, `Cargo build succeeds`), so a tool head opens its
+ * argument run exactly as its lower-case spelling does. A flag, path, colon suffix, filename, or env
+ * assignment beside the head shows the segment is a command line after all (`go test ./...`); a
+ * quoted head was typed as a command, so it stays a launch. The head itself still drops from the
+ * prose, so an English-word lead followed only by annotation (`make test`) keeps narrating through
+ * `leadsWithCommandMaterial` unless an article shows it naming its object (`Find the new file`).
+ */
+function isEnglishWordLead(launch: PeeledLaunch, segment: string): boolean {
+    if (launch.spanLead || !ENGLISH_WORD_HEADS.has(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
+        return false;
+    }
+    return !carriesCommandShapedToken(segment);
+}
+
+/**
+ * Whether any token of the segment has a command's shape (path, colon suffix, filename, flag, env
+ * assignment). Letter-free tokens (`bar 9`, `-6`, `1.5`) never count: they are the positions and
+ * values a step names, not a command line's evidence.
+ */
+function carriesCommandShapedToken(segment: string): boolean {
+    return unwrappedTokens(segment).some((token) => !isNumberOrPunctuation(token) && isCommandShapedToken(token));
 }
 
 /**
@@ -522,9 +623,7 @@ function proseRemainderWords(segment: string): string[] {
     // Seeded from the launch the peel exposes — a leading span's content included — not from
     // tokens[0], which a leading quoted span leaves empty.
     const launch = peeledLaunch(segment);
-    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    const follower = launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    let insideArgumentRun = opensArgumentRun(lead, follower);
+    let insideArgumentRun = opensArgumentRun(launch, segment);
     let slotBehindSpan = insideArgumentRun && launch.spanLead && launch.spanTokens === 1;
     // The strict material mode arms when the run's launch is command machinery: the head's
     // subcommand slot carried command material, or a command head was dropped inside the run. A
@@ -591,22 +690,47 @@ function proseRemainderWords(segment: string): string[] {
 
 /**
  * Whether a command head or a command-shaped token (path, flag, dotted name) sits in the peeled
- * leading position.
+ * leading position. An English-word lead counts unless an article directly behind it shows the
+ * step naming its object: `make test` is the launch it reads as, `Find the new file` is a step.
  */
 function leadsWithCommandMaterial(segment: string): boolean {
-    const lead = peeledLaunch(segment).lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const launch = peeledLaunch(segment);
+    if (isEnglishWordLead(launch, segment)) {
+        return !LEADING_ARTICLES.has(launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+    }
+    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return COMMAND_HEADS.has(lead) || isCommandToken(lead);
 }
 
 /**
  * Whether any command head appears among the segment's tokens once quoted launches are unwrapped —
- * annotation words between the filler and the launch must not hide it.
+ * annotation words between the filler and the launch must not hide it. A tool head counts by
+ * presence; an English-word head (`The tail is unchanged`) counts only where it was quoted or the
+ * segment carries a command-shaped token.
  */
 function mentionsCommandHead(segment: string): boolean {
+    const quoted = quotedTokens(segment);
+    const commandShaped = carriesCommandShapedToken(segment);
+    return unwrappedTokens(segment).some(
+        (token) => COMMAND_HEADS.has(token) && (!ENGLISH_WORD_HEADS.has(token) || commandShaped || quoted.has(token))
+    );
+}
+
+/** The lower-cased tokens written inside the segment's quoted spans. */
+function quotedTokens(segment: string): Set<string> {
+    const spans = segment.match(QUOTED_SPAN) ?? [];
+    return new Set(spans.flatMap((span) => unwrappedTokens(span.slice(1, -1))));
+}
+
+/** The segment's lower-cased tokens with quoted spans unwrapped and edge punctuation stripped. */
+function unwrappedTokens(segment: string): string[] {
+    return spelledTokens(segment).map((token) => token.toLowerCase());
+}
+
+/** The segment's tokens in their written letter case, quoted spans unwrapped and edge punctuation stripped. */
+function spelledTokens(segment: string): string[] {
     const unwrapped = segment.replace(QUOTED_SPAN, (span) => ` ${span.slice(1, -1)} `);
-    return unwrapped
-        .split(/\s+/)
-        .some((token) => COMMAND_HEADS.has(token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase()));
+    return unwrapped.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, ''));
 }
 
 /**
@@ -614,9 +738,14 @@ function mentionsCommandHead(segment: string): boolean {
  * three must hold: the prose remainder (cue-bearing parentheticals included) carries no observation
  * cue, every leftover word is annotation from the closed vocabulary, and the segment is launched —
  * a command head or command-shaped token leads it, or a command head appears among its tokens. Any
- * cue or any word beyond the vocabulary is real instruction and rescues the segment.
+ * cue or any word beyond the vocabulary is real instruction and rescues the segment. A segment with
+ * no letters names no command: it is the stranded marker of an inline numbered list (`2` from
+ * `1. Press Play. 2. Press Stop`), whose own dot the sentence split reads as a boundary.
  */
 function isCommandNarration(segment: string): boolean {
+    if (!/[a-z]/i.test(segment)) {
+        return false;
+    }
     const words = proseRemainderWords(segment);
     if (words.some((word) => OBSERVATION_CUE.test(word))) {
         return false;
@@ -632,11 +761,14 @@ function isCommandNarration(segment: string): boolean {
  * clause. Only a `.` or `;` followed by whitespace or the end ends a segment, and only outside a
  * quoted span — backtick, single quote, and double quote alike — so version numbers, dotted
  * paths, and a separator inside a command's quoted argument (`python -c "import json; print(1)"`)
- * never split a command into a launch-less fragment; empty pieces from separators and blank lines
+ * never split a command into a launch-less fragment. An apostrophe with a letter or digit on both
+ * sides (`the track's fader`, `doesn't`) is part of its word, and a quote directly after a letter
+ * or digit (`the clips' ends`) opens no span, so a possessive never merges the sentences behind it
+ * into one segment; empty pieces from separators and blank lines
  * drop. List markers leave the line before that split, because a numbered marker's own dot would
  * otherwise be read as a sentence boundary and strand a bare `1` segment that no command list
- * deserves. The segments-length guard in `commandOnlyTestInstructions` is load-bearing: empty
- * input reaches it, and `composePublishBody`'s emptiness refusal runs after the gate.
+ * deserves. Empty input yields no segment and so narrates nothing; `composePublishBody`'s emptiness
+ * refusal runs after the gate.
  */
 function testInstructionSegments(text: string): string[] {
     const marked = text.split(/\r?\n/).map((line) => stripRepeated(line.trim(), LEADING_LIST_MARKER));
@@ -647,9 +779,10 @@ function testInstructionSegments(text: string): string[] {
 /**
  * One line split on `.`/`;` followed by whitespace or the end, but only while no quoted span is
  * open. The quote kind that opens a span is the only kind that closes it, so an apostrophe inside
- * a double-quoted message never ends it; the separator itself drops, every other character
- * (opening and closing quotes included) stays for the launch peel and the quoted-span removal
- * downstream.
+ * a double-quoted message never ends it; a quote directly after a letter or digit never opens one,
+ * and an in-word apostrophe neither opens nor closes one;
+ * the separator itself drops, every other character (opening and closing quotes included) stays
+ * for the launch peel and the quoted-span removal downstream.
  */
 function splitOutsideQuotedSpans(line: string): string[] {
     const characters = [...line];
@@ -657,9 +790,10 @@ function splitOutsideQuotedSpans(line: string): string[] {
     let current = '';
     let quote: string | undefined;
     for (const [index, character] of characters.entries()) {
-        if (quote === undefined && (character === '`' || character === "'" || character === '"')) {
+        const isQuote = character === '`' || character === "'" || character === '"';
+        if (quote === undefined && isQuote && !followsWordCharacter(characters, index)) {
             quote = character;
-        } else if (character === quote) {
+        } else if (character === quote && !isInWordApostrophe(characters, index)) {
             quote = undefined;
         }
         if (quote === undefined && (character === '.' || character === ';')) {
@@ -676,27 +810,147 @@ function splitOutsideQuotedSpans(line: string): string[] {
     return segments;
 }
 
-/**
- * Whether every segment of `text` narrates a command. A segment is narration only when, after the
- * command material drops out (heads, their argument runs, paths, flags, quoted spans, cue-free
- * parentheticals), its prose remainder is pure annotation: no observation cue, and no word outside
- * the annotation vocabulary. "Run `pnpm dev` and confirm the transport play button toggles" teaches
- * a step and passes; "pnpm wasm:verify" keeps its verify stem inside the dropped command token and
- * refuses. Deliberately fail-open at the margins: any prose segment — "Open the app and …", "No
- * user-visible change; …", even `None.` — makes this false.
- */
-export function commandOnlyTestInstructions(text: string): boolean {
-    const segments = testInstructionSegments(text);
-    return segments.length > 0 && segments.every(isCommandNarration);
+/** Whether the code point just before `index` is a letter or digit, so a quote at `index` cannot open a span. */
+function followsWordCharacter(characters: readonly string[], index: number): boolean {
+    return WORD_CHARACTER_ONLY.test(characters[index - 1] ?? '');
+}
+
+/** Whether the code point at `index` is an apostrophe with a letter or digit immediately on both sides. */
+function isInWordApostrophe(characters: readonly string[], index: number): boolean {
+    return (
+        characters[index] === "'" &&
+        WORD_CHARACTER_ONLY.test(characters[index - 1] ?? '') &&
+        WORD_CHARACTER_ONLY.test(characters[index + 1] ?? '')
+    );
 }
 
 /**
- * The contract gate for a product-scope change's How-to-test section: a value that only recites
- * commands the author or CI already ran is refused, because it teaches a reviewer nothing they can
- * perform in the app. One prose sentence anywhere in the value satisfies it.
+ * Test-suite vocabulary no reviewer step in the app ever needs: spec files and the suites that hold
+ * them. A segment naming any of them is describing coverage — "the census spec fails if …",
+ * "run the focused publisher specs" — whatever prose surrounds it. `specs?` also covers every
+ * `x.spec.ts` filename, because the dots around it are word boundaries. A bare `test` stays out:
+ * a test tone or a test take is something a reviewer plays or records, so only the plural (`Covered
+ * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage.
+ */
+const TEST_SUITE_WORDS =
+    /\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end|existing)[- ](?:tests?|suites?))\b|__tests__\//i;
+
+/**
+ * The repository's test runners, named as proper nouns. Matched case-sensitively: prose capitalizes a runner's
+ * name (`Covered by Playwright`), while the lower-case spelling is the command a launch types
+ * (`pnpm exec playwright open the app …`), which the narration rule judges instead.
+ */
+const TEST_RUNNER_NAMES = /\b(?:Vitest|Playwright)\b/;
+
+/** `CI`, matched case-sensitively so a lower-case `ci` token and the letters inside words stay out. */
+const CI_WORD = /\bCI\b/;
+
+function namesTestSuite(segment: string): boolean {
+    return TEST_SUITE_WORDS.test(segment) || TEST_RUNNER_NAMES.test(segment) || CI_WORD.test(segment);
+}
+
+/** Script families every member of which runs a check: `test:run`, `typecheck:scripts`, `lint:fix`, `cargo:test`. */
+export const CHECK_SCRIPT_FAMILIES = new Set(['test', 'typecheck', 'lint', 'cargo']);
+
+/** Check scripts and tools that run nothing but a check: a reviewer never launches one to use the app. */
+export const CHECK_COMMANDS = new Set([
+    'deps:validate',
+    'wasm:verify',
+    'typecheck',
+    'lint',
+    'tsc',
+    'eslint',
+    'prettier',
+    'oxlint',
+    'biome',
+    'knip',
+    'jest',
+    'pytest',
+    'vitest',
+]);
+
+/**
+ * Heads whose `test` subcommand runs a suite (`pnpm test`, `cargo test`, `go test`). Playwright rides
+ * here rather than among the check-only commands: `playwright open` is a browser a reviewer drives,
+ * and only `playwright test` runs the suite.
+ */
+export const TEST_SUBCOMMAND_HEADS = new Set(['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright']);
+
+/**
+ * Whether the segment mentions a check command, whatever prose rides beside it: a check-family
+ * colon script, a check-only script or tool, or a head running its `test` subcommand. The command
+ * rule lets a cue word or a UI noun rescue a launch, which is right for `pnpm dev` and wrong for a
+ * check run — no step a reviewer performs needs one. Matched in the written lower-case spelling
+ * only, so a capitalized English word opening a sentence (`Go test the limiter`, `Prettier
+ * waveforms`) stays prose; bare `test`, `format`, and launch scripts (`desktop:dev`) never match.
+ */
+function mentionsCheckCommand(segment: string): boolean {
+    const tokens = spelledTokens(segment);
+    return tokens.some(
+        (token, index) =>
+            CHECK_COMMANDS.has(token) ||
+            isCheckFamilyScript(token) ||
+            (TEST_SUBCOMMAND_HEADS.has(token) && tokens[index + 1] === 'test')
+    );
+}
+
+/** Whether a token is a colon script of a check family: `test:e2e`, `typecheck:scripts`, `cargo:fmt`. */
+function isCheckFamilyScript(token: string): boolean {
+    const colon = token.indexOf(':');
+    return colon > 0 && CHECK_SCRIPT_FAMILIES.has(token.slice(0, colon));
+}
+
+/**
+ * The segments of `text` that narrate a check: each reads as a command invocation once its command
+ * material drops out (heads, their argument runs, paths, flags, quoted spans, cue-free
+ * parentheticals, leaving no observation cue and no word outside the annotation vocabulary), names
+ * the test suite, or mentions a check command at all. "Run `pnpm dev` and confirm the transport
+ * play button toggles" teaches a step and is not judged; "pnpm wasm:verify" keeps its verify stem
+ * inside the dropped command token and is.
+ */
+export function narratingTestInstructionSegments(text: string): string[] {
+    return testInstructionSegments(text).filter(
+        (segment) => isCommandNarration(segment) || namesTestSuite(segment) || mentionsCheckCommand(segment)
+    );
+}
+
+/**
+ * Whether any segment of `text` narrates a check. One narrating segment refuses the whole value: a
+ * prose sentence beside a command list does not turn the list into a step, it only hides the list
+ * from a looser reading.
+ */
+export function testInstructionsNarrateChecks(text: string): boolean {
+    return narratingTestInstructionSegments(text).length > 0;
+}
+
+/**
+ * The contract gate for a product-scope change's How-to-test section: a value that recites commands
+ * the author or CI already ran, or the specs that cover the change, is refused, because those lines
+ * teach a reviewer nothing they can perform in the app. The refusal quotes the segments it judged so
+ * the author can see which line to drop. A value larger than a whole pull-request body could never
+ * be published, so it is refused before the classifier reads it.
  */
 export function assertObservableTestInstructions(text: string): void {
-    if (commandOnlyTestInstructions(text)) {
-        fail(COMMAND_ONLY_TEST_INSTRUCTIONS_REFUSAL);
+    if (Buffer.byteLength(text, 'utf8') > PULL_REQUEST_BODY_BYTE_LIMIT) {
+        fail(`pull-request --test exceeds the ${PULL_REQUEST_BODY_BYTE_LIMIT}-byte pull-request body limit`);
     }
+    const judged = narratingTestInstructionSegments(text);
+    if (judged.length > 0) {
+        fail(`${CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL}; judged: ${quoteJudgedSegments(judged)}`);
+    }
+}
+
+/** The judged segments as the refusal lists them: the first few quoted and bounded, the rest counted. */
+function quoteJudgedSegments(segments: string[]): string {
+    const quoted = segments.slice(0, QUOTED_SEGMENT_LIMIT).map((segment) => JSON.stringify(boundedSegment(segment)));
+    const rest = segments.length - quoted.length;
+    return rest > 0 ? `${quoted.join(', ')} and ${rest} more` : quoted.join(', ');
+}
+
+/** A segment cut to the quoting bound, by code point so no surrogate pair splits, with an ellipsis when cut. */
+function boundedSegment(segment: string): string {
+    const characters = [...segment];
+    return characters.length > QUOTED_SEGMENT_MAX_CHARACTERS
+        ? `${characters.slice(0, QUOTED_SEGMENT_MAX_CHARACTERS).join('')}…`
+        : segment;
 }

@@ -11,6 +11,8 @@ export { summarizeFeatures } from './summarizeFeatures';
 
 export { analyzeAgentRenderReceipt } from './analyzeAgentRenderReceipt';
 export { analyzeAgentAuditionBuffer } from './analyzeAgentAuditionBuffer';
+export { getAgentMeasurementMetricIds } from './getAgentMeasurementMetricIds';
+export { measureAgentScopeRender } from './measureAgentScopeRender';
 
 export { audioToMidi } from './audioToMidi';
 export { detectOnsets } from './detectOnsets';

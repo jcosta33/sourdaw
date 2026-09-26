@@ -22,7 +22,11 @@ import {
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
-import { PROJECT_DISCOVERY_TOOL_NAME, RECIPE_DISCOVERY_TOOL_NAME } from '../../agentToolCatalog';
+import {
+    ANALYSIS_MEASURE_TOOL_NAME,
+    PROJECT_DISCOVERY_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
+} from '../../agentToolCatalog';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProviderRouteView } from '../../getProviderRouteView';
@@ -1276,7 +1280,7 @@ describe('generateToolPlanningOutcome', () => {
         'find a warm reverb preset for the vocal and load it',
         'show the command history',
         'the bass is muddy, clean it up',
-    ])('never advertises recipe.discover to WebLLM for "%s"', async (prompt) => {
+    ])('never advertises recipe.discover or analysis.measure to WebLLM for "%s"', async (prompt) => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
@@ -1295,9 +1299,10 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
         expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
     });
 
-    it('still advertises recipe.discover to a hosted cloud backend', async () => {
+    it('still advertises recipe.discover and analysis.measure to a hosted cloud backend', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
@@ -1318,7 +1323,9 @@ describe('generateToolPlanningOutcome', () => {
         ).resolves.toMatchObject({ status: 'complete' });
 
         const sentTools = mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(sentTools.map((tool: ToolSchema) => tool.function.name)).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        const sentNames = sentTools.map((tool: ToolSchema) => tool.function.name);
+        expect(sentNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(sentNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(

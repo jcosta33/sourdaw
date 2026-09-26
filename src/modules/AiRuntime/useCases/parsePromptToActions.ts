@@ -19,6 +19,7 @@ import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../m
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
     isWorkflowCapabilityId,
@@ -56,6 +57,7 @@ import { materializeBatchLocalActionIdentities } from './agentReference/material
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -64,6 +66,8 @@ import {
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { compileArbitraryCommandList } from './compileArbitraryCommandList';
+import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
+import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import {
@@ -524,6 +528,23 @@ const planPromptIntent = inject({ logger })(
                             };
                         },
                     },
+                    // A measurement is bound to the revision the run read; without one it could only
+                    // ever report the project stale, so the tool stays unavailable to the run.
+                    measurement:
+                        projectRevision === undefined || projectRevision === ''
+                            ? undefined
+                            : {
+                                  toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                                  execute: (call, { callId, turn, signal: loopSignal }) =>
+                                      executeAnalysisMeasure({
+                                          call,
+                                          callId,
+                                          turn,
+                                          projectRevision,
+                                          sections: context.sections ?? [],
+                                          signal: loopSignal,
+                                      }),
+                              },
                     requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
@@ -920,6 +941,9 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
 
+                    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
+                        deriveMatchSelectorPredicates(compiledList.compilerEvidence);
+
                     return {
                         actions: guarded.actions,
                         ...(bridged.actionCommandGraph === undefined
@@ -933,6 +957,7 @@ const planPromptIntent = inject({ logger })(
                         ...(compiledList.compilerEvidence === undefined
                             ? {}
                             : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
+                        ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,
                     };

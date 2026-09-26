@@ -22,6 +22,8 @@ export const SEMANTIC_CLIP_MAX_BEATS = 256;
 export const SEMANTIC_CLIP_MAX_END_BEAT = 4096;
 export const SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH = 16;
 export const SEMANTIC_COMMAND_LIST_MAX_JSON_NODES = SEMANTIC_COMMAND_LIST_MAX_ITEMS * 256;
+/** The most predicates a `match.all` or `match.any` group may name. */
+export const SEMANTIC_COMMAND_LIST_MAX_MATCH_PREDICATES = 8;
 
 export const SEMANTIC_COMMAND_LIST_ENTITIES = [
     'track',
@@ -33,8 +35,51 @@ export const SEMANTIC_COMMAND_LIST_ENTITIES = [
 
 export const SEMANTIC_COMMAND_LIST_CONDITION_FIELDS = ['muted', 'locked', 'bypassed', 'enabled'] as const;
 
+/**
+ * The canonical-role families a `roleFamily` predicate or the shared resolver's role-family table
+ * may name. Kept here, beside the rest of the selector vocabulary, because `services/` may import
+ * `models/` but never a `useCases/` role table, and this is the one role vocabulary both the
+ * selector schema and the shared resolver can legally read.
+ */
+export const SEMANTIC_COMMAND_LIST_ROLE_FAMILIES = [
+    'drums',
+    'vocal',
+    'bass',
+    'guitar',
+    'keys',
+    'bus',
+    'master',
+] as const;
+
 export type SemanticCommandListEntity = (typeof SEMANTIC_COMMAND_LIST_ENTITIES)[number];
 export type SemanticCommandListConditionField = (typeof SEMANTIC_COMMAND_LIST_CONDITION_FIELDS)[number];
+export type SemanticCommandListRoleFamily = (typeof SEMANTIC_COMMAND_LIST_ROLE_FAMILIES)[number];
+
+/**
+ * A set predicate names exactly one of these facts about a candidate or its owning track — the
+ * track itself when the candidate is a track, otherwise the track its `trackId` names. Compile-time
+ * checks (predicate field count, role/section validity, entity compatibility) live in the compiler,
+ * not here: this is only the closed structural shape.
+ */
+export type SemanticCommandListPredicate =
+    | { role: string }
+    | { roleFamily: SemanticCommandListRoleFamily }
+    | { nameIncludes: string }
+    | { tag: string }
+    | { kind: string }
+    | { hasDeviceType: string }
+    | { isMuted: boolean }
+    | { isFrozen: boolean }
+    | { inSection: string };
+
+/** At least one of `all`/`any` must be present and non-empty; both present means both hold. */
+export type SemanticCommandListMatch = {
+    all?: SemanticCommandListPredicate[];
+    any?: SemanticCommandListPredicate[];
+};
+
+/** Exactly one of `exactly`/`maximum` is set: `exactly` demands a count, `maximum` bounds it. */
+export type SemanticCommandListQuantity = { unit: 'targets'; exactly: number } | { unit: 'targets'; maximum: number };
 
 export type SemanticCommandListSelector = {
     targetArgument: string;
@@ -42,7 +87,34 @@ export type SemanticCommandListSelector = {
     where?: Partial<Record<'name' | 'kind' | 'type' | 'trackId', string>>;
     excludeIds?: string[];
     condition?: { field: SemanticCommandListConditionField; equals: boolean };
-    quantity: { unit: 'targets'; exactly: number };
+    match?: SemanticCommandListMatch;
+    quantity: SemanticCommandListQuantity;
+};
+
+/**
+ * One `match` selector a compiled batch carried, recording the exact selector fields
+ * `ArbitraryCommandListSelectorEvidence.predicate` compiled plus the stable ids it resolved to at
+ * that moment. Carried on the pending confirmation's approval snapshot so an approval-time project
+ * change can re-resolve the same selector against the live project before rebinding the batch,
+ * rather than trusting a fingerprint check that only covers ids already in the resolved set.
+ *
+ * `actionPositions` names the indexes, in the confirmation's `actions`, of every planned action the
+ * record's own list item compiled to — not the indexes of every action touching one of `stableIds`,
+ * which a different item's action can also touch. A subset re-preview keeps this record only when it
+ * keeps every one of these positions, and rewrites them to the kept positions' new indexes; keeping
+ * the record whenever the subset merely still touches `stableIds` would carry it forward for a subset
+ * that dropped the item's own actions entirely but happened to keep another item touching the same ids.
+ */
+export type SemanticCommandListMatchSelectorRecord = {
+    itemId: string;
+    entity: SemanticCommandListEntity;
+    where?: SemanticCommandListSelector['where'];
+    match: SemanticCommandListMatch;
+    condition?: SemanticCommandListSelector['condition'];
+    excludeIds?: string[];
+    quantity: SemanticCommandListQuantity;
+    stableIds: string[];
+    actionPositions: number[];
 };
 
 export type SemanticCommandListItem = {
@@ -62,6 +134,26 @@ export type SemanticCommandListV1 = {
 const boundedStringSchema = { type: 'string', minLength: 1, maxLength: 256 } as const;
 
 /**
+ * Every set predicate is closed to exactly the nine recognized fields; the schema matcher has no
+ * `oneOf`, so "exactly one field present" is a compiler-level structural check, not a schema one.
+ */
+const semanticCommandListPredicateSchema = {
+    type: 'object',
+    properties: {
+        role: { type: 'string', minLength: 1, maxLength: 32 },
+        roleFamily: { type: 'string', enum: SEMANTIC_COMMAND_LIST_ROLE_FAMILIES },
+        nameIncludes: { type: 'string', minLength: 1, maxLength: 64 },
+        tag: { type: 'string', minLength: 1, maxLength: 64 },
+        kind: { type: 'string', minLength: 1, maxLength: 32 },
+        hasDeviceType: { type: 'string', minLength: 1, maxLength: 128 },
+        isMuted: { type: 'boolean' },
+        isFrozen: { type: 'boolean' },
+        inSection: { type: 'string', minLength: 1, maxLength: 256 },
+    },
+    additionalProperties: false,
+} as const;
+
+/**
  * The provider-facing and runtime structural contract for semantic command lists.
  * Command arguments remain command-owned and are disclosed through catalog discovery;
  * every semantic-list field and nested enum is closed here.
@@ -69,7 +161,7 @@ const boundedStringSchema = { type: 'string', minLength: 1, maxLength: 256 } as 
 export const SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA = {
     type: 'object',
     description:
-        'Version 1 bounded semantic command list. Each item names a discovered command and may use one bounded selector, exclusion, condition, exact quantity, dependency set, and local repetition descriptor. Command arguments may reference an earlier declared batch-local binding as $<binding>. The application resolves IDs and guards from one snapshot.',
+        'Version 1 bounded semantic command list. Each item names a discovered command and may use one bounded selector, exclusion, condition, an optional match predicate set (all/any groups of up to 8 predicates, each predicate naming exactly one of role, roleFamily, nameIncludes, tag, kind, hasDeviceType, isMuted, isFrozen, or inSection), a quantity naming exactly one of an exact count or a maximum, dependency set, and local repetition descriptor. Command arguments may reference an earlier declared batch-local binding as $<binding>. The application resolves IDs and guards from one snapshot.',
     properties: {
         schemaVersion: { type: 'integer', enum: [SEMANTIC_COMMAND_LIST_SCHEMA_VERSION] },
         items: {
@@ -112,6 +204,24 @@ export const SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA = {
                                 required: ['field', 'equals'],
                                 additionalProperties: false,
                             },
+                            match: {
+                                type: 'object',
+                                properties: {
+                                    all: {
+                                        type: 'array',
+                                        minItems: 1,
+                                        maxItems: SEMANTIC_COMMAND_LIST_MAX_MATCH_PREDICATES,
+                                        items: semanticCommandListPredicateSchema,
+                                    },
+                                    any: {
+                                        type: 'array',
+                                        minItems: 1,
+                                        maxItems: SEMANTIC_COMMAND_LIST_MAX_MATCH_PREDICATES,
+                                        items: semanticCommandListPredicateSchema,
+                                    },
+                                },
+                                additionalProperties: false,
+                            },
                             quantity: {
                                 type: 'object',
                                 properties: {
@@ -121,8 +231,13 @@ export const SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA = {
                                         minimum: 1,
                                         maximum: SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
                                     },
+                                    maximum: {
+                                        type: 'integer',
+                                        minimum: 1,
+                                        maximum: SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+                                    },
                                 },
-                                required: ['unit', 'exactly'],
+                                required: ['unit'],
                                 additionalProperties: false,
                             },
                         },
@@ -390,6 +505,46 @@ function matchesSchema(value: unknown, schema: unknown, depth = 0): boolean {
     return true;
 }
 
+function quantityFieldNames(quantity: Record<string, unknown>): string[] {
+    return ['exactly', 'maximum'].filter((key) => Object.hasOwn(quantity, key));
+}
+
+function hasNonEmptyMatchGroup(match: Record<string, unknown>): boolean {
+    return (Array.isArray(match.all) && match.all.length > 0) || (Array.isArray(match.any) && match.any.length > 0);
+}
+
+/**
+ * Invariants the hand-rolled matcher above cannot express — it has no `oneOf` — so "quantity names
+ * exactly one of exactly/maximum", "match names a non-empty predicate group", and "each predicate
+ * names exactly one field" are checked here, once the generic schema match has already closed every
+ * object and bounded every string. Live-data validity (unknown role, unknown section, entity
+ * compatibility) needs the project snapshot and stays a compiler check.
+ */
+function validateSelectorStructuralInvariants(item: Record<string, unknown>): string | null {
+    const selector = item.selector;
+    if (!isRecord(selector)) {
+        return null;
+    }
+    const quantity = selector.quantity;
+    if (isRecord(quantity) && quantityFieldNames(quantity).length !== 1) {
+        return `Structured command list item ${String(item.id)} quantity must name exactly one of exactly or maximum.`;
+    }
+    const match = selector.match;
+    if (!isRecord(match)) {
+        return null;
+    }
+    if (!hasNonEmptyMatchGroup(match)) {
+        return `Structured command list item ${String(item.id)} match must name a non-empty predicate group.`;
+    }
+    const allPredicates: unknown[] = Array.isArray(match.all) ? match.all : [];
+    const anyPredicates: unknown[] = Array.isArray(match.any) ? match.any : [];
+    const predicates = [...allPredicates, ...anyPredicates];
+    if (predicates.some((predicate) => !isRecord(predicate) || Object.keys(predicate).length !== 1)) {
+        return `Structured command list item ${String(item.id)} match predicate must name exactly one field.`;
+    }
+    return null;
+}
+
 /** Parses only the closed structural grammar; command ownership and composition remain compiler checks. */
 export function parseSemanticCommandList(value: unknown): SemanticCommandListParseResult {
     try {
@@ -398,6 +553,16 @@ export function parseSemanticCommandList(value: unknown): SemanticCommandListPar
                 status: 'rejected',
                 reason: 'Structured command list does not match the versioned application contract.',
             };
+        }
+        const items = isRecord(value) && Array.isArray(value.items) ? value.items : [];
+        for (const item of items) {
+            if (!isRecord(item)) {
+                continue;
+            }
+            const invariantError = validateSelectorStructuralInvariants(item);
+            if (invariantError !== null) {
+                return { status: 'rejected', reason: invariantError };
+            }
         }
         return { status: 'accepted', value: structuredClone(value) as SemanticCommandListV1 };
     } catch {

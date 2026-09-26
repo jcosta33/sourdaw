@@ -71,6 +71,10 @@ type RuntimeSinkUnderTest = {
         deviceType: string;
         deviceState: { version: number; data: Record<string, unknown> } | undefined;
     }) => string | null;
+    nativeModAssignments: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => readonly { sourceId: number; targetParam: number; amount: number }[] | null;
     acquireNativeSampleBank: (bankKey: string) => Promise<unknown>;
     nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
     updateTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
@@ -163,6 +167,8 @@ const {
     registerReleasedStripReportSinkMock,
     configureDurableAudioBufferOwnershipMock,
     collectDurableOwnedAudioBufferIdsMock,
+    clearAgentMeasurementArtifactsMock,
+    setAgentMeasurementArtifactsClearerMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -234,6 +240,11 @@ const {
         setTrackPanMock: vi.fn(),
         configureDurableAudioBufferOwnershipMock: vi.fn(),
         collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
+        // Distinguishable from the shared noop for the same reason as the
+        // durable audio ownership provider above: the assertion pins this
+        // exact reference, so rewiring or dropping the registration fails here.
+        clearAgentMeasurementArtifactsMock: vi.fn(),
+        setAgentMeasurementArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -373,6 +384,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     stageAudioBufferAsset: vi.fn(),
+    clearAgentMeasurementArtifacts: clearAgentMeasurementArtifactsMock,
 
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -553,6 +565,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
+    setAgentMeasurementArtifactsClearer: setAgentMeasurementArtifactsClearerMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
@@ -980,6 +993,20 @@ describe('bootstrap', () => {
     });
 
     /**
+     * `resetModuleStoresToDefault` calls Project's stored clearer at every
+     * project load, new project, and discard; the composition root is the
+     * only place that binds it to AudioRendering's use case. Pinned by
+     * reference like the durable ownership provider above: dropping the
+     * registration, or handing Project some other function, leaves a closed
+     * project's agent measurement renders retained with nothing reporting it.
+     */
+    it('wires the agent measurement artifact clearer to the AudioRendering use case', () => {
+        expect(setAgentMeasurementArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
+            clearAgentMeasurementArtifactsMock
+        );
+    });
+
+    /**
      * The `handleMidiMessage` suite proves injected setters reach the store and
      * the engine, but it injects its own stand-ins, so nothing there can tell
      * which functions production hands in. This is the only seam that observes
@@ -1101,6 +1128,28 @@ describe('bootstrap', () => {
             expect(nativeBankKeyForLevainDeviceStateMock).toHaveBeenCalledWith({ deviceState: chunk });
             expect(getSink().nativeSampleBankKey({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
             expect(getSink().nativeSampleBankKey({ deviceType: 'builtin-eq', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The modulation-routing mirror of the bank door above: Bacteria is
+         * the one native body whose `deviceState` carries a variable-length
+         * table rather than a fixed `parameterValues` vocabulary, so an
+         * unwired row leaves a natively carried Bacteria instance playing with
+         * no routing at all while the Web Audio twin still hears the project's
+         * table.
+         */
+        it('maps a bacteria device’s routing table onto the engine’s own grammar, and nothing for a body with no such door', () => {
+            const chunk = {
+                version: 1,
+                data: {
+                    modAssignments: [{ sourceId: 'lfo1', targetParam: 'mix', amount: 0.5, bipolar: false }],
+                },
+            };
+
+            expect(getSink().nativeModAssignments({ deviceType: 'bacteria', deviceState: chunk })).toEqual([
+                { sourceId: 0, targetParam: 0, amount: 0.5 },
+            ]);
+            expect(getSink().nativeModAssignments({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
         });
 
         /**

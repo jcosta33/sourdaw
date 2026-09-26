@@ -52,6 +52,7 @@ export function captureOfflineRenderInput(
                 device.id,
                 projectDeviceForNativeBody(device, {
                     nativeSampleBankKey: sink.nativeSampleBankKey,
+                    nativeModAssignments: sink.nativeModAssignments,
                     projectNativeDeviceState: (input) => {
                         if (input.deviceType === 'grand-boule') {
                             return runtime.calibrationByDevice.get(input.deviceId) ?? null;

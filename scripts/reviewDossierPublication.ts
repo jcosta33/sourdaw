@@ -21,7 +21,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from './reviewDossier.ts';
-import { readAssessmentImpact } from './reviewDossierChain.ts';
+import { readAssessmentIgnoredReason, readAssessmentImpact } from './reviewDossierChain.ts';
 import { acceptedFindings, completedStances, discardedDispositions } from './reviewDossierViews.ts';
 
 import type {
@@ -59,6 +59,13 @@ export type ReviewDossierInput = {
     limitations: string[];
     /** How the round's advisory semantic assessment influenced it: influence, never agreement. */
     assessmentImpact: AssessmentImpact;
+    /**
+     * Why a `none` impact had no effect, when the delivered assessment withheld or left anything
+     * unresolved. Optional on the input: the publication gate requires it only when the bundle's
+     * assessment record shows a delivered assessment with anything withheld or unresolved and the
+     * round neither cites nor declares it ignored.
+     */
+    assessmentIgnoredReason?: string;
 };
 
 type ReviewDossierComment = { path: string; line: number; side: 'LEFT' | 'RIGHT' };
@@ -214,7 +221,7 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
             `review dossier input format must be ${REVIEW_DOSSIER_INPUT_FORMAT}, found ${describeValue(value.format)}`
         );
     }
-    return {
+    const input: ReviewDossierInput = {
         format: REVIEW_DOSSIER_INPUT_FORMAT,
         pr: readPositiveInteger('review dossier input pr', value.pr),
         headSha: readNonBlankString('review dossier input headSha', value.headSha),
@@ -224,6 +231,13 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
         limitations: readLimitations(value.limitations),
         assessmentImpact: readAssessmentImpact(value.assessmentImpact, 'review dossier input assessmentImpact'),
     };
+    if (value.assessmentIgnoredReason !== undefined) {
+        input.assessmentIgnoredReason = readAssessmentIgnoredReason(
+            value.assessmentIgnoredReason,
+            'review dossier input assessmentIgnoredReason'
+        );
+    }
+    return input;
 }
 
 /**
@@ -365,6 +379,7 @@ function assembleFromInput(input: ReviewDossierBuildInput): ReviewDossier {
         limitations: parsed.limitations,
         recommendation: input.recommendation,
         assessmentImpact: parsed.assessmentImpact,
+        assessmentIgnoredReason: parsed.assessmentIgnoredReason,
     });
 }
 

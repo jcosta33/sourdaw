@@ -74,7 +74,7 @@ function shapedFiniteProjectedState(projected: Readonly<Record<string, number>>)
  */
 type NativeDeviceProjection = Pick<
     ReturnType<typeof getAudioDeviceRuntimeSink>,
-    'projectNativeDeviceState' | 'nativeSampleBankKey'
+    'projectNativeDeviceState' | 'nativeSampleBankKey' | 'nativeModAssignments'
 >;
 
 function projectDeviceState(
@@ -112,6 +112,26 @@ function sampleBankKeyField(
     return bankKey === null ? {} : { sampleBankKey: bankKey };
 }
 
+/**
+ * A bacteria device's modulation-assignment table, as an optional field to
+ * spread — the same "absent rather than `undefined`" shape [`sampleBankKeyField`]
+ * keeps, so `serializeAudioGraphCommand` omits the field and every other
+ * device's payload stays byte-identical to what the engine took before this
+ * table existed (#4685 slice 2).
+ *
+ * Asked unconditionally, for the same reason the bank key is: only the owning
+ * module can decode `deviceState`, and this is the one seam that reaches it
+ * before the record crosses the wire.
+ */
+function modAssignmentsField(
+    deviceType: string,
+    deviceState: DeviceStateChunk | undefined,
+    projection: NativeDeviceProjection
+) {
+    const rows = projection.nativeModAssignments({ deviceType, deviceState });
+    return rows === null ? {} : { modAssignments: rows };
+}
+
 export function projectDeviceForNativeBody(
     device: Device,
     projection: NativeDeviceProjection = getAudioDeviceRuntimeSink()
@@ -122,9 +142,15 @@ export function projectDeviceForNativeBody(
     }
     const patch = body.projectPatch(device.parameterValues);
     const bank = sampleBankKeyField(device.type, device.deviceState, projection);
+    const modAssignments = modAssignmentsField(device.type, device.deviceState, projection);
     const projectedState = projectDeviceState(device.id, device.type, device.deviceState, projection);
     if (!projectedState) {
-        return { ...device, ...bank, parameterValues: patch };
+        return { ...device, ...bank, ...modAssignments, parameterValues: patch };
     }
-    return { ...device, ...bank, parameterValues: { ...patch, ...shapedFiniteProjectedState(projectedState) } };
+    return {
+        ...device,
+        ...bank,
+        ...modAssignments,
+        parameterValues: { ...patch, ...shapedFiniteProjectedState(projectedState) },
+    };
 }

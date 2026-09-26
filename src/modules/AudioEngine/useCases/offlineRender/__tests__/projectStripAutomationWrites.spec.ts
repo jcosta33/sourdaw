@@ -430,6 +430,39 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
         expect(entry?.writes[0]).toEqual({ shape: 'step', value: 0.6, time: 0 });
     });
 
+    // #4684: the recording binding shares `compileAutomationSegments`, so a
+    // non-zero `compensationDelaySec` must land in the recorded step writes
+    // too. `slewTickSeconds: 0` disables the offline glide so the step is exact.
+    it('shifts a recorded device step later by the track compensation delay', () => {
+        const track = createTrack({ devices: [hostedDevice] });
+        // baseInput.projectBeatToSeconds is the identity function, so a
+        // point's `beat` is its time in seconds directly: beat 2 is 2s.
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'plugin-1:7', points: [point(0, 0.6, 'step'), point(2, 1)] }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            deviceEntries,
+            deviceParameterLaw,
+            compensationDelaySec: 0.01,
+            slewTickSeconds: 0,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
+        expect(entry?.writes).toEqual([
+            { shape: 'step', value: 0.6, time: 0 },
+            { shape: 'step', value: 1, time: 2.01 },
+        ]);
+    });
+
     it('leaves a lane on a device the law refuses unprojected', () => {
         const track = createTrack({ devices: [hostedDevice] });
         const lanes: AutomationLane[] = [lane({ parameterId: 'plugin-1:9', points: [point(0, 0.6)] })];

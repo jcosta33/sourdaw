@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
+import {
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+} from '../../../../models/AgentToolCatalogNames';
+import { type ToolSchema } from '../../../../models/Tools/Types';
+import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../../../useCases/applicationOwnedToolLoop';
+import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
+import { encodeWireToolName } from '../encodeWireToolName';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
 import { AUTO_TOOL_CHOICE } from '../hostedToolPlan';
 
@@ -532,5 +540,107 @@ describe('generateAnthropicToolCalls', () => {
         for (const tool of body.tools) {
             expect(tool.name).not.toContain('.');
         }
+    });
+
+    describe('production-catalog strict-tool admission', () => {
+        type WireTool = { name: string; strict?: boolean; input_schema: Record<string, unknown> };
+
+        function isRecord(value: unknown): value is Record<string, unknown> {
+            return typeof value === 'object' && value !== null && !Array.isArray(value);
+        }
+
+        /**
+         * Independently recounts the two per-parameter budgets straight off the captured
+         * wire `input_schema` — a fresh walk written in this spec, never a call into
+         * `selectAnthropicStrictTools`'s own counter, so the assertion below cannot pass
+         * merely because production and test share one (possibly wrong) implementation.
+         */
+        function countWireSchemaComplexity(node: unknown): { optionalParameters: number; unionParameters: number } {
+            if (!isRecord(node)) {
+                return { optionalParameters: 0, unionParameters: 0 };
+            }
+            let optionalParameters = 0;
+            let unionParameters = Array.isArray(node.anyOf) || Array.isArray(node.type) ? 1 : 0;
+            if (isRecord(node.properties)) {
+                const required = new Set(Array.isArray(node.required) ? node.required : []);
+                for (const [propertyName, propertySchema] of Object.entries(node.properties)) {
+                    if (!required.has(propertyName)) {
+                        optionalParameters += 1;
+                    }
+                    const nested = countWireSchemaComplexity(propertySchema);
+                    optionalParameters += nested.optionalParameters;
+                    unionParameters += nested.unionParameters;
+                }
+            }
+            if (node.items !== undefined) {
+                const nested = countWireSchemaComplexity(node.items);
+                optionalParameters += nested.optionalParameters;
+                unionParameters += nested.unionParameters;
+            }
+            for (const branchKey of ['anyOf', 'allOf'] as const) {
+                const branches = node[branchKey];
+                if (!Array.isArray(branches)) {
+                    continue;
+                }
+                for (const branch of branches) {
+                    const nested = countWireSchemaComplexity(branch);
+                    optionalParameters += nested.optionalParameters;
+                    unionParameters += nested.unionParameters;
+                }
+            }
+            return { optionalParameters, unionParameters };
+        }
+
+        async function captureRequestBody(toolSchemas: readonly ToolSchema[]): Promise<{ tools: WireTool[] }> {
+            returnPayload({ content: [], stop_reason: 'end_turn' });
+            await generateAnthropicToolCalls({
+                runtime,
+                systemPrompt: 'system',
+                userMessage: 'turn the drums down 2 dB',
+                toolSchemas,
+                maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
+                signal: new AbortController().signal,
+            });
+            const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+            if (!request) {
+                throw new Error('Expected a recorded provider request');
+            }
+            return JSON.parse(request.body) as { tools: WireTool[] };
+        }
+
+        it.each([
+            ['getPlanningProviderToolSchemas()', getPlanningProviderToolSchemas()],
+            ['APPLICATION_OWNED_TOOL_SCHEMAS', APPLICATION_OWNED_TOOL_SCHEMAS],
+        ])('keeps the strict subset of %s within the documented complexity caps', async (_label, toolSchemas) => {
+            const body = await captureRequestBody(toolSchemas);
+            const strictTools = body.tools.filter((wireTool) => wireTool.strict === true);
+
+            // Literal caps, not the production constants: this proves the wire request
+            // this repository actually sends stays inside Anthropic's documented limits,
+            // not merely that the selector agrees with itself.
+            expect(strictTools.length).toBeLessThanOrEqual(20);
+
+            let totalOptionalParameters = 0;
+            let totalUnionParameters = 0;
+            for (const wireTool of strictTools) {
+                const complexity = countWireSchemaComplexity(wireTool.input_schema);
+                totalOptionalParameters += complexity.optionalParameters;
+                totalUnionParameters += complexity.unionParameters;
+            }
+            expect(totalOptionalParameters).toBeLessThanOrEqual(24);
+            expect(totalUnionParameters).toBeLessThanOrEqual(16);
+
+            const proposeWireName = encodeWireToolName(COMMAND_BATCH_PROPOSAL_TOOL_NAME);
+            const declineWireName = encodeWireToolName(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            const proposeTool = body.tools.find((wireTool) => wireTool.name === proposeWireName);
+            const declineTool = body.tools.find((wireTool) => wireTool.name === declineWireName);
+            expect(proposeTool).toBeDefined();
+            expect(declineTool).toBeDefined();
+            // `command.batch.propose` alone carries 36 optional parameters — more than the
+            // whole request's 24-parameter budget — so it must be sent non-strict.
+            expect(proposeTool?.strict).toBeUndefined();
+            expect(declineTool?.strict).toBe(true);
+        });
     });
 });
