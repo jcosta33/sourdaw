@@ -70,6 +70,50 @@ type NotePropertyTrackState = {
 const valueFromLaneY = (y: number, height: number): number =>
     Math.round((1 - Math.max(0, Math.min(1, (y - 2) / (height - 4)))) * 127);
 
+/** Lane-local y of the top of a bar showing `value` (0–127). */
+const laneYForValue = (value: number, height: number): number => height - (value / 127) * (height - 4) - 2;
+
+/** One recorded change of a note's value, `offsetBeats` after the note starts. */
+type NoteCurvePoint = { offsetBeats: number; value: number };
+
+/**
+ * Draws a note's recorded curve as a step line across its span: flat from
+ * note-on at the bar's value, one vertical step at each point, flat again to
+ * the note's end. The line is read-only; the bar below stays the edit target.
+ */
+const strokeNoteCurve = (
+    ctx: CanvasRenderingContext2D,
+    {
+        x,
+        endX,
+        startValue,
+        curve,
+        beatWidth,
+        height,
+    }: {
+        x: number;
+        endX: number;
+        startValue: number;
+        curve: readonly NoteCurvePoint[];
+        beatWidth: number;
+        height: number;
+    }
+): void => {
+    let y = laneYForValue(startValue, height);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (const point of curve) {
+        const pointX = x + point.offsetBeats * beatWidth;
+        ctx.lineTo(pointX, y);
+        y = laneYForValue(point.value, height);
+        ctx.lineTo(pointX, y);
+    }
+    ctx.lineTo(endX, y);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+};
+
 /** A bar in the lane: the note plus the clip that owns it. */
 type LaneNoteEntry = { note: MidiNote; clipId: string };
 
@@ -202,6 +246,11 @@ type NotePropertyLaneProps = {
     scrollRef: RefObject<HTMLElement | null>;
     /** Extract the 0–127 value from a note for display. */
     getValue: (note: MidiNote) => number;
+    /**
+     * The note's recorded changes of this value after note-on, drawn as a
+     * read-only step line over its bar; absent when the property has none.
+     */
+    getCurve?: (note: MidiNote) => readonly NoteCurvePoint[] | undefined;
     /** Set the value on the note (called during drag). */
     setValue: (clipId: string, noteId: string, value: number) => void;
     /** Set the values on multiple notes at once (called during ramp drag). */
@@ -219,6 +268,7 @@ export const NotePropertyLane = ({
     beatWidth,
     scrollRef,
     getValue,
+    getCurve,
     setValue,
     setValues,
     label,
@@ -325,7 +375,7 @@ export const NotePropertyLane = ({
                 }
                 const val = getValue(note);
                 const barH = (val / 127) * (h - 4);
-                const barY = h - barH - 2;
+                const barY = laneYForValue(val, h);
                 const isSelected = selectedNoteIds.has(note.id);
 
                 const clipColor = colorForClip(ownerClipId);
@@ -347,6 +397,18 @@ export const NotePropertyLane = ({
                     ctx.textAlign = 'center';
                     ctx.fillText(String(val), x + 1 + barW / 2, barY - 2);
                 }
+
+                const curve = getCurve?.(note);
+                if (curve !== undefined && curve.length > 0) {
+                    strokeNoteCurve(ctx, {
+                        x,
+                        endX: x + note.duration * beatWidth,
+                        startValue: val,
+                        curve,
+                        beatWidth,
+                        height: h,
+                    });
+                }
             }
         };
 
@@ -366,7 +428,7 @@ export const NotePropertyLane = ({
             scrollEl?.removeEventListener('scroll', draw);
             observer?.disconnect();
         };
-    }, [laneNotes, selectedNoteIds, beatWidth, colorForClip, getValue, label, scrollRef]);
+    }, [laneNotes, selectedNoteIds, beatWidth, colorForClip, getValue, getCurve, label, scrollRef]);
 
     /**
      * The one place a pointer becomes a lane coordinate. Every gesture below

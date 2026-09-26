@@ -24,6 +24,7 @@ import { defaultProjectStoreState, projectStore } from '../../../../stores/proje
 import { saveProject } from '../../saveProject/saveProject';
 import { buildProjectData } from '../buildProjectData';
 import { exportProjectFile } from '../exportProjectFile';
+import { hydrateProjectMidi } from '../hydrateProjectMidi';
 
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
 // against the real stores we seed below. vi.mock is hoisted above these imports.
@@ -249,6 +250,44 @@ describe('exportProjectFile round-trip shape', () => {
         expect(midi.notesByClipId['clip-midi']?.[0]?.pitch).toBe(64);
         expect(midi.ccByClipId['clip-midi']?.[0]?.controller).toBe(1);
         expect(midi.probabilitySeed).toBe(3_735_928_559);
+    });
+
+    it('exports recorded per-note curves that read back into the MIDI store unchanged', async () => {
+        const note = {
+            id: 'note-curves',
+            pitch: 60,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            probability: 100,
+            pressure: 10,
+            slide: 40,
+            pitchBend: 0,
+            pitchBendRangeSemitones: 48,
+            expression: {
+                pressure: [
+                    { offsetBeats: 1, value: 90 },
+                    { offsetBeats: 1.8, value: 20 },
+                ],
+                slide: [{ offsetBeats: 1, value: 64 }],
+                pitchBend: [
+                    { offsetBeats: 0.5, value: 4096 },
+                    { offsetBeats: 1.5, value: 0 },
+                ],
+            },
+        };
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { 'clip-midi': [note] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        await exportProjectFile();
+
+        const saved = written().midi;
+        expect(saved.notesByClipId['clip-midi']).toEqual([note]);
+        expect(hydrateProjectMidi(saved).notesByClipId['clip-midi']).toEqual([note]);
     });
 
     it('writes the live transport tempo into the export', async () => {

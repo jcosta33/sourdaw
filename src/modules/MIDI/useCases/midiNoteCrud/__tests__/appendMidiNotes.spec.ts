@@ -273,6 +273,22 @@ describe('appendMidiNotes', () => {
         ['an empty articulation', { ...createAppendNote(), articulation: '' }],
         ['an oversized articulation', { ...createAppendNote(), articulation: 'a'.repeat(129) }],
         ['a control-character articulation', { ...createAppendNote(), articulation: 'accent\n' }],
+        [
+            'a curve point at or past duration',
+            { ...createAppendNote(), expression: { pressure: [{ offsetBeats: 0.5, value: 40 }] } },
+        ],
+        [
+            'unsorted curve points',
+            {
+                ...createAppendNote(),
+                expression: {
+                    pressure: [
+                        { offsetBeats: 0.3, value: 40 },
+                        { offsetBeats: 0.1, value: 90 },
+                    ],
+                },
+            },
+        ],
     ])('rejects a batch with %s before UUID or state mutation', (_case, invalidNote) => {
         const stateBefore = midiStore.value;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');

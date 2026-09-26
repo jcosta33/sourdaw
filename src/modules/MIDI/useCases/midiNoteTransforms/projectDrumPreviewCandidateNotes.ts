@@ -1,6 +1,7 @@
 import { clampVelocity } from '#/utils/midiData';
 
 import { type MidiNote } from '../../models/MidiNote';
+import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
 type DrumPreviewRecipe = 'ghost-note-pocket' | 'half-time-space' | 'syncopated-hats';
 
@@ -59,10 +60,9 @@ function projectGhostNotePocket(input: ProjectDrumPreviewCandidateNotesInput): M
             continue;
         }
         projected.push({
-            ...note,
+            ...sliceMidiNoteExtent(note, { fromOffset: 0, duration: Math.min(note.duration, 0.125) }),
             id: `preview-${input.branchId}-ghost-${note.id}`,
             startBeat,
-            duration: Math.min(note.duration, 0.125),
             velocity: Math.max(1, Math.round(note.velocity * 0.45)),
         });
     }
@@ -90,10 +90,9 @@ function projectSyncopatedHats(input: ProjectDrumPreviewCandidateNotesInput): Mi
             continue;
         }
         projected.push({
-            ...note,
+            ...sliceMidiNoteExtent(note, { fromOffset: 0, duration: Math.min(note.duration, 0.125) }),
             id: `preview-${input.branchId}-offbeat-${note.id}`,
             startBeat,
-            duration: Math.min(note.duration, 0.125),
             velocity: Math.max(1, Math.round(note.velocity * 0.72)),
         });
     }

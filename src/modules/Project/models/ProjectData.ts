@@ -327,6 +327,19 @@ export type ProjectMidiNote = {
     pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
+    /** Expression changes after note-on, per dimension; offsets are beats after `startBeat`. */
+    expression?: ProjectMidiNoteExpression;
+};
+
+export type ProjectMidiExpressionPoint = {
+    offsetBeats: number;
+    value: number;
+};
+
+export type ProjectMidiNoteExpression = {
+    pressure?: ProjectMidiExpressionPoint[];
+    slide?: ProjectMidiExpressionPoint[];
+    pitchBend?: ProjectMidiExpressionPoint[];
 };
 
 export type ProjectGrooveSubdivision = '1/8' | '1/16' | '1/32' | '1/16T';

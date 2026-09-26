@@ -54,6 +54,34 @@ describe('projectShortMidiOverlapRemoval', () => {
         expect(projectShortMidiOverlapRemoval({ notes, tempo: 60, maximumOverlapMs: 30 })?.shortenedNotes).toEqual([]);
     });
 
+    it('keeps only in-span curve points when overlap removal shortens a curved note', () => {
+        const result = projectShortMidiOverlapRemoval({
+            tempo: 120,
+            maximumOverlapMs: 30,
+            notes: [
+                {
+                    id: 'a',
+                    pitch: 60,
+                    channel: 0,
+                    startBeat: 0,
+                    duration: 1.04,
+                    velocity: 100,
+                    expression: {
+                        pressure: [
+                            { offsetBeats: 0.5, value: 40 },
+                            { offsetBeats: 1.02, value: 90 },
+                        ],
+                    },
+                },
+                { id: 'b', pitch: 60, channel: 0, startBeat: 1, duration: 1, velocity: 90 },
+            ],
+        });
+
+        const shortened = result?.notes.find((note) => note.id === 'a');
+        expect(shortened?.duration).toBe(1);
+        expect(shortened?.expression).toEqual({ pressure: [{ offsetBeats: 0.5, value: 40 }] });
+    });
+
     it('rejects ambiguous stacked same-pitch/channel note starts', () => {
         expect(
             projectShortMidiOverlapRemoval({

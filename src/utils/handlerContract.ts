@@ -314,6 +314,13 @@ export type MidiClipNoteSnapshot = {
     readonly pitchBendRangeSemitones?: number;
     readonly channel?: number;
     readonly articulation?: string;
+    readonly expression?: MidiNoteExpressionSnapshot;
+};
+export type MidiExpressionPointSnapshot = { readonly offsetBeats: number; readonly value: number };
+export type MidiNoteExpressionSnapshot = {
+    readonly pressure?: MidiExpressionPointSnapshot[];
+    readonly slide?: MidiExpressionPointSnapshot[];
+    readonly pitchBend?: MidiExpressionPointSnapshot[];
 };
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];

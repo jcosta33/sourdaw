@@ -58,6 +58,26 @@ describe('quantizeMidiNoteLengths', () => {
         expect(result.map((n) => n.duration)).toEqual([0.6, 0.5, 1.1]);
     });
 
+    it('keeps only in-span curve points when a curved note is snapped shorter', () => {
+        const curved: MidiNote = {
+            id: 'a',
+            pitch: 60,
+            startBeat: 0,
+            duration: 0.6,
+            velocity: 100,
+            expression: {
+                pressure: [
+                    { offsetBeats: 0.2, value: 50 },
+                    { offsetBeats: 0.55, value: 90 },
+                ],
+            },
+        };
+        // 0.6 / 0.25 = 2.4 → round to 2 → 0.5
+        const result = quantizeMidiNoteLengths({ notes: [curved], gridSize: 0.25 });
+        expect(result[0]?.duration).toBe(0.5);
+        expect(result[0]?.expression).toEqual({ pressure: [{ offsetBeats: 0.2, value: 50 }] });
+    });
+
     it('quantizes all notes when noteIds is empty array', () => {
         const result = quantizeMidiNoteLengths({
             notes: [note('a', 0.6), note('b', 1.1)],

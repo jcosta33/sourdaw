@@ -494,6 +494,23 @@ describe('usePianoRollInteractions', () => {
             );
         });
 
+        it('undoing a resize restores the whole prior note, recorded expression included', () => {
+            const before = {
+                ...makeNote('n1', 60, 2, 2),
+                expression: { pressure: [{ offsetBeats: 1.5, value: 90 }] },
+            };
+            mocks.getNotesForClip.mockReturnValue([before]);
+            const { canvas } = renderRoll();
+
+            fireEvent.mouseDown(canvas, { clientX: 155, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: 115, clientY: yForPitch(60) });
+            fireEvent.mouseUp(canvas, { clientX: 115, clientY: yForPitch(60) });
+
+            const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+            undo();
+            expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [before]);
+        });
+
         it('left-edge drag moves the start and preserves the end beat', () => {
             const { canvas } = renderRoll();
 
@@ -792,8 +809,12 @@ describe('usePianoRollInteractions', () => {
             expect(mocks.moveMidiNote).toHaveBeenLastCalledWith('clip-1', 'n1', 72, 2);
         });
 
-        it('L applies legato to the selected notes with undo based on durations', () => {
-            mocks.getNotesForClip.mockReturnValue([makeNote('n1', 60, 2, 4)]);
+        it('L applies legato to the selected notes and undo restores the whole prior notes', () => {
+            const before = {
+                ...makeNote('n1', 60, 2, 4),
+                expression: { pressure: [{ offsetBeats: 3, value: 90 }] },
+            };
+            mocks.getNotesForClip.mockReturnValue([before]);
             const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
 
             fireEvent.keyDown(canvas, { key: 'l' });
@@ -804,6 +825,9 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+            const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+            undo();
+            expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [before]);
         });
 
         it('J does not join when only one note is selected', () => {

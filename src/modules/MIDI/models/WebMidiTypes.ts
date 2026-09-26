@@ -48,6 +48,28 @@ export type ToasterNoteRoute = {
     pad: number;
 };
 
+/** One expression change of a held note, `offsetSeconds` after its note-on. */
+export type HeldNoteExpressionPoint = {
+    offsetSeconds: number;
+    value: number;
+};
+
+/**
+ * One dimension's changes after note-on while the note is held. `initial` is
+ * the value that was in effect at note-on (undefined when none was), captured
+ * because the live scalar on the active note moves with every change.
+ */
+export type HeldNoteExpressionTrail = {
+    initial: number | undefined;
+    points: HeldNoteExpressionPoint[];
+};
+
+export type HeldNoteExpressionTrails = {
+    pressure?: HeldNoteExpressionTrail;
+    slide?: HeldNoteExpressionTrail;
+    pitchBend?: HeldNoteExpressionTrail;
+};
+
 export type ActiveNoteData = {
     startTime: number;
     startBeat: number;
@@ -70,6 +92,8 @@ export type ActiveNoteData = {
      * instead of leaving playback to guess.
      */
     pitchBendRangeSemitones?: number;
+    /** MPE expression changes after note-on, recorded as a curve at note-off. */
+    expressionTrails?: HeldNoteExpressionTrails;
     osc?: OscillatorNode & { _env?: GainNode };
     /** When the note was sent to a Fermenter instance, stores the device ID for noteOff routing */
     fermenterDeviceId?: string;
