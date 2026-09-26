@@ -21,6 +21,8 @@ import { hydrateYeastState } from '#/modules/Yeast/useCases';
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 import { defaultMissingMediaStoreState, missingMediaStore } from '../../../stores/missingMediaStore';
 
+import { agentMeasurementArtifactsClearerRef } from './agentMeasurementArtifactClearingState';
+
 type ResetModuleStoresToDefaultInput = {
     createNewMidiProbabilitySeed?: boolean;
     resetGrooveTemplates?: boolean;
@@ -41,6 +43,10 @@ export function resetModuleStoresToDefault({
     // which re-derive it) or is `newProject`, which has no media to miss — so
     // clearing here is what stops a closed project's count from outliving it.
     missingMediaStore.set(structuredClone(defaultMissingMediaStoreState));
+    // Retained measurement renders describe the project being torn down; clear them (and their
+    // expiry timer) through the composition-root-registered seam — see
+    // `agentMeasurementArtifactClearingState.ts` for why this cannot be a direct barrel import.
+    agentMeasurementArtifactsClearerRef.current?.();
     transportStore.set(defaultTransportState);
     setMasterGainValue(defaultTransportState.masterGain / 100);
     automationStore.set({ lanes: [] });

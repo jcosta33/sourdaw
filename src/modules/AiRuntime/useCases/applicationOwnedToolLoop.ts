@@ -164,7 +164,18 @@ type RunApplicationOwnedToolLoopInput = {
         toolName: string;
         admit: (call: ToolCallResult) => ApplicationOwnedToolLoopInterpretationAdmission;
     };
+    /**
+     * The measurement read. It renders the project offline, so the caller binds it to the run's
+     * revision and the loop executes at most one call to it per turn. Without it the tool stays
+     * unavailable to this run.
+     */
+    measurement?: {
+        toolName: string;
+        execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<ApplicationToolReceipt>;
+    };
 };
+
+type MeasurementCallContext = { callId: string; turn: number; loopId: string; signal?: AbortSignal };
 
 type ParsedQuery = { status: 'valid'; input: QueryInput } | { status: 'invalid'; reason: string };
 
@@ -820,6 +831,57 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
     }
 }
 
+async function executeMeasurement(
+    measurement: NonNullable<RunApplicationOwnedToolLoopInput['measurement']>,
+    call: ToolCallResult,
+    context: MeasurementCallContext
+): Promise<ApplicationToolReceipt> {
+    try {
+        return await measurement.execute(call, context);
+    } catch {
+        return failureReceipt({
+            callId: context.callId,
+            toolName: call.name,
+            turn: context.turn,
+            code: 'tool-execution-failed',
+            safeMessage: 'Measurement failed inside the application authority.',
+            retryable: true,
+        });
+    }
+}
+
+/**
+ * One turn's reads, in call order. Only the turn's first measurement call executes: each renders
+ * the project offline, so a later one in the same turn is refused without rendering.
+ */
+function executeTurnReads(input: {
+    calls: readonly IdentifiedToolCall[];
+    turn: number;
+    loopId: string;
+    measurement: RunApplicationOwnedToolLoopInput['measurement'];
+    signal?: AbortSignal;
+}): Promise<ApplicationToolReceipt>[] {
+    const { measurement, turn } = input;
+    const firstMeasurementIndex =
+        measurement === undefined ? -1 : input.calls.findIndex(({ call }) => call.name === measurement.toolName);
+    return input.calls.map(async ({ call, callId }, index) => {
+        if (measurement === undefined || call.name !== measurement.toolName) {
+            return executeSafeRead(call, callId, turn);
+        }
+        if (index !== firstMeasurementIndex) {
+            return failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'measure-per-turn-limit',
+                safeMessage: 'Only one measurement runs per turn; request it again in a later turn.',
+                retryable: true,
+            });
+        }
+        return executeMeasurement(measurement, call, { callId, turn, loopId: input.loopId, signal: input.signal });
+    });
+}
+
 function recordDisclosedCommandSchemas(
     calls: readonly { call: ToolCallResult }[],
     receipts: readonly ApplicationToolReceipt[],
@@ -1270,6 +1332,7 @@ export async function runApplicationOwnedToolLoop(
             AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
             RECIPE_DISCOVERY_TOOL_NAME,
+            ...(input.measurement === undefined ? [] : [input.measurement.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls = identifiedCalls.filter(
@@ -1332,10 +1395,17 @@ export async function runApplicationOwnedToolLoop(
         }
 
         const turnReceipts = await Promise.all(
-            safeReadCalls.map(async ({ call, callId }) =>
-                boundReceipt(executeSafeRead(call, callId, turn), limits.maxReceiptBytesPerCall)
-            )
+            executeTurnReads({
+                calls: safeReadCalls,
+                turn,
+                loopId: input.loopId,
+                measurement: input.measurement,
+                signal: input.signal,
+            }).map(async (receipt) => boundReceipt(await receipt, limits.maxReceiptBytesPerCall))
         );
+        if (input.signal?.aborted) {
+            return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
+        }
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
         const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);

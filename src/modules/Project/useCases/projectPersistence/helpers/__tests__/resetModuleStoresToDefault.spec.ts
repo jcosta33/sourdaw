@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { agentMeasurementArtifactStore } from '#/modules/AudioRendering/stores';
 import { glutenMeterStore, updateGlutenMeters } from '#/modules/Gluten/stores';
 import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
@@ -110,6 +111,7 @@ vi.mock('../../../../stores/arrangementStore', () => ({
 }));
 
 import { defaultMissingMediaStoreState, missingMediaStore } from '../../../../stores/missingMediaStore';
+import { setAgentMeasurementArtifactsClearer } from '../../setAgentMeasurementArtifactsClearer';
 import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 describe('resetModuleStoresToDefault', () => {
@@ -223,5 +225,42 @@ describe('resetModuleStoresToDefault', () => {
         // singleton, so this device's state survived into the next project.
         expect(store.value).toEqual(createDefaultGrandBouleState());
         expect(store.value?.temperament).toBe(0);
+    });
+
+    it('should clear retained agent measurement renders so a closed project does not leak them', () => {
+        // agentMeasurementArtifactStore is NOT mocked here: retain a real
+        // artifact the way analysis.measure would, then assert the reset
+        // releases it — otherwise the render (and its expiry timer) outlives
+        // the project that produced it. The clearer itself is registered
+        // through the same composition-root seam bootstrap.ts uses (Project
+        // cannot import AudioRendering's barrel directly — see
+        // agentMeasurementArtifactClearingState.ts), so this spy stands in for
+        // `clearAgentMeasurementArtifacts` and does what it does: empty the store.
+        const clearer = vi.fn(() => {
+            agentMeasurementArtifactStore.set({ artifacts: [] });
+        });
+        setAgentMeasurementArtifactsClearer(clearer);
+        agentMeasurementArtifactStore.set({
+            artifacts: [
+                {
+                    owner: 'agent-measurement',
+                    retention: 'session',
+                    contentAddress: 'prior-project-measurement',
+                    sourceRevision: 'revision-1',
+                    renderedAt: Date.now(),
+                    sampleRate: 48_000,
+                    frameCount: 48_000,
+                    channelCount: 2,
+                    durationSeconds: 1,
+                    byteSize: 384_000,
+                    buffer: {} as AudioBuffer,
+                },
+            ],
+        });
+
+        resetModuleStoresToDefault();
+
+        expect(clearer).toHaveBeenCalledTimes(1);
+        expect(agentMeasurementArtifactStore.value).toEqual({ artifacts: [] });
     });
 });

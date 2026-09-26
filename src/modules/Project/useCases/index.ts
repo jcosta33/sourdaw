@@ -13,6 +13,7 @@ export { initProjectDirtyTracking } from './projectPersistence/saveProject/initP
 export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/initPluginStateDirtyTracking';
 export { loadProject } from './projectPersistence/loadProject';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
+export { setAgentMeasurementArtifactsClearer } from './projectPersistence/setAgentMeasurementArtifactsClearer';
 export { whenProjectIdentityTransitionDependenciesConfigured } from './projectPersistence/whenProjectIdentityTransitionDependenciesConfigured';
 export { failProjectIdentityTransitionDependencies } from './projectPersistence/failProjectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
