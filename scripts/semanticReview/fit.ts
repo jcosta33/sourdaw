@@ -14,6 +14,7 @@
 
 import { EVIDENCE_SIDES, type EvidenceReference, type EvidenceSide } from './contracts.ts';
 import { type SemanticEvidenceSet } from './evidence.ts';
+import { isChargedContractDocument } from './evidenceOrdering.ts';
 
 /**
  * One region exactly as it is sent. `fitUnitEvidence` costs regions through this same shape, so the
@@ -89,10 +90,10 @@ function fitRegions(
  * unrelated state reduces accuracy, so an admitted contract region that fits this share is reserved
  * ahead of the change's own source rather than left to whatever is left over.
  *
- * The reserve is taken only for a context region the request can actually carry, because a reserved
- * share no region fits buys nothing and costs the unit its own evidence. Measured against the real
- * default documents on a contract-needing `src/modules/Project` unit, the share is 4,401 B of the local
- * profile's 11,003 B request budget and 7,678 B of the ci profile's 19,195 B, while
+ * The reserve is taken only for a contract-context region the request can actually carry, because a
+ * reserved share no region fits buys nothing and costs the unit its own evidence. Measured against the
+ * real default documents on a contract-needing `src/modules/Project` unit, the share is 4,401 B of the
+ * local profile's 11,003 B request budget and 7,678 B of the ci profile's 19,195 B, while
  * `.agents/decisions/README.md` costs 11,981 B serialized and `AGENTS.md` is over the per-region
  * ceiling at both profiles. Neither profile therefore reserves anything for the README: local cannot
  * carry it at all and withholds it while the unit's own sides keep the budget, and ci sends it only out
@@ -101,12 +102,15 @@ function fitRegions(
 const CONTEXT_BUDGET_SHARE = 0.4;
 
 /**
- * Whether an offered context region fits the bounded share, so reserving it delivers a document the
- * request can carry. A region larger than the share is not necessarily lost — the context fit still
- * receives whatever the own sides leave — but the reserve cannot be what admits it.
+ * Whether a charged contract document fits the bounded share, so reserving it delivers a document the
+ * request can carry. A document larger than the share is not necessarily lost — the context fit still
+ * receives whatever the own sides leave — but the reserve cannot be what admits it. Only the regions
+ * `isChargedContractDocument` admits are offered here: an implementation after side another unit
+ * supplied as context is fitted with the context but takes no reserve, because the reserve exists for
+ * the documents a planned reader charged and an implementation region does not depend on it.
  */
-function contextShareFits(set: SemanticEvidenceSet, context: readonly EvidenceReference[], share: number): boolean {
-    return context.some((reference) => regionCost(reference, set.contents.get(reference.evidenceId) ?? '') <= share);
+function contractShareFits(set: SemanticEvidenceSet, documents: readonly EvidenceReference[], share: number): boolean {
+    return documents.some((reference) => regionCost(reference, set.contents.get(reference.evidenceId) ?? '') <= share);
 }
 
 /** One fitted region set: the regions kept, their contents, and the sides dropped by the fitter. */
@@ -130,8 +134,8 @@ export type FittedUnitEvidence = {
  * needed it report the evidence as not supplied rather than answering over a fragment; later regions
  * are dropped once the budget is gone. Context regions are offered last, so an oversized
  * implementation costs a contract rather than the unit — except for the bounded share
- * `contextShareFits` reserves when a context region fits it. Whatever is lost is reported, because an
- * omitted region is not evidence that the region is safe.
+ * `contractShareFits` reserves when a charged contract document fits it. Whatever is lost is reported,
+ * because an omitted region is not evidence that the region is safe.
  *
  * The own and context fits are returned separately rather than as one union, because a dropped side
  * means different things in each: an own-side drop unsupplies that side of the unit, while a context
@@ -144,7 +148,8 @@ export function fitUnitEvidence(
     maxBytes: number
 ): FittedUnitEvidence {
     const share = Math.floor(maxBytes * CONTEXT_BUDGET_SHARE);
-    const contextBudget = contextShareFits(set, context, share) ? share : 0;
+    const documents = context.filter(isChargedContractDocument);
+    const contextBudget = contractShareFits(set, documents, share) ? share : 0;
     const ownFitted = fitRegions(set, own, maxBytes - contextBudget);
     const contextFitted = fitRegions(set, context, maxBytes - ownFitted.used);
     return {
@@ -164,8 +169,10 @@ export function fitUnitEvidence(
 
 /**
  * The reduced-unit record's reason. When the per-request fitter dropped sides, the reason names them
- * in the fixed side order so a reader can tell which side was cut; a unit reduced only by a collector
- * withholding carries no fitted drop and keeps the plain reason.
+ * in the fixed side order so a reader can tell which side was cut. The caller emits it only for a unit
+ * whose fitter actually dropped a side, so a unit reduced by nothing but the collector's own
+ * withholding is never recorded as a request-budget reduction; the plain form stays here as the shape
+ * reports persisted before that guard carry, and stays readable to `semanticReviewContext`.
  */
 export function unitReductionReason(dropped: ReadonlySet<EvidenceSide>): string {
     const sides = [...dropped].sort((left, right) => EVIDENCE_SIDES.indexOf(left) - EVIDENCE_SIDES.indexOf(right));

@@ -1208,6 +1208,82 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
+    it('ranks a credentialed file that plans no unit as bulk, so a planned reader keeps the context it charged', () => {
+        // A: the promotion into tier 1 asked only for a contract token, so a modified `scripts/legacy.ts`
+        // whose after side is credential-shaped — excluded by the content screen and skipped by the
+        // planner — carried its bulk before side ahead of the context documents the contract-needing
+        // `src/modules/Project/undo.ts` charged, and the collector's total withheld both documents while
+        // the planned unit carried none. Its sides must rank bulk and the reader's charge must be
+        // delivered. Dropping the `plannedPaths` condition in `admissionUnits` reddens every arm at both
+        // profiles: the bulk hunks leave no room for a document, so both are withheld as
+        // `total-evidence-budget-exhausted (context, contract)` and the unit's context is empty.
+        const legacyPath = 'scripts/legacy.ts';
+        const readerPath = 'src/modules/Project/undo.ts';
+        const hunkLines = 2;
+        const hunkChars = 8_180;
+        const hunkCount = 64; // ~1.047 MB of before side, within one document of the ci total budget
+        const lines = hunkLines * hunkCount;
+        const bulk = `${'x'.repeat(hunkChars)}\n`.repeat(lines);
+        const beforeHunks: { startLine: number; endLine: number }[] = [];
+        for (let start = 1; start <= lines; start += hunkLines) {
+            beforeHunks.push({ startLine: start, endLine: start + hunkLines - 1 });
+        }
+        // The charged documents are sized like the real `.agents/decisions/README.md`: too large for the
+        // budget the bulk hunks leave, small enough for the reader's own request.
+        const document =
+            '| [0003](0003-engine-owned-plugin-runtime-owner.md) | decision text that names one owner |\n'.repeat(95);
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        for (const profileName of ['local', 'ci'] as const) {
+            const profile = SEMANTIC_BUDGET_PROFILES[profileName];
+            const files = [changedFile(legacyPath, { added: 1, deleted: lines }), changedFile(readerPath)];
+            const source = fakeSource({
+                files,
+                hunks: new Map<string, PathHunks>([[legacyPath, { path: legacyPath, before: beforeHunks, after: [] }]]),
+                blobs: {
+                    [`${MERGE_BASE}:${legacyPath}`]: bulk,
+                    [`${HEAD}:${legacyPath}`]: `export const key = '${awsShaped}';\n`,
+                    [`${MERGE_BASE}:${readerPath}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${readerPath}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:AGENTS.md`]: document,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: document,
+                },
+            });
+            const set = collectEvidence({
+                port: source,
+                mergeBaseSha: MERGE_BASE,
+                headSha: HEAD,
+                contractSourceSha: MERGE_BASE,
+                limits: {
+                    maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                    maxTotalBytes: profile.maxTotalSubmittedBytes,
+                },
+                includeDefaultContractContext: true,
+            });
+            // The credentialed file produces no unit at all: it is excluded, never planned.
+            expect(set.excluded).toContainEqual({ path: legacyPath, reason: 'credential-shaped-content-excluded' });
+            // The context the planned reader charged is admitted, and the total it bound against is the
+            // bulk file's own hunks.
+            expect(
+                set.references.filter((reference) => reference.side === 'context').map((reference) => reference.path)
+            ).toEqual(['.agents/decisions/README.md', 'AGENTS.md']);
+            expect(
+                set.truncated.some(
+                    (entry) => entry.path === legacyPath && entry.reason.startsWith('total-evidence-budget-exhausted')
+                )
+            ).toBe(true);
+            expect(set.truncated.some((entry) => entry.reason.endsWith('(context, contract)'))).toBe(false);
+            const { units, excluded } = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+            const unit = units.find((candidate) => candidate.path === readerPath);
+            // The unit keeps both of its own sides and carries the charged documents its request can
+            // hold — one at local, both at ci, and none at all before this repair.
+            expect(unit?.evidence.own.map((reference) => reference.side)).toEqual(['after', 'before']);
+            const carried = unit?.evidence.context.map((reference) => reference.path) ?? [];
+            expect(carried.length).toBeGreaterThan(0);
+            expect(carried.every((path) => path === 'AGENTS.md' || path === '.agents/decisions/README.md')).toBe(true);
+            expect(excluded).not.toContainEqual({ path: readerPath, reason: 'no-evidence-region-within-budget' });
+        }
+    });
+
     it('withholds a contract-needing unit below its request while the documents it charged are sent', async () => {
         // The admission tier is an attempt order, not a protection. `fitUnitEvidence` reserves the
         // bounded context share of the request before it offers the unit's own regions, so on a 280-line
@@ -1328,6 +1404,114 @@ describe('contract-carrying admission', () => {
             path,
             reason: 'unit-evidence-reduced-below-request-budget (after)',
         });
+    });
+
+    it('keeps an implementation context region in the fit but out of the reserve', () => {
+        // B, implementation regime: the reserve asked about the whole context array, so a 1,216 B
+        // implementation after side another unit contributed as context took the 2,560 B share of the
+        // 6,401 B request and withheld the charged reader's own sides — a region the reserve does not
+        // protect, paying for itself with the evidence the unit exists to supply. Keying the reserve on
+        // the charged contract documents alone leaves the own sides the request budget and still fits the
+        // implementation region out of what they leave. Reading the whole array again starves both own
+        // sides and the implementation token with them, failing every arm of this case.
+        const implPath = 'src/modules/Project/useCases/undoProject.ts';
+        const specPath = 'src/modules/Project/__tests__/undo.spec.ts';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile(specPath, { added: 200, deleted: 200 }),
+                    changedFile(implPath, { added: 40, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:${specPath}`]: 'const beforeValue = 1;\n'.repeat(200),
+                    [`${HEAD}:${specPath}`]: 'const afterValue = 2;\n'.repeat(200),
+                    [`${MERGE_BASE}:${implPath}`]: 'export const impl = 0;\n',
+                    [`${HEAD}:${implPath}`]: 'export const impl = 1;\n'.repeat(40),
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const own = set.references.filter((reference) => reference.side !== 'context' && reference.path === specPath);
+        const context = set.references.filter((reference) => reference.side === 'after' && reference.path === implPath);
+        const cost = (reference: EvidenceReference): number =>
+            regionCost(reference, set.contents.get(reference.evidenceId) ?? '');
+        const implementation = context[0];
+        expect(own).toHaveLength(2);
+        expect(implementation).toBeDefined();
+        if (implementation === undefined) {
+            throw new Error('the fixture did not mint the implementation context region');
+        }
+        const largestOwn = Math.max(...own.map(cost));
+        const smallestOwn = Math.min(...own.map(cost));
+        // Sized so the implementation region fits the share and neither own side does: the reserve
+        // starves the whole own set, while the whole budget carries one own side and the context region.
+        const budget = largestOwn + cost(implementation) + 128;
+        expect(Math.floor(budget * 0.4)).toBeGreaterThanOrEqual(cost(implementation));
+        expect(Math.floor(budget * 0.6)).toBeLessThan(smallestOwn);
+        const fitted = fitUnitEvidence(set, own, context, budget);
+        // The reserve no longer reaches into the own fit: one own side survives the request, and the
+        // implementation region is still fitted out of what that side leaves.
+        expect(fitted.own.references).toHaveLength(1);
+        expect(fitted.context.references).toEqual([implementation]);
+        expect(
+            missingRequiredEvidence(
+                semanticRule('production_path_no_longer_reached'),
+                fitted.own.references,
+                fitted.context.references,
+                'modified',
+                fitted.own.droppedSides,
+                fitted.context.droppedSides
+            )
+        ).toEqual(['before test source']);
+    });
+
+    it('plans the unit a charged contract document was charged for, with an own region inside its request budget', () => {
+        // C: the gate charged `.agents/decisions/README.md` for a unit the planner refused, so the total
+        // budget paid for a document no request read. Sized at the production local profile, the reader's
+        // two ~10,500 B sides serialize to 10,842 B and 10,841 B, inside its 11,003 B request budget, so
+        // an admissible own region reaches the request and the unit is planned; the README, 12,019 B
+        // serialized, is over both the 4,401 B share and what the own sides leave, so the fitter
+        // withholds it. Restoring the merge base's unconditional reserve takes the share from the own
+        // sides and the planner refuses the unit as `no-evidence-region-within-budget` again, which is
+        // the state this case pins.
+        const path = 'src/modules/Project/undo.ts';
+        const side = `${'x'.repeat(104)}\n`.repeat(100); // 10,500 B
+        const readme =
+            '| [0003](0003-engine-owned-plugin-runtime-owner.md) | decision text that names one owner |\n'.repeat(128);
+        const files = [changedFile(path, { added: 100, deleted: 100 })];
+        const source = fakeSource({
+            files,
+            blobs: {
+                [`${MERGE_BASE}:${path}`]: side,
+                [`${HEAD}:${path}`]: side,
+                [`${MERGE_BASE}:.agents/decisions/README.md`]: readme,
+            },
+        });
+        const set = collectEvidence({
+            port: source,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes,
+                maxTotalBytes: SEMANTIC_BUDGET_PROFILES.local.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        // The document the gate charged for this reader is admitted as context.
+        expect(
+            set.references.some(
+                (reference) => reference.path === '.agents/decisions/README.md' && reference.side === 'context'
+            )
+        ).toBe(true);
+        const { units, excluded } = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        expect(excluded).not.toContainEqual({ path, reason: 'no-evidence-region-within-budget' });
+        const unit = units.find((candidate) => candidate.path === path);
+        expect(unit?.evidence.own.length).toBeGreaterThan(0);
+        expect(unit?.evidence.context.map((reference) => reference.path)).toEqual([]);
     });
 
     it('charges no contract context when the content screen drops the only reading unit', () => {
@@ -4537,6 +4721,47 @@ describe('reduced-unit reporting', () => {
             path: 'crates/daw-dsp/src/big.rs',
             reason: 'unit-evidence-reduced-below-request-budget (after)',
         });
+    });
+
+    it("does not record a request-budget reduction for the collector's own per-region withholding", async () => {
+        // D: a unit was reduced whenever it carried any truncation entry, and the reason came from the
+        // fitter's dropped sides alone, so a unit whose only truncation was the collector withholding an
+        // over-ceiling side was recorded as `unit-evidence-reduced-below-request-budget` although the
+        // fitter dropped nothing. The fitted drop is what that reason names; the collector's own entry
+        // stays in the scope exactly as it was written.
+        const path = 'crates/daw-dsp/src/big.rs';
+        const oversized = 'const over = 1;\n'.repeat(2_000);
+        const result = await runScan({
+            ...scanPorts(
+                constantProvider(0.05),
+                fakeSource({
+                    files: [changedFile(path, { added: 2_000, deleted: 1 })],
+                    blobs: {
+                        [`${MERGE_BASE}:${path}`]: 'const small = 1;\n',
+                        [`${HEAD}:${path}`]: oversized,
+                    },
+                }),
+                fixedClock(1_000)
+            ),
+            limits: {
+                maxRegionBytes: SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes,
+                maxTotalBytes: SEMANTIC_BUDGET_PROFILES.local.maxTotalSubmittedBytes,
+            },
+        });
+        // The collector's per-region ceiling withheld the after side, and the run is still partial.
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'region-exceeds-per-region-budget (after)',
+        });
+        expect(result.report.limitations.join(' ')).toContain('exceeds the per-region budget');
+        expect(result.report.execution).toBe('partial');
+        // The fitter dropped nothing, so no reduction below the request budget is recorded.
+        expect(
+            result.report.scope.truncated.some((entry) =>
+                entry.reason.startsWith('unit-evidence-reduced-below-request-budget')
+            )
+        ).toBe(false);
+        expect(result.report.limitations.join(' ')).not.toContain('per-request state budget');
     });
 
     it('does not send a region it cannot send whole, and reports what the questions then lack', () => {

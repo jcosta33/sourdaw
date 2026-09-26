@@ -619,8 +619,11 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
     const budget = createBudgetController(input.profile);
     const deadline = input.ports.clock.now() + input.profile.overallDeadlineMs;
     // A unit the fitter had to reduce is a limitation of the run, not a detail of the plan: without
-    // this the operator sees a clean completion for a unit whose evidence was cut to a fraction.
-    const reducedUnits = units.filter((unit) => unit.evidence.truncated.length > 0);
+    // this the operator sees a clean completion for a unit whose evidence was cut to a fraction. Only a
+    // fitted drop is a reduction: a unit whose truncation entries are the collector's own withholdings
+    // was never reduced below the request budget, and recording it as one named a cause that never
+    // occurred. Those entries stay in the scope's `truncated` list exactly as the collector wrote them.
+    const reducedUnits = units.filter((unit) => unit.evidence.fittedDroppedSides.size > 0);
     const unitReductions = [
         ...incomplete,
         ...reducedUnits.map((unit) => ({

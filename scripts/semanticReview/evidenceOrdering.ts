@@ -9,14 +9,16 @@
  * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
  *    contract-carrying or a source a contract-carrying spec covers — so the budget stays on the change
  *    the contract lives in and no spec outranks the source it covers;
- * 2. a changed file whose rules need contract evidence — its own sides, attempted before the context
- *    units those rules charge, while the side stays behind genuine contract material. The attempt order
- *    is what keeps the charge from taking its reader's place at admission: when the collector's total
- *    binds before the context tier, the document is withheld there and no context region reaches the
- *    request fitter at all, so the reserve is zero and the request budget is spent on the own sides the
- *    collector admitted. The fitter reserves `CONTEXT_BUDGET_SHARE` only when an admitted context region
- *    fits that share; then the unit's own sides can still be withheld below its request while the
- *    document it reserves for is sent;
+ * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
+ *    sides, attempted before the context units those rules charge, while the side stays behind genuine
+ *    contract material. The attempt order is what keeps the charge from taking its reader's place at
+ *    admission: when the collector's total binds before the context tier, the document is withheld
+ *    there and no contract-context region reaches the request fitter at all, so the reserve is zero and
+ *    the request budget is spent on the own sides the collector admitted. A file that plans no unit is
+ *    never promoted here — it ranks bulk, and it charges nothing. The fitter reserves
+ *    `CONTEXT_BUDGET_SHARE` only when an admitted contract-context region fits that share; then the
+ *    unit's own sides can still be withheld below its request while the document it reserves for is
+ *    sent;
  * 3. contract-context units, the documents read at the contract source revision — ahead of bulk,
  *    behind the change's own contract material;
  * 4. bulk sides of the change.
@@ -42,6 +44,7 @@ import { applicableRules, isCollectedSpec, unitNeedsContractContext } from './ru
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 
+import type { EvidenceReference } from './contracts.ts';
 import type { PathHunks, SemanticChangedFile, SemanticSourcePort } from './evidence.ts';
 
 /** A deterministic string ordering. `localeCompare` is locale-dependent and would not be reproducible. */
@@ -95,9 +98,13 @@ export function classifyContractCarryingSides(
  * are attempted ahead of the context documents its rules charge, so the order keeps the charge from
  * taking the reader's place — and that is what it keeps: the order decides which side the collector's
  * total withholds, never what a request carries. When the total binds before the context tier the
- * document is withheld at admission, the fitter sees no context region, and the reserve is zero, so the
- * request budget is spent on the own sides the collector admitted; the fitter reserves
- * `CONTEXT_BUDGET_SHARE` only when an admitted context region fits that share.
+ * contract document is withheld at admission, no contract-context region reaches the fitter, and the
+ * reserve is zero, so the request budget is spent on the own sides the collector admitted; the fitter
+ * reserves `CONTEXT_BUDGET_SHARE` only when an admitted contract-context region fits that share.
+ *
+ * This is the rules-level question alone. Whether the file's unit will exist is `plannedUnitPaths`,
+ * and every consumer that promotes such a file, charges a document for it, or reserves for one asks
+ * both.
  */
 export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): ReadonlySet<string> {
     const needing = new Set<string>();
@@ -108,6 +115,54 @@ export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): R
         }
     }
     return needing;
+}
+
+/**
+ * The changed paths whose unit the planner will plan with an admissible own region inside its request
+ * budget: the file's own path survives the content screen, its rules admit it, and at least one side
+ * carries a region admission can charge. The per-region ceiling is the request's own state budget, so
+ * a chargeable region is the pre-admission form of an own region that reaches the request.
+ *
+ * One predicate, because a file that produces no unit must neither charge a contract document, nor
+ * outrank one, nor take a reserve for one — and each of those three consumers holds only a projection
+ * of this answer. The own path decides, exactly as the planner's skip does: a rename credentialed on
+ * its previous side alone still plans a destination unit from its clean after side, so it is planned
+ * here too, while a rename credentialed on both sides is keyed on its own path by
+ * `credentialShapedPaths` and plans nothing.
+ */
+export function plannedUnitPaths(
+    changed: readonly SemanticChangedFile[],
+    admissionBytes: ReadonlyMap<string, AdmissionSideBytes>,
+    credentialExcludedPaths: ReadonlySet<string>
+): ReadonlySet<string> {
+    const planned = new Set<string>();
+    for (const file of changed) {
+        if (credentialExcludedPaths.has(file.path)) {
+            continue;
+        }
+        const offeredPaths = file.previousPath === undefined ? [file.path] : [file.path, file.previousPath];
+        if (applicableRules(offeredPaths).length === 0) {
+            continue;
+        }
+        const bytes = admissionBytes.get(file.path);
+        if ((bytes?.before ?? 0) === 0 && (bytes?.after ?? 0) === 0) {
+            continue;
+        }
+        planned.add(file.path);
+    }
+    return planned;
+}
+
+/**
+ * Whether a region is one a planned unit charged as a contract document, which is the only class the
+ * request reserve protects. The collector mints a `context` region only for a document the gate
+ * charged, and the gate charges one only where `plannedUnitPaths` found a reader — so this is that
+ * predicate read on the region the charge produced, and a file that plans no unit can take no reserve.
+ * A changed file's after side offered as implementation context is that file's own evidence, kept in
+ * the fit and out of the reserve.
+ */
+export function isChargedContractDocument(reference: EvidenceReference): boolean {
+    return reference.side === 'context';
 }
 
 /**
@@ -186,7 +241,7 @@ export type ChangedSideUnit = {
     readonly pathContractCarrying: boolean;
     /** Whether a contract-carrying collected spec covers this source, so it ranks in the spec's tier. */
     readonly specCovered: boolean;
-    /** Whether this path's rules declare a contract, decision or registration token, so its own sides rank ahead of the context they charge. */
+    /** Whether this path's unit will be planned and its rules declare a contract, decision or registration token, so its own sides rank ahead of the context they charge. */
     readonly contractNeeding: boolean;
     readonly admissionBytes: number;
 };
@@ -225,13 +280,15 @@ function unitSideOrder(unit: AdmissionUnit): number {
  * The admission tier, four ranks:
  *
  * 0. the change's own contract-carrying sides and the sources a contract-carrying spec covers;
- * 1. a changed file whose rules declare a contract, decision or registration token — its own
- *    before/after sides are attempted ahead of the context documents those rules charge, while the side
- *    stays behind genuine contract material. The tier is an attempt order, not a protection: it orders
- *    what the collector's total withholds, and the request fitter reserves the bounded context share
- *    only when an admitted context region fits that share, so a context region the collector withheld
- *    under a binding total costs the fitter nothing and the request budget is spent on the own sides the
- *    collector admitted;
+ * 1. a changed file whose unit the planner will plan and whose rules declare a contract, decision or
+ *    registration token — its own before/after sides are attempted ahead of the context documents
+ *    those rules charge, while the side stays behind genuine contract material. A file that plans no
+ *    unit is not promoted: its sides rank bulk, so a file the planner excludes cannot take the
+ *    admission order from the documents a planned reader charged. The tier is an attempt order, not a
+ *    protection: it orders what the collector's total withholds, and the request fitter reserves the
+ *    bounded context share only when an admitted contract-context region fits that share, so a
+ *    contract document the collector withheld under a binding total costs the fitter nothing and the
+ *    request budget is spent on the own sides the collector admitted;
  * 2. contract-context units;
  * 3. bulk sides.
  *
@@ -253,7 +310,7 @@ function admissionTier(unit: AdmissionUnit): number {
 }
 
 /**
- * The admission order. Four tiers — the change's own contract-carrying sides first, then a
+ * The admission order. Four tiers — the change's own contract-carrying sides first, then a planned
  * contract-needing file's own sides, then contract-context regions, then bulk sides — and, inside each
  * tier, non-spec before collected spec, then a side of a contract-carrying path before a purely bulk
  * side, then ascending admission bytes — the order-independent lower bound a side's sole regions cost,
@@ -297,14 +354,17 @@ export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit)
  * surface admits its contract before side before a bulk side of another change while its bulk after
  * side stays ranked with bulk. Contract-context regions sit in their own tier — behind the change's own
  * contract-carrying sides, ahead of bulk — so a document read at the contract source revision cannot
- * outrank the change's contract material even when it is larger.
+ * outrank the change's contract material even when it is larger. Only a path `plannedPaths` admits is
+ * promoted into the contract-needing tier: a credentialed file the planner will exclude ranks bulk, so
+ * it cannot take the admission order from the documents a planned reader charged.
  */
 export function admissionUnits(
     changed: readonly SemanticChangedFile[],
     sidesByPath: ReadonlyMap<string, ContractCarryingSides>,
     admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>,
     contractContexts: readonly { path: string; admissionBytes: number }[],
-    specCovered: ReadonlySet<string>
+    specCovered: ReadonlySet<string>,
+    plannedPaths: ReadonlySet<string>
 ): readonly AdmissionUnit[] {
     const contractNeeding = contractNeedingPaths(changed);
     const units: AdmissionUnit[] = [];
@@ -312,7 +372,7 @@ export function admissionUnits(
         const sides = sidesByPath.get(file.path);
         const pathContractCarrying = (sides?.before ?? false) || (sides?.after ?? false);
         const covered = specCovered.has(file.path);
-        const needsContract = contractNeeding.has(file.path);
+        const needsContract = contractNeeding.has(file.path) && plannedPaths.has(file.path);
         if (kindHasBeforeSide(file.kind)) {
             units.push({
                 kind: 'changed',
