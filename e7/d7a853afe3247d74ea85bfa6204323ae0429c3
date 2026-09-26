@@ -1,0 +1,43 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_2bfd55a4393d7c::t_816457b67ebaec 767-779,783-784,787-788,795-808,817-818,825-827,829-834,969-1222,3719-3736
+scripts/semanticReview/contractCarrying.ts
+  s_2bfd55a4393d7c::t_98fc891e754299 12,119-122
+scripts/semanticReview/evidence.ts
+  s_ef536aab624565::t_f6f10f661193c1 32,35,39,603-611
+scripts/semanticReview/evidenceOrdering.ts
+  s_2bfd55a4393d7c::t_9f1cc120426ecd 5-10,13,16,36-88,168-205,207-217,221-222,224,231-235,241-243,245,250-259,262-280,282-283
+scripts/semanticReview/verify.ts
+  s_1c08b47ac3792f::t_7c5d9be5d464dd 49,375-393,400-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e7d7a853afe3247d74ea85bfa6204323ae0429c3",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
