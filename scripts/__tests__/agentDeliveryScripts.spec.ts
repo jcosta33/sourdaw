@@ -1844,9 +1844,53 @@ describe('package scripts and gitignore', () => {
             source: "await import('./checked.ts',);",
             specifier: './checked.ts',
         },
+        {
+            label: 'a require specifier narrowed with a leading angle-bracket assertion',
+            source: "require(<string>'./checked.ts');",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a dynamic import specifier narrowed with a leading angle-bracket assertion',
+            source: "await import(<string>'./checked.ts');",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a createRequire specifier narrowed with a leading angle-bracket assertion',
+            source: "createRequire(import.meta.url)(<string>'./checked.ts');",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal require with a non-null assertion',
+            source: "require(('./checked.ts')!);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a literal require with a non-null assertion',
+            source: "require('./checked.ts'!);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a parenthesised literal require narrowed and non-null asserted',
+            source: "require(<string>('./checked.ts')!);",
+            specifier: './checked.ts',
+        },
     ])('admits $label as a static specifier, never a computed load', ({ source, specifier }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
         expect(snapshotImportSpecifiers(source)).toContain(specifier);
+    });
+
+    /**
+     * The erased wrappers above are admitted only around a literal specifier. The same wrappers on a
+     * computed operand — an angle-bracket assertion or non-null assertion applied to a variable — must
+     * stay refused, because the value is still computed.
+     */
+    it('keeps angle-bracket and non-null assertions on a computed operand refused', () => {
+        expect(snapshotComputedDynamicSpecifiers('require(<string>specifier)')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('require(specifier!)')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('await import(<string>specifier)')).toEqual(['import(...)']);
+        expect(snapshotComputedDynamicSpecifiers('createRequire(import.meta.url)(<string>specifier)')).toEqual([
+            'createRequire(...)(...)',
+        ]);
     });
 
     /**
@@ -2069,6 +2113,33 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * A `//` inside a regex literal is a character class, not a comment opener, so the line-comment
+     * walk must not read it as one. `const re = /[.//]/;` ends with a `;` whose preceding `.` belongs
+     * to the regex body; without skipping the regex the back-walk jumps over the `;` to that `.` and
+     * reads the following `require`, `import`, or `createRequire` as a member call, hiding the
+     * computed load.
+     */
+    it.each([
+        {
+            label: 'a require load after a regex literal whose body holds a dot and slashes',
+            source: 'const re = /[.//]/;\nrequire(specifier);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import after a regex literal whose body holds a dot and slashes',
+            source: 'const re = /[.//]/;\nimport(specifier);',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a createRequire load after a regex literal whose body holds a dot and slashes',
+            source: "import { createRequire } from 'node:module';\nconst re = /[.//]/;\ncreateRequire(import.meta.url)(specifier);",
+            shape: 'createRequire(...)(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
      * A parenthesized list whose first argument is a parameter list — `name: type`, `name?: type`,
      * `...args: type`, or a destructuring pattern followed by a type — is a TypeScript declaration,
      * never a call: no module specifier can take that shape, so it must not be read as a computed
@@ -2172,6 +2243,22 @@ describe('package scripts and gitignore', () => {
         {
             label: 'a require-named generator function declaration',
             source: 'function* require() { yield 1; }',
+        },
+        {
+            label: 'a require-named class method after a preceding class method',
+            source: 'class ModuleLoader { load() {} require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named class method after a preceding class method with an untyped parameter',
+            source: 'class ModuleLoader { load() {} require(name) {} }',
+        },
+        {
+            label: 'a require-named interface member after a preceding property',
+            source: 'interface Loader { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named type-literal member after a preceding property',
+            source: 'type Loader = { version: string; require(specifier: string): unknown }',
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);

@@ -698,8 +698,13 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
     // method in a class, object, or type body), or `(` / `,` (a parameter whose type is a call
     // signature). A modifier or a generator asterisk before the name is skipped so the enclosing
     // construct decides, never the modifier alone. Anything else — `?`, `case`, `extends`, a
-    // statement boundary — leaves the token a callee, so the parenthesized list is a call. A block
-    // whose first statement is a call followed by another block (`{ require(spec) { … } }`) is
+    // statement boundary — leaves the token a callee, so the parenthesized list is a call.
+    //
+    // A later member is preceded by `}` (the previous method's body) or `;` (the previous member),
+    // not by the body's `{`, so the one-token look refuses it. The enclosing construct decides
+    // instead: a `}`/`;`-preceded name inside a class, interface, or type-literal body is a member
+    // declaration whatever precedes it, while the same name in a statement block stays a call. A
+    // block whose first statement is a call followed by another block (`{ require(spec) { … } }`) is
     // indistinguishable from an object method by this token look, and is filed as #4818 rather than
     // silently misread as a declaration.
     let cursor = keywordIndex - 1;
@@ -736,6 +741,9 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
             cursor -= 1;
             continue;
         }
+        if (character === '}' || character === ';') {
+            return isMemberInsideClassLikeBody(source, keywordIndex);
+        }
         if (isIdentifierContinue(character)) {
             let identifierStart = cursor;
             while (identifierStart >= 0 && isIdentifierContinue(source[identifierStart])) {
@@ -757,10 +765,236 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
 }
 
 /**
+ * Whether a `require`/`import` name preceded by `}` or `;` is a member of a class, interface, or
+ * type-literal body — the innermost `{` enclosing the name must be one such body rather than a
+ * statement block. The statement-block shapes stay refused, and the first-statement block case named
+ * in `isDeclarationContext` never reaches here because its name is preceded by `{`, not `}` or `;`.
+ */
+function isMemberInsideClassLikeBody(source: string, keywordIndex: number): boolean {
+    const open = enclosingBraceOpen(source, keywordIndex);
+    if (open === undefined) {
+        return false;
+    }
+    return classLikeBodyOpenBefore(source, open);
+}
+
+/**
+ * The index of the `{` that opens the innermost brace-delimited region containing `keywordIndex`,
+ * skipping braces that belong to string, template, or comment content on the way, or `undefined`
+ * when no such brace precedes the name. Regex literals are not skipped here: a brace inside a regex
+ * body is an expression token this walk does not read.
+ */
+function enclosingBraceOpen(source: string, keywordIndex: number): number | undefined {
+    let cursor = keywordIndex - 1;
+    let depth = 0;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return undefined;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            const open = skipQuotedBackward(source, cursor, character);
+            cursor = open === undefined ? cursor - 1 : open - 1;
+            continue;
+        }
+        if (character === '`') {
+            const open = skipTemplateBackward(source, cursor);
+            cursor = open === undefined ? cursor - 1 : open - 1;
+            continue;
+        }
+        if (character === '}') {
+            depth += 1;
+            cursor -= 1;
+            continue;
+        }
+        if (character === '{') {
+            if (depth === 0) {
+                return cursor;
+            }
+            depth -= 1;
+            cursor -= 1;
+            continue;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/** Statement and block construct keywords that end a class/interface/type header scan. */
+const BLOCK_INTRODUCER_KEYWORDS: ReadonlySet<string> = new Set([
+    'function',
+    'const',
+    'let',
+    'var',
+    'if',
+    'else',
+    'for',
+    'while',
+    'do',
+    'switch',
+    'case',
+    'default',
+    'try',
+    'catch',
+    'finally',
+    'throw',
+    'return',
+    'new',
+    'await',
+    'yield',
+    'with',
+    'import',
+    'namespace',
+    'enum',
+    'module',
+]);
+
+/**
+ * Whether the `{` at `openIndex` opens a class, interface, or type-literal body. The scan walks back
+ * over the header — a name, a `type Name =` clause, a heritage or implements clause, and balanced
+ * parentheses or brackets inside them — and stops, refusing, at any statement or block keyword or
+ * unmatched punctuation, so a `type` keyword in an earlier statement cannot claim a later block.
+ */
+function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = openIndex - 1;
+    let delimiterDepth = 0;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return false;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return false;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            const open = skipQuotedBackward(source, cursor, character);
+            cursor = open === undefined ? cursor - 1 : open - 1;
+            continue;
+        }
+        if (character === '`') {
+            const open = skipTemplateBackward(source, cursor);
+            cursor = open === undefined ? cursor - 1 : open - 1;
+            continue;
+        }
+        if (character === ')' || character === ']') {
+            delimiterDepth += 1;
+            cursor -= 1;
+            continue;
+        }
+        if ((character === '(' || character === '[') && delimiterDepth > 0) {
+            delimiterDepth -= 1;
+            cursor -= 1;
+            continue;
+        }
+        if (delimiterDepth > 0) {
+            cursor -= 1;
+            continue;
+        }
+        if (isIdentifierContinue(character)) {
+            const word = readWordBackward(source, cursor);
+            if (word === 'class' || word === 'interface' || word === 'type') {
+                return true;
+            }
+            if (BLOCK_INTRODUCER_KEYWORDS.has(word)) {
+                return false;
+            }
+            cursor -= word.length;
+            continue;
+        }
+        if (character === '.' || character === ',' || character === '=' || character === '|' || character === '&') {
+            cursor -= 1;
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
+/** The opening quote of the string literal whose closing quote is at `index`, or `undefined`. */
+function skipQuotedBackward(source: string, index: number, quote: "'" | '"'): number | undefined {
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
+        }
+        if (character === '\\') {
+            cursor -= 2;
+            continue;
+        }
+        if (character === quote) {
+            return cursor;
+        }
+        if (isLineTerminator(character)) {
+            return undefined;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/** The opening backtick of the template literal whose closing backtick is at `index`, or `undefined`. */
+function skipTemplateBackward(source: string, index: number): number | undefined {
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor -= 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/** The identifier word ending at `cursor`, read backward to its first character. */
+function readWordBackward(source: string, cursor: number): string {
+    let start = cursor;
+    while (start >= 0 && isIdentifierContinue(source[start])) {
+        start -= 1;
+    }
+    return source.slice(start + 1, cursor + 1);
+}
+
+/**
  * The index of the `//` that opens the line comment containing `cursor`, or `undefined` when the
- * cursor is not inside a `//` comment. Walking the line forward from its start — skipping string and
- * template literals and block comments — keeps a `//` inside a quoted value or a block comment from
- * masking a real token.
+ * cursor is not inside a `//` comment. Walking the line forward from its start — skipping string,
+ * template, and regex literals and block comments — keeps a `//` inside a quoted value, a regex, or a
+ * block comment from masking a real token.
  */
 function lineCommentOpenBefore(source: string, cursor: number): number | undefined {
     let lineStart = cursor;
@@ -775,6 +1009,11 @@ function lineCommentOpenBefore(source: string, cursor: number): number | undefin
                 return index;
             }
             index = commentEnd;
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
             continue;
         }
         const character = source[index];
@@ -884,9 +1123,21 @@ function staticSpecifierEnd(source: string, start: number, end: number): number 
 }
 
 function readStaticSpecifier(source: string, start: number, end: number): number | undefined {
-    const cursor = skipWhitespace(source, start);
+    let cursor = skipWhitespace(source, start);
     if (cursor >= end) {
         return undefined;
+    }
+    // A leading angle-bracket assertion is erased at run time exactly as `as` is, so the specifier
+    // stays the literal; skip it and read the asserted expression.
+    while (source[cursor] === '<') {
+        const afterType = skipTypeArguments(source, cursor, end);
+        if (afterType === undefined) {
+            return undefined;
+        }
+        cursor = skipWhitespace(source, afterType);
+        if (cursor >= end) {
+            return undefined;
+        }
     }
     const first = source[cursor];
     let literalEnd: number | undefined;
@@ -915,12 +1166,17 @@ function readStaticSpecifier(source: string, start: number, end: number): number
     } else {
         return undefined;
     }
-    // A literal may carry any number of chained `as`/`satisfies` casts. Each cast's type is erased at
-    // run time, so the value stays the literal, but the cast must be skipped so the caller can tell
-    // the specifier's end from a value-modifying operator that follows it.
+    // A literal may carry a postfix non-null assertion and any number of chained `as`/`satisfies`
+    // casts, in any order. Each is erased at run time, so the value stays the literal, but it must be
+    // skipped so the caller can tell the specifier's end from a value-modifying operator that follows
+    // it.
     let current = literalEnd;
     while (true) {
         const after = skipWhitespace(source, current);
+        if (source[after] === '!') {
+            current = after + 1;
+            continue;
+        }
         let typeStart: number | undefined;
         if (isKeywordAt(source, after, 'as')) {
             typeStart = after + 2;
@@ -1481,6 +1737,13 @@ function readDynamicImportSpecifier(source: string, index: number): ReadSpecifie
     cursor += 1;
     while (true) {
         cursor = skipWhitespace(source, cursor);
+        while (source[cursor] === '<') {
+            const afterType = skipTypeArguments(source, cursor, source.length);
+            if (afterType === undefined) {
+                break;
+            }
+            cursor = skipWhitespace(source, afterType);
+        }
         if (source[cursor] !== '(') {
             break;
         }
