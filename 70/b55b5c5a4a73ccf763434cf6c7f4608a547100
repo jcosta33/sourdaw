@@ -1,0 +1,70 @@
+src/modules/AiGeneration/handlers/generation/__tests__/createGenerationHandler.spec.ts
+  h_beb54bf43b47b7 17,148,157-158,160-177
+src/modules/AiGeneration/handlers/generation/__tests__/generatorUndo.integration.spec.ts
+  h_beb54bf43b47b7 1-121
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateChordProgression.spec.ts
+  h_beb54bf43b47b7 8,19
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateDrumPattern.spec.ts
+  h_beb54bf43b47b7 8,19
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateMelody.spec.ts
+  h_beb54bf43b47b7 8,19
+src/modules/AiGeneration/handlers/generation/createGenerationHandler.ts
+  h_beb54bf43b47b7 3,5,7-9,14,19-47,80-83,90,103-136,142-149,151,153,155-173
+src/modules/AiGeneration/handlers/generation/generationHandlerHelpers.ts
+  h_beb54bf43b47b7 39-54,63,69-82
+src/modules/AudioEngine/handlers/finalFeature/__tests__/cvOutputUndo.integration.spec.ts
+  h_beb54bf43b47b7 1-148
+src/modules/AudioEngine/handlers/finalFeature/__tests__/handleAddCvOutput.spec.ts
+  h_beb54bf43b47b7 3,5,9-15,18-21,25,48-94
+src/modules/AudioEngine/handlers/finalFeature/handleAddCvOutput.ts
+  h_beb54bf43b47b7 1,8-29,32-38,40-53
+src/modules/AudioEngine/handlers/finalFeature/handleRemoveCvOutput.ts
+  h_beb54bf43b47b7 1-13
+src/modules/AudioEngine/useCases/getFinalFeatureHandlers.ts
+  h_beb54bf43b47b7 13,30,50
+src/modules/Automation/useCases/index.ts
+  h_beb54bf43b47b7 20
+src/modules/Command/useCases/__tests__/coalesceWithPreviousAfterNoopSettle.integration.spec.ts
+  h_beb54bf43b47b7 1-130
+src/modules/Command/useCases/executeAppAction.ts
+  h_beb54bf43b47b7 50-94,396-407
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 5237-5244,5254,5259,5326,5335,5347,5359,5380,5392,5398,5404-5405,5430,5436-5437,5501,5507,5522,5524,5533,5535,5544,5914-5915,5919-5920,5922-5930,5932
+src/modules/MIDI/handlers/noteTransform/__tests__/humanizeNotesUndo.integration.spec.ts
+  h_beb54bf43b47b7 1-138
+src/modules/MIDI/handlers/noteTransform/handleHumanizeNotes.ts
+  h_beb54bf43b47b7 2-4,6,9-52,58-61,69,71-72
+src/modules/MIDI/useCases/midiEvent/addMidiCC.ts
+  h_beb54bf43b47b7 5-12,18-21
+src/modules/MIDI/useCases/midiEvent/addPitchBend.ts
+  h_beb54bf43b47b7 5,11-14
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  h_beb54bf43b47b7 16,131-135,142,235-249,253,269-271,285-290,294,310-312,386,410
+src/modules/TimelineEditor/models/AutomationViewTypes.ts
+  h_beb54bf43b47b7 9-10
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDrag.spec.tsx
+  h_beb54bf43b47b7 24,46,194-197,204-207,210
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationDragClickAddUndo.spec.tsx
+  h_beb54bf43b47b7 1-105
+src/modules/TimelineEditor/presentations/helpers/automationDrag.ts
+  h_beb54bf43b47b7 11,135-139,144
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  h_beb54bf43b47b7 69-71,136-138
+src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx
+  h_beb54bf43b47b7 69-71,137-139
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  h_beb54bf43b47b7 1-309
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 2751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "70b55b5c5a4a73ccf763434cf6c7f4608a547100",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
