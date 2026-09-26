@@ -184,4 +184,47 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         });
         expect(segments).toEqual([{ startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 }]);
     });
+
+    // #4684 round 3: a clip lane whose active window closes exactly at the
+    // region start compiles to several events that all sit at time zero (the
+    // seed plus one or more events from the zero-width visible span in
+    // compileAutomationEvents) — nothing in the stream ever gets past the
+    // region start. The old `events.length > 1` gate could not tell that
+    // apart from a real multi-event stream and opened a `[0, D]` hold plus
+    // shifted every segment by the compensation, which
+    // mergeAutomationSegmentStreams then reads as overlapping whatever lane
+    // opens at the region start and withholds a lane over.
+    describe('a stream whose last event sits at time zero stays entirely at frame 0', () => {
+        const identity = (beat: number): number => beat;
+
+        it('opens no hold and shifts nothing for a zero-width linear span (no hold to frame 50)', () => {
+            const segments = compileAutomationSegments([point(0, 0), point(8, 1)], 4, 60, [], 100, 4, identity, 0.5, {
+                activeWindowSeconds: { startSeconds: 0, endSeconds: 4 },
+            });
+            expect(segments.length).toBeGreaterThan(0);
+            for (const segment of segments) {
+                expect(segment.startFrame).toBe(0);
+                expect(segment.endFrame).toBe(0);
+            }
+        });
+
+        it('opens no hold and shifts nothing for a zero-width step span', () => {
+            const segments = compileAutomationSegments(
+                [point(0, 3, 'step'), point(4, 9, 'step')],
+                4,
+                60,
+                [],
+                100,
+                4,
+                identity,
+                0.5,
+                { activeWindowSeconds: { startSeconds: 0, endSeconds: 4 } }
+            );
+            expect(segments.length).toBeGreaterThan(0);
+            for (const segment of segments) {
+                expect(segment.startFrame).toBe(0);
+                expect(segment.endFrame).toBe(0);
+            }
+        });
+    });
 });

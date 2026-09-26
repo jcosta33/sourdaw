@@ -48,20 +48,25 @@ export function compileAutomationSegments(
     // `compensationDelaySec` of the render.
     //
     // A lane whose window closes exactly at the region start compiles to
-    // exactly one event sitting at time zero — nothing follows the seed.
-    // That lone zero-length terminator is what `mergeAutomationSegmentStreams`
-    // documents and relies on sitting at frame 0: shifting it (or opening a
-    // hold in front of it) has no later material to lead into, and instead
-    // turns it into a `[0, D]` span that overlaps whatever lane opens at the
-    // region start, which the merge then reads as a genuine clash and
-    // withholds a lane over (#4684). A lone seed has no window to shift into
-    // only when it sits at time zero; a lone event later in the render — no
-    // different from the tail of a multi-event stream — is shifted like
-    // every other event below.
+    // several events all sitting at time zero (the seed `set@0`, plus a
+    // `linear@0` or `set@0` from the zero-width visible span) — nothing in the
+    // stream ever gets past the region start. Events are time-ordered
+    // (`compileAutomationEvents` only ever appends at a non-decreasing
+    // `relativeStart`/`timeSeconds`), so the last event's own time answers
+    // that question for the whole stream: shifting it (or opening a hold in
+    // front of it) has no later material to lead into, and instead turns it
+    // into a `[0, D]` span that overlaps whatever lane opens at the region
+    // start, which the merge then reads as a genuine clash and withholds a
+    // lane over (#4684). A stream whose last event is later than zero — a
+    // lone event later in the render included, no different from the tail of
+    // a multi-event stream — is shifted throughout, on every segment,
+    // including its last event, and gets the opening hold when its seed is a
+    // time-zero `set`.
     const segments: OfflineAutomationSegment[] = [];
     const seed = events[0]!;
-    const hasLaterEvent = events.length > 1;
-    if (compensationDelaySec > 0 && hasLaterEvent && seed.type === 'set' && seed.timeSeconds === 0) {
+    const reachesPastStart = events.at(-1)!.timeSeconds > 0;
+    const shift = reachesPastStart ? compensationDelaySec : 0;
+    if (compensationDelaySec > 0 && reachesPastStart && seed.type === 'set' && seed.timeSeconds === 0) {
         segments.push({
             startFrame: 0,
             endFrame: toFrame(seed.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
@@ -74,19 +79,14 @@ export function compileAutomationSegments(
         const previous = events[index - 1]!;
         const event = events[index]!;
         segments.push({
-            startFrame: toFrame(previous.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
-            endFrame: toFrame(event.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
+            startFrame: toFrame(previous.timeSeconds + shift, durationSeconds, sampleRate),
+            endFrame: toFrame(event.timeSeconds + shift, durationSeconds, sampleRate),
             startValue: previous.value,
             endValue: event.type === 'linear' ? event.value : previous.value,
         });
     }
     const last = events.at(-1)!;
-    const shiftLast = hasLaterEvent || last.timeSeconds > 0;
-    const lastFrame = toFrame(
-        shiftLast ? last.timeSeconds + compensationDelaySec : last.timeSeconds,
-        durationSeconds,
-        sampleRate
-    );
+    const lastFrame = toFrame(last.timeSeconds + shift, durationSeconds, sampleRate);
     segments.push({ startFrame: lastFrame, endFrame: lastFrame, startValue: last.value, endValue: last.value });
     return segments;
 }

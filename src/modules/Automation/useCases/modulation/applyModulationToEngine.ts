@@ -25,6 +25,14 @@ type AutomatedBaseSlot = { activeLaneCount: number; value: number | null };
  * transport scheduler owns the map and hands it in; it is read-only here.
  */
 type AppliedAutomationBases = ReadonlyMap<string, ReadonlyMap<string, number>>;
+/**
+ * The compensated device-family read beat `applyAutomation` resolved for each
+ * track this tick, indexed `trackId → beat` — the transport-owned
+ * `deviceReadBeatByTrack` map, handed in read-only. Without it (existing
+ * callers, or a track with no device-family lane) `indexAutomatedBases` falls
+ * back to the raw playhead beat, its pre-#4684-round-3 behaviour.
+ */
+type DeviceReadBeatByTrack = ReadonlyMap<string, number>;
 
 const trackById = new Map<string, ModulationTrack>();
 let cachedLanesRef: readonly AutomationLane[] | undefined;
@@ -144,7 +152,7 @@ function rebuildLaneMetadata(lanes: readonly AutomationLane[], tracks: readonly 
     automatedBaseSlots.length = 0;
 }
 
-function indexAutomatedBases(currentBeat: number): void {
+function indexAutomatedBases(currentBeat: number, deviceReadBeats?: DeviceReadBeatByTrack): void {
     const autoState = automationStore.value;
     const tracks = trackStore.value?.tracks;
     if (!autoState || !tracks) {
@@ -162,14 +170,22 @@ function indexAutomatedBases(currentBeat: number): void {
         if (lane.points.length === 0) {
             continue;
         }
-        if (lane.clipId && !isClipActive(track, lane.clipId, currentBeat)) {
+        // #4684 round 3: gate and read on the same compensated clock
+        // applyAutomation used for this track's device-family lanes, not the
+        // raw playhead — otherwise a clip-owned lane whose compensated beat
+        // had not yet crossed into the clip still contributed its
+        // playhead-beat value as modulation's base, a value applyAutomation
+        // itself never wrote this tick. Falls back to currentBeat when no map
+        // is passed (existing callers) or the track has no recorded entry.
+        const readBeat = deviceReadBeats?.get(track.id) ?? currentBeat;
+        if (lane.clipId && !isClipActive(track, lane.clipId, readBeat)) {
             continue;
         }
         if (isRecordingAutomationByKey(recordingKey, track.automationMode)) {
             continue;
         }
         automationVisited.clear();
-        const value = getAutomationValueAtBeat(lane.id, currentBeat, automationVisited);
+        const value = getAutomationValueAtBeat(lane.id, readBeat, automationVisited);
         if (value !== null) {
             // Match applyAutomation array ordering: later equivalent lanes win.
             setAutomatedBase(deviceId, parameterId, value);
@@ -192,11 +208,18 @@ function indexAutomatedBases(currentBeat: number): void {
  * On a transport discontinuity (a change in the scheduler discontinuity epoch
  * passed in) the slew is snapped straight to the combined target on the first
  * tick — the modulation analog of `applyAutomation`'s slew reset.
+ *
+ * `deviceReadBeats` is the per-track compensated read beat `applyAutomation`
+ * resolved for its own device-family lanes this tick (#4684 round 3); passing
+ * it keeps `indexAutomatedBases`'s clip gate and curve read on the same clock
+ * `applyAutomation` used, instead of the raw playhead beat every other caller
+ * still gets by omitting it.
  */
 export function applyModulationToEngine(
     currentBeat: number,
     discontinuityEpoch?: number,
-    appliedAutomationBases?: AppliedAutomationBases
+    appliedAutomationBases?: AppliedAutomationBases,
+    deviceReadBeats?: DeviceReadBeatByTrack
 ): void {
     const state = modulationStore.value;
     if (!state || state.modulators.length === 0) {
@@ -224,7 +247,7 @@ export function applyModulationToEngine(
     if (discontinuityEpoch !== undefined) {
         modulationSlewEpoch.last = discontinuityEpoch;
     }
-    indexAutomatedBases(currentBeat);
+    indexAutomatedBases(currentBeat, deviceReadBeats);
 
     for (const modulator of state.modulators) {
         if (!modulator.enabled || modulator.mappings.length === 0) {

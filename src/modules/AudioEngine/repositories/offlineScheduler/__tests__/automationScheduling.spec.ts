@@ -1337,6 +1337,124 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 0, endFrame: 0, startValue: 9, endValue: 9 }]);
     });
 
+    // #4684 round 3: a multi-point clip lane whose visible window is
+    // zero-width at the region start compiles to SEVERAL events all sitting
+    // at time zero (the seed plus one or more events from the zero-width
+    // visible span in compileAutomationEvents) — the `events.length > 1` gate
+    // could not tell that apart from a real multi-event stream and opened a
+    // spurious `[0, D]` hold, inflating this stream's terminator frame past
+    // the neighboring clip's own opening frame. The merge then read that as a
+    // genuine overlap and withheld this lane entirely, losing its value.
+    it('keeps both lanes when a multi-point clip lane compiles to several zero-time events at the region start (#4684 round 3)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const regionStartClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 4 }],
+            ['clip-b', { startBeat: 4, endBeat: 8 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // clip-a's window closes exactly at the region start (beat 4),
+                // but unlike the lone-terminator case above it carries TWO
+                // points spanning past the clip end — its compiled stream is
+                // a seed `set@0` plus a `linear@0` from the zero-width
+                // visible span, not a single lone event.
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                        { beat: 8, value: 1, curve: 'linear', tension: 0 },
+                    ],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 4, value: 0.9, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            regionStartSeconds: 4,
+            compensationDelaySec: 0.5,
+            clipBoundsById: regionStartClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        const segments = scheduleParam.mock.calls[0]![0] as Array<{ endValue: number }>;
+        expect(segments.at(-1)?.endValue).toBeCloseTo(0.9);
+    });
+
+    it('keeps both lanes when the neighboring clip lane is itself a multi-point step stream (#4684 round 3)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const regionStartClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 4 }],
+            ['clip-b', { startBeat: 4, endBeat: 8 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                        { beat: 8, value: 1, curve: 'linear', tension: 0 },
+                    ],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 4, value: 9, curve: 'step', tension: 0 },
+                        { beat: 6, value: 5, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            regionStartSeconds: 4,
+            compensationDelaySec: 0.5,
+            clipBoundsById: regionStartClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+    });
+
     it('shifts a lone clip lane mid-render by the compensation, landing its handover on the same frame as a neighboring clip would (#4684)', () => {
         const scheduleParam = vi.fn();
         const onWithheldDeviceLanes = vi.fn();

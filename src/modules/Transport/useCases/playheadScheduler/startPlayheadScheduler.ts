@@ -31,6 +31,7 @@ import { evaluateFollowActions } from '../evaluateFollowActions';
 import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
+import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
@@ -621,7 +622,15 @@ export function startPlayheadScheduler(): void {
         // Hand modulation the values applyAutomation just applied, so a
         // param both automated and modulated combines onto the value the engine
         // actually holds rather than a separately recomputed raw curve value.
-        applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch, appliedAutomationBases);
+        // deviceReadBeatByTrack keeps indexAutomatedBases's clip gate and curve
+        // read on the same compensated clock applyAutomation used for its own
+        // device-family lanes this tick (#4684 round 3).
+        applyModulationToEngine(
+            newPosition,
+            schedulerSession.discontinuityEpoch,
+            appliedAutomationBases,
+            deviceReadBeatByTrack
+        );
         scheduleAdjustmentLayers(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;

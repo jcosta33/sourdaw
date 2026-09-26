@@ -20,6 +20,7 @@ import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 import { tempoMapStore } from '../../../../stores/tempoMapStore';
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
+import { deviceReadBeatByTrack } from '../deviceReadBeatByTrack';
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -627,6 +628,59 @@ describe('applyAutomation', () => {
             schedulerSession.discontinuityEpoch = 402;
             applyAutomation(4.75);
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
+        });
+
+        it('records the compensated device-family read beat in deviceReadBeatByTrack, with no entry for a gain-only track', () => {
+            // #4684 round 3: this is the hand-off applyModulationToEngine reads
+            // so its own clip gate and curve read agree with this pass's clock.
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                        sends: [],
+                    },
+                    {
+                        id: 'track-2',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [],
+                        sends: [],
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        parameterId: 'builtin-eq:eq-low-gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                    {
+                        id: 'lane-gain-2',
+                        trackId: 'track-2',
+                        parameterId: 'gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+            // 4.25 beats @ 120 BPM = 2.125s, minus 0.25s compensation = 1.875s
+            // -> 3.75 beat (same conversion as the case above).
+            applyAutomation(4.25);
+
+            expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(3.75);
+            expect(deviceReadBeatByTrack.has('track-2')).toBe(false);
         });
     });
 
