@@ -1,0 +1,14 @@
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  h_beb54bf43b47b7 13-16,25-26,50-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eed574f00a33b50913bbdd3a333a124158d94008",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
