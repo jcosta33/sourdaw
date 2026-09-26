@@ -526,23 +526,22 @@ describe('track-state guarded undo integration', () => {
 
             await undo();
             expect(track('track-1')?.clips).toEqual([activeClip]);
-            expect(track('track-1')?.alternatives?.map((alternative) => alternative.id)).toEqual(['alt-1', 'alt-a']);
+            expect(track('track-1')?.alternatives.map((alternative) => alternative.id)).toEqual(['alt-1', 'alt-a']);
             // The decisive assertion: the hidden clip's take comes back with it — a
             // capture intersecting retiring ids with the active collection alone
             // retires take-a in the forward and never restores it here.
-            const restoredClipIds = (takeLaneStore.value?.lanes ?? [])
-                .flatMap((candidate) => candidate.takes)
-                .map((take) => take.clipId)
-                .sort();
+            const restoredLanes = takeLaneStore.value?.lanes ?? [];
+            const restoredTakes = restoredLanes.flatMap((candidate) => candidate.takes);
+            const restoredClipIds = restoredTakes.map((take) => take.clipId).sort();
             expect(restoredClipIds).toEqual(['clip-a', 'clip-b']);
 
             await redo();
             expect(track('track-1')?.clips.map((clip) => clip.id)).not.toContain('clip-b');
             // Redo re-retires what the forward retired — the hidden clip's take
             // included — rather than stranding it on a clip no track holds.
-            expect(
-                (takeLaneStore.value?.lanes ?? []).flatMap((candidate) => candidate.takes).map((take) => take.id)
-            ).toEqual([]);
+            const lanesAfterRedo = takeLaneStore.value?.lanes ?? [];
+            const takesAfterRedo = lanesAfterRedo.flatMap((candidate) => candidate.takes);
+            expect(takesAfterRedo).toEqual([]);
         });
     });
 
