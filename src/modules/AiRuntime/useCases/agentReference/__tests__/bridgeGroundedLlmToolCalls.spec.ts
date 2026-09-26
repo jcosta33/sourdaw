@@ -7596,6 +7596,94 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(vague.rejections[0]?.reason).toContain('parameterId');
     });
 
+    describe('device parameter lane targets', () => {
+        function createDistortion(id: string, name: string): ProjectTrack['devices'][number] {
+            return {
+                id,
+                name,
+                type: 'distortion',
+                bypassed: false,
+                parameters: [
+                    {
+                        id: 'dist-drive',
+                        name: 'Drive',
+                        type: 'float',
+                        value: 20,
+                        minValue: 0,
+                        maxValue: 100,
+                        unit: '%',
+                    },
+                ],
+            };
+        }
+
+        function bridgeDriveLane(parameterId: string, prompt: string, devices: ProjectTrack['devices']) {
+            return bridge(
+                [{ name: 'addAutomationLane', arguments: { trackId: 'track-vocals', parameterId } }],
+                prompt,
+                {
+                    ...projectContext,
+                    automationLanes: [],
+                    tracks: [createTrack({ id: 'track-vocals', name: 'Vocals', devices }), guitar, master],
+                }
+            );
+        }
+
+        it('grounds neither of two same-named devices that carry the requested parameter', () => {
+            const devices = [createDistortion('device-a', 'Distortion'), createDistortion('device-b', 'Distortion')];
+            const prompt = 'Add automation lane for Distortion Drive on Vocals';
+
+            for (const parameterId of ['device-a:dist-drive', 'device-b:dist-drive']) {
+                const result = bridgeDriveLane(parameterId, prompt, devices);
+
+                expect(result.actions).toEqual([]);
+                expect(result.rejections[0]?.reason).toContain('parameterId');
+            }
+        });
+
+        it('grounds only the device a distinct name identifies when two devices share a type', () => {
+            const devices = [createDistortion('device-a', 'Crunch'), createDistortion('device-b', 'Fuzz')];
+            const prompt = 'Add automation lane for Crunch distortion Drive on Vocals';
+
+            const named = bridgeDriveLane('device-a:dist-drive', prompt, devices);
+            const unnamed = bridgeDriveLane('device-b:dist-drive', prompt, devices);
+
+            expect(named.rejections).toEqual([]);
+            expect(named.actions).toEqual([
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'track-vocals',
+                        parameterId: 'device-a:dist-drive',
+                        parameterName: 'Crunch → Drive',
+                    },
+                },
+            ]);
+            expect(unnamed.actions).toEqual([]);
+            expect(unnamed.rejections[0]?.reason).toContain('parameterId');
+        });
+
+        it('grounds the only device on the track that carries the requested parameter', () => {
+            const result = bridgeDriveLane(
+                'device-a:dist-drive',
+                'Add automation lane for Distortion Drive on Vocals',
+                [createDistortion('device-a', 'Distortion')]
+            );
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'track-vocals',
+                        parameterId: 'device-a:dist-drive',
+                        parameterName: 'Distortion → Drive',
+                    },
+                },
+            ]);
+        });
+    });
+
     it('grounds automation lane edits by parameter name and owner track', () => {
         const point = bridge(
             [

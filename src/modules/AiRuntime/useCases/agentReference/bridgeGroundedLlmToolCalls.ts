@@ -2964,11 +2964,26 @@ function validateTimeSignatureValue(
     return null;
 }
 
+/** The references that name this device and none of the other devices carrying the same parameter. */
+function getDistinctDeviceTokens(
+    device: DeviceParameterDirectionDevice,
+    carriers: readonly DeviceParameterDirectionDevice[]
+): string[] {
+    const sharedTokens = new Set(
+        carriers
+            .filter((carrier) => carrier.id !== device.id)
+            .flatMap((carrier) => getNormalizedTokens([carrier.id, carrier.type, carrier.name ?? '']))
+    );
+    return getNormalizedTokens([device.id, device.type, device.name ?? '']).filter((token) => !sharedTokens.has(token));
+}
+
 /**
- * A device parameter is grounded as an automation target only when the request names both the
- * device on the grounded track and the parameter, because a parameter name alone ("Drive", "Mix")
- * recurs across the devices of one chain. Both are project references the masked scope hides, so
- * they are read from the scope's own text.
+ * A device parameter is grounded as an automation target only when the request names the parameter
+ * and identifies exactly one device on the grounded track that carries it, because a parameter name
+ * alone ("Drive", "Mix") recurs across the devices of one chain. A device is identified only by a
+ * reference no other carrier shares: two Distortions on one track are told apart by their own names
+ * or ids, never by the type they share. Both are project references the masked scope hides, so they
+ * are read from the scope's own text.
  */
 function namesDeviceAutomationTarget(
     assertedValue: string,
@@ -2980,17 +2995,20 @@ function namesDeviceAutomationTarget(
     if (separatorIndex <= 0) {
         return false;
     }
-    const device = context.tracks
-        .find((track) => track.id === trackId)
-        ?.devices.find((candidate) => candidate.id === assertedValue.slice(0, separatorIndex));
-    const parameter = device?.parameters?.find((candidate) => candidate.id === assertedValue.slice(separatorIndex + 1));
-    if (!device || !parameter) {
+    const parameterId = assertedValue.slice(separatorIndex + 1);
+    const carriers =
+        context.tracks
+            .find((track) => track.id === trackId)
+            ?.devices.filter((device) => device.parameters?.some((parameter) => parameter.id === parameterId)) ?? [];
+    const device = carriers.find((carrier) => carrier.id === assertedValue.slice(0, separatorIndex));
+    const parameter = device?.parameters?.find((candidate) => candidate.id === parameterId);
+    if (!device || !parameter || !clauseNamesToken(actionScope, getNormalizedTokens([parameter.id, parameter.name]))) {
         return false;
     }
-    return (
-        clauseNamesToken(actionScope, getNormalizedTokens([device.id, device.type, device.name ?? ''])) &&
-        clauseNamesToken(actionScope, getNormalizedTokens([parameter.id, parameter.name]))
+    const identified = carriers.filter((carrier) =>
+        clauseNamesToken(actionScope, getDistinctDeviceTokens(carrier, carriers))
     );
+    return identified.length === 1 && identified[0] === device;
 }
 
 function validateStringLiteralValue(
