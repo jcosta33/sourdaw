@@ -61,11 +61,13 @@ const LEADING_QUOTED_SPAN = /^(`[^`]*`|'[^']*'|"[^"]*")/;
 const QUOTED_SPAN = /(`[^`]*`|'[^']*'|"[^"]*")/g;
 
 /**
- * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. Deliberately
- * not balance-aware: nested parentheses leave the unmatched remainder in the prose, and whatever
- * survives can only fail a segment open, never shut.
+ * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. A match
+ * never spans another open parenthesis, so an unclosed `(` costs one scan to the next `(` rather
+ * than one to the end of the value, keeping the scan linear. Deliberately not balance-aware: in a
+ * nested group the innermost pair matches first, the outer remainder stays in the prose, and
+ * whatever survives can only fail a segment open, never shut.
  */
-const PARENTHETICAL = /\([^)]*\)/g;
+const PARENTHETICAL = /\([^()]*\)/g;
 
 /**
  * Edge punctuation a first token may trail or lead with (`vitest:`, `pnpm,`). Parentheses ride
@@ -645,8 +647,13 @@ function mentionsCommandHead(segment: string): boolean {
 
 /** The segment's lower-cased tokens with quoted spans unwrapped and edge punctuation stripped. */
 function unwrappedTokens(segment: string): string[] {
+    return spelledTokens(segment).map((token) => token.toLowerCase());
+}
+
+/** The segment's tokens in their written letter case, quoted spans unwrapped and edge punctuation stripped. */
+function spelledTokens(segment: string): string[] {
     const unwrapped = segment.replace(QUOTED_SPAN, (span) => ` ${span.slice(1, -1)} `);
-    return unwrapped.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+    return unwrapped.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, ''));
 }
 
 /**
@@ -726,11 +733,11 @@ function splitOutsideQuotedSpans(line: string): string[] {
  * them. A segment naming any of them is describing coverage — "the census spec fails if …",
  * "run the focused publisher specs" — whatever prose surrounds it. `specs?` also covers every
  * `x.spec.ts` filename, because the dots around it are word boundaries. A bare `test` stays out:
- * a test tone or a test take is something a reviewer plays or records, so only a qualified suite
- * (`unit suite`, `integration tests`, `the existing tests`) names coverage.
+ * a test tone or a test take is something a reviewer plays or records, so only the plural (`Covered
+ * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage.
  */
 const TEST_SUITE_WORDS =
-    /\b(?:specs?|e2e|test suites?|(?:unit|integration|end-to-end|existing)[- ](?:tests?|suites?))\b|__tests__\//i;
+    /\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end|existing)[- ](?:tests?|suites?))\b|__tests__\//i;
 
 /**
  * The repository's test runners, named as proper nouns. Matched case-sensitively: prose capitalizes a runner's
@@ -746,17 +753,71 @@ function namesTestSuite(segment: string): boolean {
     return TEST_SUITE_WORDS.test(segment) || TEST_RUNNER_NAMES.test(segment) || CI_WORD.test(segment);
 }
 
+/** Script families every member of which runs a check: `test:run`, `typecheck:scripts`, `lint:fix`, `cargo:test`. */
+const CHECK_SCRIPT_FAMILIES = new Set(['test', 'typecheck', 'lint', 'cargo']);
+
+/** Check scripts and tools that run nothing but a check: a reviewer never launches one to use the app. */
+const CHECK_COMMANDS = new Set([
+    'deps:validate',
+    'wasm:verify',
+    'typecheck',
+    'lint',
+    'tsc',
+    'eslint',
+    'prettier',
+    'oxlint',
+    'biome',
+    'knip',
+    'jest',
+    'pytest',
+    'vitest',
+]);
+
+/**
+ * Heads whose `test` subcommand runs a suite (`pnpm test`, `cargo test`, `go test`). Playwright rides
+ * here rather than among the check-only commands: `playwright open` is a browser a reviewer drives,
+ * and only `playwright test` runs the suite.
+ */
+const TEST_SUBCOMMAND_HEADS = new Set(['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright']);
+
+/**
+ * Whether the segment mentions a check command, whatever prose rides beside it: a check-family
+ * colon script, a check-only script or tool, or a head running its `test` subcommand. The command
+ * rule lets a cue word or a UI noun rescue a launch, which is right for `pnpm dev` and wrong for a
+ * check run — no step a reviewer performs needs one. Matched in the written lower-case spelling
+ * only, so a capitalized English word opening a sentence (`Go test the limiter`, `Prettier
+ * waveforms`) stays prose; bare `test`, `format`, and launch scripts (`desktop:dev`) never match.
+ */
+function mentionsCheckCommand(segment: string): boolean {
+    const tokens = spelledTokens(segment);
+    return tokens.some(
+        (token, index) =>
+            CHECK_COMMANDS.has(token) ||
+            isCheckFamilyScript(token) ||
+            (TEST_SUBCOMMAND_HEADS.has(token) && tokens[index + 1] === 'test')
+    );
+}
+
+/** Whether a token is a colon script of a check family: `test:e2e`, `typecheck:scripts`, `cargo:fmt`. */
+function isCheckFamilyScript(token: string): boolean {
+    const colon = token.indexOf(':');
+    return colon > 0 && CHECK_SCRIPT_FAMILIES.has(token.slice(0, colon));
+}
+
 /**
  * Whether any segment of `text` narrates a check: it reads as a command invocation once its command
  * material drops out (heads, their argument runs, paths, flags, quoted spans, cue-free
- * parentheticals, leaving no observation cue and no word outside the annotation vocabulary), or it
- * names the test suite. "Run `pnpm dev` and confirm the transport play button toggles" teaches a
- * step and passes; "pnpm wasm:verify" keeps its verify stem inside the dropped command token and
- * refuses. One narrating segment refuses the whole value: a prose sentence beside a command list
- * does not turn the list into a step, it only hides the list from a looser reading.
+ * parentheticals, leaving no observation cue and no word outside the annotation vocabulary), it
+ * names the test suite, or it mentions a check command at all. "Run `pnpm dev` and confirm the
+ * transport play button toggles" teaches a step and passes; "pnpm wasm:verify" keeps its verify
+ * stem inside the dropped command token and refuses. One narrating segment refuses the whole value:
+ * a prose sentence beside a command list does not turn the list into a step, it only hides the list
+ * from a looser reading.
  */
 export function testInstructionsNarrateChecks(text: string): boolean {
-    return testInstructionSegments(text).some((segment) => isCommandNarration(segment) || namesTestSuite(segment));
+    return testInstructionSegments(text).some(
+        (segment) => isCommandNarration(segment) || namesTestSuite(segment) || mentionsCheckCommand(segment)
+    );
 }
 
 /**

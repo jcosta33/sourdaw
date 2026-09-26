@@ -1323,6 +1323,9 @@ describe('product-scope test instructions', () => {
         // so only the runner-name vocabulary refuses these two.
         ['a test-runner mention', 'Vitest covers the transport scheduler.'],
         ['a browser-runner mention', 'Covered by Playwright.'],
+        // The bare plural names coverage where a bare singular names audio: only `tests` refuses.
+        ['a bare plural tests mention', 'Covered by tests.'],
+        ['a passing-tests claim', 'All tests pass.'],
     ])('refuses %s even with no command token', (_label, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
@@ -1338,10 +1341,60 @@ describe('product-scope test instructions', () => {
         // A bare 'test' qualifies nothing: a test tone or a test take is audio the reviewer
         // plays or records.
         ['a test-tone step', 'Play the test tone and confirm the meter reads -18 dBFS.'],
+        ['a test-tone peak step', 'Play the test tone and confirm the meter peaks at -6 dB.'],
         ['a test-take step', 'Record a test take and confirm it lands on the take lane.'],
     ])('passes %s that only brushes the test-suite vocabulary', (_label, step) => {
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        [
+            'a coverage note beside an app step',
+            'Open the mixer and confirm the send knob reads -12 dB. Automated coverage: pnpm test:run src/modules/PunchRecording.',
+        ],
+        ['a developer aside naming a focused run', 'Developers can run pnpm test:run src/modules/Mixer.'],
+        ['a verification claim naming two checks', 'Verified with pnpm typecheck and pnpm lint on the changed files.'],
+        ['a lint claim', 'Checked with pnpm lint.'],
+        ['a labelled cargo check', 'Focused checks: pnpm cargo:test --package daw-engine capture.'],
+        [
+            'a typecheck ahead of an app step',
+            'Run pnpm typecheck, then open the mixer and confirm the send knob reads -12 dB.',
+        ],
+        [
+            'a typecheck parenthetical inside an app step',
+            'Open the mixer and confirm the hint shows (pnpm typecheck clean).',
+        ],
+        ['a labelled check list', 'Checks: pnpm lint, pnpm typecheck.'],
+        ['a ticked checklist of checks', '- [x] pnpm lint\n- [x] pnpm typecheck'],
+        ['a cargo test clause behind an app step', 'Open the mixer; cargo test passes.'],
+    ])('refuses %s: a check-run mention narrates whatever prose rides beside it', (_label, instructions) => {
+        // Cue words and UI nouns rescue a launch through the command rule, so these refuse only
+        // through the check-command mention: no step a reviewer performs needs a check run.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toBe(REFUSAL);
+    });
+
+    it.each([
+        ['a dev launch folded into the step', 'Run pnpm dev, open the mixer, and confirm the send knob reads -12 dB.'],
+        ['a parenthesized desktop launch', 'Launch the desktop app (pnpm desktop:dev) and open the mixer.'],
+        ['a format verb naming its object', 'Format the clip name and confirm it reads Take 2.'],
+    ])('passes %s: launches, bare format, and bare test are not check runs', (_label, step) => {
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('scans an unclosed-parenthesis flood in linear time and keeps flat parenthetical verdicts', () => {
+        // A parenthetical match that could span another '(' rescans to the end of the value from
+        // every unclosed one — quadratic, tens of seconds on this input.
+        expect(testInstructionsNarrateChecks('(a '.repeat(200_000))).toBe(false);
+        expect(testInstructionsNarrateChecks('`pnpm test:run everything` (140 passed)')).toBe(true);
+        expect(
+            testInstructionsNarrateChecks('Press the loop shortcut (Cmd+L) and confirm the loop brace appears.')
+        ).toBe(false);
+        expect(testInstructionsNarrateChecks('Launch the desktop app (pnpm desktop:dev) and open the mixer.')).toBe(
+            false
+        );
     });
 
     it.each([
@@ -1404,6 +1457,9 @@ describe('product-scope test instructions', () => {
         ['a capitalized launch carrying a flag', 'Cargo test --package daw-engine'],
         ['a lower-case find sweep', 'find . -name x'],
         ['a lower-case go test run', 'go test ./...'],
+        // A flag beside a verb head is command-shaped evidence: the trailing non-vocabulary word
+        // is the command's argument, never a UI noun that rescues a step.
+        ['a verb head carrying a flag and a bare argument', 'sort -r results'],
         // The verb head still drops from the prose, so with nothing but annotation behind it the
         // head mention keeps the segment narrating.
         ['a capitalized head followed only by annotation', 'Make test'],
