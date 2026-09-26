@@ -1,0 +1,38 @@
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_2bfd55a4393d7c::t_395422ca38e215 393
+  s_2bfd55a4393d7c::t_5a194202766c6e 93-99,101-106,113-117,130-164
+  s_2bfd55a4393d7c::t_943541e9cd192e 268-274,276-278,285-290,293-298,305-313
+  s_1c08b47ac3792f::t_e8a577c196a2d4 165
+src/modules/Levain/useCases/__tests__/loadSamplesForInstrumentCommitOrder.spec.ts
+  s_2bfd55a4393d7c::t_7f685bbf05f88d 213,219
+  s_2bfd55a4393d7c::t_9d4889e4910150 314-359
+  s_2bfd55a4393d7c::t_014d31792e7e30 21
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_2bfd55a4393d7c::t_c93c6e8e836de3 437-463
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_1fcb597eb77635 660-814
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7a79871fb170faa7071b3f6f69a48fac00f75a33",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
