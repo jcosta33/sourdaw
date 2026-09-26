@@ -14346,6 +14346,33 @@ mod tests {
         );
     }
 
+    /// The live door's own mirror of the construction-time refusal
+    /// (`a_bacteria_device_naming_a_mod_assignment_amount_past_f32_range_at_construction_refuses`
+    /// above): `1e39` decodes cleanly into `ModAssignmentPayload::amount`'s
+    /// `f64` intermediate and only becomes `f32::INFINITY` once serde narrows
+    /// the field, so an edit landing on a device already mapped must refuse
+    /// it exactly as construction does, rather than forwarding an infinite
+    /// amount into `GraphCommand::AddModAssignment`.
+    #[test]
+    fn set_device_mod_assignments_with_an_amount_past_f32_range_refuses() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": [{ "sourceId": 0, "targetParam": 1, "amount": 1e39 }] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a mod-assignment amount past f32 range on the live door must refuse");
+
+        assert!(
+            refusal.contains("finite"),
+            "the refusal must name the reason, got: {refusal}"
+        );
+    }
+
     /// A 65th identical modulation-assignment row accepted would change the
     /// engine's accumulated offset for the target every one of these rows
     /// shares (`param_offsets[target] += source * amount`,
