@@ -1,0 +1,42 @@
+src/modules/ControlSurface/AGENTS.md
+  h_beb54bf43b47b7 12
+src/modules/DawInterchange/useCases/__tests__/dawProjectContentOffsetAndRampRoundTrip.spec.ts
+  h_beb54bf43b47b7 12-15,26-34,43-62,95-120,154-195
+src/modules/DawInterchange/useCases/__tests__/mapToProjectDataMasterGainScale.spec.ts
+  h_beb54bf43b47b7 21-23
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 261,269-270,272
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 215-222,224,226-229,232,235,237,241-244
+src/modules/DawInterchange/useCases/serializeProjectXml.ts
+  h_beb54bf43b47b7 210-213,215
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  h_beb54bf43b47b7 81-83
+src/modules/MIDI/stores/midiStore.ts
+  h_beb54bf43b47b7 27-30,44,48,261-264,277-278,301-304,322-328
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/migrateAbsoluteMidiNotesReload.spec.ts
+  h_beb54bf43b47b7 14,19,25-26,39-43,100-125
+src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts
+  h_beb54bf43b47b7 10-14,16-23,32-34,65-73,77,79-84,97-103,105,107
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 281-287
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  h_beb54bf43b47b7 63
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  h_beb54bf43b47b7 89-92
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidi.ts
+  h_beb54bf43b47b7 46-49
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 532
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6d5fda7b976b1c905564de825d4dc7f2441878eb",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
