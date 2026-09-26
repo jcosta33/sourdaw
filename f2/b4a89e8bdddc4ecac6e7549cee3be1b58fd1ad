@@ -1,0 +1,37 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_2bfd55a4393d7c::t_96e4c07a0e2b89 265,267-276
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_2bfd55a4393d7c::t_d2af5b8d7b729b 1339-1446
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  s_2bfd55a4393d7c::t_0bd6203c09d4fe 172-194
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_2bfd55a4393d7c::t_02b930861ee033 211-213
+  s_2bfd55a4393d7c::t_5c3b060622f01d 478,491-495,497-500,502-519,523-558
+  s_ef536aab624565::t_b9e40cd1d5e7ac 559
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_2bfd55a4393d7c::t_dd96571829bfa7 51-60,84,86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f2b4a89e8bdddc4ecac6e7549cee3be1b58fd1ad",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
