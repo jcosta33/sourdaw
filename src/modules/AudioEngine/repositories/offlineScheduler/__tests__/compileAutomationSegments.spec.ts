@@ -158,4 +158,15 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         expect(stepped?.startFrame).toBe(maxFrame);
         expect(stepped?.endFrame).toBe(maxFrame);
     });
+
+    it('shifts both ends of a genuine linear ramp segment by the compensation delay (#4684)', () => {
+        // 60 BPM: beat 1 = 1s, beat 2 = 2s. Two linear points make a true ramp,
+        // exercising the middle-loop shift (this file's other
+        // compensationDelaySec cases only shift a step's opening hold/terminator).
+        const segments = compileAutomationSegments([point(1, 0), point(2, 1)], 4, 60, [], SR, 0, undefined, 0.01);
+        const ramp = segments.find((segment) => segment.startValue === 0 && segment.endValue === 1);
+        // 1s + 0.01s = 1.01s * 48000 = 48480; 2s + 0.01s = 2.01s * 48000 = 96480.
+        expect(ramp?.startFrame).toBe(48_480);
+        expect(ramp?.endFrame).toBe(96_480);
+    });
 });

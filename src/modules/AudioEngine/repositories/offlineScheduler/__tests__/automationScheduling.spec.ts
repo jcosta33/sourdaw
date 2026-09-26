@@ -1276,6 +1276,59 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
             laneIds: ['lane-track'],
         });
     });
+
+    it('keeps a clip lane whose window closes exactly at the region start from colliding with the lane opening there under compensation (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const regionStartClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 4 }],
+            ['clip-b', { startBeat: 4, endBeat: 8 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // clip-a's window closes exactly at the region start (beat 4):
+                // its compiled stream is the lone zero-length terminator
+                // `compileAutomationSegments`/`mergeAutomationSegmentStreams`
+                // document — before the fix, `compensationDelaySec > 0` turned
+                // it into a `[0, D]` hold that collides with clip-b opening at
+                // the same frame, and the merge withheld one of the two lanes.
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 4, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            regionStartSeconds: 4,
+            compensationDelaySec: 0.01,
+            clipBoundsById: regionStartClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+    });
 });
 
 describe('scheduleTrackAutomation — stepped device parameters offline', () => {

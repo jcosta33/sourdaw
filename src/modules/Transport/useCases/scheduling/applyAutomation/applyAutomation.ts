@@ -262,8 +262,20 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // Before the arrangement start reads the start value — the same
             // held-value boundary `getAutomationValueAtBeat` and the offline
             // compiler (`compileAutomationEvents`) both hold at their own
-            // edges.
-            beat = Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1));
+            // edges. Bounded below by the scheduler's own jump anchor
+            // (#4684): after a transport discontinuity — scheduler start,
+            // loop wrap, follow-action jump — old sources are stopped and new
+            // audio reaches the devices only after the compensation delay, so
+            // a read behind the landing beat would read material that never
+            // played. Bounded above by `currentBeat`: this clock only ever
+            // looks backward from the playhead.
+            beat = Math.min(
+                currentBeat,
+                Math.max(
+                    schedulerSession.discontinuityAnchorBeat,
+                    samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1)
+                )
+            );
         }
         compensatedBeatByTrack.set(trackId, beat);
         return beat;

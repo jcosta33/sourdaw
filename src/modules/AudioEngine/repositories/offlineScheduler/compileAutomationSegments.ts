@@ -46,9 +46,19 @@ export function compileAutomationSegments(
     // `automationScheduling.ts` (`scheduleCurveWritePoints`) apply to theirs —
     // so the device does not sit on its stale base value for the first
     // `compensationDelaySec` of the render.
+    //
+    // A lane whose window closes exactly at the region start compiles to
+    // exactly one event — nothing follows the seed. That is the lone
+    // zero-length terminator `mergeAutomationSegmentStreams` documents and
+    // relies on sitting at frame 0: shifting it (or opening a hold in front
+    // of it) has no later material to lead into, and instead turns it into a
+    // `[0, D]` span that overlaps whatever lane opens at the region start,
+    // which the merge then reads as a genuine clash and withholds a lane over
+    // (#4684). Only shift when a later event follows the seed.
     const segments: OfflineAutomationSegment[] = [];
     const seed = events[0]!;
-    if (compensationDelaySec > 0 && seed.type === 'set' && seed.timeSeconds === 0) {
+    const hasLaterEvent = events.length > 1;
+    if (compensationDelaySec > 0 && hasLaterEvent && seed.type === 'set' && seed.timeSeconds === 0) {
         segments.push({
             startFrame: 0,
             endFrame: toFrame(seed.timeSeconds + compensationDelaySec, durationSeconds, sampleRate),
@@ -68,7 +78,11 @@ export function compileAutomationSegments(
         });
     }
     const last = events.at(-1)!;
-    const lastFrame = toFrame(last.timeSeconds + compensationDelaySec, durationSeconds, sampleRate);
+    const lastFrame = toFrame(
+        hasLaterEvent ? last.timeSeconds + compensationDelaySec : last.timeSeconds,
+        durationSeconds,
+        sampleRate
+    );
     segments.push({ startFrame: lastFrame, endFrame: lastFrame, startValue: last.value, endValue: last.value });
     return segments;
 }
