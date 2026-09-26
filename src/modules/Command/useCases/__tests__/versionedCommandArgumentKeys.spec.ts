@@ -10,8 +10,10 @@ import {
 import { validateVersionedCommandArguments } from '../versionedCommandArgumentKeys';
 
 // The fixtures mirror the producer shapes `prepareClipSplit` writes — the undo's
-// `replacement` carries `rightClip: null` — and the Arrangement handler specs'
-// snapshots, which the restore handler consumes.
+// `replacement` carries `rightClip: null`, the right clip always carries the
+// offset fields, and every snapshot carries both satellite entries and the
+// automation-lane array — because a decode guard that omits what the producer
+// always writes pins a shape reality never produces.
 function makeClipSnapshot(id: string): ClipStateSnapshot {
     return {
         id,
@@ -20,6 +22,8 @@ function makeClipSnapshot(id: string): ClipStateSnapshot {
         startBeat: 0,
         endBeat: 4,
         type: 'audio',
+        audioOffsetBeats: 0,
+        midiOffsetBeats: 0,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1,
@@ -43,6 +47,11 @@ function makeSnapshot(overrides: Partial<ClipSplitActionSnapshot> = {}): ClipSpl
         rightClipIndex: 1,
         sourceMidi: emptyMidi,
         rightMidi: emptyMidi,
+        clipSatellites: [
+            { clipId: 'c1', gainEnvelope: null, warpState: null },
+            { clipId: 'c2', gainEnvelope: null, warpState: null },
+        ],
+        clipAutomationLanes: [],
         ...overrides,
     };
 }
