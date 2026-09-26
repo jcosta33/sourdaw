@@ -16,10 +16,11 @@ import {
     CHECK_STATUSES,
     FILLER_WORDS,
     OBSERVATION_CUE_STEMS,
-    PIPELINE_VERDICT_VERBS,
+    GATE_CHECK_STATUSES,
     REMAINDER_VOCABULARY,
     STATUS_ADVERBS,
     STATUS_LINKING_VERBS,
+    SUITE_OR_PIPELINE_VERDICT_VERBS,
     TEST_MODIFIED_NOUNS,
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
@@ -645,18 +646,24 @@ function isInWordApostrophe(characters: readonly string[], index: number): boole
  * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage. `existing`
  * names coverage on the plural, the suite, and a singular `test` that modifies none of the DAW
  * nouns in `TEST_MODIFIED_NOUNS`: `the existing test covers this` is coverage, while `an existing
- * test project` is something a reviewer opens.
+ * test project` is something a reviewer opens. A test fixture is always coverage, whatever it
+ * holds (`the existing test project fixture covers this`).
  */
 const TEST_SUITE_WORDS = new RegExp(
-    `\\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
+    `\\b(?:specs?|e2e|fixtures?|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
     'i'
 );
 
 /**
- * A check verdict, as a pattern fragment: a linking verb, an optional adverb, and a status (`is
- * green`, `is still clean`, `turned red`).
+ * A check verdict over the given statuses, as a pattern fragment: a linking verb, an optional
+ * adverb, and a status (`is green`, `is still clean`, `turned red`).
  */
-const CHECK_VERDICT_SOURCE = `(?:${STATUS_LINKING_VERBS.join('|')})\\s+(?:(?:${STATUS_ADVERBS.join('|')})\\s+)?(?:${CHECK_STATUSES.join('|')})\\b`;
+function checkVerdictSource(statuses: readonly string[]): string {
+    return `(?:${STATUS_LINKING_VERBS.join('|')})\\s+(?:(?:${STATUS_ADVERBS.join('|')})\\s+)?(?:${statuses.join('|')})\\b`;
+}
+
+/** A check verdict over every check status, as a pattern fragment. */
+const CHECK_VERDICT_SOURCE = checkVerdictSource(CHECK_STATUSES);
 
 /** A status phrase behind a check's name, as a pattern fragment: ` is green`, ` was already red`. */
 const STATUS_PHRASE = `\\s+${CHECK_VERDICT_SOURCE}`;
@@ -674,20 +681,22 @@ const EMPHASIS_AND_BACKTICKS = /[*_~`]/g;
 /**
  * The repository's own check names, matched case-sensitively as the proper nouns they are.
  * `HeavyGate` names nothing else, so it matches bare. `Gate` is also the DAW's noise-gate device
- * (`Add a Gate to track 1`, `Gate passes signal below the threshold`), so it names the check only
- * with a status phrase (`Gate is green`) or a check noun (`the Gate check passed`) behind it.
+ * (`Add a Gate to track 1`, `confirm the Gate is passing signal`, `the Gate runs before the
+ * compressor`), so it names the check only with a status phrase over `GATE_CHECK_STATUSES` (`Gate
+ * is green`, `Gate is still green`) or a noun from `CHECK_RUN_NOUNS` (`the Gate check passed`)
+ * directly behind it.
  */
 const REPOSITORY_CHECK_NAMES = new RegExp(
-    `\\bHeavyGate\\b|\\bGate(?:${STATUS_PHRASE}|\\s+(?:${CHECK_RUN_NOUNS.join('|')})s?\\b)`
+    `\\bHeavyGate\\b|\\bGate(?:\\s+${checkVerdictSource(GATE_CHECK_STATUSES)}|\\s+(?:${CHECK_RUN_NOUNS.join('|')})\\b)`
 );
 
 /**
- * A suite or the pipeline reported with its status (`The suite is green`) or a pipeline verdict
- * (`pipeline validates the current head`), in any letter case. A bare `suite` stays out: a plugin
- * suite is something a reviewer loads.
+ * A suite or the pipeline reported with its status (`The suite is green`) or a verdict verb (`The
+ * suite passed`, `pipeline validates the current head`), in any letter case. A bare `suite` stays
+ * out: a plugin suite is something a reviewer loads.
  */
 const SUITE_OR_PIPELINE_STATUS = new RegExp(
-    `\\b(?:suites?|pipeline)${STATUS_PHRASE}|\\bpipeline\\s+(?:${PIPELINE_VERDICT_VERBS.join('|')})\\b`,
+    `\\b(?:suites?|pipeline)(?:${STATUS_PHRASE}|\\s+(?:${SUITE_OR_PIPELINE_VERDICT_VERBS.join('|')})\\b)`,
     'i'
 );
 

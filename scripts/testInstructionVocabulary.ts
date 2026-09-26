@@ -421,8 +421,20 @@ export const STATUS_ADVERBS = ['still', 'now', 'already', 'again'];
 /** The statuses a check is reported with. */
 export const CHECK_STATUSES = ['green', 'red', 'clean', 'passing', 'failing'];
 
-/** The nouns that make `Gate` the repository's check rather than the DAW device: `the Gate check`. */
-export const CHECK_RUN_NOUNS = ['check', 'job', 'run', 'workflow'];
+/**
+ * The statuses that make `Gate` the repository's check rather than the DAW's noise-gate device. The
+ * device itself is passing signal, failing to close, clean of chatter, or red on its meter, so
+ * only `green` is left to the check. Exported so the specs can pin the inventory: adding a device
+ * status reddens the equality pin and the device sentences that use it.
+ */
+export const GATE_CHECK_STATUSES = ['green'];
 
-/** The verdict verbs a pipeline reports with: `the pipeline validates the head`. */
-export const PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];
+/**
+ * The nouns that make `Gate` the repository's check rather than the DAW device: `the Gate check`,
+ * `the Gate jobs`. Plurals are listed only where they cannot be a verb: `the Gate checks the
+ * sidechain` and `the Gate runs before the compressor` describe the device.
+ */
+export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'run', 'workflow', 'workflows'];
+
+/** The verdict verbs a suite or the pipeline reports with: `the suite passed`, `the pipeline validates the head`. */
+export const SUITE_OR_PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];

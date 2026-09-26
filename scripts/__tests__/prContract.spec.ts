@@ -43,6 +43,7 @@ import {
     CHECK_SCRIPT_FAMILIES,
     CLOSED_CLASS_FUNCTION_WORDS,
     ENGLISH_WORD_HEADS,
+    GATE_CHECK_STATUSES,
     STATUS_ADVERBS,
     STEP_VERB_HEADS,
     TEST_MODIFIED_NOUNS,
@@ -1170,15 +1171,21 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
-    it.each([
-        ['green', 'Gate is green.'],
-        ['red', 'Gate is red.'],
-        ['clean', 'Gate is clean.'],
-        ['passing', 'Gate is passing.'],
-        ['failing', 'Gate is failing.'],
-    ])('refuses the Gate check reported as %s', (_status, instructions) => {
+    /**
+     * The statuses that make `Gate` the repository's check, spec-owned on purpose: adding a status the
+     * noise-gate device also carries reddens this pin and the device sentences below.
+     */
+    const GATE_CHECK_STATUSES_UNDER_TEST = ['green'];
+
+    it('pins the statuses that make Gate the check rather than the noise-gate device', () => {
+        expect(GATE_CHECK_STATUSES).toEqual(GATE_CHECK_STATUSES_UNDER_TEST);
+    });
+
+    it.each(GATE_CHECK_STATUSES_UNDER_TEST)('refuses the Gate check reported as %s', (status) => {
         // `Gate` is beyond the annotation vocabulary and rescues the command rule, so only the
         // check-name status phrase refuses the sentence.
+        const instructions = `Gate is ${status}.`;
+
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
@@ -1186,10 +1193,42 @@ describe('product-scope test instructions', () => {
     it.each([
         ['check', 'The Gate check passed.'],
         ['job', 'The Gate job passed.'],
+        ['jobs', 'The Gate jobs passed.'],
         ['run', 'The Gate run passed.'],
         ['workflow', 'The Gate workflow passed.'],
-        ['plural', 'The Gate checks passed.'],
+        ['workflows', 'The Gate workflows passed.'],
     ])('refuses the Gate check named by the %s noun', (_noun, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['passing audio', 'Confirm the Gate is passing audio.'],
+        ['passing signal', 'Play the loop and confirm the Gate is passing signal above the threshold.'],
+        ['failing to close', 'Hit the pad hard and confirm the Gate is failing to close on the tail.'],
+        ['clean of chatter', 'Lower the threshold and confirm the Gate is clean with no chatter.'],
+        ['red on its meter', 'Confirm the Gate is red while signal passes.'],
+        ['running before the compressor', 'Confirm the Gate runs before the compressor.'],
+        ['checking the sidechain', 'Confirm the Gate checks the sidechain input.'],
+    ])('passes the noise-gate device %s: only green or a check noun makes Gate the check', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['passes', 'The suite passes.'],
+        ['passed', 'The suite passed on this head.'],
+        ['failed', 'The suites failed.'],
+    ])('refuses a suite reporting the verdict %s', (_verb, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a spaced fixture', 'The existing test project fixture covers this.'],
+        ['a fixture that passes', 'The existing test track fixture already passes.'],
+        ['a hyphenated fixture', 'The existing test-project fixture covers this.'],
+    ])('refuses %s: a test fixture names coverage whatever it holds', (_label, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
