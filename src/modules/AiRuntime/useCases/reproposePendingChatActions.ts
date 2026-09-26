@@ -7,6 +7,7 @@ import {
 
 import { type AgentRunPhase } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { appendChatMessage, updateChatMessage } from '../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
@@ -16,6 +17,7 @@ import {
 
 import { pendingActionResourceSettlement } from './agentRequestOrchestration/pendingActionResourceSettlement';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -127,6 +129,58 @@ function compileSelectedSubset(
     } finally {
         preview.resource.release();
     }
+}
+
+/**
+ * The subset route can drop actions a carried selector needed: keep a record only when the
+ * included actions still cover every id in its `stableIds`, derived through the same
+ * `getPlannedActionAffectedIds` computation the subset route already uses for `affectedIds`. A
+ * record that loses coverage would otherwise reach `revalidateApprovedMatchSelectors` and the
+ * persisted confirmation for a selector the reproposed batch no longer fully targets.
+ */
+function filterCarriedMatchSelectorPredicates(
+    matchSelectorPredicates: readonly SemanticCommandListMatchSelectorRecord[] | undefined,
+    includedAffectedIds: ReadonlySet<string>
+): SemanticCommandListMatchSelectorRecord[] | undefined {
+    if (!matchSelectorPredicates) {
+        return undefined;
+    }
+    const kept = matchSelectorPredicates.filter((record) =>
+        record.stableIds.every((id) => includedAffectedIds.has(id))
+    );
+    return kept.length === 0 ? undefined : kept;
+}
+
+type CarriedSelectionResult =
+    | {
+          status: 'carried';
+          affectedIds: readonly string[];
+          matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] | undefined;
+      }
+    | Extract<ReproposePendingChatActionsResult, { status: 'rejected' }>;
+
+/**
+ * Narrow the confirmation's carried affected ids and `match` selector records to the subset
+ * route's included actions, then replay whatever selectors survive against the live project
+ * before the caller persists anything derived from them.
+ */
+function resolveCarriedSelection(
+    confirmation: PendingAppActionConfirmation,
+    actions: PendingAppActionConfirmation['actions'],
+    selectsSubset: boolean
+): CarriedSelectionResult {
+    let affectedIds = confirmation.affectedIds;
+    let matchSelectorPredicates = confirmation.approvalSnapshot.matchSelectorPredicates;
+    if (selectsSubset) {
+        const includedAffectedIds = new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)));
+        affectedIds = [...includedAffectedIds];
+        matchSelectorPredicates = filterCarriedMatchSelectorPredicates(matchSelectorPredicates, includedAffectedIds);
+    }
+    const revalidation = revalidateApprovedMatchSelectors(matchSelectorPredicates ?? []);
+    if (revalidation.status === 'invalidated') {
+        return { status: 'rejected', reason: revalidation.detail };
+    }
+    return { status: 'carried', affectedIds, matchSelectorPredicates };
 }
 
 /** The actions and labels the included commands came from, by their position in the replaced proposal. */
@@ -275,10 +329,11 @@ export async function reproposePendingChatActions(
     const { approval, parsed: parsedRefreshed, refreshed } = rebound;
 
     const { actions, actionLabels } = selectIncludedPlan(confirmation, originalCommandIds, includedOriginalCommandIds);
-    let affectedIds = confirmation.affectedIds;
-    if (selectsSubset) {
-        affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
+    const carriedSelection = resolveCarriedSelection(confirmation, actions, selectsSubset);
+    if (carriedSelection.status === 'rejected') {
+        return carriedSelection;
     }
+    const { affectedIds, matchSelectorPredicates: carriedMatchSelectorPredicates } = carriedSelection;
 
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
@@ -300,11 +355,14 @@ export async function reproposePendingChatActions(
         affectedIds: [...affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
         // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
-        // in the working batch's commands rather than re-resolving any `match` selector, so the
-        // carried record from the original proposal is still what the batch was built against; a
-        // later `resolveConfirmationAdmission` changed-revision re-resolution needs it to keep
-        // guarding a reproposed confirmation the same way it guards a first-proposed one.
-        matchSelectorPredicates: confirmation.approvalSnapshot.matchSelectorPredicates,
+        // in the working batch's commands rather than re-resolving any `match` selector, so this
+        // re-preview is itself a point where a selector could go stale unnoticed; `revalidateApprovedMatchSelectors`
+        // above already replayed the filtered set (subset-covered only) against the live project and
+        // rejected before persisting anything if any selector no longer resolves the same targets. What
+        // survives that check is carried forward so a later `resolveConfirmationAdmission`
+        // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
+        // guards a first-proposed one.
+        matchSelectorPredicates: carriedMatchSelectorPredicates,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

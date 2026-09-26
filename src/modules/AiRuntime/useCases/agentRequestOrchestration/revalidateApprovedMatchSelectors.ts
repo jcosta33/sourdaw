@@ -1,3 +1,5 @@
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+
 import { type SemanticCommandListMatchSelectorRecord } from '../../models/SemanticCommandList';
 import {
     collectSemanticCommandListCandidates,
@@ -21,12 +23,24 @@ export type MatchSelectorPredicateRevalidation = { status: 'unchanged' } | { sta
  * resolver both the compiler and the evidence validator use is the only way to see a resolved set
  * that would come out different today. A batch with no carried selectors, and one whose selectors
  * still resolve to the same id sets, report `unchanged` so today's rebind proceeds exactly as before.
+ *
+ * The repair-state store must be checked before `getProjectContext()`: `getProjectContext()` throws
+ * `AiProposalInvalidatedError` while a repair is pending, which the caller does not catch. A batch
+ * that still carries selectors while the project needs repair cannot be replayed against a project
+ * context at all, so it reports `invalidated` directly, the same terminal outcome the caller already
+ * applies for a selector that no longer resolves.
  */
 export function revalidateApprovedMatchSelectors(
     matchSelectorPredicates: readonly SemanticCommandListMatchSelectorRecord[]
 ): MatchSelectorPredicateRevalidation {
     if (matchSelectorPredicates.length === 0) {
         return { status: 'unchanged' };
+    }
+    if (agentProjectRepairStateStore.value) {
+        return {
+            status: 'invalidated',
+            detail: 'The project needs repair before its carried match selectors can be re-resolved.',
+        };
     }
     const context = getProjectContext();
     const candidates = collectSemanticCommandListCandidates({

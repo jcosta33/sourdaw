@@ -674,6 +674,90 @@ describe('parsePromptToActions', () => {
         });
     });
 
+    it('carries a match selector predicate record alongside the compiled actions for a match-based bulk selector', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'catalog-mute-track',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['muteTrack'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'semantic-mute-tracks-match',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Mute all audio tracks.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: ['provider-invented'],
+                                    targetRanges: [],
+                                    protectedTargetIds: ['track-vocals'],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate selector preconditions.'],
+                                stoppingConditions: ['Stop if the project revision changes.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'mute-audio-tracks-match',
+                                        name: 'muteTrack',
+                                        arguments: { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            match: { all: [{ kind: 'audio' }] },
+                                            quantity: { unit: 'targets', exactly: 2 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+
+        const result = await parsePromptToActions(
+            'mute all audio tracks',
+            createMixerContext(),
+            undefined,
+            'revision-1'
+        );
+
+        expect(generateToolCalls).toHaveBeenCalledTimes(2);
+        expect(result.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true, expectedMuted: false } },
+            { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true, expectedMuted: false } },
+        ]);
+        // Only a `match`-based selector produces compiler evidence with a `predicate`; a `where`-based
+        // selector (the `it.each` cases above) never carries one — this is `parsePromptToActions`'s own
+        // hand-off of that evidence into `matchSelectorPredicates`, one of the four carriers that must
+        // not drop it on the way to a persisted confirmation.
+        expect(result.matchSelectorPredicates).toEqual([
+            {
+                itemId: 'mute-audio-tracks-match',
+                entity: 'track',
+                match: { all: [{ kind: 'audio' }] },
+                quantity: { unit: 'targets', exactly: 2 },
+                stableIds: ['track-vocals', 'track-guitar'],
+            },
+        ]);
+    });
+
     it('unions explicit and structural bulk protections across proposal, confirmation, and authority', async () => {
         const context = createBulkInsertionContext();
         const prompt =

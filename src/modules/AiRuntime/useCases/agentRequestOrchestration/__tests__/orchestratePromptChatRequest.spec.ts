@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
+import { type SemanticCommandListMatchSelectorRecord } from '../../../models/SemanticCommandList';
+import { describePendingActionConfirmation } from '../../describePendingActionConfirmation';
 import { type ProviderAttemptAdmission } from '../../llmOrchestration/inference';
 import { type planPromptActions } from '../../planPromptActions';
 import { orchestratePromptChatRequest } from '../orchestratePromptChatRequest';
@@ -710,5 +712,56 @@ describe('orchestratePromptChatRequest', () => {
         expect(mocks.executePromptCommandPreview).not.toHaveBeenCalled();
         expect(mocks.persistPromptActionConfirmation).not.toHaveBeenCalled();
         expect(mocks.executeImmediatePromptCommand).not.toHaveBeenCalled();
+    });
+
+    it('carries the planned match selector predicate records through to the persisted confirmation', async () => {
+        const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] = [
+            {
+                itemId: 'selector-1',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 8 },
+                stableIds: ['track-kick'],
+            },
+        ];
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [{ type: 'setTrackColor', payload: { trackId: 'track-kick', color: '#ffffff' } }],
+                matchSelectorPredicates,
+                executionMode: 'apply',
+            },
+            projectRevision: 'revision-planned',
+        });
+        vi.mocked(describePendingActionConfirmation).mockReturnValueOnce({
+            actionLabels: ['Set kick color'],
+            affectedIds: ['track-kick'],
+            protectedUnchanged: [],
+            content: 'Set kick color',
+            risk: { level: 'bounded-reversible', reason: null },
+        });
+        mocks.materializePromptCommandPlan.mockReturnValue({
+            status: 'prepared',
+            commandGroup: 'command-group-fixture',
+            parsedCommandBatch: { commands: [] },
+            compiledActionExecution: {
+                commandEnvelopes: ['command-envelope-fixture'],
+                commandBatch: { commands: [] },
+                requiresConfirmation: true,
+                agentApproval: { kind: 'confirm-required' },
+            },
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'set the kick track color',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.persistPromptActionConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({ matchSelectorPredicates })
+        );
     });
 });
