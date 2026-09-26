@@ -252,6 +252,94 @@ describe('semantic review context', () => {
         expect(JSON.stringify(result)).not.toContain('the model declined to flag this');
     });
 
+    it('projects the fired signals a scan carries, bounded to their rule, path and probability', () => {
+        const fired = signal({
+            ruleId: 'admission_branch_completes_without_asserting',
+            path: 'src/modules/audio/take.test.ts',
+            outcome: 'signal',
+            probability: 0.82,
+            confidence: 0.82,
+            disposition: 'recommend_investigation',
+            reasoning: 'yes probability 0.820 is at or above 0.7',
+        });
+        const unfired = [
+            signal({ outcome: 'insufficient_context', disposition: 'unresolved', probability: 0.5 }),
+            signal({ outcome: 'no_signal', disposition: 'no_additional_recommendation', probability: 0.55 }),
+        ];
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired, ...unfired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toEqual([
+            {
+                ruleId: 'admission_branch_completes_without_asserting',
+                path: 'src/modules/audio/take.test.ts',
+                probability: 0.82,
+            },
+        ]);
+        // The fired signal carries only its rule, path, and probability: the reasoning, outcome band,
+        // and disposition the producer recorded stay in the artifact.
+        expect(JSON.stringify(result)).not.toContain('recommend_investigation');
+        expect(JSON.stringify(result)).not.toContain('at or above');
+    });
+
+    it('caps the fired signals it records at the summary bound, leaving overflow in the artifact', () => {
+        const fired = Array.from({ length: 7 }, (_unused, index) =>
+            signal({
+                ruleId: 'admission_branch_completes_without_asserting',
+                path: `src/module/file-${index}.test.ts`,
+                outcome: 'signal',
+                probability: 0.8,
+                confidence: 0.8,
+                disposition: 'recommend_investigation',
+            })
+        );
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: fired })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toHaveLength(5);
+    });
+
+    it('records zero fired signals for a scan whose signals never recommend investigation', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
+        });
+        expect(asAssessed(resolveSemanticReviewContext(42, HEAD, port)).firedSignals).toEqual([]);
+    });
+
+    it('refuses a fired signal whose projected path carries a credential shape', () => {
+        const fired = signal({
+            ruleId: 'conditional_admission_added',
+            path: 'src/ghp_0123456789abcdef0123456789abcdef0123/x.test.ts',
+            outcome: 'signal',
+            probability: 0.9,
+            confidence: 0.9,
+            disposition: 'recommend_investigation',
+        });
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
+        });
+
+        expect(() => resolveSemanticReviewContext(42, HEAD, port)).toThrow(
+            /semantic-ci fired signal path value at index 0 contains a GitHub token/u
+        );
+    });
+
     it('finds the semantic check when it sits beyond the first page of check runs', () => {
         const fillers: SemanticCheckRun[] = Array.from({ length: 40 }, (_, index) => ({
             id: index + 1,

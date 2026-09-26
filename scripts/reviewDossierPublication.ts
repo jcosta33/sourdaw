@@ -46,7 +46,7 @@ export type ReviewDossierStanceInput = {
 };
 
 export type ReviewStancesRecord = {
-    stances: { stance: string }[];
+    stances: { stance: string; admittedBy?: string }[];
 };
 
 export type ReviewDossierInput = {
@@ -242,9 +242,10 @@ export function parseReviewDossierInput(value: unknown): ReviewDossierInput {
 
 /**
  * The caller's pre-dispatch `stances.json`. The gate validates only the shape it consumes — an
- * object whose `stances` entries each name a stance — and treats the failure-mode admissions,
- * baseline-probe results, and per-draw exhaustion records as free-form caller evidence it never
- * reads; the dossier's own draw entries carry the gated exhaustion.
+ * object whose `stances` entries each name a stance, with each entry's `admittedBy` lifted when it
+ * is a non-blank string — and treats the baseline-probe results and per-draw exhaustion records as
+ * free-form caller evidence it never reads; the dossier's own draw entries carry the gated
+ * exhaustion.
  */
 export function parseReviewStancesRecord(value: unknown, path: string): ReviewStancesRecord {
     if (!isRecord(value)) {
@@ -253,12 +254,16 @@ export function parseReviewStancesRecord(value: unknown, path: string): ReviewSt
     if (!Array.isArray(value.stances)) {
         fail(`review stances record at ${path} stances must be an array, found ${describeValue(value.stances)}`);
     }
-    const stances: { stance: string }[] = [];
+    const stances: ReviewStancesRecord['stances'] = [];
     for (const [index, entry] of value.stances.entries()) {
         if (!isRecord(entry) || typeof entry.stance !== 'string') {
             fail(`review stances record at ${path} stances[${index}] must carry a stance string`);
         }
-        stances.push({ stance: entry.stance });
+        const stance: { stance: string; admittedBy?: string } = { stance: entry.stance };
+        if (typeof entry.admittedBy === 'string' && entry.admittedBy.trim() !== '') {
+            stance.admittedBy = entry.admittedBy;
+        }
+        stances.push(stance);
     }
     return { stances };
 }
@@ -272,6 +277,24 @@ export function recordedReviewStances(
     path: string
 ): string[] | undefined {
     return read.present ? parseReviewStancesRecord(read.value, path).stances.map((entry) => entry.stance) : undefined;
+}
+
+/**
+ * The dispatched stances' `admittedBy` lines, or an empty list when the bundle holds no stances.json
+ * — a fired signal's disposal token may name an admission, so publication reads the lines beside
+ * the names. A blank or non-string admission is simply not lifted: it cannot carry the token, and
+ * `pnpm stances:check` owns refusing a missing one.
+ */
+export function recordedStanceAdmissions(
+    read: { present: true; value: unknown } | { present: false },
+    path: string
+): readonly string[] {
+    if (!read.present) {
+        return [];
+    }
+    return parseReviewStancesRecord(read.value, path).stances.flatMap((entry) =>
+        entry.admittedBy === undefined ? [] : [entry.admittedBy]
+    );
 }
 
 /** One completed draw's disclosure fields, shared by both dossier shapes. */

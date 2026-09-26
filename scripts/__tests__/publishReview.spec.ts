@@ -5443,6 +5443,129 @@ describe('fresh reviewer dossier publication', () => {
         });
     });
 
+    describe('fired semantic signal disposal', () => {
+        /** The repository's own measured standing escape (#4441), as a fired scan signal projects it. */
+        const FIRED_SIGNAL = {
+            ruleId: 'admission_branch_completes_without_asserting',
+            path: 'src/modules/audio/take.test.ts',
+            probability: 0.82,
+        };
+        const FIRED_TOKEN = `semantic-signal ${FIRED_SIGNAL.ruleId} ${FIRED_SIGNAL.path}`;
+
+        it('refuses a fresh publication with an undisposed fired signal before any write, naming rule and path', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the assessment surfaced nothing actionable' }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /does not dispose of 1 of the delivered assessment's 1 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.test\.ts\)/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a limitation naming the fired signal token', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: [
+                        'the assessment run semantic-review-42-1 withheld the audio module',
+                        `${FIRED_TOKEN}: the conditional admission is the deliberate #4441 escape`,
+                    ],
+                }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a discarded finding naming the fired signal token', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is disposed below' }),
+                discarded: [
+                    {
+                        finding: FIRED_TOKEN,
+                        stance: 'correctness',
+                        reason: 'the conditional admission is deliberate and pinned by its own spec',
+                    },
+                ],
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                const persisted = parseReviewDossier(fixture.readDossier());
+                expect(discardedDispositions(persisted).map((entry) => entry.findingId)).toEqual([FIRED_TOKEN]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a stance admittedBy line naming the fired signal token', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                stances: {
+                    stances: [
+                        {
+                            stance: 'correctness',
+                            admittedBy: `${FIRED_TOKEN}: a reordered take insert drops a buffered frame`,
+                        },
+                        { stance: 'test-validity' },
+                    ],
+                },
+                dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is the stance this round attacked' }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses an undisposed fired signal even when the withheld scope was cited, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
+                }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /does not dispose of 1 of the delivered assessment's 1 fired signal/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a legacy record without the firedSignals field unchanged', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the withheld paths are outside scope' }),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+    });
+
     describe('no-assessment semantic-ci acknowledgement', () => {
         it('refuses a no-assessment record with an unrelated limitation, never posting', () => {
             const fixture = dossierFixture({
