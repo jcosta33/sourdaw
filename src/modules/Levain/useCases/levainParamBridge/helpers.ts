@@ -365,13 +365,25 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             case 'Tightness':
                 setRuntimeParam(target, 'humanize', 1.0 - value);
                 break;
-            case 'Space':
-                // The room mic is the 'room'-type position (index 2 in the default
-                // patch). The compact MicBlendSlider drives the same mic, so both
-                // controls must target the same index or they fight over 'room'.
-                setRuntimeParam(target, 'mic_0_volume', 1.0 - value * 0.5);
-                setRuntimeParam(target, 'mic_2_volume', value);
+            case 'Space': {
+                // The room mic is whichever loaded index carries the 'room'
+                // position type — not a fixed index, since a bank's mic order
+                // is author-defined and most shipped banks carry no room mic
+                // at all. The compact MicBlendSlider resolves the same way, so
+                // both controls always agree on which index is 'room'.
+                const loadedMicPositions = state.loadedMicPositions;
+                const roomIndex = loadedMicPositions ? loadedMicPositions.indexOf('room') : -1;
+                if (roomIndex === -1) {
+                    // No loaded room mic: nothing for Space to blend toward.
+                    break;
+                }
+                const closeIndex = loadedMicPositions ? loadedMicPositions.indexOf('close') : -1;
+                if (closeIndex !== -1) {
+                    setRuntimeParam(target, `mic_${closeIndex}_volume`, 1.0 - value * 0.5);
+                }
+                setRuntimeParam(target, `mic_${roomIndex}_volume`, value);
                 break;
+            }
             case 'Tone':
                 setRuntimeParam(target, 'tone', value);
                 break;

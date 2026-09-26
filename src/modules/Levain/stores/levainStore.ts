@@ -15,6 +15,7 @@ import {
     type LevainPatch,
     type ArticulationType,
     type MicPositionState,
+    type MicPositionType,
     createDefaultPatch,
 } from '../models/LevainPatch';
 
@@ -35,6 +36,12 @@ export type LevainState = {
     peakL: number;
     peakR: number;
     currentArticulationDisplay: string;
+    /**
+     * The loaded bank's mic position names, in engine-index order. Null means
+     * no bank is committed yet (loading, failed, or never started) — the Stage
+     * card renders no mic rows in that state.
+     */
+    loadedMicPositions: readonly MicPositionType[] | null;
 };
 
 export const defaultLevainState: LevainState = {
@@ -47,6 +54,7 @@ export const defaultLevainState: LevainState = {
     peakL: 0,
     peakR: 0,
     currentArticulationDisplay: 'Long',
+    loadedMicPositions: null,
 };
 
 type LevainInstances = Record<string, LevainState>;
@@ -171,6 +179,21 @@ export function updateMicPosition(deviceId: string, index: number, updates: Part
             },
         });
     }
+}
+
+/**
+ * Record the mic positions the currently-loaded bank carries, keyed by engine
+ * index. Set to the loaded names on a successful load; clear to null when a
+ * new load starts or the load fails, so the panel never shows a stale bank's
+ * controls while a different one is loading or failed.
+ */
+export function setLoadedMicPositions(deviceId: string, positions: readonly MicPositionType[] | null): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
+    levainStore.set({ ...instances, [deviceId]: { ...state, loadedMicPositions: positions } });
 }
 
 export function setEngineReady(deviceId: string, ready: boolean): void {

@@ -11,6 +11,7 @@ vi.mock('../../repositories/sampleLoader/loadInstrumentFromManifest', () => ({
 vi.mock('../../stores/levainStore', () => ({
     setSampleLoadProgress: vi.fn(),
     setSampleLoadError: vi.fn(),
+    setLoadedMicPositions: vi.fn(),
 }));
 
 vi.mock('../../repositories/sampleLoader/resolveSampleBasePath', () => ({
@@ -18,7 +19,7 @@ vi.mock('../../repositories/sampleLoader/resolveSampleBasePath', () => ({
 }));
 
 import { loadInstrumentFromManifest } from '../../repositories/sampleLoader/loadInstrumentFromManifest';
-import { setSampleLoadError, setSampleLoadProgress } from '../../stores/levainStore';
+import { setLoadedMicPositions, setSampleLoadError, setSampleLoadProgress } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
 
 describe('autoLoadLevainSamples', () => {
@@ -27,6 +28,7 @@ describe('autoLoadLevainSamples', () => {
         vi.mocked(loadInstrumentFromManifest).mockResolvedValue(undefined);
         vi.mocked(setSampleLoadProgress).mockClear();
         vi.mocked(setSampleLoadError).mockClear();
+        vi.mocked(setLoadedMicPositions).mockClear();
         vi.useFakeTimers();
     });
 
@@ -97,6 +99,36 @@ describe('autoLoadLevainSamples', () => {
         });
     });
 
+    describe('loadedMicPositions — the shared route every UI load path funnels through', () => {
+        // registerLevainDevice (web live registration), loadInstrument (preset
+        // load and instrument change) all call this function through
+        // loadSamplesForInstrument; this is the one place that must clear and
+        // set the store's loadedMicPositions for every one of those routes.
+        it('clears loadedMicPositions before starting a new load', async () => {
+            await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            expect(setLoadedMicPositions).toHaveBeenNthCalledWith(1, 'd1', null);
+        });
+
+        it('stores the loaded bank names on a successful load', async () => {
+            vi.mocked(loadInstrumentFromManifest).mockResolvedValueOnce({
+                micPositions: ['close', 'room'],
+            } as unknown as Awaited<ReturnType<typeof loadInstrumentFromManifest>>);
+
+            await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            expect(setLoadedMicPositions).toHaveBeenCalledWith('d1', ['close', 'room']);
+        });
+
+        it('clears loadedMicPositions when the load fails', async () => {
+            vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('boom'));
+
+            await expect(autoLoadLevainSamples('d1', {} as MessagePort, 'cello')).rejects.toThrow('boom');
+
+            expect(setLoadedMicPositions).toHaveBeenLastCalledWith('d1', null);
+        });
+    });
+
     describe('fix 2 — a superseded (aborted) load bails without owning the UI', () => {
         it('does not start the loader when already aborted', async () => {
             const controller = new AbortController();
@@ -112,7 +144,7 @@ describe('autoLoadLevainSamples', () => {
             const controller = new AbortController();
             vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
                 controller.abort();
-                return Promise.resolve();
+                return Promise.resolve(undefined);
             });
 
             await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);

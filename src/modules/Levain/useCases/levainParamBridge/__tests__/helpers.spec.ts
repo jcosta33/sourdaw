@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi, type Mock } from 'vite
 
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
-import { createDefaultPatch } from '../../../models/LevainPatch';
+import { createDefaultPatch, type MicPositionType } from '../../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../../stores/levainStore';
 import { projectLevainPatchToEngineParameters } from '../../projectLevainPatchToEngineParameters';
 import { createLevainBridge, type LevainDevice } from '../helpers';
@@ -50,9 +50,15 @@ function makeDevice(): MockedLevainDevice {
     };
 }
 
-function seedDevice(deviceId: string): void {
+// Defaults to the default patch's own three-mic order so every existing test
+// that doesn't care about Space/room resolution keeps resolving room to index
+// 2 unchanged; only the Space-macro tests below override this explicitly.
+function seedDevice(
+    deviceId: string,
+    loadedMicPositions: readonly MicPositionType[] | null = ['close', 'decca-tree', 'room']
+): void {
     levainStore.set({
-        [deviceId]: { ...defaultLevainState, patch: createDefaultPatch('violin-1') },
+        [deviceId]: { ...defaultLevainState, patch: createDefaultPatch('violin-1'), loadedMicPositions },
     });
 }
 
@@ -236,8 +242,8 @@ describe('createLevainBridge', () => {
         });
     });
 
-    describe('fix 5 — Space macro drives the room mic (index 2)', () => {
-        it('writes mic_2_volume, not mic_1_volume, for the Space macro', () => {
+    describe('fix 5 — Space macro resolves close/room by loaded position type, never a fixed index', () => {
+        it('writes mic_2_volume, not mic_1_volume, when the loaded bank keeps room at index 2', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
@@ -250,6 +256,34 @@ describe('createLevainBridge', () => {
 
             expect(device.setParam).toHaveBeenCalledWith('mic_2_volume', 0.7);
             expect(device.setParam).not.toHaveBeenCalledWith('mic_1_volume', expect.any(Number));
+        });
+
+        it('writes mic_0_volume and mic_1_volume when the loaded bank omits decca-tree', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', ['close', 'room']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            expect(device.setParam).toHaveBeenCalledWith('mic_0_volume', expect.any(Number));
+            expect(device.setParam).toHaveBeenCalledWith('mic_1_volume', 0.6);
+            expect(device.setParam).not.toHaveBeenCalledWith('mic_2_volume', expect.any(Number));
+        });
+
+        it('writes no mic parameter when the loaded bank carries no room mic', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', ['close']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            expect(device.setParam).not.toHaveBeenCalledWith(expect.stringMatching(/^mic_/), expect.any(Number));
         });
     });
 

@@ -1,7 +1,7 @@
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
 
-import type { DecodedBankLease } from './createDecodedBankResource';
+import type { DecodedBank, DecodedBankLease } from './createDecodedBankResource';
 
 export type { ManifestArticulation, ManifestZone, SampleManifest } from './sampleManifest';
 
@@ -158,6 +158,9 @@ export type LoadInstrumentFromManifestInput = {
  * @param signal Optional abort signal. When a newer load supersedes this one,
  *   the caller aborts it; per-load tokens fence any messages already queued for
  *   the superseded transaction from the replacement bank.
+ * @returns The decoded bank the worklet committed, or undefined when the load
+ *   was aborted before committing (a superseded load resolves rather than
+ *   throwing; see the `signal` fencing above).
  */
 export async function loadInstrumentFromManifest({
     manifestUrl,
@@ -167,7 +170,7 @@ export async function loadInstrumentFromManifest({
     lod = DEFAULT_LOD,
     onProgress,
     signal,
-}: LoadInstrumentFromManifestInput): Promise<void> {
+}: LoadInstrumentFromManifestInput): Promise<DecodedBank | undefined> {
     let lease: DecodedBankLease;
     try {
         lease = await decodedBankResource.acquire({
@@ -180,13 +183,13 @@ export async function loadInstrumentFromManifest({
         });
     } catch (error) {
         if (signal?.aborted) {
-            return;
+            return undefined;
         }
         throw error;
     }
     if (signal?.aborted) {
         lease.release();
-        return;
+        return undefined;
     }
 
     const bank = lease.bank;
@@ -312,6 +315,7 @@ export async function loadInstrumentFromManifest({
         });
         await handshake.completed;
         completed = true;
+        return bank;
     } finally {
         if (handshake && !completed) {
             handshake.cancel();

@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { WEB_LOD } from '../repositories/sampleLoader/helpers';
 import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
 import { resolveSampleBasePath } from '../repositories/sampleLoader/resolveSampleBasePath';
-import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
+import { setLoadedMicPositions, setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
@@ -27,6 +27,11 @@ export async function autoLoadLevainSamples(
     instrumentId: string,
     signal?: AbortSignal
 ): Promise<void> {
+    // A new load starting immediately invalidates whatever bank the panel
+    // last showed — the Stage card must stop rendering the previous bank's
+    // mic rows while this one is in flight, not carry them over stale.
+    setLoadedMicPositions(deviceId, null);
+
     // The repository owns the desktop IPC: on desktop it resolves the bundled
     // resource directory (massive sample banks straight from OS resources); on
     // web it returns the public `/samples/levain/<id>` path.
@@ -42,8 +47,9 @@ export async function autoLoadLevainSamples(
 
     setSampleLoadProgress(deviceId, 0.01); // trigger UI loading state
 
+    let bank: Awaited<ReturnType<typeof loadInstrumentFromManifest>>;
     try {
-        await loadInstrumentFromManifest({
+        bank = await loadInstrumentFromManifest({
             manifestUrl,
             basePath: manifestBase,
             expectedInstrumentId: instrumentId,
@@ -66,12 +72,16 @@ export async function autoLoadLevainSamples(
         // Fallback sine tone will continue to work. Surface the failure instead
         // of flashing a synthetic 100% then "Ready".
         setSampleLoadError(deviceId, error instanceof Error ? error.message : 'Sample load failed');
+        setLoadedMicPositions(deviceId, null);
         throw error;
     }
 
     // Completed but superseded — don't claim 100%/Ready over the newer load.
     if (signal?.aborted) {
         return;
+    }
+    if (bank) {
+        setLoadedMicPositions(deviceId, bank.micPositions);
     }
     setSampleLoadProgress(deviceId, 1.0);
     setTimeout(() => {
