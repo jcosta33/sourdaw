@@ -1,0 +1,24 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 1258-1332,1528-1600,4979-5051
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 21-26,300-318,336-358,364-367,370-371,375,384-393,448-453,518,521-524,608,636,706-708,713-715
+scripts/semanticReview/evidenceOrdering.ts
+  h_beb54bf43b47b7 13-19,96-100,230-234,537-543,566-568
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 87-99,103-111,132-133,146-147
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 29,33,354,371-374,383-384
+scripts/semanticReviewContext.ts
+  h_beb54bf43b47b7 150-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "20645529ad5ec61b0a6dde5d97d08a49d29c601c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
