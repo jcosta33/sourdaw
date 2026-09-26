@@ -14700,8 +14700,8 @@ mod tests {
     /// [`a_bacteria_mod_assignment_source_id_past_the_mirrored_ceiling_is_refused_by_the_engine_too`]
     /// uses for `source_id`, varying `target_param` instead.
     #[test]
-    fn a_bacteria_mod_assignment_target_param_past_the_mirrored_ceiling_is_refused_by_the_engine_too()
-     {
+    fn a_bacteria_mod_assignment_target_param_past_the_mirrored_ceiling_is_refused_by_the_engine_too(
+    ) {
         const RATE: f32 = 48_000.0;
         let valid_row = (0u8, 1u16, 0.9f32);
 
