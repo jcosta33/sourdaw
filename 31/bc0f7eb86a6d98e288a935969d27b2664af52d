@@ -1,0 +1,29 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_2bfd55a4393d7c::t_ec985d25c68314 92-130
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectShortMidiOverlapRemoval.spec.ts
+  s_2bfd55a4393d7c::t_e0e0b1130ad118 57-84
+src/modules/MIDI/transformers/__tests__/quantizeMidiNoteLengths.spec.ts
+  s_2bfd55a4393d7c::t_3d8d445cfeec50 61-80
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/legatoNotes.spec.ts
+  s_2bfd55a4393d7c::t_f4b6f2edd23747 60-88
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_2bfd55a4393d7c::t_8a096e6fe79446 260-281
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/appendMidiNotes.spec.ts
+  s_2bfd55a4393d7c::t_75608d3f16cfb2 276-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "31bc0f7eb86a6d98e288a935969d27b2664af52d",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
