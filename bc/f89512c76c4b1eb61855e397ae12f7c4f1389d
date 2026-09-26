@@ -1,0 +1,20 @@
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_468dcc9eae2038 544,550,575-583
+  s_2bfd55a4393d7c::t_edf9a35a3edfa3 554-559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bcf89512c76c4b1eb61855e397ae12f7c4f1389d",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
