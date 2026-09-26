@@ -189,13 +189,20 @@ describe('CCLane', () => {
             undoFn!();
             expect(removeMidiCC).toHaveBeenCalledWith('clip-1', expect.any(String));
 
+            // Redo must re-add the point under its own id, so the undo side's
+            // remove keeps naming a point the store holds.
+            const addedCC = vi.mocked(addMidiCC).mock.results[0]?.value;
+            expect(addedCC).toBeDefined();
+
             vi.mocked(addMidiCC).mockClear();
             redoFn!();
             expect(addMidiCC).toHaveBeenCalledWith(
                 'clip-1',
                 1,
                 valueFromY(76, 80),
-                beatFromX(48, defaultProps.beatWidth)
+                beatFromX(48, defaultProps.beatWidth),
+                0,
+                addedCC?.id
             );
         });
 
@@ -592,7 +599,7 @@ describe('CCLane', () => {
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             vi.mocked(addMidiCC).mockClear();
             undoFn!();
-            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 20, 0, 0);
+            expect(addMidiCC).toHaveBeenCalledWith('clip-1', 1, 20, 0, 0, 'cc-a');
         });
     });
 });
