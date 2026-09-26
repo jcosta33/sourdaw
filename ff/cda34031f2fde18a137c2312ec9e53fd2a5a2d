@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_8bef4dc05184f8 943,946,957,960,962-966,972-975
+  s_1c08b47ac3792f::t_51078538c64f9c 880,895-897,904-910,913-924
+  s_1c08b47ac3792f::t_2ef40f79a05009 925,927-942,944-945,947-956,958-959,961,967-971,976-979,981-997,1000-1022,1024-1045
+  s_1c08b47ac3792f::t_0fa37d5c78eec4 980,1023
+  s_1c08b47ac3792f::t_2aa07087f66e35 998-999
+  s_1c08b47ac3792f::t_a1cd533b8d636f 926,1048
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_1c08b47ac3792f::t_58fa300a4fa208 194-200,202-204,207-213,216
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_95c1a2e68b892e 1327-1365
+  s_1c08b47ac3792f::t_4a6d09f2de88c5 1646,1658-1667
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_9ad0c86c122b38 374
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_4d532a9d4d9fa7 1504-1507
+  s_1c08b47ac3792f::t_23ac8e9b1d935b 1559-1562
+  s_1c08b47ac3792f::t_6c24907600b3dc 26,31
+  s_1c08b47ac3792f::t_05f306819ce4a1 1440-1503,1508-1558,1563-1567
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ffcda34031f2fde18a137c2312ec9e53fd2a5a2d",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
