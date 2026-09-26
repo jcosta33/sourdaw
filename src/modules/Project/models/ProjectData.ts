@@ -326,6 +326,9 @@ export type ProjectArrangementMidi = {
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
+    /** Same stamp as the top-level ProjectMidi block: written by the
+     * per-arrangement serialization, absent in pre-stamp arrangements. */
+    noteCoordinateFormat?: 'clip-relative';
 };
 
 export type ProjectMidiNote = {
