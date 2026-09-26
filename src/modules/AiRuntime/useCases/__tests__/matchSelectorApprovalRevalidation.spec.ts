@@ -40,6 +40,7 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates';
 import { getProjectContext } from '../getProjectContext';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
@@ -103,21 +104,6 @@ function setTracks(tracks: Track[]): void {
 
 function trackIdsOf(actions: readonly ExecutableRuntimeAction[]): string[] {
     return actions.flatMap((action) => (action.type === 'setTrackColor' ? [action.payload.trackId] : []));
-}
-
-/**
- * Mirrors `parsePromptToActions.ts`'s own derivation: a record's `actionPositions` come from its
- * item's `representativeCommandIndexes`, deduplicated, never from `stableIds` and never from the
- * item's own `commandStart`/`commandCount` range — canonical command deduplication can fully resolve
- * a `match` item's commands onto an earlier item's identical commands, leaving that item's own range
- * empty even though its intent is still carried by those earlier positions. A helper compiling
- * selector evidence by hand must derive positions the same way the real production path does.
- */
-function actionPositionsByItemId(
-    compiled: ReturnType<typeof compileArbitraryCommandList>
-): ReadonlyMap<string, number[]> {
-    const items = compiled.status === 'accepted' ? (compiled.compilerEvidence?.items ?? []) : [];
-    return new Map(items.map((item) => [item.itemId, [...new Set(item.representativeCommandIndexes)]]));
 }
 
 function buildDrumColorCall() {
@@ -194,26 +180,7 @@ function compileDrumColorProposal(): {
     if (materialized.status !== 'accepted') {
         throw new Error(materialized.reason);
     }
-    const positionsByItemId = actionPositionsByItemId(compiled);
-    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
-        compiled.compilerEvidence.selectors.flatMap((selector) => {
-            if (selector.predicate === undefined) {
-                return [];
-            }
-            return [
-                {
-                    itemId: selector.itemId,
-                    entity: selector.predicate.entity,
-                    where: selector.predicate.where,
-                    match: selector.predicate.match,
-                    condition: selector.predicate.condition,
-                    excludeIds: selector.predicate.excludeIds,
-                    quantity: selector.predicate.quantity,
-                    stableIds: [...selector.stableIds],
-                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
-                },
-            ];
-        });
+    const matchSelectorPredicates = deriveMatchSelectorPredicates(compiled.compilerEvidence);
     return { actions: materialized.actions, matchSelectorPredicates, revision };
 }
 
@@ -288,26 +255,7 @@ function compileDrumAutomationModeProposal(): {
             payload: { trackId: command.arguments.trackId, mode: command.arguments.mode as Track['automationMode'] },
         };
     });
-    const positionsByItemId = actionPositionsByItemId(compiled);
-    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
-        compiled.compilerEvidence.selectors.flatMap((selector) => {
-            if (selector.predicate === undefined) {
-                return [];
-            }
-            return [
-                {
-                    itemId: selector.itemId,
-                    entity: selector.predicate.entity,
-                    where: selector.predicate.where,
-                    match: selector.predicate.match,
-                    condition: selector.predicate.condition,
-                    excludeIds: selector.predicate.excludeIds,
-                    quantity: selector.predicate.quantity,
-                    stableIds: [...selector.stableIds],
-                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
-                },
-            ];
-        });
+    const matchSelectorPredicates = deriveMatchSelectorPredicates(compiled.compilerEvidence);
     return { actions, matchSelectorPredicates, revision };
 }
 
@@ -433,26 +381,7 @@ function compileAutomationModeDeduplicationProposal(): {
             payload: { trackId: command.arguments.trackId, mode: command.arguments.mode as Track['automationMode'] },
         };
     });
-    const positionsByItemId = actionPositionsByItemId(compiled);
-    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
-        compiled.compilerEvidence.selectors.flatMap((selector) => {
-            if (selector.predicate === undefined) {
-                return [];
-            }
-            return [
-                {
-                    itemId: selector.itemId,
-                    entity: selector.predicate.entity,
-                    where: selector.predicate.where,
-                    match: selector.predicate.match,
-                    condition: selector.predicate.condition,
-                    excludeIds: selector.predicate.excludeIds,
-                    quantity: selector.predicate.quantity,
-                    stableIds: [...selector.stableIds],
-                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
-                },
-            ];
-        });
+    const matchSelectorPredicates = deriveMatchSelectorPredicates(compiled.compilerEvidence);
     return { actions, matchSelectorPredicates, revision };
 }
 
@@ -567,26 +496,7 @@ function compileDrumRoutingAndAutomationProposal(): {
             payload: { trackId: command.arguments.trackId, mode: command.arguments.mode as Track['automationMode'] },
         };
     });
-    const positionsByItemId = actionPositionsByItemId(compiled);
-    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
-        compiled.compilerEvidence.selectors.flatMap((selector) => {
-            if (selector.predicate === undefined) {
-                return [];
-            }
-            return [
-                {
-                    itemId: selector.itemId,
-                    entity: selector.predicate.entity,
-                    where: selector.predicate.where,
-                    match: selector.predicate.match,
-                    condition: selector.predicate.condition,
-                    excludeIds: selector.predicate.excludeIds,
-                    quantity: selector.predicate.quantity,
-                    stableIds: [...selector.stableIds],
-                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
-                },
-            ];
-        });
+    const matchSelectorPredicates = deriveMatchSelectorPredicates(compiled.compilerEvidence);
     return { actions, matchSelectorPredicates, revision };
 }
 
