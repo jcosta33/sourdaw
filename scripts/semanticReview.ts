@@ -385,10 +385,6 @@ async function handlerVerify(parsed: ParsedArgs, primaryRoot: string): Promise<n
         },
         revision: resolved.revision,
         profile,
-        limits: {
-            maxRegionBytes: profile.maxStatePlusQuestionBytes,
-            maxTotalBytes: profile.maxTotalSubmittedBytes,
-        },
         findings,
         runId: `verify-${resolved.headSha.slice(0, 12)}-${new Date().toISOString()}`,
     });

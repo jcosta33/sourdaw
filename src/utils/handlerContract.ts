@@ -1357,6 +1357,16 @@ export type AppAction =
               rightClipId: string;
               expected: ClipSplitActionSnapshot;
               replacement: ClipSplitActionSnapshot;
+              /**
+               * Shared holder for the take lanes the undo leg retires from the
+               * right half, filled in place by `execute()` when it filters the
+               * right clip out. The paired redo carries the same array, so the
+               * redo can put back a take that landed on the right half after the
+               * split. Optional so entries persisted before the field existed
+               * still decode; absent means the undo records nothing and the redo
+               * restores nothing.
+               */
+              retiredTakeLanes?: RetiredTakeLaneSnapshot[];
           };
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
