@@ -25,6 +25,7 @@ import {
     collectEvidence,
     exclusionReason,
     isContractCarryingPath,
+    withheldRegionReason,
     type PathHunks,
     type SemanticChangedFile,
     type SemanticEvidenceSet,
@@ -383,6 +384,18 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
+    it('routes the hunk-beyond-file cause through the shared withheld-region vocabulary', () => {
+        // R4: the hunk-beyond-file reason was built inline and skipped the contract term, so a
+        // contract-carrying path withheld that way read as bulk while the reader already accepted the
+        // contract-marked form.
+        expect(withheldRegionReason(true, 'after', 'hunk-beyond-file')).toBe('hunk-beyond-file (after, contract)');
+        expect(withheldRegionReason(false, 'after', 'hunk-beyond-file')).toBe('hunk-beyond-file (after)');
+        expect(withheldRegionReason(true, 'before', 'region')).toBe(
+            'region-exceeds-per-region-budget (before, contract)'
+        );
+        expect(withheldRegionReason(false, 'before', 'total')).toBe('total-evidence-budget-exhausted (before)');
+    });
+
     it('derives contract-carrying from the closure, the contract documents, and the workflow inventory', () => {
         expect(isContractCarryingPath('scripts/trustedGithubWriteBootstrap.ts')).toBe(true);
         expect(isContractCarryingPath('AGENTS.md')).toBe(true);
@@ -430,11 +443,43 @@ describe('contract-carrying admission', () => {
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
+    it('admits a collected spec that imports a closure member without an extension before an equal-sized bulk spec', () => {
+        // R1: live specs import closure members without an extension (`../githubAppIdentity`), so the
+        // specifier resolved outside the closure set and the spec was classified bulk. Resolving the
+        // extensionless form through the TypeScript extensions matches how the runtime resolves it.
+        const before = 'const before = 1;\n';
+        const contractAfter = "import { githubAppIdentity } from '../githubAppIdentity';\n";
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/plain.spec.ts'), changedFile('scripts/__tests__/githubAppIdentity.spec.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/githubAppIdentity.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/githubAppIdentity.spec.ts`]: contractAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'scripts/__tests__/githubAppIdentity.spec.ts')
+        ).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+
     it('admits a collected spec that names a pinned workflow file before an equal-sized bulk spec', () => {
         // R1: `healthGatesWorkflow.spec.ts` imports no closure member, but its content pins the workflow
         // inventory, so a change to it carries the Gate contract.
         const before = 'const before = 1;\n';
-        const contractAfter = "const workflow = 'semantic-review.yml';\n";
+        const contractAfter = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
         const set = collectEvidence({
             port: fakeSource({
@@ -461,6 +506,38 @@ describe('contract-carrying admission', () => {
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
+    it('leaves a collected spec that only mentions a workflow filename bulk', () => {
+        // R2: an unanchored substring matched a filename anywhere, so prose mentioning `nightly.yml`
+        // classified the spec contract-carrying and displaced the bulk source it covers. The pin is the
+        // `.github/workflows/` path, not the bare filename.
+        const before = 'const before = 1;\n';
+        const plainAfter = "import { describe, expect, it } from 'vitest';\n";
+        const mentionAfter = '// nightly.yml is mentioned here without its pinned path\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('aaa/plain.spec.ts'), changedFile('zzz/mention.spec.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: plainAfter,
+                    [`${MERGE_BASE}:zzz/mention.spec.ts`]: before,
+                    [`${HEAD}:zzz/mention.spec.ts`]: mentionAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(plainAfter, 'utf8'),
+            },
+        });
+        expect(set.references.some((reference) => reference.path === 'zzz/mention.spec.ts')).toBe(false);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(true);
+        expect(set.truncated.some((entry) => entry.path === 'zzz/mention.spec.ts')).toBe(true);
+    });
+
     it('leaves a collected spec whose after side is unavailable unclassified, never an error', () => {
         const set = collectEvidence({
             port: fakeSource({ files: [changedFile('scripts/__tests__/missing.spec.ts')], blobs: {} }),
@@ -475,10 +552,12 @@ describe('contract-carrying admission', () => {
 
     it('admits a pinned workflow file before a large bulk file under a one-path budget', () => {
         // R2: the closure is trusted-graph scripts only, so `.github/workflows/semantic-review.yml` ranked
-        // bulk and a tight budget could drop the file that holds the advisory check's provider key.
+        // bulk and a tight budget could drop the file that holds the advisory check's provider key. The
+        // bulk fixture is cheaper under every non-contract leg, so only the contract class admits the
+        // workflow file and its after side.
         const workflowBefore = 'name: semantic-review\n';
         const workflowAfter = 'name: semantic-review\non: pull_request_target\n';
-        const bulk = 'const bulk = 1;\n'.repeat(40);
+        const bulk = 'const bulk = 1;\n';
         const set = collectEvidence({
             port: fakeSource({
                 files: [changedFile('aaa/bulk.ts'), changedFile('.github/workflows/semantic-review.yml')],
@@ -493,13 +572,15 @@ describe('contract-carrying admission', () => {
             headSha: HEAD,
             contractSourceSha: MERGE_BASE,
             limits: {
-                maxRegionBytes: Buffer.byteLength(bulk, 'utf8'),
+                maxRegionBytes: 1_000_000,
                 maxTotalBytes: Buffer.byteLength(workflowBefore, 'utf8') + Buffer.byteLength(workflowAfter, 'utf8'),
             },
         });
-        expect(set.references.some((reference) => reference.path === '.github/workflows/semantic-review.yml')).toBe(
-            true
-        );
+        expect(
+            set.references.some(
+                (reference) => reference.path === '.github/workflows/semantic-review.yml' && reference.side === 'after'
+            )
+        ).toBe(true);
         expect(
             set.truncated.some(
                 (entry) => entry.path === 'aaa/bulk.ts' && entry.reason === 'total-evidence-budget-exhausted (before)'
@@ -572,13 +653,17 @@ describe('contract-carrying admission', () => {
         ).toBe(true);
     });
 
-    it('asserts the exact truncated entries when a binding budget forces the spec out', () => {
-        // R5: with a budget that admits only the source's two sides, the source is admitted and the
-        // spec — which would have sorted first by path — is withheld with its contract-marked cause.
+    it('admits a closure source before a cheaper spec and withholds the spec when the budget binds', () => {
+        // R7: with a budget that admitted only the source's two sides, the spec's before side alone
+        // exceeded it, so the spec was withheld under either order and the case observed the qualifier
+        // vocabulary rather than the non-spec-before-spec ordering. A budget the spec's before side
+        // fits, but which still displaces a source side when the spec sorts first, makes the ordering
+        // leg decisive: the spec is cheaper than the source, so only non-spec-before-spec admits both
+        // source sides ahead of it.
         const sourceBefore = 'export const policy = 1;\n';
-        const sourceAfter = 'export const policy = 2;\n';
+        const sourceAfter = `export const policy = 2;\n${'const grown = 1;\n'.repeat(6)}`;
         const specBefore = "import { planReviewRisk } from '../reviewRiskPolicy.ts';\n";
-        const specAfter = `${specBefore}${'const large = 1;\n'.repeat(200)}`;
+        const specAfter = specBefore;
         const set = collectEvidence({
             port: fakeSource({
                 files: [
@@ -600,9 +685,10 @@ describe('contract-carrying admission', () => {
                 maxTotalBytes: Buffer.byteLength(sourceBefore, 'utf8') + Buffer.byteLength(sourceAfter, 'utf8'),
             },
         });
-        expect(new Set(set.references.map((reference) => reference.path))).toEqual(
-            new Set(['scripts/reviewRiskPolicy.ts'])
-        );
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`).sort()).toEqual([
+            'scripts/reviewRiskPolicy.ts:after',
+            'scripts/reviewRiskPolicy.ts:before',
+        ]);
         expect(set.truncated).toEqual([
             {
                 path: 'scripts/__tests__/reviewRiskPolicy.spec.ts',
@@ -613,6 +699,60 @@ describe('contract-carrying admission', () => {
                 reason: 'total-evidence-budget-exhausted (after, contract)',
             },
         ]);
+    });
+
+    it('orders a small genuine edit before a whole-file fallback of larger cost', () => {
+        // R5: the changed-line total ranked a zero-line copy (numstat `0 0`) first, so its whole before
+        // side spent the budget and the five-line edit beside it was withheld on both sides. Ordering by
+        // the admission bytes keeps the copy's whole-file fallback from outranking the edit.
+        const copy = 'const copied = 1;\n'.repeat(150);
+        const editBefore = 'const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n';
+        const editAfter = 'const a = 2;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('zzz/duplicated.ts', {
+                        kind: 'copied',
+                        previousPath: 'zzz/original.ts',
+                        added: 0,
+                        deleted: 0,
+                    }),
+                    changedFile('aaa/edit.ts', { added: 1, deleted: 1 }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:zzz/original.ts`]: copy,
+                    [`${HEAD}:zzz/duplicated.ts`]: copy,
+                    [`${MERGE_BASE}:aaa/edit.ts`]: editBefore,
+                    [`${HEAD}:aaa/edit.ts`]: editAfter,
+                },
+                hunks: new Map([
+                    [
+                        'aaa/edit.ts',
+                        {
+                            path: 'aaa/edit.ts',
+                            before: [{ startLine: 1, endLine: 5 }],
+                            after: [{ startLine: 1, endLine: 5 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(copy, 'utf8'),
+            },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`).sort()).toEqual([
+            'aaa/edit.ts:after',
+            'aaa/edit.ts:before',
+        ]);
+        expect(
+            set.references.some(
+                (reference) => reference.path === 'zzz/duplicated.ts' || reference.path === 'zzz/original.ts'
+            )
+        ).toBe(false);
     });
 });
 
@@ -4363,6 +4503,59 @@ describe('verify withholds a region over the per-region budget', () => {
         expect(report.scope.truncated).toEqual([
             { path: 'scripts/reviewDossier.ts', reason: 'region-exceeds-per-region-budget (after, contract)' },
         ]);
+    });
+
+    it('names a content-classified spec reference with the same contract qualifier on both routes', async () => {
+        // R3: verify derived the contract flag from the path alone, so a spec whose content imports the
+        // closure read bulk on verify and contract on scan. The shared content rule makes both routes
+        // emit the same string for the same reference.
+        const specPath = 'scripts/__tests__/agentDeliveryScripts.spec.ts';
+        const specAfter = `import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n${'const oversized = 1;\n'.repeat(
+            8
+        )}`;
+        const scanSet = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(specPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${specPath}`]: 'const before = 1;\n',
+                    [`${HEAD}:${specPath}`]: specAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 32, maxTotalBytes: 1_000_000 },
+        });
+        const scanReason = scanSet.truncated.find((entry) => entry.path === specPath)?.reason;
+
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const { report } = await verifyWith({
+            provider,
+            blobs: { [`${HEAD}:${specPath}`]: specAfter },
+            limits: { maxRegionBytes: 32, maxTotalBytes: 8_192 },
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [
+                        { path: specPath, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER },
+                    ],
+                },
+            ],
+        });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.truncated).toEqual([
+            { path: specPath, reason: 'region-exceeds-per-region-budget (after, contract)' },
+        ]);
+        expect(scanReason).toBe('region-exceeds-per-region-budget (after, contract)');
     });
 
     it('sends and judges a region that fits the budget', async () => {

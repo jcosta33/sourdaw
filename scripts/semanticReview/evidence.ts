@@ -29,8 +29,21 @@ import {
     type EvidenceSide,
     type SemanticScopeExclusion,
 } from './contracts.ts';
+import {
+    admissionBytesByPath,
+    compareForAdmission,
+    compareLexicographic,
+    kindHasAfterSide,
+    kindHasBeforeSide,
+    readChangedContents,
+    type ChangedFileContents,
+} from './evidenceOrdering.ts';
 import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
+import { sliceLines, splitLines, type LineRange } from './slicing.ts';
+
+export { compareByPath, compareLexicographic } from './evidenceOrdering.ts';
+export type { LineRange } from './slicing.ts';
 
 export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
 
@@ -50,9 +63,6 @@ export type SemanticChangedFile = {
  * The only source access this module has. The caller supplies Git-object reads; this module never
  * decides how they are performed.
  */
-/** A contiguous run of lines in one revision of one file. */
-export type LineRange = { readonly startLine: number; readonly endLine: number };
-
 /**
  * The changed lines of one path, per side, with the margin the diff was taken at already applied.
  *
@@ -183,7 +193,11 @@ function directoryOf(path: string): string {
     return index === -1 ? '' : path.slice(0, index + 1);
 }
 
-/** Resolves a relative import/export specifier against the importing file's directory to a repo path. */
+/**
+ * Resolves a relative import/export specifier against the importing file's directory to a repo path,
+ * leaving the extension off. The extension is added by `resolvesToClosureMember`, matching how the
+ * runtime resolves an extensionless import.
+ */
 function resolveSpecifier(fromDir: string, specifier: string): string | undefined {
     const segments = fromDir.split('/').filter((segment) => segment !== '' && segment !== '.');
     for (const segment of specifier.split('/')) {
@@ -201,6 +215,17 @@ function resolveSpecifier(fromDir: string, specifier: string): string | undefine
     return segments.join('/');
 }
 
+/** The TypeScript source extensions the repository resolves for an extensionless import specifier. */
+const SOURCE_MODULE_EXTENSIONS: readonly string[] = ['.ts', '.tsx', '.mts', '.cts'];
+
+/** Whether a resolved specifier path names a trusted closure member, with or without a source extension. */
+function resolvesToClosureMember(base: string): boolean {
+    if (TRUSTED_CLOSURE_PATHS.has(base)) {
+        return true;
+    }
+    return SOURCE_MODULE_EXTENSIONS.some((extension) => TRUSTED_CLOSURE_PATHS.has(base + extension));
+}
+
 /** The relative `import`/`export ... from` specifiers of one source file, in document order. */
 function relativeImportSpecifiers(source: string): string[] {
     const specifiers: string[] = [];
@@ -216,28 +241,28 @@ function relativeImportSpecifiers(source: string): string[] {
     return specifiers;
 }
 
-/** Whether a collected spec's after-side content imports a trusted closure member or names a pinned workflow file. */
+/**
+ * Whether a collected spec's after-side content imports a trusted closure member or names a pinned
+ * workflow file. The workflow pin matches the pinned repo path rather than the bare filename, so prose
+ * that merely mentions a workflow name cannot classify a spec.
+ */
 function isContractCarryingSpecContent(afterContent: string, specPath: string): boolean {
     for (const specifier of relativeImportSpecifiers(afterContent)) {
         const resolved = resolveSpecifier(directoryOf(specPath), specifier);
-        if (resolved !== undefined && TRUSTED_CLOSURE_PATHS.has(resolved)) {
+        if (resolved !== undefined && resolvesToClosureMember(resolved)) {
             return true;
         }
     }
-    return HEALTH_GATE_WORKFLOW_FILES.some((name) => afterContent.includes(name));
+    return HEALTH_GATE_WORKFLOW_FILES.some((name) => afterContent.includes(`.github/workflows/${name}`));
 }
 
 /**
- * Whether a changed collected spec is contract-carrying, classified from its after-side content read
- * through the source port. A spec whose content is unavailable is simply not classified; the collector
- * performs the read at most once per changed file.
+ * Whether a changed path is contract-carrying, decided from the path alone or, for a collected spec,
+ * from its after-side content. The scan and verify routes share this rule, so the same withheld
+ * reference reads the same whichever route produced it.
  */
-function classifyChangedSpecContract(port: SemanticSourcePort, headSha: string, path: string): boolean {
-    if (!isCollectedSpec(path)) {
-        return false;
-    }
-    const after = port.readFile(headSha, path);
-    return after !== undefined && isContractCarryingSpecContent(after, path);
+export function isContractCarryingContent(path: string, content: string): boolean {
+    return isContractCarryingPath(path) || (isCollectedSpec(path) && isContractCarryingSpecContent(content, path));
 }
 
 /** The rule ids a path admits, sorted so two sets can be compared for equality. */
@@ -293,10 +318,6 @@ export function exclusionReason(file: SemanticChangedFile): string | undefined {
     return undefined;
 }
 
-function splitLines(text: string): string[] {
-    return text.split('\n');
-}
-
 /**
  * Whether a region can be supplied at all.
  *
@@ -336,22 +357,6 @@ export function evidenceSidePrefix(side: EvidenceSide): string {
     return 'c';
 }
 
-/** A deterministic string ordering. `localeCompare` is locale-dependent and would not be reproducible. */
-export function compareLexicographic(left: string, right: string): number {
-    if (left < right) {
-        return -1;
-    }
-    if (left > right) {
-        return 1;
-    }
-    return 0;
-}
-
-/** A deterministic path ordering, used wherever a source ordering must be reproducible. */
-export function compareByPath(left: { readonly path: string }, right: { readonly path: string }): number {
-    return compareLexicographic(left.path, right.path);
-}
-
 /** The resolved bounds of one region, matching the line accounting every region uses. */
 function regionBounds(request: RegionRequest, text: string): LineRange {
     const lines = splitLines(text);
@@ -381,16 +386,6 @@ function makeReference(request: RegionRequest, text: string, ordinal: number): E
         endLine: bounds.endLine,
         contentHash: semanticTextDigest(text),
     };
-}
-
-/** The named lines of `text`, clamped to what the file holds, or `undefined` when none remain. */
-function sliceLines(text: string, range: LineRange): { text: string; range: LineRange } | undefined {
-    const lines = splitLines(text);
-    const last = Math.max(1, lines.length);
-    const start = Math.min(Math.max(1, range.startLine), last);
-    const end = Math.min(Math.max(start, range.endLine), last);
-    const slice = lines.slice(start - 1, end);
-    return slice.length === 0 ? undefined : { text: slice.join('\n'), range: { startLine: start, endLine: end } };
 }
 
 function regionFor(port: SemanticSourcePort, revisionSha: string, path: string): string | undefined {
@@ -430,7 +425,8 @@ function admitSide(
     truncated: SemanticScopeExclusion[],
     limitations: string[],
     ownWithheldSides: Map<string, Set<EvidenceSide>>,
-    contextWithheldSides: Set<EvidenceSide>
+    contextWithheldSides: Set<EvidenceSide>,
+    contractCarryingPaths: ReadonlySet<string>
 ): void {
     if (ranges === undefined || ranges.length === 0) {
         admit(request, raw, label);
@@ -439,7 +435,14 @@ function admitSide(
     for (const range of ranges) {
         const sliced = sliceLines(raw, range);
         if (sliced === undefined) {
-            truncated.push({ path: request.path, reason: `hunk-beyond-file (${label})` });
+            truncated.push({
+                path: request.path,
+                reason: withheldRegionReason(
+                    isContractCarryingRegion(request, label, contractCarryingPaths),
+                    label,
+                    'hunk-beyond-file'
+                ),
+            });
             limitations.push(`evidence for ${request.path} (${label}) names lines this revision does not hold`);
             recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
             continue;
@@ -448,16 +451,37 @@ function admitSide(
     }
 }
 
-export type WithheldBudgetCause = 'region' | 'total';
+export type WithheldRegionCause = 'region' | 'total' | 'hunk-beyond-file';
+
+/** The withheld-region code each cause emits, so every cause shares one vocabulary. */
+function withheldCauseCode(cause: WithheldRegionCause): string {
+    if (cause === 'region') {
+        return 'region-exceeds-per-region-budget';
+    }
+    if (cause === 'total') {
+        return 'total-evidence-budget-exhausted';
+    }
+    return 'hunk-beyond-file';
+}
+
+/** Whether a region belongs to a contract-carrying changed path; context regions are already named. */
+function isContractCarryingRegion(
+    request: { readonly changedPath?: string },
+    label: string,
+    contractCarryingPaths: ReadonlySet<string>
+): boolean {
+    return label !== 'contract' && request.changedPath !== undefined && contractCarryingPaths.has(request.changedPath);
+}
 
 /**
- * The one withheld-region vocabulary the scan and verify routes share. The budget cause stays the
- * code — `region-exceeds-per-region-budget` or `total-evidence-budget-exhausted` — and `contract`
- * joins the side qualifier for a contract-carrying changed path, so the same withheld reference reads
- * the same whichever route produced it. Every other path keeps the plain `<code> (<side>)` form.
+ * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code —
+ * `region-exceeds-per-region-budget`, `total-evidence-budget-exhausted`, or `hunk-beyond-file` — and
+ * `contract` joins the side qualifier for a contract-carrying changed path, so the same withheld
+ * reference reads the same whichever route produced it. Every other path keeps the plain
+ * `<code> (<side>)` form.
  */
-export function withheldRegionReason(contractCarrying: boolean, side: string, budget: WithheldBudgetCause): string {
-    const base = budget === 'region' ? 'region-exceeds-per-region-budget' : 'total-evidence-budget-exhausted';
+export function withheldRegionReason(contractCarrying: boolean, side: string, cause: WithheldRegionCause): string {
+    const base = withheldCauseCode(cause);
     return contractCarrying ? `${base} (${side}, contract)` : `${base} (${side})`;
 }
 
@@ -468,12 +492,10 @@ export function withheldRegionReason(contractCarrying: boolean, side: string, bu
 function withheldReason(
     request: RegionRequest,
     label: string,
-    budget: WithheldBudgetCause,
+    cause: WithheldRegionCause,
     contractCarryingPaths: ReadonlySet<string>
 ): string {
-    const contractCarrying =
-        label !== 'contract' && request.changedPath !== undefined && contractCarryingPaths.has(request.changedPath);
-    return withheldRegionReason(contractCarrying, label, budget);
+    return withheldRegionReason(isContractCarryingRegion(request, label, contractCarryingPaths), label, cause);
 }
 
 type RegionAdmissionState = {
@@ -614,7 +636,8 @@ function createRegionAdmission(
                 state.truncated,
                 state.limitations,
                 state.ownWithheldSides,
-                state.contextWithheldSides
+                state.contextWithheldSides,
+                state.contractCarryingPaths
             ),
         references: state.references,
         contents: state.contents,
@@ -627,53 +650,19 @@ function createRegionAdmission(
     };
 }
 
-/** Whether a change kind has a before side at the merge base; a copy's unchanged source is one. */
-function kindHasBeforeSide(kind: SemanticChangeKind): boolean {
-    return kind === 'modified' || kind === 'renamed' || kind === 'deleted' || kind === 'copied';
-}
-
-/** Whether a change kind has an after side at the reviewed head; a copy's new destination is one. */
-function kindHasAfterSide(kind: SemanticChangeKind): boolean {
-    return kind === 'added' || kind === 'modified' || kind === 'renamed' || kind === 'copied';
-}
-
-/**
- * The admission order for one change. Contract-carrying before bulk, and inside each group non-spec
- * before collected spec, then ascending changed-line total, then path — so no spec can outrank the
- * source it covers and no large path can starve a smaller one.
- */
-function compareForAdmission(
-    left: SemanticChangedFile,
-    right: SemanticChangedFile,
-    contractCarrying: ReadonlySet<string>
-): number {
-    const leftContract = contractCarrying.has(left.path) ? 0 : 1;
-    const rightContract = contractCarrying.has(right.path) ? 0 : 1;
-    if (leftContract !== rightContract) {
-        return leftContract - rightContract;
-    }
-    const leftSpec = isCollectedSpec(left.path) ? 1 : 0;
-    const rightSpec = isCollectedSpec(right.path) ? 1 : 0;
-    if (leftSpec !== rightSpec) {
-        return leftSpec - rightSpec;
-    }
-    const leftLines = left.added + left.deleted;
-    const rightLines = right.added + right.deleted;
-    if (leftLines !== rightLines) {
-        return leftLines - rightLines;
-    }
-    return compareByPath(left, right);
-}
-
-/** The changed paths that are contract-carrying, each classified once from its path or after-side content. */
+/** The changed paths that are contract-carrying, classified once from their path or after-side content. */
 function classifyContractCarryingPaths(
-    port: SemanticSourcePort,
-    headSha: string,
-    changed: readonly SemanticChangedFile[]
+    changed: readonly SemanticChangedFile[],
+    contents: ReadonlyMap<string, ChangedFileContents>
 ): Set<string> {
     const contractCarrying = new Set<string>();
     for (const file of changed) {
-        if (isContractCarryingPath(file.path) || classifyChangedSpecContract(port, headSha, file.path)) {
+        if (isContractCarryingPath(file.path)) {
+            contractCarrying.add(file.path);
+            continue;
+        }
+        const after = contents.get(file.path)?.after;
+        if (after !== undefined && isContractCarryingContent(file.path, after)) {
             contractCarrying.add(file.path);
         }
     }
@@ -694,10 +683,6 @@ export function collectEvidence(input: {
     contractPaths?: readonly string[];
 }): SemanticEvidenceSet {
     const changed = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)];
-    // Classify each changed file once: a pure-path contract member, or a collected spec whose after
-    // side imports a closure member or names a pinned workflow file. The spec read happens here, once.
-    const contractCarrying = classifyContractCarryingPaths(input.port, input.headSha, changed);
-    const files = changed.sort((left, right) => compareForAdmission(left, right, contractCarrying));
     // Read once for the whole change: one `git diff` answers for every path, and an empty map means
     // the hunks were unavailable and each changed file is supplied whole.
     let hunksByPath: ReadonlyMap<string, PathHunks>;
@@ -706,6 +691,14 @@ export function collectEvidence(input: {
     } catch {
         hunksByPath = new Map();
     }
+
+    // Read each changed path's sides once; classification, admission sizing, and admission itself all
+    // consume this single read. Classifying from the same content the scan admits keeps each changed
+    // path to at most one content read.
+    const contents = readChangedContents(input.port, input.mergeBaseSha, input.headSha, changed);
+    const contractCarrying = classifyContractCarryingPaths(changed, contents);
+    const bytesByPath = admissionBytesByPath(changed, contents, hunksByPath);
+    const files = [...changed].sort((left, right) => compareForAdmission(left, right, contractCarrying, bytesByPath));
 
     const admission = createRegionAdmission(input.limits, contractCarrying);
     const { admit, admitSide } = admission;
@@ -725,8 +718,9 @@ export function collectEvidence(input: {
         }
         const beforePath = file.previousPath ?? file.path;
         const hunks = hunksByPath.get(file.path);
+        const entry = contents.get(file.path);
         if (kindHasBeforeSide(file.kind)) {
-            const before = regionFor(input.port, input.mergeBaseSha, beforePath);
+            const before = entry?.before;
             if (before === undefined) {
                 admission.truncated.push({ path: beforePath, reason: 'evidence-unavailable-at-revision' });
                 admission.limitations.push(`before-side content for ${beforePath} was unavailable at the merge base`);
@@ -740,7 +734,7 @@ export function collectEvidence(input: {
             }
         }
         if (kindHasAfterSide(file.kind)) {
-            const after = regionFor(input.port, input.headSha, file.path);
+            const after = entry?.after;
             if (after === undefined) {
                 admission.truncated.push({ path: file.path, reason: 'evidence-unavailable-at-revision' });
                 admission.limitations.push(`after-side content for ${file.path} was unavailable at the reviewed head`);

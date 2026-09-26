@@ -669,6 +669,7 @@ describe('semantic review context', () => {
                                 { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after)' },
                                 { path: 'src/d.ts', reason: 'total-evidence-budget-exhausted (context)' },
                                 { path: 'src/e.ts', reason: 'region-exceeds-per-region-budget (contract)' },
+                                { path: 'src/f.ts', reason: 'hunk-beyond-file (after, contract)' },
                             ],
                         },
                     })
@@ -682,6 +683,7 @@ describe('semantic review context', () => {
             'region-exceeds-per-region-budget (after)',
             'total-evidence-budget-exhausted (context)',
             'region-exceeds-per-region-budget (contract)',
+            'hunk-beyond-file (after, contract)',
         ]);
     });
 
