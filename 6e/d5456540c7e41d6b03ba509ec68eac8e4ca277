@@ -20,6 +20,8 @@ scripts/reviewRiskPolicy.ts
   s_2bfd55a4393d7c::t_a1b7bb406bd2a7 75-81
 scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
   h_beb54bf43b47b7 205-214
+scripts/semanticReview/evidence.ts
+  s_1c08b47ac3792f::t_ddfdf19ae557d1 475-476
 ---
 {
   "schema_version": "authorship/3.0.0",

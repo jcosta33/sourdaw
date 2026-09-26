@@ -53,12 +53,19 @@ scripts/testInstructions.ts
   s_ef536aab624565::t_fd4b3c99623a46 520
   s_ef536aab624565::t_a5c12a89eea354 511
   s_ef536aab624565::t_0a9a7470b58c21 521-529
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 480-481,554,559
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.7.4",
   "base_commit_sha": "c2ea6401bb0659a0e0efa6c0cae426396ca3e7e2",
   "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
   "sessions": {
     "s_1c08b47ac3792f": {
       "agent_id": {
