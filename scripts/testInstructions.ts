@@ -60,11 +60,30 @@ const LEADING_ARTICLES = new Set(['a', 'an', 'the']);
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
 
+/**
+ * A letter or digit. An apostrophe with one immediately on both sides (`track's`, `doesn't`) is
+ * part of the word and never opens or closes a single-quoted span. The sentence split
+ * (`isInWordApostrophe`) and both quoted-span patterns read it the same way, so a possessive can
+ * neither hold the rest of its line open against the split nor pair with a later contraction into
+ * a span that hides the prose between them. An apostrophe with whitespace, punctuation, or the line
+ * edge on either side still delimits: `python -c 'import json; print(1)'` stays one quoted argument.
+ */
+const WORD_CHARACTER = '[\\p{L}\\p{N}]';
+
+/** An apostrophe inside a word, as a pattern fragment. */
+const IN_WORD_APOSTROPHE = `(?<=${WORD_CHARACTER})'(?=${WORD_CHARACTER})`;
+
+/** A terminated single-quoted span: delimiting apostrophes outside any word, in-word apostrophes allowed inside. */
+const SINGLE_QUOTED_SPAN = `(?!${IN_WORD_APOSTROPHE})'(?:[^']|${IN_WORD_APOSTROPHE})*(?!${IN_WORD_APOSTROPHE})'`;
+
+/** One code point that is a letter or digit, for the sentence split's per-character apostrophe test. */
+const WORD_CHARACTER_ONLY = new RegExp(`^${WORD_CHARACTER}$`, 'u');
+
 /** Leading quoted spans (backtick, single quote, or double quote), for peeling the launch off a segment's front. */
-const LEADING_QUOTED_SPAN = /^(`[^`]*`|'[^']*'|"[^"]*")/;
+const LEADING_QUOTED_SPAN = new RegExp(`^(\`[^\`]*\`|${SINGLE_QUOTED_SPAN}|"[^"]*")`, 'u');
 
 /** Any terminated quoted span (backtick, single quote, or double quote), for removing quoted commands from a segment's prose remainder. */
-const QUOTED_SPAN = /(`[^`]*`|'[^']*'|"[^"]*")/g;
+const QUOTED_SPAN = new RegExp(`(\`[^\`]*\`|${SINGLE_QUOTED_SPAN}|"[^"]*")`, 'gu');
 
 /**
  * A flat parenthetical, for stripping or keeping result annotations like `(140 passed)`. A match
@@ -336,12 +355,13 @@ function stripRepeated(value: string, pattern: RegExp): string {
  * the value unchanged when it has none.
  */
 function leadingQuotedSpanContent(value: string): string {
-    const quote = value[0];
-    if (quote !== '`' && quote !== "'" && quote !== '"') {
-        return value;
-    }
-    const closing = value.indexOf(quote, 1);
-    return closing > 1 ? value.slice(1, closing) : value;
+    const span = leadingQuotedSpan(value);
+    return span.length > 2 ? span.slice(1, -1) : value;
+}
+
+/** The leading terminated quoted span itself, quotes included, or empty when the value has none. */
+function leadingQuotedSpan(value: string): string {
+    return LEADING_QUOTED_SPAN.exec(value)?.[0] ?? '';
 }
 
 type PeeledLaunch = { lead: string; follower: string; spanLead: boolean; spanTokens: number };
@@ -365,12 +385,12 @@ function peeledLaunch(segment: string): PeeledLaunch {
     for (;;) {
         const quote = rest[0];
         if (quote === '`' || quote === "'" || quote === '"') {
-            const closing = rest.indexOf(quote, 1);
+            const span = leadingQuotedSpan(rest);
             const content = leadingQuotedSpanContent(rest).trim();
             spanLead = true;
             spanTokens = content === '' ? 0 : content.split(/\s+/).length;
-            if (spanTokens === 1 && closing > 1) {
-                const behind = rest.slice(closing + 1).trim();
+            if (spanTokens === 1 && span.length > 2) {
+                const behind = rest.slice(span.length).trim();
                 spanFollower = behind === '' ? '' : (behind.split(/\s+/)[0] ?? '');
             }
         }
@@ -725,7 +745,9 @@ function isCommandNarration(segment: string): boolean {
  * clause. Only a `.` or `;` followed by whitespace or the end ends a segment, and only outside a
  * quoted span — backtick, single quote, and double quote alike — so version numbers, dotted
  * paths, and a separator inside a command's quoted argument (`python -c "import json; print(1)"`)
- * never split a command into a launch-less fragment; empty pieces from separators and blank lines
+ * never split a command into a launch-less fragment. An apostrophe with a letter or digit on both
+ * sides (`the track's fader`, `doesn't`) is part of its word and opens no span, so a possessive
+ * never merges the sentences behind it into one segment; empty pieces from separators and blank lines
  * drop. List markers leave the line before that split, because a numbered marker's own dot would
  * otherwise be read as a sentence boundary and strand a bare `1` segment that no command list
  * deserves. Empty input yields no segment and so narrates nothing; `composePublishBody`'s emptiness
@@ -740,9 +762,9 @@ function testInstructionSegments(text: string): string[] {
 /**
  * One line split on `.`/`;` followed by whitespace or the end, but only while no quoted span is
  * open. The quote kind that opens a span is the only kind that closes it, so an apostrophe inside
- * a double-quoted message never ends it; the separator itself drops, every other character
- * (opening and closing quotes included) stays for the launch peel and the quoted-span removal
- * downstream.
+ * a double-quoted message never ends it, and an in-word apostrophe neither opens nor closes one;
+ * the separator itself drops, every other character (opening and closing quotes included) stays
+ * for the launch peel and the quoted-span removal downstream.
  */
 function splitOutsideQuotedSpans(line: string): string[] {
     const characters = [...line];
@@ -750,9 +772,10 @@ function splitOutsideQuotedSpans(line: string): string[] {
     let current = '';
     let quote: string | undefined;
     for (const [index, character] of characters.entries()) {
-        if (quote === undefined && (character === '`' || character === "'" || character === '"')) {
+        const delimits = !isInWordApostrophe(characters, index);
+        if (quote === undefined && delimits && (character === '`' || character === "'" || character === '"')) {
             quote = character;
-        } else if (character === quote) {
+        } else if (character === quote && delimits) {
             quote = undefined;
         }
         if (quote === undefined && (character === '.' || character === ';')) {
@@ -767,6 +790,15 @@ function splitOutsideQuotedSpans(line: string): string[] {
     }
     segments.push(current);
     return segments;
+}
+
+/** Whether the code point at `index` is an apostrophe with a letter or digit immediately on both sides. */
+function isInWordApostrophe(characters: readonly string[], index: number): boolean {
+    return (
+        characters[index] === "'" &&
+        WORD_CHARACTER_ONLY.test(characters[index - 1] ?? '') &&
+        WORD_CHARACTER_ONLY.test(characters[index + 1] ?? '')
+    );
 }
 
 /**

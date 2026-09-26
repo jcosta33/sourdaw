@@ -908,6 +908,60 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
+    it('keeps a single-quoted argument after whitespace one segment', () => {
+        const instructions = "python -c 'import json; print(1)'";
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([instructions]);
+    });
+
+    it.each([
+        [
+            'a possessive before a launch sentence',
+            "Open the mixer and confirm the track's fader moves. pnpm dev. Press Stop.",
+            'pnpm dev',
+        ],
+        [
+            'a contraction before a launch sentence',
+            "Drag the clip; it doesn't snap. pnpm format on every touched file (clean, staged). Press Play.",
+            'pnpm format on every touched file (clean, staged)',
+        ],
+    ])('splits the sentences behind %s', (_label, instructions, judged) => {
+        // An apostrophe between two letters is part of its word, not an opening quote, so the
+        // sentences behind it split and the launch sentence is judged on its own.
+        expect(narratingTestInstructionSegments(instructions)).toEqual([judged]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('quotes the check line behind a possessive, not the app step before it', () => {
+        const instructions =
+            "Assign two armed audio tracks different inputs, enable On or Auto monitoring, then record: each track's " +
+            'monitor and capture now come from its own endpoint. Turning monitoring off for one track leaves the ' +
+            'other monitoring. Covered by pnpm test:run src/modules/AudioEngine/__tests__/recording.spec.ts.';
+
+        const message = refusal(() => assertObservableTestInstructions(instructions));
+        expect(message).toMatch(REFUSAL_PREFIX);
+        expect(message).toContain('Covered by pnpm test:run');
+        expect(message).not.toContain('Assign two armed');
+    });
+
+    it('passes a step whose possessive and contraction sit on either side of a separator', () => {
+        const step = "Open the mixer and confirm the track's fader moves; the meter doesn't clip.";
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a contraction inside a quoted commit message', "git commit -m 'don't reset the mixer'"],
+        ['a possessive inside a quoted echo argument', "echo 'the track's meter moves'"],
+    ])('refuses %s', (_label, instructions) => {
+        // The quoted-span removal reads the in-word apostrophe as part of the argument, so the
+        // whole quoted argument drops with the launch; pairing it as a closing quote would strand
+        // the prose behind it as rescuing words.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
     it.each([
         ['a rebuild-and-verify command pair', 'pnpm wasm:all\npnpm wasm:verify'],
         [
