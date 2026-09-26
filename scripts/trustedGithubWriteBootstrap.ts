@@ -497,25 +497,37 @@ const computedDynamicSpecifiersCache = new Map<string, string[]>();
  * a heritage clause, a `case`, or a statement before a block), `const load = require; load(expr)`,
  * `require.call(null, expr)` / `require.apply(null, args)`, and `require.bind(null)(expr)`, whose
  * second call carries the specifier — are resolved, so they are refused too rather than silently
- * skipped. The single-file binding pass reads every declared spelling of a loader: a `createRequire`
- * imported under an alias (`import { createRequire as makeRequire } from 'node:module'`, then
- * `makeRequire(url)(expr)` or `const load = makeRequire(url); load(expr)`), a `: NodeRequire`
- * annotation or an `as NodeRequire` cast on the initializer, a loader in any declarator of a
- * declaration (`const url = import.meta.url, load = createRequire(url)`), and a `.resolve` member on
- * a bound loader (`load.resolve(expr)`), which loads exactly as `require.resolve(expr)` does.
+ * skipped. The single-file binding pass reads a loader declaration in this file: a loader name
+ * declared `const`/`let`/`var`, in any declarator of its declaration, whose initializer is the
+ * `require` identifier or a complete `createRequire(…)` call — spelled literally or under the alias
+ * a `node:module` `createRequire` import recorded (`import { createRequire as makeRequire } from
+ * 'node:module'`, then `makeRequire(url)(expr)` or `const load = makeRequire(url); load(expr)`) —
+ * with a `: NodeRequire` annotation or an `as`/`satisfies` cast on that initializer, and a `.resolve`
+ * member on such a loader (`load.resolve(expr)`), which loads exactly as `require.resolve(expr)`
+ * does. Nothing else in the file is a loader to that pass.
  *
  * Shapes this scan does not decide are admitted, not refused, and are named here as undecided rather
- * than implied: a loader reached through a `node:module` namespace import
+ * than implied, because the binding pass is single-file: it reads a loader's declaration in this file
+ * and no other file, and it reads no initializer other than the two shapes above. Undecided are a
+ * loader reached through a `node:module` namespace import
  * (`import * as ns from 'node:module'` then `ns.createRequire(expr)`, declared or chained), a loader
  * assigned after its declaration (`let load; load = require;`), a parenthesised initializer
  * (`const load = (require);`, `const load = (0, require);`), a double-parenthesised callee
- * (`((require))(spec);`), and a `require`-named member whose list opens right after a block-opening
+ * (`((require))(spec);`), a `require`-named member whose list opens right after a block-opening
  * brace (`function load() { require(spec) { run(); } }`), which the declaration walk cannot tell from
- * an object method. The type-body rule also still refuses grammar-legal declarations whose
+ * an object method, an initializer that names another binding rather than a loader
+ * (`const a = createRequire(import.meta.url); const b = a; b(spec);`), a bound initializer
+ * (`const load = require.bind(null); load(spec);`, `const r = load.resolve; r(spec);`), a binding
+ * formed by a default — a parameter default, or a destructuring default
+ * (`function f(load = require) { load(spec); }`, `const { load = require } = opts; load(spec);`) —
+ * an erased non-null or angle-bracket assertion on the initializer
+ * (`const asserted = require!;`, `const asserted = <NodeRequire>require;`), and a loader imported
+ * from another file (`import { load } from './loaders.ts'; load(spec);`). The type-body rule also
+ * still refuses grammar-legal declarations whose
  * `require`/`import` member sits in a position the header walk does not recognize — a nested property
  * type, a parameter, return, or class-property annotation, a conditional-type branch, a mapped type, a
  * decorator-preceded member, or a union with a negative literal type — a false positive that is
- * test-pinned rather than implied. Both sets stay filed as #4835.
+ * test-pinned rather than implied. All three sets stay filed as #4835.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const cached = computedDynamicSpecifiersCache.get(source);
@@ -675,7 +687,8 @@ function skipTemplateOpaque(source: string, index: number): number {
 
 /**
  * A balanced `open`/`close` delimiter skip that never recurses into the import scanner: comments,
- * strings, templates (opaquely), and regex literals are skipped wholesale.
+ * strings, templates (opaquely), and regex literals are skipped wholesale. The regex skip is
+ * context-free for the same reason as `lineCommentOpenBefore`'s: this walk reads forward only.
  */
 function skipBalancedDelimitedOpaque(
     source: string,
@@ -701,7 +714,7 @@ function skipBalancedDelimitedOpaque(
             cursor = skipTemplateOpaque(source, cursor);
             continue;
         }
-        const regexEnd = skipRegexLiteral(source, cursor);
+        const regexEnd = skipRegexLiteral(source, cursor, false);
         if (regexEnd !== undefined) {
             cursor = regexEnd;
             continue;
@@ -741,7 +754,7 @@ function skipBalancedParensOpaque(source: string, index: number): number | undef
             cursor = skipTemplateOpaque(source, cursor);
             continue;
         }
-        const regexEnd = skipRegexLiteral(source, cursor);
+        const regexEnd = skipRegexLiteral(source, cursor, false);
         if (regexEnd !== undefined) {
             cursor = regexEnd;
             continue;
@@ -767,8 +780,8 @@ function skipBalancedParensOpaque(source: string, index: number): number | undef
  * this pass cannot see still resolves to the loader, so the call is refused — the fail-closed
  * reading. A name the pass never records is not a loader, so a call through it is admitted: that is
  * fail-open, and covers an assignment after declaration (`let load; load = require;`), a
- * parenthesised initializer (`const load = (require);`), and a `node:module` namespace import, all
- * named in the contract as undecided (#4835).
+ * parenthesised initializer (`const load = (require);`), a `node:module` namespace import, and every
+ * other initializer shape the pass does not read, all named in the contract as undecided (#4835).
  */
 function collectLoaderBindings(source: string): LoaderBindingTable {
     const bindings = new Map<string, LoaderBinding[]>();
@@ -983,9 +996,6 @@ function loaderCalleeAt(
     }
     if (isKeywordAt(source, start, 'createRequire')) {
         return { kind: 'createRequire', end: start + 'createRequire'.length };
-    }
-    if (!isIdentifierStart(source[start]) || isIdentifierContinue(source[start - 1])) {
-        return undefined;
     }
     const word = readWordForward(source, start);
     const bindings = known.get(word);
@@ -2153,7 +2163,8 @@ function readWordBackward(source: string, cursor: number): string {
  * The index of the `//` that opens the line comment containing `cursor`, or `undefined` when the
  * cursor is not inside a `//` comment. Walking the line forward from its start — skipping string,
  * template, and regex literals and block comments — keeps a `//` inside a quoted value, a regex, or a
- * block comment from masking a real token.
+ * block comment from masking a real token. The walk is forward-only: it reads a regex by its shape,
+ * never by the token before it, because this runs inside `previousSignificantCharacter`.
  */
 function lineCommentOpenBefore(source: string, cursor: number): number | undefined {
     let lineStart = cursor;
@@ -2170,7 +2181,7 @@ function lineCommentOpenBefore(source: string, cursor: number): number | undefin
             index = commentEnd;
             continue;
         }
-        const regexEnd = skipRegexLiteral(source, index);
+        const regexEnd = skipRegexLiteral(source, index, false);
         if (regexEnd !== undefined) {
             index = regexEnd;
             continue;
@@ -2779,11 +2790,11 @@ const REGEX_PREFIX_KEYWORDS = new Set([
  */
 const CONTROL_HEADER_KEYWORDS = new Set(['if', 'for', 'while', 'with', 'switch', 'catch']);
 
-function skipRegexLiteral(source: string, index: number): number | undefined {
+function skipRegexLiteral(source: string, index: number, consultBackwardContext = true): number | undefined {
     if (source[index] !== '/') {
         return undefined;
     }
-    if (!canStartRegexLiteral(source, index)) {
+    if (consultBackwardContext && !canStartRegexLiteral(source, index)) {
         return undefined;
     }
     let cursor = index + 1;
@@ -2829,6 +2840,15 @@ function skipRegexLiteral(source: string, index: number): number | undefined {
  * when none exists. Block and line comments are transparent — a slash after either reads the token
  * before the comment — but string, template, and regex literals are not skipped here: the caller
  * classifies them, because a `/` after any of those is division.
+ *
+ * This walk and the forward walks that must stay opaque — `lineCommentOpenBefore` here and the
+ * `…Opaque` skippers below — read a regex literal with `consultBackwardContext` false. Asking
+ * whether a `/` opens a regex asks this function for the token before it, which asks
+ * `lineCommentOpenBefore`, which walks the line forward; a template interpolation holding a `/`
+ * (`const t = `${a / b}`;`) therefore reached this function again from inside its own walk and
+ * recursed without bound. Reading a regex by its shape alone removes that edge, so no input can
+ * exhaust the stack, and an unreadable `/` is left to the walk — division, the reading that
+ * admits rather than hides.
  */
 function previousSignificantCharacter(source: string, cursor: number): number | undefined {
     while (cursor >= 0) {
@@ -2976,6 +2996,34 @@ function matchingOpenParenBackward(source: string, closeParen: number): number |
 }
 
 /**
+ * Whether the token before the `!` at `bang` ends an expression, which makes that `!` postfix and a
+ * `/` after it a division. The character before the assertion decides — an identifier, a digit, a
+ * literal quote, `)`, `]`, `}`, or a `++`/`--` — never the `/`'s own position, so `a! / require(x)`
+ * keeps its load. A prefix `!` (`!!x`, `!x`) ends no expression, so the `/` after it is still a
+ * regex.
+ */
+function tokenBeforeEndsExpression(source: string, bang: number): boolean {
+    const before = previousSignificantCharacter(source, bang - 1);
+    if (before === undefined) {
+        return false;
+    }
+    const character = source.charAt(before);
+    if (character === "'" || character === '"' || character === '`') {
+        return true;
+    }
+    if (character === ')' || character === ']' || character === '}') {
+        return true;
+    }
+    if (character === '+' || character === '-') {
+        return source.charAt(before - 1) === character;
+    }
+    if (character === '!') {
+        return tokenBeforeEndsExpression(source, before);
+    }
+    return isIdentifierContinue(character) || isDecimalDigit(character);
+}
+
+/**
  * Whether a `/` may open a regex after the `)` at `closeParen`: only when that parenthesis closes a
  * control-flow header (`if`, `for`, `while`, `with`, `switch`, `catch`) whose body is a statement,
  * including a `for await (…)` header spelled with two words. A `)` closing a call or grouping is an
@@ -3014,90 +3062,186 @@ function closingParenAllowsRegex(source: string, closeParen: number): boolean {
 /**
  * Whether a `}` at `closeBrace` closes a declaration body — a class, interface, enum, namespace, or
  * function declaration, or a statement block — which ends a statement so a following `/` opens a
- * regex. A `}` that closes an expression-position body (an object literal, a class or function
- * expression, or an arrow function body) ends an expression, so a following `/` is division.
+ * regex. A `}` that closes an expression-position body (an object literal in operand position, a
+ * class or function expression, or an arrow function body) ends an expression, so a following `/` is
+ * division.
+ *
+ * The statement-end reading is the fallback, not a recognition: a close is division only when the
+ * construct that owns it is provably an expression, so a `}` in a shape this walk does not model
+ * keeps the statement-end reading rather than turning a statement-position regex into code. Reading
+ * an unrecognised close as an expression end refused `export {}`, `const enum E {}`,
+ * `declare global {}`, and a `switch` case block, whose following regex the merge base admitted.
  */
 function closeBraceStartsStatement(source: string, closeBrace: number): boolean {
     const open = skipBackwardBalancedDelimited(source, closeBrace, '{', '}');
     if (open === undefined) {
+        return true;
+    }
+    return !expressionBodyOpenBefore(source, open);
+}
+
+/** Characters after which a `{` opens an object literal in operand position, not a statement block. */
+const OPERAND_POSITION_CHARACTERS = '=(?&|+-*/%^[_';
+
+/**
+ * Whether the `{` at `openIndex` opens an expression-position body, whose close ends an expression:
+ * an arrow body, a class or function expression body, or an object literal in operand position. Only
+ * a shape proved here is division; every other close keeps the statement-end reading, so the default
+ * is the merge base's rather than a recognition that can regress.
+ */
+function expressionBodyOpenBefore(source: string, openIndex: number): boolean {
+    const before = skipBackwardTrivia(source, openIndex - 1);
+    if (before < 0) {
         return false;
     }
-    return declarationBodyOpenBefore(source, open + 1);
+    const character = source.charAt(before);
+    if (character === ':') {
+        return !labelledBlockOpenBefore(source, openIndex);
+    }
+    if (OPERAND_POSITION_CHARACTERS.includes(character)) {
+        return true;
+    }
+    if (character === '>' && source.charAt(before - 1) === '=') {
+        return true; // an arrow body is an expression
+    }
+    if (character === '(') {
+        return expressionBodyAfterParenBefore(source, before);
+    }
+    return classOrFunctionExpressionBefore(source, before);
 }
 
 /**
- * Keywords whose `{` opens a statement block directly, so that block's close ends a statement.
- * `catch` is here for its bare form; `catch (e) {}` closes through the control-header `)` instead.
+ * Whether the `{` at a `(`-preceded body opens an object literal in operand position — a grouped or
+ * arrow expression whose own context is an operand — rather than the argument list of a call or
+ * method (`f({ … })`, `{ foo() {} }`), whose close ends a statement.
  */
-const STATEMENT_BLOCK_INTRODUCER_KEYWORDS: ReadonlySet<string> = new Set(['else', 'finally', 'catch']);
+function expressionBodyAfterParenBefore(source: string, openParen: number): boolean {
+    const after = skipBalancedParensOpaque(source, openParen);
+    if (after === undefined) {
+        return false;
+    }
+    const closer = after - 1;
+    if (source.charAt(closer) !== ')') {
+        return false;
+    }
+    const before = skipBackwardTrivia(source, closer - 1);
+    if (before >= 0 && source.charAt(before) === '>' && source.charAt(before - 1) === '=') {
+        return true; // an arrow's parenthesised return
+    }
+    return operandPositionBefore(source, before);
+}
+
+/** Whether a `{` directly after the token ending at `end` is an object literal in operand position. */
+function operandPositionBefore(source: string, end: number): boolean {
+    return end >= 0 && OPERAND_POSITION_CHARACTERS.includes(source.charAt(end));
+}
+
+/** Characters that end a class, function, or method header scan without naming one. */
+const HEADER_BOUNDARY_CHARACTERS = ';,\\{}:=';
 
 /**
- * Whether the `{` at `openIndex` follows a statement label (`foo: {}`), whose block ends a statement
- * when it closes. The `:` separates a label only when the identifier before it begins a statement —
- * the start of input, another statement, or a control header's body. A `:` after a name inside a
- * brace-delimited body (`{ foo: {} }`, `class C { foo: {} }`) is a property or member annotation
- * instead, and that brace may be an object literal whose close ends an expression, so it is refused:
- * admitting it would hide a load behind the close.
+ * Whether a `class` or `function` keyword that `isDeclarationStatementPosition` does not place at
+ * statement position — an expression — ends the header at `before`. Walking the header's own tokens
+ * reaches the keyword: balanced parameter, generic, and index lists, the heritage clause or the
+ * declaration's name, and the modifiers before it. A token that names no header stops the walk, so a
+ * method body (`{ foo() {} }`), a call argument, and a bare statement block are not read as
+ * expressions, and a declaration statement (`export default function f() {}`) keeps its reading.
+ */
+function classOrFunctionExpressionBefore(source: string, before: number): boolean {
+    let cursor = before;
+    while (cursor >= 0) {
+        const character = source.charAt(cursor);
+        if (character === '' || HEADER_BOUNDARY_CHARACTERS.includes(character)) {
+            return false;
+        }
+        if (character === ')' || character === ']' || (character === '>' && source.charAt(cursor - 1) !== '=')) {
+            const group = matchingHeaderDelimiter(character);
+            const open = skipBackwardBalancedDelimited(source, cursor, group.open, group.close);
+            if (open === undefined) {
+                return false;
+            }
+            cursor = skipBackwardTrivia(source, open - 1);
+            continue;
+        }
+        if (!isIdentifierContinue(character)) {
+            return false;
+        }
+        const word = readWordBackward(source, cursor);
+        const wordStart = cursor - word.length + 1;
+        if (word === 'class') {
+            // A `class` header is a declaration when it names a class and its own position is a
+            // statement boundary; `class extends Base {}` names an expression, and so does a named
+            // class after `=`. Reaching that keyword means walking past the name, its generics, and
+            // any heritage clause, which are the header tokens the walk above already skips.
+            const nameStart = skipBackwardTrivia(source, cursor + 1);
+            const extendsClause = isKeywordAt(source, nameStart, 'extends');
+            if (isIdentifierContinue(source.charAt(nameStart)) && !extendsClause) {
+                return !isDeclarationStatementPosition(source, wordStart);
+            }
+            return !isDeclarationStatementPosition(source, wordStart) || isOperandPositionKeyword(source, wordStart);
+        }
+        if (word === 'function') {
+            return !isDeclarationStatementPosition(source, wordStart);
+        }
+        cursor = skipBackwardTrivia(source, wordStart - 1);
+    }
+    return false;
+}
+
+/** Whether the token before the `class` at `keywordStart` puts that keyword in operand position. */
+function isOperandPositionKeyword(source: string, keywordStart: number): boolean {
+    const before = skipBackwardTrivia(source, keywordStart - 1);
+    return before >= 0 && OPERAND_POSITION_CHARACTERS.includes(source.charAt(before));
+}
+
+/** The `open`/`close` pair of a header delimiter whose closing character is `close`. */
+function matchingHeaderDelimiter(close: string): { open: string; close: string } {
+    if (close === ')') {
+        return { open: '(', close: ')' };
+    }
+    if (close === ']') {
+        return { open: '[', close: ']' };
+    }
+    return { open: '<', close: '>' };
+}
+
+/**
+ * Whether the `{` at `openIndex` follows a statement label (`foo: {}`) or a `case`/`default` clause
+ * (`switch (x) { case 1: {} }`), whose block ends a statement when it closes. The `:` separates the
+ * clause only when the token before it begins a statement — the start of input, another statement, a
+ * control header's body, or a `case`/`default` keyword. A `:` after a name inside a brace-delimited
+ * body (`{ foo: {} }`, `class C { foo: {} }`) is a property or member annotation instead, and that
+ * brace may be an object literal whose close ends an expression, so it is not read as a clause.
  */
 function labelledBlockOpenBefore(source: string, openIndex: number): boolean {
     let cursor = skipBackwardTrivia(source, openIndex - 1);
-    if (cursor < 0 || source[cursor] !== ':') {
+    if (cursor < 0 || source.charAt(cursor) !== ':') {
         return false;
     }
     cursor = skipBackwardTrivia(source, cursor - 1);
-    if (cursor < 0 || !isIdentifierContinue(source[cursor])) {
+    if (cursor < 0 || !isIdentifierContinue(source.charAt(cursor))) {
         return false;
     }
     const name = readWordBackward(source, cursor);
-    const beforeName = skipBackwardTrivia(source, cursor - name.length);
+    const nameStart = cursor - name.length + 1;
+    const beforeName = skipBackwardTrivia(source, nameStart - 1);
+    if (name === 'default' && isIdentifierStart(source.charAt(nameStart))) {
+        return true; // `default: { … }` — a switch clause, and a legal label
+    }
+    if (beforeName >= 0 && isKeywordAt(source, beforeName - 'case'.length + 1, 'case')) {
+        return true; // `case <expr>: { … }` — a switch clause
+    }
+    if (!isIdentifierStart(source.charAt(nameStart))) {
+        return false; // the `:` ends no label name (`{ 1: {} }` is a property)
+    }
     if (beforeName < 0) {
         return true;
     }
-    const character = source[beforeName];
+    const character = source.charAt(beforeName);
     if (character === ';' || character === '}') {
         return true;
     }
     return character === ')' && closingParenAllowsRegex(source, beforeName);
-}
-
-/**
- * Whether the `{` at `openIndex` opens a statement-level declaration body or a bare statement block,
- * whose closing `}` ends a statement. The header's own tokens decide it — not merely that the header
- * looks like a type — so an expression-position `{` stays expression-ending.
- */
-function declarationBodyOpenBefore(source: string, openIndex: number): boolean {
-    const before = skipBackwardTrivia(source, openIndex - 1);
-    if (before < 0) {
-        return true; // start of input: a bare block statement
-    }
-    const character = source[before];
-    if (character === ';' || character === '{' || character === '}') {
-        return true; // a bare block statement after a statement boundary
-    }
-    if (character === ':') {
-        return labelledBlockOpenBefore(source, openIndex);
-    }
-    if (character === ')') {
-        // A control header's `)` opens a block statement; a `function f()` header opens a function
-        // declaration; a class header's heritage clause can end in `)` (`class X extends foo() {`),
-        // so the class walk decides that case too. An arrow body is a `>` preceded by `=`.
-        return (
-            closingParenAllowsRegex(source, before) ||
-            functionDeclarationBodyOpenBefore(source, before) ||
-            classInterfaceDeclarationBodyOpenBefore(source, openIndex)
-        );
-    }
-    if (character === '>') {
-        // `=>` is an arrow body (an expression); a generic close belongs to a class/interface header.
-        return source[before - 1] !== '=' && classInterfaceDeclarationBodyOpenBefore(source, openIndex);
-    }
-    if (isIdentifierContinue(character)) {
-        if (STATEMENT_BLOCK_INTRODUCER_KEYWORDS.has(readWordBackward(source, before))) {
-            return true;
-        }
-        return classInterfaceDeclarationBodyOpenBefore(source, openIndex);
-    }
-    return false;
 }
 
 /** Modifiers that can precede a declaration keyword at statement position. */
@@ -3132,109 +3276,6 @@ function isDeclarationStatementPosition(source: string, keywordStart: number): b
 }
 
 /**
- * Whether the `{` whose header's parameter list closes at `closeParen` opens a `function`
- * declaration body — `function f() {`, including generator, generic, and modifier-prefixed forms —
- * at statement position. A function *expression* (`const r = function g() {}`) has `function` after
- * `=`, not a statement boundary, so it is refused.
- */
-function functionDeclarationBodyOpenBefore(source: string, closeParen: number): boolean {
-    const afterParams = skipBackwardBalancedDelimited(source, closeParen, '(', ')');
-    if (afterParams === undefined) {
-        return false;
-    }
-    let cursor = skipBackwardTrivia(source, afterParams);
-    if (cursor < 0) {
-        return false;
-    }
-    if (source[cursor] === '>') {
-        const afterGenerics = skipBackwardBalancedDelimited(source, cursor, '<', '>');
-        if (afterGenerics === undefined) {
-            return false;
-        }
-        cursor = skipBackwardTrivia(source, afterGenerics);
-        if (cursor < 0) {
-            return false;
-        }
-    }
-    if (!isIdentifierContinue(source[cursor])) {
-        return false;
-    }
-    const name = readWordBackward(source, cursor);
-    cursor = skipBackwardTrivia(source, cursor - name.length);
-    if (cursor < 0) {
-        return false;
-    }
-    if (source[cursor] === '*') {
-        cursor = skipBackwardTrivia(source, cursor - 1);
-        if (cursor < 0) {
-            return false;
-        }
-    }
-    if (readWordBackward(source, cursor) !== 'function') {
-        return false;
-    }
-    return isDeclarationStatementPosition(source, cursor - 'function'.length);
-}
-
-/**
- * Whether the `{` at `openIndex` opens a `class`/`interface`/`enum`/`namespace` declaration body at
- * statement position, including generic and heritage headers. An anonymous `class {}` is always an
- * expression, and a named class after `=` (`const r = class C {}`) has `class` after `=`, so both are
- * refused.
- */
-function classInterfaceDeclarationBodyOpenBefore(source: string, openIndex: number): boolean {
-    let cursor = openIndex - 1;
-    while (true) {
-        cursor = skipBackwardTrivia(source, cursor);
-        if (cursor < 0) {
-            return false;
-        }
-        const character = source[cursor];
-        if (character === '>') {
-            if (cursor >= 1 && source[cursor - 1] === '=') {
-                return false; // `=>` arrow body
-            }
-            const afterOpen = skipBackwardBalancedDelimited(source, cursor, '<', '>');
-            if (afterOpen === undefined) {
-                return false;
-            }
-            cursor = afterOpen;
-            continue;
-        }
-        if (character === ')' || character === ']') {
-            const afterOpen = skipBackwardBalancedDelimited(source, cursor, character === ')' ? '(' : '[', character);
-            if (afterOpen === undefined) {
-                return false;
-            }
-            cursor = afterOpen;
-            continue;
-        }
-        if (isIdentifierContinue(character)) {
-            const word = readWordBackward(source, cursor);
-            if (
-                word === 'class' ||
-                word === 'interface' ||
-                word === 'enum' ||
-                word === 'namespace' ||
-                word === 'module'
-            ) {
-                return isDeclarationStatementPosition(source, cursor - word.length);
-            }
-            if (BLOCK_INTRODUCER_KEYWORDS.has(word)) {
-                return false;
-            }
-            cursor -= word.length;
-            continue;
-        }
-        if (character === '.' || character === ',') {
-            cursor -= 1;
-            continue;
-        }
-        return false;
-    }
-}
-
-/**
  * The regex-versus-division decision, made from the previous significant token rather than the
  * single preceding character. A `/` opens a regex after an operator, `(`, `[`, `{`, `,`, `;`, `:`,
  * `=`, `!`, `&`, `|`, `?`, `=>`, a keyword that expects an expression, or at the start of input;
@@ -3263,6 +3304,13 @@ function canStartRegexLiteral(source: string, index: number): boolean {
     if (character === '+' || character === '-') {
         // `++`/`--` end an expression, so a `/` after either is division.
         return source[previous - 1] !== character;
+    }
+    if (character === '!') {
+        // `!` is postfix — so a `/` after it is division, exactly as after `++` — when the token
+        // before it ends an expression: `const y = a! / require(spec) / 2;` sees the load. A prefix
+        // `!` (`const y = !import(spec) / 2;`) keeps its operator reading, where the `/` follows the
+        // asserted operand. Reading every `!` as an operator prefix hid the load behind one.
+        return !tokenBeforeEndsExpression(source, previous);
     }
     if (character === '/') {
         // A `/` that closes a regex is an expression end; any other `/` is a division operator,
