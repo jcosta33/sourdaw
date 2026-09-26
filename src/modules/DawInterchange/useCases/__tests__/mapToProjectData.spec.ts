@@ -431,8 +431,8 @@ describe('mapToProjectData — tempo/timeSignature maps and markers', () => {
         const data = mapToProjectData({
             parsed: minimalParsed({
                 tempoChanges: [
-                    { beat: 0, tempo: 120 },
-                    { beat: 4, tempo: 140 },
+                    { beat: 0, tempo: 120, curve: 'instant' },
+                    { beat: 4, tempo: 140, curve: 'instant' },
                 ],
             }),
             bufferIdsByPath: new Map(),

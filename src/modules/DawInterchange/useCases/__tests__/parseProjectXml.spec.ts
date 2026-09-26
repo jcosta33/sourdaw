@@ -321,7 +321,7 @@ describe('parseProjectXml — master-track automation', () => {
             '<RealPoint time="4" value="140"/>' +
             '</Points></Automation></Lanes></Arrangement>';
         const result = parseProjectXml(project(inner));
-        expect(result.tempoChanges).toEqual([{ beat: 4, tempo: 140 }]);
+        expect(result.tempoChanges).toEqual([{ beat: 4, tempo: 140, curve: 'instant' }]);
     });
 
     it('parses time-signature automation points', () => {

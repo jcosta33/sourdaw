@@ -75,6 +75,10 @@ export type HydratableProjectData = {
     warpStates?: unknown;
     modulation?: unknown;
     cvGate?: unknown;
+    /** Owner-decoded by ControlSurface's `sanitizeMidiLearnState`, for the same
+     * reason as the fields above: one unreadable mapping must degrade to an
+     * empty table, not reject the entire project file. */
+    midiLearn?: unknown;
     history?: unknown;
 };
 

@@ -125,6 +125,15 @@ export type ProjectData = {
     timeSignatureMap?: ProjectTimeSignatureMap;
     takeLanes?: ProjectTakeLaneStoreState;
     sidechainRoutes?: ProjectSidechainRoute[];
+    /**
+     * Durable half of ControlSurface's MIDI Learn state (the same projection
+     * its CRDT slot persists): the learned controller mappings, without the
+     * ephemeral learn-arm UI fields. Without this field the named-project JSON
+     * routes — Open Recent, Discard changes, `.sourdaw` import — rebuild the
+     * CRDT root and lose every mapping (#4600). Absent in older files hydrates
+     * to an empty table.
+     */
+    midiLearn?: ProjectMidiLearnState;
     arrangements?: ProjectArrangementSnapshot[];
     activeArrangementId?: string;
     audioBuffers?: Record<string, ProjectExportedAudioBuffer>;
@@ -785,6 +794,31 @@ export type ProjectSidechainRoute = {
     targetDeviceId: string;
     targetParameterId: string;
     gain: number;
+};
+
+/**
+ * Local mirror of ControlSurface's durable MIDI Learn mapping. Duplicated
+ * rather than imported because models do not cross module boundaries;
+ * structural typing keeps the two assignable, which `buildProjectData` and
+ * the hydrator rely on.
+ */
+export type ProjectMidiLearnMapping = {
+    id: string;
+    channel: number;
+    cc: number;
+    targetType: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
+    trackId?: string;
+    deviceId?: string;
+    paramId?: string;
+    minValue: number;
+    maxValue: number;
+    scaleMode?: 'linear' | 'log' | 'exp';
+};
+
+/** Durable half of ControlSurface's `MidiLearnState` — see `ProjectData.midiLearn`. */
+export type ProjectMidiLearnState = {
+    mappingsSchemaVersion: number;
+    mappings: ProjectMidiLearnMapping[];
 };
 
 export type ProjectArrangementSnapshot = {

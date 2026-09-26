@@ -1,3 +1,4 @@
+import { defaultTransportState } from '#/modules/Transport/stores';
 import { clampFaderGain } from '#/utils/audioLevelLaw';
 
 import { type DawProjectParseResult, type DawProjectParsedClip, type DawProjectParsedTrack } from './dawProjectTypes';
@@ -88,7 +89,7 @@ function mapClip(
             locked: false,
             muted: false,
             bufferId,
-            sampleStartBeat: 0,
+            sampleStartBeat: parsedClip.playStartBeat ?? 0,
         };
         return { clip, notes: [] };
     }
@@ -109,6 +110,9 @@ function mapClip(
         muted: false,
         notes,
     };
+    if (parsedClip.playStartBeat !== undefined) {
+        clip.midiOffsetBeats = parsedClip.playStartBeat;
+    }
     return { clip, notes };
 }
 
@@ -295,7 +299,7 @@ export function mapToProjectData(input: MapToProjectDataInput): ProjectData {
             countInBars: 1,
             preRollEnabled: false,
             preRollBars: 1,
-            masterGain: 0.8,
+            masterGain: defaultTransportState.masterGain,
         },
         arrangement: { tracks },
         automation,

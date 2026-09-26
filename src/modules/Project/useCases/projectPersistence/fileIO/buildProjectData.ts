@@ -11,6 +11,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { cvGateStore } from '#/modules/CvGate/stores';
@@ -246,6 +247,17 @@ export async function buildProjectData({
         cvGateState = structuredClone(liveCvGate);
     }
 
+    // The CRDT slot's durable projection verbatim: `toCrdt` keeps exactly
+    // these two fields, so the named-project JSON carries the same truth the
+    // document does and the three JSON-rebuild routes lose nothing (#4600).
+    const liveMidiLearn = midiLearnStore.value;
+    const midiLearn: ProjectData['midiLearn'] | undefined = liveMidiLearn
+        ? {
+              mappingsSchemaVersion: liveMidiLearn.mappingsSchemaVersion,
+              mappings: structuredClone(liveMidiLearn.mappings),
+          }
+        : undefined;
+
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
         meta: {
@@ -318,6 +330,7 @@ export async function buildProjectData({
             name: message.name || (message as { label?: string }).label || 'Untitled',
             color: message.color,
         })),
+        midiLearn,
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
         arrangements: arrState.arrangements.map((snapshot) => ({

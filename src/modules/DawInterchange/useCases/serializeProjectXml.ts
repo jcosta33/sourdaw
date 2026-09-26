@@ -206,7 +206,12 @@ function renderClipXml(
     indent: string
 ): string {
     const duration = Math.max(0, clip.endBeat - clip.startBeat);
-    const header = `${indent}<${CLIP} time="${formatNumber(clip.startBeat)}" duration="${formatNumber(duration)}" name="${escapeXml(clip.name)}"`;
+    // `playStart` carries the content offset — where the clip starts reading
+    // its media (a split right half, a left-trimmed clip). Omitted at 0, the
+    // DAWproject default, so offset-0 exports stay byte-identical.
+    const playStart = clip.type === 'audio' ? (clip.sampleStartBeat ?? 0) : (clip.midiOffsetBeats ?? 0);
+    const playStartAttribute = playStart > 0 ? ` playStart="${formatNumber(playStart)}"` : '';
+    const header = `${indent}<${CLIP} time="${formatNumber(clip.startBeat)}" duration="${formatNumber(duration)}"${playStartAttribute} name="${escapeXml(clip.name)}"`;
     if (clip.type === 'audio') {
         const path = clip.bufferId ? audioPathByBufferId.get(clip.bufferId) : undefined;
         if (!path) {
@@ -257,8 +262,11 @@ ${indent}</${POINTS}>`;
     const lines: string[] = [];
     lines.push(`${indent}<${POINTS} target="tempo" timeUnit="beats">`);
     for (const change of tempoChanges) {
+        // `interpolation="linear"` ramps into the next point; omitted is the
+        // DAWproject default `hold`, an instant step.
+        const interpolation = change.curve === 'linear' ? ' interpolation="linear"' : '';
         lines.push(
-            `${indent}    <${REAL_POINT} time="${formatNumber(change.beat)}" value="${formatNumber(change.tempo)}"/>`
+            `${indent}    <${REAL_POINT} time="${formatNumber(change.beat)}" value="${formatNumber(change.tempo)}"${interpolation}/>`
         );
     }
     lines.push(`${indent}</${POINTS}>`);
