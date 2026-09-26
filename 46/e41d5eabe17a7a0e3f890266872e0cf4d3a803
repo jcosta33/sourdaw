@@ -1,0 +1,50 @@
+src/modules/ControlSurface/stores/index.ts
+  h_beb54bf43b47b7 4
+src/modules/DawInterchange/useCases/__tests__/dawProjectContentOffsetAndRampRoundTrip.spec.ts
+  h_beb54bf43b47b7 1-96
+src/modules/DawInterchange/useCases/__tests__/dawProjectRoundTrip.spec.ts
+  h_beb54bf43b47b7 143
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  h_beb54bf43b47b7 434-435
+src/modules/DawInterchange/useCases/__tests__/mapToProjectDataMasterGainScale.spec.ts
+  h_beb54bf43b47b7 1-36
+src/modules/DawInterchange/useCases/__tests__/parseDawProject.spec.ts
+  h_beb54bf43b47b7 167-168
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 324
+src/modules/DawInterchange/useCases/__tests__/serializeProjectXml.spec.ts
+  h_beb54bf43b47b7 36
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  h_beb54bf43b47b7 35-37,43-45
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  h_beb54bf43b47b7 1,92,113-115,302
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 85-95,227-229,240,253,265,341
+src/modules/DawInterchange/useCases/serializeProjectXml.ts
+  h_beb54bf43b47b7 209-214,265-267,269
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/migrateAbsoluteMidiNotesReload.spec.ts
+  h_beb54bf43b47b7 1-96
+src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts
+  h_beb54bf43b47b7 10-19,49,51-60,62-63,65
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 128-136,799-823
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/midiLearnPersistence.roundTrip.spec.ts
+  h_beb54bf43b47b7 1-74
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  h_beb54bf43b47b7 14,250-260,333
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  h_beb54bf43b47b7 8,37-40
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 78-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "46e41d5eabe17a7a0e3f890266872e0cf4d3a803",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
