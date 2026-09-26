@@ -14,14 +14,13 @@
  * Admission is ranked so a contract-carrying path — a trusted GitHub-write closure member, a contract
  * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
- * boundary), or a collected spec whose after side imports a closure member or names one of those
- * workflow files — is admitted before bulk or generated material and named when a budget withholds it,
- * so the same budget is spent where the contract lives.
+ * boundary), or a collected spec whose content imports a closure member or names one of those workflow
+ * files — is admitted before bulk or generated material and named when a budget withholds it, so the
+ * same budget is spent where the contract lives. Each side is classified from the path and content it
+ * carries, so a deleted or moved spec still counts from its before side.
  */
 
-import { HEALTH_GATE_WORKFLOW_FILES } from '../healthGateWorkflowContract.ts';
-import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
-
+import { isContractCarryingContent } from './contractCarrying.ts';
 import {
     assertLineRange,
     semanticTextDigest,
@@ -44,6 +43,7 @@ import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 
 export { compareByPath, compareLexicographic } from './evidenceOrdering.ts';
 export type { LineRange } from './slicing.ts';
+export { isContractCarryingContent, isContractCarryingPath } from './contractCarrying.ts';
 
 export type SemanticChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied';
 
@@ -140,129 +140,15 @@ const SENSITIVE_PATH_PATTERNS: readonly RegExp[] = [
     /(?:^|\/)transcripts?\//iu,
 ];
 
-const CONTRACT_PATH_PATTERNS: readonly RegExp[] = [
-    /(?:^|\/)AGENTS\.md$/u,
-    /(?:^|\/)\.agents\/decisions\//u,
-    /(?:^|\/)\.agents\/skills\//u,
-];
-
 const LOCKFILE_NAMES: ReadonlySet<string> = new Set(['Cargo.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']);
 
 export function isSensitivePath(path: string): boolean {
     return SENSITIVE_PATH_PATTERNS.some((pattern) => pattern.test(path));
 }
 
-export function isContractPath(path: string): boolean {
-    return CONTRACT_PATH_PATTERNS.some((pattern) => pattern.test(path));
-}
-
 function baseName(path: string): string {
     const parts = path.split('/');
     return parts[parts.length - 1] ?? path;
-}
-
-/**
- * The trusted GitHub-write dependency closure, whose members execute with a role identity; a change to
- * one can move a privileged transition, so these paths are contract-carrying.
- */
-const TRUSTED_CLOSURE_PATHS: ReadonlySet<string> = new Set(Object.values(trustedDependencyGraphs).flat());
-
-/** The repo paths of the workflow files the repository declares as its gate boundary. */
-const PINNED_WORKFLOW_PATHS: ReadonlySet<string> = new Set(
-    HEALTH_GATE_WORKFLOW_FILES.map((name) => `.github/workflows/${name}`)
-);
-
-/** Whether a path is a workflow file under `.github/workflows/` named in the repository's declared inventory. */
-function isPinnedWorkflowPath(path: string): boolean {
-    return path.startsWith('.github/workflows/') && PINNED_WORKFLOW_PATHS.has(path);
-}
-
-/**
- * Contract-carrying paths are the trusted GitHub-write closure, the contract documents (`AGENTS.md`,
- * `.agents/decisions/`, `.agents/skills/`), and the declared workflow boundary. A collected spec whose
- * after side imports a closure member or names a pinned workflow file is classified separately in
- * `collectEvidence`, where its read through the source port is available.
- */
-export function isContractCarryingPath(path: string): boolean {
-    return isContractPath(path) || TRUSTED_CLOSURE_PATHS.has(path) || isPinnedWorkflowPath(path);
-}
-
-/** The directory of a repo-relative path, including the trailing slash; empty for a top-level file. */
-function directoryOf(path: string): string {
-    const index = path.lastIndexOf('/');
-    return index === -1 ? '' : path.slice(0, index + 1);
-}
-
-/**
- * Resolves a relative import/export specifier against the importing file's directory to a repo path,
- * leaving the extension off. The extension is added by `resolvesToClosureMember`, matching how the
- * runtime resolves an extensionless import.
- */
-function resolveSpecifier(fromDir: string, specifier: string): string | undefined {
-    const segments = fromDir.split('/').filter((segment) => segment !== '' && segment !== '.');
-    for (const segment of specifier.split('/')) {
-        if (segment === '' || segment === '.') {
-            continue;
-        }
-        if (segment === '..') {
-            if (segments.pop() === undefined) {
-                return undefined;
-            }
-            continue;
-        }
-        segments.push(segment);
-    }
-    return segments.join('/');
-}
-
-/** The TypeScript source extensions the repository resolves for an extensionless import specifier. */
-const SOURCE_MODULE_EXTENSIONS: readonly string[] = ['.ts', '.tsx', '.mts', '.cts'];
-
-/** Whether a resolved specifier path names a trusted closure member, with or without a source extension. */
-function resolvesToClosureMember(base: string): boolean {
-    if (TRUSTED_CLOSURE_PATHS.has(base)) {
-        return true;
-    }
-    return SOURCE_MODULE_EXTENSIONS.some((extension) => TRUSTED_CLOSURE_PATHS.has(base + extension));
-}
-
-/** The relative `import`/`export ... from` specifiers of one source file, in document order. */
-function relativeImportSpecifiers(source: string): string[] {
-    const specifiers: string[] = [];
-    const patterns: readonly RegExp[] = [/\bfrom\s*(['"])([^'"\n]+)\1/gu, /\bimport\s*(['"])([^'"\n]+)\1/gu];
-    for (const pattern of patterns) {
-        for (const match of source.matchAll(pattern)) {
-            const specifier = match[2];
-            if (specifier !== undefined && specifier.startsWith('.')) {
-                specifiers.push(specifier);
-            }
-        }
-    }
-    return specifiers;
-}
-
-/**
- * Whether a collected spec's after-side content imports a trusted closure member or names a pinned
- * workflow file. The workflow pin matches the pinned repo path rather than the bare filename, so prose
- * that merely mentions a workflow name cannot classify a spec.
- */
-function isContractCarryingSpecContent(afterContent: string, specPath: string): boolean {
-    for (const specifier of relativeImportSpecifiers(afterContent)) {
-        const resolved = resolveSpecifier(directoryOf(specPath), specifier);
-        if (resolved !== undefined && resolvesToClosureMember(resolved)) {
-            return true;
-        }
-    }
-    return HEALTH_GATE_WORKFLOW_FILES.some((name) => afterContent.includes(`.github/workflows/${name}`));
-}
-
-/**
- * Whether a changed path is contract-carrying, decided from the path alone or, for a collected spec,
- * from its after-side content. The scan and verify routes share this rule, so the same withheld
- * reference reads the same whichever route produced it.
- */
-export function isContractCarryingContent(path: string, content: string): boolean {
-    return isContractCarryingPath(path) || (isCollectedSpec(path) && isContractCarryingSpecContent(content, path));
 }
 
 /** The rule ids a path admits, sorted so two sets can be compared for equality. */
@@ -426,7 +312,7 @@ function admitSide(
     limitations: string[],
     ownWithheldSides: Map<string, Set<EvidenceSide>>,
     contextWithheldSides: Set<EvidenceSide>,
-    contractCarryingPaths: ReadonlySet<string>
+    contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
 ): void {
     if (ranges === undefined || ranges.length === 0) {
         admit(request, raw, label);
@@ -438,7 +324,7 @@ function admitSide(
             truncated.push({
                 path: request.path,
                 reason: withheldRegionReason(
-                    isContractCarryingRegion(request, label, contractCarryingPaths),
+                    isContractCarryingRegion(request, contractCarryingSides),
                     label,
                     'hunk-beyond-file'
                 ),
@@ -464,21 +350,29 @@ function withheldCauseCode(cause: WithheldRegionCause): string {
     return 'hunk-beyond-file';
 }
 
-/** Whether a region belongs to a contract-carrying changed path; context regions are already named. */
+/**
+ * Whether a region belongs to a contract-carrying path, decided from the path and content of the side
+ * the region comes from. Contract-context regions carry no changed path and are always contract.
+ */
 function isContractCarryingRegion(
-    request: { readonly changedPath?: string },
-    label: string,
-    contractCarryingPaths: ReadonlySet<string>
+    request: { readonly changedPath?: string; readonly side: EvidenceSide },
+    contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
 ): boolean {
-    return label !== 'contract' && request.changedPath !== undefined && contractCarryingPaths.has(request.changedPath);
+    if (request.changedPath === undefined) {
+        return true;
+    }
+    const sides = contractCarryingSides.get(request.changedPath);
+    if (sides === undefined) {
+        return false;
+    }
+    return request.side === 'before' ? sides.before : sides.after;
 }
 
 /**
  * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code —
  * `region-exceeds-per-region-budget`, `total-evidence-budget-exhausted`, or `hunk-beyond-file` — and
- * `contract` joins the side qualifier for a contract-carrying changed path, so the same withheld
- * reference reads the same whichever route produced it. Every other path keeps the plain
- * `<code> (<side>)` form.
+ * `contract` joins the side qualifier for a contract-carrying region, so the same withheld reference
+ * reads the same whichever route produced it. Every other region keeps the plain `<code> (<side>)` form.
  */
 export function withheldRegionReason(contractCarrying: boolean, side: string, cause: WithheldRegionCause): string {
     const base = withheldCauseCode(cause);
@@ -486,21 +380,21 @@ export function withheldRegionReason(contractCarrying: boolean, side: string, ca
 }
 
 /**
- * The reason a budget withholds one region, from the contract-carrying classification the collector
- * built. Contract-context regions (label `contract`) are already named by their qualifier.
+ * The reason a budget withholds one region, from the per-side contract-carrying classification the
+ * collector built.
  */
 function withheldReason(
     request: RegionRequest,
     label: string,
     cause: WithheldRegionCause,
-    contractCarryingPaths: ReadonlySet<string>
+    contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
 ): string {
-    return withheldRegionReason(isContractCarryingRegion(request, label, contractCarryingPaths), label, cause);
+    return withheldRegionReason(isContractCarryingRegion(request, contractCarryingSides), label, cause);
 }
 
 type RegionAdmissionState = {
     readonly limits: SemanticEvidenceLimits;
-    readonly contractCarryingPaths: ReadonlySet<string>;
+    readonly contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>;
     readonly references: EvidenceReference[];
     readonly contents: Map<string, string>;
     readonly attribution: Map<string, Set<string>>;
@@ -529,9 +423,9 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         }
         return;
     }
-    // Path classification runs before the read; this runs before admission, on the whole region rather
-    // than the prefix, because a credential later in the file is still a credential. An ordinary-looking
-    // filename is the case path patterns cannot see.
+    // The content screen runs before admission, on the whole region rather than the prefix, because a
+    // credential later in the file is still a credential. An ordinary-looking filename is the case path
+    // patterns cannot see.
     const unsafe = sensitiveContentReason(raw);
     if (unsafe !== undefined) {
         // One entry per path: the scope manifest counts paths, and both sides of a modified file would
@@ -550,7 +444,7 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
     if (!regionFits(raw, state.limits.maxRegionBytes)) {
         state.truncated.push({
             path: request.path,
-            reason: withheldReason(request, label, 'region', state.contractCarryingPaths),
+            reason: withheldReason(request, label, 'region', state.contractCarryingSides),
         });
         state.limitations.push(
             `evidence for ${request.path} (${label}) was not supplied: it exceeds the per-region budget`
@@ -562,7 +456,7 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
     if (state.totalBytes + bytes > state.limits.maxTotalBytes) {
         state.truncated.push({
             path: request.path,
-            reason: withheldReason(request, label, 'total', state.contractCarryingPaths),
+            reason: withheldReason(request, label, 'total', state.contractCarryingSides),
         });
         state.limitations.push(
             `evidence for ${request.path} (${label}) was omitted: the total evidence budget was exhausted`
@@ -589,7 +483,7 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
  */
 function createRegionAdmission(
     limits: SemanticEvidenceLimits,
-    contractCarryingPaths: ReadonlySet<string>
+    contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
 ): {
     admit: (request: RegionRequest, raw: string, label: string) => void;
     admitSide: (
@@ -609,7 +503,7 @@ function createRegionAdmission(
 } {
     const state: RegionAdmissionState = {
         limits,
-        contractCarryingPaths,
+        contractCarryingSides,
         references: [],
         contents: new Map(),
         attribution: new Map(),
@@ -637,7 +531,7 @@ function createRegionAdmission(
                 state.limitations,
                 state.ownWithheldSides,
                 state.contextWithheldSides,
-                state.contractCarryingPaths
+                state.contractCarryingSides
             ),
         references: state.references,
         contents: state.contents,
@@ -650,23 +544,64 @@ function createRegionAdmission(
     };
 }
 
-/** The changed paths that are contract-carrying, classified once from their path or after-side content. */
-function classifyContractCarryingPaths(
+/** The contract-carrying classification of one changed path's two sides, decided per side from that side's own path and content. */
+type ContractCarryingSides = { readonly before: boolean; readonly after: boolean };
+
+/**
+ * Classifies each changed path's sides from the path and content the side itself carries: the
+ * pre-change path's before content for the before side, and the post-change path's after content for
+ * the after side. A deleted or moved collected spec whose before side pins a closure member therefore
+ * still classifies contract-carrying even though its after side is absent or unclassified.
+ */
+function classifyContractCarryingSides(
     changed: readonly SemanticChangedFile[],
     contents: ReadonlyMap<string, ChangedFileContents>
-): Set<string> {
-    const contractCarrying = new Set<string>();
+): ReadonlyMap<string, ContractCarryingSides> {
+    const sidesByPath = new Map<string, ContractCarryingSides>();
     for (const file of changed) {
-        if (isContractCarryingPath(file.path)) {
-            contractCarrying.add(file.path);
-            continue;
-        }
-        const after = contents.get(file.path)?.after;
-        if (after !== undefined && isContractCarryingContent(file.path, after)) {
-            contractCarrying.add(file.path);
+        const beforePath = file.previousPath ?? file.path;
+        const entry = contents.get(file.path);
+        const before = entry?.before;
+        const after = entry?.after;
+        sidesByPath.set(file.path, {
+            before: before !== undefined && isContractCarryingContent(beforePath, before),
+            after: after !== undefined && isContractCarryingContent(file.path, after),
+        });
+    }
+    return sidesByPath;
+}
+
+/** The changed paths that are contract-carrying on either side, for the admission order. */
+function contractCarryingPaths(sidesByPath: ReadonlyMap<string, ContractCarryingSides>): ReadonlySet<string> {
+    const contractCarrying = new Set<string>();
+    for (const [path, sides] of sidesByPath) {
+        if (sides.before || sides.after) {
+            contractCarrying.add(path);
         }
     }
     return contractCarrying;
+}
+
+/**
+ * Records every screened-out path into the admission result, so an excluded path stays visible rather
+ * than vanishing from the report. A withheld secret is evidence that never left the machine, not an
+ * irrelevant path like a binary or a lockfile; it must reach the completion layer exactly as the
+ * content gate's withholdings do, or the same class of loss reports two different outcomes.
+ */
+function recordScreenExclusions(
+    screened: readonly { file: SemanticChangedFile; reason: string | undefined }[],
+    admission: { excluded: SemanticScopeExclusion[]; truncated: SemanticScopeExclusion[]; limitations: string[] }
+): void {
+    for (const { file, reason } of screened) {
+        if (reason === undefined) {
+            continue;
+        }
+        admission.excluded.push({ path: file.path, reason });
+        if (reason === 'sensitive-content-excluded') {
+            admission.truncated.push({ path: file.path, reason: 'evidence-withheld-sensitive-path' });
+            admission.limitations.push(`evidence for ${file.path} was withheld: it is on the sensitive-path list`);
+        }
+    }
 }
 
 /**
@@ -692,30 +627,26 @@ export function collectEvidence(input: {
         hunksByPath = new Map();
     }
 
-    // Read each changed path's sides once; classification, admission sizing, and admission itself all
-    // consume this single read. Classifying from the same content the scan admits keeps each changed
-    // path to at most one content read.
-    const contents = readChangedContents(input.port, input.mergeBaseSha, input.headSha, changed);
-    const contractCarrying = classifyContractCarryingPaths(changed, contents);
-    const bytesByPath = admissionBytesByPath(changed, contents, hunksByPath);
-    const files = [...changed].sort((left, right) => compareForAdmission(left, right, contractCarrying, bytesByPath));
+    // Screen each changed path before any read, so excluded, binary, generated and lockfile paths are
+    // never read. The screen is content-free; only the surviving paths reach the source port.
+    const screened = changed.map((file) => ({ file, reason: exclusionReason(file) }));
+    const assessed = screened.filter((entry) => entry.reason === undefined).map((entry) => entry.file);
 
-    const admission = createRegionAdmission(input.limits, contractCarrying);
+    // Read each surviving path's sides once; classification, admission sizing, and admission itself all
+    // consume this single read. Classifying from the same content the scan admits keeps each surviving
+    // path to at most one content read.
+    const contents = readChangedContents(input.port, input.mergeBaseSha, input.headSha, assessed);
+    const contractCarryingSides = classifyContractCarryingSides(assessed, contents);
+    const contractCarrying = contractCarryingPaths(contractCarryingSides);
+    const bytesByPath = admissionBytesByPath(assessed, contents, hunksByPath, input.limits.maxRegionBytes);
+    const files = [...assessed].sort((left, right) => compareForAdmission(left, right, contractCarrying, bytesByPath));
+
+    const admission = createRegionAdmission(input.limits, contractCarryingSides);
     const { admit, admitSide } = admission;
 
+    recordScreenExclusions(screened, admission);
+
     for (const file of files) {
-        const reason = exclusionReason(file);
-        if (reason !== undefined) {
-            admission.excluded.push({ path: file.path, reason });
-            // A withheld secret is evidence that never left the machine, not an irrelevant path like a
-            // binary or a lockfile. It must reach the completion layer exactly as the content gate's
-            // withholdings do, or the same class of loss reports two different outcomes.
-            if (reason === 'sensitive-content-excluded') {
-                admission.truncated.push({ path: file.path, reason: 'evidence-withheld-sensitive-path' });
-                admission.limitations.push(`evidence for ${file.path} was withheld: it is on the sensitive-path list`);
-            }
-            continue;
-        }
         const beforePath = file.previousPath ?? file.path;
         const hunks = hunksByPath.get(file.path);
         const entry = contents.get(file.path);
@@ -756,7 +687,7 @@ export function collectEvidence(input: {
             admission.limitations.push(`contract ${path} was unavailable at the contract source revision`);
             continue;
         }
-        admit({ revisionSha: input.contractSourceSha, path, side: 'context' }, raw, 'contract');
+        admit({ revisionSha: input.contractSourceSha, path, side: 'context' }, raw, 'context');
     }
 
     if (admission.references.length === 0) {

@@ -25,7 +25,6 @@ import {
     collectEvidence,
     exclusionReason,
     isContractCarryingPath,
-    withheldRegionReason,
     type PathHunks,
     type SemanticChangedFile,
     type SemanticEvidenceSet,
@@ -296,6 +295,50 @@ describe('evidence collection', () => {
         expect(set.limitations.join(' ')).toContain('no source region was eligible');
     });
 
+    it('never reads a path the screen excludes before admission', () => {
+        // R2: the collector read every changed path's sides before `exclusionReason` ran, so excluded,
+        // binary, generated and lockfile paths were read and held for the whole collection. Screening
+        // each path first means only the surviving path's two sides reach the source port.
+        const reads: string[] = [];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:src/modules/Project/a.ts`]: 'const before = 1;\n',
+            [`${HEAD}:src/modules/Project/a.ts`]: 'const after = 1;\n',
+        };
+        const files: readonly SemanticChangedFile[] = [
+            changedFile('.env'),
+            changedFile('assets/impulse.wav', { binary: true }),
+            changedFile('public/wasm/daw-dsp/app.js', { generated: true }),
+            changedFile('Cargo.lock'),
+            changedFile('src/modules/Project/a.ts'),
+        ];
+        const port: SemanticSourcePort = {
+            changedFiles: () => files,
+            readFile: (sha, path) => {
+                reads.push(`${sha}:${path}`);
+                return blobs[`${sha}:${path}`];
+            },
+            changedHunks: () => new Map<string, PathHunks>(),
+        };
+        const set = collectEvidence({
+            port,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        expect(reads).toEqual([`${MERGE_BASE}:src/modules/Project/a.ts`, `${HEAD}:src/modules/Project/a.ts`]);
+        const reasons = new Map(set.excluded.map((entry) => [entry.path, entry.reason]));
+        expect(reasons.get('.env')).toBe('sensitive-content-excluded');
+        expect(reasons.get('assets/impulse.wav')).toBe('binary');
+        expect(reasons.get('public/wasm/daw-dsp/app.js')).toBe('generated');
+        expect(reasons.get('Cargo.lock')).toBe('dependency-lockfile');
+        // The sensitive path keeps its truncation and limitation entries even though it is never read.
+        expect(
+            set.truncated.some((entry) => entry.path === '.env' && entry.reason === 'evidence-withheld-sensitive-path')
+        ).toBe(true);
+        expect(set.limitations.join(' ')).toContain('it is on the sensitive-path list');
+    });
+
     it('assigns stable application-generated evidence ids with real line bounds', () => {
         const set = collectEvidence({
             port: fakeSource({
@@ -384,16 +427,36 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
-    it('routes the hunk-beyond-file cause through the shared withheld-region vocabulary', () => {
-        // R4: the hunk-beyond-file reason was built inline and skipped the contract term, so a
-        // contract-carrying path withheld that way read as bulk while the reader already accepted the
-        // contract-marked form.
-        expect(withheldRegionReason(true, 'after', 'hunk-beyond-file')).toBe('hunk-beyond-file (after, contract)');
-        expect(withheldRegionReason(false, 'after', 'hunk-beyond-file')).toBe('hunk-beyond-file (after)');
-        expect(withheldRegionReason(true, 'before', 'region')).toBe(
-            'region-exceeds-per-region-budget (before, contract)'
-        );
-        expect(withheldRegionReason(false, 'before', 'total')).toBe('total-evidence-budget-exhausted (before)');
+    it('routes the hunk-beyond-file cause through the collector for a contract-carrying path', () => {
+        // R5: the hunk-beyond-file reason was asserted against the shared helper, so re-inlining the
+        // inline form in the collector left the whole suite green. Driving the collector to a hunk that
+        // names lines beyond the file exercises the producer and pins the contract term it records.
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile('scripts/reviewDossier.ts')],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/reviewDossier.ts`]: 'const before = 1;\n',
+                    [`${HEAD}:scripts/reviewDossier.ts`]: 'const after = 1;\n',
+                },
+                hunks: new Map([
+                    [
+                        'scripts/reviewDossier.ts',
+                        {
+                            path: 'scripts/reviewDossier.ts',
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [{ startLine: 5, endLine: 9 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        });
+        expect(set.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'hunk-beyond-file (after, contract)' },
+        ]);
     });
 
     it('derives contract-carrying from the closure, the contract documents, and the workflow inventory', () => {
@@ -702,12 +765,16 @@ describe('contract-carrying admission', () => {
     });
 
     it('orders a small genuine edit before a whole-file fallback of larger cost', () => {
-        // R5: the changed-line total ranked a zero-line copy (numstat `0 0`) first, so its whole before
-        // side spent the budget and the five-line edit beside it was withheld on both sides. Ordering by
-        // the admission bytes keeps the copy's whole-file fallback from outranking the edit.
-        const copy = 'const copied = 1;\n'.repeat(150);
-        const editBefore = 'const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n';
-        const editAfter = 'const a = 2;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n';
+        // R6: the changed-line total ranked a zero-line copy (numstat `0 0`) first, so its whole before
+        // side spent the budget and the edit beside it was withheld on both sides. Ordering by the
+        // admission bytes keeps the copy's whole-file fallback from outranking the edit. The edit's file
+        // is larger than the copy, but its hunk is smaller, so a whole-side estimate would rank the copy
+        // first and this case would redden.
+        const copy = 'const copied = 1;\n'.repeat(50);
+        const editHead = 'const a = 1;\nconst b = 2;\nconst c = 3;\n';
+        const editTail = 'const filler = 0;\n'.repeat(197);
+        const editBefore = `${editHead}${editTail}`;
+        const editAfter = `const a = 2;\nconst b = 2;\nconst c = 3;\n${editTail}`;
         const set = collectEvidence({
             port: fakeSource({
                 files: [
@@ -730,8 +797,8 @@ describe('contract-carrying admission', () => {
                         'aaa/edit.ts',
                         {
                             path: 'aaa/edit.ts',
-                            before: [{ startLine: 1, endLine: 5 }],
-                            after: [{ startLine: 1, endLine: 5 }],
+                            before: [{ startLine: 1, endLine: 3 }],
+                            after: [{ startLine: 1, endLine: 3 }],
                         },
                     ],
                 ]),
@@ -753,6 +820,262 @@ describe('contract-carrying admission', () => {
                 (reference) => reference.path === 'zzz/duplicated.ts' || reference.path === 'zzz/original.ts'
             )
         ).toBe(false);
+    });
+
+    it('ranks a contract path by its chargeable hunks, not the over-budget hunk', () => {
+        // R1: the ranked cost summed every hunk slice, so an over-budget hunk outranked a cheaper
+        // contract path and starved the material hunk that fits the total budget on its own. Ordering by
+        // the bytes admission can charge counts the over-budget hunk as zero.
+        const material = 'const mat = 1;\n';
+        const oversized = 'const oversized = 1;\n'.repeat(60);
+        const competitor = 'const competitor = 123456789012345;\n';
+        // A single-line hunk slices away the trailing newline, so the two material slices cost one byte
+        // less than their blobs.
+        const materialBytes = Buffer.byteLength(material, 'utf8') - 1;
+        const competitorBytes = Buffer.byteLength(competitor, 'utf8') - 1;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('scripts/reviewRiskPolicy.ts', { kind: 'added', added: 1, deleted: 0 }),
+                    changedFile('scripts/reviewDossier.ts', { kind: 'added', added: 1, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${HEAD}:scripts/reviewDossier.ts`]: `${material}${oversized}`,
+                    [`${HEAD}:scripts/reviewRiskPolicy.ts`]: competitor,
+                },
+                hunks: new Map([
+                    [
+                        'scripts/reviewDossier.ts',
+                        {
+                            path: 'scripts/reviewDossier.ts',
+                            before: [],
+                            after: [
+                                { startLine: 1, endLine: 1 },
+                                { startLine: 2, endLine: 61 },
+                            ],
+                        },
+                    ],
+                    [
+                        'scripts/reviewRiskPolicy.ts',
+                        {
+                            path: 'scripts/reviewRiskPolicy.ts',
+                            before: [],
+                            after: [{ startLine: 1, endLine: 1 }],
+                        },
+                    ],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 100,
+                maxTotalBytes: materialBytes + competitorBytes - 1,
+            },
+        });
+        // The material hunk ranks the contract path first and fits the total budget on its own.
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`).sort()).toEqual([
+            'scripts/reviewDossier.ts:after',
+        ]);
+        expect(set.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'region-exceeds-per-region-budget (after, contract)' },
+            { path: 'scripts/reviewRiskPolicy.ts', reason: 'total-evidence-budget-exhausted (after, contract)' },
+        ]);
+    });
+
+    it('admits a collected spec that imports a closure member as a .js specifier', () => {
+        // R4: the runtime maps .js onto the TypeScript source, but the trial only tried the exact base
+        // and the TypeScript extensions, so `../../canonicalRecord.js` ranked bulk while the runtime
+        // loaded `scripts/canonicalRecord.ts`.
+        const before = 'const before = 1;\n';
+        const contractAfter = "import { canonicalRecord } from '../../canonicalRecord.js';\n";
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('aaa/plain.spec.ts'),
+                    changedFile('scripts/__tests__/nested/canonicalRecord.spec.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/nested/canonicalRecord.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/nested/canonicalRecord.spec.ts`]: contractAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts')
+        ).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+
+    it.each([
+        ['query', '../../canonicalRecord.ts?raw'],
+        ['hash', '../../canonicalRecord.ts#hash'],
+    ])('admits a collected spec whose closure import carries a %s postfix', (_label, specifier) => {
+        // R4: the runtime strips a query or hash postfix before resolving, so the trial must too, or a
+        // spec pinning a closure member through one reads as bulk.
+        const before = 'const before = 1;\n';
+        const contractAfter = `import { canonicalRecord } from '${specifier}';\n`;
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('aaa/plain.spec.ts'),
+                    changedFile('scripts/__tests__/nested/canonicalRecord.spec.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:aaa/plain.spec.ts`]: before,
+                    [`${HEAD}:aaa/plain.spec.ts`]: bulkAfter,
+                    [`${MERGE_BASE}:scripts/__tests__/nested/canonicalRecord.spec.ts`]: before,
+                    [`${HEAD}:scripts/__tests__/nested/canonicalRecord.spec.ts`]: contractAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
+            },
+        });
+        expect(
+            set.references.some((reference) => reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts')
+        ).toBe(true);
+        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
+    });
+});
+
+describe('contract classification follows each side on both routes', () => {
+    const closureImport = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+    const largeFiller = 'const large = 1;\n'.repeat(200);
+    const limits = { maxRegionBytes: 100, maxTotalBytes: 8_192 };
+
+    async function verifyWithheldReason(
+        reference: { path: string; side: 'before' | 'after' | 'context' },
+        blobs: Record<string, string>
+    ): Promise<string | undefined> {
+        const { runVerify } = await import('../verify.ts');
+        const result = await runVerify({
+            ports: {
+                source: fakeSource({ files: [], blobs }),
+                provider: constantProvider({ supported: 0.5, contradicted: 0.25, insufficient_context: 0.25 }),
+                cache: new MapCache(),
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: () => undefined,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            limits,
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [{ ...reference, startLine: 1, endLine: Number.MAX_SAFE_INTEGER }],
+                },
+            ],
+            runId: 'verify-withheld',
+        });
+        return result.report.scope.truncated[0]?.reason;
+    }
+
+    it('classifies a deleted closure-pinning spec by its before side on both routes', async () => {
+        // R3: a deleted spec has no after side, so the after-only classifier read it bulk and the scan
+        // withheld its before side without the contract term, while verify read that reference's own
+        // before content and did.
+        const deletedPath = 'scripts/__tests__/deleted.spec.ts';
+        const beforeContent = `${closureImport}${largeFiller}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(deletedPath, { kind: 'deleted' })],
+                blobs: { [`${MERGE_BASE}:${deletedPath}`]: beforeContent },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits,
+        });
+        expect(set.truncated).toEqual([
+            { path: deletedPath, reason: 'region-exceeds-per-region-budget (before, contract)' },
+        ]);
+        expect(
+            await verifyWithheldReason(
+                { path: deletedPath, side: 'before' },
+                {
+                    [`${MERGE_BASE}:${deletedPath}`]: beforeContent,
+                }
+            )
+        ).toBe('region-exceeds-per-region-budget (before, contract)');
+    });
+
+    it('classifies a renamed closure-pinning spec by its before side on both routes', async () => {
+        // R3: a rename was classified by its destination, so a spec moved out of a closure-pinning path
+        // read bulk on its before side while verify read the source path's own content.
+        const sourcePath = 'scripts/__tests__/closure.spec.ts';
+        const targetPath = 'src/modules/other/moved.ts';
+        const beforeContent = `${closureImport}${largeFiller}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(targetPath, { kind: 'renamed', previousPath: sourcePath, added: 1, deleted: 1 })],
+                blobs: {
+                    [`${MERGE_BASE}:${sourcePath}`]: beforeContent,
+                    [`${HEAD}:${targetPath}`]: 'const after = 1;\n',
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits,
+        });
+        expect(set.truncated).toEqual([
+            { path: sourcePath, reason: 'region-exceeds-per-region-budget (before, contract)' },
+        ]);
+        expect(
+            await verifyWithheldReason(
+                { path: sourcePath, side: 'before' },
+                {
+                    [`${MERGE_BASE}:${sourcePath}`]: beforeContent,
+                }
+            )
+        ).toBe('region-exceeds-per-region-budget (before, contract)');
+    });
+
+    it('labels a withheld contract-context region the same on both routes', async () => {
+        // R3: the scan named a withheld contract-context region `(contract)` while verify named the same
+        // reference `(context, contract)`; both now read the side qualifier the reference actually has.
+        const contractContent = '# AGENTS.md\n'.repeat(200);
+        const set = collectEvidence({
+            port: fakeSource({ files: [], blobs: { [`${MERGE_BASE}:AGENTS.md`]: contractContent } }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits,
+            contractPaths: ['AGENTS.md'],
+        });
+        expect(set.truncated).toEqual([
+            { path: 'AGENTS.md', reason: 'region-exceeds-per-region-budget (context, contract)' },
+        ]);
+        expect(
+            await verifyWithheldReason(
+                { path: 'AGENTS.md', side: 'context' },
+                {
+                    [`${MERGE_BASE}:AGENTS.md`]: contractContent,
+                }
+            )
+        ).toBe('region-exceeds-per-region-budget (context, contract)');
     });
 });
 

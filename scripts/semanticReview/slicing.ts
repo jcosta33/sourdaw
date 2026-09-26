@@ -15,6 +15,12 @@ export function splitLines(text: string): string[] {
 /** The named lines of `text`, clamped to what the file holds, or `undefined` when none remain. */
 export function sliceLines(text: string, range: LineRange): { text: string; range: LineRange } | undefined {
     const lines = splitLines(text);
+    // A hunk that starts past the file's last line names no line this revision holds; clamping it to
+    // the last line would admit a region the diff never described. `splitLines` never returns empty,
+    // so this is the only way a range can leave no line.
+    if (range.startLine > lines.length) {
+        return undefined;
+    }
     const last = Math.max(1, lines.length);
     const start = Math.min(Math.max(1, range.startLine), last);
     const end = Math.min(Math.max(start, range.endLine), last);

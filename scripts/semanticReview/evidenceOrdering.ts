@@ -8,6 +8,7 @@
  */
 
 import { isCollectedSpec } from './rules.ts';
+import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, type LineRange } from './slicing.ts';
 
 import type { PathHunks, SemanticChangedFile, SemanticSourcePort } from './evidence.ts';
@@ -96,26 +97,44 @@ export function readChangedContents(
     return contents;
 }
 
-/** The raw bytes of one side's regions: each hunk slice, or the whole side when the hunks are unavailable. */
-function sideRegionBytes(raw: string, ranges: readonly LineRange[] | undefined): number {
+/** The raw bytes of one region, or zero when admission cannot charge it: the content screen or the per-region budget withholds it. */
+function chargeableRegionBytes(raw: string, maxRegionBytes: number): number {
+    if (sensitiveContentReason(raw) !== undefined) {
+        return 0;
+    }
+    if (Buffer.byteLength(raw, 'utf8') > maxRegionBytes) {
+        return 0;
+    }
+    return Buffer.byteLength(raw, 'utf8');
+}
+
+/** The ranked bytes of one side's regions: each hunk slice admission can charge, or the whole side when the hunks are unavailable. */
+function sideRegionBytes(raw: string, ranges: readonly LineRange[] | undefined, maxRegionBytes: number): number {
     if (ranges === undefined || ranges.length === 0) {
-        return Buffer.byteLength(raw, 'utf8');
+        return chargeableRegionBytes(raw, maxRegionBytes);
     }
     let bytes = 0;
     for (const range of ranges) {
         const sliced = sliceLines(raw, range);
         if (sliced !== undefined) {
-            bytes += Buffer.byteLength(sliced.text, 'utf8');
+            bytes += chargeableRegionBytes(sliced.text, maxRegionBytes);
         }
     }
     return bytes;
 }
 
-/** Each changed path's admission byte cost, computed once from the shared side reads and hunks. */
+/**
+ * Each changed path's admission byte cost, computed once from the shared side reads and hunks.
+ *
+ * The cost is what admission can actually spend: a region the content screen withholds or one that
+ * exceeds the per-region budget costs zero, so the ranked figure never outranks a path for bytes that
+ * admission would not charge.
+ */
 export function admissionBytesByPath(
     changed: readonly SemanticChangedFile[],
     contents: ReadonlyMap<string, ChangedFileContents>,
-    hunksByPath: ReadonlyMap<string, PathHunks>
+    hunksByPath: ReadonlyMap<string, PathHunks>,
+    maxRegionBytes: number
 ): ReadonlyMap<string, number> {
     const bytes = new Map<string, number>();
     for (const file of changed) {
@@ -123,10 +142,10 @@ export function admissionBytesByPath(
         const hunks = hunksByPath.get(file.path);
         let total = 0;
         if (kindHasBeforeSide(file.kind) && entry?.before !== undefined) {
-            total += sideRegionBytes(entry.before, hunks?.before);
+            total += sideRegionBytes(entry.before, hunks?.before, maxRegionBytes);
         }
         if (kindHasAfterSide(file.kind) && entry?.after !== undefined) {
-            total += sideRegionBytes(entry.after, hunks?.after);
+            total += sideRegionBytes(entry.after, hunks?.after, maxRegionBytes);
         }
         bytes.set(file.path, total);
     }
