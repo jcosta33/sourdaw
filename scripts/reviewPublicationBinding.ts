@@ -39,6 +39,7 @@ import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts'
 import {
     REASSESSMENT_FILE_NAME,
     REVIEW_ROUND_ESCALATION_THRESHOLD,
+    assertReviewRoundNotFrozen,
     countReviewerRequestChangesRounds,
     gateReviewRoundEscalation,
     type ReviewReassessment,
@@ -150,9 +151,9 @@ function readSemanticCiRecord(port: PublishReviewPort, bundle: string): Semantic
  * without naming the field at fault, so the message describes what the reader enforces and the
  * repair, instead of blaming baseSha for a manifest that is present and readable but wrong elsewhere.
  * The repair is in place because review:prepare refuses to reuse a populated bundle whose manifest
- * it cannot read, so regenerating is unavailable in every state that reaches this refusal. A fresh
- * approval publication reads its approval context before this gate and surfaces the reader's own
- * error first, so the refusal is reachable for a request-changes publication (#4754).
+ * it cannot read, so regenerating is unavailable in every state that reaches this refusal. A
+ * publication takes the round-cap decision before its approval context, so this refusal is reached
+ * by a fresh approval publication too, not only by a request-changes one (#4754).
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
@@ -161,6 +162,66 @@ function readEscalationBaseSha(bundle: string, observedCount: number): string {
         return fail(
             `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} can bind`
         );
+    }
+}
+
+/**
+ * The reviewer REQUEST_CHANGES rounds the pull request's public history records, read from the
+ * public channels alone. Fails closed when the port cannot read them, because a run that cannot
+ * count the rounds cannot decide the cap.
+ */
+function observedReviewRoundCount(number: number, head: string, port: PublishReviewPort): number {
+    if (port.publicReviews === undefined || port.publicReviewComments === undefined) {
+        fail('review round escalation requires the port to read the pull request public reviews and comments');
+    }
+    const reviews = port.publicReviews;
+    const comments = port.publicReviewComments;
+    return countReviewerRequestChangesRounds(
+        reconstructReviewRounds(number, { state: 'OPEN', head }, reviews(number), comments(number))
+    );
+}
+
+/**
+ * The round-cap decision on its own — the freeze, and the escalation duty read from the public
+ * history — so a publication takes it before the approval context and the comment preflight it
+ * would otherwise report instead. A fresh approval publication reads its approval context before the
+ * dossier gate, and a manifest no approval context can be read from is exactly a state the round-cap
+ * refusal must still reach, because that refusal is the only text naming the reassessment an
+ * escalated head is missing and the routes out of a frozen one (#4754).
+ */
+export function assertReviewRoundPublicationAdmitted(input: {
+    number: number;
+    head: string;
+    bundle: string;
+    port: PublishReviewPort;
+}): void {
+    if (hasRiskPlan(input.bundle, input.port) && bundleRecordsPublication(input.bundle, input.port)) {
+        // The head replays a review it already posted, which the round cap does not bound: the
+        // replayed review is one of the counted rounds.
+        return;
+    }
+    const observedCount = observedReviewRoundCount(input.number, input.head, input.port);
+    if (observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
+        return;
+    }
+    assertReviewRoundNotFrozen(observedCount);
+    if (!hasRiskPlan(input.bundle, input.port)) {
+        // A bundle with no risk plan publishes exactly as before, and for it this refusal is already
+        // reachable through the gate below, which names the manifest a reassessment must bind.
+        return;
+    }
+    const recorded = readBundleFile(input.port, join(input.bundle, REASSESSMENT_FILE_NAME));
+    if (!recorded.present) {
+        // The refusal for an absent reassessment is the same one the gate below raises, so the
+        // publication is told before it reads anything it would report instead.
+        gateReviewRoundEscalation({
+            observedCount,
+            pr: input.number,
+            headSha: input.head,
+            baseSha: '',
+            bundle: input.bundle,
+            reassessment: recorded,
+        });
     }
 }
 
@@ -178,16 +239,8 @@ function readReviewRoundEscalation(
     bundle: string,
     port: PublishReviewPort
 ): ReviewReassessment | undefined {
-    if (port.publicReviews === undefined || port.publicReviewComments === undefined) {
-        fail('review round escalation requires the port to read the pull request public reviews and comments');
-    }
-    const reconstruction = reconstructReviewRounds(
-        number,
-        { state: 'OPEN', head },
-        port.publicReviews(number),
-        port.publicReviewComments(number)
-    );
-    const observedCount = countReviewerRequestChangesRounds(reconstruction);
+    assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
+    const observedCount = observedReviewRoundCount(number, head, port);
     if (observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return undefined;
     }
@@ -203,11 +256,21 @@ function readReviewRoundEscalation(
 }
 
 /**
+ * Whether the bundle carries a risk plan, and so a risk plan's gate. The plan's presence is what
+ * distinguishes a bundle prepared under the current contract from a legacy one, whose dossier the
+ * round-cap decision must not read on its behalf (#4754).
+ */
+function hasRiskPlan(bundle: string, port: PublishReviewPort): boolean {
+    return readBundleFile(port, join(bundle, REVIEW_RISK_PLAN_NAME)).present;
+}
+
+/**
  * Whether a plan-carrying bundle's dossier already records its publication. Such a head replays that
  * record instead of posting fresh, so the escalation gate — which bounds fresh publications against
  * the live round count — must be skipped there. A caller input dossier (`dossier-input-v1`), or a
  * persisted record whose POST never landed its binding, records no publication and answers false.
- * Only called once the risk plan is known present, so a legacy bundle never reads its dossier here.
+ * The dossier's own presence gates the read, so a legacy bundle that carries none answers false
+ * without the caller having to establish the risk plan first.
  */
 function bundleRecordsPublication(bundle: string, port: PublishReviewPort): boolean {
     const dossierRead = readBundleFile(port, join(bundle, REVIEW_DOSSIER_NAME));
