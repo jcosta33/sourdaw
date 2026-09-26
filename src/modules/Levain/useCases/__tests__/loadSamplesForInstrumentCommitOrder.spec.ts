@@ -333,9 +333,7 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
             // A: worklet commit staged (`buildZoneMap` posted) but held back.
             const loadA = bridge.loadSamplesForInstrument(deviceId, 'cello');
             await vi.waitFor(() => {
-                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'buildZoneMap')).toBe(
-                    true
-                );
+                expect(port.postMessage.mock.calls.some(([m]) => isRecord(m) && m.type === 'buildZoneMap')).toBe(true);
             });
             const aLoadPromise = autoLoadSpy.mock.results[0]?.value as ReturnType<typeof autoLoadLevainSamples>;
             expect(aLoadPromise).toBeDefined();
