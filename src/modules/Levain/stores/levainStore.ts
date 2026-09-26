@@ -38,8 +38,10 @@ export type LevainState = {
     currentArticulationDisplay: string;
     /**
      * The loaded bank's mic position names, in engine-index order. Null means
-     * no bank is committed yet (loading, failed, or never started) — the Stage
-     * card renders no mic rows in that state.
+     * no bank is committed yet or committed to no mics — never "failed": a
+     * rejected replacement load restores the previously committed bank's
+     * names here, because the engine keeps sounding that bank rather than
+     * silencing it. The Stage card renders no mic rows only while null.
      */
     loadedMicPositions: readonly MicPositionType[] | null;
 };

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { sendMicParamToEngine } from '../../../useCases/levainParamBridge/sendMicParamToEngine';
@@ -320,7 +320,9 @@ describe('LevainPanel', () => {
             expect(screen.queryByText('Room')).not.toBeInTheDocument();
             const rows = screen.getAllByTestId('readout-row');
             const spaceRow = rows.find((row) => row.textContent?.includes('Space'));
-            expect(spaceRow?.textContent).toContain('1 mic');
+            // Exact match: "1 mic" and "1 mics" (an always-plural readout)
+            // must not both satisfy this assertion.
+            expect(within(spaceRow as HTMLElement).getByText('1 mic', { exact: true })).toBeInTheDocument();
         });
 
         it('renders three rows in bank order with a "3 mics" readout, for a three-mic bank', () => {

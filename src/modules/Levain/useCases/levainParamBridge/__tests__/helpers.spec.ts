@@ -461,7 +461,22 @@ describe('createLevainBridge', () => {
             expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', ['close', 'room']);
         });
 
-        it('leaves loadedMicPositions at its clear when the load rejects', async () => {
+        it('restores the previously committed names when a live load rejects', async () => {
+            const deps = makeDeps(() => Promise.reject(new Error('boom')));
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            seedDevice('d1', ['close']);
+            deps.setLoadedMicPositions.mockClear();
+
+            await bridge.loadSamplesForInstrument('d1', 'cello');
+
+            // Null during the load, then restored to the bank the engine kept
+            // sounding once the rejection settles.
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(1, 'd1', null);
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(2, 'd1', ['close']);
+        });
+
+        it('stays null when no bank was committed and the load rejects', async () => {
             const deps = makeDeps(() => Promise.reject(new Error('boom')));
             const bridge = createLevainBridge(deps);
             void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
@@ -469,8 +484,38 @@ describe('createLevainBridge', () => {
 
             await bridge.loadSamplesForInstrument('d1', 'cello');
 
-            expect(deps.setLoadedMicPositions).toHaveBeenCalledTimes(1);
-            expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', null);
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledTimes(2);
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(1, 'd1', null);
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(2, 'd1', null);
+        });
+
+        it('writes nothing for a rejected load already superseded by another', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            seedDevice('d1', ['close']);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // B (the successor) settles; A rejects afterward but its controller
+            // was already aborted when B started, so it must not restore over
+            // B's outcome.
+            second.resolve(['room']);
+            first.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['room']);
+            expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['close']);
         });
 
         it('keeps the successor’s names when a load superseded before it resolves settles later', async () => {

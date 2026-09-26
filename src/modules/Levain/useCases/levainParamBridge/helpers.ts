@@ -189,6 +189,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // is the only route that writes `loadedMicPositions`: the offline export
         // route drives the same loader with the live device's id and must never
         // touch the live panel's rows (see `autoLoadLevainSamples`'s own comment).
+        // A rejected load never commits: the worklet only aborts the *pending*
+        // bank, so the previously committed bank keeps sounding. The rejection
+        // branch below restores these kept names rather than leaving the panel
+        // on the transient null.
+        const previousMicPositions = levainStore.value?.[deviceId]?.loadedMicPositions ?? null;
         deps.setLoadedMicPositions(deviceId, null);
 
         const controller = new AbortController();
@@ -207,6 +212,9 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                     return 'cancelled';
                 }
                 logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
+                // Restore the previously committed bank's names: the engine
+                // kept sounding it, so the panel's rows must match.
+                deps.setLoadedMicPositions(deviceId, previousMicPositions);
                 return 'failed';
             }
         );
