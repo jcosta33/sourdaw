@@ -9,9 +9,11 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type SemanticCommandListMatchSelectorRecord } from '../../../models/SemanticCommandList';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
 import { type admitCommittedSectionRenderRetry } from '../admitCommittedSectionRenderRetry';
 import { confirmationAdmission } from '../resolveConfirmationAdmission';
+import { type MatchSelectorPredicateRevalidation } from '../revalidateApprovedMatchSelectors';
 
 type RetryAdmissionInput = Parameters<typeof admitCommittedSectionRenderRetry>[0];
 type RetryAdmissionResult = ReturnType<typeof admitCommittedSectionRenderRetry>;
@@ -28,6 +30,9 @@ const mocks = vi.hoisted(() => ({
     failUnreadableEvidence: vi.fn(),
     reboundApproval: vi.fn(),
     refreshBatch: vi.fn(),
+    revalidateMatchSelectors: vi.fn<
+        (predicates: readonly SemanticCommandListMatchSelectorRecord[]) => MatchSelectorPredicateRevalidation
+    >(() => ({ status: 'unchanged' })),
     revision: vi.fn(() => 'revision-1'),
     revisionMatchesLive: vi.fn(() => true),
     chatState: { value: null as { isGenerating: boolean } | null },
@@ -49,6 +54,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
 }));
 vi.mock('../admitCommittedSectionRenderRetry', () => ({ admitCommittedSectionRenderRetry: mocks.admitRetry }));
+vi.mock('../revalidateApprovedMatchSelectors', () => ({
+    revalidateApprovedMatchSelectors: mocks.revalidateMatchSelectors,
+}));
 vi.mock('../../compileAgentRiskApproval', () => ({ compileAgentRiskApproval: mocks.compileApproval }));
 vi.mock('../confirmationTerminalSettlement', () => ({
     confirmationTerminalSettlement: {
@@ -176,6 +184,7 @@ beforeEach(() => {
     mocks.invalidateForDivergence.mockResolvedValue({ status: 'invalidated', reason: 'divergence' });
     mocks.invalidateForProjectChange.mockResolvedValue({ status: 'invalidated', reason: 'stale' });
     mocks.reboundApproval.mockReturnValue(confirmation);
+    mocks.revalidateMatchSelectors.mockReturnValue({ status: 'unchanged' });
 });
 
 describe('resolveConfirmationAdmission', () => {
@@ -416,6 +425,39 @@ describe('resolveConfirmationAdmission', () => {
             confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
         ).resolves.toEqual({ status: 'handled', result: { status: 'invalidated', reason: 'divergence' } });
         expect(mocks.invalidateForDivergence).toHaveBeenCalledWith(confirmation, divergence);
+    });
+
+    it('invalidates through project-change settlement when a carried match selector no longer resolves, without refreshing or rebinding the batch', async () => {
+        const commandBatch = createBatch();
+        const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] = [
+            {
+                itemId: 'color-drums',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 8 },
+                stableIds: ['track-kick', 'track-snare'],
+                actionPositions: [0, 1],
+            },
+        ];
+        const baseConfirmation = createConfirmation({ commandBatch });
+        const confirmation = {
+            ...baseConfirmation,
+            approvalSnapshot: { ...baseConfirmation.approvalSnapshot, matchSelectorPredicates },
+        };
+        const detail =
+            'Match selector color-drums now resolves a different target set than the approved batch carried.';
+        mocks.getConfirmation.mockReturnValue(confirmation);
+        mocks.revision.mockReturnValue('revision-2');
+        mocks.revisionMatchesLive.mockReturnValue(false);
+        mocks.revalidateMatchSelectors.mockReturnValue({ status: 'invalidated', detail });
+
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+        ).resolves.toEqual({ status: 'handled', result: { status: 'invalidated', reason: 'stale' } });
+        expect(mocks.revalidateMatchSelectors).toHaveBeenCalledWith(matchSelectorPredicates);
+        expect(mocks.invalidateForProjectChange).toHaveBeenCalledWith(confirmation, detail);
+        expect(mocks.refreshBatch).not.toHaveBeenCalled();
+        expect(mocks.reboundApproval).not.toHaveBeenCalled();
     });
 
     it('rebinds a revalidated approval, updates chat, and requires a new confirmation', async () => {

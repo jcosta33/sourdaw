@@ -358,6 +358,7 @@ export async function submitAdmittedPromptRequest(
                 agentApproval: compiled.agentApproval,
                 affectedIds: [...authority.scope.targetIds],
                 protectedUnchanged: authority.scope.protectedTargetIds.map((id) => ({ id, name: id })),
+                matchSelectorPredicates: planned.result.matchSelectorPredicates,
                 executionMode: planned.result.executionMode,
                 group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },
                 projectRevision: planned.projectRevision,

@@ -19,6 +19,7 @@ import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../m
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import {
     isWorkflowCapabilityId,
@@ -65,6 +66,7 @@ import {
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { compileArbitraryCommandList } from './compileArbitraryCommandList';
+import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
@@ -939,6 +941,9 @@ const planPromptIntent = inject({ logger })(
                         };
                     }
 
+                    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
+                        deriveMatchSelectorPredicates(compiledList.compilerEvidence);
+
                     return {
                         actions: guarded.actions,
                         ...(bridged.actionCommandGraph === undefined
@@ -952,6 +957,7 @@ const planPromptIntent = inject({ logger })(
                         ...(compiledList.compilerEvidence === undefined
                             ? {}
                             : { providerKnownTargetIds: [...compiledList.compilerEvidence.providerKnownTargetIds] }),
+                        ...(matchSelectorPredicates.length === 0 ? {} : { matchSelectorPredicates }),
                         ...(effectiveProviderProposal === null ? {} : { providerProposal: effectiveProviderProposal }),
                         ...creativeAuthorityFields,
                     };

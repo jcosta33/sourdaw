@@ -763,6 +763,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // immutable `addNotes` command metadata. Nothing here hydrates or
         // writes a device.
         'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 3,
+        // Count provenance: new file entry, measured 1 — the `ArbitraryCommandListEvidence`
+        // type import from compileArbitraryCommandList. The file only projects compiler
+        // evidence into match selector records; no device hydration or write.
+        'src/modules/AiRuntime/useCases/deriveMatchSelectorPredicates.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
         'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
         'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,

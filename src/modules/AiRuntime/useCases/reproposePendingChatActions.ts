@@ -7,6 +7,7 @@ import {
 
 import { type AgentRunPhase } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { appendChatMessage, updateChatMessage } from '../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
@@ -16,6 +17,7 @@ import {
 
 import { pendingActionResourceSettlement } from './agentRequestOrchestration/pendingActionResourceSettlement';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
@@ -129,6 +131,80 @@ function compileSelectedSubset(
     }
 }
 
+/** Rewrites every position to its new index, or returns `null` when any position was dropped. */
+function rewriteActionPositions(
+    positions: readonly number[],
+    newPositionByOriginalIndex: ReadonlyMap<number, number>
+): number[] | null {
+    const rewritten: number[] = [];
+    for (const position of positions) {
+        const newPosition = newPositionByOriginalIndex.get(position);
+        if (newPosition === undefined) {
+            return null;
+        }
+        rewritten.push(newPosition);
+    }
+    return rewritten;
+}
+
+/**
+ * The subset route can drop actions a carried selector's own list item produced: keep a record
+ * only when every one of its `actionPositions` survived into the subset, then rewrite those
+ * positions to their new indexes in the replacement's `actions`. Coverage is checked against the
+ * record's own positions rather than its `stableIds` because a *different* item's kept action can
+ * touch the same ids the record resolved to (for example, a `where`-selected command targeting the
+ * same track a `match` selector also resolved) — comparing ids alone would carry the record forward
+ * for a subset that dropped every action the record's item produced.
+ */
+function filterCarriedMatchSelectorPredicates(
+    matchSelectorPredicates: readonly SemanticCommandListMatchSelectorRecord[] | undefined,
+    includedActionIndexes: readonly number[]
+): SemanticCommandListMatchSelectorRecord[] | undefined {
+    if (!matchSelectorPredicates) {
+        return undefined;
+    }
+    const newPositionByOriginalIndex = new Map(
+        includedActionIndexes.map((originalIndex, newIndex) => [originalIndex, newIndex])
+    );
+    const kept = matchSelectorPredicates.flatMap((record) => {
+        const actionPositions = rewriteActionPositions(record.actionPositions, newPositionByOriginalIndex);
+        return actionPositions === null ? [] : [{ ...record, actionPositions }];
+    });
+    return kept.length === 0 ? undefined : kept;
+}
+
+type CarriedSelectionResult =
+    | {
+          status: 'carried';
+          affectedIds: readonly string[];
+          matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] | undefined;
+      }
+    | Extract<ReproposePendingChatActionsResult, { status: 'rejected' }>;
+
+/**
+ * Narrow the confirmation's carried affected ids and `match` selector records to the subset
+ * route's included actions, then replay whatever selectors survive against the live project
+ * before the caller persists anything derived from them.
+ */
+function resolveCarriedSelection(
+    confirmation: PendingAppActionConfirmation,
+    actions: PendingAppActionConfirmation['actions'],
+    includedActionIndexes: readonly number[],
+    selectsSubset: boolean
+): CarriedSelectionResult {
+    let affectedIds = confirmation.affectedIds;
+    let matchSelectorPredicates = confirmation.approvalSnapshot.matchSelectorPredicates;
+    if (selectsSubset) {
+        affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
+        matchSelectorPredicates = filterCarriedMatchSelectorPredicates(matchSelectorPredicates, includedActionIndexes);
+    }
+    const revalidation = revalidateApprovedMatchSelectors(matchSelectorPredicates ?? []);
+    if (revalidation.status === 'invalidated') {
+        return { status: 'rejected', reason: revalidation.detail };
+    }
+    return { status: 'carried', affectedIds, matchSelectorPredicates };
+}
+
 /** The actions and labels the included commands came from, by their position in the replaced proposal. */
 function selectIncludedPlan(
     confirmation: PendingAppActionConfirmation,
@@ -142,6 +218,7 @@ function selectIncludedPlan(
         includedCommandIds.has(commandId) ? [index] : []
     );
     return {
+        includedActionIndexes,
         actions: includedActionIndexes.flatMap((index) => {
             const action = confirmation.actions[index];
             return action ? [action] : [];
@@ -274,11 +351,16 @@ export async function reproposePendingChatActions(
     }
     const { approval, parsed: parsedRefreshed, refreshed } = rebound;
 
-    const { actions, actionLabels } = selectIncludedPlan(confirmation, originalCommandIds, includedOriginalCommandIds);
-    let affectedIds = confirmation.affectedIds;
-    if (selectsSubset) {
-        affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
+    const { actions, actionLabels, includedActionIndexes } = selectIncludedPlan(
+        confirmation,
+        originalCommandIds,
+        includedOriginalCommandIds
+    );
+    const carriedSelection = resolveCarriedSelection(confirmation, actions, includedActionIndexes, selectsSubset);
+    if (carriedSelection.status === 'rejected') {
+        return carriedSelection;
     }
+    const { affectedIds, matchSelectorPredicates: carriedMatchSelectorPredicates } = carriedSelection;
 
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
@@ -299,6 +381,15 @@ export async function reproposePendingChatActions(
         agentApproval: approval,
         affectedIds: [...affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
+        // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
+        // in the working batch's commands rather than re-resolving any `match` selector, so this
+        // re-preview is itself a point where a selector could go stale unnoticed; `revalidateApprovedMatchSelectors`
+        // above already replayed the filtered set (subset-covered only) against the live project and
+        // rejected before persisting anything if any selector no longer resolves the same targets. What
+        // survives that check is carried forward so a later `resolveConfirmationAdmission`
+        // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
+        // guards a first-proposed one.
+        matchSelectorPredicates: carriedMatchSelectorPredicates,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,
