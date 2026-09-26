@@ -3976,9 +3976,9 @@ const LEVAIN_PATCH_PRECEDENCE: &[&str] = &[];
 ///
 /// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
 /// `GraphCommand` moves through a fixed-size ring, and inline this body's
-/// sixty-four voices, its zone map, its mic mixer's delay lines and its two
-/// 4096-frame channel buffers would set the size of every command the engine
-/// sends.
+/// sixty-four voices, its zone map, its per-mic realism and tone sections and
+/// its two 4096-frame channel buffers would set the size of every command the
+/// engine sends.
 ///
 /// This hosts [`LevainInstance`], the object the browser worklet drives
 /// (`levainProcessor.ts`), so an instrument sounds the same under both runtimes
@@ -4247,11 +4247,10 @@ impl LevainBody {
     /// The instrument produces its material in the block it was asked for and
     /// delays nothing on the way out. Every stage of `LevainEngine::process_block`
     /// is a per-sample read of state the block itself advances — the voices, the
-    /// realism layer, the tone macro, the mic mixer — and the one delay line in
-    /// the instrument is the mic mixer's, which is authored per mic position
-    /// (`MicPosition::delay_samples`) and reachable by no name in the
-    /// vocabulary, so nothing a patch or a live write can do makes this figure
-    /// move.
+    /// realism layer, the tone macro, the mic mixer — and none of them holds a
+    /// delay line. The mic mix applies no delay: each mic position's recording
+    /// already carries its own arrival time, so the mixer only sets level and
+    /// pan. Nothing a patch or a live write can do makes this figure move.
     ///
     /// Declaring none is not the same as declaring zero, and this body declares
     /// none: [`PluginCore::declared_latency_frames`] answers `None` for it, on

@@ -3,6 +3,11 @@
 //! Manages instrument state, voice pool, expression, articulations,
 //! legato, mic mixing, and humanization. The section + voice engine
 //! processes MIDI events and renders audio blocks.
+//!
+//! Every note plays every loaded mic position together: each voice renders
+//! one stream per position, and each enabled position's sum runs through its
+//! own realism and tone stages before the mic mixer places it in the stereo
+//! field.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,13 +18,13 @@ use super::expression::ExpressionState;
 use super::fallback::FallbackToneEngine;
 use super::humanize::Humanizer;
 use super::legato::{LegatoEngine, LegatoResult, LegatoTransitionStore};
-use super::mic::MicMixer;
+use super::mic::{MicMixer, MAX_MIC_POSITIONS};
 use super::performance::{AutoArticulation, AutoDivisi, EnsembleTiming};
 use super::realism::RealismEngine;
 use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::tone::ToneTilt;
 use super::types::*;
-use super::voice::VoicePool;
+use super::voice::{NoteZones, VoicePool};
 use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
 use crate::params::{ATTACK, MASTER_GAIN, RELEASE, TONE};
 
@@ -31,6 +36,9 @@ thread_local! {
 /// Maximum staggered pedal releases in flight at once (matches
 /// `PedalDeferredRelease`'s own `MAX_DEFERRED`).
 const MAX_STAGGERED_RELEASES: usize = 128;
+
+/// Round-robin candidates one mic position's lookup offers a note-on.
+const MAX_ROUND_ROBIN_CANDIDATES: usize = 16;
 
 struct PendingSampleBank {
     zone_map: ZoneMap,
@@ -82,7 +90,7 @@ pub struct LevainEngine {
     articulation: ArticulationState,
     /// Legato engine.
     legato: LegatoEngine,
-    /// Mic mixer.
+    /// Level, pan and on/off per mic position.
     mic_mixer: MicMixer,
     /// Humanizer.
     humanizer: Humanizer,
@@ -98,10 +106,12 @@ pub struct LevainEngine {
     ensemble_timing: EnsembleTiming,
     /// Fallback tone generator (used when no samples are loaded).
     fallback: FallbackToneEngine,
-    /// Orchestral realism augmentation layer.
-    realism: RealismEngine,
-    /// Tone macro — a brightness tilt over the whole instrument output.
-    tone: ToneTilt,
+    /// Orchestral realism augmentation layer, one per mic position so each
+    /// position's chain keeps its own filter and noise state.
+    realism: [RealismEngine; MAX_MIC_POSITIONS],
+    /// Tone macro — a brightness tilt over the whole instrument output, one
+    /// section per mic position.
+    tone: [ToneTilt; MAX_MIC_POSITIONS],
     /// Attack/Release macro scaling applied over each zone's own ADSR.
     envelope_scaling: EnvelopeScaling,
     /// Modelled-release scaling for the loaded instrument's family, held apart
@@ -118,7 +128,7 @@ pub struct LevainEngine {
 
     /// Number of configured articulations.
     num_articulations: usize,
-    /// Number of configured mic positions.
+    /// Number of mic positions the loaded bank declares.
     num_mics: usize,
 
     /// Scratch buffer for dynamic layer gains.
@@ -129,12 +139,6 @@ pub struct LevainEngine {
     /// costs no audio-thread allocation.
     pending_staggered_releases: [(u8, f32, u32); MAX_STAGGERED_RELEASES],
     pending_staggered_count: usize,
-
-    /// Mic layer the zone lookup renders from — the first enabled position
-    /// (see `refresh_mic_layer`). Kontakt-style per-mic selection: banks carry
-    /// one layer per mic position and the enabled flags choose which layer
-    /// sounds, voiced through that position's own volume/pan/delay/phase.
-    mic_layer: MicId,
 
     /// Samples rendered since construction — the engine's clock, feeding the
     /// auto-articulation runs detector (`AutoArticulation::record_note_on`).
@@ -154,7 +158,7 @@ impl LevainEngine {
             expression: ExpressionState::new(sample_rate, &config),
             articulation: ArticulationState::new(),
             legato: LegatoEngine::new(sample_rate),
-            mic_mixer: MicMixer::new(1), // default single mic
+            mic_mixer: MicMixer::default(),
             humanizer: Humanizer::new(HumanizeConfig::default()),
             release_tracker: ReleaseTracker::new(sample_rate),
             pedal_deferred: PedalDeferredRelease::new(),
@@ -162,8 +166,8 @@ impl LevainEngine {
             auto_articulation: AutoArticulation::new(),
             ensemble_timing: EnsembleTiming::new(),
             fallback: FallbackToneEngine::new(sample_rate),
-            realism: RealismEngine::new(sample_rate),
-            tone: ToneTilt::new(sample_rate),
+            realism: std::array::from_fn(|_| RealismEngine::new(sample_rate)),
+            tone: std::array::from_fn(|_| ToneTilt::new(sample_rate)),
             envelope_scaling: EnvelopeScaling::IDENTITY,
             family_release_scale: 1.0,
             sample_rate,
@@ -173,7 +177,6 @@ impl LevainEngine {
             layer_gains: [0.0; MAX_VEL_LAYERS],
             pending_staggered_releases: [(0, 0.0, 0); MAX_STAGGERED_RELEASES],
             pending_staggered_count: 0,
-            mic_layer: 0,
             elapsed_samples: 0,
         }
     }
@@ -187,7 +190,9 @@ impl LevainEngine {
         }
         self.auto_divisi.clear();
         self.fallback.enabled = true;
-        self.realism.reset();
+        for realism in self.realism.iter_mut() {
+            realism.reset();
+        }
         // Legato transitions reference sample ids from the bank being
         // cleared; carrying them into whatever loads next would let a
         // transition resolve to the wrong (or now-invalid) sample.
@@ -279,9 +284,9 @@ impl LevainEngine {
         self.zone_map = pending.zone_map;
         self.sample_pool = pending.sample_pool;
         self.num_articulations = pending.num_articulations;
+        // Mic position settings are left alone: hosts send them before the
+        // bank loads, and a bank swap is not a mixer reset.
         self.num_mics = pending.num_mics;
-        self.mic_mixer = MicMixer::new(pending.num_mics);
-        self.refresh_mic_layer();
         self.apply_instrument(&pending.instrument_id);
         self.fallback.enabled = false;
         self.expression
@@ -367,7 +372,9 @@ impl LevainEngine {
     /// calls the `set_instrument` export, so anything wired only to that would
     /// be dead on arrival.
     fn apply_instrument(&mut self, instrument_id: &str) {
-        self.realism.configure_for(instrument_id);
+        for realism in self.realism.iter_mut() {
+            realism.configure_for(instrument_id);
+        }
         self.family_release_scale =
             InstrumentFamily::from_instrument_id(instrument_id).release_scale();
         self.voice_pool
@@ -400,8 +407,6 @@ impl LevainEngine {
         self.zone_map.build_lut(num_articulations, num_mics)?;
         self.num_articulations = num_articulations;
         self.num_mics = num_mics;
-        self.mic_mixer = MicMixer::new(num_mics);
-        self.refresh_mic_layer();
         // Disable fallback — real samples are loaded
         self.fallback.enabled = false;
         self.expression
@@ -464,7 +469,9 @@ impl LevainEngine {
         let mut art = articulation;
 
         // Realism layer transient (bow scrape onset, etc).
-        self.realism.note_on(note);
+        for realism in self.realism.iter_mut() {
+            realism.note_on(note);
+        }
 
         // Track for release triggers.
         self.release_tracker.note_on(note);
@@ -484,8 +491,8 @@ impl LevainEngine {
         let cc1_normalized = self.expression.crossfader.current_cc1();
         let current_dynamic = cc1_to_dynamic(cc1_normalized);
 
-        // Look up zone BEFORE allocating a voice (avoid stealing a voice for nothing).
-        let mut candidates_slice = self.zone_map.lookup(art, self.mic_layer, note, velocity);
+        // Resolve zones BEFORE allocating a voice (avoid stealing a voice for nothing).
+        let mut zones = self.resolve_note_zones(art, note, velocity);
 
         // A per-note articulation is a fixed id from the project's 28-name
         // table, assigned without consulting the instrument the track is
@@ -495,29 +502,15 @@ impl LevainEngine {
         // real samples load, so the note produced no voice and no sound at all.
         // Degrade to the articulation the channel is already on, which is what
         // the same note plays when it carries no per-note articulation.
-        if candidates_slice.is_empty() && art != self.articulation.current {
+        if zones.is_none() && art != self.articulation.current {
             art = self.articulation.current;
-            candidates_slice = self.zone_map.lookup(art, self.mic_layer, note, velocity);
+            zones = self.resolve_note_zones(art, note, velocity);
         }
 
-        if candidates_slice.is_empty() {
+        let Some(zones) = zones else {
             // No samples loaded — use fallback sine tone so the instrument isn't silent.
             self.fallback.note_on(note, gain);
             return;
-        }
-        let mut candidates_buf = [0u32; 16];
-        let candidate_count = candidates_slice.len().min(16);
-        candidates_buf[..candidate_count].copy_from_slice(&candidates_slice[..candidate_count]);
-        let candidates = &candidates_buf[..candidate_count];
-
-        let zone_id = match self.zone_map.select_rr(art, note, candidates) {
-            Some(id) => id,
-            None => return,
-        };
-
-        let zone = match self.zone_map.get_zone(zone_id) {
-            Some(z) => *z,
-            None => return,
         };
 
         // Now allocate voice and check legato (after confirming we have a zone).
@@ -535,11 +528,19 @@ impl LevainEngine {
         match legato_result {
             LegatoResult::Normal => {
                 let voice = &mut self.voice_pool.voices[voice_idx];
-                voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
+                voice.trigger(
+                    note,
+                    channel,
+                    velocity,
+                    &zones,
+                    art,
+                    gain,
+                    &self.sample_pool,
+                );
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
                 voice.apply_note_humanization(&humanize, self.sample_rate);
-                self.attach_dynamic_layer(voice_idx, art, note, zone_id, velocity);
+                self.attach_dynamic_layer(voice_idx, art, note, &zones, velocity);
             }
             LegatoResult::TrueTransition {
                 from_note,
@@ -570,7 +571,15 @@ impl LevainEngine {
                     self.voice_pool.voices[from_voice].release();
                 }
                 let voice = &mut self.voice_pool.voices[voice_idx];
-                voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
+                voice.trigger(
+                    note,
+                    channel,
+                    velocity,
+                    &zones,
+                    art,
+                    gain,
+                    &self.sample_pool,
+                );
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
                 voice.apply_note_humanization(&humanize, self.sample_rate);
@@ -619,14 +628,14 @@ impl LevainEngine {
                     .get(from_voice)
                     .is_some_and(|voice| voice.active && voice.note == from_note)
                 {
-                    // The incoming zone enters at the outgoing stream's own
-                    // playhead, so the slur adds no second attack. This is
+                    // The incoming zones enter at the outgoing lead stream's
+                    // own playhead, so the slur adds no second attack. This is
                     // the fallback for an interval the bank has no recorded
                     // transition for; a registered transition takes the
                     // `TrueTransition` arm above and never reaches here.
-                    let outgoing_position = self.voice_pool.voices[from_voice].playback.position;
+                    let outgoing_position = self.voice_pool.voices[from_voice].lead_position();
                     self.voice_pool.voices[from_voice].start_crossfade(
-                        &zone,
+                        &zones,
                         note,
                         glide_time,
                         self.sample_rate,
@@ -640,7 +649,15 @@ impl LevainEngine {
                     self.voice_pool.voices[from_voice].held = true;
                 } else {
                     let voice = &mut self.voice_pool.voices[voice_idx];
-                    voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
+                    voice.trigger(
+                        note,
+                        channel,
+                        velocity,
+                        &zones,
+                        art,
+                        gain,
+                        &self.sample_pool,
+                    );
                     voice.vibrato_phase = vibrato_phase;
                     voice.vibrato_rate_scale = vibrato_rate_scale;
                 }
@@ -655,7 +672,9 @@ impl LevainEngine {
         }
 
         // Realism release transient (bow lift noise burst).
-        self.realism.note_off(note);
+        for realism in self.realism.iter_mut() {
+            realism.note_off(note);
+        }
 
         // Update legato tracking.
         self.legato.note_off(note);
@@ -836,7 +855,11 @@ impl LevainEngine {
             // patch's own voicing — the panel's macro strip defaults them there
             // and resets them there, so a patch that never touches these knobs
             // renders exactly as it did before they existed.
-            TONE => self.tone.set_position(value),
+            TONE => {
+                for tone in self.tone.iter_mut() {
+                    tone.set_position(value);
+                }
+            }
             ATTACK => {
                 self.envelope_scaling.attack = macro_time_scale(value);
                 self.voice_pool
@@ -874,28 +897,62 @@ impl LevainEngine {
         match param {
             "volume" => self.mic_mixer.set_mic_volume(mic_idx, value),
             "pan" => self.mic_mixer.set_mic_pan(mic_idx, value),
-            "enabled" => {
-                self.mic_mixer.set_mic_enabled(mic_idx, value > 0.5);
-                self.refresh_mic_layer();
-            }
+            "enabled" => self.set_mic_enabled(mic_idx, value > 0.5),
             _ => {}
         }
     }
 
-    /// Re-derive the mic layer the engine renders from: the first enabled
-    /// position. Kontakt-style per-mic layers, as a selection: banks carry one
-    /// zone layer per mic position and the enabled flags choose which one
-    /// sounds, voiced through that position's own volume/pan/delay/phase.
-    /// Deliberately not a simultaneous mix of every enabled layer — the
-    /// realism and tone stages are mono processors shared by the instrument,
-    /// so rendering N layers at once needs per-layer instances of both, which
-    /// is a redesign, not a wiring. With every position at its default
-    /// (enabled), this selects mic 0 and behaviour is unchanged from the
-    /// single-mic era.
-    fn refresh_mic_layer(&mut self) {
-        self.mic_layer = (0..self.num_mics)
-            .find(|&index| self.mic_mixer.is_enabled(index))
-            .map_or(self.mic_layer, |index| index as MicId);
+    /// Switch a mic position on or off. A position's realism and tone stages
+    /// are not fed while it is off, so switching it back on starts them from
+    /// silence rather than from history left by signal long gone.
+    fn set_mic_enabled(&mut self, mic: usize, enabled: bool) {
+        let switching_on = enabled && !self.mic_mixer.is_enabled(mic);
+        self.mic_mixer.set_mic_enabled(mic, enabled);
+        if !switching_on {
+            return;
+        }
+        if let (Some(realism), Some(tone)) = (self.realism.get_mut(mic), self.tone.get_mut(mic)) {
+            realism.reset();
+            tone.reset();
+        }
+    }
+
+    /// Mic positions the loaded bank declares, bounded by the mixer's size.
+    #[inline]
+    fn loaded_mics(&self) -> usize {
+        self.num_mics.min(MAX_MIC_POSITIONS)
+    }
+
+    /// Every loaded mic position's zone for one note-on, sharing one
+    /// round-robin ordinal so all positions play the same take. The ordinal
+    /// moves on once per note when any position offers a choice. `None` when
+    /// no loaded position has a zone for the note.
+    fn resolve_note_zones(
+        &mut self,
+        articulation: ArticulationId,
+        note: u8,
+        velocity: u8,
+    ) -> Option<NoteZones> {
+        let mics = self.loaded_mics();
+        let round_robin = self.zone_map.round_robin_position(articulation, note);
+        let mut zones = [None; MAX_MIC_POSITIONS];
+        let mut round_robin_advances = false;
+        for (mic, zone) in zones[..mics].iter_mut().enumerate() {
+            let candidates = self
+                .zone_map
+                .lookup(articulation, mic as MicId, note, velocity);
+            let candidates = &candidates[..candidates.len().min(MAX_ROUND_ROBIN_CANDIDATES)];
+            round_robin_advances |= candidates.len() > 1;
+            *zone = self
+                .zone_map
+                .pick_round_robin(candidates, round_robin)
+                .and_then(|zone_id| self.zone_map.get_zone(zone_id))
+                .copied();
+        }
+        if round_robin_advances {
+            self.zone_map.advance_round_robin(articulation, note);
+        }
+        NoteZones::new(zones, mics)
     }
 
     // -----------------------------------------------------------------------
@@ -935,7 +992,9 @@ impl LevainEngine {
         // — bow noise scales with CC1, breath noise with CC11.
         let cc1 = self.expression.crossfader.current_cc1();
         let cc11 = self.expression.cc11 as f32 / 127.0;
-        self.realism.update_expression(cc1, cc11);
+        for realism in self.realism.iter_mut() {
+            realism.update_expression(cc1, cc11);
+        }
 
         // Advance per-voice vibrato by one block. Each voice keeps its own
         // phase and rate-scale (set at trigger time from humanization), so
@@ -979,38 +1038,52 @@ impl LevainEngine {
         // block), so block-granularity is sufficient.
         let voices_active = self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
 
+        let mics = self.loaded_mics();
         for i in 0..len {
-            let mut mono_sum = 0.0_f32;
+            let mut mic_sums = [0.0_f32; MAX_MIC_POSITIONS];
 
-            // Sum all active voices.
+            // Sum all active voices, per mic position.
             for voice in self.voice_pool.voices.iter_mut() {
                 if !voice.active {
                     continue;
                 }
-                mono_sum += voice.tick(&self.sample_pool);
+                let voice_mics = voice.tick(&self.sample_pool);
+                for (sum, sample) in mic_sums[..mics].iter_mut().zip(voice_mics) {
+                    *sum += sample;
+                }
             }
 
-            // Add fallback tone (active when no samples loaded).
-            mono_sum += self.fallback.tick();
+            // Add fallback tone (active when no samples loaded) to the first
+            // position's chain.
+            mic_sums[0] += self.fallback.tick();
 
-            // Apply expression and master gain.
-            mono_sum *= expr_gain * self.master_gain;
+            let mut left_sample = 0.0_f32;
+            let mut right_sample = 0.0_f32;
+            for (mic, &mic_sum) in mic_sums[..mics].iter().enumerate() {
+                if !self.mic_mixer.is_enabled(mic) {
+                    continue;
+                }
 
-            // Orchestral realism augmentation (body resonance, sympathetic
-            // strings, bow/breath noise, frequency-dependent damping).
-            mono_sum = self.realism.tick(mono_sum, voices_active);
+                // Apply expression and master gain.
+                let sample = mic_sum * (expr_gain * self.master_gain);
 
-            // Tone macro. Last stage before the mic mix, so it voices the whole
-            // instrument — the sampled body and the realism layer's bow, breath
-            // and air alike — rather than only the sample content.
-            mono_sum = self.tone.tick(mono_sum);
+                // Orchestral realism augmentation (body resonance, sympathetic
+                // strings, bow/breath noise, frequency-dependent damping).
+                let sample = self.realism[mic].tick(sample, voices_active);
 
-            // Mix through the selected mic layer's position — its own delay,
-            // phase, volume, and pan.
-            let (l, r) = self.mic_mixer.mix_layer(self.mic_layer as usize, mono_sum);
+                // Tone macro. Last stage before the mic mix, so it voices the
+                // whole position — the sampled body and the realism layer's
+                // bow, breath and air alike — rather than only the sample
+                // content.
+                let sample = self.tone[mic].tick(sample);
 
-            left[i] = l;
-            right[i] = r;
+                let (l, r) = self.mic_mixer.place(mic, sample);
+                left_sample += l;
+                right_sample += r;
+            }
+
+            left[i] = left_sample;
+            right[i] = right_sample;
         }
     }
 
@@ -1023,10 +1096,11 @@ impl LevainEngine {
     // Release triggers, staggered pedal release, dynamic-layer crossfade
     // -----------------------------------------------------------------------
 
-    /// Fire a note's release-trigger zone if the tracker judges one audible
+    /// Fire a note's release-trigger zones if the tracker judges one audible
     /// (audit F5). `should_trigger`/`release_vol` used to be computed and
-    /// discarded; this looks up the matching `is_release` zone through the
-    /// same lookup/trigger path `note_on` uses and plays it at
+    /// discarded; this looks up the matching `is_release` zone on every
+    /// loaded mic position through the same lookup/trigger path `note_on`
+    /// uses and plays them at
     /// `release_vol`, narrowed to this note's own current articulation and
     /// trigger velocity so the release layer matches what was sounding.
     fn trigger_release_if_available(&mut self, note: u8, cc1: f32) {
@@ -1043,18 +1117,7 @@ impl LevainEngine {
             .find(|voice| voice.active && voice.note == note)
             .map_or(100, |voice| voice.velocity);
 
-        let candidates = self
-            .zone_map
-            .lookup(articulation, self.mic_layer, note, velocity);
-        let release_zone_id = candidates.iter().copied().find(|&id| {
-            self.zone_map
-                .get_zone(id)
-                .is_some_and(|zone| zone.is_release)
-        });
-        let Some(zone_id) = release_zone_id else {
-            return;
-        };
-        let Some(zone) = self.zone_map.get_zone(zone_id).copied() else {
+        let Some(zones) = self.resolve_release_zones(articulation, note, velocity) else {
             return;
         };
 
@@ -1064,7 +1127,7 @@ impl LevainEngine {
             note,
             0,
             velocity,
-            &zone,
+            &zones,
             articulation,
             release_vol,
             &self.sample_pool,
@@ -1073,6 +1136,28 @@ impl LevainEngine {
         // must not be addressable by per-note (MPE) expression or bent by a
         // later legato transition at the same pitch.
         voice.held = false;
+    }
+
+    /// Every loaded mic position's release-trigger zone for a note: the first
+    /// `is_release` zone its lookup offers. `None` when no position has one.
+    fn resolve_release_zones(
+        &self,
+        articulation: ArticulationId,
+        note: u8,
+        velocity: u8,
+    ) -> Option<NoteZones> {
+        let mics = self.loaded_mics();
+        let mut zones = [None; MAX_MIC_POSITIONS];
+        for (mic, zone) in zones[..mics].iter_mut().enumerate() {
+            *zone = self
+                .zone_map
+                .lookup(articulation, mic as MicId, note, velocity)
+                .iter()
+                .filter_map(|&zone_id| self.zone_map.get_zone(zone_id))
+                .find(|zone| zone.is_release)
+                .copied();
+        }
+        NoteZones::new(zones, mics)
     }
 
     /// Run the note-off steps a pedal release defers, once fired — either
@@ -1085,22 +1170,23 @@ impl LevainEngine {
         self.trigger_release_if_available(note, cc1);
     }
 
-    /// Look up a velocity-adjacent zone for the CC1 dynamic-layer crossfade
+    /// Look up velocity-adjacent zones for the CC1 dynamic-layer crossfade
     /// (audit F6). The engine's dynamic-layer count partitions 0..1 evenly
     /// the same way `DynamicCrossfader::configure` does, so the note's own
     /// trigger velocity names which partition it nominally belongs to, and
     /// the immediate neighbour — if a genuinely different zone exists there
-    /// — is the zone CC1 can blend towards. Returns `None` when the bank
-    /// only authored one zone across that neighbourhood (the common case),
-    /// so behaviour is unchanged unless a bank genuinely offers more than
-    /// one velocity layer.
-    fn find_adjacent_layer_zone(
+    /// on any mic position that sounds the note — is the layer CC1 can blend
+    /// towards. Each such position gets its own adjacent zone; the others keep
+    /// their primary alone. Returns `None` when the bank only authored one
+    /// zone across that neighbourhood (the common case), so behaviour is
+    /// unchanged unless a bank genuinely offers more than one velocity layer.
+    fn find_adjacent_layer_zones(
         &self,
         articulation: ArticulationId,
         note: u8,
-        primary_zone_id: ZoneId,
+        primary: &NoteZones,
         velocity: u8,
-    ) -> Option<(usize, usize, ZoneId)> {
+    ) -> Option<(usize, usize, [Option<Zone>; MAX_MIC_POSITIONS])> {
         let num_layers = self.expression.crossfader.num_layers;
         if num_layers < 2 {
             return None;
@@ -1118,43 +1204,48 @@ impl LevainEngine {
                 * 127.0)
                 .round()
                 .clamp(0.0, 127.0) as u8;
-            let candidates =
-                self.zone_map
-                    .lookup(articulation, self.mic_layer, note, representative_velocity);
-            let found = candidates.iter().copied().find(|&id| {
-                id != primary_zone_id
-                    && self
-                        .zone_map
-                        .get_zone(id)
-                        .is_some_and(|zone| !zone.is_release)
-            });
-            if let Some(zone_id) = found {
-                return Some((primary_idx, neighbour_idx, zone_id));
+            let mut adjacent = [None; MAX_MIC_POSITIONS];
+            for (mic, layer) in adjacent[..primary.mic_count()].iter_mut().enumerate() {
+                let Some(primary_zone) = primary.zone(mic) else {
+                    continue;
+                };
+                *layer = self
+                    .zone_map
+                    .lookup(articulation, mic as MicId, note, representative_velocity)
+                    .iter()
+                    .filter(|&&zone_id| zone_id != primary_zone.id)
+                    .filter_map(|&zone_id| self.zone_map.get_zone(zone_id))
+                    .find(|zone| !zone.is_release)
+                    .copied();
+            }
+            if adjacent.iter().any(Option::is_some) {
+                return Some((primary_idx, neighbour_idx, adjacent));
             }
         }
         None
     }
 
-    /// Attach the velocity-adjacent zone (if any) found by
-    /// `find_adjacent_layer_zone` to a freshly triggered voice.
+    /// Attach the velocity-adjacent zones (if any) found by
+    /// `find_adjacent_layer_zones` to a freshly triggered voice.
     fn attach_dynamic_layer(
         &mut self,
         voice_idx: usize,
         articulation: ArticulationId,
         note: u8,
-        primary_zone_id: ZoneId,
+        primary: &NoteZones,
         velocity: u8,
     ) {
-        let Some((primary_idx, secondary_idx, adjacent_zone_id)) =
-            self.find_adjacent_layer_zone(articulation, note, primary_zone_id, velocity)
+        let Some((primary_idx, secondary_idx, adjacent)) =
+            self.find_adjacent_layer_zones(articulation, note, primary, velocity)
         else {
             return;
         };
-        let Some(adjacent_zone) = self.zone_map.get_zone(adjacent_zone_id).copied() else {
-            return;
-        };
         let voice = &mut self.voice_pool.voices[voice_idx];
-        voice.set_dynamic_layer(&adjacent_zone, note, &self.sample_pool);
+        for (mic, zone) in adjacent.iter().enumerate() {
+            if let Some(zone) = zone {
+                voice.set_dynamic_layer(mic, zone, note, &self.sample_pool);
+            }
+        }
         voice.dynamic_layer_primary_idx = primary_idx;
         voice.dynamic_layer_secondary_idx = secondary_idx;
     }
@@ -1846,7 +1937,10 @@ mod tests {
         let mut engine = engine_with_sawtooth_zone();
         engine.set_instrument("violin");
         let sounding_pool = Arc::as_ptr(&engine.sample_pool);
-        assert!(engine.realism.is_bowed_string_for_test());
+        assert!(engine
+            .realism
+            .iter()
+            .all(|realism| realism.is_bowed_string_for_test()));
 
         engine.begin_sample_bank("trumpet");
         engine
@@ -1856,7 +1950,10 @@ mod tests {
         engine.abort_sample_bank();
 
         assert_eq!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
-        assert!(engine.realism.is_bowed_string_for_test());
+        assert!(engine
+            .realism
+            .iter()
+            .all(|realism| realism.is_bowed_string_for_test()));
         engine.note_on(60, 100);
         assert!(rms(&render(&mut engine, 24)) > 1.0e-3);
     }
