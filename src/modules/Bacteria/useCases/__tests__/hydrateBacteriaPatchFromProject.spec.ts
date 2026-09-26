@@ -1,19 +1,54 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { DEFAULT_PATCH, type BacteriaPatch } from '../../models/BacteriaPatch';
-import { bacteriaStore, getBacteriaState, loadBacteriaPatch, setBacteriaParam } from '../../stores/bacteriaStore';
+import { BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION } from '../../models/BacteriaModAssignmentsState';
+import { DEFAULT_PATCH, type BacteriaModAssignment, type BacteriaPatch } from '../../models/BacteriaPatch';
+import {
+    bacteriaStore,
+    getBacteriaState,
+    loadBacteriaPatch,
+    setBacteriaParam,
+    setBacteriaUiLevel,
+} from '../../stores/bacteriaStore';
 import { hydrateBacteriaPatchFromProject } from '../hydrateBacteriaPatchFromProject';
 
-const DEVICE_ID = 'bacteria-1';
+// The routing push (#4756) resolves its write target and its engine door
+// through the shared bridge dependency object. Mocking only that object
+// keeps `pushBacteriaModAssignmentsToEngine`'s own real `inject()` resolution
+// intact — the same pattern would apply to any other bridge use case this
+// hydrator started calling — so the assertions below observe the one door a
+// projected routing table has to reach, `updateDevicePatch`, without a live
+// engine node.
+const mocks = vi.hoisted(() => ({
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+    updateDevicePatch: vi.fn(),
+}));
 
-function seedProjectDevice(parameterValues: Record<string, number>, type = 'bacteria'): void {
+vi.mock('../bacteriaParamBridge/bacteriaParamBridgeDependencies', () => ({
+    bacteriaParamBridgeDependencies: {
+        resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
+        updateDevicePatch: mocks.updateDevicePatch,
+    },
+}));
+
+const DEVICE_ID = 'bacteria-1';
+const TRACK_ID = 't1';
+
+function row(overrides: Partial<BacteriaModAssignment> = {}): BacteriaModAssignment {
+    return { sourceId: 'lfo1', targetParam: 'band0_drive', amount: 0.5, bipolar: true, ...overrides };
+}
+
+function seedProjectDevice(
+    parameterValues: Record<string, number> | undefined,
+    type = 'bacteria',
+    deviceState?: unknown
+): void {
     trackStore.set({
         tracks: [
             {
                 id: 't1',
-                devices: [{ id: DEVICE_ID, type, parameterValues }],
+                devices: [{ id: DEVICE_ID, type, parameterValues, deviceState }],
             },
         ],
     } as unknown as typeof trackStore.value);
@@ -23,6 +58,8 @@ describe('hydrateBacteriaPatchFromProject', () => {
     beforeEach(() => {
         bacteriaStore.set({});
         trackStore.set(null);
+        mocks.resolveEligibleDeviceWriteTarget.mockReset().mockReturnValue({ status: 'ineligible' });
+        mocks.updateDevicePatch.mockReset();
     });
 
     it('loads nondefault persisted parameters into an empty device store (#3673)', () => {
@@ -140,5 +177,95 @@ describe('hydrateBacteriaPatchFromProject', () => {
         expect(patch.name).toBe('My patch');
         expect(patch.snapshots).toEqual(metadataPatch.snapshots);
         expect(patch.mix).toBe(0.25);
+    });
+
+    it('projects the routing table from the deviceState chunk onto an empty store table (#4756)', () => {
+        const r1 = row();
+        setBacteriaUiLevel(DEVICE_ID, 1);
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([]);
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [r1] },
+        });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([r1]);
+    });
+
+    it('projects the routing table even when parameterValues is absent', () => {
+        const r1 = row();
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [r1] },
+        });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([r1]);
+    });
+
+    it('leaves the routing table untouched when the chunk is absent', () => {
+        const r1 = row();
+        loadBacteriaPatch(DEVICE_ID, { ...DEFAULT_PATCH, modAssignments: [r1] });
+        seedProjectDevice({ mix: 0.5 });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([r1]);
+    });
+
+    it('pushes a projected routing table to the live engine for an eligible target (#4756)', () => {
+        const rowA = row({ sourceId: 'macro1', targetParam: 'band1_filterCutoff', bipolar: false });
+        const rowB = row({ sourceId: 'lfo1', targetParam: 'band0_drive' });
+        loadBacteriaPatch(DEVICE_ID, { ...DEFAULT_PATCH, modAssignments: [rowA] });
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [rowB] },
+        });
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: TRACK_ID,
+            deviceId: DEVICE_ID,
+        });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([rowB]);
+        expect(mocks.updateDevicePatch).toHaveBeenCalledExactlyOnceWith(TRACK_ID, DEVICE_ID, {
+            modAssignments: [{ sourceId: 0, targetParam: 16, amount: 50 }],
+        });
+    });
+
+    it('does not push when the store table already equals the chunk', () => {
+        const rowB = row();
+        loadBacteriaPatch(DEVICE_ID, { ...DEFAULT_PATCH, modAssignments: [rowB] });
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [rowB] },
+        });
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: TRACK_ID,
+            deviceId: DEVICE_ID,
+        });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(mocks.updateDevicePatch).not.toHaveBeenCalled();
+    });
+
+    it('takes a projected table into the store but pushes nothing for an ineligible target', () => {
+        const rowB = row();
+        seedProjectDevice(undefined, 'bacteria', {
+            version: BACTERIA_MOD_ASSIGNMENTS_STATE_VERSION,
+            data: { modAssignments: [rowB] },
+        });
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        hydrateBacteriaPatchFromProject(DEVICE_ID);
+
+        expect(getBacteriaState(DEVICE_ID).patch.modAssignments).toEqual([rowB]);
+        expect(mocks.updateDevicePatch).not.toHaveBeenCalled();
     });
 });

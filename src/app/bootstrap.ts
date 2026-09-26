@@ -61,7 +61,7 @@ import {
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
+import { clearAgentMeasurementArtifacts, stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -73,6 +73,7 @@ import {
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
+import { initBacteriaModAssignmentsPersistence, initBacteriaSubscribers } from '#/modules/Bacteria/useCases';
 import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
 import {
     canExecuteCommandBatch,
@@ -160,6 +161,7 @@ import {
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
+    setAgentMeasurementArtifactsClearer,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -328,6 +330,10 @@ setWorkspaceEventBus(eventBus);
 // AudioRendering's barrel, which Arrangement cannot import without a module
 // cycle, so the composition root supplies the stager.
 setClipAudioAssetStager(stageAudioBufferAsset);
+// Same seam shape as the stager above: AudioRendering's WAV export path
+// imports Project's use cases, so Project cannot import AudioRendering's
+// barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
+setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
@@ -603,6 +609,11 @@ initToasterKitPersistence();
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
 initLevainDeviceStatePersistence();
+initBacteriaSubscribers({ eventBus, logger });
+// Same shape and the same reason, subscriber first so the device's first
+// appearance already carries the routing table read back from the document:
+// `modAssignments` is a routing table, not a number `parameterValues` can hold.
+initBacteriaModAssignmentsPersistence();
 composeGrandBoule({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
 // The native Crumbs instance follows the device's presence on the project, not

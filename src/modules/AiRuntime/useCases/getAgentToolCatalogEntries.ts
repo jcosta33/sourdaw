@@ -9,6 +9,7 @@ import { type ToolSchema } from '../models/ToolDefinitions';
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
@@ -118,16 +119,18 @@ function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>)
     if (category === 'approval') {
         return lifecycleAvailability.filter((entry) => entry.name === 'command.approval');
     }
-    const nameByCategory = {
-        query: PROJECT_QUERY_TOOL_NAME,
-        resolve: PROJECT_RESOLVE_TOOL_NAME,
-        catalog: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
-        history: COMMAND_HISTORY_TOOL_NAME,
-        render: RENDER_REQUEST_TOOL_NAME,
-        analysis: ANALYSIS_REQUEST_TOOL_NAME,
-    } as const;
-    const name = nameByCategory[category];
-    return getAgentToolCatalogSchemas().filter((schema) => schema.function.name === name);
+    const namesByCategory: Readonly<
+        Record<'query' | 'resolve' | 'catalog' | 'history' | 'render' | 'analysis', readonly string[]>
+    > = {
+        query: [PROJECT_QUERY_TOOL_NAME],
+        resolve: [PROJECT_RESOLVE_TOOL_NAME],
+        catalog: [AGENT_CATALOG_DISCOVERY_TOOL_NAME],
+        history: [COMMAND_HISTORY_TOOL_NAME],
+        render: [RENDER_REQUEST_TOOL_NAME],
+        analysis: [ANALYSIS_REQUEST_TOOL_NAME, ANALYSIS_MEASURE_TOOL_NAME],
+    };
+    const names = namesByCategory[category];
+    return getAgentToolCatalogSchemas().filter((schema) => names.includes(schema.function.name));
 }
 
 function requireExactNames(names: readonly string[]): void {

@@ -34,7 +34,13 @@ const composition = resolveAppComposition({
 
 async function renderApplication(): Promise<void> {
     if (hasDesktopBridge) {
-        const { resetDisplayScaleForStartup } = await import('#/modules/WorkspaceShell/useCases');
+        const [{ resetDisplayScaleForStartup }, { clearInheritedRetrospectiveCaptureArm }] = await Promise.all([
+            import('#/modules/WorkspaceShell/useCases'),
+            import('./clearInheritedRetrospectiveCaptureArm'),
+        ]);
+        // Before anything renders, so it is ordered ahead of every arm this
+        // renderer can issue.
+        clearInheritedRetrospectiveCaptureArm();
         await resetDisplayScaleForStartup();
     } else {
         resetBrowserDisplayScaleForChildStartup();

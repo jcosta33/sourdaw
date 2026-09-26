@@ -155,6 +155,12 @@ type ExecutableAppActionDescriptor = {
     description: string;
     discoverability?: ExecutableAppActionDiscoverability;
     intentPhrases: readonly string[];
+    /**
+     * Phrases that name this action only in a clause stating a decibel figure in a form one of its
+     * level value rules declares. A bare verb such as "put" says nothing about level on its own;
+     * "put the Kick at -6 dB" does.
+     */
+    levelIntentPhrases?: readonly string[];
     selectionPhrases?: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
@@ -327,6 +333,12 @@ export const executableAppActionDescriptors = [
             'create bus track',
             'add a bus track',
             'create a bus track',
+            'add a new bus',
+            'create a new bus',
+            'make a bus',
+            'make a new bus',
+            'set up a bus',
+            'set up a new bus',
         ],
         targetRules: [],
         valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
@@ -1460,6 +1472,7 @@ export const executableAppActionDescriptors = [
         risk: 'bounded-reversible',
         description: `Set track volume in decibels. Exactly one of gainDb, deltaDb, or gain. ${describeLevelLawDb(TRACK_FADER_LAW)}.`,
         intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
+        levelIntentPhrases: ['put', 'bring up', 'bring down'],
         targetRules: trackTargetRules,
         valueRules: [
             { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
@@ -1919,6 +1932,32 @@ export const executableAppActionDescriptors = [
             'set the master volume',
             'change master volume',
         ],
+        levelIntentPhrases: [
+            'set master',
+            'set the master',
+            'lower master',
+            'lower the master',
+            'raise master',
+            'raise the master',
+            'turn up master',
+            'turn up the master',
+            'turn down master',
+            'turn down the master',
+            'turn master up',
+            'turn the master up',
+            'turn master down',
+            'turn the master down',
+            'bring up master',
+            'bring up the master',
+            'bring down master',
+            'bring down the master',
+            'bring master up',
+            'bring the master up',
+            'bring master down',
+            'bring the master down',
+            'master louder',
+            'master quieter',
+        ],
         targetRules: [],
         valueRules: [
             { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
@@ -2140,7 +2179,7 @@ export const executableAppActionDescriptors = [
         actionType: 'addSend',
         risk: 'authority-sensitive',
         description: `Route a copy of a track's signal to a bus (parallel processing). Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
-        intentPhrases: ['add send', 'create send', 'send'],
+        intentPhrases: ['add send', 'create send', 'send', 'sends from', 'feed into'],
         targetRules: sendTargetRules,
         valueRules: [
             { argument: 'levelDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },
@@ -2171,6 +2210,7 @@ export const executableAppActionDescriptors = [
         risk: 'authority-sensitive',
         description: `Adjust the send level from a track to a bus. Exactly one of levelDb, deltaDb, or level. ${describeLevelLawDb(SEND_LEVEL_LAW)}.`,
         intentPhrases: ['adjust send', 'set send', 'change send'],
+        levelIntentPhrases: ['lower send to', 'raise send to'],
         targetRules: sendTargetRules,
         valueRules: [
             { argument: 'levelDb', kind: 'number-if-present', requiredInPrompt: true, levelForm: 'absolute-decibel' },

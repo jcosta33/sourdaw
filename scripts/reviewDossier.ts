@@ -14,14 +14,21 @@
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
+import { assertPublicationBindings, collectPublicationBindings } from './reviewDossierBindings.ts';
 import {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
+    assertAssessmentIgnoredReasonConsistent,
+    assertAssessmentImpactConsistent,
     assertDossierSize,
     buildDossier,
     computeDossierDigest,
+    dossierPayload,
     headDigestOf,
+    readAssessmentIgnoredReason,
+    readAssessmentImpact,
     reviewDossierEventDigest,
+    type AssessmentImpact,
 } from './reviewDossierChain.ts';
 import {
     REVIEW_REASSESSED_EVENT_KEYS,
@@ -38,6 +45,7 @@ export {
     authorizedEvidenceDigest,
     reviewDossierEventDigest,
     serializeReviewDossier,
+    type AssessmentImpact,
 } from './reviewDossierChain.ts';
 
 export type ReviewModelTier = 'economy' | 'standard' | 'strongest';
@@ -103,6 +111,23 @@ export type ReviewDossier = {
     evidence: { observable: string; verification: string; observed: string }[];
     limitations: string[];
     recommendation: 'approve' | 'request-changes';
+    /**
+     * Required of the caller input and of a canonical record supplied for a fresh publication,
+     * enforced at that boundary; the read path tolerates its absence so a record persisted before the
+     * field existed keeps verifying rather than being refused for a field it never carried (the same
+     * historical tolerance `exhaustion` gets). Present, its value must be one of the four tokens.
+     */
+    assessmentImpact?: AssessmentImpact;
+    /**
+     * The acknowledgement the orchestrator records when the round's `assessmentImpact` is `none` and
+     * the delivered assessment withheld or left anything unresolved: a single-line reason why it had
+     * no effect. Optional on the read path, exactly as `assessmentImpact` is, so a record persisted
+     * before the field existed keeps verifying; required only by the publication gate when the
+     * bundle's assessment record shows a delivered assessment with anything withheld or unresolved.
+     * It records an acknowledgement, never agreement, and confers no verdict, approval or merge
+     * authority.
+     */
+    assessmentIgnoredReason?: string;
     headDigest: string;
     dossierDigest: string;
 };
@@ -429,82 +454,6 @@ function readDiscardedEntry(value: unknown, index: number): ReviewDossierEvent {
     };
 }
 
-type PublicationBindings = {
-    reviewId: number | undefined;
-    findings: Map<string, Extract<ReviewDossierEvent, { kind: 'finding-published' }>>;
-    authorization: Extract<ReviewDossierEvent, { kind: 'delivery-authorized' }> | undefined;
-    reassessment: Extract<ReviewDossierEvent, { kind: 'review-reassessed' }> | undefined;
-};
-
-/**
- * Collects the publication-binding events, refusing the structural violations on sight: at most
- * one recorded publication, and any finding bound at most once. Binding-to-disposition rules run
- * in `assertPublicationBindings` after the disposition sets are complete, so the record's own
- * event order — bindings always append after the dispositions — is not part of the rule.
- */
-function collectPublicationBindings(events: readonly ReviewDossierEvent[]): PublicationBindings {
-    const bindings: PublicationBindings = {
-        reviewId: undefined,
-        findings: new Map(),
-        authorization: undefined,
-        reassessment: undefined,
-    };
-    for (const event of events) {
-        if (event.kind === 'review-published') {
-            if (bindings.reviewId !== undefined) {
-                fail(`review dossier records more than one publication: ${bindings.reviewId} and ${event.reviewId}`);
-            }
-            bindings.reviewId = event.reviewId;
-        }
-        if (event.kind === 'finding-published') {
-            if (bindings.findings.has(event.findingId)) {
-                fail(`review dossier publishes finding ${event.findingId} more than once`);
-            }
-            bindings.findings.set(event.findingId, event);
-        }
-        if (event.kind === 'delivery-authorized') {
-            if (bindings.authorization !== undefined) {
-                fail(
-                    `review dossier records more than one delivery authorization: ${bindings.authorization.reviewId} and ${event.reviewId}`
-                );
-            }
-            if (bindings.reviewId === undefined) {
-                fail(`review dossier records delivery authorization ${event.reviewId} without a recorded publication`);
-            }
-            if (event.approvalReviewId !== bindings.reviewId) {
-                fail(
-                    `review dossier delivery authorization ${event.reviewId} binds approval ${event.approvalReviewId}, not the recorded publication ${bindings.reviewId}`
-                );
-            }
-            bindings.authorization = event;
-        }
-        if (event.kind === 'review-reassessed') {
-            if (bindings.reassessment !== undefined) {
-                fail(`review dossier records more than one round reassessment`);
-            }
-            bindings.reassessment = event;
-        }
-    }
-    return bindings;
-}
-
-/** Every published finding binds an accepted one, and names the one recorded publication. */
-function assertPublicationBindings(bindings: PublicationBindings, accepted: ReadonlySet<string>): void {
-    for (const event of bindings.findings.values()) {
-        if (!accepted.has(event.findingId)) {
-            fail(`review dossier publishes finding ${event.findingId}, which no accepted finding carries`);
-        }
-        if (bindings.reviewId === undefined) {
-            fail(`review dossier publishes finding ${event.findingId} without recording the publication's review id`);
-        }
-        if (event.reviewId !== bindings.reviewId) {
-            fail(
-                `review dossier finding ${event.findingId} binds review ${event.reviewId}, not the recorded publication ${bindings.reviewId}`
-            );
-        }
-    }
-}
-
 function assertTotalMaps(payload: DossierPayload): void {
     const completedDraws = new Set<string>();
     const completed = new Set<ReviewDossierStance>();
@@ -549,6 +498,12 @@ function assertTotalMaps(payload: DossierPayload): void {
         own.add(event.findingId);
     }
     assertPublicationBindings(bindings, accepted);
+    // Wherever the impact is present, the record's own contents must not contradict it. Absence is
+    // the publication boundary's concern, not this shared payload assertion's.
+    assertAssessmentImpactConsistent(payload);
+    // A reason declares the assessment ignored, so it can only stand beside `none`; the same shared
+    // assertion runs on the read path, so a persisted record cannot carry the contradiction.
+    assertAssessmentIgnoredReasonConsistent(payload);
     for (const stance of payload.requiredStances) {
         if (!completed.has(stance)) {
             fail(`review dossier has no completed record for required stance: ${stance}`);
@@ -592,7 +547,15 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
     if (!isRecord(value)) {
         fail(`review dossier must be an object, found ${describeValue(value)}`);
     }
-    assertExactKeys(value, DOSSIER_KEYS, 'dossier');
+    // `assessmentImpact` is required of the input and of newly assembled records, but a record
+    // persisted before the field existed carries none: carry it out of the key-set check it would
+    // otherwise fail, and read it only when present so a historical digest keeps verifying.
+    // `assessmentIgnoredReason` shares the same historical tolerance: a pre-field record omits it.
+    const assessmentImpact = 'assessmentImpact' in value ? readAssessmentImpact(value.assessmentImpact) : undefined;
+    const assessmentIgnoredReason =
+        'assessmentIgnoredReason' in value ? readAssessmentIgnoredReason(value.assessmentIgnoredReason) : undefined;
+    const { assessmentImpact: _optional, assessmentIgnoredReason: _optionalReason, ...requiredKeys } = value;
+    assertExactKeys(requiredKeys, DOSSIER_KEYS, 'dossier');
     if (value.format !== REVIEW_DOSSIER_FORMAT) {
         fail(`review dossier format must be ${REVIEW_DOSSIER_FORMAT}, found ${describeValue(value.format)}`);
     }
@@ -614,6 +577,8 @@ export function parseReviewDossier(value: unknown): ReviewDossier {
             isRecommendation,
             'approve or request-changes'
         ),
+        assessmentImpact,
+        assessmentIgnoredReason,
     };
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
@@ -654,6 +619,8 @@ export function assembleReviewDossier(input: {
     evidence: readonly { observable: string; verification: string; observed: string }[];
     limitations: readonly string[];
     recommendation: 'approve' | 'request-changes';
+    assessmentImpact: AssessmentImpact;
+    assessmentIgnoredReason?: string;
 }): ReviewDossier {
     const callerEvents = input.events.map((event, index) => readEventRecord(event, `event ${index}`, false).event);
     const payload: DossierPayload = {
@@ -671,7 +638,11 @@ export function assembleReviewDossier(input: {
             isRecommendation,
             'approve or request-changes'
         ),
+        assessmentImpact: readAssessmentImpact(input.assessmentImpact),
     };
+    if (input.assessmentIgnoredReason !== undefined) {
+        payload.assessmentIgnoredReason = readAssessmentIgnoredReason(input.assessmentIgnoredReason);
+    }
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
     const dossier = buildDossier(payload);
@@ -694,17 +665,7 @@ export function appendReviewDossierEvents(
     const appendedEvents = appended.map(
         (event, index) => readEventRecord(event, `appended event ${index}`, false).event
     );
-    const payload: DossierPayload = {
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events: [...dossier.events, ...appendedEvents],
-        evidence: dossier.evidence,
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-    };
+    const payload = dossierPayload(dossier, [...dossier.events, ...appendedEvents]);
     assertTotalMaps(payload);
     assertEvidenceSafe(payload.evidence, payload.limitations);
     const result = buildDossier(payload);

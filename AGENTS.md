@@ -170,15 +170,47 @@ branch's, which the command's own trusted-execution assertion refuses.
 Write the caller-authored `dossier.json` beside `review.json` and `discarded.json`: one completed
 entry per dispatched draw, each recording its stance, reviewer model, tier, and outcome; one stance
 may carry several draws with distinct models, and a draw that fell back to an authoring model
-records its exhaustion. Alongside the draw entries go the bounded evidence claims and the
-limitations. Accepted findings are not declared there; they are the review document's own inline
-comments. `review:publish` refuses a fresh reviewer publication before any remote write when the
-dossier is missing, malformed, or rebound from the head the plan binds; when the bundle carries
-`stances.json`, every dossier entry must match a recorded stance and every recorded stance an
-entry (draws on one stance share its single recorded entry);
-when its accepted findings do not match the document's comments one-to-one; or when its
-recommendation disagrees with the document's event. It then persists the canonical append-only record bound to the head; re-publishing
-the same head replays that record unchanged rather than minting a second one.
+records its exhaustion. Alongside the draw entries go the bounded evidence claims, the
+limitations, and the required `assessmentImpact`: how the round's advisory semantic assessment
+influenced it — `finding-led` only when the round carries an accepted finding the assessment
+surfaced, `stance-changed` only when it changed the dispatched stance enumeration, `limitation-only`
+when it produced a disclosed limitation without changing the round, and `none` when it had no
+effect. The orchestrator chooses it honestly for the round; it records influence, never agreement,
+and is not a verdict, an approval, or merge authority. `limitation-only` is refused when the round
+discloses no limitation, and `finding-led` when it accepts no finding; `none` and `stance-changed`
+are the orchestrator's attestation, which the record cannot decide for or against. Accepted findings
+are not declared there; they are the review document's own inline comments. `review:publish` refuses
+a fresh reviewer publication before any remote write when the dossier is missing, malformed, or
+rebound from the head the plan binds; when the caller input omits `assessmentImpact` or carries a
+value outside the four tokens; when its recorded impact contradicts the round's own limitations or
+accepted findings; when a persisted record's claimed publication does not stand live and exact on
+this head, reported as that failure and never as a missing field; when the bundle carries
+`stances.json`, every
+dossier entry must match a recorded stance and every recorded stance an entry (draws on one stance
+share its single recorded entry); when its accepted findings do not match the document's comments
+one-to-one; or when its recommendation disagrees with the document's event. It then persists the
+canonical append-only record bound to the head, with `assessmentImpact` beside `recommendation` and
+covered by `dossierDigest`; re-publishing the same head replays that record unchanged rather than
+minting a second one. The caller input always carries `assessmentImpact`. The bundle's own persisted
+record for the head may omit it — that is the shape every pre-field dossier on disk has — and a
+re-published bundle keeps working; a persisted record that claims a publication is not trusted on
+that claim alone, because its self-asserted `review-published` event is the caller's, so the named
+review must stand live and exact or the publication is refused for that failure.
+
+When the bundle's `semantic-ci.json` records a delivered assessment that withheld any scope entry or
+left any question unresolved, `review:publish` refuses a fresh publication unless the dossier either
+cites the assessment or declares it ignored. Citing it is a `limitation` naming the assessment's
+artifact identity or one of the paths it withheld — the round's own text, never a non-`none` impact
+token by itself. Declaring it ignored is `assessmentImpact: none` with an
+`assessmentIgnoredReason`: one bounded, single-line, evidence-safe reason the orchestrator records for
+why the assessment had no effect. A `none` with no reason is refused naming `assessmentIgnoredReason`
+and the withheld figure; a reason beside a non-`none` token is refused naming `assessmentIgnoredReason`
+and the token it contradicts. The reason is folded into the canonical record beside `assessmentImpact`
+and covered by `dossierDigest`, so the acknowledgement is bound to what was accepted; records persisted
+before it existed keep verifying byte-identically. It records an acknowledgement, never agreement, and
+confers no verdict, approval or merge authority — ADR 0047 still governs. A bundle with no
+`semantic-ci.json` — a historical bundle, or a head whose assessment was never delivered — carries no
+such requirement.
 
 A pull request that has taken the reviewer change-request escalation threshold — the constant
 `REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer

@@ -7,6 +7,7 @@ import {
     parseReviewDossier,
     serializeReviewDossier,
 } from '../reviewDossier.ts';
+import { ASSESSMENT_IMPACTS, buildDossier } from '../reviewDossierChain.ts';
 import {
     REVIEW_DOSSIER_INPUT_FORMAT,
     buildReviewDossier,
@@ -15,12 +16,14 @@ import {
 } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
+    assessmentImpact,
     completedStances,
     deliveryAuthorization,
     discardedDispositions,
+    publishedReviewId,
 } from '../reviewDossierViews.ts';
 
-import type { ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
+import type { AssessmentImpact, ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewDossierInput, ReviewDossierStanceInput } from '../reviewDossierPublication.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
@@ -126,6 +129,7 @@ const INPUT: ReviewDossierInput = {
     stances: [CORRECTNESS_STANCE, TEST_VALIDITY_STANCE],
     evidence: EVIDENCE,
     limitations: [LIMITATION],
+    assessmentImpact: 'none',
 };
 
 /** A canonical, already-persisted record of the shape the publisher could find on disk. */
@@ -134,6 +138,7 @@ function persistedRecord(options: {
     events?: readonly ReviewDossierEvent[];
     discarded?: unknown;
     recommendation?: 'approve' | 'request-changes';
+    assessmentImpact?: AssessmentImpact;
 }): unknown {
     const dossier: ReviewDossier = assembleReviewDossier({
         plan: options.plan ?? PLAN,
@@ -142,11 +147,40 @@ function persistedRecord(options: {
         evidence: EVIDENCE,
         limitations: [LIMITATION],
         recommendation: options.recommendation ?? 'request-changes',
+        assessmentImpact: options.assessmentImpact ?? 'none',
     });
     return JSON.parse(serializeReviewDossier(dossier));
 }
 
 type InputRefusalCase = { label: string; value: unknown; message: RegExp };
+
+/** The caller input with the required assessment impact deleted outright, not merely undefined. */
+function inputWithoutAssessmentImpact(): Record<string, unknown> {
+    const { assessmentImpact: _omitted, ...rest } = INPUT;
+    return rest;
+}
+
+/**
+ * The bundle's own persisted record for the head, authored directly, omitting the impact: the shape
+ * every pre-field dossier on disk has. `reviewId` adds the record's self-asserted publication.
+ */
+function canonicalPersistedRecordWithImpactOmitted(reviewId?: number): unknown {
+    const events: ReviewDossierEvent[] = [...COMPLETED_STANCES];
+    if (reviewId !== undefined) {
+        events.push({ kind: 'review-published', reviewId });
+    }
+    return buildDossier({
+        pr: PLAN.pr,
+        headSha: PLAN.headSha,
+        baseSha: PLAN.baseSha,
+        riskClasses: PLAN.riskClasses,
+        requiredStances: [...PLAN.requiredStances],
+        events,
+        evidence: EVIDENCE,
+        limitations: [LIMITATION],
+        recommendation: 'request-changes',
+    });
+}
 
 const INPUT_REFUSALS: readonly InputRefusalCase[] = [
     { label: 'a non-object', value: 'not an object', message: /input must be an object/ },
@@ -255,6 +289,41 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
         label: 'a blank limitation',
         value: { ...INPUT, limitations: [''] },
         message: /input limitations\[0\] must be a non-blank string/,
+    },
+    {
+        label: 'a missing assessment impact',
+        value: inputWithoutAssessmentImpact(),
+        message: /input assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/,
+    },
+    {
+        label: 'an unknown assessment impact',
+        value: { ...INPUT, assessmentImpact: 'ignored' },
+        message: /input assessmentImpact must be none, limitation-only, stance-changed or finding-led, found "ignored"/,
+    },
+    {
+        label: 'a non-string assessment impact',
+        value: { ...INPUT, assessmentImpact: 7 },
+        message: /input assessmentImpact must be none, limitation-only, stance-changed or finding-led, found 7/,
+    },
+    {
+        label: 'a blank assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: '   ' },
+        message: /input assessmentIgnoredReason must be a non-blank string/,
+    },
+    {
+        label: 'an edge-untrimmed assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: ' padded reason ' },
+        message: /input assessmentIgnoredReason value at index 0 is not edge-trimmed/,
+    },
+    {
+        label: 'a multiline assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: 'first line\nsecond line' },
+        message: /input assessmentIgnoredReason value at index 0 contains a line separator/,
+    },
+    {
+        label: 'a credential-shaped assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: `ghp_${'A'.repeat(24)}` },
+        message: /input assessmentIgnoredReason value at index 0 contains a GitHub token/,
     },
 ];
 
@@ -618,6 +687,46 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
             }),
         message: /review dossier input format must be dossier-input-v1/,
     },
+    {
+        label: 'an input claiming limitation-only with no limited round',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentImpact: 'limitation-only', limitations: [] },
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            }),
+        message: /assessmentImpact limitation-only contradicts limitations: the round discloses none/,
+    },
+    {
+        label: 'an input claiming finding-led with no accepted finding',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentImpact: 'finding-led' },
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            }),
+        message: /assessmentImpact finding-led contradicts accepted findings: the round carries none/,
+    },
+    {
+        label: 'a reason beside a non-none impact',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: {
+                    ...INPUT,
+                    assessmentImpact: 'stance-changed',
+                    assessmentIgnoredReason: 'the assessment surfaced nothing actionable',
+                },
+                discarded: [],
+                comments: [],
+                recommendation: 'approve',
+            }),
+        message: /assessmentIgnoredReason requires assessmentImpact none, found stance-changed/,
+    },
 ];
 
 describe('parseReviewDossierInput', () => {
@@ -625,9 +734,46 @@ describe('parseReviewDossierInput', () => {
         expect(parseReviewDossierInput(INPUT)).toEqual(INPUT);
     });
 
+    /**
+     * The documented rule, pinned beside the spec that enforces it: the caller input always carries
+     * `assessmentImpact`; only a persisted record replaying an already-published head may omit it.
+     */
+    it('requires the impact on the caller input unconditionally, even for an already-published head', () => {
+        expect(() => parseReviewDossierInput(inputWithoutAssessmentImpact())).toThrow(
+            /input assessmentImpact must be none, limitation-only, stance-changed or finding-led, found undefined/
+        );
+    });
+
     it.each(INPUT_REFUSALS)('refuses $label', ({ value, message }) => {
         expect(() => parseReviewDossierInput(value)).toThrow(message);
     });
+});
+
+describe('persisted record without an assessment impact', () => {
+    /**
+     * The tolerance is anchored on the bundle's own persisted record, not on the record's
+     * self-asserted publication or a live fact: the input form always carries the field (above),
+     * while a persisted record may omit it, because that is the shape every pre-field dossier has.
+     */
+    it.each([undefined, 5272945685])(
+        'tolerates the persisted record that omits the impact (publication event: %s)',
+        (reviewId) => {
+            const result = buildReviewDossier({
+                plan: PLAN,
+                raw: canonicalPersistedRecordWithImpactOmitted(reviewId),
+                discarded: [],
+                comments: [],
+                recommendation: 'request-changes',
+            });
+
+            expect(result.fromPersisted).toBe(true);
+            expect(result.dossier.assessmentImpact).toBeUndefined();
+            if (reviewId !== undefined) {
+                expect(publishedReviewId(result.dossier)).toBe(reviewId);
+            }
+            expect(serializeReviewDossier(parseReviewDossier(JSON.parse(result.canonical)))).toBe(result.canonical);
+        }
+    );
 });
 
 describe('parseReviewStancesRecord', () => {
@@ -698,6 +844,68 @@ describe('buildReviewDossier', () => {
         expect(parsed.recommendation).toBe('request-changes');
         expect(parsed.evidence).toEqual(EVIDENCE);
         expect(parsed.limitations).toEqual([LIMITATION]);
+    });
+
+    it.each(ASSESSMENT_IMPACTS)(
+        'carries the %s assessment impact from the input form into the canonical record',
+        (token) => {
+            const result = buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentImpact: token },
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            });
+
+            expect(assessmentImpact(result.dossier)).toBe(token);
+            expect(parseReviewDossier(JSON.parse(result.canonical)).assessmentImpact).toBe(token);
+        }
+    );
+
+    it('gives dossiers differing only in assessmentImpact different digests and replays each unchanged', () => {
+        const build = (assessmentImpact: AssessmentImpact) =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentImpact },
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            });
+
+        const none = build('none');
+        const findingLed = build('finding-led');
+
+        expect(none.dossier.dossierDigest).not.toBe(findingLed.dossier.dossierDigest);
+        const replayed = buildReviewDossier({
+            plan: PLAN,
+            raw: JSON.parse(findingLed.canonical),
+            discarded: [],
+            comments: [COMMENT],
+            recommendation: 'request-changes',
+        });
+        expect(replayed.fromPersisted).toBe(true);
+        expect(replayed.canonical).toBe(findingLed.canonical);
+    });
+
+    it('carries the assessmentIgnoredReason beside a none impact and covers it in the digest', () => {
+        const REASON = 'the withheld audio module is outside this change’s blast radius';
+        const build = (reason?: string) =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentIgnoredReason: reason },
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            });
+
+        const without = build();
+        const withReason = build(REASON);
+
+        expect(without.dossier.assessmentIgnoredReason).toBeUndefined();
+        expect(withReason.dossier.assessmentIgnoredReason).toBe(REASON);
+        expect(without.dossier.dossierDigest).not.toBe(withReason.dossier.dossierDigest);
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(withReason.canonical)))).toBe(withReason.canonical);
+        expect(parseReviewDossier(JSON.parse(withReason.canonical)).assessmentIgnoredReason).toBe(REASON);
     });
 
     it('keeps the accepted-finding ids positional, matching the comments array', () => {
@@ -1008,6 +1216,7 @@ describe('delivery authorization binding (#3376, spec #3367 AC-005)', () => {
             evidence: EVIDENCE,
             limitations: [LIMITATION],
             recommendation: 'approve',
+            assessmentImpact: 'none',
         });
         return appendReviewDossierEvents(base, [{ kind: 'review-published', reviewId: REVIEW_ID }]);
     }
@@ -1075,6 +1284,7 @@ describe('delivery authorization binding (#3376, spec #3367 AC-005)', () => {
             evidence: EVIDENCE,
             limitations: [LIMITATION],
             recommendation: 'approve',
+            assessmentImpact: 'none',
         });
 
         expect(() => authorizedDossier(base)).toThrow(/without a recorded publication/);

@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "6bb3ccdbfbbf9cd5d2e2c4b6a1ae624a3ed63df765374eedced3abb71db2e4fd"
+        "digest": "f1440bd00268df694d598954b56c0d3988905f5f2fb1b2cf2c83a784e0b801be"
     },
     "census": {
         "digest": "f61deb440af07e248b43f0ba740592ff0c1f6030bbbedde4d0601c58ed14f1da"
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "75d21403ec16415959059dd0fc9536d734f44e890199a0831bfb216dbb3d87a3"
+                    "digest": "3be6027fb20e35950cc35822a426997d4ec53311cdf66cdf461810e2660f2681"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "ac8a76fdfdb937d9e667fd6f8f47f6c2b2023a012c795a308ceb39910426cff0"
+                    "digest": "63eb606fd95fae0387682c1e1f150e5fdb5b02bc019a207997cd6d289d23fea5"
                 }
             ]
         },
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "4fe8af6ae01dfaf461387ad88e7a3a047d9f859ccb0572972cd021aae7f1bc06"
+                    "digest": "6f365bd8dfa72187b5dce6002fa3fb43cc4540b2107b439d7ddedef0087b251c"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
@@ -656,7 +656,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AudioAnalysis/useCases/__tests__/agentObjectiveAnalysis.spec.ts",
-                    "digest": "356ee474e1fe04e06bb217943a8ffde79f142297f24b68cf91c1ed8abc1461de"
+                    "digest": "9ac915481205845bd6a76d3f4283d8ff6a87853d641113b5a03c79364c5518a4"
                 }
             ]
         },
@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "719faaa8928b9d6197f690a127d69e2065b94fc83898589e39e7d7ec456526cb"
+                    "digest": "0ffdb7ec07d950ddfdf859aaadb1233c5eeec8aa1a66d5562b660f735f7edeac"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -805,7 +805,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "a3e1042d43d0559e47daafbdfee22ba42fec02f152520e95ca820af4add1c80b"
+                    "digest": "557c3836fe72f17ea149f6a84152a1e11fe9afd9295e9ce9582dee9686f26445"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",

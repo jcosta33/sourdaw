@@ -28,6 +28,11 @@ import {
 } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
 import { buildReviewDossier, recordedReviewStances } from './reviewDossierPublication.ts';
+import {
+    assertSemanticAssessmentAcknowledged,
+    parseSemanticAssessmentCoverage,
+    type SemanticAssessmentCoverage,
+} from './reviewDossierSemanticAssessment.ts';
 import { acceptedFindings, deliveryAuthorization, publishedFindings, publishedReviewId } from './reviewDossierViews.ts';
 import { exactPublishedReview } from './reviewPublicationRemoteInspection.ts';
 import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts';
@@ -46,6 +51,7 @@ const REVIEW_RISK_PLAN_NAME = 'risk-plan.json';
 const REVIEW_STANCES_NAME = 'stances.json';
 const REVIEW_DOSSIER_NAME = 'dossier.json';
 const REVIEW_DISCARDED_NAME = 'discarded.json';
+const SEMANTIC_CI_NAME = 'semantic-ci.json';
 
 type BundleFileRead = { present: true; value: unknown } | { present: false };
 
@@ -117,17 +123,38 @@ function persistCanonicalReviewDossier(
 }
 
 /**
+ * The bundle's `semantic-ci.json` record, parsed, or `undefined` when the bundle carries none — a
+ * historical bundle prepared before `review:prepare` wrote the projection, or a head whose
+ * assessment was never delivered. A present but malformed file is refused, exactly like every other
+ * bundle file.
+ */
+function readSemanticCiRecord(port: PublishReviewPort, bundle: string): SemanticAssessmentCoverage | undefined {
+    const read = readBundleFile(port, join(bundle, SEMANTIC_CI_NAME));
+    if (!read.present) {
+        return undefined;
+    }
+    return parseSemanticAssessmentCoverage(read.value);
+}
+
+/**
  * The bundle base the escalation reassessment must bind, read from the bundle manifest. A
- * post-threshold head whose manifest carries no readable base refuses with the escalation contract
- * message — naming the missing field, the observed count, the threshold, and the reassessment route
- * — rather than a raw manifest read error: an unverifiable base can never satisfy the gate.
+ * post-threshold head whose manifest supplies no usable context refuses with the escalation contract
+ * message — naming the observed count, the threshold, the manifest the reader rejected, the fields
+ * it demands, the repair, and the reassessment route — rather than a raw manifest read error. The
+ * bundle reader reports an absent, unreadable, malformed, and invalid manifest as one failure
+ * without naming the field at fault, so the message describes what the reader enforces and the
+ * repair, instead of blaming baseSha for a manifest that is present and readable but wrong elsewhere.
+ * The repair is in place because review:prepare refuses to reuse a populated bundle whose manifest
+ * it cannot read, so regenerating is unavailable in every state that reaches this refusal. A fresh
+ * approval publication reads its approval context before this gate and surfaces the reader's own
+ * error first, so the refusal is reachable for a request-changes publication (#4754).
  */
 function readEscalationBaseSha(bundle: string, observedCount: number): string {
     try {
         return readReviewBundleContext(bundle).baseSha;
     } catch {
         return fail(
-            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} has no readable baseSha; the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} cannot be bound to an unverifiable base`
+            `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, REASSESSMENT_FILE_NAME)} can bind`
         );
     }
 }
@@ -250,6 +277,15 @@ export function prepareReviewDossierPublication(input: {
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
         recordedStances,
     });
+    // The gate bounds every publication that will actually post: a caller input, or a persisted
+    // canonical record whose publication was never recorded. Only a record that already binds a
+    // publication replays instead of posting, so it is exempt.
+    if (publishedReviewId(publication.dossier) === undefined) {
+        assertSemanticAssessmentAcknowledged(publication.dossier, readSemanticCiRecord(input.port, input.bundle), {
+            pr: plan.pr,
+            headSha: plan.headSha,
+        });
+    }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
     return reassessment;
 }

@@ -362,7 +362,7 @@ describe('projectStripAutomationWrites — no lanes', () => {
 
         const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes: [] });
 
-        expect(result).toEqual({ outcome: 'converted', entries: [] });
+        expect(result).toEqual({ outcome: 'converted', entries: [], overlaps: [] });
     });
 
     it('converts a track whose automationMode is off into zero entries without reading its lanes', () => {
@@ -371,7 +371,7 @@ describe('projectStripAutomationWrites — no lanes', () => {
 
         const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
 
-        expect(result).toEqual({ outcome: 'converted', entries: [] });
+        expect(result).toEqual({ outcome: 'converted', entries: [], overlaps: [] });
     });
 });
 
@@ -443,7 +443,7 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
             deviceParameterLaw,
         });
 
-        expect(result).toEqual({ outcome: 'converted', entries: [] });
+        expect(result).toEqual({ outcome: 'converted', entries: [], overlaps: [] });
     });
 
     it('names no device target for a caller that supplies no device entries', () => {
@@ -452,6 +452,80 @@ describe('projectStripAutomationWrites — a hosted device lane (#3568)', () => 
 
         const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
 
-        expect(result).toEqual({ outcome: 'converted', entries: [] });
+        expect(result).toEqual({ outcome: 'converted', entries: [], overlaps: [] });
+    });
+
+    it('converts the strip, keeps the parameter entry, and reports the withheld lane when a track-level lane overlaps a clip-scoped lane on one device parameter (Fixture O)', () => {
+        // clip-b[0.4, 0.8) holds `lane-clip-b`'s single point at its own
+        // start. The track-level lane (no clipId) carries a second point at
+        // beat 2 — past clip-b's start — so its own schedule genuinely spans
+        // across clip-b's window rather than merely compiling back to back
+        // with it. `lane-clip-b` is latest in lane-array order, so
+        // `mergeAutomationSegmentStreams` keeps it and withholds `lane-track`
+        // — the parameter's entry still converts, carrying `lane-clip-b`'s
+        // writes, and every other entry on the strip still stands too.
+        const scopedClip = clip({ id: 'clip-b', startBeat: 0.4, endBeat: 0.8 });
+        const track = createTrack({ devices: [hostedDevice], clips: [scopedClip] });
+        const lanes: AutomationLane[] = [
+            lane({
+                id: 'lane-track',
+                parameterId: 'plugin-1:7',
+                points: [point(0, 0.6), point(2, 0.6)],
+            }),
+            lane({
+                id: 'lane-clip-b',
+                parameterId: 'plugin-1:7',
+                clipId: scopedClip.id,
+                points: [point(0.4, 0.9)],
+            }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            deviceEntries,
+            deviceParameterLaw,
+        });
+
+        if (result.outcome !== 'converted') {
+            throw new Error(`expected 'converted', got 'declined': ${result.reason}`);
+        }
+        expect(result.overlaps).toEqual([{ deviceId: 'plugin-1', parameterId: '7', laneIds: ['lane-track'] }]);
+        const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
+        expect(entry).toBeDefined();
+        expect(entry?.writes[0]).toEqual({ shape: 'step', value: 0.9, time: 0.4 });
+    });
+
+    it('withholds both losing lanes into one overlap entry, keeping the latest, when three lanes on one device parameter mutually overlap', () => {
+        // Every lane below is track-level (no clipId) and spans the whole
+        // render, so all three genuinely overlap on one device parameter —
+        // one cluster of three, not three independent pairs.
+        const track = createTrack({ devices: [hostedDevice] });
+        const lanes: AutomationLane[] = [
+            lane({ id: 'lane-1', parameterId: 'plugin-1:7', points: [point(0, 0.1), point(4, 0.1)] }),
+            lane({ id: 'lane-2', parameterId: 'plugin-1:7', points: [point(0, 0.5), point(4, 0.5)] }),
+            lane({ id: 'lane-3', parameterId: 'plugin-1:7', points: [point(0, 0.9), point(4, 0.9)] }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            deviceEntries,
+            deviceParameterLaw,
+        });
+
+        if (result.outcome !== 'converted') {
+            throw new Error(`expected 'converted', got 'declined': ${result.reason}`);
+        }
+        expect(result.overlaps).toEqual([{ deviceId: 'plugin-1', parameterId: '7', laneIds: ['lane-1', 'lane-2'] }]);
+        const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
+        expect(entry).toBeDefined();
+        // lane-3 is latest in lane-array order, so its own value (0.9) is
+        // what the kept, merged stream opens with.
+        expect(entry?.writes[0]).toEqual({ shape: 'step', value: 0.9, time: 0 });
     });
 });

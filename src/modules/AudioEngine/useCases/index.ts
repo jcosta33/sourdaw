@@ -155,6 +155,8 @@ export { clearReportedLatency } from './latencyCompensation/compensation/clearRe
 
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';
+export { checkCancel } from './offlineRender/checkCancel';
+export { resetCancelFlag } from './offlineRender/resetCancelFlag';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
 export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';
@@ -186,6 +188,9 @@ export { setNativeCarriedTracks } from './trackAudioControls/setNativeCarriedTra
 export { setTrackSoloGate } from './trackAudioControls/setTrackSoloGate';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
+
+export { armRetrospectiveCapture } from './retrospectiveCapture/armRetrospectiveCapture';
+export { disarmRetrospectiveCapture } from './retrospectiveCapture/disarmRetrospectiveCapture';
 
 export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
 export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';

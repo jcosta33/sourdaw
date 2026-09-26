@@ -18,9 +18,12 @@ import {
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
+import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 import { REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
+
+const SEMANTIC_CI_TEXT = '{"state":"no-assessment","reason":"absent"}';
 
 /**
  * Fixture teardown. `rmSync` retries because the real-git case's tree can still be settling when the
@@ -88,6 +91,7 @@ function fakePort(root: string) {
             Object.assign(files, bundle);
             installBundleAtomically(destination, bundle);
         },
+        semanticCiJson: () => SEMANTIC_CI_TEXT,
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, files };
@@ -120,8 +124,10 @@ describe('review prepare', () => {
                     'pr.md',
                     'review-size.json',
                     'risk-plan.json',
+                    'semantic-ci.json',
                 ],
             });
+            expect(files['semantic-ci.json']).toBe(`${SEMANTIC_CI_TEXT}\n`);
             expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
                 files: 2,
                 added: 6,
@@ -144,6 +150,18 @@ describe('review prepare', () => {
             expect(calls.some((call) => call.includes('worktree') || call.includes('agent-'))).toBe(false);
             expect(JSON.stringify(files)).not.toContain('ghs_');
             expect(JSON.stringify(files)).not.toContain('BEGIN RSA');
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
+    it('writes semantic-ci.json as the injected text plus exactly one trailing newline', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port } = fakePort(root);
+        port.semanticCiJson = () => '{"custom":"text"}';
+        try {
+            const destination = prepareReview(42, port);
+            expect(readFileSync(join(destination, 'semantic-ci.json'), 'utf8')).toBe('{"custom":"text"}\n');
         } finally {
             removeTempRoot(root);
         }
@@ -189,6 +207,68 @@ describe('review prepare', () => {
         }
     });
 
+    it('pins the trusted executing closure to the entry local-import graph', () => {
+        const entryFile = join(import.meta.dirname, '..', 'prepareReviewEntry.ts');
+        expect(trustedExecutingPaths(entryFile)).toEqual([
+            'scripts/canonicalRecord.ts',
+            'scripts/evidenceSafety.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+            'scripts/prepareReview.ts',
+            'scripts/prepareReviewEntry.ts',
+            'scripts/reconstructReviewRounds.ts',
+            'scripts/reviewBundleLocator.ts',
+            'scripts/reviewDiffSummary.ts',
+            'scripts/reviewDossier.ts',
+            'scripts/reviewDossierBindings.ts',
+            'scripts/reviewDossierChain.ts',
+            'scripts/reviewDossierReassessed.ts',
+            'scripts/reviewDossierViews.ts',
+            'scripts/reviewRepair.ts',
+            'scripts/reviewRiskPolicy.ts',
+            'scripts/reviewRoundEscalation.ts',
+            'scripts/semanticReview/contracts.ts',
+            'scripts/semanticReview/interpret.ts',
+            'scripts/semanticReview/report.ts',
+            'scripts/semanticReview/rules.ts',
+            'scripts/semanticReviewContext.ts',
+            'scripts/semanticReviewWorkflowContract.ts',
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/vitestCollectionPatterns.ts',
+            'scripts/wasm-artifacts.ts',
+            'scripts/wasmToolchainPins.ts',
+            'scripts/workspaceManifestFingerprint.ts',
+        ]);
+    });
+
+    it('derives nested local imports as repository paths', () => {
+        const sources: Record<string, string> = {
+            '/repo/scripts/prepareReviewEntry.ts': "import './prepareReview.ts';",
+            '/repo/scripts/prepareReview.ts': "import './nested/helper.ts';",
+            '/repo/scripts/nested/helper.ts': '',
+        };
+        expect(trustedExecutingPaths('/repo/scripts/prepareReviewEntry.ts', (path) => sources[path] ?? '')).toEqual([
+            'scripts/nested/helper.ts',
+            'scripts/prepareReview.ts',
+            'scripts/prepareReviewEntry.ts',
+        ]);
+    });
+
+    it('refuses when an asserted path has no blob on origin/main', () => {
+        const blobs = [{ path: 'scripts/prepareReviewEntry.ts', originBlob: undefined, source: 'entry' }];
+        expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/no blob on origin\/main/);
+    });
+
+    it('refuses a drifted asserted module', () => {
+        const blobs = [{ path: 'scripts/semanticReviewContext.ts', originBlob: 'origin resolver', source: 'drifted' }];
+        expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/does not match origin\/main/);
+    });
+
+    it('refuses an unlisted local import', () => {
+        const source = "import './missing.ts';";
+        const blobs = [{ path: 'scripts/prepareReview.ts', originBlob: source, source }];
+        expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/imports unlisted local dependency/);
+    });
     it('writes a risk plan for the reviewed head and records it as generated', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
         const { port } = fakePort(root);

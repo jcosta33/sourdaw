@@ -3,13 +3,17 @@
  * spec #3367 AC-004): per-event field ordering, the sequence/predecessor digest chain, `headDigest`
  * and `dossierDigest`, assembly of a chained record from a validated payload, the coarse size
  * ceiling, and serialization. `reviewDossier.ts` owns the record's types, readers and validation;
- * this module owns turning a validated payload into canonical bytes and back-stop digests. Every
- * import from the record module is type-only, so the dependency runs one way.
+ * this module owns turning a validated payload into canonical bytes and back-stop digests. It also
+ * owns the `assessmentImpact` field's four-token vocabulary and reader, the one definition the
+ * record reader and the caller-input parser share, and the `assessmentIgnoredReason` acknowledgement's
+ * reader and `none`-only consistency rule. Every import from the record module is type-only,
+ * so the dependency runs one way.
  */
 
 import { createHash } from 'node:crypto';
 
 import { canonicalJson, type JsonValue } from './canonicalRecord.ts';
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
 
 import type { DossierPayload, ReviewDossier, ReviewDossierEvent, ReviewDossierEventRecord } from './reviewDossier.ts';
@@ -18,6 +22,99 @@ export const REVIEW_DOSSIER_FORMAT = 'dossier-v1';
 export const REVIEW_DOSSIER_MAX_BYTES = 32_768;
 
 export const GENESIS_DIGEST: string = '0'.repeat(64);
+
+/**
+ * The four outcomes, in their canonical order. This array is the vocabulary's definition: the type
+ * is derived from it and a spec pins its exact contents, so widening it reddens a test rather than
+ * passing silently.
+ */
+export const ASSESSMENT_IMPACTS = ['none', 'limitation-only', 'stance-changed', 'finding-led'] as const;
+export type AssessmentImpact = (typeof ASSESSMENT_IMPACTS)[number];
+
+/**
+ * The admission gate, as a total map keyed by the union rather than a set built from the array: a
+ * token added to either the array (widening the union) or this map (an excess key) fails to compile,
+ * so a widened token cannot reach `readAssessmentImpact` with the guard still returning a value its
+ * union does not carry. Exported so the pin spec asserts its live key set, which catches a run-time
+ * widening the type cannot see (an `Object.assign` onto the map).
+ */
+export const ASSESSMENT_IMPACT_MEMBERSHIP: Record<AssessmentImpact, true> = {
+    none: true,
+    'limitation-only': true,
+    'stance-changed': true,
+    'finding-led': true,
+};
+const ASSESSMENT_IMPACT_TOKENS = 'none, limitation-only, stance-changed or finding-led';
+
+function isAssessmentImpact(value: string): value is AssessmentImpact {
+    return Object.hasOwn(ASSESSMENT_IMPACT_MEMBERSHIP, value);
+}
+
+/**
+ * Reads the impact token a record or a caller input carries, refusing any other value, a missing
+ * value, or a non-string with a message naming the field and the four admissible tokens. The label
+ * defaults to the record's own field name; the caller-input parser passes its qualified label.
+ */
+export function readAssessmentImpact(value: unknown, label = 'assessmentImpact'): AssessmentImpact {
+    if (typeof value !== 'string' || !isAssessmentImpact(value)) {
+        fail(`${label} must be ${ASSESSMENT_IMPACT_TOKENS}, found ${JSON.stringify(value) ?? typeof value}`);
+    }
+    return value;
+}
+
+/**
+ * What the record's own contents say about the impact it claims, wherever the field is present: two
+ * tokens are decided by the record — `limitation-only` claims a disclosed limitation and
+ * `finding-led` an accepted finding — while `none` and `stance-changed` are not decidable from the
+ * record and stay the orchestrator's attestation. An absent field is tolerated here unconditionally,
+ * because this runs on the read path too and a record persisted before the field existed must keep
+ * verifying rather than be refused for a field it never carried; requiring it is the publication
+ * boundary's job, not this shared payload assertion's.
+ */
+export function assertAssessmentImpactConsistent(payload: DossierPayload): void {
+    const impact = payload.assessmentImpact;
+    if (impact === undefined) {
+        return;
+    }
+    if (impact === 'limitation-only' && payload.limitations.length === 0) {
+        fail('review dossier assessmentImpact limitation-only contradicts limitations: the round discloses none');
+    }
+    if (impact === 'finding-led' && !payload.events.some((event) => event.kind === 'finding-accepted')) {
+        fail('review dossier assessmentImpact finding-led contradicts accepted findings: the round carries none');
+    }
+}
+
+/**
+ * Reads the acknowledgement string a dossier or caller input carries, refusing any other shape. The
+ * value is a single trimmed, bounded, evidence-safe line: it is persisted into the record, so it
+ * carries the same publication-safety rules as every other recorded literal. The label defaults to
+ * the record's own field name; the caller-input parser passes its qualified label.
+ */
+export function readAssessmentIgnoredReason(value: unknown, label = 'assessmentIgnoredReason'): string {
+    if (typeof value !== 'string' || value.trim() === '') {
+        fail(`${label} must be a non-blank string, found ${JSON.stringify(value) ?? typeof value}`);
+    }
+    assertPublicationSafeEvidence(label, [value]);
+    return value;
+}
+
+/**
+ * What the record's own fields say about an acknowledgement it claims: a reason declares the
+ * assessment ignored, which only `none` can stand beside. A non-`none` impact already names the
+ * assessment's influence on the round, so a reason beside it contradicts the record; an absent
+ * impact is the historical shape, and a reason beside it is refused the same way. Runs on the read
+ * path too, so a persisted record cannot carry the contradiction; historical records predate the
+ * field and are untouched.
+ */
+export function assertAssessmentIgnoredReasonConsistent(payload: DossierPayload): void {
+    if (payload.assessmentIgnoredReason !== undefined && payload.assessmentImpact !== 'none') {
+        fail(
+            `review dossier assessmentIgnoredReason requires assessmentImpact none, found ${
+                payload.assessmentImpact ?? 'absent'
+            }`
+        );
+    }
+}
 
 type FieldEntry = readonly [string, JsonValue];
 
@@ -119,26 +216,35 @@ export function headDigestOf(events: readonly ReviewDossierEventRecord[]): strin
 }
 
 export function computeDossierDigest(payload: DossierPayload, headDigest: string): string {
-    return sha256Hex(
-        canonicalJson({
-            format: REVIEW_DOSSIER_FORMAT,
-            pr: payload.pr,
-            headSha: payload.headSha,
-            baseSha: payload.baseSha,
-            riskClasses: payload.riskClasses,
-            requiredStances: payload.requiredStances,
-            evidence: payload.evidence,
-            limitations: payload.limitations,
-            recommendation: payload.recommendation,
-            headDigest,
-        })
-    );
+    const record: Record<string, JsonValue> = {
+        format: REVIEW_DOSSIER_FORMAT,
+        pr: payload.pr,
+        headSha: payload.headSha,
+        baseSha: payload.baseSha,
+        riskClasses: payload.riskClasses,
+        requiredStances: payload.requiredStances,
+        evidence: payload.evidence,
+        limitations: payload.limitations,
+        recommendation: payload.recommendation,
+    };
+    // Absent, never undefined-valued: a record persisted before the field existed keeps its exact
+    // digest, and two records differing only in this field still differ.
+    if (payload.assessmentImpact !== undefined) {
+        record.assessmentImpact = payload.assessmentImpact;
+    }
+    // Same historical tolerance as `assessmentImpact`: the acknowledgement rides the digest only
+    // when present, so records persisted before it existed keep their exact bytes.
+    if (payload.assessmentIgnoredReason !== undefined) {
+        record.assessmentIgnoredReason = payload.assessmentIgnoredReason;
+    }
+    record.headDigest = headDigest;
+    return sha256Hex(canonicalJson(record));
 }
 
 export function buildDossier(payload: DossierPayload): ReviewDossier {
     const events = chainEvents(payload.events);
     const headDigest = headDigestOf(events);
-    return {
+    const dossier: ReviewDossier = {
         format: REVIEW_DOSSIER_FORMAT,
         pr: payload.pr,
         headSha: payload.headSha,
@@ -152,6 +258,13 @@ export function buildDossier(payload: DossierPayload): ReviewDossier {
         headDigest,
         dossierDigest: computeDossierDigest(payload, headDigest),
     };
+    if (payload.assessmentImpact !== undefined) {
+        dossier.assessmentImpact = payload.assessmentImpact;
+    }
+    if (payload.assessmentIgnoredReason !== undefined) {
+        dossier.assessmentIgnoredReason = payload.assessmentIgnoredReason;
+    }
+    return dossier;
 }
 
 export function assertDossierSize(dossier: ReviewDossier): void {
@@ -167,7 +280,7 @@ function serializeEventRecord(record: ReviewDossierEventRecord): Record<string, 
 }
 
 export function serializeReviewDossier(dossier: ReviewDossier): string {
-    const record = {
+    const record: Record<string, unknown> = {
         format: dossier.format,
         pr: dossier.pr,
         headSha: dossier.headSha,
@@ -182,10 +295,39 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
         })),
         limitations: dossier.limitations,
         recommendation: dossier.recommendation,
-        headDigest: dossier.headDigest,
-        dossierDigest: dossier.dossierDigest,
     };
+    // Absent, never null: a record persisted before the field existed reserializes byte-identically.
+    if (dossier.assessmentImpact !== undefined) {
+        record.assessmentImpact = dossier.assessmentImpact;
+    }
+    if (dossier.assessmentIgnoredReason !== undefined) {
+        record.assessmentIgnoredReason = dossier.assessmentIgnoredReason;
+    }
+    record.headDigest = dossier.headDigest;
+    record.dossierDigest = dossier.dossierDigest;
     return `${JSON.stringify(record, null, 4)}\n`;
+}
+
+/**
+ * The payload a persisted dossier's own fields rebuild against a given event list. Both the append
+ * path (in the record module) and the authorization digest below project a dossier this way, so the
+ * projection lives in one place; `assessmentImpact` and `assessmentIgnoredReason` ride along so a
+ * rebuilt digest still covers them.
+ */
+export function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEvent[]): DossierPayload {
+    return {
+        pr: dossier.pr,
+        headSha: dossier.headSha,
+        baseSha: dossier.baseSha,
+        riskClasses: dossier.riskClasses,
+        requiredStances: dossier.requiredStances,
+        events,
+        evidence: dossier.evidence,
+        limitations: dossier.limitations,
+        recommendation: dossier.recommendation,
+        assessmentImpact: dossier.assessmentImpact,
+        assessmentIgnoredReason: dossier.assessmentIgnoredReason,
+    };
 }
 
 /**
@@ -203,15 +345,5 @@ export function authorizedEvidenceDigest(dossier: ReviewDossier): string {
     if (events.length === dossier.events.length) {
         return dossier.dossierDigest;
     }
-    return buildDossier({
-        pr: dossier.pr,
-        headSha: dossier.headSha,
-        baseSha: dossier.baseSha,
-        riskClasses: dossier.riskClasses,
-        requiredStances: dossier.requiredStances,
-        events,
-        evidence: dossier.evidence,
-        limitations: dossier.limitations,
-        recommendation: dossier.recommendation,
-    }).dossierDigest;
+    return buildDossier(dossierPayload(dossier, events)).dossierDigest;
 }

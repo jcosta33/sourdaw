@@ -11,6 +11,7 @@ import {
     type ReconstructReviewRoundsPort,
 } from '../reconstructReviewRounds.ts';
 import { appendReviewDossierEvents, parseReviewDossier } from '../reviewDossier.ts';
+import { buildDossier } from '../reviewDossierChain.ts';
 import { buildReviewDossier, type ReviewDossierInput } from '../reviewDossierPublication.ts';
 import { renderReviewRepairReply, type ReviewRepairRecord } from '../reviewRepair.ts';
 
@@ -41,6 +42,7 @@ const dossierInput: ReviewDossierInput = {
     ],
     evidence: [],
     limitations: [],
+    assessmentImpact: 'none',
 };
 
 function repairRecord(rootCommentId: number, commit: string): ReviewRepairRecord {
@@ -299,6 +301,41 @@ describe('reconstruction run', () => {
         const run = runReviewReconstruction(42, reconstructed);
         expect(run.mismatches).toBe(1);
         expect(logged.some((line) => line.startsWith('shadow mismatch'))).toBe(true);
+        expect(logged.at(-1)).toBe('review-reconstruction:42:rounds=1:compared=1:mismatches=1');
+    });
+
+    it('completes for a bundle holding an unpublished historical dossier with no assessment impact', () => {
+        // The shape most persisted dossiers on disk have: no review-published event, no impact. The
+        // read path tolerates the absent field, so the run compares the head instead of aborting.
+        const unpublished = buildDossier({
+            pr: 42,
+            headSha: head,
+            baseSha: base,
+            riskClasses: ['small'],
+            requiredStances: ['correctness'],
+            events: [
+                {
+                    kind: 'stance-completed',
+                    stance: 'correctness',
+                    reviewerModel: 'model-correctness',
+                    modelTier: 'strongest',
+                    outcome: 'clean',
+                },
+            ],
+            evidence: [],
+            limitations: [],
+            recommendation: 'approve',
+        });
+        const { port: reconstructed, logged } = port({
+            reviews: [reviewerReview(10, head, 'APPROVED')],
+            comments: [],
+            dossiers: { [head]: structuredClone(unpublished) },
+        });
+        const run = runReviewReconstruction(42, reconstructed);
+
+        expect(run.comparisons).toHaveLength(1);
+        expect(run.mismatches).toBe(1);
+        expect(logged.some((line) => line.includes('dossier records no publication'))).toBe(true);
         expect(logged.at(-1)).toBe('review-reconstruction:42:rounds=1:compared=1:mismatches=1');
     });
 });
