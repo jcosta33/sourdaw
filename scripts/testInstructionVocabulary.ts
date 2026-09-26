@@ -446,6 +446,35 @@ export const CHECK_RUN_NOUNS = ['check', 'job', 'jobs', 'workflow', 'workflows']
 export const SUITE_OR_PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];
 
 /**
+ * The prepositions that may tie a verdict to its check context: `green on this head`, `passed for
+ * this pull request`. Exported so the specs can pin the inventory: changing any member reddens the
+ * equality pin and that member's case.
+ */
+export const CHECK_CONTEXT_PREPOSITIONS = ['on', 'for'];
+
+/**
+ * The determiners that point a verdict at one revision: `this head`, `the latest push`, `the
+ * current commit`. Exported so the specs can pin the inventory: changing any member reddens the
+ * equality pin and that member's case.
+ */
+export const CHECK_CONTEXT_DETERMINERS = ['this', 'the latest', 'the current'];
+
+/**
+ * The revisions only a check passes on: a DAW step has no head, push, commit, pull request, or
+ * change to be green on. `change` keeps `The pipeline validated this change` a report. Exported so
+ * the specs can pin the inventory: changing any member reddens the equality pin and that member's
+ * case.
+ */
+export const CHECK_CONTEXT_OBJECTS = ['head', 'push', 'commit', 'pull request', 'change'];
+
+/**
+ * The clauses that tie a verdict to delivery without naming a revision: `the suite passed before
+ * merging`. Exported so the specs can pin the inventory: changing any member reddens the equality
+ * pin and that member's case.
+ */
+export const CHECK_CONTEXT_CLAUSES = ['before merging'];
+
+/**
  * The verdict verbs that turn `an existing test <DAW noun>` back into coverage when they follow it
  * in the same segment: `the existing test track still passes`, `the existing test project covers
  * this`. Exported so the specs can pin the inventory: changing any member reddens the equality pin

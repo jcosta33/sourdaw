@@ -8,6 +8,10 @@ import { fail, PULL_REQUEST_BODY_BYTE_LIMIT } from './prContract.ts';
 import {
     ARTICLES,
     CHECK_COMMANDS,
+    CHECK_CONTEXT_CLAUSES,
+    CHECK_CONTEXT_DETERMINERS,
+    CHECK_CONTEXT_OBJECTS,
+    CHECK_CONTEXT_PREPOSITIONS,
     CHECK_SCRIPT_FAMILIES,
     CLOSED_CLASS_FUNCTION_WORDS,
     COVERAGE_VERDICT_VERBS,
@@ -681,16 +685,32 @@ const CHECK_VERDICT_ONLY = new RegExp(`^${CHECK_VERDICT_SOURCE}$`);
  */
 const EMPHASIS_AND_BACKTICKS = /[*_~`]/g;
 
+/** An alternation over multi-word phrases, each space matching any run of whitespace. */
+function phraseAlternation(phrases: readonly string[]): string {
+    return phrases.map((phrase) => phrase.split(' ').join('\\s+')).join('|');
+}
+
+/**
+ * The check context a verdict may be tied to (`on this head`, `for the latest push`, `before
+ * merging`), as a pattern fragment with its leading whitespace: only a check has a head, a push, or
+ * a pull request to pass on.
+ */
+const CHECK_CONTEXT_SOURCE =
+    `\\s+(?:(?:${CHECK_CONTEXT_PREPOSITIONS.join('|')})\\s+)?(?:${phraseAlternation(CHECK_CONTEXT_DETERMINERS)})` +
+    `\\s+(?:${phraseAlternation(CHECK_CONTEXT_OBJECTS)})\\b|\\s+(?:${phraseAlternation(CHECK_CONTEXT_CLAUSES)})\\b`;
+
 /**
  * A pattern for `subject` followed by `verdict` read as a status report, not as a DAW step that
- * happens to contain the words: the report either opens the segment, behind at most the article
- * `the` (`The suite passed on this head`), or closes it, followed by nothing but an optional status
- * adverb (`Confirm Gate is green`, `Gate is green again`). The same words mid-step describe the
- * device or the plugin (`confirm the Gate is green while the signal is above the threshold`).
+ * happens to contain the words. Either the report is the whole sentence, behind at most the
+ * article `the` and followed by nothing but an optional status adverb (`Gate is green`, `The suite
+ * is green again`), or the verdict is tied to a check context anywhere in the step (`Confirm Gate
+ * is green on the latest push`, `make sure the suite passed before merging`). The same words
+ * anywhere else describe the device or the plugin: `lower the threshold until the Gate turns
+ * green`, `confirm the Levain suite passes`.
  */
 function statusReport(subject: string, verdict: string, flags = ''): RegExp {
-    const trailingAdverb = `(?:\\s+(?:${STATUS_ADVERBS.join('|')}))?`;
-    return new RegExp(`^(?:[Tt]he\\s+)?${subject}${verdict}|\\b${subject}${verdict}${trailingAdverb}\\W*$`, flags);
+    const report = `${subject}${verdict}(?:\\s+(?:${STATUS_ADVERBS.join('|')}))?`;
+    return new RegExp(`^(?:[Tt]he\\s+)?${report}\\W*$|\\b${report}(?:${CHECK_CONTEXT_SOURCE})`, flags);
 }
 
 /**
@@ -702,18 +722,18 @@ function statusReport(subject: string, verdict: string, flags = ''): RegExp {
 const REPOSITORY_CHECK_NAMES = new RegExp(`\\bHeavyGate\\b|\\bGate\\s+(?:${CHECK_RUN_NOUNS.join('|')})\\b`);
 
 /**
- * `Gate` reported with a status over `GATE_CHECK_STATUSES` (`Gate is green`, `Gate is still
- * green`), only as a status report: the device turns green on its meter mid-step (`confirm the
- * Gate turns green when it opens`).
+ * `Gate` reported with a status over `GATE_CHECK_STATUSES` (`Gate is green`, `Gate is green on this
+ * head`), only as a status report: the device turns green on its meter in a step (`confirm the
+ * Gate turns green when it opens`, `confirm the Noise Gate is green`).
  */
 const GATE_STATUS_REPORT = statusReport('Gate', `\\s+${checkVerdictSource(GATE_CHECK_STATUSES)}`);
 
 /**
  * A suite or the pipeline reported with its status (`The suite is green`) or a verdict verb (`The
  * suite passed`, `pipeline validates the current head`), in any letter case, only as a status
- * report: Proof and Levain are suites, and a step confirms `the suite passes audio` or `the render
- * pipeline passes the full mix`. A bare `suite` stays out: a plugin suite is something a reviewer
- * loads.
+ * report: Proof and Levain are suites, and a step confirms `the Levain suite passes`, `the suite
+ * passes audio`, or `the pipeline is clean`. A bare `suite` stays out: a plugin suite is something
+ * a reviewer loads.
  */
 const SUITE_OR_PIPELINE_STATUS_REPORT = statusReport(
     '(?:suites?|pipeline)',

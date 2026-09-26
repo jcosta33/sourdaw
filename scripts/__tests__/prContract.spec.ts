@@ -40,6 +40,10 @@ import {
 import {
     COMMAND_HEADS,
     CHECK_COMMANDS,
+    CHECK_CONTEXT_CLAUSES,
+    CHECK_CONTEXT_DETERMINERS,
+    CHECK_CONTEXT_OBJECTS,
+    CHECK_CONTEXT_PREPOSITIONS,
     CHECK_SCRIPT_FAMILIES,
     CHECK_RUN_NOUNS,
     CLOSED_CLASS_FUNCTION_WORDS,
@@ -1201,7 +1205,7 @@ describe('product-scope test instructions', () => {
             ['The Gate is green on the latest push'],
         ],
     ])(
-        'refuses %s opening the segment: words behind the verdict keep it a status report',
+        'refuses %s tied to a check context: the revision keeps it a status report',
         (_label, instructions, segments) => {
             expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
             expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
@@ -1240,11 +1244,112 @@ describe('product-scope test instructions', () => {
         expect(SUITE_OR_PIPELINE_VERDICT_VERBS).toEqual(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST);
     });
 
-    it.each(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST)('refuses a suite status report closing on %s', (verb) => {
-        const instructions = `Confirm the suite ${verb}.`;
+    it.each(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST)(
+        'refuses a suite verdict %s tied to a check context',
+        (verb) => {
+            const instructions = `Confirm the suite ${verb} on this head.`;
 
-        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm the suite ${verb}`]);
+            expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm the suite ${verb} on this head`]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST)(
+        'passes a suite verdict %s closing a step with no check context',
+        (verb) => {
+            const step = `Confirm the suite ${verb}.`;
+
+            expect(narratingTestInstructionSegments(step)).toEqual([]);
+            expect(() => assertObservableTestInstructions(step)).not.toThrow();
+        }
+    );
+
+    /** The check-context prepositions, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_PREPOSITIONS_UNDER_TEST = ['on', 'for'];
+
+    it('pins the prepositions that tie a verdict to its check context', () => {
+        expect(CHECK_CONTEXT_PREPOSITIONS).toEqual(CHECK_CONTEXT_PREPOSITIONS_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_PREPOSITIONS_UNDER_TEST)('refuses a Gate verdict tied to a head by %s', (preposition) => {
+        const instructions = `Confirm Gate is green ${preposition} this head.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([
+            `Confirm Gate is green ${preposition} this head`,
+        ]);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The check-context determiners, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_DETERMINERS_UNDER_TEST = ['this', 'the latest', 'the current'];
+
+    it('pins the determiners that point a verdict at one revision', () => {
+        expect(CHECK_CONTEXT_DETERMINERS).toEqual(CHECK_CONTEXT_DETERMINERS_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_DETERMINERS_UNDER_TEST)('refuses a Gate verdict on %s head', (determiner) => {
+        const instructions = `Confirm Gate is green on ${determiner} head.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm Gate is green on ${determiner} head`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The revisions only a check passes on, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_OBJECTS_UNDER_TEST = ['head', 'push', 'commit', 'pull request', 'change'];
+
+    it('pins the revisions only a check passes on', () => {
+        expect(CHECK_CONTEXT_OBJECTS).toEqual(CHECK_CONTEXT_OBJECTS_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_OBJECTS_UNDER_TEST)('refuses a Gate verdict on this %s', (object) => {
+        const instructions = `Confirm Gate is green on this ${object}.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm Gate is green on this ${object}`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The delivery clauses, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_CLAUSES_UNDER_TEST = ['before merging'];
+
+    it('pins the clauses that tie a verdict to delivery', () => {
+        expect(CHECK_CONTEXT_CLAUSES).toEqual(CHECK_CONTEXT_CLAUSES_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_CLAUSES_UNDER_TEST)('refuses a Gate verdict tied to delivery by %s', (clause) => {
+        const instructions = `Confirm Gate is green ${clause}.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm Gate is green ${clause}`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        'Gate is green.',
+        'Gate is still green.',
+        'The suite is green.',
+        'The suite passed.',
+        'pipeline validates the current head',
+        'Gate is green on this head.',
+        'The Gate is green on the latest push.',
+        'Confirm Gate is green on the latest push.',
+        'Make sure the suite passed before merging.',
+        'The pipeline passed for this pull request.',
+    ])('refuses %s: a whole-sentence report or a verdict tied to a check context', (instructions) => {
+        expect(narratingTestInstructionSegments(instructions)).not.toEqual([]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        'The Gate turns green when the kick hits.',
+        'Lower the threshold until the Gate turns green.',
+        'Press Play and confirm the Noise Gate is green.',
+        'Bypass the plugin and confirm the pipeline is clean.',
+        'Load the Proof suite. The suite passes audio once bypass is off.',
+        'Confirm the Levain suite passes.',
+        'Play the loop and confirm the Gate is green while the signal is above the threshold.',
+        'Confirm Gate is green.',
+    ])('passes %s: a verdict inside a step with no check context is no status report', (step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
     });
 
     /** The verdicts that end the existing-test DAW-noun exemption, spec-owned on purpose: changing any member reddens the equality pin. */
@@ -1262,7 +1367,6 @@ describe('product-scope test instructions', () => {
     });
 
     it.each([
-        ['a Gate verdict closing a step', 'Confirm Gate is green.', ['Confirm Gate is green']],
         [
             'an existing test track that still passes',
             'The existing test track still passes.',
