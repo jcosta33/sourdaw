@@ -457,20 +457,23 @@ pub enum GraphCommand {
     /// an edit, an undo, a patch reload — always opens with this before
     /// [`GraphCommand::AddModAssignment`] re-adds whatever rows survive,
     /// exactly as `BacteriaNode`'s worklet protocol does on the Web Audio
-    /// carrier. An id naming a body other than Bacteria, or no body at all,
-    /// is counted the way an unmapped [`GraphCommand::SetParam`] is
-    /// (`record_unmapped_set_param_call`) and otherwise ignored: no allocation
-    /// and no lock either way, because [`BacteriaBody::clear_mod_assignments`]
-    /// forwards to an engine method that only clears a preallocated table.
+    /// carrier. An id naming no body at all is skipped silently. An id naming
+    /// a Bacteria body clears its table. An id naming a body of a non-Bacteria
+    /// type is counted as an unmapped [`GraphCommand::SetParam`]
+    /// (`record_unmapped_set_param_call`): no allocation and no lock either way,
+    /// because [`BacteriaBody::clear_mod_assignments`] forwards to an engine
+    /// method that only clears a preallocated table.
     ClearModAssignments(usize),
     /// Add one row to a Bacteria body's modulation-assignment table.
     ///
     /// Carries no `Vec`, `Box`, or `String`: `source_id` and `target_param`
     /// are the engine's own small integer grammar and `amount` is the scaled
     /// offset, so the whole row is stack-sized and applying or dropping it
-    /// allocates nothing. Refused the same way
-    /// [`GraphCommand::ClearModAssignments`] is refused, for the same
-    /// non-Bacteria-body reason; `BacteriaEngine::add_mod_assignment` also
+    /// allocates nothing. Treated the same way [`GraphCommand::ClearModAssignments`]
+    /// treats an unknown id: an id naming no body at all is skipped silently,
+    /// one naming a Bacteria body adds the row, and one naming a non-Bacteria
+    /// type is counted as an unmapped call, for the same reason
+    /// `ClearModAssignments` is. `BacteriaEngine::add_mod_assignment` also
     /// silently ignores a row past its own 64-row ceiling or naming a source
     /// or target outside its tables, so a batch that oversends still lands
     /// exactly 64 rows rather than aborting the callback.
