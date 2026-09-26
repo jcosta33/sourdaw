@@ -1,0 +1,33 @@
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_2bfd55a4393d7c::t_dd587ff511242b 224-228,231,236-241,254-260
+  s_2bfd55a4393d7c::t_b02245688a4494 88-113
+  s_2bfd55a4393d7c::t_640ab4e72d3391 10
+  s_2bfd55a4393d7c::t_8108b2aaed7c87 333-335
+  s_2bfd55a4393d7c::t_0e63a205a8e41e 39-43
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_2bfd55a4393d7c::t_44b9a3f8fe3cea 25-38
+  s_2bfd55a4393d7c::t_212f8f8890da67 89-101
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_2bfd55a4393d7c::t_43728f37de3da7 573-647
+  s_2bfd55a4393d7c::t_bd84a33a4da772 482-488,490-491
+src/modules/Levain/stores/levainStore.ts
+  s_2bfd55a4393d7c::t_bb50faf28b68fe 188-195
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_2bfd55a4393d7c::t_60d8e0cd915ed0 154-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e4dc4567f5497ad7f34e5d10f3c00e3019daf8e2",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
