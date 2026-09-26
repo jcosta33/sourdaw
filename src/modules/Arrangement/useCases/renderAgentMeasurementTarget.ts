@@ -35,6 +35,10 @@ export async function renderAgentMeasurementTarget({
         includeInserts: true,
         includeAutomation: true,
         includeSends: true,
+        // A measurement's buffer is never replayed through a live strip, so the
+        // target's own VCA group master has to be baked in here or it is
+        // dropped from the figure entirely. See `resolveContributorVcaMultiplier`.
+        includeTargetVca: true,
         onWarning,
         abortSignal,
     });

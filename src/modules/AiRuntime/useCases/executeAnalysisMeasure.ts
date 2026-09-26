@@ -119,6 +119,10 @@ function refusalFailure(refusal: ScopeRefusal, scope: ParsedArguments['scope']):
             safeMessage: `Target ${target} cannot be measured in isolation: its muted contributor ${String(refusal.contributorId)} would be rendered unmuted.`,
             retryable: false,
         },
+        'disabled-contributor': {
+            safeMessage: `Target ${target} cannot be measured in isolation: its disabled contributor ${String(refusal.contributorId)} builds no live strip.`,
+            retryable: false,
+        },
         'render-busy': { safeMessage: 'Another offline render is in progress.', retryable: true },
         'stale-revision': {
             safeMessage: 'The project changed while it was being measured; read it again before measuring.',

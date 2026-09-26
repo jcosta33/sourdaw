@@ -37,26 +37,41 @@ export type ResolveContributorVcaMultiplierInput = {
     track: Track;
     isTarget: boolean;
     groups: ReturnType<typeof getVcaGroupsState>;
+    /**
+     * Whether the target itself should also receive its group master. See
+     * `includeTargetVca` on `renderTrackSubgraphOffline` for the rule this
+     * flips.
+     */
+    includeTargetVca?: boolean;
 };
 
 /**
- * The VCA group master to bake into one track of this render — and the one place
- * the two halves of this subgraph are deliberately treated differently.
+ * The VCA group master to bake into one track of this render.
  *
- * **Upstream contributors get it.** Their audio is summed into the print exactly
- * once and is never recomposed afterwards: the routing edge that got baked stops
- * carrying live signal the moment the target is frozen, so whatever their group
- * master was worth has to be in the samples or it is lost for good.
+ * **Upstream contributors always get it.** Their audio is summed into the print
+ * exactly once and is never recomposed afterwards: the routing edge that got
+ * baked stops carrying live signal the moment the target is frozen, so whatever
+ * their group master was worth has to be in the samples or it is lost for good.
  *
- * **The target does not.** Its strip stays live after the freeze, and
- * `applyVcaGains` / the gain-automation branch keep driving that same fader.
- * Baking the multiplier in here would apply the group twice, once in the buffer
- * and again on the fader the buffer is replayed through.
+ * **The target does not, by default.** Freeze and bounce replay their buffer
+ * through the very strip that stays live afterwards, and `applyVcaGains` / the
+ * gain-automation branch keep driving that same fader — baking the multiplier
+ * in here would apply the group twice, once in the buffer and again on the
+ * fader the buffer is replayed through.
  *
- * Two rules in one loop, so it is stated here rather than left to be inferred.
+ * **`includeTargetVca` opts the target in.** A measurement's render is never
+ * replayed through a live strip — nothing downstream will ever apply the
+ * group again — so leaving it out here would drop it from the measured figure
+ * entirely rather than double it. Freeze and bounce never set this; only a
+ * caller whose buffer is the end of the line does.
  */
-function resolveContributorVcaMultiplier({ track, isTarget, groups }: ResolveContributorVcaMultiplierInput): number {
-    if (isTarget) {
+function resolveContributorVcaMultiplier({
+    track,
+    isTarget,
+    groups,
+    includeTargetVca = false,
+}: ResolveContributorVcaMultiplierInput): number {
+    if (isTarget && !includeTargetVca) {
         return 1;
     }
 
@@ -99,6 +114,16 @@ type RenderTrackSubgraphOfflineInput = {
      * `projectStripTrack` for the rule.
      */
     targetMixer?: TargetMixerDisposition;
+    /**
+     * Whether the target's own VCA group master is baked into the print.
+     *
+     * Defaults to `false`, matching freeze and bounce: the target's strip stays
+     * live after the render and keeps applying that group itself. A caller
+     * whose buffer is never replayed through a live strip — a measurement —
+     * sets this `true` so the group is not silently dropped from what it
+     * reports. See `resolveContributorVcaMultiplier` for the full rule.
+     */
+    includeTargetVca?: boolean;
     onProgress?: (fraction: number) => void;
     onWarning?: (message: string) => void;
     /**
@@ -133,6 +158,7 @@ export async function renderTrackSubgraphOffline({
     includeAutomation = true,
     includeSends = true,
     targetMixer = 'bake',
+    includeTargetVca = false,
     onProgress,
     onWarning,
     onScheduled,
@@ -269,6 +295,7 @@ export async function renderTrackSubgraphOffline({
                         track,
                         isTarget: track.id === targetTrackId,
                         groups: vcaGroups,
+                        includeTargetVca,
                     }),
                     contributesAudio: contributingTrackIds.has(track.id),
                     onWarning,
@@ -374,6 +401,7 @@ export async function renderTrackSubgraphOffline({
                     track,
                     isTarget: track.id === targetTrackId,
                     groups: vcaGroups,
+                    includeTargetVca,
                 }),
                 tally,
                 abortSignal,

@@ -1,5 +1,5 @@
 import { renderAgentMeasurementTarget, resolveAgentMeasurementTargets } from '#/modules/Arrangement/useCases';
-import { cancelExport, isExportActive, renderOffline } from '#/modules/AudioEngine/useCases';
+import { cancelExport, isExportActive, renderOffline, resetCancelFlag } from '#/modules/AudioEngine/useCases';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
@@ -78,7 +78,13 @@ async function renderMixdown(
     input: RenderAgentMeasurementScopeInput,
     onWarning: (message: string) => void
 ): Promise<AudioBuffer> {
-    const cancelActiveRender = () => cancelExport();
+    // Distinguishes "this abort raised the flag" from "the flag was already
+    // raised by something else" — the second must survive this render untouched.
+    let raisedCancelFlag = false;
+    const cancelActiveRender = () => {
+        raisedCancelFlag = true;
+        cancelExport();
+    };
     input.signal?.addEventListener('abort', cancelActiveRender, { once: true });
     try {
         return await renderOffline({
@@ -90,6 +96,18 @@ async function renderMixdown(
         });
     } finally {
         input.signal?.removeEventListener('abort', cancelActiveRender);
+        // `renderOffline`'s own render lock (acquired and released inside
+        // `executeOfflineRender`) is already released by the time this render
+        // has settled either way. Nothing else lowers the process-wide cancel
+        // flag until the next mixdown or stem export begins its own scope
+        // (`beginExportCancellationScope`) — without this, a run stopped mid
+        // measurement leaves every later freeze or bounce reading a flag this
+        // measurement raised and failing with "Export cancelled" (scheduleTrackClips's
+        // `checkCancel`). Lower it here, before this render reports its outcome,
+        // and only when this abort is the one that raised it.
+        if (raisedCancelFlag) {
+            resetCancelFlag();
+        }
     }
 }
 

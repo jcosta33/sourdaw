@@ -16,7 +16,7 @@ type SidechainDetectorRoute = {
     targetDeviceId: string;
 };
 
-type LiveAudibility = 'audible' | 'muted' | 'solo-suppressed';
+type LiveAudibility = 'audible' | 'muted' | 'solo-suppressed' | 'disabled';
 
 type AgentMeasurementTarget = {
     targetId: string;
@@ -28,21 +28,25 @@ type AgentMeasurementTarget = {
 
 type AgentMeasurementTargetRefusal = {
     status: 'refused';
-    code: 'unknown-target' | 'kind-mismatch' | 'muted-contributor';
+    code: 'unknown-target' | 'kind-mismatch' | 'muted-contributor' | 'disabled-contributor';
     targetId: string;
-    /** The muted subgraph member a `muted-contributor` refusal names. */
+    /** The muted or disabled subgraph member a contributor refusal names. */
     contributorId: string | null;
 };
 
 type ResolveAgentMeasurementTargetsResult =
     { status: 'resolved'; soloActive: boolean; targets: AgentMeasurementTarget[] } | AgentMeasurementTargetRefusal;
 
-/** The live solo read model, derived exactly as the live solo path derives it. */
+/**
+ * The live solo read model, derived exactly as the live solo path derives it:
+ * the strip set excludes a disabled track, exactly as `readLiveStripTracks` does.
+ */
 function readLiveAudibility(tracks: Track[]): EffectiveAudibility {
     const stripTrackIds = new Set(
         tracks
             .filter(
                 (track) =>
+                    !track.disabled &&
                     shouldCreateLiveTrackStrip(track) &&
                     tracks.filter((candidate) => candidate.id === track.id).length === 1
             )
@@ -56,6 +60,9 @@ function readLiveAudibility(tracks: Track[]): EffectiveAudibility {
 }
 
 function liveAudibilityOf(track: Track | undefined, audibility: EffectiveAudibility): LiveAudibility {
+    if (track?.disabled) {
+        return 'disabled';
+    }
     if (track?.muted) {
         return 'muted';
     }
@@ -65,12 +72,22 @@ function liveAudibilityOf(track: Track | undefined, audibility: EffectiveAudibil
     return 'audible';
 }
 
+/**
+ * A bus target must actually form a live strip. Any folder accepts routing, but
+ * a plain one — no toaster device — builds no live strip, so there is nothing a
+ * bus measurement would be isolating.
+ */
 function matchesScopeKind(track: Track, kind: 'tracks' | 'buses'): boolean {
     const eligibility = getTrackEligibility(track.kind);
     if (kind === 'tracks') {
         return eligibility.rendersTrackContent;
     }
-    return track.kind !== 'master' && eligibility.acceptsRoutingEndpoint && !eligibility.rendersTrackContent;
+    return (
+        track.kind !== 'master' &&
+        eligibility.acceptsRoutingEndpoint &&
+        !eligibility.rendersTrackContent &&
+        shouldCreateLiveTrackStrip(track)
+    );
 }
 
 /**
@@ -126,6 +143,12 @@ function resolveIsolatedTarget(
     if (mutedContributor !== undefined) {
         return { status: 'refused', code: 'muted-contributor', targetId, contributorId: mutedContributor.id };
     }
+    // No sidechain-key exception here: a disabled key source has no live strip
+    // to tap in the first place, unlike a merely muted one.
+    const disabledContributor = subgraph.renderTracks.find((track) => track.id !== targetId && track.disabled);
+    if (disabledContributor !== undefined) {
+        return { status: 'refused', code: 'disabled-contributor', targetId, contributorId: disabledContributor.id };
+    }
     return {
         status: 'target',
         target: {
@@ -141,9 +164,12 @@ function resolveIsolatedTarget(
  * The render targets of one agent measurement scope, each with how it sounds live.
  *
  * A track or bus target renders its isolated subgraph, which carries every
- * member's content regardless of that member's own mute. A muted member other
- * than the target and the sidechain keys would therefore print audio the live
- * mix does not carry, so the scope is refused instead of rendered.
+ * member's content regardless of that member's own mute or disabled state. A
+ * muted member other than the target and the sidechain keys, or a disabled
+ * member other than the target, would therefore print audio the live mix does
+ * not carry, so the scope is refused instead of rendered. Mute keeps a
+ * sidechain-key exception because live still taps a muted key's detector feed;
+ * disabled has none, because a disabled track builds no live strip to tap.
  */
 export function resolveAgentMeasurementTargets(
     input: ResolveAgentMeasurementTargetsInput

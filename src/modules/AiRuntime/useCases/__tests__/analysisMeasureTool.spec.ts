@@ -190,12 +190,30 @@ async function measureOnce(argumentsValue: Record<string, unknown>) {
     return { result, receipt, requestTurn };
 }
 
-function containsNumberArray(value: unknown): boolean {
+/** An `AudioBuffer` duck type: a plain number array walk never matches it (its
+ *  channels sit behind a method, not an own enumerable array), so raw audio
+ *  smuggled into a receipt as a whole buffer needs its own check. */
+function isAudioBufferLike(value: unknown): boolean {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        typeof (value as { getChannelData?: unknown }).getChannelData === 'function' &&
+        typeof (value as { numberOfChannels?: unknown }).numberOfChannels === 'number'
+    );
+}
+
+/** No receipt may carry raw samples: a bare number series, a typed array
+ *  (`Float32Array` and friends walk as plain numeric objects, not arrays), or
+ *  an `AudioBuffer` itself. */
+function containsRawAudioData(value: unknown): boolean {
+    if (ArrayBuffer.isView(value) || isAudioBufferLike(value)) {
+        return true;
+    }
     if (Array.isArray(value)) {
-        return value.some((entry) => typeof entry === 'number' || containsNumberArray(entry));
+        return value.some((entry) => typeof entry === 'number' || containsRawAudioData(entry));
     }
     if (typeof value === 'object' && value !== null) {
-        return Object.values(value).some(containsNumberArray);
+        return Object.values(value).some(containsRawAudioData);
     }
     return false;
 }
@@ -302,7 +320,16 @@ describe('analysis.measure', () => {
             expect(Object.keys(target.measurements)).toHaveLength(14);
         }
         expect(new TextEncoder().encode(JSON.stringify(receipt)).byteLength).toBeLessThanOrEqual(16_384);
-        expect(containsNumberArray(receipt.data)).toBe(false);
+        expect(containsRawAudioData(receipt.data)).toBe(false);
+    });
+
+    it('would catch a typed array or a whole AudioBuffer smuggled into a receipt', () => {
+        // Proves the guard above actually discriminates: a naive number-array walk
+        // never matches either shape, so a regression here would silently defeat
+        // every "no audio in the receipt" assertion.
+        expect(containsRawAudioData(new Float32Array([0.1, 0.2]))).toBe(true);
+        expect(containsRawAudioData(fourClicksBuffer())).toBe(true);
+        expect(containsRawAudioData({ measurements: { onsetCount: { value: 4 } } })).toBe(false);
     });
 
     it('renders a track target through its isolated subgraph with its send return', async () => {
@@ -334,7 +361,24 @@ describe('analysis.measure', () => {
         });
     });
 
-    it('accepts a folder under buses and reports it as a bus', async () => {
+    it('refuses a plain folder under buses: it builds no live strip to isolate', async () => {
+        const { receipt } = await measureOnce({ scope: { kind: 'buses', ids: ['keys-folder'] }, range: CHORUS });
+
+        expect(receipt).toMatchObject({ status: 'failure', data: null, error: { code: 'kind-mismatch' } });
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('accepts a folder under buses when a toaster device makes it a live strip', async () => {
+        setProject(
+            projectTracks({
+                'keys-folder': {
+                    devices: [
+                        { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+                    ],
+                },
+            })
+        );
+
         const { receipt } = await measureOnce({ scope: { kind: 'buses', ids: ['keys-folder'] }, range: CHORUS });
 
         expect(renderedTrackIds()).toEqual(['pad', 'keys-folder']);
@@ -453,6 +497,88 @@ describe('analysis.measure', () => {
         expect(receipt.status).toBe('success');
         expect(receipt.data).toMatchObject({
             targets: [{ targetId: 'vocal', liveAudibility: 'muted', soloActive: false }],
+        });
+    });
+
+    it('refuses a target whose disabled contributor builds no live strip to isolate', async () => {
+        setProject(projectTracks({ kick: { disabled: true } }));
+
+        const { receipt } = await measureOnce({ scope: { kind: 'buses', ids: ['drum-bus'] }, range: CHORUS });
+
+        expect(receipt).toMatchObject({ status: 'failure', error: { code: 'disabled-contributor' } });
+        expect(receipt.error?.safeMessage).toContain('kick');
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('does not exempt a disabled sidechain key source the way it exempts a muted one', async () => {
+        setProject(
+            projectTracks({
+                kick: { disabled: true },
+                'drum-bus': {
+                    devices: [
+                        {
+                            id: 'sidechain-1',
+                            name: 'Sidechain',
+                            type: 'builtin-sidechain-compressor',
+                            bypassed: false,
+                            parameterValues: {},
+                        },
+                    ],
+                },
+            })
+        );
+        // This route and device are exactly the shape `collectSidechainKeySourceIds`
+        // exempts for a muted key source, so the refusal below proves disabled
+        // deliberately gets no such exemption rather than merely never reaching it.
+        sidechainStore.set({
+            routes: [
+                {
+                    id: 'route-1',
+                    sourceTrackId: 'kick',
+                    targetTrackId: 'drum-bus',
+                    targetDeviceId: 'sidechain-1',
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                },
+            ],
+        });
+
+        const { receipt } = await measureOnce({ scope: { kind: 'buses', ids: ['drum-bus'] }, range: CHORUS });
+
+        expect(receipt).toMatchObject({ status: 'failure', error: { code: 'disabled-contributor' } });
+    });
+
+    it('reports a disabled target as disabled even though it is also muted', async () => {
+        setProject(projectTracks({ vocal: { disabled: true, muted: true } }));
+
+        const { receipt } = await measureOnce({ scope: { kind: 'tracks', ids: ['vocal'] }, range: CHORUS });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({ targets: [{ targetId: 'vocal', liveAudibility: 'disabled' }] });
+    });
+
+    it('reports a soloed-out target as solo-suppressed', async () => {
+        setProject(projectTracks({ kick: { soloed: true } }));
+
+        const { receipt } = await measureOnce({ scope: { kind: 'tracks', ids: ['vocal'] }, range: CHORUS });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({
+            targets: [{ targetId: 'vocal', liveAudibility: 'solo-suppressed', soloActive: true }],
+        });
+    });
+
+    it('excludes a disabled track from the strip set solo derives audibility from', async () => {
+        setProject(projectTracks({ kick: { disabled: true, soloed: true } }));
+
+        const { receipt } = await measureOnce({ scope: { kind: 'tracks', ids: ['vocal'] }, range: CHORUS });
+
+        // A disabled solo has no live strip and cannot suppress anything, exactly as
+        // `readLiveStripTracks` excludes it live — unlike an ordinary soloed track,
+        // which would otherwise suppress every other target.
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({
+            targets: [{ targetId: 'vocal', liveAudibility: 'audible', soloActive: false }],
         });
     });
 
