@@ -42,8 +42,22 @@ const QUOTED_SEGMENT_MAX_CHARACTERS = 120;
 /** Leading list markers a How-to-test bullet may carry: dash, asterisk, bullet, `1.`, `1)`, `a)`. */
 const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
 
-/** Filler words that precede a command without making the segment anything but narration. */
-const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
+/** Single letters joined by dots (`e.g`, `N.B`), as a pattern fragment: a dotted abbreviation up to its closing dot. */
+const DOTTED_ABBREVIATION_SOURCE = '(?:\\p{L}\\.)+\\p{L}';
+
+/**
+ * A whole token that is a dotted abbreviation, closing dot optional (`e.g.`, `i.e`, `N.B.`). It
+ * introduces the words around it rather than being one of them, so like a letter-free token it
+ * drops from the prose remainder: it neither rescues a command line (`E.g. pnpm dev`) nor launches
+ * one.
+ */
+const DOTTED_ABBREVIATION_TOKEN = new RegExp(`^${DOTTED_ABBREVIATION_SOURCE}\\.?$`, 'u');
+
+/**
+ * Filler that precedes a command without making the segment anything but narration: the filler
+ * words, and a dotted abbreviation, which the peel strips so the command behind it is the launch.
+ */
+const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')}|${DOTTED_ABBREVIATION_SOURCE}\\.?)\\s+`, 'iu');
 
 /**
  * A letter or digit. An apostrophe with one immediately on both sides (`track's`, `doesn't`) is
@@ -357,7 +371,7 @@ function proseRemainderWords(segment: string): string[] {
     const remainder = proseRemainder(segment)
         .replaceAll(QUOTED_SPAN, ' ')
         .replace(PARENTHETICAL, (parenthetical) => (isAnnotationParenthetical(parenthetical) ? ' ' : parenthetical));
-    const tokens = remainder.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+    const tokens = remainder.split(/\s+/).map(remainderToken);
     const words: string[] = [];
     // Seeded from the launch the peel exposes — a leading span's content included — not from
     // tokens[0], which a leading quoted span leaves empty.
@@ -425,6 +439,15 @@ function proseRemainderWords(segment: string): string[] {
         }
     }
     return words;
+}
+
+/**
+ * One remainder token, edge punctuation stripped and lower-cased. A dotted abbreviation blanks
+ * like a removed quoted span, so the scan skips it and the run-ending check finds no material in it.
+ */
+function remainderToken(token: string): string {
+    const bare = token.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    return DOTTED_ABBREVIATION_TOKEN.test(bare) ? '' : bare;
 }
 
 /**
@@ -552,8 +575,8 @@ function splitOutsideQuotedSpans(line: string): string[] {
     return segments;
 }
 
-/** Single letters joined by dots (`e.g`, `N.B`): a dotted abbreviation up to its closing dot. */
-const DOTTED_ABBREVIATION = /^(?:\p{L}\.)+\p{L}$/u;
+/** A dotted abbreviation up to its closing dot, as the whole text it is tested against. */
+const DOTTED_ABBREVIATION = new RegExp(`^${DOTTED_ABBREVIATION_SOURCE}$`, 'u');
 
 /**
  * Whether the text since the last whitespace (or the line start) is a dotted abbreviation missing

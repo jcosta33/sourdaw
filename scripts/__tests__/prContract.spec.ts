@@ -1024,11 +1024,6 @@ describe('product-scope test instructions', () => {
         'these',
         'those',
         'them',
-        'everything',
-        'nothing',
-        'all',
-        'both',
-        'each',
         'to',
         'back',
         'by',
@@ -1081,6 +1076,18 @@ describe('product-scope test instructions', () => {
     );
 
     it.each([
+        ['a make target named all', 'make all'],
+        ['a make target named all with a result annotation', 'make all (green)'],
+        ['a make target named both', 'make both'],
+        ['a make target named each', 'make each'],
+    ])('refuses %s: a quantifier behind a step verb is its bare argument, not English syntax', (_label, line) => {
+        // `all`, `both`, and `each` are annotation vocabulary and no closed-class function word,
+        // so the English-word lead stays launch material and the line narrates.
+        expect(narratingTestInstructionSegments(line)).toEqual([line]);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
         // Letter-free positions and values are never command-shaped evidence, so the step verb
         // stays an English-word lead and the preposition behind it shows its sentence.
         ['a navigation step to a dotted bar position', 'Go to 1.1.1.'],
@@ -1104,6 +1111,18 @@ describe('product-scope test instructions', () => {
         // own; kept whole, its trailing dot leaves `E.g.` a prose word rather than an extension.
         expect(narratingTestInstructionSegments(step)).toEqual([]);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a launch introduced by a Latin example abbreviation', 'E.g. pnpm dev', 'E.g. pnpm dev'],
+        ['a launch introduced by a restatement abbreviation', 'Press Play. i.e. pnpm dev', 'i.e. pnpm dev'],
+        ['an abbreviation between annotation words', 'CI, i.e. pnpm dev, is green.', 'CI, i.e. pnpm dev, is green'],
+        ['an abbreviation behind a run-ending cue word', 'Run gh run watch, i.e. CI.', 'Run gh run watch, i.e. CI'],
+    ])('refuses %s: a dotted abbreviation neither rescues nor launches', (_label, instructions, segment) => {
+        // A leading abbreviation strips like filler, exposing the launch behind it; elsewhere it
+        // drops from the prose remainder and counts as no material behind a run-ending word.
+        expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
     it('still ends a sentence at a single letter, which carries no inner dot', () => {

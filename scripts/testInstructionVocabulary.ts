@@ -39,7 +39,9 @@ export const ARTICLES = ['a', 'an', 'the'];
  * particles, auxiliary and copular verbs — whose presence directly behind an English-word lead
  * shows English syntax, so the lead is no launch material: `Make a MIDI track`, `Make it the
  * same`, `Go to 1.1.1`, and `Echo is still on` are the step's own verb or subject followed by its
- * sentence. A bare argument (`make test`) is still the launch it reads as. Exported so the specs
+ * sentence. A bare argument (`make test`) is still the launch it reads as. Quantifiers (`all`,
+ * `both`, `each`, `everything`) stay out: they are also the bare targets a build tool runs
+ * (`make all`), so behind a head they show no English syntax. Exported so the specs
  * can pin the inventory: dropping any member reddens the equality pin and that member's
  * behavioral case.
  */
@@ -52,11 +54,6 @@ export const CLOSED_CLASS_FUNCTION_WORDS = new Set([
     'these',
     'those',
     'them',
-    'everything',
-    'nothing',
-    'all',
-    'both',
-    'each',
     'to',
     'back',
     'by',
