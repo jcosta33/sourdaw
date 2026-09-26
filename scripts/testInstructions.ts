@@ -508,7 +508,7 @@ function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
  * narration (`lint`, `typecheck`, the colon-bearing scripts) and tool names stay out, so they open
  * an argument run whatever their letter case.
  */
-const STEP_VERB_HEADS = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail'];
+export const STEP_VERB_HEADS = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail'];
 
 /**
  * The command heads that are also ordinary English words a DAW step or its expected result can
@@ -517,7 +517,16 @@ const STEP_VERB_HEADS = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less',
  * a command-shaped token beside them shows the segment is a command line. Tool names (`pnpm`,
  * `git`, `cargo`) stay out, so their presence alone keeps reading as a launch.
  */
-const ENGLISH_WORD_HEADS = new Set([...STEP_VERB_HEADS, 'node', 'env', 'which', 'electron', 'guard', 'tee', 'cat']);
+export const ENGLISH_WORD_HEADS = new Set([
+    ...STEP_VERB_HEADS,
+    'node',
+    'env',
+    'which',
+    'electron',
+    'guard',
+    'tee',
+    'cat',
+]);
 
 /**
  * Whether the peeled lead is an English word rather than a launch: an unquoted member of
