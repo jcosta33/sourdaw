@@ -1156,6 +1156,242 @@ describe('application-owned tool loop', () => {
         );
     });
 
+    it('reclassifies a walk refusal to the non-retryable run form when its own retry could never fit what the run leaves, and the run continues', async () => {
+        // Two real, unpaged manifest reads (builtin-eq and the Faust parametric EQ) charge 18,157
+        // bytes. Two fermenter parameter pages then admit for real, leaving too little of the run's
+        // own budget for a third fermenter page's lone retry — issued a turn later — to ever land.
+        // A walk that only classifies against the turn it is refused in, without correcting for that,
+        // would leave this read wrongly retryable instead of the non-retryable run form.
+        async function fermenterCursorAfter(cursor: string | undefined): Promise<string> {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'prime',
+                            name: 'device.factory-manifest.read',
+                            arguments: { types: ['fermenter'], page: cursor === undefined ? {} : { cursor } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+            const primed = await runApplicationOwnedToolLoop({
+                loopId: `loop-fermenter-prime-${cursor ?? 'first'}`,
+                terminalToolNames: new Set(['setTempo']),
+                requestTurn,
+            });
+            const receipt = primed.receipts.find((entry) => entry.callId === 'prime');
+            if (!receipt) {
+                throw new Error('Missing receipt for fermenter cursor priming call.');
+            }
+            const data = receipt.data as { nextCursor: string | null };
+            if (data.nextCursor === null) {
+                throw new Error('Expected fermenter paging to continue past this offset.');
+            }
+            return data.nextCursor;
+        }
+
+        const cursorAfterPage1 = await fermenterCursorAfter(undefined);
+        const cursorAfterPage2 = await fermenterCursorAfter(cursorAfterPage1);
+        const cursorAfterPage3 = await fermenterCursorAfter(cursorAfterPage2);
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'eq-full',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['builtin-eq'], page: {} },
+                    },
+                    {
+                        id: 'faust-eq-full',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['faust-pro-parametric-eq'], page: {} },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'fermenter-p1',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['fermenter'], page: { cursor: cursorAfterPage1 } },
+                    },
+                    {
+                        id: 'fermenter-p2',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['fermenter'], page: { cursor: cursorAfterPage2 } },
+                    },
+                    {
+                        id: 'fermenter-p3',
+                        name: 'device.factory-manifest.read',
+                        arguments: { types: ['fermenter'], page: { cursor: cursorAfterPage3 } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-reclassify-run-cap',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxCallsPerTurn: 4, maxTotalCalls: 10, maxTurns: 5 },
+        });
+
+        expect(result.status).not.toBe('rejected');
+        expect(result.receipts).toContainEqual(expect.objectContaining({ callId: 'fermenter-p1', status: 'success' }));
+        expect(result.receipts).toContainEqual(expect.objectContaining({ callId: 'fermenter-p2', status: 'success' }));
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'fermenter-p3',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+    });
+
+    it('reserves a later read at its larger refusal form so an admittable read is refused instead of landing the turn over the run budget', async () => {
+        // Two filler turns leave 1,656 run bytes for this turn's two reads: a 1,002-byte read
+        // followed by a 16,383-byte read that can never fit regardless. Reserving the later read at
+        // the smaller, turn-classified stand-in instead of the larger, run-classified one would admit
+        // the first read as real — but that read's own eventual final form always ends up refused
+        // alongside the second (neither fits what two filler turns left), and the turn's real final
+        // bytes would then land 24 bytes over the run's own remaining budget.
+        let callIndex = 0;
+        function nameLenForCall(index: number): number {
+            if (index <= 4) {
+                return 15_246;
+            }
+            if (index === 5) {
+                return 389;
+            }
+            return 15_770;
+        }
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            callIndex += 1;
+            const nameLen = nameLenForCall(callIndex);
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('fill-a') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('fill-b') })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'small-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                    { id: 'large-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-row-b-reservation',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxTurns: 5 },
+        });
+
+        expect(result.status).toBe('complete');
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'small-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'large-read',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'run-receipt-budget-spent', retryable: false }),
+            })
+        );
+    });
+
+    it("keeps a refused read's own smaller real receipt instead of its classified stand-in when the real receipt already fits", async () => {
+        // agent.capabilities rejects any arguments, producing a real 353-byte failure receipt that
+        // already serializes smaller than either budget-spent stand-in. Two filler turns leave too
+        // little run budget for this call, paired with a large trailing read's reservation, to admit
+        // it — but the refusal's final form must still keep this call's own real, more informative
+        // failure instead of overwriting it with the larger generic stand-in.
+        let callIndex = 0;
+        vi.mocked(querySemanticProject).mockImplementation(() => {
+            callIndex += 1;
+            const nameLen = callIndex <= 4 ? 15_485 : 15_770;
+            return {
+                schema: 'sourdaw.semantic-project-query',
+                schemaVersion: 1,
+                projectId: 'project-1',
+                projectSchemaVersion: 1,
+                revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+                revisionToken: 'revision-2',
+                queryType: 'project-summary',
+                page: { offset: 0, limit: 20, total: 1 },
+                items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(nameLen) }],
+                nextCursor: null,
+                warnings: [],
+            };
+        });
+        const fillerCalls = (prefix: string) =>
+            Array.from({ length: 2 }, (_, index) => ({
+                id: `${prefix}-${String(index)}`,
+                name: 'project.query',
+                arguments: { type: 'project-summary' },
+            }));
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('fill-a') })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: fillerCalls('fill-b') })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'caps-call', name: 'agent.capabilities', arguments: { unexpected: true } },
+                    { id: 'large-read', name: 'project.query', arguments: { type: 'project-summary' } },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-row-c-real-smaller-than-standin',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxTurns: 5 },
+        });
+
+        expect(result.receipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'caps-call',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'invalid-tool-arguments', retryable: true }),
+            })
+        );
+    });
+
     it('does not disclose a command schema from a catalog discovery receipt replaced for the turn receipt budget', async () => {
         // Two project.query fillers sized against this turn's own receipt-context serialization so
         // admitting both still fits the turn's receipt budget, but admitting the real catalog
