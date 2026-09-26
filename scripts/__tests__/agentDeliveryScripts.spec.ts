@@ -60,17 +60,21 @@ import { runRulesetHardeningCli } from '../rulesetHardening.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
+    commandEntries,
     defaultPort,
     executeTrustedSnapshot,
     fetchOriginMain,
     resolveTrustedLauncherBinding,
     resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
+    snapshotComputedDynamicSpecifiers,
+    snapshotImportSpecifiers,
     trustedDependencyGraphs,
     trustedDependencyPaths,
     trustedGitReadEnv,
     trustedLocalImportClosure,
     trustedSnapshotEnv,
+    type TrustedGithubWriteCommand,
     type TrustedLauncherBinding,
 } from '../trustedGithubWriteBootstrap.ts';
 
@@ -642,6 +646,36 @@ function runTrustedDeliverWithLoader(loader: string): Promise<number> {
         readOriginSource: (_commit, candidate) => (candidate === BOOTSTRAP_PATH ? loader : 'trusted'),
         executeSnapshot: async () => 0,
     });
+}
+
+function readRepositorySource(): (path: string) => string | undefined {
+    const repositoryRoot = join(import.meta.dirname, '..', '..');
+    return (path: string): string | undefined => {
+        try {
+            return readFileSync(join(repositoryRoot, path), 'utf8');
+        } catch {
+            return undefined;
+        }
+    };
+}
+
+/**
+ * The per-command closure contract: the declared set must start with the loader, carry the runtime's
+ * own entry path at `[1]`, and equal exactly the static local-import closure of that entry plus the
+ * loader's own static closure. Entry and closure are both derived from the runtime, never from the
+ * declared array under test, so a swapped or truncated declaration reddens.
+ */
+function assertDeclaredClosure(
+    command: TrustedGithubWriteCommand,
+    declared: readonly string[],
+    readSource: (path: string) => string | undefined
+): void {
+    expect(declared[1], `${command} declared entry`).toBe(commandEntries[command].path);
+    const expected = new Set(trustedLocalImportClosure(commandEntries[command].path, readSource));
+    for (const path of trustedLocalImportClosure(BOOTSTRAP_PATH, readSource)) {
+        expected.add(path);
+    }
+    expect(new Set(declared), `${command} declared closure`).toEqual(expected);
 }
 
 type WorkflowRecord = Record<string, unknown>;
@@ -1473,28 +1507,67 @@ describe('package scripts and gitignore', () => {
      * The graph check above only proves the declared set is closed under imports — it walks the
      * declared sources and refuses a missing or unexpected one — so it cannot see a source the graph
      * declares but the command never reaches, nor one the command reaches but the graph omits. This
-     * check computes each command's true local-import closure from its entry with the same import
-     * scan, and requires the declared set to equal exactly that closure plus the loader. A source
-     * copied into the graph without a real import, or dropped from it while still imported, reddens.
+     * check computes each command's static local-import closure (type-only edges included) from its
+     * runtime entry with the same import scan, and requires the declared set to equal exactly that
+     * closure plus the loader's own static closure. A source copied into the graph without a real
+     * import, or dropped from it while still imported, reddens.
      */
-    it('declares exactly each command local import closure, so over- and under-declaration redden', () => {
-        const repositoryRoot = join(import.meta.dirname, '..', '..');
-        const readSource = (path: string): string | undefined => {
-            try {
-                return readFileSync(join(repositoryRoot, path), 'utf8');
-            } catch {
-                return undefined;
-            }
-        };
-        for (const [command, declared] of Object.entries(trustedDependencyGraphs)) {
-            const entry = declared[1];
-            if (entry === undefined) {
-                throw new Error(`trusted dependency graph for ${command} has no entry path`);
-            }
-            const expected = new Set(trustedLocalImportClosure(entry, readSource));
-            expected.add(BOOTSTRAP_PATH);
-            expect(new Set(declared), `${command} declared closure`).toEqual(expected);
+    it('declares exactly each command static local import closure, so over- and under-declaration redden', () => {
+        const readSource = readRepositorySource();
+        for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
+            assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
         }
+    });
+
+    /**
+     * The entry the closure is walked from must come from the runtime's own command table, never from
+     * the declared array itself: `declared[1]` is part of the value under test, so a declaration whose
+     * whole array is swapped for another command's — type-valid, every path declared elsewhere — would
+     * pass every check while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. Deriving the
+     * entry from `commandEntries` and asserting it equals `declared[1]` makes that swap redden.
+     */
+    it('refuses a declaration whose entry is not the command runtime entry', () => {
+        const readSource = readRepositorySource();
+
+        expect(() => assertDeclaredClosure('deliver', trustedDependencyGraphs['review:confirm'], readSource)).toThrow();
+    });
+
+    /**
+     * The static closure is a deliberate superset of the executed graph: `import type` and
+     * `export type ... from` edges are counted even though Node's type stripping erases them, because
+     * the same union feeds the governance risk classification and must not shrink. This pins that
+     * over-approximation so a future scanner that dropped type-only edges would redden.
+     */
+    it('includes type-only import edges in the static closure', () => {
+        const readSource = (path: string): string | undefined => {
+            const fixtures: Record<string, string> = {
+                'scripts/entry.ts':
+                    "import type { A } from './typeOnly.ts';\nexport type { B } from './reExported.ts';",
+                'scripts/typeOnly.ts': 'export type A = string;',
+                'scripts/reExported.ts': 'export type B = number;',
+            };
+            return fixtures[path];
+        };
+
+        expect([...trustedLocalImportClosure('scripts/entry.ts', readSource)].sort()).toEqual([
+            'scripts/entry.ts',
+            'scripts/reExported.ts',
+            'scripts/typeOnly.ts',
+        ]);
+    });
+
+    /**
+     * The runtime graph assertion checks the loader's own local imports too, not just its presence in
+     * the declared set, so a loader-local import the graph declares passes and one it omits refuses —
+     * `ERR_MODULE_NOT_FOUND` would otherwise kill the command after every check reported coverage.
+     */
+    it('checks the loader own local imports against the declared graph', async () => {
+        const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
+
+        await expect(runTrustedDeliverWithLoader(`${loader}\nimport './githubAppIdentity.ts';\n`)).resolves.toBe(0);
+        await expect(runTrustedDeliverWithLoader(`${loader}\nimport './undeclaredLoaderImport.ts';\n`)).rejects.toThrow(
+            /scripts\/trustedGithubWriteBootstrap\.ts imports unchecked local dependency scripts\/undeclaredLoaderImport\.ts/
+        );
     });
 
     /**
@@ -1559,10 +1632,76 @@ describe('package scripts and gitignore', () => {
             poisoned: "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)(someVariable);",
             shape: 'createRequire(...)(...)',
         },
+        {
+            label: 'a computed require.resolve',
+            poisoned: "const specifier = './unchecked.ts';\nrequire.resolve(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a dynamic import template with a substitution',
+            poisoned: "const name = 'unchecked';\nawait import(`./${name}.ts`);",
+            shape: 'import(...)',
+        },
     ])('refuses $label in the graph assertion', async ({ poisoned, shape }) => {
         expect(await snapshotRefusalFor(poisoned)).toContain(
             `scripts/deliverPullRequest.ts loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
         );
+    });
+
+    /**
+     * The computed-load refusal must never fire when the first argument is a literal the snapshot can
+     * resolve, whatever follows it: a second options argument, an options object on `require.resolve`,
+     * an `as` cast, or a trailing comma all leave the specifier static, and `snapshotImportSpecifiers`
+     * already collects that literal. Refusing here would split one specifier across the two scanners —
+     * the graph check would reject a source the import scan declares resolved.
+     */
+    it.each([
+        {
+            label: 'a static dynamic import with a second argument',
+            source: "await import('./checked.ts', { with: { type: 'json' } });",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static require.resolve with an options object',
+            source: "require.resolve('./checked.ts', { paths: ['/tmp'] });",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import narrowed with an as-expression',
+            source: "await import('./checked.ts' as string);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import with a trailing comma',
+            source: "await import('./checked.ts',);",
+            specifier: './checked.ts',
+        },
+    ])('admits $label as a static specifier, never a computed load', ({ source, specifier }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toContain(specifier);
+    });
+
+    /**
+     * A type member or a parameter merely named `require` is not a load: its parenthesized list is a
+     * TypeScript parameter list, never a call whose first argument is an expression. The scan must not
+     * read `require(specifier: string)` in a type, a `require`-named function parameter, or an ambient
+     * `declare function require` as a computed load and refuse it.
+     */
+    it.each([
+        {
+            label: 'a require-typed object member',
+            source: 'type Sandbox = { require(specifier: string): unknown };',
+        },
+        {
+            label: 'a require-named function parameter',
+            source: 'function loadWith(require: (specifier: string) => unknown) { return require; }',
+        },
+        {
+            label: 'a require-named ambient function declaration',
+            source: 'declare function require(moduleName: string): unknown;',
+        },
+    ])('admits $label that names require without loading anything', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 
     /**

@@ -373,7 +373,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     ],
 };
 
-const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
+export const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:claim': { path: 'scripts/claimTrackerIssue.ts', runner: 'runClaimTrackerIssueCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
@@ -624,15 +624,31 @@ function computedDynamicLoad(source: string, openParen: number, shape: string): 
     while (source[specifierStart] === '(') {
         specifierStart = skipWhitespace(source, specifierStart + 1);
     }
+    // A parameter list whose first token is an identifier immediately followed by `:` is a TypeScript
+    // declaration (`require(specifier: string)` in a type, an ambient `declare function require`),
+    // never a call — no expression argument can take that shape — so it is not a computed load.
+    if (isTypedParameterList(source, specifierStart)) {
+        return undefined;
+    }
     const literal = readModuleStringAfter(source, specifierStart);
-    if (literal === undefined) {
-        return { shape, end: endOfBalancedCall(source, openParen) };
+    if (literal !== undefined) {
+        // A literal first argument resolves from the snapshot whatever follows it — a second options
+        // argument, an `as` cast, a trailing comma — and `snapshotImportSpecifiers` already collects it.
+        return undefined;
     }
-    const afterLiteral = skipWhitespace(source, literal.end);
-    if (source[afterLiteral] !== ')') {
-        return { shape, end: endOfBalancedCall(source, openParen) };
+    return { shape, end: endOfBalancedCall(source, openParen) };
+}
+
+function isTypedParameterList(source: string, start: number): boolean {
+    const first = source[start];
+    if (first === undefined || !/[A-Za-z_$]/.test(first)) {
+        return false;
     }
-    return undefined;
+    let cursor = start + 1;
+    while (cursor < source.length && isIdentifierContinue(source[cursor])) {
+        cursor += 1;
+    }
+    return source[cursor] === ':';
 }
 
 function endOfBalancedCall(source: string, openParen: number): number {
@@ -1181,17 +1197,22 @@ function localModuleDependencies(path: string, source: string): string[] {
 }
 
 /**
- * The local modules `entry` actually executes, walked with the same import scan the graph check uses:
- * every `./`-relative literal or static-template import from `entry` and, transitively, from each
- * module it reaches. `readSource` supplies each module's source from the working tree, so the walk
- * crosses an undeclared intermediate instead of stopping at it. The walk refuses rather than silently
- * truncates: a reached module with no source, or a computed `import(expr)` / `require(expr)` /
- * `createRequire(...)(expr)` specifier, throws — those shapes cannot be resolved from a snapshot and
- * must not be skipped. The loader itself is deliberately absent — no executed source may import it,
- * which `assertTrustedSourceGraph` refuses — so a command's declared set is exactly this closure plus
- * the loader's own path. Exported so the specs pinning each command's declared set to its true closure
- * can see over- and under-declaration, which the runtime check alone cannot: it only proves the
- * declared set is closed under imports.
+ * The static local-import closure of `entry`: every module reached by walking `./`-relative literal or
+ * static-template imports from `entry` and, transitively, from each module it reaches, using the same
+ * import scan the graph check uses. Type-only edges (`import type`, `export type ... from`) are
+ * included deliberately: Node's type stripping erases them, so this closure is a superset of what the
+ * command actually executes, but the very same union feeds the governance risk classification and must
+ * not shrink — narrowing it to the executed graph would silently drop a changed script from
+ * `native-security` classification. `readSource` supplies each module's source from the working tree,
+ * so the walk crosses an undeclared intermediate instead of stopping at it. The walk refuses rather
+ * than silently truncates: a reached module with no source, or a computed `import(expr)` /
+ * `require(expr)` / `createRequire(...)(expr)` specifier, throws — those shapes cannot be resolved from
+ * a snapshot and must not be skipped. The loader itself is deliberately absent from a command's
+ * executed graph — no executed source may import it, which `assertTrustedSourceGraph` refuses — so a
+ * command's declared set is exactly this closure plus the loader's own static-import closure. Exported
+ * so the specs pinning each command's declared set to its static closure can see over- and
+ * under-declaration, which the runtime check alone cannot: it only proves the declared set is closed
+ * under imports.
  */
 export function trustedLocalImportClosure(
     entry: string,
