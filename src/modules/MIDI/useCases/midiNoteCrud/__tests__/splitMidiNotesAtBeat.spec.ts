@@ -166,6 +166,49 @@ describe('splitMidiNotesAtBeat', () => {
         expect(right.some((entry) => entry.id === 'hole-note')).toBe(false);
     });
 
+    it("slices a curved note's recorded expression at both the discard hole and the split point", () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                source: [
+                    {
+                        id: 'swell',
+                        pitch: 60,
+                        startBeat: 1.5,
+                        duration: 7,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 0.5, value: 50 },
+                                { offsetBeats: 3, value: 70 },
+                                { offsetBeats: 6, value: 30 },
+                            ],
+                        },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 7, discardBeforeBeat: 3 });
+
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+        const [left] = written.notesByClipId.source!;
+        const [right] = written.notesByClipId.right!;
+
+        expect(left).toMatchObject({ id: 'swell', startBeat: 1.5, duration: 1.5, pressure: 10 });
+        expect(left?.expression).toEqual({ pressure: [{ offsetBeats: 0.5, value: 50 }] });
+
+        // The right stub starts at the hole end (media 7 -> 0), matching the
+        // hole-spanner stub in the discard-window case above; its pressure is
+        // the value in force at beat 7, not the note's note-on scalar.
+        expect(right).toMatchObject({ startBeat: 0, duration: 1.5, pressure: 70 });
+        expect(right?.expression).toEqual({ pressure: [{ offsetBeats: 0.5, value: 30 }] });
+    });
+
     it('keeps notes on the source clip when nothing crosses the split', () => {
         mocks.midiStoreValue.value = {
             notesByClipId: { source: [note(60, 0, 2, 'a'), note(62, 2, 1, 'b')] },
