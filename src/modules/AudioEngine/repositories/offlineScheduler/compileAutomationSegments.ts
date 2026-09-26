@@ -48,13 +48,16 @@ export function compileAutomationSegments(
     // `compensationDelaySec` of the render.
     //
     // A lane whose window closes exactly at the region start compiles to
-    // exactly one event — nothing follows the seed. That is the lone
-    // zero-length terminator `mergeAutomationSegmentStreams` documents and
-    // relies on sitting at frame 0: shifting it (or opening a hold in front
-    // of it) has no later material to lead into, and instead turns it into a
-    // `[0, D]` span that overlaps whatever lane opens at the region start,
-    // which the merge then reads as a genuine clash and withholds a lane over
-    // (#4684). Only shift when a later event follows the seed.
+    // exactly one event sitting at time zero — nothing follows the seed.
+    // That lone zero-length terminator is what `mergeAutomationSegmentStreams`
+    // documents and relies on sitting at frame 0: shifting it (or opening a
+    // hold in front of it) has no later material to lead into, and instead
+    // turns it into a `[0, D]` span that overlaps whatever lane opens at the
+    // region start, which the merge then reads as a genuine clash and
+    // withholds a lane over (#4684). A lone seed has no window to shift into
+    // only when it sits at time zero; a lone event later in the render — no
+    // different from the tail of a multi-event stream — is shifted like
+    // every other event below.
     const segments: OfflineAutomationSegment[] = [];
     const seed = events[0]!;
     const hasLaterEvent = events.length > 1;
@@ -78,8 +81,9 @@ export function compileAutomationSegments(
         });
     }
     const last = events.at(-1)!;
+    const shiftLast = hasLaterEvent || last.timeSeconds > 0;
     const lastFrame = toFrame(
-        hasLaterEvent ? last.timeSeconds + compensationDelaySec : last.timeSeconds,
+        shiftLast ? last.timeSeconds + compensationDelaySec : last.timeSeconds,
         durationSeconds,
         sampleRate
     );

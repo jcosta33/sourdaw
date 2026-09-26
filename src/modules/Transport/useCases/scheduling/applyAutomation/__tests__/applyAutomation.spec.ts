@@ -208,10 +208,9 @@ describe('applyAutomation', () => {
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(deriveVcaMultiplier).mockReturnValue(1);
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
-        // #4684: the jump anchor and tempo map are real (unmocked) singletons
-        // shared across every case in this file; reset both so a case that
-        // mutates one cannot leak into the next regardless of run order.
-        schedulerSession.discontinuityAnchorBeat = 0;
+        // #4684: the tempo map is a real (unmocked) singleton shared across
+        // every case in this file; reset it so a case that mutates it cannot
+        // leak into the next regardless of run order.
         tempoMapStore.set({ changes: [] });
     });
 
@@ -476,7 +475,7 @@ describe('applyAutomation', () => {
             expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', 0.75, 12.25);
         });
 
-        it('bounds the compensated read at the scheduler jump anchor, so a snap tick right after a discontinuity cannot read behind the landing beat', () => {
+        it('reads the backdated material behind the landing beat right after a landing, never clamped to the landing beat', () => {
             seedDeviceLane({
                 devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
                 laneParameterId: 'builtin-eq:eq-low-gain',
@@ -489,23 +488,73 @@ describe('applyAutomation', () => {
             schedulerSession.discontinuityEpoch = 199;
             applyAutomation(0);
 
-            // The scheduler just landed a discontinuity on beat 4 (a seek, loop
-            // wrap, or follow-action jump): old sources stopped, and new audio
-            // reaches the devices only after the 0.25s (0.5 beat @ 120 BPM)
-            // compensation delay. The raw compensated read (4 - 0.5 = 3.5) would
-            // land on pre-jump material that never played; the anchor bounds it
-            // at the landing beat instead.
-            schedulerSession.discontinuityAnchorBeat = 4;
+            // The scheduler just landed (play/resume, seek while playing, loop
+            // wrap, or follow-action jump) on beat 4: `scheduleAudioClips.ts`
+            // backdates a clip spanning that beat by the 0.25s (0.5 beat @ 120
+            // BPM) compensation, so the audio entering the devices right after
+            // the landing is the backdated 3.75, not the landing beat itself.
             schedulerSession.discontinuityEpoch = 200;
-            applyAutomation(4);
-            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 4);
-            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+            applyAutomation(4.25);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 3.75);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+        });
 
-            // 4.5 - 0.5 = 4.0, already at the anchor, so the bound is a no-op here.
-            schedulerSession.discontinuityEpoch = 201;
-            applyAutomation(4.5);
-            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 4);
+        it('advances past the step once the compensated read crosses it after a landing', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            schedulerSession.discontinuityEpoch = 210;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 211;
+            applyAutomation(4.25);
+
+            // 4.6 beats = 2.3s, minus the 0.25s compensation = 2.05s -> 4.1 beat
+            // (>= 4 -> post-step 1): the compensated read has now crossed the step.
+            schedulerSession.discontinuityEpoch = 212;
+            applyAutomation(4.6);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 4.1);
             expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        it('reads behind the landing beat on the landing tick itself when the playhead lands exactly on it', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            schedulerSession.discontinuityEpoch = 220;
+            applyAutomation(0);
+
+            // The landing (a jump or a fresh play/resume) puts the playhead
+            // exactly on beat 4. The audio entering the devices on this very
+            // tick is still the backdated 3.5 (4 - 0.5 beat); clamping to the
+            // landing beat would read ahead of what is actually sounding.
+            schedulerSession.discontinuityEpoch = 221;
+            applyAutomation(4);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 3.5);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+        });
+
+        it('holds the compensated read at the arrangement start when a landing falls inside the compensation window, never reading a negative beat', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            // A landing at beat 0.1 (0.05s) minus the 0.25s compensation is
+            // negative — the arrangement-start hold clamps the read to 0
+            // instead of reading before the arrangement even started.
+            schedulerSession.discontinuityEpoch = 230;
+            applyAutomation(0.1);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 0);
         });
 
         it('reads the compensated beat through the tempo map instead of a constant-tempo approximation', () => {

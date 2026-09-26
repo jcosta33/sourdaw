@@ -169,4 +169,27 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         expect(ramp?.startFrame).toBe(48_480);
         expect(ramp?.endFrame).toBe(96_480);
     });
+
+    it('shifts a lone event that sits later in the render, not only the region-start terminator (#4684)', () => {
+        // A clip-scoped lane whose active window opens at beat 2, seconds 100
+        // (identity beat mapping): the single point compiles to exactly one
+        // event, sitting at time 2s — past the region start, so it is not the
+        // zero-length region-start terminator the opening-hold gate exists
+        // for. Before the fix, a lone event was shifted only when it followed
+        // an opening hold (which needs a *later* event), so this one was never
+        // shifted at all: 2s * 100 = frame 200, not 201.
+        const identity = (beat: number): number => beat;
+        const segments = compileAutomationSegments(
+            [point(2, 9, 'step')],
+            4,
+            60,
+            [],
+            100,
+            0,
+            identity,
+            0.01,
+            { activeWindowSeconds: { startSeconds: 2, endSeconds: 4 } }
+        );
+        expect(segments).toEqual([{ startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 }]);
+    });
 });

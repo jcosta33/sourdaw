@@ -49,16 +49,6 @@ export const schedulerSession = {
     // cancellation. Loop wraps and jumps advance this without cancelling the
     // live scheduler generation; restarts/replacements advance both.
     discontinuityEpoch: 0,
-    // The beat the most recent transport discontinuity actually landed on —
-    // the scheduler's start beat, `loopStart` on a loop wrap, or
-    // `jumpToPosition` on a follow-action jump. Old sources are stopped and
-    // new audio reaches the devices only after the track's compensation
-    // delay, so a compensated read (`compensatedBeatFor`, applyAutomation.ts)
-    // must never read material from before this beat — it never played
-    // (#4684). Reset implicitly by every site that sets it; a scheduler that
-    // has not started yet reads the initial value of 0, preserving prior
-    // behaviour.
-    discontinuityAnchorBeat: 0,
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.

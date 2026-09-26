@@ -1336,6 +1336,114 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         // sorts the stream as non-clashing) but corrupts this merged output.
         expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 0, endFrame: 0, startValue: 9, endValue: 9 }]);
     });
+
+    it('shifts a lone clip lane mid-render by the compensation, landing its handover on the same frame as a neighboring clip would (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const midRenderClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 2 }],
+            ['clip-b', { startBeat: 2, endBeat: 4 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // clip-a's single point holds its value across the gap to
+                // clip-b's own opening frame — the same "terminator becomes a
+                // hold" merge Fixture D exercises above.
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                // clip-b's single point sits at beat 2 — mid-render, not the
+                // render's own region start — so before the fix its lone
+                // compiled event was never shifted by the compensation at
+                // all, landing its handover one frame early (200, not 201).
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 2, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            compensationDelaySec: 0.01,
+            clipBoundsById: midRenderClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        // 2s + 0.01s compensation = 2.01s * 100 sampleRate = frame 201, not the
+        // unshifted 200 — the device write now lands on the same delayed
+        // clock as clip-b's own compensated audio.
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([
+            { startFrame: 0, endFrame: 201, startValue: 3, endValue: 3 },
+            { startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 },
+        ]);
+    });
+
+    it('control: without a compensation delay, the same lanes hand over at the unshifted frame (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const midRenderClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 2 }],
+            ['clip-b', { startBeat: 2, endBeat: 4 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 2, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            clipBoundsById: midRenderClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([
+            { startFrame: 0, endFrame: 200, startValue: 3, endValue: 3 },
+            { startFrame: 200, endFrame: 200, startValue: 9, endValue: 9 },
+        ]);
+    });
 });
 
 describe('scheduleTrackAutomation — stepped device parameters offline', () => {

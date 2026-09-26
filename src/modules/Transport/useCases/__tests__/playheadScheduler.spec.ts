@@ -521,29 +521,6 @@ describe('playhead scheduler tick', () => {
         );
     });
 
-    it('anchors the compensated read at the start beat, then at loopStart once a real wrap lands there (#4684)', async () => {
-        // playheadPosition (5) and loopStart (3) are deliberately distinct, so a
-        // regression that stopped setting the anchor at either site could not
-        // hide behind a coincidental match with the other.
-        harness.transport_store.value = {
-            ...playingTransport,
-            playheadPosition: 5,
-            isLooping: true,
-            loopStart: 3,
-            loopEnd: 5.15,
-        };
-        startPlayheadScheduler();
-        expect(schedulerSession.discontinuityAnchorBeat).toBe(5);
-
-        harness.clock = 0.05;
-        await fireTick();
-        expect(schedulerSession.discontinuityAnchorBeat).toBe(5); // no wrap yet
-
-        harness.clock = 0.1;
-        await fireTick();
-        expect(schedulerSession.discontinuityAnchorBeat).toBe(3); // wrapped; anchored at loopStart, not the start beat
-    });
-
     it('advances a semantic discontinuity epoch on a real scheduler follow-action jump', async () => {
         startPlayheadScheduler();
         harness.clock = 0.05;
@@ -558,8 +535,6 @@ describe('playhead scheduler tick', () => {
 
         expect(afterJump?.discontinuityEpoch).toBeGreaterThan(beforeJumpEpoch ?? 0);
         expect(afterJump?.generation).toBe(beforeJump?.generation);
-        // #4684: anchored at jumpToPosition (8), not the pre-jump beat (0).
-        expect(schedulerSession.discontinuityAnchorBeat).toBe(8);
         expect(panicYeastRuntime).toHaveBeenCalledTimes(1);
         expect(vi.mocked(panicYeastRuntime).mock.invocationCallOrder[0]).toBeLessThan(
             vi.mocked(scheduleMidiNotes).mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY

@@ -262,20 +262,18 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // Before the arrangement start reads the start value — the same
             // held-value boundary `getAutomationValueAtBeat` and the offline
             // compiler (`compileAutomationEvents`) both hold at their own
-            // edges. Bounded below by the scheduler's own jump anchor
-            // (#4684): after a transport discontinuity — scheduler start,
-            // loop wrap, follow-action jump — old sources are stopped and new
-            // audio reaches the devices only after the compensation delay, so
-            // a read behind the landing beat would read material that never
-            // played. Bounded above by `currentBeat`: this clock only ever
+            // edges. Bounded above by `currentBeat`: this clock only ever
             // looks backward from the playhead.
-            beat = Math.min(
-                currentBeat,
-                Math.max(
-                    schedulerSession.discontinuityAnchorBeat,
-                    samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1)
-                )
-            );
+            //
+            // After any landing (play/resume, seek while playing, loop wrap,
+            // follow-action jump) `scheduleAudioClips.ts` backdates a clip
+            // spanning the landing beat P by the track's compensation D, so
+            // the audio entering the devices from that instant onward is
+            // P − D, advancing forward from there — never the landing beat
+            // itself. This read follows that backdated material rather than
+            // clamping to the landing beat, which would read ahead of what
+            // is actually sounding.
+            beat = Math.min(currentBeat, Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1)));
         }
         compensatedBeatByTrack.set(trackId, beat);
         return beat;

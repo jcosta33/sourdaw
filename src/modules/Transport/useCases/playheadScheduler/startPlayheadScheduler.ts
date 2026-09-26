@@ -130,10 +130,6 @@ export function startPlayheadScheduler(): void {
 
     schedulerSession.generation += 1;
     advanceSchedulerDiscontinuityEpoch();
-    // #4684: the beat this session actually starts playing from — the
-    // scheduler's own jump anchor, so a compensated device read cannot land
-    // on material before it (see `schedulerSession.discontinuityAnchorBeat`).
-    schedulerSession.discontinuityAnchorBeat = state.playheadPosition;
     const schedulerGeneration = schedulerSession.generation;
     schedulerSession.tickInFlight = false;
     const cancellation: SchedulerCancellation = {
@@ -346,9 +342,6 @@ export function startPlayheadScheduler(): void {
             const loopLength = current.loopEnd - current.loopStart;
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
             advanceSchedulerDiscontinuityEpoch();
-            // #4684: the wrap lands playback on `loopStart`, so a compensated
-            // device read must not land behind it either.
-            schedulerSession.discontinuityAnchorBeat = current.loopStart;
             rackDiscontinuity = true;
             // Anchor the next window at the seam itself, not at the wrapped
             // playhead. The wrap only fires once `newPosition >= loopEnd`, so
@@ -388,10 +381,6 @@ export function startPlayheadScheduler(): void {
         if (jumpToPosition !== null) {
             newPosition = jumpToPosition;
             advanceSchedulerDiscontinuityEpoch();
-            // #4684: the follow-action jump lands playback on
-            // `jumpToPosition`, the same anchor a compensated device read
-            // must not land behind.
-            schedulerSession.discontinuityAnchorBeat = jumpToPosition;
             rackDiscontinuity = true;
             schedulerSession.lastScheduledBeat = newPosition;
             tickStartPosition = newPosition;
