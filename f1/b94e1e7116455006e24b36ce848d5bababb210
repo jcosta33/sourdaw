@@ -1,0 +1,16 @@
+.agents/decisions/0049-single-approval-review-author-merge.md
+  h_beb54bf43b47b7 76-77,79-80
+AGENTS.md
+  h_beb54bf43b47b7 224-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f1b94e1e7116455006e24b36ce848d5bababb210",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
