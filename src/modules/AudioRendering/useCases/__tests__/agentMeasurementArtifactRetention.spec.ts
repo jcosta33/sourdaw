@@ -5,7 +5,6 @@ import { agentMeasurementArtifactStore } from '../../stores/agentMeasurementArti
 import { clearAgentMeasurementArtifacts } from '../clearAgentMeasurementArtifacts';
 import { pruneExpiredAgentMeasurementArtifacts } from '../pruneExpiredAgentMeasurementArtifacts';
 import { retainAgentMeasurementArtifacts } from '../retainAgentMeasurementArtifacts';
-import { scheduleAgentMeasurementArtifactExpiry } from '../scheduleAgentMeasurementArtifactExpiry';
 
 const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
 
@@ -92,7 +91,6 @@ describe('agent measurement artifact retention', () => {
             sourceRevision: 'rev-1',
             now,
         });
-        scheduleAgentMeasurementArtifactExpiry(now);
 
         vi.advanceTimersByTime(AGENT_MEASUREMENT_RETENTION_POLICY.maxAgeMs + 1);
 
