@@ -102,8 +102,11 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         // just filtered it out — retire its take lanes too, capturing them into
         // the shared payload array so the paired redo can put back a take that
         // landed on the right half after the split. Runs only after every
-        // conflict-prone step passed, so a conflict retires nothing.
-        if (action.payload.replacement.rightClip === undefined) {
+        // conflict-prone step passed, so a conflict retires nothing. The type is
+        // `ClipStateSnapshot | null` and `prepareClipSplit` writes `null`, so the
+        // discriminator is falsiness — `=== undefined` never fires on a real
+        // payload, which is how the first cut of this leg silently never ran.
+        if (!action.payload.replacement.rightClip) {
             const retired = removeTakesForClips([action.payload.rightClipId]);
             action.payload.retiredTakeLanes?.splice(0, action.payload.retiredTakeLanes.length, ...retired);
         } else if (action.payload.retiredTakeLanes !== undefined) {
