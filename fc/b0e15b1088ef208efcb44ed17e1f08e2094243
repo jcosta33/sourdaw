@@ -1,0 +1,37 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/selectAnthropicStrictTools.spec.ts
+  s_1c08b47ac3792f::t_817992be259d4d 1-137
+  s_1c08b47ac3792f::t_cc3fe0d77389e3 138-141
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/toolSchemaProjectionCore.ts
+  s_1c08b47ac3792f::t_8bdc06c3a6f2f5 41-55
+  s_1c08b47ac3792f::t_6f12d5b8550228 253-260
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiStrictSchemaProjection.spec.ts
+  s_1c08b47ac3792f::t_e472ade1605876 296-315
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_1c08b47ac3792f::t_cb8ed7882525ee 22
+  s_1c08b47ac3792f::t_207c890051c54e 144-149
+  s_1c08b47ac3792f::t_9a8a908a7c3201 161-167
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicStrictSchemaProjection.spec.ts
+  s_1c08b47ac3792f::t_2a7d7e426e984a 265-284
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/selectAnthropicStrictTools.ts
+  s_1c08b47ac3792f::t_49de17175f4d9b 1-109
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_1c08b47ac3792f::t_2372ea463b170f 4-8
+  s_1c08b47ac3792f::t_1512ef620694ff 544-642
+  s_1c08b47ac3792f::t_4aa639204aacde 9-11,643-645
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fcb0e15b1088ef208efcb44ed17e1f08e2094243",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
