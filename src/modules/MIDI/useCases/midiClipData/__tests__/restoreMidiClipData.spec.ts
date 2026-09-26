@@ -138,6 +138,14 @@ const INVALID_SNAPSHOT_CASES = [
         }),
     },
     {
+        label: 'expression curve point at or past duration',
+        snapshots: createSnapshots({
+            notesSnapshot: [
+                { ...createNote('note-invalid'), duration: 4, expression: { pressure: [{ offsetBeats: 9, value: 90 }] } },
+            ],
+        }),
+    },
+    {
         label: 'control-change extra key',
         snapshots: createSnapshots({ controlChangeSnapshot: [{ ...createControlChange('cc-invalid'), extra: true }] }),
     },
@@ -381,6 +389,23 @@ describe('restoreMidiClipData', () => {
 
         expect(mocks.set).not.toHaveBeenCalled();
         expect(mocks.state.value).toBe(previousState);
+    });
+
+    it('restores a note carrying a valid expression curve and reads it back unchanged', () => {
+        const noteWithCurve = {
+            ...createNote('note-with-curve'),
+            duration: 4,
+            expression: { pressure: [{ offsetBeats: 1, value: 90 }] },
+        };
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: [noteWithCurve],
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+
+        expect(requireMidiState().notesByClipId['clip-restore']).toEqual([noteWithCurve]);
     });
 
     it('rejects a non-numeric pitch bend range', () => {
