@@ -1,0 +1,36 @@
+scripts/testInstructionVocabulary.ts
+  s_ef536aab624565::t_726bd779d38e2f 424-437,439-440
+scripts/testInstructions.ts
+  s_ef536aab624565::t_94c9a70be600d3 658-659,661-666
+  s_ef536aab624565::t_9e93f05bd299ae 19,23
+  s_ef536aab624565::t_9700b8e9a6d3f9 649-650,653
+  s_ef536aab624565::t_a2e990faa29ca5 684-687,690,694-696,699
+scripts/__tests__/prContract.spec.ts
+  s_ef536aab624565::t_1ed006bfd4d703 46
+  s_ef536aab624565::t_07891f8f44b3e4 1174-1184,1187-1188,1196,1199,1205-1234
+  s_1c08b47ac3792f::t_0591e288d560aa 1235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "872eec027ce395c020161e96d3e16773144453e6",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
