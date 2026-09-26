@@ -30,7 +30,7 @@ type AppliedAutomationBases = ReadonlyMap<string, ReadonlyMap<string, number>>;
  * track this tick, indexed `trackId → beat` — the transport-owned
  * `deviceReadBeatByTrack` map, handed in read-only. Without it (existing
  * callers, or a track with no device-family lane) `indexAutomatedBases` falls
- * back to the raw playhead beat, its pre-#4684-round-3 behaviour.
+ * back to the raw playhead beat.
  */
 type DeviceReadBeatByTrack = ReadonlyMap<string, number>;
 
@@ -170,13 +170,11 @@ function indexAutomatedBases(currentBeat: number, deviceReadBeats?: DeviceReadBe
         if (lane.points.length === 0) {
             continue;
         }
-        // #4684 round 3: gate and read on the same compensated clock
-        // applyAutomation used for this track's device-family lanes, not the
-        // raw playhead — otherwise a clip-owned lane whose compensated beat
-        // had not yet crossed into the clip still contributed its
-        // playhead-beat value as modulation's base, a value applyAutomation
-        // itself never wrote this tick. Falls back to currentBeat when no map
-        // is passed (existing callers) or the track has no recorded entry.
+        // Gate and read on the same compensated clock applyAutomation used for
+        // this track's device-family lanes (#4684), not the raw playhead, so
+        // the two passes agree on the clip-owned value they both derive.
+        // Falls back to currentBeat when no map is passed (existing callers)
+        // or the track has no recorded entry.
         const readBeat = deviceReadBeats?.get(track.id) ?? currentBeat;
         if (lane.clipId && !isClipActive(track, lane.clipId, readBeat)) {
             continue;
@@ -210,8 +208,8 @@ function indexAutomatedBases(currentBeat: number, deviceReadBeats?: DeviceReadBe
  * tick — the modulation analog of `applyAutomation`'s slew reset.
  *
  * `deviceReadBeats` is the per-track compensated read beat `applyAutomation`
- * resolved for its own device-family lanes this tick (#4684 round 3); passing
- * it keeps `indexAutomatedBases`'s clip gate and curve read on the same clock
+ * resolved for its own device-family lanes this tick (#4684); passing it
+ * keeps `indexAutomatedBases`'s clip gate and curve read on the same clock
  * `applyAutomation` used, instead of the raw playhead beat every other caller
  * still gets by omitting it.
  */

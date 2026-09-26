@@ -489,10 +489,10 @@ describe('applyModulationToEngine', () => {
         });
     });
 
-    // #4684 round 3: indexAutomatedBases must gate and read a clip-owned
-    // device lane on the SAME compensated beat applyAutomation used for that
-    // track, not the raw playhead — otherwise it contributes a value
-    // applyAutomation itself never wrote this tick (or misses one it did).
+    // #4684: indexAutomatedBases must gate and read a clip-owned device lane
+    // on the SAME compensated beat applyAutomation used for that track, not
+    // the raw playhead — otherwise it contributes a value applyAutomation
+    // itself never wrote this tick (or misses one it did).
     describe('gates and reads on the compensated device read beat, not the playhead', () => {
         // amount 0 isolates the base under test: target = base + 0, so the
         // written value IS whichever base indexAutomatedBases resolved.

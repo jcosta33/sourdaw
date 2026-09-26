@@ -624,7 +624,7 @@ export function startPlayheadScheduler(): void {
         // actually holds rather than a separately recomputed raw curve value.
         // deviceReadBeatByTrack keeps indexAutomatedBases's clip gate and curve
         // read on the same compensated clock applyAutomation used for its own
-        // device-family lanes this tick (#4684 round 3).
+        // device-family lanes this tick (#4684).
         applyModulationToEngine(
             newPosition,
             schedulerSession.discontinuityEpoch,

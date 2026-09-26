@@ -499,8 +499,8 @@ describe('playhead scheduler tick', () => {
         expect(vi.mocked(stopAllScheduled).mock.calls.length).toBe(stopCallsBefore);
     });
 
-    // #4684 round 3: applyModulationToEngine's clip gate and curve read must
-    // agree with applyAutomation's own compensated device-family clock, which
+    // #4684: applyModulationToEngine's clip gate and curve read must agree
+    // with applyAutomation's own compensated device-family clock, which
     // the scheduler hands over as the real (unmocked) deviceReadBeatByTrack
     // singleton applyAutomation writes into — asserted by identity, since a
     // fresh Map with the same current contents would prove nothing about the

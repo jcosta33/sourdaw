@@ -631,8 +631,8 @@ describe('applyAutomation', () => {
         });
 
         it('records the compensated device-family read beat in deviceReadBeatByTrack, with no entry for a gain-only track', () => {
-            // #4684 round 3: this is the hand-off applyModulationToEngine reads
-            // so its own clip gate and curve read agree with this pass's clock.
+            // #4684: this is the hand-off applyModulationToEngine reads so its
+            // own clip gate and curve read agree with this pass's clock.
             mutableTrackStore.value = {
                 tracks: [
                     {

@@ -185,8 +185,8 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         expect(segments).toEqual([{ startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 }]);
     });
 
-    // #4684 round 3: a clip lane whose active window closes exactly at the
-    // region start compiles to several events that all sit at time zero (the
+    // #4684: a clip lane whose active window closes exactly at the region
+    // start compiles to several events that all sit at time zero (the
     // seed plus one or more events from the zero-width visible span in
     // compileAutomationEvents) — nothing in the stream ever gets past the
     // region start. The old `events.length > 1` gate could not tell that

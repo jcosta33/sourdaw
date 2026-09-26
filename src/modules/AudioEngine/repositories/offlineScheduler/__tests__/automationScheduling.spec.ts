@@ -1337,15 +1337,15 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 0, endFrame: 0, startValue: 9, endValue: 9 }]);
     });
 
-    // #4684 round 3: a multi-point clip lane whose visible window is
-    // zero-width at the region start compiles to SEVERAL events all sitting
-    // at time zero (the seed plus one or more events from the zero-width
-    // visible span in compileAutomationEvents) — the `events.length > 1` gate
-    // could not tell that apart from a real multi-event stream and opened a
-    // spurious `[0, D]` hold, inflating this stream's terminator frame past
-    // the neighboring clip's own opening frame. The merge then read that as a
+    // #4684: a multi-point clip lane whose visible window is zero-width at
+    // the region start compiles to SEVERAL events all sitting at time zero
+    // (the seed plus one or more events from the zero-width visible span in
+    // compileAutomationEvents) — the `events.length > 1` gate could not tell
+    // that apart from a real multi-event stream and opened a spurious
+    // `[0, D]` hold, inflating this stream's terminator frame past the
+    // neighboring clip's own opening frame. The merge then read that as a
     // genuine overlap and withheld this lane entirely, losing its value.
-    it('keeps both lanes when a multi-point clip lane compiles to several zero-time events at the region start (#4684 round 3)', () => {
+    it('keeps both lanes when a multi-point clip lane compiles to several zero-time events at the region start (#4684)', () => {
         const scheduleParam = vi.fn();
         const onWithheldDeviceLanes = vi.fn();
         const regionStartClipBounds = new Map([
@@ -1402,7 +1402,7 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
         expect(segments.at(-1)?.endValue).toBeCloseTo(0.9);
     });
 
-    it('keeps both lanes when the neighboring clip lane is itself a multi-point step stream (#4684 round 3)', () => {
+    it('keeps both lanes when the neighboring clip lane is itself a multi-point step stream (#4684)', () => {
         const scheduleParam = vi.fn();
         const onWithheldDeviceLanes = vi.fn();
         const regionStartClipBounds = new Map([

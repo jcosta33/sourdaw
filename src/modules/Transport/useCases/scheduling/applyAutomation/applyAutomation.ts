@@ -208,8 +208,8 @@ export function applyAutomation(currentBeat: number): Set<string> {
     clearAppliedAutomationBases();
     // This tick's device-family read beat per track, handed to
     // applyModulationToEngine so indexAutomatedBases gates and reads on the
-    // same compensated clock this pass does (#4684 round 3) instead of the
-    // raw playhead beat.
+    // same compensated clock this pass does (#4684) instead of the raw
+    // playhead beat.
     clearDeviceReadBeatByTrack();
     // Each device's bypass-release edge, resolved on the first lane of this
     // tick that reaches it and read by every lane after that.
@@ -381,7 +381,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // Record this track's device-family read beat before any clip gating,
         // so a lane skipped below only because the compensated beat has not
         // yet reached its clip still leaves modulation the beat to agree on
-        // (#4684 round 3) — see deviceReadBeatByTrack.ts.
+        // (#4684) — see deviceReadBeatByTrack.ts.
         if (readsCompensatedClock) {
             deviceReadBeatByTrack.set(lane.trackId, readBeat);
         }
