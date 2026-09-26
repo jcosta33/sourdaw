@@ -1,5 +1,6 @@
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
 
+import { type NativeModAssignmentRow } from '../models/AudioGraphBackend';
 import { type NativeSampleBankLease } from '../models/NativeSampleBank';
 
 import { type BacteriaMeterData } from './BacteriaNode';
@@ -145,6 +146,22 @@ export type AudioDeviceRuntimeSink = {
         deviceState: DeviceStateChunk | undefined;
     }) => Readonly<Record<string, number>> | null;
     /**
+     * A bacteria device's whole modulation-assignment table, mapped onto the
+     * engine's own numeric grammar, or `null` for a type with no such table
+     * or a chunk this cannot read.
+     *
+     * `Device.deviceState` never crosses the wire to the native engine
+     * (`serializeAudioGraphCommand.ts` drops it), and only the owning module
+     * can decode a bacteria device's chunk — the same reason
+     * `projectNativeDeviceState` exists, answered from the same composition
+     * root. `projectDeviceForNativeBody` calls this, pure and synchronous, to
+     * fold the table into the device the native body actually receives.
+     */
+    nativeModAssignments: (input: {
+        deviceType: string;
+        deviceState: DeviceStateChunk | undefined;
+    }) => readonly NativeModAssignmentRow[] | null;
+    /**
      * The native sample bank a device sounds, as the bank store keys it, or
      * `null` when the type sounds no bank.
      *
@@ -227,6 +244,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateNativeTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
     projectNativeDeviceState: () => null,
+    nativeModAssignments: () => null,
     nativeSampleBankKey: () => null,
     nativeBuiltinParameterName: () => null,
     acquireNativeSampleBank: () => Promise.resolve(null),

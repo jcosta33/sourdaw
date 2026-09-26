@@ -1,3 +1,4 @@
+import { extractBacteriaModAssignments } from '../../engine/BacteriaNode';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { sendNativeDeviceParameters } from '../livePlayback/sendNativeDeviceParameters';
 
@@ -20,11 +21,25 @@ import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
  * `FERMENTER_DSP_PARAM_OVERRIDES` is keyed by camelCase descriptor id, so a
  * snake_case name misses it, and the fallback only rewrites capitals, of which
  * a snake_case name has none.
+ *
+ * A Bacteria patch's `modAssignments` rides the same native batch as its
+ * parameter records (#4685 slice 2), through `extractBacteriaModAssignments`
+ * — the same reader the Web Audio worklet's own patch door uses, so the two
+ * carriers agree on what counts as a well-formed table without a second
+ * validator. An absent or malformed table appends no mod command and leaves
+ * the native engine's routing untouched; an empty array is sent and clears it.
  */
 export function updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void {
     audioEngine.updateDevicePatch(trackId, deviceId, patch);
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
-    if (body) {
-        void sendNativeDeviceParameters({ trackId, deviceId, values: body.projectPatch(patch) });
+    if (!body) {
+        return;
     }
+    const values = body.projectPatch(patch);
+    const modAssignments = extractBacteriaModAssignments(patch);
+    if (modAssignments === null) {
+        void sendNativeDeviceParameters({ trackId, deviceId, values });
+        return;
+    }
+    void sendNativeDeviceParameters({ trackId, deviceId, values, modAssignments });
 }

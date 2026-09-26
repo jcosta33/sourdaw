@@ -71,6 +71,10 @@ type RuntimeSinkUnderTest = {
         deviceType: string;
         deviceState: { version: number; data: Record<string, unknown> } | undefined;
     }) => string | null;
+    nativeModAssignments: (input: {
+        deviceType: string;
+        deviceState: { version: number; data: Record<string, unknown> } | undefined;
+    }) => readonly { sourceId: number; targetParam: number; amount: number }[] | null;
     acquireNativeSampleBank: (bankKey: string) => Promise<unknown>;
     nativeBuiltinParameterName: (input: { deviceType: string; paramId: string }) => string | null;
     updateTunerTelemetry: (deviceId: string, telemetry: TunerReadingUnderTest) => void;
@@ -1124,6 +1128,28 @@ describe('bootstrap', () => {
             expect(nativeBankKeyForLevainDeviceStateMock).toHaveBeenCalledWith({ deviceState: chunk });
             expect(getSink().nativeSampleBankKey({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
             expect(getSink().nativeSampleBankKey({ deviceType: 'builtin-eq', deviceState: chunk })).toBeNull();
+        });
+
+        /**
+         * The modulation-routing mirror of the bank door above: Bacteria is
+         * the one native body whose `deviceState` carries a variable-length
+         * table rather than a fixed `parameterValues` vocabulary, so an
+         * unwired row leaves a natively carried Bacteria instance playing with
+         * no routing at all while the Web Audio twin still hears the project's
+         * table.
+         */
+        it('maps a bacteria device’s routing table onto the engine’s own grammar, and nothing for a body with no such door', () => {
+            const chunk = {
+                version: 1,
+                data: {
+                    modAssignments: [{ sourceId: 'lfo1', targetParam: 'mix', amount: 0.5, bipolar: false }],
+                },
+            };
+
+            expect(getSink().nativeModAssignments({ deviceType: 'bacteria', deviceState: chunk })).toEqual([
+                { sourceId: 0, targetParam: 0, amount: 0.5 },
+            ]);
+            expect(getSink().nativeModAssignments({ deviceType: 'toaster', deviceState: chunk })).toBeNull();
         });
 
         /**
