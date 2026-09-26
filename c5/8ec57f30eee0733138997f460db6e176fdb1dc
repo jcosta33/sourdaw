@@ -1,0 +1,26 @@
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_2bfd55a4393d7c::t_8093d7c444ac65 212-213,216
+  s_2bfd55a4393d7c::t_38440bbc06394b 254
+  s_2bfd55a4393d7c::t_2ab524779c9a29 10-17
+  s_2bfd55a4393d7c::t_2e6dc2cd94a1cd 231
+  s_2bfd55a4393d7c::t_0caaf7ef284034 243-253,255-280
+  s_2bfd55a4393d7c::t_338af109f2641a 39
+  s_2bfd55a4393d7c::t_98214a9cff4f2d 4
+  s_2bfd55a4393d7c::t_508072c23e0e5c 134,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c58ec57f30eee0733138997f460db6e176fdb1dc",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
