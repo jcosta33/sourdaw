@@ -73,6 +73,18 @@ describe('countReviewerRequestChangesRounds', () => {
     it('returns zero when no reviewer round requested changes', () => {
         expect(countReviewerRequestChangesRounds(reconstruction([reviewerReview(1, HEAD, 'APPROVED')]))).toBe(0);
     });
+
+    it('counts one review once when the history returns it twice', () => {
+        const reviews: PublicReview[] = [
+            reviewerReview(14, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(13, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(12, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(11, HEAD, 'CHANGES_REQUESTED'),
+            reviewerReview(11, HEAD, 'CHANGES_REQUESTED'),
+        ];
+
+        expect(countReviewerRequestChangesRounds(reconstruction(reviews))).toBe(4);
+    });
 });
 
 describe('parseReviewReassessment', () => {

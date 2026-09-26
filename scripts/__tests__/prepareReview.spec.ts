@@ -21,7 +21,7 @@ import {
 import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
-import { REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
+import { REVIEW_ROUND_ESCALATION_THRESHOLD, REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 const SEMANTIC_CI_TEXT = '{"state":"no-assessment","reason":"absent"}';
 
@@ -202,6 +202,30 @@ describe('review prepare', () => {
             expect(logs).toContain(
                 `review-round-escalation:42:write ${join(destination, 'reassessment.json')} before the next publication`
             );
+        } finally {
+            removeTempRoot(root);
+        }
+    });
+
+    it.each([
+        [REVIEW_ROUND_FREEZE_THRESHOLD - 1, 'review-round-freeze-warning', true],
+        [REVIEW_ROUND_FREEZE_THRESHOLD, 'review-round-freeze', false],
+    ])('logs %s rounds with the freeze signal', (rounds, flag, directsReassessment) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port, logs } = fakePort(root);
+        port.reviews = () =>
+            Array.from({ length: rounds }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: 'headsha',
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            }));
+        port.reviewComments = () => [];
+        try {
+            prepareReview(42, port);
+            expect(logs).toContain(`${flag}:42:request-changes=${rounds}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`);
+            expect(logs.some((line) => line.includes('before the next publication'))).toBe(directsReassessment);
         } finally {
             removeTempRoot(root);
         }

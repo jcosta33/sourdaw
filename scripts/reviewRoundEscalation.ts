@@ -126,10 +126,19 @@ export function parseReviewReassessment(value: unknown): ReviewReassessment {
     };
 }
 
-/** The reviewer `REQUEST_CHANGES` rounds in a reconstruction — rounds, never findings. */
+/**
+ * The reviewer `REQUEST_CHANGES` rounds in a reconstruction — rounds, never findings. A round is its
+ * review, so the same review appearing twice, as a paginated read can return it, counts once: the
+ * freeze is absolute, and an inflated count would freeze a pull request that has not taken the rounds.
+ */
 export function countReviewerRequestChangesRounds(reconstruction: ReviewReconstruction): number {
-    return reconstruction.rounds.filter((round) => round.role === 'reviewer' && round.verdict === 'changes-requested')
-        .length;
+    const reviews = new Set<number>();
+    for (const round of reconstruction.rounds) {
+        if (round.role === 'reviewer' && round.verdict === 'changes-requested') {
+            reviews.add(round.reviewId);
+        }
+    }
+    return reviews.size;
 }
 
 export type ReviewReassessmentFile = { present: true; value: unknown } | { present: false };
