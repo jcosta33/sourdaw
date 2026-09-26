@@ -9,6 +9,7 @@ import {
 } from './sampleManifest';
 
 import type { SampleLodConfig } from './helpers';
+import type { MicPositionType } from '../../models/LevainPatch';
 
 export type DecodedSample = {
     data: Float32Array<SharedArrayBuffer>;
@@ -37,6 +38,8 @@ export type DecodedBank = {
     legatoTransitions: readonly ManifestLegatoTransition[];
     numArticulations: number;
     numMics: number;
+    /** The loaded bank's mic position names, sliced to `numMics` (after the load's `maxMics` cap). */
+    micPositions: readonly MicPositionType[];
     decodedByteLength: number;
 };
 
@@ -521,6 +524,7 @@ export function createDecodedBankResource({
         if (input.lod.maxMics > 0) {
             numMics = Math.min(numMics, input.lod.maxMics);
         }
+        const micPositions = manifest.micPositions.slice(0, numMics);
         if (zones.length === 0) {
             throw new TypeError(`Levain manifest ${manifest.instrumentId}@${manifest.version} has no playable zones`);
         }
@@ -590,6 +594,7 @@ export function createDecodedBankResource({
             legatoTransitions: manifest.legatoTransitions,
             numArticulations,
             numMics,
+            micPositions: Object.freeze(micPositions),
             decodedByteLength: entry.decodedBytes,
         });
     }

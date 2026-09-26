@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi, type Mock } from 'vite
 
 import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
-import { createDefaultPatch } from '../../../models/LevainPatch';
+import { createDefaultPatch, type MicPositionType } from '../../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../../stores/levainStore';
 import { projectLevainPatchToEngineParameters } from '../../projectLevainPatchToEngineParameters';
 import { createLevainBridge, type LevainDevice } from '../helpers';
@@ -11,10 +11,15 @@ import { createLevainBridge, type LevainDevice } from '../helpers';
 // createLevainBridge — engine forwarding behaviour
 // ---------------------------------------------------------------------------
 
-type AutoLoad = (deviceId: string, port: MessagePort, instrumentId: string, signal?: AbortSignal) => Promise<void>;
+type AutoLoad = (
+    deviceId: string,
+    port: MessagePort,
+    instrumentId: string,
+    signal?: AbortSignal
+) => Promise<readonly MicPositionType[] | null>;
 
 function makeDeps(
-    autoLoad: AutoLoad = vi.fn(() => Promise.resolve()),
+    autoLoad: AutoLoad = vi.fn(() => Promise.resolve(null)),
     initialResolutionStatus: DeviceWriteTargetResolution['status'] = 'eligible'
 ) {
     let resolutionStatus = initialResolutionStatus;
@@ -25,6 +30,7 @@ function makeDeps(
             vi.fn<(trackId: string, deviceId: string, values: Record<string, number>) => void>(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
+        setLoadedMicPositions: vi.fn<(deviceId: string, positions: readonly MicPositionType[] | null) => void>(),
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => {
             if (resolutionStatus !== 'eligible') {
                 return { status: resolutionStatus };
@@ -50,9 +56,15 @@ function makeDevice(): MockedLevainDevice {
     };
 }
 
-function seedDevice(deviceId: string): void {
+// Defaults to the default patch's own three-mic order so every existing test
+// that doesn't care about Space/room resolution keeps resolving room to index
+// 2 unchanged; only the Space-macro tests below override this explicitly.
+function seedDevice(
+    deviceId: string,
+    loadedMicPositions: readonly MicPositionType[] | null = ['close', 'decca-tree', 'room']
+): void {
     levainStore.set({
-        [deviceId]: { ...defaultLevainState, patch: createDefaultPatch('violin-1') },
+        [deviceId]: { ...defaultLevainState, patch: createDefaultPatch('violin-1'), loadedMicPositions },
     });
 }
 
@@ -112,7 +124,7 @@ describe('createLevainBridge', () => {
                     if (signal) {
                         signals.push(signal);
                     }
-                    return new Promise<void>(() => {
+                    return new Promise<readonly MicPositionType[] | null>(() => {
                         // Intentionally remains pending so cancellation is observable.
                     });
                 });
@@ -189,7 +201,7 @@ describe('createLevainBridge', () => {
                     if (signal) {
                         signals.push(signal);
                     }
-                    return new Promise<void>(() => {
+                    return new Promise<readonly MicPositionType[] | null>(() => {
                         // Intentionally remains pending so unregister must abort it.
                     });
                 });
@@ -220,7 +232,7 @@ describe('createLevainBridge', () => {
             let engineCallsWhenLoading: Parameters<LevainDevice['setParam']>[] = [];
             const deps = makeDeps(() => {
                 engineCallsWhenLoading = [...device.setParam.mock.calls];
-                return Promise.resolve();
+                return Promise.resolve(null);
             });
             const bridge = createLevainBridge(deps);
             const patch = createDefaultPatch('violin-1');
@@ -236,8 +248,8 @@ describe('createLevainBridge', () => {
         });
     });
 
-    describe('fix 5 — Space macro drives the room mic (index 2)', () => {
-        it('writes mic_2_volume, not mic_1_volume, for the Space macro', () => {
+    describe('fix 5 — Space macro resolves close/room by loaded position type, never a fixed index', () => {
+        it('writes mic_2_volume, not mic_1_volume, when the loaded bank keeps room at index 2', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
@@ -250,6 +262,51 @@ describe('createLevainBridge', () => {
 
             expect(device.setParam).toHaveBeenCalledWith('mic_2_volume', 0.7);
             expect(device.setParam).not.toHaveBeenCalledWith('mic_1_volume', expect.any(Number));
+        });
+
+        it('writes mic_0_volume and mic_1_volume when the loaded bank omits decca-tree', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', ['close', 'room']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            expect(device.setParam).toHaveBeenCalledWith('mic_0_volume', expect.any(Number));
+            expect(device.setParam).toHaveBeenCalledWith('mic_1_volume', 0.6);
+            expect(device.setParam).not.toHaveBeenCalledWith('mic_2_volume', expect.any(Number));
+        });
+
+        it('writes Close on mic_1_volume and Room on mic_0_volume when the loaded bank orders room first', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', ['room', 'close']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            // Room sits at index 0 here, Close at index 1 — the reverse of the
+            // decca-tree-omitted case above — so each type's volume must still
+            // follow its own loaded index, not the fixed index that case used.
+            expect(device.setParam).toHaveBeenCalledWith('mic_1_volume', 0.7);
+            expect(device.setParam).toHaveBeenCalledWith('mic_0_volume', 0.6);
+        });
+
+        it('writes no mic parameter when the loaded bank carries no room mic', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', ['close']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            expect(device.setParam).not.toHaveBeenCalledWith(expect.stringMatching(/^mic_/), expect.any(Number));
         });
     });
 
@@ -334,9 +391,9 @@ describe('createLevainBridge', () => {
                 _port: MessagePort,
                 _instrumentId: string,
                 signal?: AbortSignal
-            ): Promise<void> {
+            ): Promise<readonly MicPositionType[] | null> {
                 signals.push(signal);
-                return new Promise<void>(() => {
+                return new Promise<readonly MicPositionType[] | null>(() => {
                     // never resolves — simulates a long-running load
                 });
             }
@@ -362,9 +419,9 @@ describe('createLevainBridge', () => {
                 _port: MessagePort,
                 _instrumentId: string,
                 signal?: AbortSignal
-            ): Promise<void> {
+            ): Promise<readonly MicPositionType[] | null> {
                 signals.push(signal);
-                return new Promise<void>(() => {});
+                return new Promise<readonly MicPositionType[] | null>(() => {});
             }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
@@ -376,9 +433,9 @@ describe('createLevainBridge', () => {
         });
 
         it('settles registration from the successor when its initial bank load is superseded', async () => {
-            const loads: PromiseWithResolvers<void>[] = [];
+            const loads: PromiseWithResolvers<readonly MicPositionType[] | null>[] = [];
             const deps = makeDeps(() => {
-                const load = Promise.withResolvers<void>();
+                const load = Promise.withResolvers<readonly MicPositionType[] | null>();
                 loads.push(load);
                 return load.promise;
             });
@@ -386,10 +443,219 @@ describe('createLevainBridge', () => {
             const registration = bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
 
             const replacement = bridge.loadSamplesForInstrument('d1', 'cello');
-            loads[1]?.resolve();
+            loads[1]?.resolve(null);
 
             await expect(registration).resolves.toBe('ready');
             await expect(replacement).resolves.toBe('ready');
+        });
+    });
+
+    describe('loadedMicPositions — only loadSamplesForInstrument (the live route) writes it', () => {
+        it('clears loadedMicPositions before invoking autoLoadLevainSamples', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+            deps.autoLoadLevainSamples.mockClear();
+
+            void bridge.loadSamplesForInstrument('d1', 'cello');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', null);
+            expect(deps.autoLoadLevainSamples).toHaveBeenCalledTimes(1);
+            const clearOrder = deps.setLoadedMicPositions.mock.invocationCallOrder[0];
+            const loadOrder = deps.autoLoadLevainSamples.mock.invocationCallOrder[0];
+            expect(clearOrder).toBeLessThan(loadOrder as number);
+        });
+
+        it('sets loadedMicPositions to the resolved bank names on a successful load', async () => {
+            const deps = makeDeps(() => Promise.resolve(['close', 'room']));
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            await bridge.loadSamplesForInstrument('d1', 'cello');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledWith('d1', ['close', 'room']);
+        });
+
+        it('restores the previously committed names when a live load rejects', async () => {
+            // 'close' is committed through an actual successful load (rather
+            // than seeded directly into the store) so the bridge's own
+            // committed-bank record — not the store's transient
+            // `loadedMicPositions` — is what the rejection below restores from.
+            const deps = makeDeps((_deviceId, _port, instrumentId) =>
+                instrumentId === 'violin-1' ? Promise.resolve(['close']) : Promise.reject(new Error('boom'))
+            );
+            const bridge = createLevainBridge(deps);
+            seedDevice('d1');
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            await bridge.loadSamplesForInstrument('d1', 'cello');
+
+            // Null during the load, then restored to the bank the engine kept
+            // sounding once the rejection settles.
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(1, 'd1', null);
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(2, 'd1', ['close']);
+        });
+
+        it('stays null when no bank was committed and the load rejects', async () => {
+            const deps = makeDeps(() => Promise.reject(new Error('boom')));
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            await bridge.loadSamplesForInstrument('d1', 'cello');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenCalledTimes(2);
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(1, 'd1', null);
+            expect(deps.setLoadedMicPositions).toHaveBeenNthCalledWith(2, 'd1', null);
+        });
+
+        it('writes nothing for a rejected load already superseded by another', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            seedDevice('d1', ['close']);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // B (the successor) settles; A rejects afterward but its controller
+            // was already aborted when B started, so it must not restore over
+            // B's outcome.
+            second.resolve(['room']);
+            first.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['room']);
+            expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['close']);
+        });
+
+        it('keeps the successor’s names when a load superseded before it resolves settles later, surviving a later rejection too', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            // Keyed by instrument id rather than call order, so registration's
+            // own initial load (a different instrument id) doesn't consume
+            // either resolver meant for the two explicit calls below.
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps((_deviceId, _port, instrumentId) => {
+                if (instrumentId === 'flute') {
+                    return Promise.reject(new Error('boom'));
+                }
+                return responsesByInstrument.get(instrumentId) ?? Promise.resolve(null);
+            });
+            const bridge = createLevainBridge(deps);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // B (the successor) settles first; A settles afterward but its
+            // controller was already aborted when B started.
+            second.resolve(['close']);
+            first.resolve(['room']);
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
+            expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['room']);
+
+            // A's late resolution must not have corrupted the bridge's
+            // committed-bank record with its own (earlier-started, later
+            // arriving) names: a further load that rejects has to restore
+            // B's bank, not A's, proving the record itself still holds
+            // B's commit rather than only the transient store write above.
+            await bridge.loadSamplesForInstrument('d1', 'flute');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
+        });
+
+        it('restores the last committed bank when the load that supersedes an uncommitted resolution rejects', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['violin-1', Promise.resolve(['close'])],
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // A (superseded by B) resolves null — it never proved a
+            // commitment, so it must not erase what registration already
+            // committed. B (the current load) rejects afterward and must
+            // restore that still-standing commitment, not A's null.
+            first.resolve(null);
+            second.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
+        });
+
+        it('records a superseded load’s committed bank so a later rejection can restore it', async () => {
+            const first = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const second = Promise.withResolvers<readonly MicPositionType[] | null>();
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
+                ['violin-1', Promise.resolve(['close'])],
+                ['cello', first.promise],
+                ['viola', second.promise],
+            ]);
+            const deps = makeDeps(
+                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
+            );
+            const bridge = createLevainBridge(deps);
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            deps.setLoadedMicPositions.mockClear();
+
+            const loadA = bridge.loadSamplesForInstrument('d1', 'cello');
+            const loadB = bridge.loadSamplesForInstrument('d1', 'viola');
+
+            // A's worklet handshake commits its bank after B already
+            // superseded (aborted) it. The commitment already happened in the
+            // engine, so it must still update the record B's own later
+            // rejection restores from.
+            first.resolve(['close', 'room']);
+            second.reject(new Error('boom'));
+            await Promise.all([loadA, loadB]);
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close', 'room']);
+        });
+
+        it('starts a fresh committed record after unregister, so a rejecting first load after re-register restores null', async () => {
+            const deps = makeDeps((_deviceId, _port, instrumentId) =>
+                instrumentId === 'violin-1' ? Promise.resolve(['close']) : Promise.reject(new Error('boom'))
+            );
+            const bridge = createLevainBridge(deps);
+            seedDevice('d1');
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            bridge.unregisterLevainDevice('d1');
+            levainStore.set({ d1: { ...defaultLevainState, patch: createDefaultPatch('cello') } });
+            await bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            // Without clearing the committed record on unregister, this would
+            // restore the pre-unregister 'close' bank instead of null.
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', null);
         });
     });
 

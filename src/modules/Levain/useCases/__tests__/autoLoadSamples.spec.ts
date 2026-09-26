@@ -97,6 +97,37 @@ describe('autoLoadLevainSamples', () => {
         });
     });
 
+    describe('return value — the live route (loadSamplesForInstrument) owns loadedMicPositions, not this loader', () => {
+        // The offline render route (prepareOfflineLevain) drives this same
+        // function with the live device's id and an offline render node's
+        // port; a store write here would let an export or freeze clear or
+        // overwrite the live panel's rows. This function reports the outcome
+        // only through its return value — the mocked store module above
+        // exposes no `setLoadedMicPositions` at all, so any regression that
+        // tried to call one would throw here rather than silently pass.
+        it('returns the bank names on a successful load', async () => {
+            vi.mocked(loadInstrumentFromManifest).mockResolvedValueOnce({
+                micPositions: ['close', 'room'],
+            } as unknown as Awaited<ReturnType<typeof loadInstrumentFromManifest>>);
+
+            const result = await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            expect(result).toEqual(['close', 'room']);
+        });
+
+        it('returns null when the loader resolves no bank', async () => {
+            const result = await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            expect(result).toBeNull();
+        });
+
+        it('rejects instead of returning when the load fails', async () => {
+            vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('boom'));
+
+            await expect(autoLoadLevainSamples('d1', {} as MessagePort, 'cello')).rejects.toThrow('boom');
+        });
+    });
+
     describe('fix 2 — a superseded (aborted) load bails without owning the UI', () => {
         it('does not start the loader when already aborted', async () => {
             const controller = new AbortController();
@@ -112,11 +143,32 @@ describe('autoLoadLevainSamples', () => {
             const controller = new AbortController();
             vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
                 controller.abort();
-                return Promise.resolve();
+                return Promise.resolve(undefined);
             });
 
             await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);
 
+            expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
+        });
+
+        it('returns the committed bank names when the signal aborts after the loader resolves a bank', async () => {
+            // `loadInstrumentFromManifest` only resolves a bank once the
+            // worklet's `sampleBankLoaded` handshake message settles — the
+            // engine already committed it, so a later abort cannot un-commit
+            // it. The caller (`loadSamplesForInstrument`) needs these names to
+            // restore them if the load that superseded this one goes on to
+            // fail.
+            const controller = new AbortController();
+            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
+                controller.abort();
+                return Promise.resolve({
+                    micPositions: ['close', 'room'],
+                } as unknown as Awaited<ReturnType<typeof loadInstrumentFromManifest>>);
+            });
+
+            const result = await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);
+
+            expect(result).toEqual(['close', 'room']);
             expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
         });
 

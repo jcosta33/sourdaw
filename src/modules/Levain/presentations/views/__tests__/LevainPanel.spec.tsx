@@ -1,12 +1,51 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { sendMicParamToEngine } from '../../../useCases/levainParamBridge/sendMicParamToEngine';
 import { LevainPanel } from '../LevainPanel';
 
 // Mutable state the mocked store returns, keyed by deviceId. Tests tweak it
 // before rendering. LevainPanel reads an instances map keyed by deviceId.
 type PanelState = Record<string, unknown>;
 let panelState: PanelState;
+
+// Per-index mic state the patch persists. The Stage card labels and truncates
+// this from `loadedMicPositions`; the underlying entry's own `type` here is
+// irrelevant to what renders — only its index and volume/pan/enabled survive.
+function basePatchMicPositions(): unknown[] {
+    return [
+        {
+            type: 'close',
+            name: 'Close',
+            volume: 0.8,
+            pan: 0,
+            delayMs: 0,
+            enabled: true,
+            stereoWidth: 1,
+            phaseInvert: false,
+        },
+        {
+            type: 'decca-tree',
+            name: 'Decca Tree',
+            volume: 0.6,
+            pan: 0,
+            delayMs: 0,
+            enabled: true,
+            stereoWidth: 1,
+            phaseInvert: false,
+        },
+        {
+            type: 'room',
+            name: 'Room',
+            volume: 0.3,
+            pan: 0,
+            delayMs: 0,
+            enabled: false,
+            stereoWidth: 1,
+            phaseInvert: false,
+        },
+    ];
+}
 
 function baseState(): PanelState {
     return {
@@ -18,7 +57,7 @@ function baseState(): PanelState {
             expression: {},
             legato: { enabled: false },
             humanize: { amount: 0 },
-            micPositions: [],
+            micPositions: basePatchMicPositions(),
             macros: [],
             macroLabels: [],
             masterGain: 0.8,
@@ -32,6 +71,7 @@ function baseState(): PanelState {
         peakL: 0,
         peakR: 0,
         currentArticulationDisplay: 'Long',
+        loadedMicPositions: null,
     };
 }
 
@@ -145,8 +185,28 @@ vi.mock('../../components/LevainMacroStrip', () => ({
     LevainMacroStrip: () => <div data-testid="macro-strip">Macro Strip</div>,
 }));
 
-vi.mock('../../components/MicBlendSlider', () => ({
-    MicBlendSlider: () => <div data-testid="mic-blend-slider">Mic Blend Slider</div>,
+// MicBlendSlider itself is NOT mocked here: the acceptance behaviour under
+// test — which mic rows render, their labels, and which index a change
+// writes to — lives inside that component, driven by the `micPositions`
+// array LevainPanel computes from `loadedMicPositions`.
+vi.mock('#/components/daw/DawPluginToggle', () => ({
+    DawPluginToggle: ({ children, onClick, pressed }: any) => (
+        <button type="button" data-testid="mic-toggle" data-pressed={pressed} onClick={onClick}>
+            {children}
+        </button>
+    ),
+}));
+
+vi.mock('#/components/daw/Fader', () => ({
+    Fader: ({ value, onChange, ...rest }: any) => (
+        <input
+            type="range"
+            data-testid="fader"
+            aria-label={rest['aria-label']}
+            value={value}
+            onChange={(e: any) => onChange(Number(e.target.value))}
+        />
+    ),
 }));
 
 describe('LevainPanel', () => {
@@ -246,6 +306,63 @@ describe('LevainPanel', () => {
             const loadTile = tiles.find((t) => t.textContent?.includes('Load'));
             expect(loadTile?.textContent).toContain('Error');
             expect(loadTile?.textContent).toContain('Failed to fetch manifest');
+        });
+    });
+
+    describe('Stage card shows only the microphone positions the loaded bank carries', () => {
+        it('renders exactly one row, labelled Close, with a "1 mic" readout, for a single-mic bank', () => {
+            panelState = { ...baseState(), loadedMicPositions: ['close'] };
+            render(<LevainPanel deviceId="test-device" />);
+
+            expect(screen.getAllByTestId('fader')).toHaveLength(1);
+            expect(screen.getByText('Close')).toBeInTheDocument();
+            expect(screen.queryByText('Decca Tree')).not.toBeInTheDocument();
+            expect(screen.queryByText('Room')).not.toBeInTheDocument();
+            const rows = screen.getAllByTestId('readout-row');
+            const spaceRow = rows.find((row) => row.textContent?.includes('Space'));
+            // Exact match: "1 mic" and "1 mics" (an always-plural readout)
+            // must not both satisfy this assertion.
+            expect(within(spaceRow as HTMLElement).getByText('1 mic', { exact: true })).toBeInTheDocument();
+        });
+
+        it('renders three rows in bank order with a "3 mics" readout, for a three-mic bank', () => {
+            panelState = { ...baseState(), loadedMicPositions: ['close', 'decca-tree', 'room'] };
+            render(<LevainPanel deviceId="test-device" />);
+
+            expect(screen.getAllByTestId('fader')).toHaveLength(3);
+            expect(screen.getByText('Close')).toBeInTheDocument();
+            expect(screen.getByText('Decca Tree')).toBeInTheDocument();
+            expect(screen.getByText('Room')).toBeInTheDocument();
+            const rows = screen.getAllByTestId('readout-row');
+            const spaceRow = rows.find((row) => row.textContent?.includes('Space'));
+            expect(spaceRow?.textContent).toContain('3 mics');
+        });
+
+        it('labels row 0 Room and row 1 Close, and sends mic_1_volume when row 1 changes', () => {
+            panelState = { ...baseState(), loadedMicPositions: ['room', 'close'] };
+            render(<LevainPanel deviceId="test-device" />);
+
+            const faders = screen.getAllByTestId('fader');
+            expect(faders).toHaveLength(2);
+            expect(faders[0]).toHaveAttribute('aria-label', 'Room level');
+            expect(faders[1]).toHaveAttribute('aria-label', 'Close level');
+
+            fireEvent.change(faders[1]!, { target: { value: '6' } });
+
+            expect(sendMicParamToEngine).toHaveBeenCalledWith('test-device', 1, 'volume', expect.any(Number));
+        });
+
+        it('renders no mic rows while no bank is committed', () => {
+            panelState = { ...baseState(), loadedMicPositions: null };
+            render(<LevainPanel deviceId="test-device" />);
+
+            expect(screen.queryAllByTestId('fader')).toHaveLength(0);
+            expect(screen.getByText('Stage')).toBeInTheDocument();
+            const rows = screen.getAllByTestId('readout-row');
+            const spaceRow = rows.find((row) => row.textContent?.includes('Space'));
+            // Exact match: guards against a stale "3 mics" (or any other
+            // count) surviving a rewrite of the no-bank fallback text.
+            expect(within(spaceRow as HTMLElement).getByText('0 mics', { exact: true })).toBeInTheDocument();
         });
     });
 

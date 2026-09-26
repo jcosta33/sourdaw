@@ -15,6 +15,7 @@ import {
     type LevainPatch,
     type ArticulationType,
     type MicPositionState,
+    type MicPositionType,
     createDefaultPatch,
 } from '../models/LevainPatch';
 
@@ -35,6 +36,14 @@ export type LevainState = {
     peakL: number;
     peakR: number;
     currentArticulationDisplay: string;
+    /**
+     * The loaded bank's mic position names, in engine-index order. Null means
+     * no bank is committed yet or committed to no mics — never "failed": a
+     * rejected replacement load restores the previously committed bank's
+     * names here, because the engine keeps sounding that bank rather than
+     * silencing it. The Stage card renders no mic rows only while null.
+     */
+    loadedMicPositions: readonly MicPositionType[] | null;
 };
 
 export const defaultLevainState: LevainState = {
@@ -47,6 +56,7 @@ export const defaultLevainState: LevainState = {
     peakL: 0,
     peakR: 0,
     currentArticulationDisplay: 'Long',
+    loadedMicPositions: null,
 };
 
 type LevainInstances = Record<string, LevainState>;
@@ -171,6 +181,26 @@ export function updateMicPosition(deviceId: string, index: number, updates: Part
             },
         });
     }
+}
+
+/**
+ * Record the mic positions the currently-loaded bank carries, keyed by engine
+ * index. Cleared to null when a new load starts, so the panel never shows a
+ * stale bank's controls while a different one is loading. `levainParamBridge`
+ * keeps its own record of the bank the engine last actually committed,
+ * independent of this field: on a successful load this is set to the loaded
+ * names, and on a failed load it is set to that committed record (or null
+ * when nothing was ever committed) rather than cleared, because the engine
+ * keeps sounding whatever bank it last committed regardless of how the
+ * replacement failed.
+ */
+export function setLoadedMicPositions(deviceId: string, positions: readonly MicPositionType[] | null): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
+    levainStore.set({ ...instances, [deviceId]: { ...state, loadedMicPositions: positions } });
 }
 
 export function setEngineReady(deviceId: string, ready: boolean): void {

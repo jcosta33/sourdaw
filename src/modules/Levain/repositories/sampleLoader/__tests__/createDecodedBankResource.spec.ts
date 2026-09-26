@@ -8,7 +8,7 @@ import {
     type LoadDecodedBankInput,
 } from '../createDecodedBankResource';
 
-import type { InstrumentId } from '../../../models/LevainPatch';
+import type { InstrumentId, MicPositionType } from '../../../models/LevainPatch';
 import type { SampleManifest } from '../sampleManifest';
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -78,16 +78,18 @@ function createManifest({
     articulationId = 0,
     files,
     instrumentId = 'violin-1',
+    micPositions = ['close'],
 }: {
     articulationId?: number;
     files: string[];
     instrumentId?: InstrumentId;
+    micPositions?: readonly MicPositionType[];
 }): SampleManifest {
     return {
         version: 1,
         instrumentId,
         sampleRate: 48_000,
-        micPositions: ['close'],
+        micPositions,
         articulations: [
             {
                 type: 'sustain',
@@ -157,6 +159,36 @@ describe('createDecodedBankResource', () => {
             sampleLoads: 1,
             resolvedBanks: 1,
         });
+    });
+
+    it("slices the loaded mic position names to the load's maxMics cap", async () => {
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi
+                .fn()
+                .mockResolvedValue(createManifest({ files: ['a.wav'], micPositions: ['close', 'room'] })),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const bank = await loadBank(resource, { ...DEFAULT_INPUT, lod: { maxMics: 1, maxRoundRobins: 0 } });
+
+        expect(bank.micPositions).toEqual(['close']);
+    });
+
+    it('carries every loaded mic position name when the load is uncapped', async () => {
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi
+                .fn()
+                .mockResolvedValue(createManifest({ files: ['a.wav'], micPositions: ['close', 'room'] })),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const bank = await loadBank(resource);
+
+        expect(bank.micPositions).toEqual(['close', 'room']);
     });
 
     it('publishes a new worklet bank identity after cache invalidation', async () => {

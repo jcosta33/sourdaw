@@ -42,6 +42,15 @@ function mics(close: number, room: number): MicPositionState[] {
     return next;
 }
 
+/** A bank-loaded mic array: entries carry only the given types, in order. */
+function loadedMics(types: MicPositionState['type'][]): MicPositionState[] {
+    const base = createDefaultPatch('violin-1').micPositions;
+    return types.map((type, index) => {
+        const template = base[index] ?? base[0]!;
+        return { ...template, type };
+    });
+}
+
 describe('MicBlendSlider', () => {
     it('should render', () => {
         const patch = createDefaultPatch('violin-1');
@@ -93,6 +102,54 @@ describe('MicBlendSlider — compact blend room enable threshold', () => {
         render(<MicBlendSlider micPositions={mics(0.8, 0.3)} onSendMicParam={onSend} onUpdateMicPosition={vi.fn()} />);
         fireEvent.change(screen.getByTestId('blend-knob'), { target: { value: '0.1' } });
         expect(onSend).toHaveBeenCalledWith(2, 'enabled', 1.0);
+    });
+});
+
+describe('MicBlendSlider — resolves close/room by loaded type, not fixed index', () => {
+    it('writes mic_0 and mic_1 (room resolved to index 1) when the bank omits decca-tree', () => {
+        const onUpdate = vi.fn();
+        const onSend = vi.fn();
+        render(
+            <MicBlendSlider
+                micPositions={loadedMics(['close', 'room'])}
+                onSendMicParam={onSend}
+                onUpdateMicPosition={onUpdate}
+            />
+        );
+        fireEvent.change(screen.getByTestId('blend-knob'), { target: { value: '0.6' } });
+        expect(onUpdate).toHaveBeenCalledWith(0, { volume: 0.4 });
+        expect(onUpdate).toHaveBeenCalledWith(1, expect.objectContaining({ volume: 0.6 }));
+        expect(onSend).toHaveBeenCalledWith(0, 'volume', 0.4);
+        expect(onSend).toHaveBeenCalledWith(1, 'volume', 0.6);
+        expect(onSend).not.toHaveBeenCalledWith(2, expect.anything(), expect.anything());
+    });
+
+    it('writes Close on mic_1 and Room on mic_0 when the loaded bank orders room first', () => {
+        const onUpdate = vi.fn();
+        const onSend = vi.fn();
+        render(
+            <MicBlendSlider
+                micPositions={loadedMics(['room', 'close'])}
+                onSendMicParam={onSend}
+                onUpdateMicPosition={onUpdate}
+            />
+        );
+        fireEvent.change(screen.getByTestId('blend-knob'), { target: { value: '0.6' } });
+        expect(onUpdate).toHaveBeenCalledWith(1, { volume: 0.4 });
+        expect(onUpdate).toHaveBeenCalledWith(0, expect.objectContaining({ volume: 0.6 }));
+        expect(onSend).toHaveBeenCalledWith(1, 'volume', 0.4);
+        expect(onSend).toHaveBeenCalledWith(0, 'volume', 0.6);
+    });
+
+    it('renders no compact blend when the loaded bank carries no room mic', () => {
+        const { container } = render(
+            <MicBlendSlider
+                micPositions={loadedMics(['close'])}
+                onSendMicParam={vi.fn()}
+                onUpdateMicPosition={vi.fn()}
+            />
+        );
+        expect(container).toBeEmptyDOMElement();
     });
 });
 

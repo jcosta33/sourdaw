@@ -23,7 +23,7 @@ import { loadInstrument } from '../loadPreset';
 import { prepareOfflineLevain } from '../prepareOfflineLevain';
 
 const mocks = vi.hoisted(() => ({
-    autoLoadLevainSamples: vi.fn(() => Promise.resolve()),
+    autoLoadLevainSamples: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock('../autoLoadSamples', () => ({
@@ -99,7 +99,7 @@ describe('Levain instrument persistence round trip', () => {
 
     beforeEach(() => {
         mocks.autoLoadLevainSamples.mockClear();
-        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve());
+        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         levainStore.set({});
@@ -201,7 +201,8 @@ describe('Levain instrument persistence round trip', () => {
             getAllTracks: () => trackStore.value?.tracks ?? [],
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
-            autoLoadLevainSamples: vi.fn().mockResolvedValue(undefined),
+            autoLoadLevainSamples: vi.fn().mockResolvedValue(null),
+            setLoadedMicPositions: vi.fn(),
             // This case follows project truth into the offline engine state;
             // the native session is not part of that round trip.
             writeNativeBuiltinParameters: vi.fn(),
@@ -301,13 +302,14 @@ describe('Levain instrument persistence round trip', () => {
         // session store and starts the sample load when the device chain is built,
         // and it ran before anything had told it which instrument this device is.
         Container.clear();
-        const autoLoadLevainSamples = vi.fn().mockResolvedValue(undefined);
+        const autoLoadLevainSamples = vi.fn().mockResolvedValue(null);
         injectDependencies(levainBridge, {
             getAllTracks: () => [],
             persistDeviceParam: vi.fn(),
             writeNativeBuiltinParameters: vi.fn(),
             sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
             autoLoadLevainSamples,
+            setLoadedMicPositions: vi.fn(),
             resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
                 status: 'eligible' as const,
                 trackId: 'track-1',

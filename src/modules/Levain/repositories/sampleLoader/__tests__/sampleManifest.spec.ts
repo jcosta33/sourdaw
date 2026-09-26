@@ -231,6 +231,15 @@ describe('parseSampleManifest', () => {
         );
     });
 
+    it('rejects microphone position names outside the model-owned contract', () => {
+        const manifest = createValidManifest();
+        manifest.micPositions = ['close', 'stereo-pair'];
+
+        expect(() => parseSampleManifest(manifest)).toThrow(
+            'Levain sample manifest micPositions must name known microphone positions'
+        );
+    });
+
     it('rejects loop positions that cannot cross the u32 WASM boundary', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, loopStart: 4_294_967_296 });

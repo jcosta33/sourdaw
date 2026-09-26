@@ -11,7 +11,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
-import { type InstrumentId } from '../../models/LevainPatch';
+import { MIC_POSITION_DISPLAY_NAMES, type InstrumentId, type MicPositionState } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
 import { sendMicParamToEngine } from '../../useCases/levainParamBridge/sendMicParamToEngine';
 import { setLevainParamWithAudio } from '../../useCases/levainParamBridge/setLevainParamWithAudio';
@@ -74,6 +74,26 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     const { patch, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
     const sampleLoadError = state.sampleLoadError ?? null;
+    const loadedMicPositions = state.loadedMicPositions;
+
+    // The Stage card only ever shows mics the loaded bank actually carries:
+    // truncate to the loaded count and relabel each row from the bank's own
+    // position order, rather than the default patch's Close/Decca Tree/Room
+    // assumption. With no bank committed yet (loading or failed), this is an
+    // empty list and the card renders no mic rows.
+    function toVisibleMicPosition(type: MicPositionState['type'], index: number): MicPositionState | undefined {
+        const mic = patch.micPositions[index];
+        if (!mic) {
+            return undefined;
+        }
+        return { ...mic, type, name: MIC_POSITION_DISPLAY_NAMES[type] };
+    }
+    let visibleMicPositions: MicPositionState[] = [];
+    if (loadedMicPositions) {
+        visibleMicPositions = loadedMicPositions
+            .map((type, index) => toVisibleMicPosition(type, index))
+            .filter((mic): mic is MicPositionState => mic !== undefined);
+    }
 
     // Load readout: a failure surfaces as an explicit error (not a synthetic
     // 100% then "Ready"); otherwise show the live percentage or idle "Ready".
@@ -271,7 +291,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
                     <SectionCard title="Stage" detail="Mic balance should feel spatial, not like raw mixer math.">
                         <MicBlendSlider
-                            micPositions={patch.micPositions}
+                            micPositions={visibleMicPositions}
                             showFull
                             onSendMicParam={(micIndex, name, value) =>
                                 sendMicParamToEngine(deviceId, micIndex, name, value)
@@ -363,7 +383,11 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             />
                             <DawReadoutRow
                                 label="Space"
-                                value={`${patch.micPositions.length} mics`}
+                                value={
+                                    loadedMicPositions
+                                        ? `${loadedMicPositions.length} mic${loadedMicPositions.length === 1 ? '' : 's'}`
+                                        : '0 mics'
+                                }
                                 valueClassName="text-foreground/85"
                             />
                         </Stack>

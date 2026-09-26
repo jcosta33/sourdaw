@@ -76,10 +76,37 @@ type MakePortOptions = {
     uploadRequired?: boolean;
     autoComplete?: boolean;
     commitError?: string;
+    /**
+     * Model the processor's own commit timing: `buildZoneMap` clears the
+     * pending token synchronously (as `_completeSampleBankLoad` does,
+     * levainProcessor.ts ~:285-291) but the test emits the terminal
+     * `sampleBankLoaded` itself, later — so a race between an abort and that
+     * still-unset reply can be driven deterministically instead of via timers.
+     */
+    deferCommit?: boolean;
+    /**
+     * Model the processor going silent on further messages once it is
+     * disposing or has faulted — it never answers a matched
+     * `abortSampleBank` with its own `sampleBankError`, so a test can prove
+     * the handshake settles from the out-of-band `disposed`/`error` message
+     * alone, not from the ordinary abort-races-a-reply path already covered
+     * by "aborts the active worklet transaction while waiting for its commit
+     * acknowledgement".
+     */
+    silenceAbortReply?: boolean;
 };
 
+/**
+ * A fake worklet port modelled on `levainProcessor.ts`'s own token bookkeeping
+ * (~:178, ~:285-343, ~:513-517): it tracks the one load token it considers
+ * pending and only answers a matched `abortSampleBank` — exactly like the
+ * real processor's `abortSampleBank` case, which is a no-op once
+ * `_bankLoadToken` no longer matches (already committed, or a different
+ * load).
+ */
 function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    let pendingToken: number | null = null;
     function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
@@ -91,6 +118,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
             return;
         }
         if (message.type === 'beginSampleBank') {
+            pendingToken = message.loadToken;
             queueMicrotask(() => {
                 emit({
                     type: 'sampleBankUploadDecision',
@@ -100,13 +128,43 @@ function makePort(options: MakePortOptions = {}): FakePort {
             });
             return;
         }
-        if (message.type === 'buildZoneMap' && options.autoComplete !== false) {
+        if (message.type === 'buildZoneMap') {
+            if (options.autoComplete === false) {
+                // Models a commit still in flight (e.g. a shared-bank
+                // follower awaiting its owner) — the token stays pending.
+                return;
+            }
+            // The real processor clears its token synchronously on commit,
+            // before the reply is even queued.
+            pendingToken = null;
+            if (options.deferCommit) {
+                return;
+            }
             queueMicrotask(() => {
                 if (options.commitError) {
                     emit({ type: 'sampleBankError', loadToken: message.loadToken, message: options.commitError });
                     return;
                 }
                 emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
+            });
+            return;
+        }
+        if (message.type === 'abortSampleBank') {
+            if (message.loadToken !== pendingToken) {
+                // Matches `msg.loadToken === this._bankLoadToken` failing on
+                // the real processor: already committed, or a stale token.
+                return;
+            }
+            pendingToken = null;
+            if (options.silenceAbortReply) {
+                return;
+            }
+            queueMicrotask(() => {
+                emit({
+                    type: 'sampleBankError',
+                    loadToken: message.loadToken,
+                    message: 'Levain sample bank load was aborted',
+                });
             });
         }
     });
@@ -351,6 +409,11 @@ describe('loadInstrumentFromManifest', () => {
     });
 
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
+        // The token is still pending on this fake port when the abort lands
+        // (buildZoneMap has not committed — `autoComplete: false`), so the
+        // port answers `abortSampleBank` with `sampleBankError` the way the
+        // real processor's matched abort does; the promise settles from that
+        // answer rather than from an immediate local rejection.
         const port = makePort({ autoComplete: false });
         const controller = new AbortController();
         const pending = loadInstrumentFromManifest({
@@ -369,6 +432,100 @@ describe('loadInstrumentFromManifest', () => {
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(postedTypes(port)).toContain('abortSampleBank');
         expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+    });
+
+    describe('an abort after buildZoneMap defers to the worklet', () => {
+        it('resolves with the committed bank when the worklet already committed before the abort lands', async () => {
+            const twoMicManifest = {
+                ...MANIFEST,
+                micPositions: ['close', 'room'],
+                articulations: [
+                    {
+                        ...MANIFEST.articulations[0],
+                        zones: [
+                            { ...MANIFEST.articulations[0]!.zones[0], file: 'a.wav', micId: 0 },
+                            { ...MANIFEST.articulations[0]!.zones[0], file: 'b.wav', micId: 1 },
+                        ],
+                    },
+                ],
+            };
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockResolvedValue({
+                    ok: true,
+                    status: 200,
+                    json: () => Promise.resolve(twoMicManifest),
+                })
+            );
+            // `deferCommit` clears the port's pending token synchronously on
+            // `buildZoneMap` (as the real processor's commit does) but leaves
+            // the terminal `sampleBankLoaded` reply for this test to deliver,
+            // so the abort-vs-reply race is driven deterministically instead
+            // of by timer ordering.
+            const port = makePort({ deferCommit: true });
+            const controller = new AbortController();
+            const pending = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                signal: controller.signal,
+            });
+            await vi.waitFor(() => {
+                expect(postedTypes(port)).toContain('buildZoneMap');
+            });
+            const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
+                return isRecord(message) && message.type === 'buildZoneMap';
+            })?.[0];
+            if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
+                throw new Error('Expected a buildZoneMap message');
+            }
+
+            controller.abort();
+            // The token was already cleared by the commit above, so the
+            // abort's `abortSampleBank` finds no match and gets no answer —
+            // only the worklet's own delayed reply below may settle this.
+            expect(postedTypes(port)).toContain('abortSampleBank');
+
+            port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage.loadToken });
+
+            const bank = await pending;
+            expect(bank?.micPositions).toEqual(['close', 'room']);
+        });
+
+        // "abort after buildZoneMap while the fake worklet has not committed;
+        // it answers the abort with sampleBankError → rejects with the abort
+        // reason" is the same scenario the pre-existing
+        // 'aborts the active worklet transaction while waiting for its commit
+        // acknowledgement' test above already covers — its sequence didn't
+        // change, only `makePort`'s abort handling gained the answer that now
+        // drives its rejection.
+
+        it.each(['disposed', 'error'] as const)(
+            'rejects without a pending promise when the worklet reports %s after the abort',
+            async (type) => {
+                // `silenceAbortReply` keeps the port from also answering the
+                // abort itself with `sampleBankError` (that race is already
+                // covered above) — the load must settle only from `type`.
+                const port = makePort({ autoComplete: false, silenceAbortReply: true });
+                const controller = new AbortController();
+                const pending = loadInstrumentFromManifest({
+                    manifestUrl: '/m.json',
+                    basePath: '/base',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    signal: controller.signal,
+                });
+                await vi.waitFor(() => {
+                    expect(postedTypes(port)).toContain('buildZoneMap');
+                });
+
+                controller.abort();
+                port.emit({ type });
+
+                await expect(pending).rejects.toThrow();
+            }
+        );
     });
 
     it('hydrates two concurrent instances from one manifest fetch and one decoded sample', async () => {
@@ -421,6 +578,66 @@ describe('loadInstrumentFromManifest', () => {
                 secondBeginMessage.instrumentId === 'violin-1' &&
                 secondBeginMessage.loadToken !== (firstBeginMessage as Record<string, unknown>).loadToken
         ).toBe(true);
+    });
+
+    it('ignores a sampleBankError addressed to a different load sharing the same port', async () => {
+        // Two consumers on one device's single port, each with its own
+        // `loadToken` (as the concurrent-instances test above establishes) —
+        // the exact shape a device's real MessagePort has, unlike this file's
+        // other cases which each get a fresh fake port. `onMessage`'s
+        // `message.loadToken !== loadToken` guard is what a foreign token's
+        // `sampleBankError` must fail before it can reject the wrong load.
+        const port = makePort({ autoComplete: false });
+        const first = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+        const second = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+
+        await vi.waitFor(() => {
+            const begins = port.postMessage.mock.calls.filter(
+                ([message]) => isRecord(message) && message.type === 'beginSampleBank'
+            );
+            expect(begins).toHaveLength(2);
+        });
+        const [firstToken, secondToken] = port.postMessage.mock.calls
+            .filter(([message]) => isRecord(message) && message.type === 'beginSampleBank')
+            .map(([message]) => (message as Record<string, unknown>).loadToken as number);
+
+        await vi.waitFor(() => {
+            const builds = port.postMessage.mock.calls.filter(
+                ([message]) => isRecord(message) && message.type === 'buildZoneMap'
+            );
+            expect(builds).toHaveLength(2);
+        });
+
+        let firstSettled = false;
+        void first.then(
+            () => {
+                firstSettled = true;
+            },
+            () => {
+                firstSettled = true;
+            }
+        );
+
+        // Addressed to the second load's token; the first must stay pending.
+        port.emit({ type: 'sampleBankError', loadToken: secondToken, message: 'unrelated failure' });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(firstSettled).toBe(false);
+        await expect(second).rejects.toThrow('unrelated failure');
+
+        // Answer the first's own token so nothing is left pending.
+        port.emit({ type: 'sampleBankLoaded', loadToken: firstToken });
+        await expect(first).resolves.toBeDefined();
     });
 
     it('rejects mismatched bank identity before decoding or mutating the worklet', async () => {
