@@ -500,9 +500,14 @@ describe('contract-carrying admission', () => {
             },
         });
         expect(
-            set.references.some((reference) => reference.path === 'scripts/__tests__/agentDeliveryScripts.spec.ts')
+            set.references.some(
+                (reference) =>
+                    reference.path === 'scripts/__tests__/agentDeliveryScripts.spec.ts' && reference.side === 'after'
+            )
         ).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -532,9 +537,14 @@ describe('contract-carrying admission', () => {
             },
         });
         expect(
-            set.references.some((reference) => reference.path === 'scripts/__tests__/githubAppIdentity.spec.ts')
+            set.references.some(
+                (reference) =>
+                    reference.path === 'scripts/__tests__/githubAppIdentity.spec.ts' && reference.side === 'after'
+            )
         ).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -563,9 +573,14 @@ describe('contract-carrying admission', () => {
             },
         });
         expect(
-            set.references.some((reference) => reference.path === 'scripts/__tests__/healthGatesWorkflow.spec.ts')
+            set.references.some(
+                (reference) =>
+                    reference.path === 'scripts/__tests__/healthGatesWorkflow.spec.ts' && reference.side === 'after'
+            )
         ).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -594,11 +609,17 @@ describe('contract-carrying admission', () => {
                 maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(plainAfter, 'utf8'),
             },
         });
-        expect(set.references.some((reference) => reference.path === 'zzz/mention.spec.ts')).toBe(false);
+        // The bare-filename spec's after side is withheld with the plain bulk reason, never a contract
+        // term, so the unanchored substring did not classify it contract-carrying.
         expect(
-            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+            set.references.some((reference) => reference.path === 'zzz/mention.spec.ts' && reference.side === 'after')
+        ).toBe(false);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'zzz/mention.spec.ts' && entry.reason === 'total-evidence-budget-exhausted (after)'
+            )
         ).toBe(true);
-        expect(set.truncated.some((entry) => entry.path === 'zzz/mention.spec.ts')).toBe(true);
     });
 
     it('leaves a collected spec whose after side is unavailable unclassified, never an error', () => {
@@ -895,6 +916,40 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
+    it('ranks a path by its hunk slice, not its whole side', () => {
+        // R4: the byte figure is built from the hunk slices admission admits, not the whole side. A
+        // 100-line file with a one-line hunk ranks by that one line; replacing the sliced cost with the
+        // whole-side size ranks it after the 50-line competitor and starves the line the change touched.
+        const bigLine = 'const big = 1;\n';
+        const bigBody = bigLine.repeat(100);
+        const competitorBody = 'const competitor = 1;\n'.repeat(50);
+        const materialBytes = Buffer.byteLength(bigLine, 'utf8') - 1;
+        const competitorBytes = Buffer.byteLength(competitorBody, 'utf8');
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('aaa/big.ts', { kind: 'added', added: 100, deleted: 0 }),
+                    changedFile('bbb/competitor.ts', { kind: 'added', added: 50, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${HEAD}:aaa/big.ts`]: bigBody,
+                    [`${HEAD}:bbb/competitor.ts`]: competitorBody,
+                },
+                hunks: new Map([
+                    ['aaa/big.ts', { path: 'aaa/big.ts', before: [], after: [{ startLine: 50, endLine: 50 }] }],
+                ]),
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: materialBytes + competitorBytes - 1 },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['aaa/big.ts:after']);
+        expect(set.truncated).toEqual([
+            { path: 'bbb/competitor.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
     it('admits a collected spec that imports a closure member as a .js specifier', () => {
         // R4: the runtime maps .js onto the TypeScript source, but the trial only tried the exact base
         // and the TypeScript extensions, so `../../canonicalRecord.js` ranked bulk while the runtime
@@ -924,9 +979,14 @@ describe('contract-carrying admission', () => {
             },
         });
         expect(
-            set.references.some((reference) => reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts')
+            set.references.some(
+                (reference) =>
+                    reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts' && reference.side === 'after'
+            )
         ).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
@@ -961,16 +1021,21 @@ describe('contract-carrying admission', () => {
             },
         });
         expect(
-            set.references.some((reference) => reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts')
+            set.references.some(
+                (reference) =>
+                    reference.path === 'scripts/__tests__/nested/canonicalRecord.spec.ts' && reference.side === 'after'
+            )
         ).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 
     it('leaves a collected spec whose closure import is commented out bulk', () => {
         // R4: a regex over raw source read a commented-out import as a real one and classified the spec
-        // contract-carrying. The syntax walker skips comments, so the spec stays bulk and the contract
-        // spec beside it is admitted first.
+        // contract-carrying. The syntax walker skips comments, so the spec's after side stays bulk and is
+        // withheld with the plain bulk reason instead of admitted ahead of other bulk material.
         const before = 'const before = 1;\n';
         const contractAfter = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
         const commentedAfter = "// import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
@@ -992,15 +1057,16 @@ describe('contract-carrying admission', () => {
                 maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
             },
         });
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'scripts/__tests__/commented.spec.ts')).toBe(
-            false
-        );
+        expect(
+            set.references.some(
+                (reference) => reference.path === 'scripts/__tests__/commented.spec.ts' && reference.side === 'after'
+            )
+        ).toBe(false);
         expect(
             set.truncated.some(
                 (entry) =>
                     entry.path === 'scripts/__tests__/commented.spec.ts' &&
-                    entry.reason === 'total-evidence-budget-exhausted (before)'
+                    entry.reason === 'total-evidence-budget-exhausted (after)'
             )
         ).toBe(true);
     });
@@ -1029,8 +1095,14 @@ describe('contract-carrying admission', () => {
                 maxTotalBytes: Buffer.byteLength(before, 'utf8') + Buffer.byteLength(contractAfter, 'utf8'),
             },
         });
-        expect(set.references.some((reference) => reference.path === 'scripts/__tests__/dynamic.spec.ts')).toBe(true);
-        expect(set.references.some((reference) => reference.path === 'aaa/plain.spec.ts')).toBe(false);
+        expect(
+            set.references.some(
+                (reference) => reference.path === 'scripts/__tests__/dynamic.spec.ts' && reference.side === 'after'
+            )
+        ).toBe(true);
+        expect(
+            set.references.some((reference) => reference.path === 'aaa/plain.spec.ts' && reference.side === 'after')
+        ).toBe(false);
         expect(set.truncated.some((entry) => entry.path === 'aaa/plain.spec.ts')).toBe(true);
     });
 });
@@ -1177,18 +1249,95 @@ describe('admission ordering counts a shared region once', () => {
             )
         ).toBe(true);
     });
+
+    it('ranks a shared region below its charge and withholds the smaller competitor that follows', () => {
+        // R2: the byte figure is a lower bound, not a promise of what each path pays. The modified
+        // source's before side is shared with the copy, so it is not counted toward the source's rank;
+        // the source ranks by its 18-byte after edit alone. Admission charges the shared 360-byte before
+        // region to the source first, so a 108-byte competitor that sorts after the source is withheld
+        // even though it is smaller than what the source pays. That is the accepted tension: a smaller
+        // edit is not guaranteed to survive when a region is shared.
+        const sourceLine = 'const shared = 1;\n';
+        const sourceBefore = sourceLine.repeat(20);
+        const sourceAfter = 'const shared = 2;\n';
+        const copyAfter = sourceBefore;
+        const competitor = sourceLine.repeat(6);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('a/source.ts', { added: 1, deleted: 1 }),
+                    changedFile('z/copy.ts', { kind: 'copied', previousPath: 'a/source.ts', added: 20, deleted: 0 }),
+                    changedFile('m/competitor.ts', { kind: 'added', added: 6, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:a/source.ts`]: sourceBefore,
+                    [`${HEAD}:a/source.ts`]: sourceAfter,
+                    [`${HEAD}:z/copy.ts`]: copyAfter,
+                    [`${HEAD}:m/competitor.ts`]: competitor,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(sourceBefore, 'utf8') + Buffer.byteLength(sourceAfter, 'utf8'),
+            },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'a/source.ts:before',
+            'a/source.ts:after',
+        ]);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'm/competitor.ts' && entry.reason === 'total-evidence-budget-exhausted (after)'
+            )
+        ).toBe(true);
+    });
 });
 
 describe('admission ordering follows the side that carries the contract', () => {
+    const closureImport = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+
+    /**
+     * Collects one contract-carrying path that leaves its contract surface (its before side is contract,
+     * its after side bulk) against a bulk competitor, under a budget that fits only the contract side.
+     */
+    function admitAgainstBulkCompetitor(input: {
+        readonly moved: SemanticChangedFile;
+        readonly movedBeforePath: string;
+        readonly movedBefore: string;
+        readonly movedAfter: string;
+        readonly competitor: SemanticChangedFile;
+        readonly competitorContent: string;
+        readonly budget: number;
+    }): SemanticEvidenceSet {
+        return collectEvidence({
+            port: fakeSource({
+                files: [input.moved, input.competitor],
+                blobs: {
+                    [`${MERGE_BASE}:${input.movedBeforePath}`]: input.movedBefore,
+                    [`${HEAD}:${input.moved.path}`]: input.movedAfter,
+                    [`${HEAD}:${input.competitor.path}`]: input.competitorContent,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: input.budget },
+        });
+    }
+
     it('admits a contract side before a bulk side of another change regardless of file order', () => {
-        // R2: a rename out of `AGENTS.md` is contract on its before side and bulk on its 1700-byte after
-        // side. The union of the two classes ordered the whole path as contract, admitted its bulk after
-        // side first, and withheld the closure-importing spec's contract after side. Ordering each side
-        // by its own class admits the spec's after side and withholds the bulk after side without the
-        // contract term.
+        // A rename out of `AGENTS.md` is contract on its before side and bulk on its 1700-byte after
+        // side. Ordering the whole path by the union of the two classes admitted the bulk after side
+        // first; ordering by one representative side ranked the whole path bulk. Ordering each admitted
+        // side by its own class admits the contract before side first (non-spec before spec), admits the
+        // closure-importing spec's sides, and withholds the bulk after side without the contract term.
         const docBefore = '# AGENTS.md\n';
         const bulkAfter = 'const bulk = 1;\n'.repeat(106);
-        const specSide = "import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n";
+        const specSide = closureImport;
         const set = collectEvidence({
             port: fakeSource({
                 files: [
@@ -1214,10 +1363,141 @@ describe('admission ordering follows the side that carries the contract', () => 
             },
         });
         expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'AGENTS.md:before',
             'scripts/__tests__/closure.spec.ts:before',
             'scripts/__tests__/closure.spec.ts:after',
-            'AGENTS.md:before',
         ]);
+        expect(set.truncated).toEqual([{ path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' }]);
+    });
+
+    it('admits the contract before side of a rename out of AGENTS.md before a bulk competitor', () => {
+        // R1: a rename out of `AGENTS.md` is contract on its before side and bulk on its after side.
+        // Ordering the whole path by its after side ranked it bulk, admitted the cheaper bulk competitor,
+        // and withheld the contract before side with a `(before, contract)` reason the ranking never used.
+        const contractBefore = '# AGENTS.md\n'.repeat(20);
+        const bulkAfter = 'const bulk = 1;\n'.repeat(2);
+        const competitorContent = 'const competitor = 1;\n'.repeat(5);
+        const set = admitAgainstBulkCompetitor({
+            moved: changedFile('aaa/renamed.ts', { kind: 'renamed', previousPath: 'AGENTS.md', added: 2, deleted: 20 }),
+            movedBeforePath: 'AGENTS.md',
+            movedBefore: contractBefore,
+            movedAfter: bulkAfter,
+            competitor: changedFile('aaa/bulk.ts', { kind: 'added', added: 5, deleted: 0 }),
+            competitorContent,
+            budget: Buffer.byteLength(contractBefore, 'utf8'),
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['AGENTS.md:before']);
+        expect(set.truncated).toEqual([
+            { path: 'aaa/renamed.ts', reason: 'total-evidence-budget-exhausted (after)' },
+            { path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('admits the contract before side of a copy of AGENTS.md to a bulk path before a bulk competitor', () => {
+        // R1: an exact copy of `AGENTS.md` out to a bulk path is contract on its before side and bulk on
+        // its after side. The representative-side ranking read the copy as bulk and withheld the contract
+        // before side; per-side ordering admits it first.
+        const contractBefore = '# AGENTS.md\n'.repeat(20);
+        const bulkAfter = 'const bulk = 1;\n'.repeat(2);
+        const competitorContent = 'const competitor = 1;\n'.repeat(5);
+        const set = admitAgainstBulkCompetitor({
+            moved: changedFile('aaa/copied.ts', { kind: 'copied', previousPath: 'AGENTS.md', added: 20, deleted: 0 }),
+            movedBeforePath: 'AGENTS.md',
+            movedBefore: contractBefore,
+            movedAfter: bulkAfter,
+            competitor: changedFile('aaa/bulk.ts', { kind: 'added', added: 5, deleted: 0 }),
+            competitorContent,
+            budget: Buffer.byteLength(contractBefore, 'utf8'),
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['AGENTS.md:before']);
+        expect(set.truncated).toEqual([
+            { path: 'aaa/copied.ts', reason: 'total-evidence-budget-exhausted (after)' },
+            { path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('admits the contract before side of a rename of a pinned workflow before a bulk competitor', () => {
+        // R1: a rename of a pinned `.github/workflows/health-gates.yml` out to a bulk path is contract on
+        // its before side. The representative-side ranking read the workflow as bulk and withheld the
+        // contract before side; per-side ordering admits it first.
+        const contractBefore = '# contract\n'.repeat(20);
+        const bulkAfter = 'const bulk = 1;\n'.repeat(2);
+        const competitorContent = 'const competitor = 1;\n'.repeat(5);
+        const set = admitAgainstBulkCompetitor({
+            moved: changedFile('aaa/workflow.ts', {
+                kind: 'renamed',
+                previousPath: '.github/workflows/health-gates.yml',
+                added: 2,
+                deleted: 20,
+            }),
+            movedBeforePath: '.github/workflows/health-gates.yml',
+            movedBefore: contractBefore,
+            movedAfter: bulkAfter,
+            competitor: changedFile('aaa/bulk.ts', { kind: 'added', added: 5, deleted: 0 }),
+            competitorContent,
+            budget: Buffer.byteLength(contractBefore, 'utf8'),
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            '.github/workflows/health-gates.yml:before',
+        ]);
+        expect(set.truncated).toEqual([
+            { path: 'aaa/workflow.ts', reason: 'total-evidence-budget-exhausted (after)' },
+            { path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('admits the contract before side of a spec rewritten to drop its closure import before a bulk competitor', () => {
+        // R1: a collected spec rewritten to drop its closure import is contract on its before side (the
+        // import) and bulk on its after side. The representative-side ranking read the spec as bulk and
+        // withheld the contract before side; per-side ordering admits the contract before side before the
+        // non-spec bulk competitor.
+        const contractBefore = `${closureImport}${'# filler\n'.repeat(20)}`;
+        const bulkAfter = "import { describe, expect, it } from 'vitest';\n";
+        const competitorContent = 'const competitor = 1;\n'.repeat(5);
+        const set = admitAgainstBulkCompetitor({
+            moved: changedFile('scripts/__tests__/closure.spec.ts'),
+            movedBeforePath: 'scripts/__tests__/closure.spec.ts',
+            movedBefore: contractBefore,
+            movedAfter: bulkAfter,
+            competitor: changedFile('aaa/bulk.ts', { kind: 'added', added: 5, deleted: 0 }),
+            competitorContent,
+            budget: Buffer.byteLength(contractBefore, 'utf8'),
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual([
+            'scripts/__tests__/closure.spec.ts:before',
+        ]);
+        expect(set.truncated).toEqual([
+            { path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' },
+            { path: 'scripts/__tests__/closure.spec.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('admits the before side of a deleted contract path before a bulk competitor', () => {
+        // R3: a deleted `AGENTS.md` has no after side, so its before side alone decides the class. The
+        // deletion arm of the side classification had no witness; returning bulk for a file with no after
+        // side admitted the cheaper bulk competitor and withheld the contract before side.
+        const contractBefore = '# AGENTS.md\n'.repeat(20);
+        const competitorContent = 'const competitor = 1;\n'.repeat(5);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('AGENTS.md', { kind: 'deleted', deleted: 20 }),
+                    changedFile('aaa/bulk.ts', { kind: 'added', added: 5, deleted: 0 }),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:AGENTS.md`]: contractBefore,
+                    [`${HEAD}:aaa/bulk.ts`]: competitorContent,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(contractBefore, 'utf8'),
+            },
+        });
+        expect(set.references.map((reference) => `${reference.path}:${reference.side}`)).toEqual(['AGENTS.md:before']);
         expect(set.truncated).toEqual([{ path: 'aaa/bulk.ts', reason: 'total-evidence-budget-exhausted (after)' }]);
     });
 });

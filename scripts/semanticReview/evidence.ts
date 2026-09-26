@@ -11,13 +11,13 @@
  * context. The whole repository is never sent. When a region is dropped, truncated, or unavailable,
  * that is recorded as a limitation: an omitted region is not evidence that the region is safe.
  *
- * Admission is ranked so a contract-carrying path — a trusted GitHub-write closure member, a contract
+ * Admission is ranked so a contract-carrying side — a trusted GitHub-write closure member, a contract
  * document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), or a collected spec whose content imports a closure member or names one of those workflow
- * files — is admitted before bulk or generated material and named when a budget withholds it, so the
- * same budget is spent where the contract lives. Each side is classified from the path and content it
- * carries, so a deleted or moved spec still counts from its before side.
+ * files — is admitted before a bulk side and named when a budget withholds it, so the same budget is
+ * spent where the contract lives. Each side is classified from the path and content it carries, so a
+ * deleted or moved spec still counts from its before side.
  */
 
 import {
@@ -28,13 +28,10 @@ import {
     type SemanticScopeExclusion,
 } from './contracts.ts';
 import {
-    admissionBytesByPath,
+    admissionBytesBySide,
+    admissionUnits,
     classifyContractCarryingSides,
-    compareForAdmission,
     compareLexicographic,
-    contractCarryingPaths,
-    kindHasAfterSide,
-    kindHasBeforeSide,
     readChangedContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
@@ -600,8 +597,7 @@ export function collectEvidence(input: {
     // path to at most one content read.
     const contents = readChangedContents(input.port, input.mergeBaseSha, input.headSha, assessed);
     const contractCarryingSides = classifyContractCarryingSides(assessed, contents);
-    const contractCarrying = contractCarryingPaths(assessed, contractCarryingSides);
-    const bytesByPath = admissionBytesByPath(
+    const bytesBySide = admissionBytesBySide(
         assessed,
         contents,
         hunksByPath,
@@ -609,18 +605,19 @@ export function collectEvidence(input: {
         input.mergeBaseSha,
         input.headSha
     );
-    const files = [...assessed].sort((left, right) => compareForAdmission(left, right, contractCarrying, bytesByPath));
+    const units = admissionUnits(assessed, contractCarryingSides, bytesBySide);
 
     const admission = createRegionAdmission(input.limits, contractCarryingSides);
     const { admit, admitSide } = admission;
 
     recordScreenExclusions(screened, admission);
 
-    for (const file of files) {
-        const beforePath = file.previousPath ?? file.path;
+    for (const unit of units) {
+        const file = unit.file;
         const hunks = hunksByPath.get(file.path);
         const entry = contents.get(file.path);
-        if (kindHasBeforeSide(file.kind)) {
+        if (unit.side === 'before') {
+            const beforePath = file.previousPath ?? file.path;
             const before = entry?.before;
             if (before === undefined) {
                 admission.truncated.push({ path: beforePath, reason: 'evidence-unavailable-at-revision' });
@@ -633,8 +630,7 @@ export function collectEvidence(input: {
                     hunks?.before
                 );
             }
-        }
-        if (kindHasAfterSide(file.kind)) {
+        } else {
             const after = entry?.after;
             if (after === undefined) {
                 admission.truncated.push({ path: file.path, reason: 'evidence-unavailable-at-revision' });

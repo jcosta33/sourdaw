@@ -2,12 +2,17 @@
  * The admission order and its byte-cost inputs.
  *
  * The collector reads each changed path's sides once and hands the reads here, so classification,
- * sizing, and admission all consume one read per side. Ordering is by the side that represents the
- * change — the after side when it exists, the before side for a deletion — so a path is ranked and
- * labelled by one classification. The byte cost is what admission can actually charge: a region the
- * content screen or the per-region budget withholds costs zero, and a region shared by several changed
- * paths (a copy or rename whose source is also changed) is counted once, so a derived path is not
- * ranked by bytes admission will not charge it.
+ * sizing, and admission all consume one read per side. Ordering is over the admission units the
+ * collector actually admits — each changed file's before and after side, in the order admission walks
+ * them — so a side that carries a contract is admitted before a bulk side of another change whatever
+ * the file order, and the class a side is ordered by is the class its withheld reason names.
+ *
+ * The byte figure is an order-independent lower bound, a tie-break inside one class rather than a
+ * promise of what each side pays. A region the content screen or the per-region budget withholds costs
+ * zero, and a region shared by several changed paths (a copy or rename whose source is also changed) is
+ * counted once and charged to whichever claimant admission reaches first; the first claimant can
+ * therefore rank below the charge admission applies to it, and a smaller edit is not guaranteed to
+ * survive when a region is shared.
  */
 
 import { isContractCarryingContent } from './contractCarrying.ts';
@@ -36,6 +41,9 @@ export function compareByPath(left: { readonly path: string }, right: { readonly
 /** The contract-carrying classification of one changed path's two sides, decided per side from that side's own path and content. */
 export type ContractCarryingSides = { readonly before: boolean; readonly after: boolean };
 
+/** The side of a changed file the collector admits as one unit. */
+export type AdmissionSide = 'before' | 'after';
+
 /**
  * Classifies each changed path's sides from the path and content the side itself carries: the
  * pre-change path's before content for the before side, and the post-change path's after content for
@@ -60,60 +68,82 @@ export function classifyContractCarryingSides(
     return sidesByPath;
 }
 
-/** The side whose class orders a path: the after side when it exists, the before side for a deletion. */
-function orderingSideClass(file: SemanticChangedFile, sides: ContractCarryingSides | undefined): boolean {
-    if (sides === undefined) {
-        return false;
-    }
-    return kindHasAfterSide(file.kind) ? sides.after : sides.before;
-}
+/** One side the collector admits: a changed file's before or after side, with its own class and byte figure. */
+export type AdmissionUnit = {
+    readonly file: SemanticChangedFile;
+    readonly side: AdmissionSide;
+    readonly contractCarrying: boolean;
+    readonly admissionBytes: number;
+};
+
+/** The admission byte figure for one changed path, split by side. */
+export type AdmissionSideBytes = { readonly before: number; readonly after: number };
 
 /**
- * The changed paths that are contract-carrying on the side that represents the change, for the
- * admission order. A path is ordered by that one side's class, never by the union of its two sides, so
- * a rename out of a contract document is not ordered as contract when only its before side is.
+ * The admission order for one change's sides. Contract-carrying before bulk, and inside each class
+ * non-spec before collected spec, then ascending admission bytes — the order-independent lower bound a
+ * side's sole regions cost, a tie-break rather than a promise of what the side pays — then path, then a
+ * path's before side before its own after side. No spec can outrank the source it covers, and a
+ * whole-file fallback cannot starve a smaller genuine edit; a region shared with another change is still
+ * charged to whichever side admits it first, so the byte figure does not promise that every smaller
+ * edit survives.
  */
-export function contractCarryingPaths(
-    changed: readonly SemanticChangedFile[],
-    sidesByPath: ReadonlyMap<string, ContractCarryingSides>
-): ReadonlySet<string> {
-    const contractCarrying = new Set<string>();
-    for (const file of changed) {
-        if (orderingSideClass(file, sidesByPath.get(file.path))) {
-            contractCarrying.add(file.path);
-        }
-    }
-    return contractCarrying;
-}
-
-/**
- * The admission order for one change. Contract-carrying before bulk, and inside each group non-spec
- * before collected spec, then ascending admission bytes — the bytes a path's regions cost at admission
- * — then path, so no spec can outrank the source it covers and a whole-file fallback cannot starve a
- * smaller genuine edit.
- */
-export function compareForAdmission(
-    left: SemanticChangedFile,
-    right: SemanticChangedFile,
-    contractCarrying: ReadonlySet<string>,
-    admissionBytesByPath: ReadonlyMap<string, number>
-): number {
-    const leftContract = contractCarrying.has(left.path) ? 0 : 1;
-    const rightContract = contractCarrying.has(right.path) ? 0 : 1;
+export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit): number {
+    const leftContract = left.contractCarrying ? 0 : 1;
+    const rightContract = right.contractCarrying ? 0 : 1;
     if (leftContract !== rightContract) {
         return leftContract - rightContract;
     }
-    const leftSpec = isCollectedSpec(left.path) ? 1 : 0;
-    const rightSpec = isCollectedSpec(right.path) ? 1 : 0;
+    const leftSpec = isCollectedSpec(left.file.path) ? 1 : 0;
+    const rightSpec = isCollectedSpec(right.file.path) ? 1 : 0;
     if (leftSpec !== rightSpec) {
         return leftSpec - rightSpec;
     }
-    const leftBytes = admissionBytesByPath.get(left.path) ?? 0;
-    const rightBytes = admissionBytesByPath.get(right.path) ?? 0;
-    if (leftBytes !== rightBytes) {
-        return leftBytes - rightBytes;
+    if (left.admissionBytes !== right.admissionBytes) {
+        return left.admissionBytes - right.admissionBytes;
     }
-    return compareByPath(left, right);
+    const byPath = compareByPath(left.file, right.file);
+    if (byPath !== 0) {
+        return byPath;
+    }
+    if (left.side === right.side) {
+        return 0;
+    }
+    return left.side === 'before' ? -1 : 1;
+}
+
+/**
+ * The admission units for one change, in admission order. A file contributes its before side first and
+ * its after side second; each side is ordered by its own class, so a rename or copy out of a contract
+ * surface admits its contract before side before a bulk side of another change while its bulk after
+ * side stays ranked with bulk.
+ */
+export function admissionUnits(
+    changed: readonly SemanticChangedFile[],
+    sidesByPath: ReadonlyMap<string, ContractCarryingSides>,
+    admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>
+): readonly AdmissionUnit[] {
+    const units: AdmissionUnit[] = [];
+    for (const file of changed) {
+        const sides = sidesByPath.get(file.path);
+        if (kindHasBeforeSide(file.kind)) {
+            units.push({
+                file,
+                side: 'before',
+                contractCarrying: sides?.before ?? false,
+                admissionBytes: admissionBytesBySide.get(file.path)?.before ?? 0,
+            });
+        }
+        if (kindHasAfterSide(file.kind)) {
+            units.push({
+                file,
+                side: 'after',
+                contractCarrying: sides?.after ?? false,
+                admissionBytes: admissionBytesBySide.get(file.path)?.after ?? 0,
+            });
+        }
+    }
+    return units.sort(compareAdmissionUnits);
 }
 
 /** The before and after side contents of one changed file, read once and reused for classification, sizing, and admission. */
@@ -166,18 +196,18 @@ function chargeableRegionBytes(raw: string, maxRegionBytes: number): number {
 }
 
 /** The identity admission gives a region: revision, path, side, and clamped bounds. */
-function regionKey(revisionSha: string, path: string, side: 'before' | 'after', range: LineRange): string {
+function regionKey(revisionSha: string, path: string, side: AdmissionSide, range: LineRange): string {
     return `${revisionSha}:${path}:${side}:${range.startLine}-${range.endLine}`;
 }
 
-/** One region's chargeable bytes and the changed paths that mint it. */
-type RegionMint = { readonly bytes: number; readonly paths: Set<string> };
+/** One region's chargeable bytes, its side, and the changed paths that mint it. */
+type RegionMint = { readonly bytes: number; readonly side: AdmissionSide; readonly paths: Set<string> };
 
 function recordRegion(
     regions: Map<string, RegionMint>,
     revisionSha: string,
     regionPath: string,
-    side: 'before' | 'after',
+    side: AdmissionSide,
     range: LineRange,
     raw: string,
     maxRegionBytes: number,
@@ -186,7 +216,7 @@ function recordRegion(
     const key = regionKey(revisionSha, regionPath, side, range);
     const mint = regions.get(key);
     if (mint === undefined) {
-        regions.set(key, { bytes: chargeableRegionBytes(raw, maxRegionBytes), paths: new Set([changedPath]) });
+        regions.set(key, { bytes: chargeableRegionBytes(raw, maxRegionBytes), side, paths: new Set([changedPath]) });
     } else {
         mint.paths.add(changedPath);
     }
@@ -197,7 +227,7 @@ function recordSideRegions(
     regions: Map<string, RegionMint>,
     revisionSha: string,
     regionPath: string,
-    side: 'before' | 'after',
+    side: AdmissionSide,
     raw: string,
     ranges: readonly LineRange[] | undefined,
     maxRegionBytes: number,
@@ -226,22 +256,25 @@ function recordSideRegions(
 }
 
 /**
- * Each changed path's admission byte cost, computed once from the shared side reads and hunks.
+ * Each changed path's admission byte figure, per side, computed once from the shared side reads and
+ * hunks.
  *
- * A region's chargeable bytes count toward a path only when that path is the region's sole minter. A
- * region shared by several paths — a copy or rename whose unchanged source is also changed — is charged
- * once at admission by whichever path admits it first, so counting it toward every path would rank a
- * derived path by bytes admission will not charge it. The figure is a pure function of the change, so
- * it neither depends on which path is admitted first nor exceeds what admission can charge the path.
+ * A region's chargeable bytes count toward a side only when that (path, side) is the region's sole
+ * minter. A region shared by several paths — a copy or rename whose unchanged source is also changed —
+ * is charged once at admission by whichever claimant admits it first, so counting it toward every
+ * claimant would rank a derived path by bytes admission will not charge it. The figure is an
+ * order-independent lower bound, not a promise of what each side pays: the first claimant of a shared
+ * region can rank below the charge admission applies to it, and a smaller edit is not guaranteed to
+ * survive when a region is shared.
  */
-export function admissionBytesByPath(
+export function admissionBytesBySide(
     changed: readonly SemanticChangedFile[],
     contents: ReadonlyMap<string, ChangedFileContents>,
     hunksByPath: ReadonlyMap<string, PathHunks>,
     maxRegionBytes: number,
     mergeBaseSha: string,
     headSha: string
-): ReadonlyMap<string, number> {
+): ReadonlyMap<string, AdmissionSideBytes> {
     const regions = new Map<string, RegionMint>();
     for (const file of changed) {
         const entry = contents.get(file.path);
@@ -271,16 +304,20 @@ export function admissionBytesByPath(
             );
         }
     }
-    const bytes = new Map<string, number>();
+    const bytes = new Map<string, AdmissionSideBytes>();
     for (const file of changed) {
-        bytes.set(file.path, 0);
+        bytes.set(file.path, { before: 0, after: 0 });
     }
     for (const mint of regions.values()) {
         if (mint.paths.size !== 1) {
             continue;
         }
         const owner = mint.paths.values().next().value as string;
-        bytes.set(owner, (bytes.get(owner) ?? 0) + mint.bytes);
+        const current = bytes.get(owner) ?? { before: 0, after: 0 };
+        bytes.set(owner, {
+            before: current.before + (mint.side === 'before' ? mint.bytes : 0),
+            after: current.after + (mint.side === 'after' ? mint.bytes : 0),
+        });
     }
     return bytes;
 }
