@@ -1,0 +1,24 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/midiTimeStateCodec.spec.ts
+  h_beb54bf43b47b7 65-81,192-210
+src/modules/MIDI/useCases/midiNoteCrud/midiTimeStateCodec.ts
+  h_beb54bf43b47b7 69-70
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 329-331
+src/modules/Project/useCases/arrangement/__tests__/takeSnapshot.spec.ts
+  h_beb54bf43b47b7 3,57-60,99,127-167
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  h_beb54bf43b47b7 47-49,53,125-130,649-696
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/stampWriteSidePersistence.spec.ts
+  h_beb54bf43b47b7 1-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2a98ef5d95781ff2a62191ffda6ec58cdbe8c620",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
