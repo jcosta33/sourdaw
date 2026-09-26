@@ -1,0 +1,22 @@
+crates/sourdaw-native/src/commands/graph.rs
+  s_2bfd55a4393d7c::t_542cd7d4d469c4 2577-2582
+  s_2bfd55a4393d7c::t_85ec4d98fdd243 2441-2465
+  s_2bfd55a4393d7c::t_b329d5d25a7366 726-730
+  s_2bfd55a4393d7c::t_5f5e22fed8e771 14099-14166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c1ab3aaaa41663454909cbe767a929d876b7708b",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
