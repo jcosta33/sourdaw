@@ -876,18 +876,34 @@ function readLoaderDeclaration(
     }
     cursor = skipWhitespace(source, cursor + 1);
     if (isKeywordAt(source, cursor, 'require') && !isPrecededByDotAccess(source, cursor)) {
-        return { name, kind: 'require', end: cursor + 'require'.length };
+        // Only the bare `require` identifier binds a require function; anything after it — a call,
+        // member access, or chained call — names the loaded module or a method of it instead.
+        const after = skipWhitespace(source, cursor + 'require'.length);
+        if (isInitializerEnd(source, after)) {
+            return { name, kind: 'require', end: cursor + 'require'.length };
+        }
     }
     if (isKeywordAt(source, cursor, 'createRequire') && !isPrecededByDotAccess(source, cursor)) {
         const open = skipWhitespace(source, cursor + 'createRequire'.length);
         if (source[open] === '(') {
             const after = skipBalancedParensOpaque(source, open);
             if (after !== undefined) {
-                return { name, kind: 'require', end: after };
+                // A complete `createRequire(<expr>)` binds the require function it returns; a
+                // chained `('…')` after it names the loaded module, so only a statement end binds.
+                const afterCall = skipWhitespace(source, after);
+                if (isInitializerEnd(source, afterCall)) {
+                    return { name, kind: 'require', end: after };
+                }
             }
         }
     }
     return undefined;
+}
+
+/** Whether the initializer ends at `index`: a statement end, a declarator comma, or end of input. */
+function isInitializerEnd(source: string, index: number): boolean {
+    const character = source[index];
+    return character === ';' || character === ',' || character === undefined || isLineTerminator(character);
 }
 
 /**
@@ -1075,7 +1091,10 @@ function loadSiteAt(source: string, index: number): LoadSite | undefined {
         if (bindings !== undefined) {
             const binding = nearestLoaderBinding(bindings, index);
             if (binding !== undefined && !isPrecededByDotAccess(source, index)) {
-                return resolveLoadSite(source, index, index + word.length, binding.kind, false);
+                // A `require`-kind binding behaves like `require` itself, so a member or function
+                // named after it is still a declaration candidate; a `createRequire` binding cannot
+                // be, because its second call is always a load.
+                return resolveLoadSite(source, index, index + word.length, binding.kind, binding.kind === 'require');
             }
         }
     }
@@ -1539,7 +1558,33 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
     if (character === ':') {
         return annotationBodyOpenBefore(source, openIndex);
     }
-    if (character === '>' || isIdentifierStart(character)) {
+    // A type operator or delimiter directly before the `{` leaves the type expression incomplete, so
+    // the `{` completes an object type; walk back over the expression to its header. A union or
+    // intersection member, a grouping or tuple opener, and a separator or balanced close all qualify.
+    if (
+        character === '|' ||
+        character === '&' ||
+        character === '(' ||
+        character === '[' ||
+        character === '<' ||
+        character === ',' ||
+        character === ')' ||
+        character === ']'
+    ) {
+        return typeExpressionBodyOpenBefore(source, openIndex);
+    }
+    if (character === '>') {
+        // `=>` continues a type (a function return type); a generic-close `>` ends a class/interface
+        // header, so the two are read differently.
+        return source[before - 1] === '='
+            ? typeExpressionBodyOpenBefore(source, openIndex)
+            : classInterfaceBodyOpenBefore(source, openIndex);
+    }
+    if (isIdentifierStart(character)) {
+        const word = readWordBackward(source, before);
+        if (TYPE_OPERATOR_KEYWORDS.has(word)) {
+            return typeExpressionBodyOpenBefore(source, openIndex);
+        }
         return classInterfaceBodyOpenBefore(source, openIndex);
     }
     return false;
@@ -1593,6 +1638,94 @@ function annotationBodyOpenBefore(source: string, openIndex: number): boolean {
     }
     const keyword = readWordBackward(source, beforeName);
     return keyword === 'const' || keyword === 'let' || keyword === 'var';
+}
+
+/** Type-operator keywords a type expression may contain between its `{` and its header. */
+const TYPE_OPERATOR_KEYWORDS: ReadonlySet<string> = new Set([
+    'keyof',
+    'typeof',
+    'readonly',
+    'extends',
+    'implements',
+    'unique',
+    'infer',
+    'as',
+    'satisfies',
+    'is',
+]);
+
+/** Declaration keywords whose header ends in a type expression the `{` completes. */
+const TYPE_HEADER_KEYWORDS: ReadonlySet<string> = new Set([
+    'type',
+    'interface',
+    'class',
+    'const',
+    'let',
+    'var',
+    'function',
+]);
+
+/**
+ * Whether the `{` at `openIndex` completes a type expression belonging to a `type`/`interface`/
+ * `class` header or a `:`/`=` annotation. The walk reads backward over type-position tokens —
+ * operators (`|`, `&`, `,`, `.`, `?`, `:`), balanced `<…>`, `(…)`, `[…]`, and `{…}` groups, type
+ * keywords, and type atoms — and succeeds when it reaches a header keyword. A statement boundary — a
+ * block keyword, a `;`, or an unmatched delimiter — ends the walk with false, so a block after a
+ * completed statement is never claimed by an earlier `type` keyword.
+ */
+function typeExpressionBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = openIndex - 1;
+    while (true) {
+        cursor = skipBackwardTrivia(source, cursor);
+        if (cursor < 0) {
+            return false;
+        }
+        const character = source[cursor];
+        if (character === '>' || character === ')' || character === ']' || character === '}') {
+            if (character === '>' && cursor >= 1 && source[cursor - 1] === '=') {
+                cursor -= 2;
+                continue;
+            }
+            const open = matchingOpenDelimiter(character);
+            const afterOpen = skipBackwardBalancedDelimited(source, cursor, open, character);
+            if (afterOpen === undefined) {
+                return false;
+            }
+            cursor = afterOpen;
+            continue;
+        }
+        if (
+            character === '|' ||
+            character === '&' ||
+            character === '=' ||
+            character === ',' ||
+            character === '.' ||
+            character === '(' ||
+            character === '[' ||
+            character === '<' ||
+            character === '?' ||
+            character === ':'
+        ) {
+            cursor -= 1;
+            continue;
+        }
+        if (isIdentifierContinue(character)) {
+            const word = readWordBackward(source, cursor);
+            if (TYPE_HEADER_KEYWORDS.has(word)) {
+                return true;
+            }
+            if (TYPE_OPERATOR_KEYWORDS.has(word)) {
+                cursor -= word.length;
+                continue;
+            }
+            if (BLOCK_INTRODUCER_KEYWORDS.has(word)) {
+                return false;
+            }
+            cursor -= word.length;
+            continue;
+        }
+        return false;
+    }
 }
 
 /**
@@ -2121,6 +2254,20 @@ function matchingTypeDelimiter(open: '(' | '[' | '{' | '<'): ')' | ']' | '}' | '
     return '>';
 }
 
+/** The opening delimiter matching the given closing delimiter. */
+function matchingOpenDelimiter(close: ')' | ']' | '}' | '>'): '(' | '[' | '{' | '<' {
+    if (close === ')') {
+        return '(';
+    }
+    if (close === ']') {
+        return '[';
+    }
+    if (close === '}') {
+        return '{';
+    }
+    return '<';
+}
+
 function endOfBalancedCall(source: string, openParen: number): number {
     const end = skipBalancedParens(source, openParen);
     return end === undefined ? source.length : end;
@@ -2292,6 +2439,7 @@ const REGEX_PREFIX_KEYWORDS = new Set([
     'throw',
     'case',
     'delete',
+    'default',
     'typeof',
     'void',
     'await',
@@ -2357,11 +2505,10 @@ function skipRegexLiteral(source: string, index: number): number | undefined {
 }
 
 /**
- * The index of the previous non-whitespace, non-block-comment character before `cursor`, or
- * `undefined` when none exists. Block comments are transparent — a slash after a block comment
- * reads the token before the comment — but string, template, and regex literals are not skipped
- * here: the caller classifies them, because a `/` after any of those is division. This is the
- * regex-decision hot path, so it stays a single backward walk with no forward line scan.
+ * The index of the previous non-whitespace, non-comment character before `cursor`, or `undefined`
+ * when none exists. Block and line comments are transparent — a slash after either reads the token
+ * before the comment — but string, template, and regex literals are not skipped here: the caller
+ * classifies them, because a `/` after any of those is division.
  */
 function previousSignificantCharacter(source: string, cursor: number): number | undefined {
     while (cursor >= 0) {
@@ -2379,6 +2526,13 @@ function previousSignificantCharacter(source: string, cursor: number): number | 
                 return undefined;
             }
             cursor = open - 1;
+            continue;
+        }
+        // A `//` comment's last word is not a token: `const t = 1 // of\n/re/` must read the `1`,
+        // not the comment's `of`. Skip back to before the `//` so the token before the name is read.
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
             continue;
         }
         return cursor;
@@ -2494,8 +2648,10 @@ function matchingOpenParenBackward(source: string, closeParen: number): number |
 
 /**
  * Whether a `/` may open a regex after the `)` at `closeParen`: only when that parenthesis closes a
- * control-flow header (`if`, `for`, `while`, `with`, `switch`, `catch`), whose body is a statement.
- * A `)` closing a call or grouping is an expression end, so a following `/` is division.
+ * control-flow header (`if`, `for`, `while`, `with`, `switch`, `catch`) whose body is a statement,
+ * including a `for await (…)` header spelled with two words. A `)` closing a call or grouping is an
+ * expression end, so a following `/` is division, and a member named after a control keyword
+ * (`obj.catch`, `obj.if`) is not a header.
  */
 function closingParenAllowsRegex(source: string, closeParen: number): boolean {
     const open = matchingOpenParenBackward(source, closeParen);
@@ -2506,7 +2662,95 @@ function closingParenAllowsRegex(source: string, closeParen: number): boolean {
     if (beforeOpen === undefined || !isIdentifierContinue(source[beforeOpen])) {
         return false;
     }
-    return CONTROL_HEADER_KEYWORDS.has(readWordBackward(source, beforeOpen));
+    const word = readWordBackward(source, beforeOpen);
+    if (isPrecededByDotAccess(source, beforeOpen - word.length + 1)) {
+        return false;
+    }
+    if (CONTROL_HEADER_KEYWORDS.has(word)) {
+        return true;
+    }
+    // `for await (…)` spells its header keyword two words before the parenthesis; a plain
+    // `await (…)` is not a header.
+    if (word === 'await') {
+        const beforeAwait = previousSignificantCharacter(source, beforeOpen - word.length);
+        if (beforeAwait !== undefined && isIdentifierContinue(source[beforeAwait])) {
+            const beforeWord = readWordBackward(source, beforeAwait);
+            return !isPrecededByDotAccess(source, beforeAwait - beforeWord.length + 1) && beforeWord === 'for';
+        }
+    }
+    return false;
+}
+
+/**
+ * Whether the `{` at `openIndex` opens a `function` declaration body (possibly generator, generic,
+ * or modifier-prefixed), whose closing `}` ends a statement rather than an expression.
+ */
+function functionBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = skipBackwardTrivia(source, openIndex - 1);
+    if (cursor < 0 || source[cursor] !== ')') {
+        return false;
+    }
+    const afterParams = skipBackwardBalancedDelimited(source, cursor, '(', ')');
+    if (afterParams === undefined) {
+        return false;
+    }
+    cursor = skipBackwardTrivia(source, afterParams);
+    if (cursor < 0) {
+        return false;
+    }
+    if (source[cursor] === '>') {
+        const afterGenerics = skipBackwardBalancedDelimited(source, cursor, '<', '>');
+        if (afterGenerics === undefined) {
+            return false;
+        }
+        cursor = skipBackwardTrivia(source, afterGenerics);
+        if (cursor < 0) {
+            return false;
+        }
+    }
+    if (!isIdentifierContinue(source[cursor])) {
+        return false;
+    }
+    const name = readWordBackward(source, cursor);
+    cursor = skipBackwardTrivia(source, cursor - name.length);
+    if (cursor < 0) {
+        return false;
+    }
+    if (source[cursor] === '*') {
+        cursor = skipBackwardTrivia(source, cursor - 1);
+        if (cursor < 0) {
+            return false;
+        }
+    }
+    while (isIdentifierContinue(source[cursor])) {
+        const word = readWordBackward(source, cursor);
+        if (word === 'function') {
+            return true;
+        }
+        if (word === 'async' || word === 'export' || word === 'default' || word === 'declare') {
+            cursor = skipBackwardTrivia(source, cursor - word.length);
+            if (cursor < 0) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
+/**
+ * Whether a `}` at `closeBrace` closes a class, interface, or function declaration body, which ends
+ * a statement so a following `/` opens a regex. An object-literal or statement-block close ends an
+ * expression, so a following `/` is division.
+ */
+function closeBraceStartsStatement(source: string, closeBrace: number): boolean {
+    const open = skipBackwardBalancedDelimited(source, closeBrace, '{', '}');
+    if (open === undefined) {
+        return false;
+    }
+    const openIndex = open + 1;
+    return classLikeBodyOpenBefore(source, openIndex) || functionBodyOpenBefore(source, openIndex);
 }
 
 /**
@@ -2526,7 +2770,10 @@ function canStartRegexLiteral(source: string, index: number): boolean {
     if (character === ')') {
         return closingParenAllowsRegex(source, previous);
     }
-    if (character === '}' || character === ']') {
+    if (character === '}') {
+        return closeBraceStartsStatement(source, previous);
+    }
+    if (character === ']') {
         return false;
     }
     if (character === '"' || character === "'" || character === '`') {
@@ -2542,7 +2789,13 @@ function canStartRegexLiteral(source: string, index: number): boolean {
         return regexLiteralOpenBackward(source, previous) === undefined;
     }
     if (isIdentifierContinue(character)) {
-        return REGEX_PREFIX_KEYWORDS.has(readWordBackward(source, previous));
+        // A property named after a prefix keyword (`cfg.case`, `box.new`) is not the keyword, so a
+        // `/` after it is division.
+        const word = readWordBackward(source, previous);
+        if (isPrecededByDotAccess(source, previous - word.length + 1)) {
+            return false;
+        }
+        return REGEX_PREFIX_KEYWORDS.has(word);
     }
     if (isDecimalDigit(character)) {
         return false;

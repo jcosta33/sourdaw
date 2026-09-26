@@ -2150,13 +2150,196 @@ describe('package scripts and gitignore', () => {
         expect(snapshotComputedDynamicSpecifiers('if (verbose) /[\'"]/.test(line);\nrequire(spec);')).toEqual([
             'require(...)',
         ]);
-        expect(snapshotComputedDynamicSpecifiers('if (url) /^https?:\\/\\//.test(url);\nrequire(spec);')).toEqual([
+        // The `//` the escaped slashes form would end at the newline when misread as a comment, so the
+        // load is placed on the same line: only a correctly read regex keeps it visible.
+        expect(snapshotComputedDynamicSpecifiers('if (url) /^https?:\\/\\//.test(url); require(spec);')).toEqual([
             'require(...)',
         ]);
         expect(snapshotComputedDynamicSpecifiers("if (x) run(); else /don't/.test(line);\nrequire(spec);")).toEqual([
             'require(...)',
         ]);
         expect(snapshotComputedDynamicSpecifiers('const r = {} / import(name) / 2;')).toEqual(['import(...)']);
+    });
+
+    /**
+     * A control header may be spelled with two words (`for await`), so the decision must read the
+     * header keyword behind `await` rather than the single word before the matching `(`. A member or
+     * property named after a control keyword (`obj.catch`, `obj.if`) is not that keyword, so a `/`
+     * after its closing parenthesis or name is division and a following load is still seen.
+     */
+    it.each([
+        {
+            label: 'a load after a for-await header regex',
+            source: 'for await (const x of y) /[\'"]/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a member call named catch',
+            source: 'obj.catch(fn) / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load after a member call named if',
+            source: 'obj.if(x) / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load after a property named case',
+            source: 'cfg.case / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load after a property named delete',
+            source: 'set.delete / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load after a property named new',
+            source: 'box.new / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * Every control-header keyword — not just `if` — opens a regex after its parenthesised header,
+     * so a load after the header statement stays visible.
+     */
+    it.each([
+        {
+            label: 'a load after a for-header regex',
+            source: 'for (const x of xs) /[\'"]/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a while-header regex',
+            source: 'while (x) /re/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a switch-header regex',
+            source: 'switch (x) /re/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a catch-header regex',
+            source: 'catch (e) /re/.test(e);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a with-header regex',
+            source: 'with (x) /re/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A `//` line comment's text is not code: the previous-significant-character decision must skip
+     * the comment so a `/` after it reads the token before the comment, never the comment's last
+     * word. A prefix keyword at the end of a comment otherwise hides the load behind it.
+     */
+    it.each([
+        {
+            label: 'a load after a line comment ending in a prefix keyword',
+            source: 'const t = 1 // the number of\n/ import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load after a regex that follows a guard line comment',
+            source: 'if (ok) // guard the next line\n/[\'"]/.test(line);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * A `}` that closes a class, interface, or function declaration ends a statement, so a `/` after
+     * it opens a regex; a `}` that closes an object literal or statement block ends an expression, so
+     * a `/` after it is division. `default` is a prefix keyword like `return`, so a `/` after it also
+     * opens a regex.
+     */
+    it.each([
+        {
+            label: 'a load after an export-default regex',
+            source: 'export default /[\'"]/; require(spec);',
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    it('does not let a class-declaration-close regex hide a later static import', () => {
+        const source = "class C {}\n/['\"]/.test(line);\nimport { x } from './sib.ts';";
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toEqual(['./sib.ts']);
+    });
+
+    it('does not read a require inside a statement-position regex after a function declaration as a load', () => {
+        expect(snapshotComputedDynamicSpecifiers('function f() {}\n/require(spec)/.test(line);')).toEqual([]);
+    });
+
+    /**
+     * `do` is a regex-prefix keyword (`do /re/.test(x); while (y);`), while `extends` is deliberately
+     * not: a division after a heritage clause stays division, never a regex. A label before a block
+     * (`foo: { … }`) is a statement, not a `:` annotation, so a block member stays a load.
+     */
+    it.each([
+        {
+            label: 'a load after a do-body regex',
+            source: 'do /re/.test(x); while (y);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a division in a heritage clause',
+            source: 'class X extends Base / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load in a labelled statement block',
+            source: 'const x = 1;\nfoo: { doSetup(); require(spec) { run(); } }',
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
+     * The legitimate verdicts each boundary fix must preserve: a division after a plain awaited
+     * parenthesised expression, a regex after a real `if` header or `return` keyword, and a division
+     * after an object-literal close.
+     */
+    it.each([
+        {
+            label: 'a division after a plain awaited parenthesised expression',
+            source: 'await (x) / import(spec) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a regex after a real if header',
+            source: 'if (ok) /[\'"]/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a regex after a real return keyword',
+            source: 'return /re/.test(x);\nrequire(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a division after an object-literal close',
+            source: 'const r = {} / import(name) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a division after a line comment ending in a non-keyword',
+            source: 'const t = x // comment\n/ import(spec) / 2;',
+            shape: 'import(...)',
+        },
+    ])('keeps $label at its current verdict', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
     });
 
     /**
@@ -2189,6 +2372,34 @@ describe('package scripts and gitignore', () => {
             label: 'a require-named class member after a regex literal holding a brace',
             source: 'class ModuleLoader { static readonly closer = /}/; require(specifier: string) { return specifier; } }',
         },
+        {
+            label: 'a require-named member of a union object type after a preceding property',
+            source: 'type Loader = Base | { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of an intersection object type after a preceding property',
+            source: 'type Loader = Base & { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of a keyof-intersection object type after a preceding property',
+            source: 'type Loader = keyof Base & { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of a parenthesised-intersection object type after a preceding property',
+            source: 'type Loader = (A | B) & { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of an arrow return object type after a preceding property',
+            source: 'type Loader = () => { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of a parenthesised object type after a preceding property',
+            source: 'type Loader = (Base) & { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of an array object type after a preceding property',
+            source: 'type Loader = Base[] & { version: string; require(specifier: string): unknown }',
+        },
     ])('admits $label that names require without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
@@ -2214,6 +2425,16 @@ describe('package scripts and gitignore', () => {
         {
             label: 'a require bound to a const',
             source: 'const load = require;\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require bound to a let',
+            source: 'let load = require;\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require bound to a var',
+            source: 'var load = require;\nload(spec);',
             shape: 'require(...)',
         },
         {
@@ -2246,6 +2467,31 @@ describe('package scripts and gitignore', () => {
     it('refuses a call through a loader binding shadowed in a nested scope', () => {
         const source = 'const load = require;\nfunction run() { const load = createLoader(); load(spec); }';
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
+     * A binding forms only when the initializer is exactly the `require` identifier or a complete
+     * `createRequire(<expr>)` call whose closing parenthesis ends the initializer. A name bound to
+     * `require('yaml').parse`, to `require('yaml')`, or to `createRequire(...)('yaml')` holds the
+     * loaded module or a method of it, not a require function, so a later ordinary call through the
+     * name must not be refused as a computed load. The direct `const load = require` and
+     * `const load = createRequire(import.meta.url)` forms remain loaders and stay refused.
+     */
+    it.each([
+        {
+            label: 'a call through a name bound to a require result property',
+            source: "const parseYamlSource = require('yaml').parse;\nparseYamlSource(source);",
+        },
+        {
+            label: 'a call through a name bound to a require result',
+            source: "const yaml = require('yaml');\nyaml(source);",
+        },
+        {
+            label: 'a call through a name bound to a chained createRequire result',
+            source: "const yaml = createRequire(import.meta.url)('yaml');\nyaml(source);",
+        },
+    ])('admits $label without a computed load', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 
     /**
@@ -2370,6 +2616,24 @@ describe('package scripts and gitignore', () => {
             source: 'type Loader = { version: string; require(specifier: string): unknown }',
         },
     ])('admits $label that names require without loading anything', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * A member declaration named after a bound loader is admitted exactly as the same declaration
+     * named `require` is: a binding-resolved callee must carry the declaration-candidate decision, so
+     * a `load(specifier: string)` member in an interface or class is a parameter list, never a load.
+     */
+    it.each([
+        {
+            label: 'an interface member named after a bound loader',
+            source: "import { createRequire } from 'node:module'; const load = createRequire(import.meta.url); interface Loader { load(specifier: string): unknown }",
+        },
+        {
+            label: 'a class member named after a bound loader',
+            source: "import { createRequire } from 'node:module'; const load = createRequire(import.meta.url); class Loader { load(specifier: string) { return specifier; } }",
+        },
+    ])('admits $label without loading anything', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 
