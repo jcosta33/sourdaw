@@ -1,0 +1,23 @@
+scripts/testInstructions.ts
+  s_ef536aab624565::t_2876a3eb525f5e 847
+scripts/__tests__/prContract.spec.ts
+  s_ef536aab624565::t_70b1fa894c5478 39
+  s_ef536aab624565::t_ccabc7d75dcb0a 820-855
+  s_ef536aab624565::t_e0d3fbcb84e56e 1440-1442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ac84dca355eed0904f8385285eaa9b12bde57023",
+  "prompts": {},
+  "sessions": {
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
