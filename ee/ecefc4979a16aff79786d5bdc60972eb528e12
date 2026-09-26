@@ -1,0 +1,36 @@
+src/modules/MIDI/transformers/__tests__/midiNotesEqual.spec.ts
+  s_2bfd55a4393d7c::t_371c120e11a7dd 53,59-63
+  s_2bfd55a4393d7c::t_4f504dc3a91650 64
+src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts
+  s_2bfd55a4393d7c::t_0abde941aa2521 141-147
+  s_2bfd55a4393d7c::t_e67059d023496c 394-410
+  s_1c08b47ac3792f::t_2172a54160de23 140
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  s_2bfd55a4393d7c::t_a1f63c874dbc7b 1-154
+src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts
+  s_2bfd55a4393d7c::t_38e47603a015f0 1-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eeecefc4979a16aff79786d5bdc60972eb528e12",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
