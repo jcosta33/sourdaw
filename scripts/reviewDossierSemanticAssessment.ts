@@ -14,6 +14,13 @@
  * never proves. "Declaring it ignored" is `assessmentImpact: none` with an `assessmentIgnoredReason`.
  * Anything else, on a delivered assessment with anything withheld or unresolved, is the silent
  * ignore this module makes impossible.
+ *
+ * A record whose `state` is `no-assessment` means CI ran and delivered nothing for the head — a red
+ * or skipped check, not an absent bundle file. That gap cannot be "ignored" the way a delivered
+ * assessment's withheld scope can, so `assessmentImpact: none` (with or without a reason) always
+ * refuses. The gate instead requires a limitation citing the record's own reason as the token
+ * `semantic-ci <reason>` (for example `semantic-ci red-check`), whatever the impact. A bundle
+ * carrying no `semantic-ci.json` file at all is unaffected and keeps no requirement.
  */
 
 import { fail } from './prContract.ts';
@@ -103,7 +110,7 @@ export type SemanticAssessmentCoverage =
           readonly artifactName: string;
           readonly withheldPaths: readonly string[];
       }
-    | { readonly state: 'no-assessment'; readonly pr: number; readonly headSha: string };
+    | { readonly state: 'no-assessment'; readonly pr: number; readonly headSha: string; readonly reason: string };
 
 /**
  * Reads the `semantic-ci.json` record `review:prepare` wrote, failing closed on any malformed shape.
@@ -121,8 +128,8 @@ export function parseSemanticAssessmentCoverage(value: unknown): SemanticAssessm
     const pr = readPositiveInteger('semantic-ci record pr', value.pr);
     const headSha = readNonBlankString('semantic-ci record headSha', value.headSha);
     if (value.state === 'no-assessment') {
-        readNonBlankString('semantic-ci record reason', value.reason);
-        return { state: 'no-assessment', pr, headSha };
+        const reason = readNonBlankString('semantic-ci record reason', value.reason);
+        return { state: 'no-assessment', pr, headSha, reason };
     }
     if (value.state !== 'assessed') {
         fail(`semantic-ci record state must be assessed or no-assessment, found ${describeValue(value.state)}`);
@@ -148,12 +155,30 @@ function citesAssessment(
     return dossier.limitations.some((limitation) => tokens.some((token) => limitation.includes(token)));
 }
 
+/** The citation token a no-assessment round must name: `semantic-ci <reason>`. */
+function noAssessmentCitationToken(coverage: Extract<SemanticAssessmentCoverage, { state: 'no-assessment' }>): string {
+    return `semantic-ci ${coverage.reason}`;
+}
+
+/** A limitation cites a no-assessment record when it contains the token `semantic-ci <reason>`. */
+function citesNoAssessment(
+    dossier: ReviewDossier,
+    coverage: Extract<SemanticAssessmentCoverage, { state: 'no-assessment' }>
+): boolean {
+    const token = noAssessmentCitationToken(coverage);
+    return dossier.limitations.some((limitation) => limitation.includes(token));
+}
+
 /**
  * The publication gate: a delivered assessment with anything withheld or unresolved must be cited
  * (a limitation naming the assessment's artifact identity or a withheld path) or declared ignored
  * (`none` plus `assessmentIgnoredReason`). A `none` with no reason refuses, naming the field and the
- * figure it contradicts; a non-`none` impact that never cites refuses the same way. A bundle with no
- * `semantic-ci.json` passes with no requirement; a record naming another publication is refused.
+ * figure it contradicts; a non-`none` impact that never cites refuses the same way. A `no-assessment`
+ * record — CI ran and delivered nothing for the head — refuses `assessmentImpact: none` outright
+ * (a reason does not rescue it, since there is no assessment to have had no effect on) and refuses
+ * any dossier whose limitations never cite the record's reason as the token `semantic-ci <reason>`,
+ * whatever its impact. A bundle with no `semantic-ci.json` passes with no requirement; a record
+ * naming another publication is refused before either rule runs.
  */
 export function assertSemanticAssessmentAcknowledged(
     dossier: ReviewDossier,
@@ -168,7 +193,18 @@ export function assertSemanticAssessmentAcknowledged(
             `semantic-ci record pr ${coverage.pr} headSha ${coverage.headSha} does not match the publication pr ${expected.pr} headSha ${expected.headSha}`
         );
     }
-    if (coverage.state !== 'assessed') {
+    if (coverage.state === 'no-assessment') {
+        const token = noAssessmentCitationToken(coverage);
+        if (dossier.assessmentImpact === 'none') {
+            fail(
+                `review dossier assessmentImpact none ignores that no semantic assessment was delivered for this head: disclose it in a limitation naming ${token}`
+            );
+        }
+        if (!citesNoAssessment(dossier, coverage)) {
+            fail(
+                `review dossier does not cite that no semantic assessment was delivered for this head: name ${token} in a limitation`
+            );
+        }
         return;
     }
     if (coverage.withheld === 0 && coverage.unresolved === 0) {

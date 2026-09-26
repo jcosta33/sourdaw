@@ -208,9 +208,14 @@ and the withheld figure; a reason beside a non-`none` token is refused naming `a
 and the token it contradicts. The reason is folded into the canonical record beside `assessmentImpact`
 and covered by `dossierDigest`, so the acknowledgement is bound to what was accepted; records persisted
 before it existed keep verifying byte-identically. It records an acknowledgement, never agreement, and
-confers no verdict, approval or merge authority — ADR 0047 still governs. A bundle with no
-`semantic-ci.json` — a historical bundle, or a head whose assessment was never delivered — carries no
-such requirement.
+confers no verdict, approval or merge authority — ADR 0047 still governs. When the record instead
+shows `no-assessment` — CI ran and delivered nothing for the head — `review:publish` refuses
+`assessmentImpact: none` outright, with or without a reason, and requires a limitation citing the
+record's own reason as the token `semantic-ci <reason>` (for example `semantic-ci red-check`),
+regardless of impact. A bundle with no `semantic-ci.json` file at all — a historical bundle prepared
+before `review:prepare` wrote the record — still carries no such requirement; a bundle whose manifest
+records generating that file but carries no such file on disk is refused instead of read as
+undelivered.
 
 A pull request that has taken the reviewer change-request escalation threshold — the constant
 `REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer

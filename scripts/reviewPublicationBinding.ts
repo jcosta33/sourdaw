@@ -123,14 +123,19 @@ function persistCanonicalReviewDossier(
 }
 
 /**
- * The bundle's `semantic-ci.json` record, parsed, or `undefined` when the bundle carries none — a
- * historical bundle prepared before `review:prepare` wrote the projection, or a head whose
- * assessment was never delivered. A present but malformed file is refused, exactly like every other
- * bundle file.
+ * The bundle's `semantic-ci.json` record, parsed, or `undefined` when the bundle carries none. A
+ * missing file means only a bundle prepared before `review:prepare` wrote the record: when the
+ * bundle manifest's generated set records writing this file, an absent file is refused instead of
+ * being read as an undelivered assessment. A present but malformed file is refused, exactly like
+ * every other bundle file.
  */
 function readSemanticCiRecord(port: PublishReviewPort, bundle: string): SemanticAssessmentCoverage | undefined {
-    const read = readBundleFile(port, join(bundle, SEMANTIC_CI_NAME));
+    const path = join(bundle, SEMANTIC_CI_NAME);
+    const read = readBundleFile(port, path);
     if (!read.present) {
+        if (readBundleGeneratedSet(bundle)?.has(SEMANTIC_CI_NAME) === true) {
+            fail(`missing semantic-ci record at ${path}; the bundle manifest records generating it`);
+        }
         return undefined;
     }
     return parseSemanticAssessmentCoverage(read.value);

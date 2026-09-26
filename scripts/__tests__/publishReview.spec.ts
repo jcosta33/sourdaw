@@ -5038,6 +5038,18 @@ describe('fresh reviewer dossier publication', () => {
         };
     }
 
+    /** A `no-assessment` `semantic-ci.json` record: CI ran red and delivered nothing for the head. */
+    function noAssessmentSemanticCi(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+        return {
+            format: SEMANTIC_CI_FORMAT,
+            pr: number,
+            headSha: head,
+            state: 'no-assessment',
+            reason: 'red-check',
+            ...overrides,
+        };
+    }
+
     function readJsonFile(path: string): unknown {
         const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
         return parsed;
@@ -5425,6 +5437,102 @@ describe('fresh reviewer dossier publication', () => {
                     /review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved/u
                 );
                 expect(fixture.posted.review).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+    });
+
+    describe('no-assessment semantic-ci acknowledgement', () => {
+        it('refuses a no-assessment record with an unrelated limitation, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['the native audio path is not exercised on this head'],
+                }),
+                semanticCi: noAssessmentSemanticCi(),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(/semantic-ci red-check/u);
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a no-assessment record whose limitation cites the wrong reason, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
+                }),
+                semanticCi: noAssessmentSemanticCi({ reason: 'absent' }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(/semantic-ci absent/u);
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a no-assessment record whose limitation cites it', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['semantic-ci red-check: CI delivered no assessment for this head'],
+                }),
+                semanticCi: noAssessmentSemanticCi(),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a manifest that records generating the semantic-ci record while the file is absent', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                manifest: {
+                    pr: number,
+                    baseRefName: 'main',
+                    baseSha: base,
+                    headSha: head,
+                    generated: ['diff.patch', 'manifest.json', 'risk-plan.json', 'dossier.json', 'semantic-ci.json'],
+                },
+            });
+            try {
+                const message = refusalMessage(() => publishReview(number, fixture.port));
+                expect(message).toMatch(/missing semantic-ci record at .*semantic-ci\.json/u);
+                expect(fixture.calls).not.toContain('post');
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toEqual([]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes when the manifest generated list omits the semantic-ci record and the file is absent', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                manifest: {
+                    pr: number,
+                    baseRefName: 'main',
+                    baseSha: base,
+                    headSha: head,
+                    generated: ['diff.patch', 'manifest.json', 'risk-plan.json', 'dossier.json'],
+                },
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
             } finally {
                 removeTemporaryDirectory(fixture.root);
             }
