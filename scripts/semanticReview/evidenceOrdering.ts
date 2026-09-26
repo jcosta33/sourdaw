@@ -4,14 +4,16 @@
  * The collector reads each changed path's sides once and hands the reads here, so classification,
  * sizing, and admission all consume one read per side. Ordering is over the admission units the
  * collector actually admits — each changed file's before and after side, plus each contract-context
- * region — in the order admission walks them, in three tiers:
+ * region — in the order admission walks them, in four tiers:
  *
- * 1. the change's own contract-carrying sides, the changed-file before/after units whose side is
- *    contract-carrying — or a source a contract-carrying spec covers — so the budget stays on the
- *    change the contract lives in and no spec outranks the source it covers;
- * 2. contract-context units, the documents read at the contract source revision — ahead of bulk,
+ * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
+ *    contract-carrying or a source a contract-carrying spec covers — so the budget stays on the change
+ *    the contract lives in and no spec outranks the source it covers;
+ * 2. a changed file whose rules need contract evidence, so the context charge its own rules declared
+ *    cannot starve its reader, while the side stays behind genuine contract material;
+ * 3. contract-context units, the documents read at the contract source revision — ahead of bulk,
  *    behind the change's own contract material;
- * 3. bulk sides of the change.
+ * 4. bulk sides of the change.
  *
  * A side of a path that is contract-carrying on either side outranks a purely bulk side of another
  * path, so a collected spec whose after side imports a closure member keeps its bulk before side ahead
@@ -30,7 +32,7 @@
  */
 
 import { isContractCarryingContent, resolvedRelativeImportCandidates } from './contractCarrying.ts';
-import { isCollectedSpec } from './rules.ts';
+import { applicableRules, isCollectedSpec, unitNeedsContractContext } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 
@@ -83,17 +85,47 @@ export function classifyContractCarryingSides(
 }
 
 /**
+ * The changed paths whose rules declare a contract, decision or registration token. A file's own sides
+ * are ordered ahead of the context documents its rules charge, so the charge cannot starve the reader
+ * that made it chargeable.
+ */
+export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): ReadonlySet<string> {
+    const needing = new Set<string>();
+    for (const file of changed) {
+        const rules = applicableRules(file.previousPath === undefined ? [file.path] : [file.path, file.previousPath]);
+        if (unitNeedsContractContext(rules)) {
+            needing.add(file.path);
+        }
+    }
+    return needing;
+}
+
+/**
  * The changed non-spec sources a changed collected spec covers — the files that spec imports and
- * therefore tests. A contract-carrying spec must not outrank the source it covers, so these sources
- * are ordered in the spec's contract tier; a source no spec covers stays bulk whatever its own content
- * imports.
+ * therefore tests, plus one transitive level: the changed files those sources themselves re-export or
+ * import. A contract-carrying spec must not outrank the source it covers, so these sources are ordered
+ * in the spec's contract tier; a source no spec covers stays bulk whatever its own content imports.
+ *
+ * The transitive level exists because a spec reaches a module it actually tests through a re-export: a
+ * spec that imports `evidence.ts` also covers `contractCarrying.ts` and `evidenceOrdering.ts` through
+ * `evidence.ts`'s re-exports, and resolving only the spec's own specifiers left those two modules bulk.
+ * One level is the observed shape; the closure is not chased further so the walk stays deterministic
+ * and cheap over already-read contents.
  */
 export function specCoveredSources(
     changed: readonly SemanticChangedFile[],
     contents: ReadonlyMap<string, ChangedFileContents>
 ): ReadonlySet<string> {
     const changedPaths = new Set(changed.map((file) => file.path));
+    const filesByPath = new Map(changed.map((file) => [file.path, file]));
     const covered = new Set<string>();
+    const collect = (sourcePath: string, content: string): void => {
+        for (const candidate of resolvedRelativeImportCandidates(content, sourcePath)) {
+            if (changedPaths.has(candidate) && !isCollectedSpec(candidate)) {
+                covered.add(candidate);
+            }
+        }
+    };
     for (const file of changed) {
         if (!isCollectedSpec(file.path)) {
             continue;
@@ -108,18 +140,27 @@ export function specCoveredSources(
         if (!contractByContent) {
             continue;
         }
-        for (const side of [
-            { content: before, path: beforePath },
-            { content: after, path: file.path },
-        ]) {
-            if (side.content === undefined) {
-                continue;
-            }
-            for (const candidate of resolvedRelativeImportCandidates(side.content, side.path)) {
-                if (changedPaths.has(candidate) && !isCollectedSpec(candidate)) {
-                    covered.add(candidate);
-                }
-            }
+        if (before !== undefined) {
+            collect(beforePath, before);
+        }
+        if (after !== undefined) {
+            collect(file.path, after);
+        }
+    }
+    // One transitive level: each covered source's own re-exports and imports are the material the spec
+    // reaches through it. The snapshot keeps the walk to exactly one level rather than a full closure.
+    for (const coveredPath of [...covered]) {
+        const file = filesByPath.get(coveredPath);
+        if (file === undefined) {
+            continue;
+        }
+        const entry = contents.get(coveredPath);
+        const beforePath = file.previousPath ?? file.path;
+        if (entry?.before !== undefined) {
+            collect(beforePath, entry.before);
+        }
+        if (entry?.after !== undefined) {
+            collect(file.path, entry.after);
         }
     }
     return covered;
@@ -135,6 +176,8 @@ export type ChangedSideUnit = {
     readonly pathContractCarrying: boolean;
     /** Whether a contract-carrying collected spec covers this source, so it ranks in the spec's tier. */
     readonly specCovered: boolean;
+    /** Whether this path's rules declare a contract, decision or registration token, so its own sides rank ahead of the context they charge. */
+    readonly contractNeeding: boolean;
     readonly admissionBytes: number;
 };
 
@@ -168,20 +211,40 @@ function unitSideOrder(unit: AdmissionUnit): number {
     return 2;
 }
 
-/** The admission tier: the change's contract-carrying sides, then contract-context, then bulk sides. */
+/**
+ * The admission tier, four ranks:
+ *
+ * 0. the change's own contract-carrying sides and the sources a contract-carrying spec covers;
+ * 1. a changed file whose rules declare a contract, decision or registration token — its own
+ *    before/after sides rank ahead of the context documents those rules charge, so the context cannot
+ *    starve the reader that made it chargeable, while the side stays behind genuine contract material;
+ * 2. contract-context units;
+ * 3. bulk sides.
+ *
+ * A side that is contract-carrying keeps rank 0 even when its file's rules also need contract
+ * evidence, so a spec rewritten to drop its closure import still admits its contract before side ahead
+ * of its now-contract-needing bulk after side.
+ */
 function admissionTier(unit: AdmissionUnit): number {
     if (unit.kind === 'context') {
+        return 2;
+    }
+    if (unit.contractCarrying || unit.specCovered) {
+        return 0;
+    }
+    if (unit.contractNeeding) {
         return 1;
     }
-    return unit.contractCarrying || unit.specCovered ? 0 : 2;
+    return 3;
 }
 
 /**
- * The admission order. Three tiers — the change's own contract-carrying sides first, then
- * contract-context regions, then bulk sides — and, inside each tier, non-spec before collected spec,
- * then a side of a contract-carrying path before a purely bulk side, then ascending admission bytes —
- * the order-independent lower bound a side's sole regions cost, a tie-break rather than a promise of
- * what the side pays — then path, then a path's before side before its own after side. A source a
+ * The admission order. Four tiers — the change's own contract-carrying sides first, then a
+ * contract-needing file's own sides, then contract-context regions, then bulk sides — and, inside each
+ * tier, non-spec before collected spec, then a side of a contract-carrying path before a purely bulk
+ * side, then ascending admission bytes — the order-independent lower bound a side's sole regions cost,
+ * a tie-break rather than a promise of what the side pays — then path, then a path's before side before
+ * its own after side. A source a
  * contract-carrying spec covers is ordered in the spec's tier, so the non-spec-before-spec tie-break
  * keeps the source ahead of its own spec without promoting a file no spec covers. The ascending-byte
  * order is a lower-bound tie-break, not a promise that a smaller side survives — a region shared with
@@ -229,11 +292,13 @@ export function admissionUnits(
     contractContexts: readonly { path: string; admissionBytes: number }[],
     specCovered: ReadonlySet<string>
 ): readonly AdmissionUnit[] {
+    const contractNeeding = contractNeedingPaths(changed);
     const units: AdmissionUnit[] = [];
     for (const file of changed) {
         const sides = sidesByPath.get(file.path);
         const pathContractCarrying = (sides?.before ?? false) || (sides?.after ?? false);
         const covered = specCovered.has(file.path);
+        const needsContract = contractNeeding.has(file.path);
         if (kindHasBeforeSide(file.kind)) {
             units.push({
                 kind: 'changed',
@@ -242,6 +307,7 @@ export function admissionUnits(
                 contractCarrying: sides?.before ?? false,
                 pathContractCarrying,
                 specCovered: covered,
+                contractNeeding: needsContract,
                 admissionBytes: admissionBytesBySide.get(file.path)?.before ?? 0,
             });
         }
@@ -253,6 +319,7 @@ export function admissionUnits(
                 contractCarrying: sides?.after ?? false,
                 pathContractCarrying,
                 specCovered: covered,
+                contractNeeding: needsContract,
                 admissionBytes: admissionBytesBySide.get(file.path)?.after ?? 0,
             });
         }
@@ -444,4 +511,47 @@ export function admissionBytesBySide(
         });
     }
     return bytes;
+}
+
+/**
+ * The changed paths the admission content screen will mark `credential-shaped-content-excluded`, from
+ * the same region text the screen reads: each side's hunks when the hunks were read, the whole side
+ * otherwise. A file with a credential-shaped region on either side is excluded by the planner however
+ * clean its other side, so the context gate must not charge a document no unit will read. This mirrors
+ * `admitSide`'s slicing rather than reading again — the content was already read once for admission.
+ */
+export function credentialShapedPaths(
+    changed: readonly SemanticChangedFile[],
+    contents: ReadonlyMap<string, ChangedFileContents>,
+    hunksByPath: ReadonlyMap<string, PathHunks>
+): ReadonlySet<string> {
+    const credential = new Set<string>();
+    const sideHasCredential = (raw: string, ranges: readonly LineRange[] | undefined): boolean => {
+        if (ranges === undefined || ranges.length === 0) {
+            return sensitiveContentReason(raw) !== undefined;
+        }
+        for (const range of ranges) {
+            const sliced = sliceLines(raw, range);
+            if (sliced !== undefined && sensitiveContentReason(sliced.text) !== undefined) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (const file of changed) {
+        const entry = contents.get(file.path);
+        const hunks = hunksByPath.get(file.path);
+        if (
+            kindHasBeforeSide(file.kind) &&
+            entry?.before !== undefined &&
+            sideHasCredential(entry.before, hunks?.before)
+        ) {
+            credential.add(file.path);
+            continue;
+        }
+        if (kindHasAfterSide(file.kind) && entry?.after !== undefined && sideHasCredential(entry.after, hunks?.after)) {
+            credential.add(file.path);
+        }
+    }
+    return credential;
 }

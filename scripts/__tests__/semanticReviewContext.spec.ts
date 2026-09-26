@@ -833,7 +833,8 @@ describe('semantic review context', () => {
     it('keeps the three-term reduced-unit reason the fitter emits when it cuts every side', () => {
         // The fitter unions the own before/after drops with the context drop, so a unit cut on all three
         // sides emits `(before, after, context)`. Restoring the two-term qualifier cap would normalise
-        // this real producer shape to `unrecognized-reason`; the projection must keep it.
+        // this real producer shape to `unrecognized-reason`; the projection must keep it. This guards the
+        // previous repair's three-term qualifier support, not this change's context gate.
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
             actionRuns: [RUN],

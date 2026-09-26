@@ -11,17 +11,19 @@
  * context. The whole repository is never sent. When a region is dropped, truncated, or unavailable,
  * that is recorded as a limitation: an omitted region is not evidence that the region is safe.
  *
- * Admission is ranked in three tiers: a contract-carrying side — a trusted GitHub-write closure member,
+ * Admission is ranked in four tiers: a contract-carrying side — a trusted GitHub-write closure member,
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), a collected spec whose content imports a closure member or names one of those workflow
- * files, or a source such a spec covers — first, then each contract-context region the caller supplies,
- * then bulk sides. The ranking admits the change's own contract material ahead of the context documents,
- * but a region over the per-region ceiling is never supplied: it is withheld and recorded, so a contract
- * document larger than that ceiling is never sent whatever its tier. Every withheld region is named. Each
- * side is classified from the path and content it carries, so a deleted or moved spec still counts from
- * its before side, and a side of a path that is contract-carrying on either side keeps its bulk
- * companion ahead of a purely bulk path.
+ * files, or a source such a spec covers — first, then a changed file whose rules declare a contract,
+ * decision or registration token, then each contract-context region the caller supplies, then bulk
+ * sides. The ranking admits the change's own contract material ahead of the context documents and keeps
+ * a contract-needing file ahead of the context its own rules charge, but a region over the per-region
+ * ceiling is never supplied: it is withheld and recorded, so a contract document larger than that
+ * ceiling is never sent whatever its tier. Every withheld region is named. Each side is classified from
+ * the path and content it carries, so a deleted or moved spec still counts from its before side, and a
+ * side of a path that is contract-carrying on either side keeps its bulk companion ahead of a purely
+ * bulk path.
  */
 
 import {
@@ -37,6 +39,8 @@ import {
     chargeableRegionBytes,
     classifyContractCarryingSides,
     compareLexicographic,
+    contractNeedingPaths,
+    credentialShapedPaths,
     readChangedContents,
     specCoveredSources,
     type AdmissionSideBytes,
@@ -44,7 +48,7 @@ import {
     type ChangedFileContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
-import { applicableRules, isCollectedSpec, unitNeedsContractContext } from './rules.ts';
+import { applicableRules, isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 
@@ -636,25 +640,26 @@ function admitUnit(
 }
 
 /**
- * Whether any eligible changed file that can contribute admissible evidence plans a unit whose rules
+ * Whether any screened changed file that can contribute admissible evidence plans a unit whose rules
  * declare a contract, decision or registration token. A file whose every side is over the per-region
- * ceiling — or was screened out before admission — produces no unit, so it must not charge the contract
- * documents no request will read.
+ * ceiling, or carries a credential-shaped side the content screen will exclude, produces no unit, so it
+ * must not charge the contract documents no request will read. The caller screens paths before calling.
  */
 function planNeedsContractContext(
     files: readonly SemanticChangedFile[],
-    admissionBytes: ReadonlyMap<string, AdmissionSideBytes>
+    admissionBytes: ReadonlyMap<string, AdmissionSideBytes>,
+    credentialShaped: ReadonlySet<string>
 ): boolean {
+    const contractNeeding = contractNeedingPaths(files);
     for (const file of files) {
-        if (exclusionReason(file) !== undefined) {
+        if (credentialShaped.has(file.path)) {
             continue;
         }
         const bytes = admissionBytes.get(file.path);
         if ((bytes?.before ?? 0) === 0 && (bytes?.after ?? 0) === 0) {
             continue;
         }
-        const rules = applicableRules(file.previousPath === undefined ? [file.path] : [file.path, file.previousPath]);
-        if (unitNeedsContractContext(rules)) {
+        if (contractNeeding.has(file.path)) {
             return true;
         }
     }
@@ -711,10 +716,15 @@ export function collectEvidence(input: {
         input.headSha
     );
     const specCovered = specCoveredSources(assessed, contents);
+    const credentialShaped = credentialShapedPaths(assessed, contents, hunksByPath);
     // The default contract documents are charged only when a planned unit that can actually exist — an
-    // eligible file with at least one admissible side and contract-declaring rules — will read them.
+    // eligible, credential-free file with at least one admissible side and contract-declaring rules —
+    // will read them.
     const contextPaths = new Set<string>();
-    if (input.includeDefaultContractContext === true && planNeedsContractContext(assessed, bytesBySide)) {
+    const includeDefault =
+        input.includeDefaultContractContext === true &&
+        planNeedsContractContext(assessed, bytesBySide, credentialShaped);
+    if (includeDefault) {
         for (const path of contractContextCandidates(input.port, input.contractSourceSha)) {
             contextPaths.add(path);
         }
