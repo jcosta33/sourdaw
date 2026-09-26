@@ -903,6 +903,49 @@ describe('scheduleTrackAutomation', () => {
         expect(postStep[1]).toBeCloseTo(1, 10);
     });
 
+    // #4598: a one-point device lane above the declared range compiled to
+    // `slewEvents`' `events.length <= 1` early return, which skipped the
+    // clamp/quantise pair every other early return already carried — so a
+    // one-point lane exported the raw value while live played the clamped one.
+    it('clamps a single-point device lane to the declared max (#4598)', () => {
+        const deviceParam = makeParam();
+        const deviceNode = {
+            inputNode: {} as AudioNode,
+            outputNode: {} as AudioNode,
+            namedNodes: { lfoDepth: { gain: deviceParam } as unknown as AudioNode },
+            nodes: [],
+        };
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:trem-depth',
+                    minValue: 0,
+                    maxValue: 2,
+                    points: [{ beat: 128, value: 2, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-tremolo', deviceNode)],
+            deviceParameterLaw: {
+                acceptsAutomation: () => true,
+                // The lane's own declared max (2) sits above the device's real
+                // ceiling (1) — only the device law can pull it down.
+                clampValue: ({ value }) => Math.min(1, Math.max(0, value)),
+                quantiseValue: ({ value }) => value,
+            },
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
+
+        expect(deviceParam.setValueAtTime).toHaveBeenCalledWith(1, 0);
+        expect(deviceParam.linearRampToValueAtTime).not.toHaveBeenCalled();
+    });
+
     // These link tests carry the lane on `pan`, not `gain`. What they assert is
     // the linkScale algebra on the resolved scalar, and a `gain` lane now runs
     // through the fader level law (dB conversion + the [0,1] ceiling the
