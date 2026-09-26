@@ -107,19 +107,17 @@ function trackIdsOf(actions: readonly ExecutableRuntimeAction[]): string[] {
 
 /**
  * Mirrors `parsePromptToActions.ts`'s own derivation: a record's `actionPositions` come from its
- * item's compiled command range, never from `stableIds`, so a helper compiling selector evidence by
- * hand must derive them the same way the real production path does.
+ * item's `representativeCommandIndexes`, deduplicated, never from `stableIds` and never from the
+ * item's own `commandStart`/`commandCount` range — canonical command deduplication can fully resolve
+ * a `match` item's commands onto an earlier item's identical commands, leaving that item's own range
+ * empty even though its intent is still carried by those earlier positions. A helper compiling
+ * selector evidence by hand must derive positions the same way the real production path does.
  */
 function actionPositionsByItemId(
     compiled: ReturnType<typeof compileArbitraryCommandList>
 ): ReadonlyMap<string, number[]> {
     const items = compiled.status === 'accepted' ? (compiled.compilerEvidence?.items ?? []) : [];
-    return new Map(
-        items.map((item) => [
-            item.itemId,
-            Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset),
-        ])
-    );
+    return new Map(items.map((item) => [item.itemId, [...new Set(item.representativeCommandIndexes)]]));
 }
 
 function buildDrumColorCall() {
@@ -315,6 +313,147 @@ function compileDrumAutomationModeProposal(): {
 
 function automationModeTrackIdsOf(actions: readonly ExecutableRuntimeAction[]): string[] {
     return actions.flatMap((action) => (action.type === 'setAutomationMode' ? [action.payload.trackId] : []));
+}
+
+/**
+ * Two `where`-selected `setAutomationMode` items put Kick and Snare into write mode explicitly; a
+ * third, `match`-selected `roleFamily: drums` item asks for the identical mode on the identical two
+ * tracks. Every one of that third item's commands is therefore byte-identical to one the first two
+ * items already registered, so canonical deduplication adds no new commands for it: its own
+ * `commandStart`/`commandCount` range is empty even though its intent is fully carried by the first
+ * two items' commands. A fourth, unrelated item (Lead Vocal, a different mode) gives a subset
+ * re-preview something to keep or drop independently of the deduplicated record's own positions.
+ * `setTrackColor` cannot execute inside an isolated preview (see `buildDrumRoutingAndAutomationCall`
+ * above), so this reproduces the dedup scenario with `setAutomationMode` instead of a literal color.
+ */
+function buildAutomationModeDeduplicationCall() {
+    return [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    semantic: { classification: 'simple' as const, uncertainty: [] },
+                    objective:
+                        'Put the kick and snare into write mode, the lead vocal into touch mode, then put every drum-family track into write mode.',
+                    constraints: ['Do not create, delete, or rename any track.'],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: ['setAutomationMode'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [
+                        'Set the kick, snare, and lead vocal automation modes directly, then resolve the drum-family selector.',
+                    ],
+                    stoppingConditions: ['Stop if the selector resolves more than its maximum of 8 tracks.'],
+                },
+                list: {
+                    schemaVersion: 1,
+                    items: [
+                        {
+                            id: 'mode-kick',
+                            name: 'setAutomationMode',
+                            arguments: { mode: DRUM_AUTOMATION_MODE },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Kick' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                        {
+                            id: 'mode-snare',
+                            name: 'setAutomationMode',
+                            arguments: { mode: DRUM_AUTOMATION_MODE },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Snare' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                        {
+                            id: 'mode-lead-vocal',
+                            name: 'setAutomationMode',
+                            arguments: { mode: 'touch' },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                where: { name: 'Lead Vocal' },
+                                quantity: { unit: 'targets', exactly: 1 },
+                            },
+                        },
+                        {
+                            id: 'mode-drums-dedup',
+                            name: 'setAutomationMode',
+                            arguments: { mode: DRUM_AUTOMATION_MODE },
+                            selector: {
+                                targetArgument: 'trackId',
+                                entity: 'track',
+                                match: { all: [{ roleFamily: 'drums' }] },
+                                quantity: { unit: 'targets', maximum: 8 },
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+}
+
+/**
+ * Compiles the automation-mode dedup batch directly through the compiler, the same way
+ * `parsePromptToActions` does, so the `mode-drums-dedup` item's `matchSelectorPredicates` record can
+ * be asserted against its `representativeCommandIndexes`-derived positions rather than an empty range.
+ */
+function compileAutomationModeDeduplicationProposal(): {
+    actions: ExecutableRuntimeAction[];
+    matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[];
+    revision: string;
+} {
+    const context = getProjectContext();
+    const revision = captureProjectRevision();
+    const compiled = compileArbitraryCommandList({
+        context,
+        revision,
+        calls: buildAutomationModeDeduplicationCall(),
+    });
+    if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+        const reason = compiled.status === 'rejected' ? compiled.reason : 'missing compiler evidence';
+        throw new Error(`Expected the automation-mode dedup batch to compile: ${reason}`);
+    }
+    const actions: ExecutableRuntimeAction[] = compiled.compilerEvidence.commands.map((command) => {
+        if (
+            command.name !== 'setAutomationMode' ||
+            typeof command.arguments.trackId !== 'string' ||
+            typeof command.arguments.mode !== 'string'
+        ) {
+            throw new Error('Expected a canonical setAutomationMode command.');
+        }
+        return {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: command.arguments.trackId, mode: command.arguments.mode as Track['automationMode'] },
+        };
+    });
+    const positionsByItemId = actionPositionsByItemId(compiled);
+    const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
+        compiled.compilerEvidence.selectors.flatMap((selector) => {
+            if (selector.predicate === undefined) {
+                return [];
+            }
+            return [
+                {
+                    itemId: selector.itemId,
+                    entity: selector.predicate.entity,
+                    where: selector.predicate.where,
+                    match: selector.predicate.match,
+                    condition: selector.predicate.condition,
+                    excludeIds: selector.predicate.excludeIds,
+                    quantity: selector.predicate.quantity,
+                    stableIds: [...selector.stableIds],
+                    actionPositions: positionsByItemId.get(selector.itemId) ?? [],
+                },
+            ];
+        });
+    return { actions, matchSelectorPredicates, revision };
 }
 
 function createMasterTrack(id: string): Track {
@@ -1011,6 +1150,115 @@ describe('match selector approval revalidation', () => {
 
         const outcome = await confirmPendingChatActions({ confirmationId: repropose.confirmationId });
         expect(outcome.status).toBe('invalidated');
+    });
+
+    it("carries the deduplicated drum-mode record forward with its earlier items' positions instead of an empty range", async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        registerReproposableRun();
+        const { actions, matchSelectorPredicates, revision } = compileAutomationModeDeduplicationProposal();
+
+        // The dedup item contributes no command of its own: every one of its resolved targets
+        // (kick, snare) already carries an identical `setAutomationMode` write from the two explicit
+        // items ahead of it, so only three actions exist in total.
+        expect(automationModeTrackIdsOf(actions)).toEqual(['track-kick', 'track-snare', 'track-lead-vocal']);
+        expect(matchSelectorPredicates).toEqual([
+            {
+                itemId: 'mode-drums-dedup',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 8 },
+                stableIds: ['track-kick', 'track-snare'],
+                actionPositions: [0, 1],
+            },
+        ]);
+        propose('confirmation-dedup-carries', actions, matchSelectorPredicates, revision);
+
+        const original = getPendingActionConfirmation('confirmation-dedup-carries');
+        const commandBatch = original?.approvalSnapshot.commandBatch;
+        if (!commandBatch) {
+            throw new Error('Expected the proposed confirmation to carry a command batch.');
+        }
+        const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedOriginal.status === 'invalid') {
+            throw new Error(parsedOriginal.reason);
+        }
+        const kickCommand = parsedOriginal.envelope.commands.find(
+            (command) => command.operation === 'setAutomationMode' && command.arguments.trackId === 'track-kick'
+        );
+        const snareCommand = parsedOriginal.envelope.commands.find(
+            (command) => command.operation === 'setAutomationMode' && command.arguments.trackId === 'track-snare'
+        );
+        if (!kickCommand || !snareCommand) {
+            throw new Error('Expected setAutomationMode commands for both the kick and snare tracks.');
+        }
+
+        const repropose = await reproposePendingChatActions({
+            confirmationId: 'confirmation-dedup-carries',
+            selectedIntentGroupIds: [kickCommand.commandId, snareCommand.commandId],
+        });
+
+        expect(repropose.status).toBe('reproposed');
+        if (repropose.status !== 'reproposed') {
+            throw new Error('Expected the kick-and-snare subset re-preview to succeed.');
+        }
+        const subsetConfirmation = getPendingActionConfirmation(repropose.confirmationId);
+        expect(automationModeTrackIdsOf(subsetConfirmation?.actions ?? [])).toEqual(['track-kick', 'track-snare']);
+        expect(subsetConfirmation?.approvalSnapshot.matchSelectorPredicates).toEqual([
+            {
+                itemId: 'mode-drums-dedup',
+                entity: 'track',
+                match: { all: [{ roleFamily: 'drums' }] },
+                quantity: { unit: 'targets', maximum: 8 },
+                stableIds: ['track-kick', 'track-snare'],
+                actionPositions: [0, 1],
+            },
+        ]);
+    });
+
+    it('drops the deduplicated drum-mode record from a subset that excludes both of its carrying positions', async () => {
+        setTracks([
+            createColorableTrack('track-kick', 'Kick'),
+            createColorableTrack('track-snare', 'Snare'),
+            createColorableTrack('track-lead-vocal', 'Lead Vocal'),
+        ]);
+        registerReproposableRun();
+        const { actions, matchSelectorPredicates, revision } = compileAutomationModeDeduplicationProposal();
+        propose('confirmation-dedup-drops', actions, matchSelectorPredicates, revision);
+
+        const original = getPendingActionConfirmation('confirmation-dedup-drops');
+        const commandBatch = original?.approvalSnapshot.commandBatch;
+        if (!commandBatch) {
+            throw new Error('Expected the proposed confirmation to carry a command batch.');
+        }
+        const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        if (parsedOriginal.status === 'invalid') {
+            throw new Error(parsedOriginal.reason);
+        }
+        const leadVocalCommand = parsedOriginal.envelope.commands.find(
+            (command) => command.operation === 'setAutomationMode' && command.arguments.trackId === 'track-lead-vocal'
+        );
+        if (!leadVocalCommand) {
+            throw new Error('Expected a setAutomationMode command targeting the lead vocal track.');
+        }
+
+        // Keeps only the unrelated lead-vocal command: neither of the dedup record's own carrying
+        // positions (the kick and snare commands) survives the subset.
+        const repropose = await reproposePendingChatActions({
+            confirmationId: 'confirmation-dedup-drops',
+            selectedIntentGroupIds: [leadVocalCommand.commandId],
+        });
+
+        expect(repropose.status).toBe('reproposed');
+        if (repropose.status !== 'reproposed') {
+            throw new Error('Expected the lead-vocal-only subset re-preview to succeed.');
+        }
+        const subsetConfirmation = getPendingActionConfirmation(repropose.confirmationId);
+        expect(subsetConfirmation?.approvalSnapshot.matchSelectorPredicates).toBeUndefined();
+        expect(automationModeTrackIdsOf(subsetConfirmation?.actions ?? [])).toEqual(['track-lead-vocal']);
     });
 
     it('rejects a subset re-preview that keeps the drum-automation item once a new track already matches it', async () => {

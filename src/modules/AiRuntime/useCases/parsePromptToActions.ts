@@ -924,13 +924,17 @@ const planPromptIntent = inject({ logger })(
                     // Every `match` selector the compiled list carried, with the stable ids it resolved to,
                     // so `resolveConfirmationAdmission` can re-resolve each one before rebinding an
                     // approval that changed revision instead of trusting only its fingerprint check.
-                    // `actionPositions` is read from the same item's compiled command range, not from
-                    // `stableIds`, so a subset re-preview can tell "this item's own actions survived"
-                    // apart from "some other item touching the same ids survived".
+                    // `actionPositions` is read from the item's `representativeCommandIndexes` rather than
+                    // its `commandStart`/`commandCount` range: canonical command deduplication can resolve
+                    // every one of an item's commands onto an earlier item's identical commands, leaving
+                    // this item's own range empty even though its intent is still carried by those earlier
+                    // positions. `representativeCommandIndexes` names the canonical position of each of the
+                    // item's commands, deduplicated ones included, so it is never empty for an item that
+                    // produced at least one command.
                     const actionPositionsByItemId = new Map(
                         (compiledList.compilerEvidence?.items ?? []).map((item) => [
                             item.itemId,
-                            Array.from({ length: item.commandCount }, (_, offset) => item.commandStart + offset),
+                            [...new Set(item.representativeCommandIndexes)],
                         ])
                     );
                     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] =
