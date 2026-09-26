@@ -15,11 +15,12 @@
  * counts rather than `state` alone: a `skipped` execution with a zero scope is a complete
  * assessment of an empty scope, not a missing one.
  *
- * The projection is coverage-only. The report's signals, findings, reasoning, question text, and
- * probabilities never reach the bundle, and each scope entry's `reason` is validated against the
- * producer's vocabulary with anything unrecognised normalised to a fixed code: feeding a downstream
- * reviewer the assessment's judgements anchors it, so the bundle carries only the scope, the
- * abstentions, and the revision it covers.
+ * The projection is coverage-only: it names what was withheld, excluded, and left unassessed, never
+ * what was admitted. The report's signals, findings, reasoning, question text, and probabilities never
+ * reach the bundle, and each scope entry's `reason` is validated against the producer's vocabulary with
+ * anything unrecognised normalised to a fixed code: feeding a downstream reviewer the assessment's
+ * judgements anchors it, so the bundle carries only the scope, the abstentions, and the revision it
+ * covers.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -179,18 +180,20 @@ const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'region-exceeds-per-region-budget',
     'total-evidence-budget-exhausted',
     'contract-evidence-withheld',
+    'unit-evidence-reduced-below-request-budget',
 ];
 
 /** The closed single qualifier terms the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
 const PARAMETERIZED_REASON_QUALIFIERS: ReadonlySet<string> = new Set([...EVIDENCE_SIDES, 'contract']);
 
 /**
- * Whether a parenthesised qualifier is a producer shape: a single side (or the context label
- * `contract`), or a side optionally followed by `contract` — no duplicates, no unknown terms.
+ * Whether a parenthesised qualifier is a producer shape: one or more distinct side terms, optionally
+ * followed by the context label `contract` — no duplicates, no unknown terms, and `contract` at most
+ * once, last.
  */
 function isParameterizedQualifierList(qualifier: string): boolean {
     const terms = qualifier.split(',').map((term) => term.trim());
-    if (terms.length === 0 || terms.length > 2) {
+    if (terms.length === 0) {
         return false;
     }
     if (terms.some((term) => term === '')) {
@@ -202,7 +205,8 @@ function isParameterizedQualifierList(qualifier: string): boolean {
     if (terms.some((term) => !PARAMETERIZED_REASON_QUALIFIERS.has(term))) {
         return false;
     }
-    return terms.length === 1 || terms[1] === 'contract';
+    const contractIndex = terms.indexOf('contract');
+    return contractIndex === -1 || contractIndex === terms.length - 1;
 }
 
 function isParameterizedReason(reason: string): boolean {

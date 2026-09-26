@@ -14,12 +14,14 @@
  * Admission is ranked in three tiers: a contract-carrying side — a trusted GitHub-write closure member,
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
- * boundary), or a collected spec whose content imports a closure member or names one of those workflow
- * files — first, then each contract-context region the caller supplies, then bulk sides, and every
- * withheld region is named, so the same budget is spent where the contract lives and the change's own
- * contract material outranks the context documents. Each side is classified from the path and content it
- * carries, so a deleted or moved spec still counts from its before side, and a side of a path that is
- * contract-carrying on either side keeps its bulk companion ahead of a purely bulk path.
+ * boundary), or any source whose content imports a closure member or names one of those workflow
+ * files — first, then each contract-context region the caller supplies, then bulk sides. The ranking
+ * admits the change's own contract material ahead of the context documents, but a region over the
+ * per-region ceiling is never supplied: it is withheld and recorded, so a contract document larger than
+ * that ceiling is never sent whatever its tier. Every withheld region is named. Each side is classified
+ * from the path and content it carries, so a deleted or moved spec still counts from its before side,
+ * and a side of a path that is contract-carrying on either side keeps its bulk companion ahead of a
+ * purely bulk path.
  */
 
 import {
@@ -40,7 +42,7 @@ import {
     type ChangedFileContents,
     type ContractCarryingSides,
 } from './evidenceOrdering.ts';
-import { applicableRules, isCollectedSpec } from './rules.ts';
+import { applicableRules, isCollectedSpec, unitNeedsContractContext } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
 
@@ -629,6 +631,43 @@ function admitUnit(
             );
         }
     }
+}
+
+/** Whether any eligible changed file plans a unit whose rules declare a contract, decision or registration token. */
+function planNeedsContractContext(files: readonly SemanticChangedFile[]): boolean {
+    for (const file of files) {
+        if (exclusionReason(file) !== undefined) {
+            continue;
+        }
+        const rules = applicableRules(file.previousPath === undefined ? [file.path] : [file.path, file.previousPath]);
+        if (unitNeedsContractContext(rules)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** The default contract-context candidates, read at the contract source revision. */
+function contractContextCandidates(port: SemanticSourcePort, contractSourceSha: string): string[] {
+    const candidates = ['AGENTS.md', '.agents/decisions/README.md'];
+    return candidates.filter((path) => port.readFile(contractSourceSha, path) !== undefined);
+}
+
+/**
+ * The contract-context paths the caller should collect: the default candidates plus the caller's, or
+ * none when no planned unit will receive them, so a change whose rules need no contract evidence is
+ * not charged for a context document no request reads.
+ */
+export function contractContextPathsFor(
+    files: readonly SemanticChangedFile[],
+    port: SemanticSourcePort,
+    contractSourceSha: string,
+    extraPaths: readonly string[]
+): string[] {
+    if (!planNeedsContractContext(files)) {
+        return [];
+    }
+    return [...new Set([...contractContextCandidates(port, contractSourceSha), ...extraPaths])];
 }
 
 /**

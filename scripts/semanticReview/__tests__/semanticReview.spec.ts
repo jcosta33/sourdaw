@@ -838,6 +838,78 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
+    it('admits a source that imports a closure member before its own spec when the budget binds', () => {
+        // A source outside the closure that imports a closure member is contract-carrying from its
+        // content, so under the non-spec-before-spec tie-break it outranks the collected spec that
+        // covers it. Applying the content rule only to collected specs classified the source bulk, so
+        // the spec spent the budget and the source it covers was withheld.
+        const sourceBefore = 'export const evidence = 1;\n';
+        const sourceAfter =
+            "import { snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';\nexport const evidence = 2;\n";
+        const specBefore = "import { describe, expect, it } from 'vitest';\n";
+        const specAfter = `${specBefore}const workflow = '.github/workflows/semantic-review.yml';\n${'const large = 1;\n'.repeat(
+            200
+        )}`;
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [
+                    changedFile('scripts/semanticReview/__tests__/semanticReview.spec.ts'),
+                    changedFile('scripts/semanticReview/evidence.ts'),
+                ],
+                blobs: {
+                    [`${MERGE_BASE}:scripts/semanticReview/evidence.ts`]: sourceBefore,
+                    [`${HEAD}:scripts/semanticReview/evidence.ts`]: sourceAfter,
+                    [`${MERGE_BASE}:scripts/semanticReview/__tests__/semanticReview.spec.ts`]: specBefore,
+                    [`${HEAD}:scripts/semanticReview/__tests__/semanticReview.spec.ts`]: specAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: 1_000_000,
+                maxTotalBytes: Buffer.byteLength(specBefore, 'utf8') + Buffer.byteLength(specAfter, 'utf8'),
+            },
+        });
+        expect(set.references.some((reference) => reference.path === 'scripts/semanticReview/evidence.ts')).toBe(true);
+        expect(
+            set.truncated.some(
+                (entry) =>
+                    entry.path === 'scripts/semanticReview/__tests__/semanticReview.spec.ts' &&
+                    entry.reason === 'total-evidence-budget-exhausted (after, contract)'
+            )
+        ).toBe(true);
+    });
+
+    it('charges no contract context when no planned unit needs contract evidence', async () => {
+        // A crates/daw-dsp/** change plans units whose rules (audio allocation, timing) need no
+        // contract, decision, or registration token. The caller must not pass the contract-context
+        // paths, so the change's own sides are admitted and no context document a request never reads
+        // is charged to the total budget.
+        const own = 'const sample = 1;\n';
+        const files = [changedFile('crates/daw-dsp/src/a.rs'), changedFile('crates/daw-dsp/src/b.rs')];
+        const source = fakeSource({
+            files,
+            blobs: {
+                [`${MERGE_BASE}:crates/daw-dsp/src/a.rs`]: own,
+                [`${HEAD}:crates/daw-dsp/src/a.rs`]: own,
+                [`${MERGE_BASE}:crates/daw-dsp/src/b.rs`]: own,
+                [`${HEAD}:crates/daw-dsp/src/b.rs`]: own,
+                [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n',
+            },
+        });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.05), source, fixedClock(1_000)),
+            // Exactly the change's four own sides: under the old order the context documents admitted
+            // first and withheld one of the change's own sides for a region no request reads.
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: Buffer.byteLength(own, 'utf8') * 4 },
+        });
+        expect(result.report.scope.truncated).toEqual([]);
+        const contextIds = result.previews.flatMap((preview) => preview.evidenceIds).filter((id) => id.startsWith('c'));
+        expect(contextIds).toEqual([]);
+    });
+
     it('orders a chargeable hunk before screened and over-budget hunks it cannot charge', () => {
         // R5: the previous fixture pitted a clean copy against a clean edit, so reverting
         // `chargeableRegionBytes` to raw bytes left it green and dropping the content-screen branch left
@@ -3604,6 +3676,28 @@ describe('reduced-unit reporting', () => {
         expect(result.report.scope.truncated.length).toBeGreaterThan(0);
         expect(result.report.limitations.join(' ')).toContain('per-request state budget');
         expect(renderSummary(result.report)).toContain('Incomplete');
+    });
+
+    it('names the side the per-request fitter dropped in the reduced-unit entry', async () => {
+        // The reduced-unit entry was recorded per unit with no side, so a reader could not tell which
+        // side was cut. The fitter knows the dropped sides, and the entry must name them.
+        const big = 'const sample_value = 1;\n'.repeat(500);
+        const provider = constantProvider(0.05);
+        const source = fakeSource({
+            files: [changedFile('crates/daw-dsp/src/big.rs')],
+            blobs: {
+                [`${MERGE_BASE}:crates/daw-dsp/src/big.rs`]: big,
+                [`${HEAD}:crates/daw-dsp/src/big.rs`]: big,
+            },
+        });
+        const result = await runScan({
+            ...scanPorts(provider, source, fixedClock(1_000)),
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        expect(result.report.scope.truncated).toContainEqual({
+            path: 'crates/daw-dsp/src/big.rs',
+            reason: 'unit-evidence-reduced-below-request-budget (after)',
+        });
     });
 
     it('does not send a region it cannot send whole, and reports what the questions then lack', () => {

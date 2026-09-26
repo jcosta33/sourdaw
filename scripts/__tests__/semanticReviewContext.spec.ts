@@ -789,6 +789,47 @@ describe('semantic review context', () => {
         ]);
     });
 
+    it('keeps a reduced-unit entry that names the sides the fitter dropped', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'crates/daw-dsp/src/big.rs',
+                                    reason: 'unit-evidence-reduced-below-request-budget (after)',
+                                },
+                                {
+                                    path: 'crates/daw-dsp/src/wider.rs',
+                                    reason: 'unit-evidence-reduced-below-request-budget (after, context)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'crates/daw-dsp/src/big.rs', reason: 'unit-evidence-reduced-below-request-budget (after)' },
+            {
+                path: 'crates/daw-dsp/src/wider.rs',
+                reason: 'unit-evidence-reduced-below-request-budget (after, context)',
+            },
+        ]);
+    });
+
     it('accepts the contract-marked comma qualifier and the retired withheld code for reading', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],

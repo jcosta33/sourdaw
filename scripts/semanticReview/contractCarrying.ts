@@ -2,16 +2,14 @@
  * Which changed paths and which source contents are contract-carrying.
  *
  * Contract-carrying paths are the trusted GitHub-write closure, the contract documents (`AGENTS.md`,
- * `.agents/decisions/`, `.agents/skills/`), and the declared workflow boundary. A collected spec whose
- * content imports a closure member or names a pinned workflow file is contract-carrying too, decided
- * from the same rule by both the scan and verify routes so one withheld reference reads the same
- * whichever route produced it.
+ * `.agents/decisions/`, `.agents/skills/`), and the declared workflow boundary. Any changed source
+ * whose content imports a closure member or names a pinned workflow file is contract-carrying too —
+ * a spec or an implementation alike — decided from the same rule by both the scan and verify routes
+ * so one withheld reference reads the same whichever route produced it.
  */
 
 import { HEALTH_GATE_WORKFLOW_FILES } from '../healthGateWorkflowContract.ts';
 import { snapshotImportSpecifiers, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
-
-import { isCollectedSpec } from './rules.ts';
 
 const CONTRACT_PATH_PATTERNS: readonly RegExp[] = [
     /(?:^|\/)AGENTS\.md$/u,
@@ -123,13 +121,13 @@ function relativeImportSpecifiers(source: string): string[] {
 }
 
 /**
- * Whether a collected spec's content imports a trusted closure member or names a pinned workflow file.
+ * Whether a changed source's content imports a trusted closure member or names a pinned workflow file.
  * The workflow pin matches the pinned repo path rather than the bare filename, so prose that merely
- * mentions a workflow name cannot classify a spec.
+ * mentions a workflow name cannot classify a source.
  */
-function isContractCarryingSpecContent(content: string, specPath: string): boolean {
+function isContractCarryingSourceContent(content: string, sourcePath: string): boolean {
     for (const specifier of relativeImportSpecifiers(content)) {
-        const resolved = resolveSpecifier(directoryOf(specPath), specifier);
+        const resolved = resolveSpecifier(directoryOf(sourcePath), specifier);
         if (resolved !== undefined && resolvesToClosureMember(resolved)) {
             return true;
         }
@@ -137,7 +135,7 @@ function isContractCarryingSpecContent(content: string, specPath: string): boole
     return HEALTH_GATE_WORKFLOW_FILES.some((name) => content.includes(`.github/workflows/${name}`));
 }
 
-/** Whether a path is contract-carrying, decided from the path alone or, for a collected spec, from its content. */
+/** Whether a path is contract-carrying, decided from the path alone or from the content it carries. */
 export function isContractCarryingContent(path: string, content: string): boolean {
-    return isContractCarryingPath(path) || (isCollectedSpec(path) && isContractCarryingSpecContent(content, path));
+    return isContractCarryingPath(path) || isContractCarryingSourceContent(content, path);
 }

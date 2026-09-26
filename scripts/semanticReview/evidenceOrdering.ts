@@ -136,9 +136,9 @@ function admissionTier(unit: AdmissionUnit): number {
  * then a side of a contract-carrying path before a purely bulk side, then ascending admission bytes —
  * the order-independent lower bound a side's sole regions cost, a tie-break rather than a promise of
  * what the side pays — then path, then a path's before side before its own after side. No spec can
- * outrank the source it covers, and a whole-file fallback cannot starve a smaller genuine edit; a region
- * shared with another change is still charged to whichever side admits it first, so the byte figure does
- * not promise that every smaller edit survives.
+ * outrank the source it covers; the ascending-byte order is a lower-bound tie-break, not a promise that
+ * a smaller side survives — a region shared with another change is charged to whichever side admits it
+ * first, and a whole-file fallback can still starve a smaller edit when the total budget binds.
  */
 export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit): number {
     const leftTier = admissionTier(left);

@@ -579,6 +579,11 @@ export function applicableRules(paths: readonly string[]): SemanticRule[] {
     return SEMANTIC_RULES.filter((rule) => paths.some((path) => rule.appliesTo(path)));
 }
 
+/** Whether a unit's applicable rules declare a contract, decision or registration token. */
+export function unitNeedsContractContext(rules: readonly SemanticRule[]): boolean {
+    return rules.some((rule) => rule.requiredEvidence.some((token) => /contract|decision|registration/iu.test(token)));
+}
+
 /**
  * Thresholds applied when a candidate finding is assessed. They live here, with the rest of the
  * policy, so they are covered by `computePolicyDigest` and a verification report can identify the

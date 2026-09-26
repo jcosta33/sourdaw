@@ -26,13 +26,14 @@ import {
     assertEvidenceIntegrity,
     collectEvidence,
     compareByPath,
+    contractContextPathsFor,
     exclusionReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
     type SemanticChangedFile,
     type SemanticSourcePort,
 } from './evidence.ts';
-import { fitUnitEvidence, serializedRegion } from './fit.ts';
+import { fitUnitEvidence, serializedRegion, unitReductionReason } from './fit.ts';
 import { interpretScanOutcome, type ScanAssessment } from './interpret.ts';
 import {
     assessUnit,
@@ -53,6 +54,7 @@ import {
     computePolicyDigest,
     computeRulesDigest,
     isCollectedSpec,
+    unitNeedsContractContext,
     type SemanticBudgetProfile,
     type SemanticRule,
     type SemanticRuleId,
@@ -100,6 +102,12 @@ export type SemanticUnitEvidence = {
     readonly contents: ReadonlyMap<string, string>;
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    /**
+     * The sides the per-request fitter dropped for this unit, kept apart from the collector
+     * withholdings merged into `ownDroppedSides`/`contextDroppedSides`, so the reduced-unit record can
+     * name exactly what the fitter cut.
+     */
+    readonly fittedDroppedSides: ReadonlySet<EvidenceSide>;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -238,9 +246,7 @@ export function planUnits(
             }
             continue;
         }
-        const needsContract = rules.some((rule) =>
-            rule.requiredEvidence.some((token) => /contract|decision|registration/iu.test(token))
-        );
+        const needsContract = unitNeedsContractContext(rules);
         // A rule that declares it needs the implementation is asking about a path that is usually not
         // the one under assessment, so the planner supplies the changed implementation's after side as
         // context. Without this the declaration was unsatisfiable and the rule silently scored anyway;
@@ -313,6 +319,7 @@ export function planUnits(
                     fitted.context.droppedSides,
                     withheldContextSides(set, files, file.path, needsImplementation)
                 ),
+                fittedDroppedSides: new Set<EvidenceSide>([...fitted.own.droppedSides, ...fitted.context.droppedSides]),
             },
         });
     }
@@ -445,11 +452,6 @@ export type StoredUnitResponse = {
     readonly answers: Readonly<Record<string, unknown>>;
     readonly missingEvidence: Readonly<Record<string, readonly string[]>>;
 };
-
-function contractContextPaths(port: SemanticSourcePort, contractSourceSha: string): string[] {
-    const candidates = ['AGENTS.md', '.agents/decisions/README.md'];
-    return candidates.filter((path) => port.readFile(contractSourceSha, path) !== undefined);
-}
 
 type ScanAccumulation = {
     signals: ScanAssessment[];
@@ -602,9 +604,12 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
     });
     const files = input.ports.source.changedFiles(context.mergeBaseSha, context.headSha);
 
-    const contractPaths = [
-        ...new Set([...contractContextPaths(input.ports.source, context.contractSourceSha), ...input.contractPaths]),
-    ];
+    const contractPaths = contractContextPathsFor(
+        files,
+        input.ports.source,
+        context.contractSourceSha,
+        input.contractPaths
+    );
     const evidenceSet = collectEvidence({
         port: input.ports.source,
         mergeBaseSha: context.mergeBaseSha,
@@ -626,7 +631,7 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
         ...incomplete,
         ...reducedUnits.map((unit) => ({
             path: unit.path,
-            reason: 'unit-evidence-reduced-below-request-budget',
+            reason: unitReductionReason(unit.evidence.fittedDroppedSides),
         })),
     ];
     const unitReductionLimitations = reducedUnits.flatMap((unit) => [...unit.evidence.limitations]);
