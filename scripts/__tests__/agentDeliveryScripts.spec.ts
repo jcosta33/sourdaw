@@ -2033,8 +2033,8 @@ describe('package scripts and gitignore', () => {
      * reads the name's position — `function`, a method position, or a parameter position — and refuses
      * them. The block case pins only the statement-start form: a function body whose first statement
      * is the call and whose second is a block (`function load() { require(spec) { run(); } }`) is
-     * indistinguishable from an object method by this token look, and stays filed as #4818 beside the
-     * callee-bound and regex-lost shapes.
+     * indistinguishable from an object method by this token look, and stays filed as #4835 beside the
+     * callee-bound and regex-lost shapes decided under #4818.
      */
     it.each([
         {
@@ -2456,7 +2456,7 @@ describe('package scripts and gitignore', () => {
      * Grammar-legal declarations the type-body rule still refuses: a `require`/`import` member in a
      * position the header walk does not recognize reports a computed load although nothing loads.
      * These are latent — no closure source carries them — but the limitation is pinned here rather
-     * than implied, and named in the contract (#4818).
+     * than implied, and named in the contract (#4835).
      */
     it.each([
         {
@@ -2649,7 +2649,7 @@ describe('package scripts and gitignore', () => {
 
     /**
      * Shapes the single-file binding pass does not decide are admitted, not refused, and are named
-     * here as undecided (#4818): a loader reached through a `node:module` namespace import, a loader
+     * here as undecided (#4835): a loader reached through a `node:module` namespace import, a loader
      * assigned after its declaration, and a parenthesised initializer. Each is a real load the scan
      * misses; the pinned cases record the gap rather than implying it.
      */

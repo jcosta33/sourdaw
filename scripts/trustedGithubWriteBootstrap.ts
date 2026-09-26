@@ -507,7 +507,7 @@ const computedDynamicSpecifiersCache = new Map<string, string[]>();
  * not recognize — a nested property type, a parameter, return, or class-property annotation, a
  * conditional-type branch, a mapped type, a decorator-preceded member, or a union with a negative
  * literal type — a false positive that is test-pinned rather than implied. Both sets stay filed as
- * #4818.
+ * #4835.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const cached = computedDynamicSpecifiersCache.get(source);
@@ -760,7 +760,7 @@ function skipBalancedParensOpaque(source: string, index: number): number | undef
  * reading. A name the pass never records is not a loader, so a call through it is admitted: that is
  * fail-open, and covers an assignment after declaration (`let load; load = require;`) and a
  * parenthesised initializer (`const load = (require);`), both named in the contract as undecided
- * (#4818).
+ * (#4835).
  */
 function collectLoaderBindings(source: string): LoaderBindingTable {
     const bindings = new Map<string, LoaderBinding[]>();
