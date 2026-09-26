@@ -1,0 +1,30 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleArpeggiate.spec.ts
+  s_2bfd55a4393d7c::t_f36b3e0d928266 211-218
+  s_2bfd55a4393d7c::t_6f25f83b4d318a 1
+  s_2bfd55a4393d7c::t_68d83d02d105fb 184-192,197-200,210,219-220,239-263,265-282,284
+  s_2bfd55a4393d7c::t_fb9502a8832081 193-196
+  s_2bfd55a4393d7c::t_c02a2f382021a0 283
+  s_2bfd55a4393d7c::t_0049579227f924 201-209
+  s_2bfd55a4393d7c::t_144d6fc37a523b 221-238,264
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectSyncopatedArpeggio.spec.ts
+  s_2bfd55a4393d7c::t_d6f76a4c79486f 31-62
+src/modules/MIDI/useCases/midiNoteTransforms/projectSyncopatedArpeggio.ts
+  s_2bfd55a4393d7c::t_2e60b44488517d 3-4
+  s_2bfd55a4393d7c::t_0b31a660f8707c 89-90,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "69ccc3ac4bde7f3188e35fb1fa32a597b9b4c261",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
