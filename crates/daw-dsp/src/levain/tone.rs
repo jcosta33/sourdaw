@@ -84,6 +84,14 @@ impl ToneTilt {
         self.engaged = true;
     }
 
+    /// Forget the section's one-sample history, keeping its position. For a
+    /// chain that has not been fed for a while — a mic position switched back
+    /// on — whose stored history belongs to signal that is long gone.
+    pub fn reset(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
+    }
+
     #[inline]
     pub fn tick(&mut self, input: f32) -> f32 {
         if !self.engaged {

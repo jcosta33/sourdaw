@@ -553,7 +553,7 @@ mod tests {
     #[test]
     fn vibrato_modulates_speed_and_decorrelates_voices() {
         use super::super::types::*;
-        use super::super::voice::LevainVoice;
+        use super::super::voice::{LevainVoice, NoteZones};
         use super::super::zone::SamplePool;
 
         const SAMPLE_RATE: f32 = 48_000.0;
@@ -594,20 +594,20 @@ mod tests {
 
         let mut voice_a = LevainVoice::new(SAMPLE_RATE);
         let mut voice_b = LevainVoice::new(SAMPLE_RATE);
-        voice_a.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
-        voice_b.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        voice_a.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice_b.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         voice_a.vibrato_phase = 0.10;
         voice_b.vibrato_phase = 0.60; // 180° from a after sin
         voice_a.vibrato_rate_scale = 1.0;
         voice_b.vibrato_rate_scale = 1.0;
 
         // Both voices should start at base_speed = 1.0 (note 60 == root).
-        assert!((voice_a.playback.base_speed - 1.0).abs() < 1e-6);
-        assert!((voice_a.playback.speed - 1.0).abs() < 1e-6);
+        assert!((voice_a.playback[0].base_speed - 1.0).abs() < 1e-6);
+        assert!((voice_a.playback[0].speed - 1.0).abs() < 1e-6);
 
         // Step 1: depth = 0 → speed must equal base_speed exactly.
         voice_a.update_vibrato_block(0.0, RATE_HZ, 0.0, SAMPLE_RATE, BLOCK);
-        assert_eq!(voice_a.playback.speed, voice_a.playback.base_speed);
+        assert_eq!(voice_a.playback[0].speed, voice_a.playback[0].base_speed);
 
         // Step 2: drive past the onset window so the depth has ramped to
         // full. samples_since_on increments only inside `tick`, so fake it
@@ -621,28 +621,28 @@ mod tests {
         // (a) speed must have moved off base_speed for at least one of the
         // two voices (sin can be 0 at exactly one phase; we picked phases
         // such that this doesn't happen for both).
-        let moved_a = (voice_a.playback.speed - voice_a.playback.base_speed).abs() > 1e-6;
-        let moved_b = (voice_b.playback.speed - voice_b.playback.base_speed).abs() > 1e-6;
+        let moved_a = (voice_a.playback[0].speed - voice_a.playback[0].base_speed).abs() > 1e-6;
+        let moved_b = (voice_b.playback[0].speed - voice_b.playback[0].base_speed).abs() > 1e-6;
         assert!(
             moved_a || moved_b,
             "vibrato did not perturb playback speed: a={} b={}",
-            voice_a.playback.speed,
-            voice_b.playback.speed,
+            voice_a.playback[0].speed,
+            voice_b.playback[0].speed,
         );
 
         // (b) the two voices' speeds must differ — that's the
         // decorrelation guarantee.
         assert!(
-            (voice_a.playback.speed - voice_b.playback.speed).abs() > 1e-6,
+            (voice_a.playback[0].speed - voice_b.playback[0].speed).abs() > 1e-6,
             "voice A and B have identical speed {} — not decorrelated",
-            voice_a.playback.speed,
+            voice_a.playback[0].speed,
         );
 
         // (c) speed magnitude is bounded by 2^(±25/1200) ≈ 0.985..1.015,
         // a sanity check that the math is correct, not blown up.
         let max_dev = 0.025_f64;
         for v in [&voice_a, &voice_b] {
-            let dev = (v.playback.speed - 1.0).abs();
+            let dev = (v.playback[0].speed - 1.0).abs();
             assert!(
                 dev < max_dev,
                 "vibrato deviation {} too large for ±25 cent depth",
@@ -653,7 +653,7 @@ mod tests {
         // (d) at depth 0 with a voice that previously had non-zero
         // modulation, the next call must restore base_speed.
         voice_a.update_vibrato_block(0.0, RATE_HZ, 0.0, SAMPLE_RATE, BLOCK);
-        assert!((voice_a.playback.speed - voice_a.playback.base_speed).abs() < 1e-6);
+        assert!((voice_a.playback[0].speed - voice_a.playback[0].base_speed).abs() < 1e-6);
     }
 
     /// Vibrato should ramp in over the configured onset delay (spec §7.3),
@@ -662,7 +662,7 @@ mod tests {
     #[test]
     fn vibrato_onset_ramps_in() {
         use super::super::types::*;
-        use super::super::voice::LevainVoice;
+        use super::super::voice::{LevainVoice, NoteZones};
         use super::super::zone::SamplePool;
 
         const SAMPLE_RATE: f32 = 48_000.0;
@@ -700,7 +700,7 @@ mod tests {
         };
 
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         // Force a phase that gives a non-zero sin so onset is the only
         // thing keeping the modulation small.
         voice.vibrato_phase = 0.25; // sin(2π·0.25) = 1.0
@@ -709,9 +709,9 @@ mod tests {
         // be effectively zero even with full depth requested.
         voice.samples_since_on = 0;
         voice.update_vibrato_block(DEPTH_CENTS, RATE_HZ, ONSET_SECS, SAMPLE_RATE, BLOCK);
-        let speed_at_zero = voice.playback.speed;
+        let speed_at_zero = voice.playback[0].speed;
         assert!(
-            (speed_at_zero - voice.playback.base_speed).abs() < 1e-5,
+            (speed_at_zero - voice.playback[0].base_speed).abs() < 1e-5,
             "onset_gain should be 0 at samples_since_on=0, got speed {speed_at_zero}",
         );
 
@@ -720,22 +720,22 @@ mod tests {
         voice.vibrato_phase = 0.25;
         voice.samples_since_on = (SAMPLE_RATE * ONSET_SECS * 0.5) as u32;
         voice.update_vibrato_block(DEPTH_CENTS, RATE_HZ, ONSET_SECS, SAMPLE_RATE, BLOCK);
-        let speed_at_half = voice.playback.speed;
-        let dev_half = (speed_at_half - voice.playback.base_speed).abs() as f32;
+        let speed_at_half = voice.playback[0].speed;
+        let dev_half = (speed_at_half - voice.playback[0].base_speed).abs() as f32;
 
         // Past the ramp (>= 200 ms), full depth.
         voice.vibrato_phase = 0.25;
         voice.samples_since_on = (SAMPLE_RATE * ONSET_SECS * 2.0) as u32;
         voice.update_vibrato_block(DEPTH_CENTS, RATE_HZ, ONSET_SECS, SAMPLE_RATE, BLOCK);
-        let speed_at_full = voice.playback.speed;
-        let dev_full = (speed_at_full - voice.playback.base_speed).abs() as f32;
+        let speed_at_full = voice.playback[0].speed;
+        let dev_full = (speed_at_full - voice.playback[0].base_speed).abs() as f32;
 
         // Half-ramp deviation should be roughly half the full deviation
         // and clearly larger than the zero-onset deviation.
         assert!(
             dev_half > 0.0 && dev_half < dev_full,
             "onset ramp not monotonic: zero={}, half={}, full={}",
-            (speed_at_zero - voice.playback.base_speed).abs(),
+            (speed_at_zero - voice.playback[0].base_speed).abs(),
             dev_half,
             dev_full,
         );
@@ -754,7 +754,7 @@ mod tests {
     #[test]
     fn vibrato_phase_wraps_cleanly() {
         use super::super::types::*;
-        use super::super::voice::LevainVoice;
+        use super::super::voice::{LevainVoice, NoteZones};
         use super::super::zone::SamplePool;
 
         const SAMPLE_RATE: f32 = 48_000.0;
@@ -789,7 +789,7 @@ mod tests {
         };
 
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         voice.samples_since_on = SAMPLE_RATE as u32;
         voice.vibrato_phase = 0.95;
 
@@ -804,14 +804,14 @@ mod tests {
                 voice.vibrato_phase,
             );
             assert!(
-                voice.playback.speed.is_finite(),
+                voice.playback[0].speed.is_finite(),
                 "playback.speed not finite: {}",
-                voice.playback.speed,
+                voice.playback[0].speed,
             );
             assert!(
-                voice.playback.speed > 0.5 && voice.playback.speed < 2.0,
+                voice.playback[0].speed > 0.5 && voice.playback[0].speed < 2.0,
                 "playback.speed wandered: {}",
-                voice.playback.speed,
+                voice.playback[0].speed,
             );
         }
     }
