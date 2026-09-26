@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  s_2bfd55a4393d7c::t_27f4e9693a0b1c 46
+src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts
+  s_2bfd55a4393d7c::t_1dc3853be2b420 144-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ba42c87c35574dafbdf1a4b5d17342133c309250",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
