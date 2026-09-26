@@ -73,7 +73,7 @@ import {
     REVIEW_ROUND_ESCALATION_THRESHOLD,
     REVIEW_ROUND_FREEZE_THRESHOLD,
 } from '../reviewRoundEscalation.ts';
-import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
+import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
 
 import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
@@ -5474,6 +5474,45 @@ describe('fresh reviewer dossier publication', () => {
             probability: 0.82,
         };
         const FIRED_TOKEN = `semantic-signal ${FIRED_SIGNAL.ruleId} ${FIRED_SIGNAL.path}`;
+        /** The same signal as the record carries it when the publication screen refused its path. */
+        const MARKER_SIGNAL = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
+        const MARKER_TOKEN = `semantic-signal ${MARKER_SIGNAL.ruleId} ${UNRECOGNIZED_SIGNAL_VALUE}`;
+
+        it('refuses a fresh publication with an undisposed marker-valued fired signal, naming the marker', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the assessment surfaced nothing actionable' }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [MARKER_SIGNAL] }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    `does not dispose of 1 of the delivered assessment's 1 fired signal(s) (${MARKER_SIGNAL.ruleId} at ${UNRECOGNIZED_SIGNAL_VALUE})`
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a limitation naming a marker-valued fired signal by the token its record carries', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: [
+                        'the assessment run semantic-review-42-1 withheld the audio module',
+                        `${MARKER_TOKEN}: the flagged path was screened out of the record, and the deliberate #4441 escape is pinned by its own spec`,
+                    ],
+                }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [MARKER_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
 
         it('refuses a fresh publication with an undisposed fired signal before any write, naming rule and path', () => {
             const fixture = dossierFixture({

@@ -17,6 +17,7 @@ import {
     type SemanticCheckRun,
     type SemanticCiRecord,
     type SemanticReviewContextPort,
+    UNRECOGNIZED_SIGNAL_VALUE,
 } from '../semanticReviewContext.ts';
 import { SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME } from '../semanticReviewWorkflowContract.ts';
 
@@ -319,7 +320,7 @@ describe('semantic review context', () => {
         expect(asAssessed(resolveSemanticReviewContext(42, HEAD, port)).firedSignals).toEqual([]);
     });
 
-    it('refuses a fired signal whose projected path carries a credential shape', () => {
+    it('redacts a fired signal whose projected path carries a credential shape, keeping the record', () => {
         const fired = signal({
             ruleId: 'conditional_admission_added',
             // Composed from parts so no single source literal matches the diff secret scan;
@@ -337,9 +338,49 @@ describe('semantic review context', () => {
             archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
         });
 
-        expect(() => resolveSemanticReviewContext(42, HEAD, port)).toThrow(
-            /semantic-ci fired signal path value at index 0 contains a GitHub token/u
-        );
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        // The refused value becomes the fixed marker; the signal's slot, the cap, and the rest of
+        // the assessed record survive, so `review:prepare` completes and the disposal duty at
+        // publication stays writable against the marker the record carries. The screen's refusal is
+        // no longer a throw — that aborted `review:prepare` before any bundle file was written,
+        // a harder stop than the advisory assessment's non-existent merge authority (ADR 0047).
+        expect(result.firedSignals).toEqual([
+            { ruleId: 'conditional_admission_added', path: UNRECOGNIZED_SIGNAL_VALUE, probability: 0.9 },
+        ]);
+        expect(result).toMatchObject({
+            state: 'assessed',
+            assessedHeadSha: HEAD,
+            scope: { discovered: 4, eligible: 3, assessed: 2 },
+            artifact: { name: 'semantic-review-42-456-1' },
+        });
+        // No unscreened projected byte reaches the record `semantic-ci.json` serialises.
+        expect(JSON.stringify(result)).not.toContain('ghp_');
+        expect(JSON.stringify(result)).not.toContain('0'.repeat(36));
+    });
+
+    it('redacts a fired signal whose projected ruleId carries a credential shape, keeping its slot', () => {
+        const fired = signal({
+            // Composed from parts so no single source literal matches the diff secret scan.
+            ruleId: `exposed_ghp_${'1'.repeat(36)}_rule`,
+            path: 'src/modules/audio/take.test.ts',
+            outcome: 'signal',
+            probability: 0.9,
+            confidence: 0.9,
+            disposition: 'recommend_investigation',
+        });
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toEqual([
+            { ruleId: UNRECOGNIZED_SIGNAL_VALUE, path: 'src/modules/audio/take.test.ts', probability: 0.9 },
+        ]);
+        expect(JSON.stringify(result)).not.toContain('ghp_');
+        expect(JSON.stringify(result)).not.toContain('1'.repeat(36));
     });
 
     it('finds the semantic check when it sits beyond the first page of check runs', () => {

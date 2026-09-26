@@ -6,7 +6,7 @@ import {
     firedSignalCitationToken,
     parseSemanticAssessmentCoverage,
 } from '../reviewDossierSemanticAssessment.ts';
-import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
+import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
 
 import type { AssessmentImpact, ReviewDossier, ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
@@ -479,6 +479,36 @@ describe('fired-signal disposal at publication', () => {
         ).toThrow(
             /does not dispose of 1 of the delivered assessment's 2 fired signal\(s\) \(conditional_admission_added at src\/components\/transport\/Bar\.test\.ts\)/u
         );
+    });
+
+    it('refuses an undisposed marker-valued fired signal, naming the marker the record carries', () => {
+        // A fired signal whose projected value the publication screen refused is carried redacted;
+        // the disposal duty travels with the marker exactly as with a verbatim value.
+        const markerSignal = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('none', { reason: 'the assessment surfaced nothing actionable' }),
+                parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [markerSignal] }),
+                EXPECTED
+            )
+        ).toThrow(
+            `does not dispose of 1 of the delivered assessment's 1 fired signal(s) (${markerSignal.ruleId} at ${UNRECOGNIZED_SIGNAL_VALUE})`
+        );
+    });
+
+    it('accepts a limitation naming a marker-valued fired signal by the token its record carries', () => {
+        const markerSignal = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: [
+                        `the assessment run semantic-review-42-1 fired semantic-signal ${markerSignal.ruleId} ${UNRECOGNIZED_SIGNAL_VALUE}; the flagged path was screened out of the record`,
+                    ],
+                }),
+                parseSemanticAssessmentCoverage({ ...DELIVERED_WITHHELD, firedSignals: [markerSignal] }),
+                EXPECTED
+            )
+        ).not.toThrow();
     });
 
     it('passes a delivered record whose fired signals were all disposed', () => {

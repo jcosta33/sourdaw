@@ -22,9 +22,13 @@
  * so the bundle carries the scope, the abstentions, and the revision it covers. One bounded carve-out
  * carries the signals the assessment itself flagged for investigation (`recommend_investigation`),
  * because a fired signal no one is forced to name is a fired signal an orchestrator can forget: the
- * projection records at most their rule, path, and probability, publication-safe screened, and the
- * publication gate refuses a fresh round that never disposes of one by name (ADR 0050). Everything
- * else about the signals stays out.
+ * projection records at most their rule, path, and probability, screening each value
+ * publication-safe and redacting a refused value to a fixed marker, so an unscreenable byte can
+ * neither reach the bundle nor stop `review:prepare` — the signal still fires, its disposal duty
+ * survives, and the publication gate still refuses a fresh round that never disposes of one by name
+ * (ADR 0050). Everything else about the signals stays out. No projection failure throws: the
+ * assessment is advisory and holds no merge authority (ADR 0047), so its trouble is disclosed,
+ * never a stop.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -66,7 +70,10 @@ export type SemanticCiScope = {
     readonly truncated: readonly SemanticCiExclusion[];
 };
 
-/** One fired signal a fresh publication must dispose of by name: its rule, path, and probability. */
+/**
+ * One fired signal a fresh publication must dispose of by name: its rule, path, and probability. A
+ * value the publication screen refuses is carried as `UNRECOGNIZED_SIGNAL_VALUE`, never dropped.
+ */
 export type SemanticCiFiredSignal = {
     readonly ruleId: string;
     readonly path: string;
@@ -82,23 +89,38 @@ export type SemanticCiFiredSignal = {
 const MAX_FIRED_SIGNALS = MAX_SUMMARY_ITEMS;
 
 /**
+ * A projected fired-signal value as the record carries it: verbatim when the shared publication
+ * screen admits it, the fixed marker when the screen refuses. The refusal set is the screen's own —
+ * redaction changes where a refused value lands, never what the screen refuses.
+ */
+function screenedFiredSignalValue(value: string): string {
+    try {
+        assertPublicationSafeEvidence('semantic-ci fired signal value', [value]);
+    } catch {
+        return UNRECOGNIZED_SIGNAL_VALUE;
+    }
+    return value;
+}
+
+/**
  * The fired signals a fresh publication must dispose of by name: the scan's
  * `recommend_investigation` entries, projected to their rule, path, and probability and capped at
- * `MAX_FIRED_SIGNALS`. The projected strings are publication-safe screened, so a credential-shaped
- * value refuses the record instead of reaching the bundle — the one projection failure that throws,
- * because a value that must never be written cannot be softened into a `no-assessment` reason
- * without hiding that the assessment fired.
+ * `MAX_FIRED_SIGNALS`. The projected strings are publication-safe screened, and a value the screen
+ * refuses is redacted to `UNRECOGNIZED_SIGNAL_VALUE` instead of written: the record keeps the
+ * signal's slot — the cap and the count stay intact — so the disposal duty survives under the
+ * marker-valued citation token, the unscreened bytes never reach the bundle, and `review:prepare`
+ * completes rather than aborting on advisory assessment content (ADR 0047).
  */
 function firedSignalsOf(report: SemanticReport): readonly SemanticCiFiredSignal[] {
     if (report.mode !== 'scan') {
         return [];
     }
     const fired = report.signals.filter((signal) => signal.disposition === 'recommend_investigation');
-    return fired.slice(0, MAX_FIRED_SIGNALS).map((signal) => {
-        assertPublicationSafeEvidence('semantic-ci fired signal ruleId', [signal.ruleId]);
-        assertPublicationSafeEvidence('semantic-ci fired signal path', [signal.path]);
-        return { ruleId: signal.ruleId, path: signal.path, probability: signal.probability };
-    });
+    return fired.slice(0, MAX_FIRED_SIGNALS).map((signal) => ({
+        ruleId: screenedFiredSignalValue(signal.ruleId),
+        path: screenedFiredSignalValue(signal.path),
+        probability: signal.probability,
+    }));
 }
 
 export type SemanticCiArtifact = {
@@ -184,6 +206,13 @@ const UNRECOGNIZED_REASON = 'unrecognized-reason';
 
 /** The fixed marker an out-of-shape scope-entry path is normalised to. */
 const UNRECOGNIZED_PATH = '(unrecognized-path)';
+
+/**
+ * The fixed marker a publication-unsafe projected fired-signal value is redacted to, the same shape
+ * as `UNRECOGNIZED_PATH`: the record keeps the signal's slot with the refused value replaced, so the
+ * disposal duty stays writable without the unscreened bytes.
+ */
+export const UNRECOGNIZED_SIGNAL_VALUE = '(unrecognized-value)';
 
 /**
  * The producer's fixed scope-entry reason codes. Mirrored here rather than imported because the
