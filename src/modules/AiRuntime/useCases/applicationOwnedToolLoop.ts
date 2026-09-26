@@ -16,6 +16,7 @@ import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabili
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
+import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
     type HostedProviderTurn,
     type HostedTurnCall,
@@ -449,37 +450,13 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
     };
 }
 
-function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
-    const typeValues = call.arguments.types;
-    if (
-        Object.keys(call.arguments).length !== 1 ||
-        !Array.isArray(typeValues) ||
-        typeValues.length === 0 ||
-        typeValues.length > 8
-    ) {
-        return failureReceipt({
-            callId,
-            toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            turn,
-            code: 'invalid-tool-arguments',
-            safeMessage: 'device.factory-manifest.read requires one bounded type set',
-            retryable: true,
-        });
-    }
-    const types: string[] = [];
-    for (const type of typeValues) {
-        if (typeof type !== 'string' || type.length === 0 || type.length > 256) {
-            return failureReceipt({
-                callId,
-                toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
-                turn,
-                code: 'invalid-tool-arguments',
-                safeMessage: 'device.factory-manifest.read requires one bounded type set',
-                retryable: true,
-            });
-        }
-        types.push(type);
-    }
+const DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING =
+    'External plugin metadata can be inferred; opaque plugin state is not exposed or patched.';
+const DEVICE_MANIFEST_PAGE_TRUNCATED_WARNING =
+    'Manifest page is truncated; continue with the same type, version and cursor.';
+
+/** One built-in or scanned-external factory entry, merged the same way for a full or a paged read. */
+function buildDeviceManifestEntries(types: readonly string[]) {
     const external = getAgentDeviceFactoryManifest(types);
     const descriptors = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
     const runtimeByType = new Map(
@@ -517,20 +494,253 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
                   },
         };
     });
-    const manifest = { ...external, devices: [...builtins, ...external.devices] };
+    return [...builtins, ...external.devices];
+}
+
+type DeviceManifestPageArguments = { cursor?: string; limit?: number };
+
+/** The strict `page` argument contract for one `device.factory-manifest.read` call. */
+function parseDeviceManifestPageArgument(
+    pageValue: unknown
+): { status: 'absent' } | { status: 'valid'; page: DeviceManifestPageArguments } | { status: 'invalid' } {
+    if (pageValue === undefined) {
+        return { status: 'absent' };
+    }
+    if (
+        !isRecord(pageValue) ||
+        Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
+        (pageValue.cursor !== undefined &&
+            (typeof pageValue.cursor !== 'string' ||
+                pageValue.cursor.length === 0 ||
+                pageValue.cursor.length > AGENT_CATALOG_CURSOR_MAX_LENGTH ||
+                !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
+        (pageValue.limit !== undefined &&
+            (typeof pageValue.limit !== 'number' ||
+                !Number.isInteger(pageValue.limit) ||
+                pageValue.limit < 1 ||
+                pageValue.limit > DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT))
+    ) {
+        return { status: 'invalid' };
+    }
+    return {
+        status: 'valid',
+        page: {
+            ...(typeof pageValue.cursor === 'string' ? { cursor: pageValue.cursor } : {}),
+            ...(typeof pageValue.limit === 'number' ? { limit: pageValue.limit } : {}),
+        },
+    };
+}
+
+/** Binds a `parameters` page to the exact device type and version it was cut from. */
+type DeviceManifestParameterCursor = { schemaVersion: 1; type: string; version: string; offset: number };
+
+function encodeDeviceManifestParameterCursor(cursor: DeviceManifestParameterCursor): string {
+    const bytes = new TextEncoder().encode(JSON.stringify(cursor));
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+
+function decodeDeviceManifestParameterCursor(cursor: string): DeviceManifestParameterCursor | null {
+    try {
+        const base64 = cursor.replaceAll('-', '+').replaceAll('_', '/');
+        const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+        const binary = atob(padded);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (
+            typeof value !== 'object' ||
+            value === null ||
+            Array.isArray(value) ||
+            Object.keys(value).length !== 4 ||
+            !('schemaVersion' in value) ||
+            !('type' in value) ||
+            !('version' in value) ||
+            !('offset' in value) ||
+            value.schemaVersion !== 1 ||
+            typeof value.type !== 'string' ||
+            typeof value.version !== 'string' ||
+            typeof value.offset !== 'number' ||
+            !Number.isSafeInteger(value.offset) ||
+            value.offset < 0
+        ) {
+            return null;
+        }
+        return { schemaVersion: 1, type: value.type, version: value.version, offset: value.offset };
+    } catch {
+        return null;
+    }
+}
+
+function deviceManifestFailure(input: { callId: string; turn: number; safeMessage: string }): ApplicationToolReceipt {
+    return failureReceipt({
+        callId: input.callId,
+        toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+        turn: input.turn,
+        code: 'invalid-tool-arguments',
+        safeMessage: input.safeMessage,
+        retryable: true,
+    });
+}
+
+function deviceManifestSuccess(input: {
+    callId: string;
+    turn: number;
+    data: unknown;
+    summary: string;
+    warnings: string[];
+}): ApplicationToolReceipt {
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
-        callId,
+        callId: input.callId,
         toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
-        turn,
+        turn: input.turn,
         status: 'success',
         revision: null,
-        data: manifest,
-        summary: `${String(manifest.devices.length)} device factory manifest(s)`,
-        warnings: ['External plugin metadata can be inferred; opaque plugin state is not exposed or patched.'],
+        data: input.data,
+        summary: input.summary,
+        warnings: input.warnings,
         error: null,
     };
+}
+
+/**
+ * Reads one type's `parameters` window. Only reachable once the caller has already resolved a
+ * single requested type and a valid `page` argument, so the cursor's identity check has exactly
+ * one live entry to bind against.
+ */
+function executeDeviceManifestPage(input: {
+    type: string;
+    page: DeviceManifestPageArguments;
+    callId: string;
+    turn: number;
+}): ApplicationToolReceipt {
+    const { type, page, callId, turn } = input;
+    const entry = buildDeviceManifestEntries([type])[0];
+    const limit = page.limit ?? DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT;
+    if (entry === undefined) {
+        return deviceManifestSuccess({
+            callId,
+            turn,
+            data: {
+                schema: 'sourdaw.agent-device-factory-manifest',
+                schemaVersion: 1,
+                devices: [],
+                page: { limit, offset: 0, total: 0 },
+                nextCursor: null,
+                truncated: false,
+            },
+            summary: '0 device factory manifest(s)',
+            warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+        });
+    }
+    const totalParameters = entry.parameters.length;
+    let offset = 0;
+    if (page.cursor !== undefined) {
+        const decoded = decodeDeviceManifestParameterCursor(page.cursor);
+        if (decoded === null || decoded.type !== type || decoded.version !== entry.version) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read cursor does not match the requested type or version',
+            });
+        }
+        if (decoded.offset > totalParameters) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read cursor is outside the requested parameter page',
+            });
+        }
+        offset = decoded.offset;
+    }
+    const windowParameters = entry.parameters.slice(offset, offset + limit);
+    const nextOffset = offset + windowParameters.length;
+    const truncated = nextOffset < totalParameters;
+    return deviceManifestSuccess({
+        callId,
+        turn,
+        data: {
+            schema: 'sourdaw.agent-device-factory-manifest',
+            schemaVersion: 1,
+            devices: [{ ...entry, parameters: windowParameters }],
+            page: { limit, offset, total: totalParameters },
+            nextCursor: truncated
+                ? encodeDeviceManifestParameterCursor({
+                      schemaVersion: 1,
+                      type,
+                      version: entry.version,
+                      offset: nextOffset,
+                  })
+                : null,
+            truncated,
+        },
+        summary: `${String(windowParameters.length)} of ${String(totalParameters)} parameter(s) for ${type}`,
+        warnings: truncated
+            ? [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING, DEVICE_MANIFEST_PAGE_TRUNCATED_WARNING]
+            : [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+    });
+}
+
+function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const typeValues = call.arguments.types;
+    if (
+        Object.keys(call.arguments).some((key) => key !== 'types' && key !== 'page') ||
+        !Array.isArray(typeValues) ||
+        typeValues.length === 0 ||
+        typeValues.length > 8
+    ) {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read requires one bounded type set',
+        });
+    }
+    const types: string[] = [];
+    for (const type of typeValues) {
+        if (typeof type !== 'string' || type.length === 0 || type.length > 256) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read requires one bounded type set',
+            });
+        }
+        types.push(type);
+    }
+    const pageValue = call.arguments.page;
+    if (pageValue !== undefined && types.length !== 1) {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read page requires exactly one type',
+        });
+    }
+    const pageArgument = parseDeviceManifestPageArgument(pageValue);
+    if (pageArgument.status === 'invalid') {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read page does not match the strict page contract',
+        });
+    }
+    if (pageArgument.status === 'valid') {
+        return executeDeviceManifestPage({ type: types[0]!, page: pageArgument.page, callId, turn });
+    }
+    const manifest = {
+        schema: 'sourdaw.agent-device-factory-manifest',
+        schemaVersion: 1,
+        devices: buildDeviceManifestEntries(types),
+    };
+    return deviceManifestSuccess({
+        callId,
+        turn,
+        data: manifest,
+        summary: `${String(manifest.devices.length)} device factory manifest(s)`,
+        warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+    });
 }
 
 const catalogCategories = [
