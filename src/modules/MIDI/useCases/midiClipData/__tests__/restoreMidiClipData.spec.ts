@@ -141,7 +141,11 @@ const INVALID_SNAPSHOT_CASES = [
         label: 'expression curve point at or past duration',
         snapshots: createSnapshots({
             notesSnapshot: [
-                { ...createNote('note-invalid'), duration: 4, expression: { pressure: [{ offsetBeats: 9, value: 90 }] } },
+                {
+                    ...createNote('note-invalid'),
+                    duration: 4,
+                    expression: { pressure: [{ offsetBeats: 9, value: 90 }] },
+                },
             ],
         }),
     },
