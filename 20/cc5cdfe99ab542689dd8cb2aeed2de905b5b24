@@ -1,0 +1,84 @@
+src/modules/ControlSurface/stores/index.ts
+  h_beb54bf43b47b7 4
+src/modules/DawInterchange/useCases/__tests__/dawProjectContentOffsetAndRampRoundTrip.spec.ts
+  h_beb54bf43b47b7 1-11,12-15,16-25,26-34,35-42,43-62,63-94,95-120,121-153,154-195,196
+src/modules/DawInterchange/useCases/__tests__/dawProjectRoundTrip.spec.ts
+  h_beb54bf43b47b7 143
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  h_beb54bf43b47b7 434-435
+src/modules/DawInterchange/useCases/__tests__/mapToProjectDataMasterGainScale.spec.ts
+  h_beb54bf43b47b7 1-20,21-23,24-31,32,33-34
+src/modules/DawInterchange/useCases/__tests__/parseDawProject.spec.ts
+  h_beb54bf43b47b7 167-168
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 261,269-270,272,315-339,350
+src/modules/DawInterchange/useCases/__tests__/serializeProjectXml.spec.ts
+  h_beb54bf43b47b7 36
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  h_beb54bf43b47b7 35-37,43-45
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  h_beb54bf43b47b7 1,92,113-115,302
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 85-95,215-222,224,226-229,232,235,237,240,241-244,254-258,259,272,284,360
+src/modules/DawInterchange/useCases/serializeProjectXml.ts
+  h_beb54bf43b47b7 209,210-213,214,215,216,267-269,271
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/migrateAbsoluteMidiNotesReload.spec.ts
+  h_beb54bf43b47b7 1-13,14,15-18,19,20-24,25-26,27-38,39-43,44-99,100-125,126-154,155
+src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts
+  h_beb54bf43b47b7 10-14,15,16-23,32-34,56,58-64,65-73,75-76,77,79-84,97-103,105,107
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 128-136,281-287,329-331,809-833
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/midiLearnPersistence.roundTrip.spec.ts
+  h_beb54bf43b47b7 1-74
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  h_beb54bf43b47b7 14,250-260,333,336-337,341-355
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  h_beb54bf43b47b7 8,37-40
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 78-81,532
+src/modules/ControlSurface/AGENTS.md
+  h_beb54bf43b47b7 12
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  h_beb54bf43b47b7 81-83
+src/modules/MIDI/stores/midiStore.ts
+  h_beb54bf43b47b7 27-30,44,48,261-264,277-278,301-304,322-328
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  h_beb54bf43b47b7 63
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  h_beb54bf43b47b7 89-92
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidi.ts
+  h_beb54bf43b47b7 46-49
+src/modules/MIDI/useCases/__tests__/mergeImportedMidiClipNotes.spec.ts
+  h_beb54bf43b47b7 71
+src/modules/Project/stores/arrangementStore.ts
+  h_beb54bf43b47b7 333-334,379,693-697,710-713
+src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts
+  h_beb54bf43b47b7 130-146
+src/modules/Project/useCases/arrangement/loadSnapshot.ts
+  h_beb54bf43b47b7 11,15-21
+src/modules/Project/useCases/arrangement/takeSnapshot.ts
+  h_beb54bf43b47b7 20,25-30
+src/modules/Project/useCases/projectPersistence/helpers/hydrateArrangementStoreFromProjectData.ts
+  h_beb54bf43b47b7 73-77
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/midiTimeStateCodec.spec.ts
+  h_beb54bf43b47b7 65-81,192-210
+src/modules/MIDI/useCases/midiNoteCrud/midiTimeStateCodec.ts
+  h_beb54bf43b47b7 69-70
+src/modules/Project/useCases/arrangement/__tests__/takeSnapshot.spec.ts
+  h_beb54bf43b47b7 3,57-60,99,127-167
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  h_beb54bf43b47b7 47-49,53,125-130,649-696
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/stampWriteSidePersistence.spec.ts
+  h_beb54bf43b47b7 1-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "20cc5cdfe99ab542689dd8cb2aeed2de905b5b24",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
