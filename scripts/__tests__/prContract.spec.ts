@@ -35,14 +35,29 @@ import {
     assertObservableTestInstructions,
     narratingTestInstructionSegments,
     testInstructionsNarrateChecks,
+    CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
+} from '../testInstructions.ts';
+import {
     COMMAND_HEADS,
     CHECK_COMMANDS,
-    CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
+    CHECK_CONTEXT_CLAUSES,
+    CHECK_CONTEXT_DETERMINERS,
+    CHECK_CONTEXT_OBJECTS,
+    CHECK_CONTEXT_PREPOSITIONS,
     CHECK_SCRIPT_FAMILIES,
+    CHECK_RUN_NOUNS,
+    CLOSED_CLASS_FUNCTION_WORDS,
+    COVERAGE_VERDICT_VERBS,
     ENGLISH_WORD_HEADS,
+    GATE_CHECK_STATUSES,
+    STATUS_ADVERBS,
     STEP_VERB_HEADS,
+    SUITE_OR_PIPELINE_VERDICT_VERBS,
+    TEST_MODIFIED_NOUNS,
     TEST_SUBCOMMAND_HEADS,
-} from '../testInstructions.ts';
+    TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
+    TEST_SUBCOMMAND_PREFIX_WORDS,
+} from '../testInstructionVocabulary.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
 const HOW_HEADING = '### 🧪 How to test';
@@ -880,6 +895,61 @@ describe('product-scope test instructions', () => {
     });
 
     /**
+     * The runner words and value options a suite-running head may carry before `test`, spec-owned
+     * on purpose: dropping any member reddens the equality pin and that member's case below. The
+     * cue word rescues each clause from the command rule, so only the skip reaches the subcommand.
+     */
+    const TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST = ['run', '-r', '--recursive'];
+    const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST = ['--filter', '-F'];
+
+    it('pins the runner words and options the narration gate skips before a test subcommand', () => {
+        expect([...TEST_SUBCOMMAND_PREFIX_WORDS]).toEqual(TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST);
+        expect([...TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS]).toEqual(TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST);
+    });
+
+    it.each(TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST)('refuses a test subcommand behind the %s runner word', (word) => {
+        const instructions = `pnpm ${word} test and confirm the fader moves.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([
+            `pnpm ${word} test and confirm the fader moves`,
+        ]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each(TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST)(
+        'refuses a test subcommand behind the %s option, its value spaced or joined by =',
+        (option) => {
+            for (const spelled of [`${option} x`, `${option}=x`]) {
+                const instructions = `pnpm ${spelled} test and confirm the fader moves.`;
+
+                expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+                expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+            }
+        }
+    );
+
+    it.each([
+        ['a run subcommand word', 'pnpm run test and confirm the fader moves.'],
+        ['a spaced filter value', 'pnpm --filter x test and confirm the fader moves.'],
+        ['a joined filter value', 'pnpm --filter=x test and confirm the fader moves.'],
+        ['a recursive flag', 'pnpm -r test and confirm the fader moves.'],
+        ['an npm run subcommand word', 'npm run test and confirm the fader moves.'],
+        // Any order and number: the skip keeps walking until it meets `test` or anything else.
+        ['several runner options in a row', 'pnpm --filter x -r run test and confirm the fader moves.'],
+    ])('refuses a test subcommand behind %s beside app prose', (_label, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('stops the runner-option skip at the first word that is not a runner word or option', () => {
+        // 'the' ends the skip, so the `test` behind it is the audio a reviewer plays, not a suite.
+        const step = 'pnpm run the test tone and confirm the meter moves.';
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    /**
      * The check-script families, spec-owned on purpose, each beside one colon script of that family
      * that is not itself a check-only command: dropping any family reddens the equality pin and that
      * family's behavioral case below.
@@ -943,6 +1013,617 @@ describe('product-scope test instructions', () => {
             expect(refusal(() => assertObservableTestInstructions(quoted))).toMatch(REFUSAL_PREFIX);
         }
     );
+
+    /**
+     * The closed-class function words whose presence behind an English-word lead shows English
+     * syntax, spec-owned on purpose: dropping any member reddens the equality pin. The behavioral
+     * case below leaves the member as the sentence's only word beside the head, so for a member the
+     * annotation vocabulary also holds (`the`, `to`, `is`, …) only the function-word guard keeps the
+     * lead from reading as a launch and dropping it reddens that case too; a member outside the
+     * vocabulary (`into`, `sounds`, …) rescues its sentence as a prose word on its own, so the
+     * equality pin is its net.
+     */
+    const CLOSED_CLASS_FUNCTION_WORDS_UNDER_TEST = [
+        'a',
+        'an',
+        'the',
+        'it',
+        'its',
+        'this',
+        'that',
+        'these',
+        'those',
+        'them',
+        'to',
+        'back',
+        'by',
+        'as',
+        'at',
+        'in',
+        'into',
+        'on',
+        'onto',
+        'off',
+        'from',
+        'with',
+        'through',
+        'over',
+        'under',
+        'up',
+        'down',
+        'out',
+        'past',
+        'around',
+        'before',
+        'after',
+        'is',
+        'are',
+        'was',
+        'were',
+        'be',
+        'stays',
+        'remains',
+        'should',
+        'must',
+        'will',
+        'can',
+        'sounds',
+        'still',
+    ];
+
+    it('pins the closed-class function words that show English syntax behind an English-word lead', () => {
+        expect([...CLOSED_CLASS_FUNCTION_WORDS]).toEqual(CLOSED_CLASS_FUNCTION_WORDS_UNDER_TEST);
+    });
+
+    it.each(CLOSED_CLASS_FUNCTION_WORDS_UNDER_TEST)(
+        'reads an English-word lead followed by the function word %s as prose',
+        (word) => {
+            const sentence = `Press Play. Tail ${word}.`;
+
+            expect(narratingTestInstructionSegments(sentence)).toEqual([]);
+            expect(() => assertObservableTestInstructions(sentence)).not.toThrow();
+        }
+    );
+
+    it.each([
+        ['a make target named all', 'make all'],
+        ['a make target named all with a result annotation', 'make all (green)'],
+        ['a make target named both', 'make both'],
+        ['a make target named each', 'make each'],
+    ])('refuses %s: a quantifier behind a step verb is its bare argument, not English syntax', (_label, line) => {
+        // `all`, `both`, and `each` are annotation vocabulary and no closed-class function word,
+        // so the English-word lead stays launch material and the line narrates.
+        expect(narratingTestInstructionSegments(line)).toEqual([line]);
+        expect(refusal(() => assertObservableTestInstructions(line))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        // Letter-free positions and values are never command-shaped evidence, so the step verb
+        // stays an English-word lead and the preposition behind it shows its sentence.
+        ['a navigation step to a dotted bar position', 'Go to 1.1.1.'],
+        ['a navigation step to a clock time', 'Go to 0:00.'],
+        ['a locate step to a clock time', 'Head to 1:30.'],
+        // English-word heads as the sentence's subject, followed by a copula or a pronoun.
+        ['an effect named as the subject of a copula', 'Echo is still on.'],
+        ['a tail named as the subject of a copula', 'Tail is unchanged.'],
+        ['a step verb followed by a pronoun', 'Make it the same.'],
+    ])('passes %s: a function word behind an English-word lead shows English syntax, not a launch', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a Latin example abbreviation', 'Press Play. E.g. the meter moves.'],
+        ['a lower-case Latin restatement abbreviation', 'Press Play. i.e. the meter moves.'],
+        ['a nota bene opening the line', 'N.B. the fader stays at 0 dB.'],
+    ])('passes %s: a dotted abbreviation ends no sentence', (_label, step) => {
+        // Split at the abbreviation's dot, the stranded `E.g` reads as a filename launch on its
+        // own; kept whole, its trailing dot leaves `E.g.` a prose word rather than an extension.
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a launch introduced by a Latin example abbreviation', 'E.g. pnpm dev', 'E.g. pnpm dev'],
+        ['a launch introduced by a restatement abbreviation', 'Press Play. i.e. pnpm dev', 'i.e. pnpm dev'],
+        ['an abbreviation behind a step-verb launch', 'make all, i.e. every module.', 'make all, i.e. every module'],
+        [
+            'an abbreviation behind a run-ending cue word',
+            'Run pnpm dev and watch the output, i.e. clean.',
+            'Run pnpm dev and watch the output, i.e. clean',
+        ],
+    ])('refuses %s: a dotted abbreviation neither rescues nor launches', (_label, instructions, segment) => {
+        // A leading abbreviation strips like filler, exposing the launch behind it; elsewhere it
+        // drops from the prose remainder and counts as no material behind a run-ending word.
+        expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('still ends a sentence at a single letter, which carries no inner dot', () => {
+        const instructions = 'Press A. pnpm dev.';
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['pnpm dev']);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        [
+            'double-asterisk emphasis behind an app step',
+            'Open the mixer and confirm the fader moves. **pnpm lint** is clean.',
+        ],
+        ['single-asterisk emphasis', '*pnpm lint* is clean.'],
+        ['underscore emphasis', '_pnpm lint_ is clean.'],
+        ['strikethrough tildes', '~~pnpm lint~~ is clean.'],
+    ])('refuses a check hidden in %s', (_label, instructions) => {
+        // Markdown emphasis renders as the bare command, so its markers strip at token edges.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['is', 'The suite is green.'],
+        ['are', 'The suites are green.'],
+        ['was', 'The suite was green.'],
+        ['were', 'The suites were green.'],
+        ['stays', 'The suite stays green.'],
+        ['remains', 'The suite remains green.'],
+        ['goes', 'The suite goes green.'],
+        ['went', 'The suite went green.'],
+        ['turns', 'The suite turns green.'],
+        ['turned', 'The suite turned green.'],
+    ])('refuses a suite reported through the status verb %s', (_verb, instructions) => {
+        // Every word here is annotation vocabulary and no head rides beside, so only the
+        // suite-status phrase refuses the sentence.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /**
+     * The statuses that make `Gate` the repository's check, spec-owned on purpose: adding a status the
+     * noise-gate device also carries reddens this pin and the device sentences below.
+     */
+    const GATE_CHECK_STATUSES_UNDER_TEST = ['green'];
+
+    it('pins the statuses that make Gate the check rather than the noise-gate device', () => {
+        expect(GATE_CHECK_STATUSES).toEqual(GATE_CHECK_STATUSES_UNDER_TEST);
+    });
+
+    it.each(GATE_CHECK_STATUSES_UNDER_TEST)('refuses the Gate check reported as %s', (status) => {
+        // `Gate` is beyond the annotation vocabulary and rescues the command rule, so only the
+        // check-name status phrase refuses the sentence.
+        const instructions = `Gate is ${status}.`;
+
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a bare Gate verdict', 'Gate is green on this head.', ['Gate is green on this head']],
+        [
+            'a Gate verdict behind the article',
+            'The Gate is green on the latest push.',
+            ['The Gate is green on the latest push'],
+        ],
+    ])(
+        'refuses %s tied to a check context: the revision keeps it a status report',
+        (_label, instructions, segments) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    /** The nouns that make `Gate` the check anywhere, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_RUN_NOUNS_UNDER_TEST = ['check', 'job', 'jobs', 'workflow', 'workflows'];
+
+    it('pins the nouns that make Gate the check wherever they sit behind it', () => {
+        expect(CHECK_RUN_NOUNS).toEqual(CHECK_RUN_NOUNS_UNDER_TEST);
+    });
+
+    it.each([
+        ['check', 'The Gate check passed.'],
+        ['job', 'The Gate job passed.'],
+        ['jobs', 'The Gate jobs passed.'],
+        ['workflow', 'The Gate workflow passed.'],
+        ['workflows', 'The Gate workflows passed.'],
+    ])('refuses the Gate check named by the %s noun', (_noun, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The verdict verbs a suite or the pipeline reports with, spec-owned on purpose: changing any member reddens the equality pin. */
+    const SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST = [
+        'validates',
+        'validated',
+        'passes',
+        'passed',
+        'fails',
+        'failed',
+    ];
+
+    it('pins the verdict verbs a suite or the pipeline reports with', () => {
+        expect(SUITE_OR_PIPELINE_VERDICT_VERBS).toEqual(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST);
+    });
+
+    it.each(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST)(
+        'refuses a suite verdict %s tied to a check context',
+        (verb) => {
+            const instructions = `Confirm the suite ${verb} on this head.`;
+
+            expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm the suite ${verb} on this head`]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each(SUITE_OR_PIPELINE_VERDICT_VERBS_UNDER_TEST)(
+        'passes a suite verdict %s closing a step with no check context',
+        (verb) => {
+            const step = `Confirm the suite ${verb}.`;
+
+            expect(narratingTestInstructionSegments(step)).toEqual([]);
+            expect(() => assertObservableTestInstructions(step)).not.toThrow();
+        }
+    );
+
+    /** The check-context prepositions, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_PREPOSITIONS_UNDER_TEST = ['on', 'for'];
+
+    it('pins the prepositions that tie a verdict to its check context', () => {
+        expect(CHECK_CONTEXT_PREPOSITIONS).toEqual(CHECK_CONTEXT_PREPOSITIONS_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_PREPOSITIONS_UNDER_TEST)('refuses a Gate verdict tied to a head by %s', (preposition) => {
+        const instructions = `Confirm Gate is green ${preposition} this head.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([
+            `Confirm Gate is green ${preposition} this head`,
+        ]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The check-context determiners, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_DETERMINERS_UNDER_TEST = ['this', 'the latest', 'the current'];
+
+    it('pins the determiners that point a verdict at one revision', () => {
+        expect(CHECK_CONTEXT_DETERMINERS).toEqual(CHECK_CONTEXT_DETERMINERS_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_DETERMINERS_UNDER_TEST)('refuses a Gate verdict on %s head', (determiner) => {
+        const instructions = `Confirm Gate is green on ${determiner} head.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm Gate is green on ${determiner} head`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The revisions only a check passes on, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_OBJECTS_UNDER_TEST = ['head', 'push', 'commit', 'pull request', 'change'];
+
+    it('pins the revisions only a check passes on', () => {
+        expect(CHECK_CONTEXT_OBJECTS).toEqual(CHECK_CONTEXT_OBJECTS_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_OBJECTS_UNDER_TEST)('refuses a Gate verdict on this %s', (object) => {
+        const instructions = `Confirm Gate is green on this ${object}.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm Gate is green on this ${object}`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The delivery clauses, spec-owned on purpose: changing any member reddens the equality pin. */
+    const CHECK_CONTEXT_CLAUSES_UNDER_TEST = ['before merging'];
+
+    it('pins the clauses that tie a verdict to delivery', () => {
+        expect(CHECK_CONTEXT_CLAUSES).toEqual(CHECK_CONTEXT_CLAUSES_UNDER_TEST);
+    });
+
+    it.each(CHECK_CONTEXT_CLAUSES_UNDER_TEST)('refuses a Gate verdict tied to delivery by %s', (clause) => {
+        const instructions = `Confirm Gate is green ${clause}.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Confirm Gate is green ${clause}`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        'Gate is green.',
+        'Gate is still green.',
+        'The suite is green.',
+        'The suite passed.',
+        'pipeline validates the current head',
+        'Gate is green on this head.',
+        'The Gate is green on the latest push.',
+        'Confirm Gate is green on the latest push.',
+        'Make sure the suite passed before merging.',
+        'The pipeline passed for this pull request.',
+    ])('refuses %s: a whole-sentence report or a verdict tied to a check context', (instructions) => {
+        expect(narratingTestInstructionSegments(instructions)).not.toEqual([]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a whole-sentence report closed by other punctuation', 'Gate is green!', ['Gate is green!']],
+        ['a whole-sentence report with a trailing adverb', 'Gate is green again.', ['Gate is green again']],
+        [
+            'a suite report with a trailing adverb after a step',
+            'Press Play. The suite is green again.',
+            ['The suite is green again'],
+        ],
+        [
+            'a check context with a run of whitespace inside a phrase',
+            'Confirm Gate is green for the  latest push.',
+            ['Confirm Gate is green for the  latest push'],
+        ],
+    ])('refuses %s: the report shape holds beyond a bare full stop', (_label, instructions, segments) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        'The Gate turns green when the kick hits.',
+        'Lower the threshold until the Gate turns green.',
+        'Press Play and confirm the Noise Gate is green.',
+        'Bypass the plugin and confirm the pipeline is clean.',
+        'Load the Proof suite. The suite passes audio once bypass is off.',
+        'Confirm the Levain suite passes.',
+        'Play the loop and confirm the Gate is green while the signal is above the threshold.',
+        'Confirm Gate is green.',
+    ])('passes %s: a verdict inside a step with no check context is no status report', (step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    /** The verdicts that end the existing-test DAW-noun exemption, spec-owned on purpose: changing any member reddens the equality pin. */
+    const COVERAGE_VERDICT_VERBS_UNDER_TEST = ['passes', 'passed', 'fails', 'failed', 'covers', 'covered'];
+
+    it('pins the verdict verbs that end the existing-test DAW-noun exemption', () => {
+        expect(COVERAGE_VERDICT_VERBS).toEqual(COVERAGE_VERDICT_VERBS_UNDER_TEST);
+    });
+
+    it.each(COVERAGE_VERDICT_VERBS_UNDER_TEST)('refuses an existing test project followed by %s', (verb) => {
+        const instructions = `The existing test project ${verb} this.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`The existing test project ${verb} this`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        [
+            'an existing test track that still passes',
+            'The existing test track still passes.',
+            ['The existing test track still passes'],
+        ],
+        [
+            'an existing test project that already passes',
+            'The existing test project already passes.',
+            ['The existing test project already passes'],
+        ],
+        [
+            'an existing test clip rerun until it passes',
+            'Rerun the existing test clip and confirm it still passes.',
+            ['Rerun the existing test clip and confirm it still passes'],
+        ],
+        [
+            'an existing test fixture',
+            'The existing test fixture covers this.',
+            ['The existing test fixture covers this'],
+        ],
+    ])('refuses %s: a status report or a verdict names coverage', (_label, instructions, segments) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        [
+            'the Gate green mid-step',
+            'Play the loop and confirm the Gate is green while the signal is above the threshold.',
+        ],
+        [
+            'the Gate turning green as it opens',
+            'Add a Noise Gate to the drum bus. Hit the pad and confirm the Gate turns green when it opens.',
+        ],
+        ['the Gate going green and red', 'Confirm the Gate goes green on each hit and red between them.'],
+        ['the Gate left to run', 'Let the Gate run for a bar and confirm it closes on the tail.'],
+        [
+            'a mastering suite passing audio',
+            'Load the Proof mastering suite on the master and confirm the suite passes audio.',
+        ],
+        [
+            'a mastering suite clean with its limiter bypassed',
+            'Confirm the mastering suite is clean with the limiter bypassed.',
+        ],
+        ['a MIDI suite passing MIDI', 'Load the Levain suite and confirm the suite is passing MIDI to the sampler.'],
+        ['a suite passing the test tone', 'Insert Proof and confirm the suite passes the test tone unclipped.'],
+        [
+            'an audio pipeline clean at the loop point',
+            'Confirm the audio pipeline is clean with no clicks at the loop point.',
+        ],
+        [
+            'a render pipeline passing the mix',
+            'Play the mix and confirm the render pipeline passes the full mix without dropouts.',
+        ],
+        ['a fixture project', 'Open the fixture project and confirm it loads.'],
+        ['a demo fixture song', 'Load the demo fixture song from Help and confirm the tracks appear.'],
+    ])('passes %s: DAW words mid-step are no status report', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['passing audio', 'Confirm the Gate is passing audio.'],
+        ['passing signal', 'Play the loop and confirm the Gate is passing signal above the threshold.'],
+        ['failing to close', 'Hit the pad hard and confirm the Gate is failing to close on the tail.'],
+        ['clean of chatter', 'Lower the threshold and confirm the Gate is clean with no chatter.'],
+        ['red on its meter', 'Confirm the Gate is red while signal passes.'],
+        ['running before the compressor', 'Confirm the Gate runs before the compressor.'],
+        ['checking the sidechain', 'Confirm the Gate checks the sidechain input.'],
+    ])('passes the noise-gate device %s: only green or a check noun makes Gate the check', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['passes', 'The suite passes.'],
+        ['passed', 'The suite passed on this head.'],
+        ['failed', 'The suites failed.'],
+    ])('refuses a suite reporting the verdict %s', (_verb, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a spaced fixture', 'The existing test project fixture covers this.'],
+        ['a fixture that passes', 'The existing test track fixture already passes.'],
+        ['a hyphenated fixture', 'The existing test-project fixture covers this.'],
+    ])('refuses %s: a test fixture names coverage whatever it holds', (_label, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['a bare test fixture', 'Covered by the test fixture.', ['Covered by the test fixture']],
+        [
+            'a spaced test project fixture',
+            'Covered by the test project fixture.',
+            ['Covered by the test project fixture'],
+        ],
+        [
+            'hyphenated test-project fixtures',
+            'Covered by the test-project fixtures.',
+            ['Covered by the test-project fixtures'],
+        ],
+    ])(
+        'refuses %s: the test-fixture form alone names coverage, with no existing test or verdict',
+        (_label, instructions, segments) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual(segments);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each([
+        ['validates', 'pipeline validates the current head'],
+        ['validated', 'The pipeline validated this change.'],
+        ['passes', 'The pipeline passes this change.'],
+        ['passed', 'The pipeline passed this change.'],
+        ['fails', 'The pipeline fails this change.'],
+        ['failed', 'The pipeline failed this change.'],
+    ])('refuses a pipeline reporting the verdict %s', (_verb, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    /** The adverbs a status phrase may carry, spec-owned on purpose: dropping any member reddens the equality pin. */
+    const STATUS_ADVERBS_UNDER_TEST = ['still', 'now', 'already', 'again'];
+
+    it('pins the adverbs a status phrase may carry between its linking verb and its status', () => {
+        expect(STATUS_ADVERBS).toEqual(STATUS_ADVERBS_UNDER_TEST);
+    });
+
+    it.each(STATUS_ADVERBS_UNDER_TEST)('refuses the Gate check reported through the adverb %s', (adverb) => {
+        const instructions = `Gate is ${adverb} green.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Gate is ${adverb} green`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['the Gate check with still', 'Gate is still green.', 'Gate is still green'],
+        ['the Gate check with already', 'Gate was already green.', 'Gate was already green'],
+        ['a suite with still', 'The suite is still green.', 'The suite is still green'],
+        ['the pipeline with now', 'The pipeline is now green.', 'The pipeline is now green'],
+    ])(
+        'refuses %s: one adverb between the linking verb and the status keeps the status phrase',
+        (_label, instructions, segment) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each([
+        ['a bold check name', '**Gate** is green.', '**Gate** is green'],
+        ['a backticked check name', '`Gate` is green.', '`Gate` is green'],
+        ['an underscored check name', '_Gate_ is green.', '_Gate_ is green'],
+        ['a bold status', 'Gate is **green**.', 'Gate is **green**'],
+        ['a bold suite', 'The **suite** is green.', 'The **suite** is green'],
+        ['a bold pipeline verdict', 'The **pipeline** passed.', 'The **pipeline** passed'],
+        ['a bold check name with its noun', '**Gate** check passed.', '**Gate** check passed'],
+    ])('refuses %s: emphasis and backticks never hide a multi-word check report', (_label, instructions, segment) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['the noise-gate device passing signal', 'Gate passes signal below the threshold.'],
+        ['a bold noise-gate device added to a track', 'Add a **Gate** to track 1 and confirm it closes.'],
+    ])('passes %s: emphasis removal leaves the DAW device a device', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a diff reported clean', 'Diff is clean.', 'Diff is clean'],
+        ['a format run reported clean', 'Format is clean.', 'Format is clean'],
+        ['a diff reported green', 'Diff is green.', 'Diff is green'],
+    ])(
+        'refuses %s: a copula carrying only a check verdict keeps the English-word lead a launch',
+        (_label, instructions, segment) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each([
+        ['a tail reported unchanged', 'Tail is unchanged.'],
+        ['an echo effect still on', 'Echo is still on.'],
+        ['a diff reported empty', 'Diff is empty.'],
+    ])('passes %s: a copula followed by anything but a check verdict is a sentence', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    /**
+     * The DAW nouns a singular `test` may modify, spec-owned on purpose: dropping any member
+     * reddens the equality pin, and that member's case below then reads `existing test` as coverage.
+     */
+    const TEST_MODIFIED_NOUNS_UNDER_TEST = [
+        'project',
+        'session',
+        'song',
+        'track',
+        'clip',
+        'take',
+        'tone',
+        'signal',
+        'recording',
+        'mix',
+        'sample',
+    ];
+
+    it('pins the DAW nouns a singular test may modify', () => {
+        expect(TEST_MODIFIED_NOUNS).toEqual(TEST_MODIFIED_NOUNS_UNDER_TEST);
+    });
+
+    it.each(TEST_MODIFIED_NOUNS_UNDER_TEST)('passes an existing test %s a reviewer opens', (noun) => {
+        const step = `Open an existing test ${noun} and confirm it loads.`;
+
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['coverage claimed by the existing test', 'The existing test covers this case.'],
+        ['a rerun of the existing test', 'Rerun the existing test and confirm it passes.'],
+        ['the existing test reported passing', 'The existing test still passes.'],
+        ['coverage claimed by an existing test', 'An existing test covers it.'],
+    ])('refuses %s: a singular existing test modifying no DAW noun names coverage', (_label, instructions) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual([instructions.slice(0, -1)]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['an existing test project', 'Open an existing test project and confirm it loads.'],
+        ['an existing test session', 'Load an existing test session and confirm it plays.'],
+    ])('passes %s: a singular existing test modifying a DAW noun is something a reviewer opens', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
 
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
@@ -1617,6 +2298,15 @@ describe('product-scope test instructions', () => {
         // The bare plural names coverage where a bare singular names audio: only `tests` refuses.
         ['a bare plural tests mention', 'Covered by tests.'],
         ['a passing-tests claim', 'All tests pass.'],
+        ['a claim that the existing tests pass', 'Existing tests still pass.'],
+        // The repository's own check names: HeavyGate bare, Gate only with a status or check noun.
+        ['a Gate status', 'Gate is green.'],
+        ['a bare HeavyGate mention', 'HeavyGate passes.'],
+        ['a Gate check noun', 'The Gate check passed.'],
+        // A suite or the pipeline reported with its status, in any letter case.
+        ['a suite status', 'The suite is green.'],
+        ['a pipeline status', 'The pipeline is green.'],
+        ['a capitalized pipeline verdict', 'Pipeline passed on this change.'],
     ])('refuses %s even with no command token', (_label, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
@@ -1634,6 +2324,14 @@ describe('product-scope test instructions', () => {
         ['a test-tone step', 'Play the test tone and confirm the meter reads -18 dBFS.'],
         ['a test-tone peak step', 'Play the test tone and confirm the meter peaks at -6 dB.'],
         ['a test-take step', 'Record a test take and confirm it lands on the take lane.'],
+        // `existing` qualifies only the plural and the suite: a test project is something to open.
+        ['an existing-test-project step', 'Open an existing test project and confirm it loads.'],
+        // Gate is also the DAW's noise-gate device: bare, or in lower case, it names no check.
+        ['a noise-gate observation', 'Gate passes signal below the threshold.'],
+        ['a noise-gate insert step', 'Add a Gate to track 1 and confirm it closes.'],
+        ['a lower-case gate status', 'Play the loop and confirm the gate is green while signal passes.'],
+        // A bare suite is a plugin bundle a reviewer loads, not the test suite.
+        ['a plugin-suite step', 'Load the plugin suite and confirm the reverb appears.'],
     ])('passes %s that only brushes the test-suite vocabulary', (_label, step) => {
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
@@ -1675,6 +2373,12 @@ describe('product-scope test instructions', () => {
     ])('passes %s: launches, bare format, and bare test are not check runs', (_label, step) => {
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('splits an abbreviation flood behind a long word in linear time', () => {
+        // Rescanning the text before every dot for its last token is quadratic in that text per
+        // dot — tens of seconds on this input; the per-character chain costs constant time per dot.
+        expect(testInstructionsNarrateChecks(`${'a'.repeat(4000)}${' e.g.'.repeat(800)}`)).toBe(false);
     });
 
     it('scans an unclosed-parenthesis flood in linear time and keeps flat parenthetical verdicts', () => {
@@ -1747,6 +2451,7 @@ describe('product-scope test instructions', () => {
 
     it.each([
         ['a lower-case make launch', 'make test'],
+        ['a lower-case make lint launch', 'make lint'],
         ['a capitalized launch carrying a flag', 'Cargo test --package daw-engine'],
         ['a lower-case find sweep', 'find . -name x'],
         ['a lower-case go test run', 'go test ./...'],
