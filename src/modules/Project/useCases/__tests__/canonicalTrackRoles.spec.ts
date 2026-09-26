@@ -117,6 +117,48 @@ describe('canonical track roles', () => {
             });
         }
     );
+    it.each([
+        { name: 'Kick Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Snare Drum', role: 'snare', evidence: 'resolved-name-tags' },
+        { name: 'Tom Drums', role: 'tom', evidence: 'resolved-name-tags' },
+        { name: 'Bass Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Bass Drums', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Synth Pad', role: 'pad', evidence: 'resolved-name-tags' },
+        { name: 'Synth Bass', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Vocals', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Vocal', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Vox', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Lead Vox', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Backing Vox', role: 'backing vocal', evidence: 'resolved-name-tags' },
+        { name: 'BGV', role: 'backing vocal', evidence: 'name-tokens' },
+        { name: 'Backing Vocals', role: 'backing vocal', evidence: 'name-tokens' },
+        { name: 'Bass Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drums', role: 'drums', evidence: 'name-tokens' },
+        { name: 'Synth', role: 'synth', evidence: 'name-tokens' },
+        { name: 'Kick', role: 'kick', evidence: 'name-tokens' },
+    ] as const)(
+        'resolves compound and bare vocal track names to a canonical role: $name',
+        ({ name, role, evidence }) => {
+            expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+        }
+    );
+    it.each([
+        { name: 'Kick-Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Bass_Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Bass Synth', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Pad Synth', role: 'pad', evidence: 'resolved-name-tags' },
+        { name: 'Bass & Drums', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drums and Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass + Drums', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drums & Perc', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Synth & Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drum Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+    ] as const)(
+        'resolves a compound only when the two roles are directly adjacent: $name',
+        ({ name, role, evidence }) => {
+            expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+        }
+    );
     it.each(['Bassoon', 'Kickstarter', 'Track 1', 'MIDI Audio Instrument'])(
         'does not invent timbre from %s',
         (name) => {
