@@ -227,6 +227,17 @@ the same log names the reassessment duty. The consumed reassessment enters the d
 addition-only `review-reassessed` dossier event. `review:repair` is never blocked by this: unresolved
 threads must stay resolvable, so it logs the flag and never refuses on it.
 
+A pull request that reaches the freeze threshold — `REVIEW_ROUND_FREEZE_THRESHOLD` in the same module
+— is frozen: a fresh reviewer publication is refused whatever the bundle carries, no reassessment or
+any other caller document lifts it, and `review:repair` and `review:confirm` stay open so unresolved
+threads remain resolvable. `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` flags it and
+`review-round-freeze-warning` flags the round before, so the churn is visible while a round remains to
+spend on consolidating the work. A frozen pull request is a session failure, not a delivery problem:
+the count measures an agent that repaired states one at a time instead of enumerating the change's
+claims and states up front. The agent stops there — it closes the pull request, strands the lane, or
+re-raises the change in a new lane as one consolidated diff — rather than spending further rounds
+([ADR 0050](./.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md)).
+
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and
 bounded, and are refused when they carry a credential-shaped value, a private-key header, a JWT, a
 bearer token, or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.

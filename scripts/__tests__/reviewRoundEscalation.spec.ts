@@ -9,8 +9,10 @@ import {
 } from '../reconstructReviewRounds.ts';
 import {
     REVIEW_ROUND_ESCALATION_THRESHOLD,
+    REVIEW_ROUND_FREEZE_THRESHOLD,
     countReviewerRequestChangesRounds,
     gateReviewRoundEscalation,
+    logReviewRoundEscalationAtThreshold,
     parseReviewReassessment,
 } from '../reviewRoundEscalation.ts';
 
@@ -164,5 +166,59 @@ describe('gateReviewRoundEscalation', () => {
         expect(() =>
             gate(REVIEW_ROUND_ESCALATION_THRESHOLD, reassessment({ reason: `ghp_${'A'.repeat(24)}` }))
         ).toThrow(/reason value at index 0 contains a GitHub token/);
+    });
+
+    it('freezes at the freeze threshold even with a valid reassessment present', () => {
+        expect(() => gate(REVIEW_ROUND_FREEZE_THRESHOLD, reassessment())).toThrow(
+            new RegExp(
+                `review round freeze: observed ${REVIEW_ROUND_FREEZE_THRESHOLD} reviewer request-changes rounds.*freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}.*no reassessment lifts it`
+            )
+        );
+    });
+
+    it('still takes the reassessment one round below the freeze', () => {
+        expect(
+            gate(REVIEW_ROUND_FREEZE_THRESHOLD - 1, reassessment({ roundsObserved: REVIEW_ROUND_FREEZE_THRESHOLD - 1 }))
+        ).toBeDefined();
+    });
+});
+
+describe('logReviewRoundEscalationAtThreshold', () => {
+    function loggedReviews(count: number): PublicReview[] {
+        return Array.from({ length: count }, (_, index) => reviewerReview(index + 1, HEAD, 'CHANGES_REQUESTED'));
+    }
+
+    function messagesFor(count: number): string[] {
+        const messages: string[] = [];
+        logReviewRoundEscalationAtThreshold(
+            PR,
+            HEAD,
+            () => loggedReviews(count),
+            () => [],
+            (message) => messages.push(message)
+        );
+        return messages;
+    }
+
+    it('warns one round before the freeze', () => {
+        expect(messagesFor(REVIEW_ROUND_FREEZE_THRESHOLD - 1)).toEqual([
+            expect.stringContaining(
+                `review-round-freeze-warning:${PR}:request-changes=${REVIEW_ROUND_FREEZE_THRESHOLD - 1}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
+            ),
+            expect.stringContaining('review-round-escalation:'),
+        ]);
+    });
+
+    it('flags the freeze at the freeze threshold', () => {
+        expect(messagesFor(REVIEW_ROUND_FREEZE_THRESHOLD)).toEqual([
+            expect.stringContaining(
+                `review-round-freeze:${PR}:request-changes=${REVIEW_ROUND_FREEZE_THRESHOLD}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
+            ),
+            expect.stringContaining('review-round-escalation:'),
+        ]);
+    });
+
+    it('logs nothing below the escalation threshold', () => {
+        expect(messagesFor(REVIEW_ROUND_ESCALATION_THRESHOLD - 1)).toEqual([]);
     });
 });

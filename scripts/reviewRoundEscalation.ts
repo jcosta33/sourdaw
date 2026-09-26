@@ -20,6 +20,16 @@ import {
 } from './reconstructReviewRounds.ts';
 
 export const REVIEW_ROUND_ESCALATION_THRESHOLD = 3;
+
+/**
+ * The round at which a pull request freezes. The escalation reassessment lets a session choose to
+ * carry on, and a session that keeps choosing to carry on is the loop this bounds: PR #4746 took
+ * fourteen rounds on a one-message change. At or above this count a fresh reviewer publication is
+ * refused whatever the bundle carries, and no caller document lifts it — neither a reassessment nor
+ * any other file. The only routes are closing the pull request, stranding its lane, or re-raising
+ * the change in a new lane as one consolidated diff.
+ */
+export const REVIEW_ROUND_FREEZE_THRESHOLD = 5;
 export const REVIEW_REASSESSMENT_FORMAT = 'reassessment-v1';
 export const REASSESSMENT_FILE_NAME = 'reassessment.json';
 
@@ -127,8 +137,10 @@ export type ReviewReassessmentFile = { present: true; value: unknown } | { prese
 /**
  * The escalation gate. Below the threshold it requires nothing and returns `undefined`; at or above
  * it the caller-authored reassessment must be present, must bind this pull request, head and base,
- * must record exactly the observed count, and must carry a known action and a safe reason. Every
- * refusal names the observed count, the threshold, the expected file path, and the allowed actions.
+ * must record exactly the observed count, and must carry a known action and a safe reason. Below the
+ * freeze threshold every refusal names the observed count, the threshold, the expected file path,
+ * and the allowed actions; at or above it the refusal names the count, the freeze threshold and the
+ * routes out, because a frozen pull request takes no caller document at all.
  */
 export function gateReviewRoundEscalation(input: {
     observedCount: number;
@@ -138,6 +150,13 @@ export function gateReviewRoundEscalation(input: {
     bundle: string;
     reassessment: ReviewReassessmentFile;
 }): ReviewReassessment | undefined {
+    if (input.observedCount >= REVIEW_ROUND_FREEZE_THRESHOLD) {
+        fail(
+            `review round freeze: observed ${input.observedCount} reviewer request-changes rounds, at or above the freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}; ` +
+                `this pull request is frozen and no reassessment lifts it — close it, strand its lane, ` +
+                `or re-raise the change in a new lane as one consolidated diff`
+        );
+    }
     if (input.observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return undefined;
     }
@@ -190,6 +209,15 @@ export function logReviewRoundEscalationAtThreshold(
             comments(number)
         );
         const requestChanges = countReviewerRequestChangesRounds(reconstruction);
+        if (requestChanges >= REVIEW_ROUND_FREEZE_THRESHOLD) {
+            log(
+                `review-round-freeze:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
+            );
+        } else if (requestChanges === REVIEW_ROUND_FREEZE_THRESHOLD - 1) {
+            log(
+                `review-round-freeze-warning:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
+            );
+        }
         if (requestChanges >= REVIEW_ROUND_ESCALATION_THRESHOLD) {
             log(
                 `review-round-escalation:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
