@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngine/useCases';
-import { applyModulationToEngine, startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
+import {
+    applyModulationToEngine,
+    startAutomationRecording,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { type TempoMapStoreState } from '../../stores/tempoMapStore';
