@@ -333,18 +333,26 @@ export async function buildProjectData({
         midiLearn,
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
-        arrangements: arrState.arrangements.map((snapshot) => ({
-            ...snapshot,
-            tracks: {
-                ...snapshot.tracks,
-                tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
-            },
-            midi: serializeProjectMidi({
+        arrangements: arrState.arrangements.map((snapshot) => {
+            const snapshotMidi: Parameters<typeof serializeProjectMidi>[0] = {
                 notesByClipId: snapshot.midi.notesByClipId,
                 ccByClipId: snapshot.midi.ccByClipId,
                 pitchBendByClipId: snapshot.midi.pitchBendByClipId,
-            }),
-        })),
+            };
+            // Per-arrangement stamp, so every arrangement keeps its own
+            // coordinate format the way the top-level midi block does.
+            if (snapshot.midi.noteCoordinateFormat !== undefined) {
+                snapshotMidi.noteCoordinateFormat = snapshot.midi.noteCoordinateFormat;
+            }
+            return {
+                ...snapshot,
+                tracks: {
+                    ...snapshot.tracks,
+                    tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
+                },
+                midi: serializeProjectMidi(snapshotMidi),
+            };
+        }),
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
         adjustmentLayers: { layers: adjustmentLayerStore.value?.layers ?? [] },

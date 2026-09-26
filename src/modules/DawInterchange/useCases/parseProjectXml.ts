@@ -251,7 +251,11 @@ function parseClip(
             startBeat,
             endBeat: Math.max(endBeat, startBeat + 0.25),
             type: 'midi',
-            notes: parseNotesNode(notesNode, readTimeUnit(notesNode, unit), context.tempo),
+            // Notes are clip content: per the DAWproject Reference,
+            // contentTimeUnit governs the content while `time` and `duration`
+            // stay in the timeline unit. A Notes `timeUnit` attribute still
+            // wins via readTimeUnit.
+            notes: parseNotesNode(notesNode, readTimeUnit(notesNode, contentUnit), context.tempo),
             ...playStart,
         };
     }

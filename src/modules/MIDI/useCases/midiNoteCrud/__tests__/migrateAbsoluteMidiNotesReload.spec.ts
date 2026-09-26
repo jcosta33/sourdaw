@@ -123,4 +123,33 @@ describe('migrateAbsoluteMidiNotes on project reload', () => {
 
         expect(clipNoteStarts()).toEqual([8, 10]);
     });
+
+    it('keeps a stamped arrangement snapshot untouched through the restore pass', () => {
+        // The full snapshot-restore shape: a saved arrangement's midi section
+        // carries the three maps plus the coordinate stamp, and restoring it
+        // the way `loadSnapshot` does — the whole section through
+        // `setMidiStoreState` — must bring the stamp back, or the next boot's
+        // migration reads current-format data as legacy absolute and rewrites
+        // it. `loadSnapshot` is not reachable from this module, so the exact
+        // field set it writes is exercised here; if it drops the stamp again,
+        // this restore is what stops matching it.
+        placeMidiClip('Drums', 4, 12);
+        const snapshotMidi = {
+            notesByClipId: {
+                [CLIP_ID]: [
+                    { id: 'note-0', pitch: 36, startBeat: 8, duration: 0.5, velocity: 100, channel: 0 },
+                    { id: 'note-1', pitch: 36, startBeat: 10, duration: 0.5, velocity: 100, channel: 0 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            noteCoordinateFormat: 'clip-relative' as const,
+        };
+        setMidiStoreState(snapshotMidi);
+        expect(midiStore.value?.noteCoordinateFormat).toBe('clip-relative');
+
+        migrateAbsoluteMidiNotes();
+
+        expect(clipNoteStarts()).toEqual([8, 10]);
+    });
 });

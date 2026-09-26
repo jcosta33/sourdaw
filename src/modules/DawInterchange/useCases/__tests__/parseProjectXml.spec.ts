@@ -312,6 +312,31 @@ describe('parseProjectXml — time-unit conversion', () => {
         const note = clip && clip.type === 'midi' ? clip.notes?.[0] : undefined;
         expect(note?.startBeat).toBe(120);
     });
+
+    it('reads clip note times in the clip content unit, not the timeline unit', () => {
+        // The clip sits on a beats arrangement but declares
+        // contentTimeUnit="seconds". Per the DAWproject Reference,
+        // contentTimeUnit affects the content — the Notes here — but not the
+        // clip's time and duration, which stay in beats.
+        const transport = '<Transport><Tempo value="120"/></Transport>';
+        const inner =
+            '<Structure><Track id="t0" contentType="notes"/></Structure>' +
+            '<Arrangement><Lanes><Clips track="t0">' +
+            '<Clip time="0" duration="8" contentTimeUnit="seconds"><Notes>' +
+            '<Note time="2.5" duration="0.5" key="60"/>' +
+            '</Notes></Clip>' +
+            '</Clips></Lanes></Arrangement>';
+        const result = parseProjectXml(project(inner, transport));
+        const clip = result.tracks[0]?.clips[0];
+        // Clip window stays in the timeline unit: 0..8 beats.
+        expect(clip?.startBeat).toBe(0);
+        expect(clip?.endBeat).toBe(8);
+        const note = clip && clip.type === 'midi' ? clip.notes?.[0] : undefined;
+        // 2.5s at 120bpm = 5 beats; 0.5s = 1 beat. A timeline-unit fallback
+        // would leave the note at beat 2.5 with duration 0.5.
+        expect(note?.startBeat).toBe(5);
+        expect(note?.duration).toBe(1);
+    });
 });
 
 describe('parseProjectXml — master-track automation', () => {
