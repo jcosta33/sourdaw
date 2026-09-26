@@ -1,0 +1,33 @@
+src/modules/Arrangement/handlers/device/handleSetDeviceState.ts
+  s_2bfd55a4393d7c::t_259c0ff3fd8081 15,17-25
+src/app/__tests__/bootstrap.spec.ts
+  s_2bfd55a4393d7c::t_db872b55f284e2 1111-1131
+  s_2bfd55a4393d7c::t_08eed7e4f166b4 74-77
+  s_ef536aab624565::t_bb029d252e2785 1110
+crates/sourdaw-native/src/commands/graph.rs
+  s_2bfd55a4393d7c::t_31df22282d31cc 14349-14375
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4b3020a6e67db3f43f5449219ccc2a8fadcce286",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
