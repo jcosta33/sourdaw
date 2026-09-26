@@ -1328,6 +1328,13 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
 
         expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
         expect(scheduleParam.mock.calls).toHaveLength(1);
+        // Both lanes compile to a lone zero-length terminator at frame 0;
+        // clip-b's (later in lane-array order) is what the merge keeps —
+        // pinning the content, not just the call count, is what actually
+        // catches an opening hold re-introduced on the seed: that hold
+        // survives the clustering check (its own malformed terminator still
+        // sorts the stream as non-clashing) but corrupts this merged output.
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 0, endFrame: 0, startValue: 9, endValue: 9 }]);
     });
 });
 
