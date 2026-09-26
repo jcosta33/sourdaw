@@ -1,0 +1,21 @@
+scripts/reviewRiskPolicy.ts
+  s_2bfd55a4393d7c::t_a1b7bb406bd2a7 75-81
+scripts/trustedGithubWriteBootstrap.ts
+  s_2bfd55a4393d7c::t_38d6bdc1023b9c 623-629,632-636,639,642-651,654-658,663-805
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0b4ba25a1ef05ed9cc8b4c6afc1f24860aa9ac48",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
