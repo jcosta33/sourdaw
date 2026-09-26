@@ -12,6 +12,38 @@ describe('quantizeBeatToGrid', () => {
         expect(result).toEqual([0, 0.375, 0.5, 0.875]);
     });
 
+    it('leaves an already-swung 1/16 grid untouched on a second pass', () => {
+        // A destructive quantize must leave its own output in place: each of these
+        // beats already sits on the nearest point of the swung grid, so quantizing
+        // them again must not walk any of them toward the next straight downbeat.
+        const beats = [0, 0.375, 0.5, 0.875];
+
+        const result = beats.map((beat) => quantizeBeatToGrid({ beat, gridSize: 0.25, strength: 1, swing: 1 }));
+
+        expect(result).toEqual([0, 0.375, 0.5, 0.875]);
+    });
+
+    it('snaps a near-swung note to the swung sixteenth rather than the next downbeat', () => {
+        // 0.42 is closer to the swung point at 0.375 than to the straight downbeat at 0.5.
+        const result = quantizeBeatToGrid({ beat: 0.42, gridSize: 0.25, strength: 1, swing: 1 });
+
+        expect(result).toBe(0.375);
+    });
+
+    it('snaps to a partially swung grid point at less than full swing', () => {
+        const result = quantizeBeatToGrid({ beat: 0.38, gridSize: 0.25, strength: 1, swing: 0.5 });
+
+        expect(result).toBe(0.3125);
+    });
+
+    it('breaks an exact tie between the straight and swung candidate points toward the later point', () => {
+        // 0.1875 sits exactly midway between step 0 (target 0) and the swung step 1
+        // (target 0.375); Math.round's own half-up rule also picks the later point.
+        const result = quantizeBeatToGrid({ beat: 0.1875, gridSize: 0.25, strength: 1, swing: 1 });
+
+        expect(result).toBe(0.375);
+    });
+
     it('swings every second eighth on a 1/8 grid (0.5), unchanged from before the fix', () => {
         const beats = [0, 0.5, 1, 1.5];
 

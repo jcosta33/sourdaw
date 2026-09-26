@@ -57,10 +57,10 @@ describe('quantizeMidiNotes', () => {
         expect(result[0]?.startBeat).toBe(0.3);
     });
 
-    it('applies swing to offbeat (odd swing-unit) notes but not on-beat notes', () => {
-        // gridSize 0.5, swing 1.0 (full). Swing unit is 0.5 beats.
-        // A note at beat 0.0 is on-beat (swing unit index 0, even → no swing).
-        // A note at beat 0.5 is offbeat (swing unit index 1, odd → swing offset).
+    it('applies swing to offbeat (odd grid-step) notes but not on-beat notes', () => {
+        // gridSize 0.5, swing 1.0 (full). Each grid step is 0.5 beats.
+        // A note at beat 0.0 is on-beat (grid step index 0, even → no swing).
+        // A note at beat 0.5 is offbeat (grid step index 1, odd → swing offset).
         const notes = [note(0.0), note(0.5)];
 
         const result = quantizeMidiNotes({ notes, gridSize: 0.5, swing: 1.0 });

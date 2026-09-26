@@ -69,13 +69,13 @@ describe('quantizeNotes', () => {
         expect(sixteenthGridStart).toBe(0.5);
     });
 
-    it('should not swing the on-beat (whole-beat position) on any grid', () => {
+    it('should not swing beat 1 on a 1/16 grid, where it lands on an even grid step', () => {
         midiStore.set({
             notesByClipId: { clip1: [note('beat', 1)] },
             ccByClipId: {},
             pitchBendByClipId: {},
         });
-        quantizeNotes('clip1', 0.25, 1, 1); // beat 1 -> step 4, swing unit 2 (even => on-beat)
+        quantizeNotes('clip1', 0.25, 1, 1); // beat 1 -> step 4 on a 0.25 grid, an even step (no swing)
         expect(midiStore.value?.notesByClipId.clip1?.[0]?.startBeat).toBe(1);
     });
 });

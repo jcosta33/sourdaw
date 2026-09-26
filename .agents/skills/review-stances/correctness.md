@@ -329,4 +329,6 @@ self-consistency.
 Probe that would have caught it: for any timing, quantize, swing, or grid semantic, state the law an
 established DAW applies and evaluate the change at two grids (1/16 and 1/4 here); a result that
 cannot be reproduced in a reference DAW is a finding unless a decision record names the deliberate
-difference.
+difference. Then quantize the output a second time: a destructive quantize must leave its own output
+in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
+an offset.
