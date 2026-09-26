@@ -361,6 +361,98 @@ describe('sanitizeMidiStoreState', () => {
         expect(result.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
     });
 
+    describe('recorded expression curves', () => {
+        const baseNote = { id: 'n1', pitch: 60, startBeat: 0, duration: 4, velocity: 90, pressure: 10 };
+
+        function stateWithNote(note: Record<string, unknown>) {
+            return {
+                probabilitySeed: 7,
+                notesByClipId: { 'clip-1': [note] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+        }
+
+        it('admits a note with valid curves in every dimension unchanged', () => {
+            const exact = stateWithNote({
+                ...baseNote,
+                pitchBend: 0,
+                pitchBendRangeSemitones: 48,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 1, value: 90 },
+                        { offsetBeats: 1.8, value: 20 },
+                    ],
+                    slide: [{ offsetBeats: 1, value: 64 }],
+                    pitchBend: [
+                        { offsetBeats: 0.5, value: 4096 },
+                        { offsetBeats: 1.5, value: -8192 },
+                    ],
+                },
+            });
+
+            expect(sanitizeMidiStoreState(exact)).toBe(exact);
+        });
+
+        // A malformed optional scalar is stripped while its note stays; a
+        // malformed curve is handled the same way: that curve alone is dropped.
+        it.each([
+            [
+                'out of order',
+                [
+                    { offsetBeats: 2, value: 90 },
+                    { offsetBeats: 1, value: 20 },
+                ],
+            ],
+            [
+                'repeating an offset',
+                [
+                    { offsetBeats: 1, value: 90 },
+                    { offsetBeats: 1, value: 20 },
+                ],
+            ],
+            ['with a non-finite offset', [{ offsetBeats: Number.NaN, value: 90 }]],
+            ['with a non-finite value', [{ offsetBeats: 1, value: Number.POSITIVE_INFINITY }]],
+            ['with a point at the note end', [{ offsetBeats: 4, value: 90 }]],
+            ['with a point beyond the note end', [{ offsetBeats: 5, value: 90 }]],
+            ['with a point at note-on', [{ offsetBeats: 0, value: 90 }]],
+            ['with a value above the 7-bit range', [{ offsetBeats: 1, value: 128 }]],
+            ['with an extra point key', [{ offsetBeats: 1, value: 90, shape: 'linear' }]],
+            ['empty', []],
+            ['not an array', { offsetBeats: 1, value: 90 }],
+        ])('strips a pressure curve %s and keeps the note and its valid slide curve', (_case, pressure) => {
+            const result = sanitizeMidiStoreState(
+                stateWithNote({
+                    ...baseNote,
+                    expression: { pressure, slide: [{ offsetBeats: 1, value: 64 }] },
+                })
+            );
+
+            expect(result.notesByClipId['clip-1']).toEqual([
+                { ...baseNote, expression: { slide: [{ offsetBeats: 1, value: 64 }] } },
+            ]);
+        });
+
+        it('strips the whole expression when no curve in it is valid, keeping the note', () => {
+            const result = sanitizeMidiStoreState(
+                stateWithNote({
+                    ...baseNote,
+                    expression: { pressure: [{ offsetBeats: 9, value: 90 }], vibrato: [] },
+                })
+            );
+
+            expect(result.notesByClipId['clip-1']).toEqual([baseNote]);
+        });
+
+        it('strips a pitch-bend curve outside the 14-bit wire range', () => {
+            const result = sanitizeMidiStoreState(
+                stateWithNote({ ...baseNote, expression: { pitchBend: [{ offsetBeats: 1, value: 8192 }] } })
+            );
+
+            expect(result.notesByClipId['clip-1']).toEqual([baseNote]);
+        });
+    });
+
     it('drops rows that fail validation while keeping valid ones in the same clip', () => {
         const result = sanitizeMidiStoreState({
             probabilitySeed: 1,

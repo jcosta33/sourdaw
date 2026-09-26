@@ -1,5 +1,6 @@
 import {
     isValidMidiArticulation,
+    isValidMidiNoteExpression,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
     type MidiNote,
@@ -45,7 +46,10 @@ function isMidiNote(value: unknown): value is MidiNote {
         isOptionalFiniteNumber(value, 'channel') &&
         (!Object.hasOwn(value, 'articulation') ||
             value.articulation === undefined ||
-            isValidMidiArticulation(value.articulation))
+            isValidMidiArticulation(value.articulation)) &&
+        (!Object.hasOwn(value, 'expression') ||
+            value.expression === undefined ||
+            isValidMidiNoteExpression(value.expression, value.duration))
     );
 }
 

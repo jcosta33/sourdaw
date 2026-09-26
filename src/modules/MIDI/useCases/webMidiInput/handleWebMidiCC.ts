@@ -9,6 +9,7 @@ import { ingestChannelControlChange } from '../../repositories/webMidi/ingestCha
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
@@ -56,6 +57,8 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                 if (noteForChannel !== undefined) {
                     const noteData = activeNotes.get(noteForChannel);
                     if (noteData) {
+                        const eventTime = resolveInputEventTime({ timeStamp });
+                        recordHeldNoteExpression(noteData, { dimension: 'slide', value, eventTime });
                         noteData.slide = value;
                         // Reach the instrument voice through the one expression
                         // surface the scheduled path also uses (audit MD-2).
@@ -72,9 +75,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                             // tail (audit MD-3), so it can be voiced a turn or
                             // more after it arrived. Addressing its own arrival
                             // frame keeps it landing where it was performed.
-                            sampleFrame: resolveInputDispatchFrame({
-                                eventTime: resolveInputEventTime({ timeStamp }),
-                            }),
+                            sampleFrame: resolveInputDispatchFrame({ eventTime }),
                         });
                     }
                 }

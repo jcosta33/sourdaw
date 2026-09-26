@@ -4,9 +4,13 @@ import { type Store } from '#/infra/store/types';
 
 import {
     isValidMidiArticulation,
+    isValidMidiExpressionCurve,
+    isValidMidiNoteExpression,
+    MIDI_EXPRESSION_DIMENSIONS,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
     type MidiNote,
+    type MidiNoteExpression,
     type MidiCC,
     type MidiPitchBend,
 } from '../models/MidiNote';
@@ -95,7 +99,12 @@ function hasValidMidiNoteOptionals(value: MidiNote): boolean {
             value.pitchBendRangeSemitones === undefined ||
             isFiniteNumber(value.pitchBendRangeSemitones)) &&
         (!('channel' in value) || value.channel === undefined || isFiniteNumber(value.channel)) &&
-        (!('articulation' in value) || value.articulation === undefined || isValidMidiArticulation(value.articulation))
+        (!('articulation' in value) ||
+            value.articulation === undefined ||
+            isValidMidiArticulation(value.articulation)) &&
+        (!('expression' in value) ||
+            value.expression === undefined ||
+            isValidMidiNoteExpression(value.expression, value.duration))
     );
 }
 
@@ -109,6 +118,29 @@ function isExactMidiNote(value: unknown): value is MidiNote {
             optionalKeys: MIDI_NOTE_OPTIONAL_KEYS,
         })
     );
+}
+
+/**
+ * The note's valid curves, each kept or dropped on its own — the same rule the
+ * scalars follow here: a malformed optional is stripped, the note survives.
+ */
+function normalizeMidiNoteExpression(value: unknown, duration: number): MidiNoteExpression | undefined {
+    if (!isPlainObject(value)) {
+        return undefined;
+    }
+    const normalized: MidiNoteExpression = {};
+    let hasCurve = false;
+    for (const dimension of MIDI_EXPRESSION_DIMENSIONS) {
+        const curve = value[dimension];
+        if (isValidMidiExpressionCurve(dimension, curve, duration)) {
+            normalized[dimension] = curve;
+            hasCurve = true;
+        }
+    }
+    if (!hasCurve) {
+        return undefined;
+    }
+    return normalized;
 }
 
 function normalizeMidiNote(note: MidiNote): MidiNote {
@@ -140,6 +172,10 @@ function normalizeMidiNote(note: MidiNote): MidiNote {
     }
     if (isValidMidiArticulation(note.articulation)) {
         normalizedNote.articulation = note.articulation;
+    }
+    const expression = normalizeMidiNoteExpression(note.expression, note.duration);
+    if (expression !== undefined) {
+        normalizedNote.expression = expression;
     }
 
     return normalizedNote;

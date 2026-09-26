@@ -13,6 +13,7 @@ import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
+import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 
 function secondsToBeats(seconds: number, tempo: number): number {
     return (seconds * tempo) / 60;
@@ -227,24 +228,14 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 noteData.velocity ?? DEFAULT_NOTE_VELOCITY
             );
 
-            if (getMpeEnabled()) {
-                if (noteData.pressure !== undefined) {
-                    midiNote.pressure = noteData.pressure;
-                }
-                if (noteData.slide !== undefined) {
-                    midiNote.slide = noteData.slide;
-                }
-                if (noteData.pitchBend !== undefined) {
-                    midiNote.pitchBend = noteData.pitchBend;
-                    // Persist the depth alongside the wire delta. Without it
-                    // playback re-interprets every recorded bend at the MPE
-                    // default, so a controller set to ±12 records +6 semitones
-                    // and plays back +24 (audit MD-8).
-                    midiNote.pitchBendRangeSemitones = noteData.pitchBendRangeSemitones;
-                }
+            if (!getMpeEnabled()) {
+                deps.appendRecordedMidiNote({ clipId, note: midiNote });
+                return;
             }
-
-            deps.appendRecordedMidiNote({ clipId, note: midiNote });
+            const recordedNote = withRecordedNoteExpression(midiNote, noteData, (seconds) =>
+                secondsToBeats(seconds, tempo)
+            );
+            deps.appendRecordedMidiNote({ clipId, note: recordedNote });
         }
     };
 });

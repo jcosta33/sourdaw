@@ -1,4 +1,5 @@
 import { type MidiNote } from '../models/MidiNote';
+import { sliceMidiNoteExtent } from '../services/sliceMidiNoteExtent';
 
 type QuantizeMidiNoteLengthsInput = {
     notes: readonly MidiNote[];
@@ -20,6 +21,6 @@ export function quantizeMidiNoteLengths(input: QuantizeMidiNoteLengthsInput): Mi
         const multiples = Math.round(note.duration / input.gridSize);
         const snappedDuration = multiples * input.gridSize;
         const duration = multiples < 1 || !Number.isFinite(snappedDuration) ? note.duration : snappedDuration;
-        return { ...note, duration };
+        return sliceMidiNoteExtent(note, { fromOffset: 0, duration });
     });
 }

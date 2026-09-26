@@ -118,6 +118,43 @@ describe('serializeProjectMidi', () => {
         });
     });
 
+    it('round-trips a note with recorded pressure, slide and bend curves through save and reopen', () => {
+        const note = {
+            id: 'note-1',
+            pitch: 60,
+            startBeat: 2,
+            duration: 2,
+            velocity: 100,
+            probability: 100,
+            pressure: 10,
+            slide: 40,
+            pitchBend: 0,
+            pitchBendRangeSemitones: 48,
+            channel: 2,
+            expression: {
+                pressure: [
+                    { offsetBeats: 1, value: 90 },
+                    { offsetBeats: 1.8, value: 20 },
+                ],
+                slide: [{ offsetBeats: 1, value: 64 }],
+                pitchBend: [
+                    { offsetBeats: 0.5, value: 4096 },
+                    { offsetBeats: 1.5, value: 0 },
+                ],
+            },
+        };
+        const recorded: MidiStoreState = {
+            probabilitySeed: 1,
+            notesByClipId: { 'clip-1': [note] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        const reopened = hydrateProjectMidi(serializeProjectMidi(recorded));
+
+        expect(reopened.notesByClipId['clip-1']).toEqual([note]);
+    });
+
     it('leaves a note that never carried the fields without them', () => {
         // Absence is what makes the engine fall back to its default, so a plain
         // note must not gain a fabricated range, channel or articulation.

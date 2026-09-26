@@ -1074,14 +1074,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     notes.find((node) => node.id === noteId) ??
                     openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && (override.beat !== origBeat || override.duration !== origDuration)) {
+                    const snapshotBefore = snapshotClipNotes(noteClipId);
                     resizeMidiNote(noteClipId, noteId, override.beat, override.duration);
+                    const snapshotAfter = snapshotClipNotes(noteClipId);
                     pushUndoEntry(
                         'Resize MIDI note',
-                        // In-place geometry restore: resizing keeps the note's id
-                        // and every expression field, where a remove+add round
-                        // trip would mint a new id and drop the rest.
-                        () => resizeMidiNote(noteClipId, noteId, origBeat, origDuration),
-                        () => resizeMidiNote(noteClipId, noteId, override.beat, override.duration)
+                        // Whole-note restore: a shortening resize drops the
+                        // recorded expression outside the new span, which
+                        // resizing back to the old geometry cannot bring back.
+                        () => setNotesForClip(noteClipId, snapshotBefore),
+                        () => setNotesForClip(noteClipId, snapshotAfter)
                     );
                 }
             } else if (mode === 'resize-right' && preview?.durationOverride?.has(noteId)) {
@@ -1090,14 +1092,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     notes.find((node) => node.id === noteId) ??
                     openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && newDuration !== origDuration) {
+                    const snapshotBefore = snapshotClipNotes(noteClipId);
                     resizeMidiNote(noteClipId, noteId, undefined, newDuration);
+                    const snapshotAfter = snapshotClipNotes(noteClipId);
                     pushUndoEntry(
                         'Resize MIDI note',
-                        // In-place geometry restore: resizing keeps the note's id
-                        // and every expression field, where a remove+add round
-                        // trip would mint a new id and drop the rest.
-                        () => resizeMidiNote(noteClipId, noteId, undefined, origDuration),
-                        () => resizeMidiNote(noteClipId, noteId, undefined, newDuration)
+                        // Whole-note restore: a shortening resize drops the
+                        // recorded expression past the new end, which resizing
+                        // back to the old duration cannot bring back.
+                        () => setNotesForClip(noteClipId, snapshotBefore),
+                        () => setNotesForClip(noteClipId, snapshotAfter)
                     );
                 }
             }
@@ -1430,27 +1434,16 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (singleClip !== null) {
                 event.preventDefault();
                 const ids = [...selectedNoteIds];
-                const clipNotesArr = singleClip === clipId ? notes : (openedClipNotes?.[singleClip] ?? []);
-                const beforeDurations = clipNotesArr
-                    .filter((node) => ids.includes(node.id))
-                    .map((node) => ({ id: node.id, duration: node.duration }));
+                const snapshotBefore = snapshotClipNotes(singleClip);
                 legatoNotes(singleClip, ids);
-                const postNotes = getNotesForClip(singleClip);
-                const afterDurations = postNotes
-                    .filter((node) => ids.includes(node.id))
-                    .map((node) => ({ id: node.id, duration: node.duration }));
+                const snapshotAfter = snapshotClipNotes(singleClip);
                 pushUndoEntry(
                     'Legato notes',
-                    () => {
-                        for (const b of beforeDurations) {
-                            resizeMidiNote(singleClip, b.id, undefined, b.duration);
-                        }
-                    },
-                    () => {
-                        for (const alpha of afterDurations) {
-                            resizeMidiNote(singleClip, alpha.id, undefined, alpha.duration);
-                        }
-                    }
+                    // Whole-note restore: shortening a note drops the recorded
+                    // expression past its new end, which a duration restore
+                    // cannot bring back.
+                    () => setNotesForClip(singleClip, snapshotBefore),
+                    () => setNotesForClip(singleClip, snapshotAfter)
                 );
             }
         }

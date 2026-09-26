@@ -1,4 +1,5 @@
 import {
+    isValidMidiNoteExpression,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
     type MidiCC,
@@ -85,7 +86,10 @@ function isValidMidiNote(value: unknown): value is MidiNote {
         hasValidOptionalNumber({ value, key: 'pitchBend' }) &&
         hasValidOptionalNumber({ value, key: 'pitchBendRangeSemitones' }) &&
         hasValidOptionalNumber({ value, key: 'channel' }) &&
-        hasValidOptionalString({ value, key: 'articulation' })
+        hasValidOptionalString({ value, key: 'articulation' }) &&
+        (!Object.hasOwn(value, 'expression') ||
+            value.expression === undefined ||
+            isValidMidiNoteExpression(value.expression, value.duration))
     );
 }
 

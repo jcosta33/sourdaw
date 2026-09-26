@@ -62,6 +62,39 @@ describe('splitNoteAtBeat', () => {
         expect(right).toMatchObject({ channel: 5, pitchBendRangeSemitones: 48, articulation: 'accent' });
     });
 
+    it('gives each half its own part of the recorded expression', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 4),
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 1, value: 90 },
+                                { offsetBeats: 3, value: 20 },
+                            ],
+                        },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        splitNoteAtBeat('clip1', ['a'], 2);
+
+        const notes = midiStore.value?.notesByClipId.clip1;
+        const left = notes?.find((node) => node.startBeat === 0);
+        const right = notes?.find((node) => node.startBeat === 2);
+        expect(left?.duration).toBe(2);
+        expect(left?.pressure).toBe(10);
+        expect(left?.expression).toEqual({ pressure: [{ offsetBeats: 1, value: 90 }] });
+        expect(right?.duration).toBe(2);
+        expect(right?.pressure).toBe(90);
+        expect(right?.expression).toEqual({ pressure: [{ offsetBeats: 1, value: 20 }] });
+    });
+
     it('should not split note if beat is outside', () => {
         splitNoteAtBeat('clip1', ['a'], 5);
         expect(midiStore.value?.notesByClipId.clip1?.length).toBe(1);

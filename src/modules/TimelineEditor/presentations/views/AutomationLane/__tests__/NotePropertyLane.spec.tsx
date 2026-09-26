@@ -8,7 +8,14 @@ import { NotePropertyLane } from '../NotePropertyLane';
 const laneMocks = vi.hoisted(() => {
     const notesByClipId: Record<
         string,
-        Array<{ id: string; pitch: number; startBeat: number; duration: number; velocity: number }>
+        Array<{
+            id: string;
+            pitch: number;
+            startBeat: number;
+            duration: number;
+            velocity: number;
+            expression?: { pressure?: { offsetBeats: number; value: number }[] };
+        }>
     > = {};
     return {
         midiState: { notesByClipId },
@@ -59,7 +66,14 @@ const scrollContainer = (scrollLeft = 0, clientWidth = 200): { current: HTMLElem
     return { current: element };
 };
 
-type LaneNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+type LaneNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    expression?: { pressure?: { offsetBeats: number; value: number }[] };
+};
 
 // Shared jsdom 2d-context stub — the same object serves every canvas.
 const ctx2d = document.createElement('canvas').getContext('2d')!;
@@ -151,6 +165,60 @@ describe('NotePropertyLane', () => {
 
             // barW = 1 beat * 40px - 2, barH = (127/127) * (131 - 4), barY = 131 - 127 - 2
             expect(roundRect).toHaveBeenCalledWith(1, 2, 38, 127, [2, 2, 0, 0]);
+        });
+
+        it('draws a recorded curve as a step line with one step per point across the note span', () => {
+            const moveTo = vi.spyOn(ctx2d, 'moveTo');
+            const lineTo = vi.spyOn(ctx2d, 'lineTo');
+            moveTo.mockClear();
+            lineTo.mockClear();
+            seedNotes([
+                {
+                    ...makeNote('n1', 0, 10),
+                    duration: 4,
+                    expression: {
+                        pressure: [
+                            { offsetBeats: 1, value: 90 },
+                            { offsetBeats: 3, value: 20 },
+                        ],
+                    },
+                },
+            ]);
+
+            render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    setValue={liveSetValue}
+                    getCurve={(note: LaneNote) => note.expression?.pressure}
+                />
+            );
+
+            // y = 131 - (value / 127) * 127 - 2; x = beat * 40. The line starts
+            // at the bar's value, steps at beats 1 and 3, and ends at beat 4.
+            expect(moveTo).toHaveBeenCalledWith(0, 119);
+            expect(lineTo.mock.calls).toEqual([
+                [40, 119],
+                [40, 39],
+                [120, 39],
+                [120, 109],
+                [160, 109],
+            ]);
+        });
+
+        it('draws no curve line for a note without recorded changes', () => {
+            const lineTo = vi.spyOn(ctx2d, 'lineTo');
+            lineTo.mockClear();
+            seedNotes([makeNote('n1', 0, 10)]);
+
+            render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    setValue={liveSetValue}
+                    getCurve={(note: LaneNote) => note.expression?.pressure}
+                />
+            );
+
+            expect(lineTo).not.toHaveBeenCalled();
         });
 
         it('renders an empty-state hint when the clip has no notes', () => {

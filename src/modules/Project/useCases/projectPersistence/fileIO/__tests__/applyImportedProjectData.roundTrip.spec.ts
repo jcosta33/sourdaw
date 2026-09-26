@@ -769,6 +769,38 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(cc?.id).toBe('cc-clip-midi-0');
     });
 
+    it('reopens a saved note with its recorded pressure, slide and bend curves unchanged', async () => {
+        const note = {
+            id: 'note-curves',
+            pitch: 60,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            probability: 100,
+            pressure: 10,
+            slide: 40,
+            pitchBend: 0,
+            pitchBendRangeSemitones: 48,
+            expression: {
+                pressure: [
+                    { offsetBeats: 1, value: 90 },
+                    { offsetBeats: 1.8, value: 20 },
+                ],
+                slide: [{ offsetBeats: 1, value: 64 }],
+                pitchBend: [
+                    { offsetBeats: 0.5, value: 4096 },
+                    { offsetBeats: 1.5, value: 0 },
+                ],
+            },
+        };
+        const project = makeProject();
+        project.midi.notesByClipId['clip-midi'] = [note];
+
+        await applyImportedProjectData({ data: project });
+
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([note]);
+    });
+
     it('exposes the imported tracks on the active arrangement snapshot', async () => {
         await applyImportedProjectData({ data: makeProject() });
 

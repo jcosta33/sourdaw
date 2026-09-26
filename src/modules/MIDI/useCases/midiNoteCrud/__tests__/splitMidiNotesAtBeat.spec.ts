@@ -24,6 +24,8 @@ type StoredNote = {
     velocity: number;
     probability?: number;
     channel?: number;
+    pressure?: number;
+    expression?: { pressure?: { offsetBeats: number; value: number }[] };
 };
 
 function note(pitch: number, startBeat: number, duration: number, id?: string): StoredNote {
@@ -84,6 +86,43 @@ describe('splitMidiNotesAtBeat', () => {
         // has to be named explicitly or the split silently moves the half to
         // channel 0 (issue #1832 F8).
         expect(right[1]?.channel).toBe(5);
+    });
+
+    it("splits a straddling note's recorded expression between the two clips", () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                source: [
+                    {
+                        id: 'swell',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 4,
+                        velocity: 100,
+                        pressure: 10,
+                        expression: {
+                            pressure: [
+                                { offsetBeats: 1, value: 90 },
+                                { offsetBeats: 3, value: 20 },
+                            ],
+                        },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 2 });
+
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+        const [left] = written.notesByClipId.source!;
+        const [right] = written.notesByClipId.right!;
+        expect(left).toMatchObject({ id: 'swell', startBeat: 0, duration: 2, pressure: 10 });
+        expect(left?.expression).toEqual({ pressure: [{ offsetBeats: 1, value: 90 }] });
+        expect(right).toMatchObject({ startBeat: 0, duration: 2, pressure: 90 });
+        expect(right?.expression).toEqual({ pressure: [{ offsetBeats: 1, value: 20 }] });
     });
 
     /// Regression (PR #608 review): range deletion (deleteTimeRange) must

@@ -306,6 +306,11 @@ export type ProjectMidiNote = {
     pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
+    expression?: {
+        pressure?: { offsetBeats: number; value: number }[];
+        slide?: { offsetBeats: number; value: number }[];
+        pitchBend?: { offsetBeats: number; value: number }[];
+    };
 };
 
 export type ProjectMidiCC = {
