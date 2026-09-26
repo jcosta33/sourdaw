@@ -4,7 +4,7 @@
  * the change) instead of teaching only steps a reviewer performs in the app. `publishLane` refuses
  * the former for a product-scope change; everything here is pure text judgment with no I/O.
  */
-import { fail } from './prContract.ts';
+import { fail, PULL_REQUEST_BODY_BYTE_LIMIT } from './prContract.ts';
 
 /**
  * The refusal for a product-scope publish whose `--test` narrates checks anywhere. Reviewers verify
@@ -18,6 +18,12 @@ export const CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL =
     'pull-request --test for a product-scope change must teach only user/reviewer-observable steps and ' +
     'their expected result; drop every line that narrates a command, spec, or CI check, and fold an app ' +
     'launch into the step that uses it';
+
+/** How many judged segments a refusal quotes before it counts the rest. */
+const QUOTED_SEGMENT_LIMIT = 3;
+
+/** The length, in characters, past which a quoted segment is cut and marked with an ellipsis. */
+const QUOTED_SEGMENT_MAX_CHARACTERS = 120;
 
 /**
  * The filler words that may precede or join command tokens without making a segment anything but
@@ -458,10 +464,10 @@ function isMaterialBehindRun(token: string, strict: boolean): boolean {
  * Whether the peel's lead opens the segment's argument run: a command head or an env assignment
  * leads it (`SOURDAW_E2E_PORT=4010 pnpm test:e2e …`), while an article directly behind the head
  * keeps the run closed — `Make a MIDI track` is the step's own verb naming its object, not a
- * launch — and so does a step-verb lead.
+ * launch — and so does an English-word lead.
  */
 function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
-    if (isStepVerbLead(launch, segment)) {
+    if (isEnglishWordLead(launch, segment)) {
         return false;
     }
     const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
@@ -475,25 +481,43 @@ function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
  * narration (`lint`, `typecheck`, the colon-bearing scripts) and tool names stay out, so they open
  * an argument run whatever their letter case.
  */
-const STEP_VERB_HEADS = new Set(['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail']);
+const STEP_VERB_HEADS = ['diff', 'echo', 'find', 'format', 'go', 'head', 'less', 'make', 'sort', 'tail'];
 
 /**
- * Whether the peeled lead is the step's own verb rather than a launch: an unquoted member of
- * `STEP_VERB_HEADS`, in any letter case and wherever the peel exposes it (behind a stripped filler
- * word, at the start of a `;` or `.` clause), in a segment carrying no command-shaped token. The
- * word class decides, never the casing: a sentence may open lower-case (`Then go to bar 9`) and a
- * tool line may be capitalized (`Pnpm dev`, `Cargo build succeeds`), so a tool head opens its
- * argument run exactly as its lower-case spelling does. A flag, path, colon suffix, filename, or env
- * assignment beside a verb head shows the segment is a command line after all (`go test ./...`);
- * letter-free tokens (`bar 9`, `-6`, `1.5`) never count as that evidence. A quoted head was typed as
- * a command, so it stays a launch. The head itself still drops from the prose, so a verb head
- * followed only by annotation (`make test`) keeps narrating through `mentionsCommandHead`.
+ * The command heads that are also ordinary English words a DAW step or its expected result can
+ * carry: the step verbs, plus the nouns and pronouns a result sentence names (`Node 2 is gone`,
+ * `the cat`, `which track`). Their mere presence is no command evidence; only a quoted spelling or
+ * a command-shaped token beside them shows the segment is a command line. Tool names (`pnpm`,
+ * `git`, `cargo`) stay out, so their presence alone keeps reading as a launch.
  */
-function isStepVerbLead(launch: PeeledLaunch, segment: string): boolean {
-    if (launch.spanLead || !STEP_VERB_HEADS.has(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
+const ENGLISH_WORD_HEADS = new Set([...STEP_VERB_HEADS, 'node', 'env', 'which', 'electron', 'guard', 'tee', 'cat']);
+
+/**
+ * Whether the peeled lead is an English word rather than a launch: an unquoted member of
+ * `ENGLISH_WORD_HEADS`, in any letter case and wherever the peel exposes it (behind a stripped
+ * filler word, at the start of a `;` or `.` clause), in a segment carrying no command-shaped token.
+ * The word class decides, never the casing: a sentence may open lower-case (`Then go to bar 9`) and
+ * a tool line may be capitalized (`Pnpm dev`, `Cargo build succeeds`), so a tool head opens its
+ * argument run exactly as its lower-case spelling does. A flag, path, colon suffix, filename, or env
+ * assignment beside the head shows the segment is a command line after all (`go test ./...`); a
+ * quoted head was typed as a command, so it stays a launch. The head itself still drops from the
+ * prose, so an English-word lead followed only by annotation (`make test`) keeps narrating through
+ * `leadsWithCommandMaterial` unless an article shows it naming its object (`Find the new file`).
+ */
+function isEnglishWordLead(launch: PeeledLaunch, segment: string): boolean {
+    if (launch.spanLead || !ENGLISH_WORD_HEADS.has(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
         return false;
     }
-    return !unwrappedTokens(segment).some((token) => !isNumberOrPunctuation(token) && isCommandShapedToken(token));
+    return !carriesCommandShapedToken(segment);
+}
+
+/**
+ * Whether any token of the segment has a command's shape (path, colon suffix, filename, flag, env
+ * assignment). Letter-free tokens (`bar 9`, `-6`, `1.5`) never count: they are the positions and
+ * values a step names, not a command line's evidence.
+ */
+function carriesCommandShapedToken(segment: string): boolean {
+    return unwrappedTokens(segment).some((token) => !isNumberOrPunctuation(token) && isCommandShapedToken(token));
 }
 
 /**
@@ -630,19 +654,36 @@ function proseRemainderWords(segment: string): string[] {
 
 /**
  * Whether a command head or a command-shaped token (path, flag, dotted name) sits in the peeled
- * leading position.
+ * leading position. An English-word lead counts unless an article directly behind it shows the
+ * step naming its object: `make test` is the launch it reads as, `Find the new file` is a step.
  */
 function leadsWithCommandMaterial(segment: string): boolean {
-    const lead = peeledLaunch(segment).lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    const launch = peeledLaunch(segment);
+    if (isEnglishWordLead(launch, segment)) {
+        return !LEADING_ARTICLES.has(launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+    }
+    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return COMMAND_HEADS.has(lead) || isCommandToken(lead);
 }
 
 /**
  * Whether any command head appears among the segment's tokens once quoted launches are unwrapped —
- * annotation words between the filler and the launch must not hide it.
+ * annotation words between the filler and the launch must not hide it. A tool head counts by
+ * presence; an English-word head (`The tail is unchanged`) counts only where it was quoted or the
+ * segment carries a command-shaped token.
  */
 function mentionsCommandHead(segment: string): boolean {
-    return unwrappedTokens(segment).some((token) => COMMAND_HEADS.has(token));
+    const quoted = quotedTokens(segment);
+    const commandShaped = carriesCommandShapedToken(segment);
+    return unwrappedTokens(segment).some(
+        (token) => COMMAND_HEADS.has(token) && (!ENGLISH_WORD_HEADS.has(token) || commandShaped || quoted.has(token))
+    );
+}
+
+/** The lower-cased tokens written inside the segment's quoted spans. */
+function quotedTokens(segment: string): Set<string> {
+    const spans = segment.match(QUOTED_SPAN) ?? [];
+    return new Set(spans.flatMap((span) => unwrappedTokens(span.slice(1, -1))));
 }
 
 /** The segment's lower-cased tokens with quoted spans unwrapped and edge punctuation stripped. */
@@ -805,28 +846,56 @@ function isCheckFamilyScript(token: string): boolean {
 }
 
 /**
- * Whether any segment of `text` narrates a check: it reads as a command invocation once its command
+ * The segments of `text` that narrate a check: each reads as a command invocation once its command
  * material drops out (heads, their argument runs, paths, flags, quoted spans, cue-free
- * parentheticals, leaving no observation cue and no word outside the annotation vocabulary), it
- * names the test suite, or it mentions a check command at all. "Run `pnpm dev` and confirm the
- * transport play button toggles" teaches a step and passes; "pnpm wasm:verify" keeps its verify
- * stem inside the dropped command token and refuses. One narrating segment refuses the whole value:
- * a prose sentence beside a command list does not turn the list into a step, it only hides the list
- * from a looser reading.
+ * parentheticals, leaving no observation cue and no word outside the annotation vocabulary), names
+ * the test suite, or mentions a check command at all. "Run `pnpm dev` and confirm the transport
+ * play button toggles" teaches a step and is not judged; "pnpm wasm:verify" keeps its verify stem
+ * inside the dropped command token and is.
  */
-export function testInstructionsNarrateChecks(text: string): boolean {
-    return testInstructionSegments(text).some(
+export function narratingTestInstructionSegments(text: string): string[] {
+    return testInstructionSegments(text).filter(
         (segment) => isCommandNarration(segment) || namesTestSuite(segment) || mentionsCheckCommand(segment)
     );
 }
 
 /**
+ * Whether any segment of `text` narrates a check. One narrating segment refuses the whole value: a
+ * prose sentence beside a command list does not turn the list into a step, it only hides the list
+ * from a looser reading.
+ */
+export function testInstructionsNarrateChecks(text: string): boolean {
+    return narratingTestInstructionSegments(text).length > 0;
+}
+
+/**
  * The contract gate for a product-scope change's How-to-test section: a value that recites commands
  * the author or CI already ran, or the specs that cover the change, is refused, because those lines
- * teach a reviewer nothing they can perform in the app.
+ * teach a reviewer nothing they can perform in the app. The refusal quotes the segments it judged so
+ * the author can see which line to drop. A value larger than a whole pull-request body could never
+ * be published, so it is refused before the classifier reads it.
  */
 export function assertObservableTestInstructions(text: string): void {
-    if (testInstructionsNarrateChecks(text)) {
-        fail(CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL);
+    if (Buffer.byteLength(text, 'utf8') > PULL_REQUEST_BODY_BYTE_LIMIT) {
+        fail(`pull-request --test exceeds the ${PULL_REQUEST_BODY_BYTE_LIMIT}-byte pull-request body limit`);
     }
+    const judged = narratingTestInstructionSegments(text);
+    if (judged.length > 0) {
+        fail(`${CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL}; judged: ${quoteJudgedSegments(judged)}`);
+    }
+}
+
+/** The judged segments as the refusal lists them: the first few quoted and bounded, the rest counted. */
+function quoteJudgedSegments(segments: string[]): string {
+    const quoted = segments.slice(0, QUOTED_SEGMENT_LIMIT).map((segment) => JSON.stringify(boundedSegment(segment)));
+    const rest = segments.length - quoted.length;
+    return rest > 0 ? `${quoted.join(', ')} and ${rest} more` : quoted.join(', ');
+}
+
+/** A segment cut to the quoting bound, by code point so no surrogate pair splits, with an ellipsis when cut. */
+function boundedSegment(segment: string): string {
+    const characters = [...segment];
+    return characters.length > QUOTED_SEGMENT_MAX_CHARACTERS
+        ? `${characters.slice(0, QUOTED_SEGMENT_MAX_CHARACTERS).join('')}…`
+        : segment;
 }
