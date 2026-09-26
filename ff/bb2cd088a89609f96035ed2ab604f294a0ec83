@@ -1,0 +1,21 @@
+scripts/__tests__/publishReview.spec.ts
+  s_2bfd55a4393d7c::t_2291d8acb181fc 5465-5482
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  s_2bfd55a4393d7c::t_0e253f738a548d 279-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ffbb2cd088a89609f96035ed2ab604f294a0ec83",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
