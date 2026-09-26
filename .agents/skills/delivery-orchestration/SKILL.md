@@ -367,10 +367,13 @@ existed keep replaying byte-identically. It records an acknowledgement, never
 agreement, and confers no verdict, approval or merge authority — ADR 0047 still
 governs. When the record instead shows `no-assessment` — CI ran and delivered
 nothing for the head — `review:publish` refuses `assessmentImpact: none`
-outright, with or without a reason, and refuses any dossier with no
-limitations regardless of impact: there is nothing to cite, so the round must
-disclose the gap as a limitation instead. A bundle with no `semantic-ci.json`
-file at all — a historical bundle — still carries no such requirement.
+outright, with or without a reason, and requires a limitation citing the
+record's own reason as the token `semantic-ci <reason>` (for example
+`semantic-ci red-check`), regardless of impact. A bundle with no
+`semantic-ci.json` file at all — a historical bundle prepared before
+`review:prepare` wrote the record — still carries no such requirement; a
+bundle whose manifest records generating that file but carries no such file on
+disk is refused instead of read as undelivered.
 
 Dossier evidence, limitations, and approval-claim values must be single-line,
 trimmed and bounded, and are refused when they carry a credential-shaped value,

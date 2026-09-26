@@ -114,11 +114,12 @@ describe('parseSemanticAssessmentCoverage', () => {
         });
     });
 
-    it('projects a no-assessment record to not delivered', () => {
+    it('projects a no-assessment record to not delivered, carrying its reason', () => {
         expect(parseSemanticAssessmentCoverage(NO_ASSESSMENT)).toEqual({
             state: 'no-assessment',
             pr: 42,
             headSha: 'a'.repeat(40),
+            reason: 'absent',
         });
     });
 
@@ -224,21 +225,14 @@ describe('assertSemanticAssessmentAcknowledged', () => {
         ).not.toThrow();
     });
 
-    it('refuses a no-assessment record when the impact is none, even with a limitation', () => {
+    it('refuses a no-assessment record when the impact is none, even with a citing limitation', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(
-                dossierWith('none', { limitations: ['ci delivered no semantic assessment for this head'] }),
+                dossierWith('none', { limitations: ['semantic-ci absent: CI delivered no assessment for this head'] }),
                 parseSemanticAssessmentCoverage(NO_ASSESSMENT),
                 EXPECTED
             )
         ).toThrow(/assessmentImpact none/);
-        expect(() =>
-            assertSemanticAssessmentAcknowledged(
-                dossierWith('none', { limitations: ['ci delivered no semantic assessment for this head'] }),
-                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
-                EXPECTED
-            )
-        ).toThrow(/no semantic assessment/);
     });
 
     it('refuses a no-assessment record when the impact is none plus an assessmentIgnoredReason', () => {
@@ -258,10 +252,36 @@ describe('assertSemanticAssessmentAcknowledged', () => {
         ).toThrow(/no semantic assessment/);
     });
 
-    it('passes a no-assessment record when the impact is limitation-only with a disclosing limitation', () => {
+    it('refuses a limitation-only round whose limitation never cites the no-assessment record', () => {
         expect(() =>
             assertSemanticAssessmentAcknowledged(
-                dossierWith('limitation-only', { limitations: ['ci delivered no semantic assessment for this head'] }),
+                dossierWith('limitation-only', {
+                    limitations: ['the native audio path is not exercised on this head'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
+    it('refuses a stance-changed round whose limitation never cites the no-assessment record', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('stance-changed', {
+                    limitations: ['draw r1s2 fell back to the authoring model'],
+                }),
+                parseSemanticAssessmentCoverage(NO_ASSESSMENT),
+                EXPECTED
+            )
+        ).toThrow(/semantic-ci absent/);
+    });
+
+    it('passes a no-assessment record when the impact is limitation-only with a citing limitation', () => {
+        expect(() =>
+            assertSemanticAssessmentAcknowledged(
+                dossierWith('limitation-only', {
+                    limitations: ['semantic-ci absent: CI delivered no assessment for this head'],
+                }),
                 parseSemanticAssessmentCoverage(NO_ASSESSMENT),
                 EXPECTED
             )
@@ -275,7 +295,7 @@ describe('assertSemanticAssessmentAcknowledged', () => {
                 parseSemanticAssessmentCoverage(NO_ASSESSMENT),
                 EXPECTED
             )
-        ).toThrow(/records no limitations/);
+        ).toThrow(/semantic-ci absent/);
     });
 
     it('refuses a no-assessment record bound to another publication before the impact is checked', () => {
