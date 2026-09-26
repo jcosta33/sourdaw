@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "446a9f11a0cbc7f3d758971d9bc3e86163927e1fb1d606dd6245a4bfecf83a8e"
+                    "digest": "891d4fc0edca12d98afe8f32cbbaa75645880033b27713bdd30df9e324d3c13b"
                 }
             ]
         },
