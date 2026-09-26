@@ -1,0 +1,24 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
+  s_2bfd55a4393d7c::t_3f5f0a514edf09 267-326
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_2bfd55a4393d7c::t_7d31b4a4bbd3da 183-191,196,206
+  s_2bfd55a4393d7c::t_840500ba46a9ef 192-195
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_2bfd55a4393d7c::t_46504c8c3f80c8 906-948
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "50a3599fec46e85ea8746867fb91e6bc33de8290",
+  "prompts": {},
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
