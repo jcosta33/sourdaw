@@ -104,6 +104,13 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         },
     },
     {
+        // Live lane 'automation-follower' still holds 'automation-point', which no earlier
+        // member of the undo batch removes.
+        title: 'removeAutomationLane refuses to remove a lane holding a point it did not create',
+        actionType: 'removeAutomationLane',
+        divergedAction: { type: 'removeAutomationLane', payload: { laneId: 'automation-follower' } },
+    },
+    {
         // Live track muted=false; the guard expects muted=true.
         title: 'muteTrack refuses to write against a diverged document',
         actionType: 'muteTrack',

@@ -2980,6 +2980,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
     describe: (action: Action, context?: HandlerValidationContext) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
+    /** Why `validate` refused, read only after it has, so the batch conflict names the owner's reason rather than the bare operation. */
+    validationRefusalReason?: (action: Action, context: HandlerValidationContext) => string | null;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
     canReapplyAfterDivergence?: (action: Action, context?: HandlerValidationContext) => boolean;
     /**

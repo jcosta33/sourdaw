@@ -844,7 +844,7 @@ const planPromptIntent = inject({ logger })(
                 }
 
                 if (bridged.actions.length > 0) {
-                    const validated = validateActions(bridged.actions);
+                    const validated = validateActions(bridged.actions, bridged.batchLocalActionIdentities);
                     if (validated.length !== bridged.actions.length) {
                         const rejectedTypes = bridged.actions
                             .filter((action) => !validated.includes(action))

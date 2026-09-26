@@ -206,6 +206,12 @@ export type ProjectContextAutomationLane = {
     /** {@link maxValue} in decibels, on a gain lane only. */
     maxValueDb?: number;
     points: ProjectContextAutomationPoint[];
+    /**
+     * Set only on a lane an earlier member of the plan being grounded creates: later members may
+     * write to it, but it is not a lane the project already holds, so the member creating it is
+     * not a duplicate of it.
+     */
+    createdByPlan?: true;
 };
 
 export type ProjectContextSidechainRoute = {

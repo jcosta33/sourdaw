@@ -1270,13 +1270,19 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'addAutomationLane',
-        'Create a gain or pan automation lane on an existing track.',
+        'Create an automation lane on an existing track for its gain, its pan, or an automatable parameter of a device in its chain.',
         {
             trackId: { type: 'string', description: 'Existing track ID' },
             parameterId: {
                 type: 'string',
-                enum: ['gain', 'pan'],
-                description: 'Track parameter to automate',
+                description:
+                    'Parameter to automate: "gain" or "pan" for the track itself, or "<deviceId>:<parameterId>" for a parameter of a device already on this track, joining that device\'s ID and the parameter\'s ID with a colon',
+            },
+            binding: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9-]{0,63}$',
+                description:
+                    'Optional plan-local name. Later calls may target this newly created automation lane as $<binding>.',
             },
         },
         ['trackId', 'parameterId'],
@@ -1287,7 +1293,11 @@ const EXPECTED_COMMANDS = [
         'addAutomationPoint',
         'Add a value at an explicit beat on an existing track automation lane. Exactly one of valueDb, deltaDb, or value; the decibel forms are accepted only on a gain lane, whose minValueDb and maxValueDb state its window.',
         {
-            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            laneId: {
+                type: 'string',
+                description:
+                    'Existing track automation lane ID, or $<binding> for a lane an earlier call in this plan creates',
+            },
             beat: { type: 'number', description: 'Non-negative project beat' },
             valueDb: {
                 type: 'number',

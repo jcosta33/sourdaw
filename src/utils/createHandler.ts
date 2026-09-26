@@ -20,6 +20,11 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
         context?: HandlerValidationContext
     ) => HandlerDescribeResult;
     validate?: (action: Extract<AppAction, { type: ActionType }>, context: HandlerValidationContext) => boolean;
+    /** See `ActionHandlerCommon.validationRefusalReason`. */
+    validationRefusalReason?: (
+        action: Extract<AppAction, { type: ActionType }>,
+        context: HandlerValidationContext
+    ) => string | null;
     canReapplyAfterDivergence?: (
         action: Extract<AppAction, { type: ActionType }>,
         context?: HandlerValidationContext
@@ -81,6 +86,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         undoable: config.undoable,
         describe: config.describe,
         validate: config.validate ?? (() => true),
+        validationRefusalReason: config.validationRefusalReason,
         canReapplyAfterDivergence: config.canReapplyAfterDivergence,
         canReportConflict: config.canReportConflict ?? false,
         materializeCommandArguments: config.materializeCommandArguments,
