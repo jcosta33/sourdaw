@@ -623,6 +623,12 @@ describe('applyAutomation', () => {
             schedulerSession.discontinuityEpoch = 401;
             applyAutomation(4.25);
             expect(updateDeviceParam).not.toHaveBeenCalled();
+            // The clip gate skipped this lane, but its compensated read beat
+            // must still land in deviceReadBeatByTrack (#4684) so modulation
+            // agrees this track wrote nothing this tick, rather than falling
+            // back to the raw playhead beat and reading a value applyAutomation
+            // itself never wrote.
+            expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(3.75);
 
             // Playhead beat 4.75 -> compensated beat 4.25, now inside the clip.
             schedulerSession.discontinuityEpoch = 402;
@@ -681,6 +687,27 @@ describe('applyAutomation', () => {
 
             expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(3.75);
             expect(deviceReadBeatByTrack.has('track-2')).toBe(false);
+        });
+
+        it('drops a track from deviceReadBeatByTrack on the tick its device lane stops driving', () => {
+            // #4684: the map is cleared and rebuilt every tick (see
+            // deviceReadBeatByTrack.ts), so a track with no currently-driving
+            // device-family lane must not carry a stale entry from an earlier
+            // tick forward.
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+
+            applyAutomation(4.25);
+            expect(deviceReadBeatByTrack.has('track-1')).toBe(true);
+
+            // The track stops recording this lane: it stops driving before the
+            // read-beat record is reached this tick.
+            (mutableAutomationStore.value.lanes as Array<{ enabled?: boolean }>)[0]!.enabled = false;
+            applyAutomation(40);
+
+            expect(deviceReadBeatByTrack.has('track-1')).toBe(false);
         });
     });
 

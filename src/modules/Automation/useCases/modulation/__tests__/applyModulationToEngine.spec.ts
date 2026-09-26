@@ -559,5 +559,55 @@ describe('applyModulationToEngine', () => {
             expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
             expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
         });
+
+        it('reads the curve at the compensated read beat, not the playhead beat, once both are past the clip start', () => {
+            mocks.trackStore.value = {
+                tracks: [
+                    {
+                        id: 't1',
+                        automationMode: 'read',
+                        clips: [{ id: 'clip-1', startBeat: 4, endBeat: 8 }],
+                        devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
+                    },
+                ],
+            };
+            automationStore.set({
+                lanes: [
+                    {
+                        ...createCutoffLane(['lane-cutoff', 'd1:cutoff', 800, 'clip-1']),
+                        // Steps from 800 to 200 at beat 5, so a read at the
+                        // compensated beat (still on the 800 segment) and a
+                        // read at the playhead beat (past the step) disagree.
+                        points: [
+                            { beat: 4, value: 800, curve: 'step', tension: 0 },
+                            { beat: 5, value: 200, curve: 'linear', tension: 0 },
+                        ],
+                    },
+                ],
+            });
+            modulationStore.set({
+                modulators: [
+                    {
+                        id: 'lfo1',
+                        name: 'LFO',
+                        trackId: 't1',
+                        kind: 'lfo',
+                        config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                        mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                        enabled: true,
+                    },
+                ],
+            });
+            // Playhead 5.5 is past the step to 200 at beat 5, but the
+            // compensated read beat 4.1 is still on the pre-step 800 segment —
+            // applyAutomation itself wrote 800 for this track this tick
+            // (#4684), so indexAutomatedBases must resolve the same value.
+            const readBeats = new Map([['t1', 4.1]]);
+
+            applyModulationToEngine(5.5, undefined, new Map(), readBeats);
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
+        });
     });
 });
