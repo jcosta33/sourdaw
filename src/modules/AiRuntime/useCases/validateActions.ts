@@ -12,6 +12,7 @@ import {
     type RuntimeActionType,
 } from '../models/RuntimeAction';
 
+import { type BatchLocalActionIdentity } from './agentReference/BatchLocalActionIdentity';
 import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
 
 const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTION_TYPES);
@@ -41,15 +42,48 @@ function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {
     return Reflect.ownKeys(payload).every((key) => typeof key === 'string' && allowedKeys.includes(key));
 }
 
+type BatchCreatedLane = { actionIndex: number; parameterId: string };
+
+/**
+ * The lanes the batch itself creates, keyed by the id the plan minted for each. The creating action
+ * carries no id until identities are materialized, so the n-th lane identity names the n-th
+ * `addAutomationLane` action.
+ */
+function indexBatchCreatedLanes(
+    actions: readonly RuntimeAction[],
+    identities: readonly BatchLocalActionIdentity[]
+): ReadonlyMap<string, BatchCreatedLane> {
+    const laneActionIndexes = actions.flatMap((action, actionIndex) =>
+        action.type === 'addAutomationLane' ? [actionIndex] : []
+    );
+    const lanes = new Map<string, BatchCreatedLane>();
+    for (const identity of identities) {
+        if (identity.actionType !== 'addAutomationLane') {
+            continue;
+        }
+        const actionIndex = laneActionIndexes[identity.actionOrdinal];
+        const action = actionIndex === undefined ? undefined : actions[actionIndex];
+        if (actionIndex !== undefined && action?.type === 'addAutomationLane') {
+            lanes.set(identity.laneId, { actionIndex, parameterId: action.payload.parameterId });
+        }
+    }
+    return lanes;
+}
+
 /**
  * Decibels describe a gain amplitude and nothing else. A lane holding pan
  * positions, a cutoff in hertz, or a time in milliseconds has no decibel
  * reading, and a lane whose gain is *already* stored in decibels would take the
  * conversion twice. Only the payload validator's own view is too narrow to see
  * which of those a `laneId` names, so the lane is resolved here, where the
- * stores are.
+ * stores are — or, for a lane an earlier action of the same batch creates, from
+ * the parameter that action names.
  */
-function addressesGainLaneForDecibels(action: RuntimeAction): boolean {
+function addressesGainLaneForDecibels(
+    action: RuntimeAction,
+    actionIndex: number,
+    batchCreatedLanes: ReadonlyMap<string, BatchCreatedLane>
+): boolean {
     if (action.type !== 'addAutomationPoint') {
         return true;
     }
@@ -57,7 +91,11 @@ function addressesGainLaneForDecibels(action: RuntimeAction): boolean {
         return true;
     }
     const lane = automationStore.value?.lanes.find((candidate) => candidate.id === action.payload.laneId);
-    return lane !== undefined && isLinearGainAutomationLane(lane);
+    if (lane !== undefined) {
+        return isLinearGainAutomationLane(lane);
+    }
+    const createdLane = batchCreatedLanes.get(action.payload.laneId);
+    return createdLane !== undefined && createdLane.actionIndex < actionIndex && createdLane.parameterId === 'gain';
 }
 
 const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([
@@ -96,8 +134,12 @@ function hasAvailableVcaTargets(action: RuntimeAction): boolean {
 
 export const validateActions = inject({ logger })(
     ({ logger }) =>
-        function validateActions(actions: RuntimeAction[]): RuntimeAction[] {
-            return actions.filter((action) => {
+        function validateActions(
+            actions: RuntimeAction[],
+            batchLocalActionIdentities: readonly BatchLocalActionIdentity[] = []
+        ): RuntimeAction[] {
+            const batchCreatedLanes = indexBatchCreatedLanes(actions, batchLocalActionIdentities);
+            return actions.filter((action, actionIndex) => {
                 if (!KNOWN_ACTION_TYPES.has(action.type)) {
                     logger.warn(`Unknown action type rejected: ${action.type}`);
                     return false;
@@ -141,7 +183,7 @@ export const validateActions = inject({ logger })(
                     return false;
                 }
 
-                if (!addressesGainLaneForDecibels(action)) {
+                if (!addressesGainLaneForDecibels(action, actionIndex, batchCreatedLanes)) {
                     logger.warn(`Decibel value rejected for a non-gain automation lane: ${action.type}`);
                     return false;
                 }

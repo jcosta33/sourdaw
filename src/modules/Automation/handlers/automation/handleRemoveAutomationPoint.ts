@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+import { type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { removeAutomationPoint } from '../../useCases/automation/removeAutomationPoint';
 import { removeAutomationPointById } from '../../useCases/automation/removeAutomationPointById';
@@ -24,7 +25,26 @@ function getTargetPoint(payload: RemoveAutomationPointPayload) {
     }
     return lane.points[payload.pointIndex];
 }
+
+/** An identified point an earlier member of the same batch adds, which the store cannot answer for yet. */
+function isAddedEarlierInBatch(payload: RemoveAutomationPointPayload, context: HandlerValidationContext): boolean {
+    return context.actions
+        .slice(0, context.actionIndex)
+        .some(
+            (candidate) =>
+                candidate.type === 'addAutomationPoint' &&
+                payload.pointId !== undefined &&
+                candidate.payload.laneId === payload.laneId &&
+                candidate.payload.pointId === payload.pointId
+        );
+}
+
 export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'>({
+    validate: (action, context) =>
+        getTargetPoint(action.payload) !== undefined || isAddedEarlierInBatch(action.payload, context),
+    // Only an identified point survives divergence as the same point; an index
+    // names whichever point a concurrent edit has moved into that slot.
+    canReapplyAfterDivergence: (action) => action.payload.pointId !== undefined,
     execute: (action) => {
         const point = getTargetPoint(action.payload);
         if (!point) {

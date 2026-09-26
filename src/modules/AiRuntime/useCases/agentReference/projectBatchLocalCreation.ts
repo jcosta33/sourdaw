@@ -1,7 +1,8 @@
-import { toLevelDb } from '#/utils/audioLevelLaw';
+import { gainLaneLevelLaw, toLevelDb } from '#/utils/audioLevelLaw';
 
 import {
     type ProjectContext,
+    type ProjectContextAutomationLane,
     type ProjectContextDeviceParameter,
     type ProjectContextTrack,
 } from '../../models/ProjectContext';
@@ -32,15 +33,24 @@ export type BatchLocalCreationProjection =
           name: string;
           parameters: readonly ProjectContextDeviceParameter[];
           parentTrackId: string;
+      }
+    | {
+          createdId: string;
+          kind: 'automation-lane';
+          maxValue: number;
+          minValue: number;
+          parameterId: string;
+          parameterName: string;
+          parentTrackId: string;
       };
 
 function createProjectedTrack(
     context: ProjectContext,
-    projection: BatchLocalCreationProjection,
+    projection: Extract<BatchLocalCreationProjection, { kind: 'track' }>,
     kind: BatchLocalCreatedTrackKind
 ): ProjectContextTrack {
     const devices =
-        kind === 'midi' && projection.kind === 'track' && projection.initialDeviceId !== undefined
+        kind === 'midi' && projection.initialDeviceId !== undefined
             ? [
                   {
                       id: projection.initialDeviceId,
@@ -130,6 +140,35 @@ function projectCreatedDevice(
     };
 }
 
+/** An empty, enabled lane; only a gain lane states its window in decibels, as the project context does. */
+function projectCreatedAutomationLane(
+    context: ProjectContext,
+    projection: Extract<BatchLocalCreationProjection, { kind: 'automation-lane' }>
+): ProjectContext {
+    const law =
+        projection.parameterId === 'gain'
+            ? gainLaneLevelLaw({ minValue: projection.minValue, maxValue: projection.maxValue })
+            : null;
+    const lane: ProjectContextAutomationLane = {
+        id: projection.createdId,
+        trackId: projection.parentTrackId,
+        parameterId: projection.parameterId,
+        name: projection.parameterName,
+        enabled: true,
+        minValue: projection.minValue,
+        declaredMaxValue: projection.maxValue,
+        maxValue: projection.maxValue,
+        points: [],
+        createdByPlan: true,
+    };
+    if (law !== null) {
+        lane.minValueDb = law.floorDb;
+        lane.maxValueDb = law.ceilingDb;
+    }
+    const existingLanes = context.automationLanes ?? [];
+    return { ...context, automationLanes: [...existingLanes, lane] };
+}
+
 /**
  * Makes a plan-created object visible to every later concrete capability check in the same batch,
  * so a consumer is grounded against the object the plan will actually produce rather than against
@@ -144,6 +183,9 @@ export function projectBatchLocalCreation(
     }
     if (projection.kind === 'device') {
         return projectCreatedDevice(context, projection);
+    }
+    if (projection.kind === 'automation-lane') {
+        return projectCreatedAutomationLane(context, projection);
     }
     return { ...context, tracks: [...context.tracks, createProjectedTrack(context, projection, projection.trackKind)] };
 }

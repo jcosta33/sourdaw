@@ -24,4 +24,9 @@ export type BatchLocalActionIdentity =
           actionOrdinal: number;
           actionType: 'addClip';
           clipId: string;
+      }
+    | {
+          actionOrdinal: number;
+          actionType: 'addAutomationLane';
+          laneId: string;
       };

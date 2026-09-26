@@ -2455,7 +2455,8 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addAutomationLane',
         risk: 'bounded-reversible',
-        description: 'Create a gain or pan automation lane on an existing track.',
+        description:
+            'Create an automation lane on an existing track for its gain, its pan, or an automatable parameter of a device in its chain.',
         intentPhrases: [
             'add automation lane',
             'create automation lane',
@@ -2471,8 +2472,14 @@ export const executableAppActionDescriptors = [
                 trackId: { type: 'string', description: 'Existing track ID' },
                 parameterId: {
                     type: 'string',
-                    enum: ['gain', 'pan'],
-                    description: 'Track parameter to automate',
+                    description:
+                        'Parameter to automate: "gain" or "pan" for the track itself, or "<deviceId>:<parameterId>" for a parameter of a device already on this track, joining that device\'s ID and the parameter\'s ID with a colon',
+                },
+                binding: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9-]{0,63}$',
+                    description:
+                        'Optional plan-local name. Later calls may target this newly created automation lane as $<binding>.',
                 },
             },
             required: ['trackId', 'parameterId'],
@@ -2504,7 +2511,11 @@ export const executableAppActionDescriptors = [
         ],
         parameters: {
             properties: {
-                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                laneId: {
+                    type: 'string',
+                    description:
+                        'Existing track automation lane ID, or $<binding> for a lane an earlier call in this plan creates',
+                },
                 beat: { type: 'number', description: 'Non-negative project beat' },
                 valueDb: {
                     type: 'number',

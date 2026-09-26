@@ -4,6 +4,7 @@ import { evaluateAutomationLaneAtBeat } from '#/utils/evaluateAutomationLaneAtBe
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
+import { resolveAutomationLaneTarget } from '../resolveAutomationLaneTarget';
 import { type ToolCallResult } from '../toolCallParser';
 
 import { findTrack, hasExactKeys, isFiniteNumber, readLevelArgument, rejection } from './bridgeArgumentGuards';
@@ -106,17 +107,7 @@ type CoreAutomationStrategyDefinition<Name extends CoreAutomationCallName> = {
     };
 }[Name];
 
-const automationLaneDisplayNameByParameterId = {
-    gain: 'Gain',
-    pan: 'Pan',
-} as const;
-
-type ExecutableAutomationParameterId = keyof typeof automationLaneDisplayNameByParameterId;
 type ProviderAutomationMode = NonNullable<ProjectContext['tracks'][number]['automationMode']>;
-
-function isExecutableAutomationParameterId(value: unknown): value is ExecutableAutomationParameterId {
-    return typeof value === 'string' && Object.hasOwn(automationLaneDisplayNameByParameterId, value);
-}
 
 function findAutomationLane(context: ProjectContext, laneId: unknown) {
     if (typeof laneId !== 'string') {
@@ -158,27 +149,30 @@ const coreAutomationStrategyDefinitions = [
         name: 'addAutomationLane',
         transform: ({ call, context, index }) => {
             const args = call.arguments;
-            const track = findTrack(context, args.trackId);
+            const target = resolveAutomationLaneTarget(context, args.trackId, args.parameterId);
             if (
                 !hasExactKeys(args, ['trackId', 'parameterId']) ||
-                !track ||
-                !isExecutableAutomationParameterId(args.parameterId) ||
+                target === null ||
+                typeof args.trackId !== 'string' ||
                 (context.automationLanes ?? []).some(
-                    (lane) => lane.trackId === track.id && lane.parameterId === args.parameterId
+                    (lane) =>
+                        lane.createdByPlan !== true &&
+                        lane.trackId === args.trackId &&
+                        lane.parameterId === target.parameterId
                 )
             ) {
                 return rejection(
                     index,
                     call.name,
-                    'Expected an available track and one new gain or pan automation lane'
+                    'Expected an available track and one new automation lane for its gain, its pan, or a parameter of one of its devices'
                 );
             }
             return {
                 type: 'addAutomationLane',
                 payload: {
-                    trackId: track.id,
-                    parameterId: args.parameterId,
-                    parameterName: automationLaneDisplayNameByParameterId[args.parameterId],
+                    trackId: args.trackId,
+                    parameterId: target.parameterId,
+                    parameterName: target.parameterName,
                 },
             };
         },
