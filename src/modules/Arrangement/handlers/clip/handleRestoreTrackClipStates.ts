@@ -718,10 +718,10 @@ function writeTrackClipState(entry: TrackClipStateSnapshot): void {
  * Neither direction touches a lane the removal did not affect.
  *
  * The re-retire runs for any replacement whose `expected` carries the key at all,
- * even an empty capture: a take-retiring route (cut) that happened to capture no
+ * even an empty capture: a take-retiring route that happened to capture no
  * take still removes its clip again, so a take that landed on it since must not
  * survive as an orphan. A snapshot with no key belongs to a route that never
- * retires takes (flatten, paste, consolidate), and its redo must not start.
+ * retires takes (paste), and its redo must not start.
  *
  * A redo retires what the restored clip holds *now*, which is not what the first
  * removal retired: a take that landed between the undo and the redo is in no
@@ -749,10 +749,31 @@ function transitionRetiredTakeLanes(
         if (!expectedEntry || expectedEntry.retiredTakeLanes === undefined) {
             continue;
         }
-        const replacementClipIds = new Set(entry.clips.map((clip) => clip.id));
-        for (const clip of expectedEntry.clips) {
-            if (!replacementClipIds.has(clip.id)) {
-                retiringClipIds.add(clip.id);
+        // The clip universe spans the active collection AND every hidden
+        // alternative: a redo that drops a hidden clip must re-retire its takes
+        // just as the forward did, or the take survives naming a clip no track
+        // holds (#4518).
+        const replacementClipIds = new Set(snapshotClipIds(entry));
+        for (const clipId of snapshotClipIds(expectedEntry)) {
+            if (!replacementClipIds.has(clipId)) {
+                retiringClipIds.add(clipId);
+            }
+        }
+        // The universe diff alone misses a removal that leaves `alternatives`
+        // untouched: the active alternative still mirrors the removed ids, so
+        // the post-removal universe never loses them and a consolidate redo
+        // would re-retire nothing. The forward retired those takes by an
+        // explicit replaced-id list, so the redo re-retires every captured id
+        // whose clip is absent from the replacement's ACTIVE collection —
+        // identical to the universe diff for flatten, the only signal for
+        // consolidate (#4518).
+        const replacementActiveClipIds = new Set(entry.clips.map((clip) => clip.id));
+        for (const lane of expectedEntry.retiredTakeLanes) {
+            const retiredIds = lane.retiredTakeIds ?? [];
+            for (const take of lane.lane.takes) {
+                if (retiredIds.includes(take.id) && !replacementActiveClipIds.has(take.clipId)) {
+                    retiringClipIds.add(take.clipId);
+                }
             }
         }
     }
@@ -760,6 +781,14 @@ function transitionRetiredTakeLanes(
         return;
     }
     recordRedoTakeRetirement(action, removeTakesForClips([...retiringClipIds]));
+}
+
+/** Every clip a snapshot entry holds: the active collection plus each alternative's. */
+function snapshotClipIds(entry: TrackClipStateSnapshot): string[] {
+    return [
+        ...entry.clips.map((clip) => clip.id),
+        ...entry.trackFields.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
+    ];
 }
 
 /**

@@ -11,6 +11,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore, type TrackStoreState } from '../../../stores/trackStore';
 import { handleConsolidateAllTracks } from '../handleConsolidateAllTracks';
 
@@ -155,6 +156,7 @@ describe('handleConsolidateAllTracks storage transaction (issue #2544)', () => {
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
         agentProjectRepairStateStore.set(null);
+        takeLaneStore.set(null);
     });
 
     async function flushOneFrame(): Promise<void> {
@@ -232,6 +234,62 @@ describe('handleConsolidateAllTracks storage transaction (issue #2544)', () => {
         expect(trackStore.value?.tracks[1]?.clips[0]?.id).toBe('c2');
         // ...and the undo entry that would have covered the destroyed clips
         // was never recorded — the failure is atomic, not a lost undo.
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('keeps the takes of surviving clips when the commit aborts mid-loop (#4518)', async () => {
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-t1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-c1', clipId: 'c1', name: 'C1', startBeat: 0, endBeat: 4, selected: true }],
+                    activeCompRegions: [],
+                },
+                {
+                    id: 'lane-t2',
+                    trackId: 't2',
+                    takes: [{ id: 'take-c2', clipId: 'c2', name: 'C2', startBeat: 0, endBeat: 4, selected: true }],
+                    activeCompRegions: [],
+                },
+            ],
+        });
+
+        const renderGates: RenderGate[] = [];
+        gateRenders(renderGates, (index) => index === 1);
+
+        const dispatch = executeAppAction(consolidateAction);
+        await vi.waitFor(() => {
+            if (!renderGates[1]) {
+                throw new Error('second render was not requested');
+            }
+        });
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'repair-revision',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+        renderGates[1]!.release();
+
+        await expect(dispatch).rejects.toThrow('Project repair is required before project actions can execute');
+        await flushOneFrame();
+        flushAutomergeStorageWrites();
+
+        // The clip writes rolled back — so the retirement must have too: an
+        // unscoped removeTakesForClips commits on its own frame and survives the
+        // abort, destroying takes on clips that are still here, with no undo
+        // entry ever filed to bring them back.
+        expect(trackStore.value?.tracks[0]?.clips[0]?.id).toBe('c1');
+        expect(trackStore.value?.tracks[1]?.clips[0]?.id).toBe('c2');
+        expect(takeLaneStore.value?.lanes.map((lane) => lane.id)).toEqual(['lane-t1', 'lane-t2']);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes).map((take) => take.id)).toEqual([
+            'take-c1',
+            'take-c2',
+        ]);
         expect(undoStore.value?.past).toHaveLength(0);
     });
 });

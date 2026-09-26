@@ -1,8 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
@@ -41,8 +43,16 @@ function isFlattenNoop(trackId: string): boolean {
 
 export const handleFlattenTrack = createHandler<'flattenTrack'>({
     execute: (action) => {
-        const didWrite = flattenTrack(action.payload.trackId);
+        const trackId = action.payload.trackId;
+        // Read the replaced clip ids before the forward rewrites the collection:
+        // the flatten swaps every clip (and alternative) for the baked render,
+        // and each replaced id retires its takes through the shared rule so no
+        // orphan take keeps naming a clip no track holds (#4518).
+        const preFlattenTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
+        const retiringClipIds = preFlattenTrack ? collectTrackClipIds(preFlattenTrack) : [];
+        const didWrite = flattenTrack(trackId);
         if (didWrite) {
+            removeTakesForClips(retiringClipIds);
             const pending = pendingFlattenSnapshots.get(action);
             if (pending) {
                 const settled = captureTrackClipStates([pending.trackId]);
@@ -57,7 +67,11 @@ export const handleFlattenTrack = createHandler<'flattenTrack'>({
             return { label: 'Flatten track', inverseAction: null };
         }
 
-        const preFlattenState = captureTrackClipStates([trackId]);
+        const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
+        const retiringClipIds = track ? collectTrackClipIds(track) : [];
+        // Naming the replaced ids makes the capture carry the take lanes the
+        // forward retires, so undo puts them back with the pre-flatten clips.
+        const preFlattenState = captureTrackClipStates([trackId], retiringClipIds);
         // Empty placeholder now; `execute()` fills it once the flatten lands, and
         // both `inverseAction.payload.expected` and `redoAction.payload.replacement`
         // reference this same array, so the fill is visible in both.

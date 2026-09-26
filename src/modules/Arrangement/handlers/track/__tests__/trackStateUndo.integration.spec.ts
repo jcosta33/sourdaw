@@ -5,6 +5,13 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: notifyUserMock,
 }));
 
+// Consolidate bounces through an offline render; jsdom has no audio graph, so the
+// render seam resolves a fake buffer while the stores and history stay real.
+const renderTrackOfflineMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../useCases/freezeBounce/renderOffline', () => ({
+    renderTrackOffline: renderTrackOfflineMock,
+}));
+
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -30,6 +37,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../../stores/clipSatelliteState';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
+import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -108,6 +116,18 @@ function divergeTrack(trackId: string, patch: Record<string, unknown>): void {
     });
 }
 
+/** A non-silent buffer: `detectSilentBake` refuses an all-zero render. */
+function createFakeAudioBuffer(): AudioBuffer {
+    const channelData = new Float32Array(128).fill(0.5);
+    return {
+        duration: 1,
+        getChannelData: () => channelData,
+        length: channelData.length,
+        numberOfChannels: 2,
+        sampleRate: 48000,
+    } as unknown as AudioBuffer;
+}
+
 async function run(action: AppAction) {
     return executeAppAction(action, { source: 'manual' });
 }
@@ -141,6 +161,7 @@ describe('track-state guarded undo integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        takeLaneStore.set(null);
         clipSelectionStore.set(defaultClipSelectionState);
         // The guard reads both of these now, so a note or a retune left behind by one
         // case would decide the next one's conflict.
@@ -485,6 +506,117 @@ describe('track-state guarded undo integration', () => {
             await redo();
             expect(track('track-1')).toMatchObject({ kind: 'audio', devices: [], frozen: false });
             expect(track('track-1')?.clips).toEqual([flattenedClip]);
+        });
+
+        it('flatten: undo restores takes retired from a hidden alternative with their clips (#4518)', async () => {
+            const activeClip = ClipDummy.create({ id: 'clip-b', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            const hiddenClip = ClipDummy.create({ id: 'clip-a', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            divergeTrack('track-1', {
+                kind: 'midi',
+                clips: [activeClip],
+                frozen: true,
+                frozenBufferId: 'buffer-1',
+                freezeState: { status: 'frozen', freezeId: 'freeze-1', frozenBufferId: 'buffer-1' },
+                activeAlternativeId: 'alt-1',
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [activeClip] },
+                    { id: 'alt-a', name: 'Alternative A', clips: [hiddenClip] },
+                ],
+            });
+            // A take recorded while alt-a was showing still names its clip after the
+            // switch back — `handleSwitchTrackAlternative` never touches take lanes.
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [
+                            { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 4, selected: false },
+                            { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 4, selected: true },
+                        ],
+                        activeCompRegions: [],
+                    },
+                ],
+            });
+
+            await run({ type: 'flattenTrack', payload: { trackId: 'track-1' } });
+            // The flatten replaced both collections, so both takes retired.
+            expect(takeLaneStore.value?.lanes ?? []).toEqual([]);
+
+            await undo();
+            expect(track('track-1')?.clips).toEqual([activeClip]);
+            expect(track('track-1')?.alternatives.map((alternative) => alternative.id)).toEqual(['alt-1', 'alt-a']);
+            // The decisive assertion: the hidden clip's take comes back with it — a
+            // capture intersecting retiring ids with the active collection alone
+            // retires take-a in the forward and never restores it here.
+            const restoredLanes = takeLaneStore.value?.lanes ?? [];
+            const restoredTakes = restoredLanes.flatMap((candidate) => candidate.takes);
+            const restoredClipIds = restoredTakes.map((take) => take.clipId).sort();
+            expect(restoredClipIds).toEqual(['clip-a', 'clip-b']);
+
+            await redo();
+            expect(track('track-1')?.clips.map((clip) => clip.id)).not.toContain('clip-b');
+            // Redo re-retires what the forward retired — the hidden clip's take
+            // included — rather than stranding it on a clip no track holds.
+            const lanesAfterRedo = takeLaneStore.value?.lanes ?? [];
+            const takesAfterRedo = lanesAfterRedo.flatMap((candidate) => candidate.takes);
+            expect(takesAfterRedo).toEqual([]);
+        });
+
+        it('consolidate: redo re-retires the replaced clip takes the undo restored (#4518)', async () => {
+            const activeClip = ClipDummy.create({ id: 'clip-b', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            const hiddenClip = ClipDummy.create({ id: 'clip-a', trackId: 'track-1', startBeat: 0, endBeat: 4 });
+            divergeTrack('track-1', {
+                kind: 'midi',
+                clips: [activeClip],
+                activeAlternativeId: 'alt-1',
+                alternatives: [
+                    { id: 'alt-1', name: 'Alternative 1', clips: [activeClip] },
+                    { id: 'alt-a', name: 'Alternative A', clips: [hiddenClip] },
+                ],
+            });
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [
+                            { id: 'take-b', clipId: 'clip-b', name: 'B', startBeat: 0, endBeat: 4, selected: false },
+                            { id: 'take-a', clipId: 'clip-a', name: 'A', startBeat: 0, endBeat: 4, selected: true },
+                        ],
+                        activeCompRegions: [],
+                    },
+                ],
+            });
+            renderTrackOfflineMock.mockResolvedValue(createFakeAudioBuffer());
+
+            await run({ type: 'consolidateAllTracks', payload: undefined });
+            // The bounce replaces only the active collection: take-b retires, the
+            // hidden alternative's clip and take survive.
+            const bouncedClip = track('track-1')?.clips[0];
+            expect(bouncedClip).toBeDefined();
+            expect(bouncedClip?.id).not.toBe('clip-b');
+            const lanesAfterForward = takeLaneStore.value?.lanes ?? [];
+            const takesAfterForward = lanesAfterForward.flatMap((candidate) => candidate.takes);
+            expect(takesAfterForward.map((take) => take.id)).toEqual(['take-a']);
+
+            await undo();
+            expect(track('track-1')?.clips).toEqual([activeClip]);
+            const lanesAfterUndo = takeLaneStore.value?.lanes ?? [];
+            const takesAfterUndo = lanesAfterUndo.flatMap((candidate) => candidate.takes);
+            const undoneTakeIds = takesAfterUndo.map((take) => take.id).sort();
+            expect(undoneTakeIds).toEqual(['take-a', 'take-b']);
+
+            await redo();
+            expect(track('track-1')?.clips).toEqual([bouncedClip]);
+            // The decisive assertion: clip-b still sits in the untouched
+            // active-alternative mirror, so a snapshot-universe diff sees it as
+            // surviving and would leave take-b live — an orphan whose comp region
+            // silences the rendered bounce. The redo must re-retire it anyway.
+            expect(track('track-1')?.alternatives[0]?.clips).toEqual([activeClip]);
+            const lanesAfterRedo = takeLaneStore.value?.lanes ?? [];
+            const takesAfterRedo = lanesAfterRedo.flatMap((candidate) => candidate.takes);
+            expect(takesAfterRedo.map((take) => take.id)).toEqual(['take-a']);
         });
     });
 
