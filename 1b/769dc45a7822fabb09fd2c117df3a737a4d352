@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_1c08b47ac3792f::t_bb28b4c5ef11e9 150-158
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_85c98279b6b73d 941-949,960
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1b769dc45a7822fabb09fd2c117df3a737a4d352",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
