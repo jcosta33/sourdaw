@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_1c08b47ac3792f::t_c7a262ed27fd1f 85-99
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_56449f32708f7e 461
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_6d0e383a795724 374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7f971836c54a87ad481e26ef9ad05a91c29203b4",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
