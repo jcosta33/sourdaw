@@ -50,12 +50,72 @@ const FILLER_WORDS = [
 const LEADING_LIST_MARKER = /^(?:[-*•]\s+|[0-9]+[.)]\s+|[a-z][.)]\s+)/i;
 
 /**
- * Articles whose presence directly behind a peeled command head keeps the argument run closed:
- * `Make a MIDI track` and `Format the clip name` are the step's own verb naming its object, not a
- * launch opening an argument run that would eat the UI nouns. A bare argument (`make test`) is
- * still the launch it reads as.
+ * Articles whose presence directly behind a quoted or tool command head keeps the argument run
+ * closed: '`make` a MIDI track' is the step's own verb naming its object. Only articles do this
+ * there: behind a head typed as a command, a copula makes the command the sentence's subject
+ * ('`diff` is empty', `Git is empty`), which is narration whose words the run must still eat.
  */
-const LEADING_ARTICLES = new Set(['a', 'an', 'the']);
+const ARTICLES = ['a', 'an', 'the'];
+
+/**
+ * English closed-class function words — articles, pronouns and determiners, prepositions and
+ * particles, auxiliary and copular verbs — whose presence directly behind an English-word lead
+ * shows English syntax, so the lead is no launch material: `Make a MIDI track`, `Make it the
+ * same`, `Go to 1.1.1`, and `Echo is still on` are the step's own verb or subject followed by its
+ * sentence. A bare argument (`make test`) is still the launch it reads as. Exported so the specs
+ * can pin the inventory: dropping any member reddens the equality pin and that member's
+ * behavioral case.
+ */
+export const CLOSED_CLASS_FUNCTION_WORDS = new Set([
+    ...ARTICLES,
+    'it',
+    'its',
+    'this',
+    'that',
+    'these',
+    'those',
+    'them',
+    'everything',
+    'nothing',
+    'all',
+    'both',
+    'each',
+    'to',
+    'back',
+    'by',
+    'as',
+    'at',
+    'in',
+    'into',
+    'on',
+    'onto',
+    'off',
+    'from',
+    'with',
+    'through',
+    'over',
+    'under',
+    'up',
+    'down',
+    'out',
+    'past',
+    'around',
+    'before',
+    'after',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'stays',
+    'remains',
+    'should',
+    'must',
+    'will',
+    'can',
+    'sounds',
+    'still',
+]);
 
 /** Filler words that precede a command without making the segment anything but narration. */
 const LEADING_FILLER_WORD = new RegExp(`^(?:${FILLER_WORDS.join('|')})\\s+`, 'i');
@@ -104,9 +164,11 @@ const PARENTHETICAL = /\([^()]*\)/g;
 /**
  * Edge punctuation a first token may trail or lead with (`vitest:`, `pnpm,`). Parentheses ride
  * along so a kept parenthetical's edge words classify bare — `(the` must reach the annotation
- * vocabulary and `(confirm` the cue test exactly as their unpunctuated spellings would.
+ * vocabulary and `(confirm` the cue test exactly as their unpunctuated spellings would. Markdown
+ * emphasis markers (`*`, `_`, `~`) ride along too, so `**pnpm lint**` classifies exactly as the
+ * bare `pnpm lint` it renders as.
  */
-const TOKEN_EDGE_PUNCTUATION = /^[,;:()]+|[,;:()]+$/g;
+const TOKEN_EDGE_PUNCTUATION = /^[,;:()*_~]+|[,;:()*_~]+$/g;
 
 /**
  * A `NAME=value` token: an environment assignment prefix is command material, never the leading
@@ -375,12 +437,12 @@ type PeeledLaunch = { lead: string; follower: string; spanLead: boolean; spanTok
 
 /**
  * The launch a segment's peel exposes, with what the argument-run scan needs around it: the head
- * token, the token that follows it (the determiner probe), and the quoted-span facts. The peel is
+ * token, the token that follows it (the follower probe), and the quoted-span facts. The peel is
  * an unwrap-and-strip alternation — list markers first, then a leading quoted span unwrapped to
  * its content and leading filler words stripped, each exposing the other, both strictly shortening
  * the remainder. A leading span marks the launch quoted and reports how many tokens its content
  * held: more than the head alone means the span already consumed the head's subcommand slot inside
- * the quotes; the head alone leaves the slot behind the span, so the determiner probe consults the
+ * the quotes; the head alone leaves the slot behind the span, so the follower probe consults the
  * first token behind a head-only span — '`make` a MIDI track' reads its article exactly where the
  * bare spelling does, while a bare argument behind the span ('`make` test') still opens the run.
  */
@@ -490,16 +552,22 @@ function isMaterialBehindRun(token: string, strict: boolean): boolean {
 /**
  * Whether the peel's lead opens the segment's argument run: a command head or an env assignment
  * leads it (`SOURDAW_E2E_PORT=4010 pnpm test:e2e …`), while an article directly behind the head
- * keeps the run closed — `Make a MIDI track` is the step's own verb naming its object, not a
- * launch — and so does an English-word lead.
+ * keeps the run closed — '`make` a MIDI track' is the step's own verb naming its object, not a
+ * launch — and an English-word lead never opens one. Only articles close the run here: the heads
+ * that reach this test were typed as commands (quoted, a tool name, or beside command-shaped
+ * tokens), so a copula behind one makes the command the subject of a narrating sentence.
  */
 function opensArgumentRun(launch: PeeledLaunch, segment: string): boolean {
     if (isEnglishWordLead(launch, segment)) {
         return false;
     }
     const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    const follower = launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
-    return (COMMAND_HEADS.has(lead) || ENV_ASSIGNMENT_TOKEN.test(lead)) && !LEADING_ARTICLES.has(follower);
+    return (COMMAND_HEADS.has(lead) || ENV_ASSIGNMENT_TOKEN.test(lead)) && !ARTICLES.includes(launchFollower(launch));
+}
+
+/** The token directly behind the peeled head, edge punctuation stripped and lower-cased. */
+function launchFollower(launch: PeeledLaunch): string {
+    return launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
 }
 
 /**
@@ -536,9 +604,11 @@ export const ENGLISH_WORD_HEADS = new Set([
  * a tool line may be capitalized (`Pnpm dev`, `Cargo build succeeds`), so a tool head opens its
  * argument run exactly as its lower-case spelling does. A flag, path, colon suffix, filename, or env
  * assignment beside the head shows the segment is a command line after all (`go test ./...`); a
- * quoted head was typed as a command, so it stays a launch. The head itself still drops from the
- * prose, so an English-word lead followed only by annotation (`make test`) keeps narrating through
- * `leadsWithCommandMaterial` unless an article shows it naming its object (`Find the new file`).
+ * quoted head was typed as a command, so it stays a launch. Letter-free tokens (`1.1.1`, `0:00`)
+ * are positions and values, never that evidence. The head itself still drops from the prose, so an
+ * English-word lead followed only by annotation (`make test`) keeps narrating through
+ * `leadsWithCommandMaterial` unless a closed-class function word directly behind it shows English
+ * syntax (`Find the new file`, `Go to 1.1.1`, `Echo is still on`).
  */
 function isEnglishWordLead(launch: PeeledLaunch, segment: string): boolean {
     if (launch.spanLead || !ENGLISH_WORD_HEADS.has(launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase())) {
@@ -690,13 +760,14 @@ function proseRemainderWords(segment: string): string[] {
 
 /**
  * Whether a command head or a command-shaped token (path, flag, dotted name) sits in the peeled
- * leading position. An English-word lead counts unless an article directly behind it shows the
- * step naming its object: `make test` is the launch it reads as, `Find the new file` is a step.
+ * leading position. An English-word lead counts unless a closed-class function word directly
+ * behind it shows English syntax: `make test` is the launch it reads as, while `Find the new
+ * file`, `Head to 1:30`, and `Tail is unchanged` are sentences.
  */
 function leadsWithCommandMaterial(segment: string): boolean {
     const launch = peeledLaunch(segment);
     if (isEnglishWordLead(launch, segment)) {
-        return !LEADING_ARTICLES.has(launch.follower.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase());
+        return !CLOSED_CLASS_FUNCTION_WORDS.has(launchFollower(launch));
     }
     const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return COMMAND_HEADS.has(lead) || isCommandToken(lead);
@@ -782,7 +853,8 @@ function testInstructionSegments(text: string): string[] {
  * a double-quoted message never ends it; a quote directly after a letter or digit never opens one,
  * and an in-word apostrophe neither opens nor closes one;
  * the separator itself drops, every other character (opening and closing quotes included) stays
- * for the launch peel and the quoted-span removal downstream.
+ * for the launch peel and the quoted-span removal downstream. The dot closing a dotted
+ * abbreviation (`e.g.`, `i.e.`, `N.B.`) ends no sentence and stays in its segment.
  */
 function splitOutsideQuotedSpans(line: string): string[] {
     const characters = [...line];
@@ -798,7 +870,8 @@ function splitOutsideQuotedSpans(line: string): string[] {
         }
         if (quote === undefined && (character === '.' || character === ';')) {
             const next = characters[index + 1];
-            if (next === undefined || /\s/.test(next)) {
+            const closesAbbreviation = character === '.' && endsWithDottedAbbreviation(current);
+            if ((next === undefined || /\s/.test(next)) && !closesAbbreviation) {
                 segments.push(current);
                 current = '';
                 continue;
@@ -808,6 +881,18 @@ function splitOutsideQuotedSpans(line: string): string[] {
     }
     segments.push(current);
     return segments;
+}
+
+/** Single letters joined by dots (`e.g`, `N.B`): a dotted abbreviation up to its closing dot. */
+const DOTTED_ABBREVIATION = /^(?:\p{L}\.)+\p{L}$/u;
+
+/**
+ * Whether the text since the last whitespace (or the line start) is a dotted abbreviation missing
+ * only its closing dot, so the dot that follows closes the abbreviation rather than the sentence.
+ * A single letter (`Press A.`) carries no inner dot and still ends its sentence.
+ */
+function endsWithDottedAbbreviation(text: string): boolean {
+    return DOTTED_ABBREVIATION.test(text.slice(text.search(/\S*$/)));
 }
 
 /** Whether the code point just before `index` is a letter or digit, so a quote at `index` cannot open a span. */
@@ -830,10 +915,47 @@ function isInWordApostrophe(characters: readonly string[], index: number): boole
  * "run the focused publisher specs" — whatever prose surrounds it. `specs?` also covers every
  * `x.spec.ts` filename, because the dots around it are word boundaries. A bare `test` stays out:
  * a test tone or a test take is something a reviewer plays or records, so only the plural (`Covered
- * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage.
+ * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage. `existing`
+ * qualifies only the plural and the suite: `the existing tests` names coverage, while `an existing
+ * test project` is something a reviewer opens.
  */
 const TEST_SUITE_WORDS =
-    /\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end|existing)[- ](?:tests?|suites?))\b|__tests__\//i;
+    /\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?))\b|__tests__\//i;
+
+/** The verbs that link a check's name to its status: `Gate is green`, `the suite stays clean`. */
+const STATUS_LINKING_VERBS = ['is', 'are', 'was', 'were', 'stays', 'remains', 'goes', 'went', 'turns', 'turned'];
+
+/** The statuses a check is reported with. */
+const CHECK_STATUSES = ['green', 'red', 'clean', 'passing', 'failing'];
+
+/** A status phrase behind a check's name, as a pattern fragment: ` is green`, ` turned red`. */
+const STATUS_PHRASE = `\\s+(?:${STATUS_LINKING_VERBS.join('|')})\\s+(?:${CHECK_STATUSES.join('|')})\\b`;
+
+/** The nouns that make `Gate` the repository's check rather than the DAW device: `the Gate check`. */
+const CHECK_RUN_NOUNS = ['check', 'job', 'run', 'workflow'];
+
+/** The verdict verbs a pipeline reports with: `the pipeline validates the head`. */
+const PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];
+
+/**
+ * The repository's own check names, matched case-sensitively as the proper nouns they are.
+ * `HeavyGate` names nothing else, so it matches bare. `Gate` is also the DAW's noise-gate device
+ * (`Add a Gate to track 1`, `Gate passes signal below the threshold`), so it names the check only
+ * with a status phrase (`Gate is green`) or a check noun (`the Gate check passed`) behind it.
+ */
+const REPOSITORY_CHECK_NAMES = new RegExp(
+    `\\bHeavyGate\\b|\\bGate(?:${STATUS_PHRASE}|\\s+(?:${CHECK_RUN_NOUNS.join('|')})s?\\b)`
+);
+
+/**
+ * A suite or the pipeline reported with its status (`The suite is green`) or a pipeline verdict
+ * (`pipeline validates the current head`), in any letter case. A bare `suite` stays out: a plugin
+ * suite is something a reviewer loads.
+ */
+const SUITE_OR_PIPELINE_STATUS = new RegExp(
+    `\\b(?:suites?|pipeline)${STATUS_PHRASE}|\\bpipeline\\s+(?:${PIPELINE_VERDICT_VERBS.join('|')})\\b`,
+    'i'
+);
 
 /**
  * The repository's test runners, named as proper nouns. Matched case-sensitively: prose capitalizes a runner's
@@ -846,7 +968,13 @@ const TEST_RUNNER_NAMES = /\b(?:Vitest|Playwright)\b/;
 const CI_WORD = /\bCI\b/;
 
 function namesTestSuite(segment: string): boolean {
-    return TEST_SUITE_WORDS.test(segment) || TEST_RUNNER_NAMES.test(segment) || CI_WORD.test(segment);
+    return (
+        TEST_SUITE_WORDS.test(segment) ||
+        TEST_RUNNER_NAMES.test(segment) ||
+        CI_WORD.test(segment) ||
+        REPOSITORY_CHECK_NAMES.test(segment) ||
+        SUITE_OR_PIPELINE_STATUS.test(segment)
+    );
 }
 
 /** Script families every member of which runs a check: `test:run`, `typecheck:scripts`, `lint:fix`, `cargo:test`. */
@@ -877,6 +1005,20 @@ export const CHECK_COMMANDS = new Set([
 export const TEST_SUBCOMMAND_HEADS = new Set(['pnpm', 'npm', 'yarn', 'bun', 'cargo', 'go', 'make', 'playwright']);
 
 /**
+ * The runner words and flags that may stand alone between a suite-running head and its `test`
+ * subcommand without changing what runs: `pnpm run test`, `pnpm -r test`. Exported so the specs
+ * can pin the inventory: dropping any member reddens the equality pin and that member's case.
+ */
+export const TEST_SUBCOMMAND_PREFIX_WORDS = new Set(['run', '-r', '--recursive']);
+
+/**
+ * The runner options that take a value between a suite-running head and its `test` subcommand,
+ * written either as the next token (`pnpm --filter x test`, `pnpm -F x test`) or behind `=`
+ * (`pnpm --filter=x test`). Exported so the specs can pin the inventory like the prefix words.
+ */
+export const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS = new Set(['--filter', '-F']);
+
+/**
  * Whether the segment mentions a check command, whatever prose rides beside it: a check-family
  * colon script, a check-only script or tool, or a head running its `test` subcommand. The command
  * rule lets a cue word or a UI noun rescue a launch, which is right for `pnpm dev` and wrong for a
@@ -890,8 +1032,36 @@ function mentionsCheckCommand(segment: string): boolean {
         (token, index) =>
             CHECK_COMMANDS.has(token) ||
             isCheckFamilyScript(token) ||
-            (TEST_SUBCOMMAND_HEADS.has(token) && tokens[index + 1] === 'test')
+            (TEST_SUBCOMMAND_HEADS.has(token) && runsTestSubcommand(tokens, index + 1))
     );
+}
+
+/**
+ * Whether the tokens from `start` reach a `test` subcommand once the runner words and options a
+ * head may carry before it are skipped, in any order and number: `pnpm --filter x -r run test`.
+ */
+function runsTestSubcommand(tokens: readonly string[], start: number): boolean {
+    let index = start;
+    while (index < tokens.length) {
+        const token = tokens[index] ?? '';
+        if (token === 'test') {
+            return true;
+        }
+        if (TEST_SUBCOMMAND_PREFIX_WORDS.has(token) || isInlineValueOption(token)) {
+            index += 1;
+        } else if (TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(token)) {
+            index += 2;
+        } else {
+            return false;
+        }
+    }
+    return false;
+}
+
+/** Whether a token is a value option carrying its value behind `=`: `--filter=x`. */
+function isInlineValueOption(token: string): boolean {
+    const equals = token.indexOf('=');
+    return equals > 0 && TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(token.slice(0, equals));
 }
 
 /** Whether a token is a colon script of a check family: `test:e2e`, `typecheck:scripts`, `cargo:fmt`. */

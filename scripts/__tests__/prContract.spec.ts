@@ -39,9 +39,12 @@ import {
     CHECK_COMMANDS,
     CHECK_NARRATION_TEST_INSTRUCTIONS_REFUSAL,
     CHECK_SCRIPT_FAMILIES,
+    CLOSED_CLASS_FUNCTION_WORDS,
     ENGLISH_WORD_HEADS,
     STEP_VERB_HEADS,
     TEST_SUBCOMMAND_HEADS,
+    TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
+    TEST_SUBCOMMAND_PREFIX_WORDS,
 } from '../testInstructions.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -880,6 +883,61 @@ describe('product-scope test instructions', () => {
     });
 
     /**
+     * The runner words and value options a suite-running head may carry before `test`, spec-owned
+     * on purpose: dropping any member reddens the equality pin and that member's case below. The
+     * cue word rescues each clause from the command rule, so only the skip reaches the subcommand.
+     */
+    const TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST = ['run', '-r', '--recursive'];
+    const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST = ['--filter', '-F'];
+
+    it('pins the runner words and options the narration gate skips before a test subcommand', () => {
+        expect([...TEST_SUBCOMMAND_PREFIX_WORDS]).toEqual(TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST);
+        expect([...TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS]).toEqual(TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST);
+    });
+
+    it.each(TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST)('refuses a test subcommand behind the %s runner word', (word) => {
+        const instructions = `pnpm ${word} test and confirm the fader moves.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([
+            `pnpm ${word} test and confirm the fader moves`,
+        ]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each(TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST)(
+        'refuses a test subcommand behind the %s option, its value spaced or joined by =',
+        (option) => {
+            for (const spelled of [`${option} x`, `${option}=x`]) {
+                const instructions = `pnpm ${spelled} test and confirm the fader moves.`;
+
+                expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+                expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+            }
+        }
+    );
+
+    it.each([
+        ['a run subcommand word', 'pnpm run test and confirm the fader moves.'],
+        ['a spaced filter value', 'pnpm --filter x test and confirm the fader moves.'],
+        ['a joined filter value', 'pnpm --filter=x test and confirm the fader moves.'],
+        ['a recursive flag', 'pnpm -r test and confirm the fader moves.'],
+        ['an npm run subcommand word', 'npm run test and confirm the fader moves.'],
+        // Any order and number: the skip keeps walking until it meets `test` or anything else.
+        ['several runner options in a row', 'pnpm --filter x -r run test and confirm the fader moves.'],
+    ])('refuses a test subcommand behind %s beside app prose', (_label, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it('stops the runner-option skip at the first word that is not a runner word or option', () => {
+        // 'the' ends the skip, so the `test` behind it is the audio a reviewer plays, not a suite.
+        const step = 'pnpm run the test tone and confirm the meter moves.';
+
+        expect(testInstructionsNarrateChecks(step)).toBe(false);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    /**
      * The check-script families, spec-owned on purpose, each beside one colon script of that family
      * that is not itself a check-only command: dropping any family reddens the equality pin and that
      * family's behavioral case below.
@@ -943,6 +1001,183 @@ describe('product-scope test instructions', () => {
             expect(refusal(() => assertObservableTestInstructions(quoted))).toMatch(REFUSAL_PREFIX);
         }
     );
+
+    /**
+     * The closed-class function words whose presence behind an English-word lead shows English
+     * syntax, spec-owned on purpose: dropping any member reddens the equality pin. The behavioral
+     * case below leaves the member as the sentence's only word beside the head, so for a member the
+     * annotation vocabulary also holds (`the`, `to`, `is`, …) only the function-word guard keeps the
+     * lead from reading as a launch and dropping it reddens that case too; a member outside the
+     * vocabulary (`into`, `sounds`, …) rescues its sentence as a prose word on its own, so the
+     * equality pin is its net.
+     */
+    const CLOSED_CLASS_FUNCTION_WORDS_UNDER_TEST = [
+        'a',
+        'an',
+        'the',
+        'it',
+        'its',
+        'this',
+        'that',
+        'these',
+        'those',
+        'them',
+        'everything',
+        'nothing',
+        'all',
+        'both',
+        'each',
+        'to',
+        'back',
+        'by',
+        'as',
+        'at',
+        'in',
+        'into',
+        'on',
+        'onto',
+        'off',
+        'from',
+        'with',
+        'through',
+        'over',
+        'under',
+        'up',
+        'down',
+        'out',
+        'past',
+        'around',
+        'before',
+        'after',
+        'is',
+        'are',
+        'was',
+        'were',
+        'be',
+        'stays',
+        'remains',
+        'should',
+        'must',
+        'will',
+        'can',
+        'sounds',
+        'still',
+    ];
+
+    it('pins the closed-class function words that show English syntax behind an English-word lead', () => {
+        expect([...CLOSED_CLASS_FUNCTION_WORDS]).toEqual(CLOSED_CLASS_FUNCTION_WORDS_UNDER_TEST);
+    });
+
+    it.each(CLOSED_CLASS_FUNCTION_WORDS_UNDER_TEST)(
+        'reads an English-word lead followed by the function word %s as prose',
+        (word) => {
+            const sentence = `Press Play. Tail ${word}.`;
+
+            expect(narratingTestInstructionSegments(sentence)).toEqual([]);
+            expect(() => assertObservableTestInstructions(sentence)).not.toThrow();
+        }
+    );
+
+    it.each([
+        // Letter-free positions and values are never command-shaped evidence, so the step verb
+        // stays an English-word lead and the preposition behind it shows its sentence.
+        ['a navigation step to a dotted bar position', 'Go to 1.1.1.'],
+        ['a navigation step to a clock time', 'Go to 0:00.'],
+        ['a locate step to a clock time', 'Head to 1:30.'],
+        // English-word heads as the sentence's subject, followed by a copula or a pronoun.
+        ['an effect named as the subject of a copula', 'Echo is still on.'],
+        ['a tail named as the subject of a copula', 'Tail is unchanged.'],
+        ['a step verb followed by a pronoun', 'Make it the same.'],
+    ])('passes %s: a function word behind an English-word lead shows English syntax, not a launch', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a Latin example abbreviation', 'Press Play. E.g. the meter moves.'],
+        ['a lower-case Latin restatement abbreviation', 'Press Play. i.e. the meter moves.'],
+        ['a nota bene opening the line', 'N.B. the fader stays at 0 dB.'],
+    ])('passes %s: a dotted abbreviation ends no sentence', (_label, step) => {
+        // Split at the abbreviation's dot, the stranded `E.g` reads as a filename launch on its
+        // own; kept whole, its trailing dot leaves `E.g.` a prose word rather than an extension.
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('still ends a sentence at a single letter, which carries no inner dot', () => {
+        const instructions = 'Press A. pnpm dev.';
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual(['pnpm dev']);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        [
+            'double-asterisk emphasis behind an app step',
+            'Open the mixer and confirm the fader moves. **pnpm lint** is clean.',
+        ],
+        ['single-asterisk emphasis', '*pnpm lint* is clean.'],
+        ['underscore emphasis', '_pnpm lint_ is clean.'],
+        ['strikethrough tildes', '~~pnpm lint~~ is clean.'],
+    ])('refuses a check hidden in %s', (_label, instructions) => {
+        // Markdown emphasis renders as the bare command, so its markers strip at token edges.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['is', 'The suite is green.'],
+        ['are', 'The suites are green.'],
+        ['was', 'The suite was green.'],
+        ['were', 'The suites were green.'],
+        ['stays', 'The suite stays green.'],
+        ['remains', 'The suite remains green.'],
+        ['goes', 'The suite goes green.'],
+        ['went', 'The suite went green.'],
+        ['turns', 'The suite turns green.'],
+        ['turned', 'The suite turned green.'],
+    ])('refuses a suite reported through the status verb %s', (_verb, instructions) => {
+        // Every word here is annotation vocabulary and no head rides beside, so only the
+        // suite-status phrase refuses the sentence.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['green', 'Gate is green.'],
+        ['red', 'Gate is red.'],
+        ['clean', 'Gate is clean.'],
+        ['passing', 'Gate is passing.'],
+        ['failing', 'Gate is failing.'],
+    ])('refuses the Gate check reported as %s', (_status, instructions) => {
+        // `Gate` is beyond the annotation vocabulary and rescues the command rule, so only the
+        // check-name status phrase refuses the sentence.
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['check', 'The Gate check passed.'],
+        ['job', 'The Gate job passed.'],
+        ['run', 'The Gate run passed.'],
+        ['workflow', 'The Gate workflow passed.'],
+        ['plural', 'The Gate checks passed.'],
+    ])('refuses the Gate check named by the %s noun', (_noun, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['validates', 'pipeline validates the current head'],
+        ['validated', 'The pipeline validated this change.'],
+        ['passes', 'The pipeline passes this change.'],
+        ['passed', 'The pipeline passed this change.'],
+        ['fails', 'The pipeline fails this change.'],
+        ['failed', 'The pipeline failed this change.'],
+    ])('refuses a pipeline reporting the verdict %s', (_verb, instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
 
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
@@ -1617,6 +1852,15 @@ describe('product-scope test instructions', () => {
         // The bare plural names coverage where a bare singular names audio: only `tests` refuses.
         ['a bare plural tests mention', 'Covered by tests.'],
         ['a passing-tests claim', 'All tests pass.'],
+        ['a claim that the existing tests pass', 'Existing tests still pass.'],
+        // The repository's own check names: HeavyGate bare, Gate only with a status or check noun.
+        ['a Gate status', 'Gate is green.'],
+        ['a bare HeavyGate mention', 'HeavyGate passes.'],
+        ['a Gate check noun', 'The Gate check passed.'],
+        // A suite or the pipeline reported with its status, in any letter case.
+        ['a suite status', 'The suite is green.'],
+        ['a pipeline status', 'The pipeline is green.'],
+        ['a capitalized pipeline verdict', 'Pipeline passed on this change.'],
     ])('refuses %s even with no command token', (_label, instructions) => {
         expect(testInstructionsNarrateChecks(instructions)).toBe(true);
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
@@ -1634,6 +1878,14 @@ describe('product-scope test instructions', () => {
         ['a test-tone step', 'Play the test tone and confirm the meter reads -18 dBFS.'],
         ['a test-tone peak step', 'Play the test tone and confirm the meter peaks at -6 dB.'],
         ['a test-take step', 'Record a test take and confirm it lands on the take lane.'],
+        // `existing` qualifies only the plural and the suite: a test project is something to open.
+        ['an existing-test-project step', 'Open an existing test project and confirm it loads.'],
+        // Gate is also the DAW's noise-gate device: bare, or in lower case, it names no check.
+        ['a noise-gate observation', 'Gate passes signal below the threshold.'],
+        ['a noise-gate insert step', 'Add a Gate to track 1 and confirm it closes.'],
+        ['a lower-case gate status', 'Play the loop and confirm the gate is green while signal passes.'],
+        // A bare suite is a plugin bundle a reviewer loads, not the test suite.
+        ['a plugin-suite step', 'Load the plugin suite and confirm the reverb appears.'],
     ])('passes %s that only brushes the test-suite vocabulary', (_label, step) => {
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
@@ -1747,6 +1999,7 @@ describe('product-scope test instructions', () => {
 
     it.each([
         ['a lower-case make launch', 'make test'],
+        ['a lower-case make lint launch', 'make lint'],
         ['a capitalized launch carrying a flag', 'Cargo test --package daw-engine'],
         ['a lower-case find sweep', 'find . -name x'],
         ['a lower-case go test run', 'go test ./...'],
