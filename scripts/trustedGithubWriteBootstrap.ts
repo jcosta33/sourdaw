@@ -698,6 +698,13 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
             cursor = open - 1;
             continue;
         }
+        // A `//` comment's last character is not a token: `flag ? // {` would otherwise be read as a
+        // `{` method position. Skip back to before the `//` so the token before the name is read.
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
+            continue;
+        }
         if (character === '{' || character === '(' || character === ',') {
             return true;
         }
@@ -711,6 +718,41 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
         return false;
     }
     return false;
+}
+
+/**
+ * The index of the `//` that opens the line comment containing `cursor`, or `undefined` when the
+ * cursor is not inside a `//` comment. Walking the line forward from its start — skipping string and
+ * template literals and block comments — keeps a `//` inside a quoted value or a block comment from
+ * masking a real token.
+ */
+function lineCommentOpenBefore(source: string, cursor: number): number | undefined {
+    let lineStart = cursor;
+    while (lineStart >= 0 && !isLineTerminator(source[lineStart] ?? '')) {
+        lineStart -= 1;
+    }
+    let index = lineStart + 1;
+    while (index < cursor) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            if (source.startsWith('//', index)) {
+                return index;
+            }
+            index = commentEnd;
+            continue;
+        }
+        const character = source[index];
+        if (character === "'" || character === '"') {
+            index = skipQuoted(source, index, character);
+            continue;
+        }
+        if (character === '`') {
+            index = scanTemplate(source, index, cursor, new Set());
+            continue;
+        }
+        index += 1;
+    }
+    return undefined;
 }
 
 function isAnnotatedParameterListRegion(source: string, start: number, end: number): boolean {
@@ -872,22 +914,28 @@ function isDecimalDigit(character: string | undefined): boolean {
  * and `<>` so a comma inside a generic, tuple, function, or object type does not end the cast, and
  * stops at a chained `as`/`satisfies` so the caller can chain it.
  *
- * Three shapes would otherwise end the cast early or swallow the operator after it, and are decided
- * here rather than by the terminator set alone: a `<` is a type-argument opener only when its level
- * closes before the cast ends (otherwise it is a value comparison and the cast ends before it); a
- * conditional type's `?` and `:` are type syntax once an `extends` precedes them at the same level
- * (otherwise `?` is a value ternary and the cast ends before it); and a leading `-`/`+` on a numeric
- * literal type is part of the type (otherwise the cast ends before a value `-`/`+` operator).
+ * Several shapes would otherwise end the cast early or swallow the operator after it, and are
+ * decided here rather than by the terminator set alone: a `<` is a type-argument opener only when
+ * its level closes before the cast ends (otherwise it is a value comparison and the cast ends before
+ * it); a conditional type's `?` and `:` are type syntax once an `extends` precedes them at the same
+ * level, paired per nesting depth (otherwise `?` is a value ternary and the cast ends before it); a
+ * leading `-`/`+` on a numeric literal type is part of the type only where a type atom begins
+ * (otherwise it is a value operator and the cast ends before it); and a word operator — `&&`, `||`,
+ * `instanceof`, `in` — always ends the cast because none is type syntax.
  */
 function skipTypeExpression(source: string, start: number, end: number): number {
     let cursor = skipWhitespace(source, start);
     const openers: Array<')' | ']' | '}' | '>'> = [];
-    // An `extends` seen at the top level since the last conditional `?`, arming the next `?` as the
-    // true-branch opener of a conditional type rather than a value ternary.
-    let armedExtends = false;
-    // Conditional branches opened by `?` and awaiting their `:`, so a branch separator is type
-    // syntax while a top-level `:` with no open conditional ends the cast.
-    let openConditionals = 0;
+    // Conditional types pair each top-level `extends` with the `?` that opens its true branch and
+    // each such `?` with its `:`. Pairing nests — `A extends B ? C extends D ? E : F : G` and
+    // `A extends () => B extends C ? D : E ? F : G` both carry two conditionals at one level — so a
+    // stack replaces a one-shot arm: a nested conditional's `?`/`:` cannot consume the outer
+    // `extends`'s arm. A top-level `?` with no armed `extends` is a value ternary and ends the cast.
+    const conditionals: Array<'extends' | 'conditional'> = [];
+    // Whether a type atom has been consumed at the top level. A `-` directly before a digit is the
+    // sign of a numeric literal type only where a type atom begins (the leading `-1`); after a
+    // completed type it is a value `-`/`+` operator and ends the cast.
+    let typeStarted = false;
     while (cursor < end) {
         const commentEnd = skipComment(source, cursor);
         if (commentEnd !== undefined) {
@@ -898,16 +946,23 @@ function skipTypeExpression(source: string, start: number, end: number): number 
         if (character === undefined) {
             return cursor;
         }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor += 1;
+            continue;
+        }
         if (character === "'" || character === '"') {
             cursor = skipQuoted(source, cursor, character);
+            typeStarted = true;
             continue;
         }
         if (character === '`') {
             cursor = scanTemplate(source, cursor, end, new Set());
+            typeStarted = true;
             continue;
         }
         if (character === '=' && source[cursor + 1] === '>') {
             cursor += 2;
+            typeStarted = false;
             continue;
         }
         if (character === '<') {
@@ -934,6 +989,7 @@ function skipTypeExpression(source: string, start: number, end: number): number 
             }
             openers.pop();
             cursor += 1;
+            typeStarted = true;
             continue;
         }
         if (openers.length === 0) {
@@ -944,34 +1000,53 @@ function skipTypeExpression(source: string, start: number, end: number): number 
                 return cursor;
             }
             if (isKeywordAt(source, cursor, 'extends')) {
-                armedExtends = true;
+                conditionals.push('extends');
+                typeStarted = false;
                 cursor += 'extends'.length;
                 continue;
             }
             if (character === '?') {
-                if (armedExtends) {
-                    armedExtends = false;
-                    openConditionals += 1;
+                if (conditionals[conditionals.length - 1] === 'extends') {
+                    conditionals.pop();
+                    conditionals.push('conditional');
+                    typeStarted = false;
                     cursor += 1;
                     continue;
                 }
                 return cursor;
             }
             if (character === ':') {
-                if (openConditionals > 0) {
-                    openConditionals -= 1;
+                if (conditionals[conditionals.length - 1] === 'conditional') {
+                    conditionals.pop();
+                    typeStarted = false;
                     cursor += 1;
                     continue;
                 }
                 return cursor;
             }
+            if (character === '-' && isDecimalDigit(source[cursor + 1]) && !typeStarted) {
+                typeStarted = true;
+                cursor += 1;
+                continue;
+            }
             if ((character === '-' || character === '+') && isDecimalDigit(source[cursor + 1])) {
+                return cursor;
+            }
+            if (isKeywordAt(source, cursor, 'instanceof') || isKeywordAt(source, cursor, 'in')) {
+                return cursor;
+            }
+            if (source.startsWith('&&', cursor) || source.startsWith('||', cursor)) {
+                return cursor;
+            }
+            if (character === '|' || character === '&') {
+                typeStarted = false;
                 cursor += 1;
                 continue;
             }
             if (TYPE_TERMINATOR_CHARACTERS.has(character)) {
                 return cursor;
             }
+            typeStarted = true;
         }
         cursor += 1;
     }

@@ -1877,36 +1877,84 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * A value operator after a completed cast type is value syntax, not part of the erased type, so a
+     * specifier built from it is computed. Word operators (`&&`, `||`, `instanceof`, `in`) and a
+     * `+`/`-` directly before a digit all follow the type and must end the cast; otherwise the
+     * scanner swallows the operator and its right operand as type syntax and reports a static load
+     * the source never performs. The comparison case above ends the cast at the `<`; these end it at
+     * the operator itself.
+     */
+    it.each([
+        {
+            label: 'a word-and operator after a cast type building the require specifier',
+            source: "const loaded = require('./checked.ts' as string && './other.ts');",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a binary plus after a cast type building the require specifier',
+            source: "const loaded = require('./checked.ts' as string +2);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a word-or operator after a conditional cast type building the require specifier',
+            source: "const loaded = require('./checked.ts' as A extends string ? R : never || './other.ts');",
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    /**
      * A cast type may carry type-only syntax that a value operator would mimic: a conditional type
-     * (`A extends B ? C : D`, including as a function type's return type) whose `?` and `:` are type
-     * syntax once an `extends` precedes them at the same level, and a numeric literal type (`-1`)
-     * with a leading sign. All three are erased at run time, so the specifier stays the literal and
-     * the cast is admitted rather than reported as a computed load. The value-ternary guard is the
-     * comparison case above: without `extends`, a `?` still ends the cast.
+     * (`A extends B ? C : D`, including nested conditional types and a function type's return type)
+     * whose `?` and `:` are type syntax once an `extends` precedes them at the same level, and a
+     * numeric literal type (`-1`) with a leading sign. These are erased at run time, so the specifier
+     * stays the literal and the cast is admitted rather than reported as a computed load. The
+     * value-ternary guard is the comparison case above: without `extends`, a `?` still ends the cast.
+     * Each case asserts both halves of admission — no computed shape and the literal still collected —
+     * so a scanner that stopped refusing the computed load without collecting the literal would fail.
      */
     it.each([
         {
             label: 'a static dynamic import cast to a conditional type',
             source: "await import('./checked.ts' as A extends B ? C : D);",
+            specifier: './checked.ts',
         },
         {
             label: 'a static dynamic import cast to a function type returning a conditional type',
             source: "await import('./checked.ts' as () => A extends B ? C : D);",
+            specifier: './checked.ts',
         },
         {
             label: 'a static dynamic import cast to a negative literal type',
             source: "await import('./checked.ts' as -1);",
+            specifier: './checked.ts',
         },
-    ])('admits $label as a static specifier, never a computed load', ({ source }) => {
+        {
+            label: 'a static dynamic import cast to a conditional type with a function-returning-conditional extends type',
+            source: "await import('./checked.ts' as A extends () => B extends C ? D : E ? F : G);",
+            specifier: './checked.ts',
+        },
+        {
+            label: 'a static dynamic import cast to a function type returning a conditional with a function-returning-conditional extends type',
+            source: "await import('./checked.ts' as () => A extends () => B extends C ? D : E ? F : G);",
+            specifier: './checked.ts',
+        },
+    ])('admits $label as a static specifier, never a computed load', ({ source, specifier }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+        expect(snapshotImportSpecifiers(source)).toContain(specifier);
     });
 
     /**
      * A real call is admitted as a declaration when the rule reads the single token after the closing
      * parenthesis instead of the enclosing construct. `flag ? require(spec) : undefined`,
-     * `case require(spec):`, `class X extends require(spec) {}`, and a call before an ASI block all
-     * close the parenthesis with `{` or `:` and are calls. The declaration-context rule reads the
-     * name's position — `function`, a method position, or a parameter position — and refuses them.
+     * `case require(spec):`, `class X extends require(spec) {}`, and a statement-start call before an
+     * ASI block all close the parenthesis with `{` or `:` and are calls. The declaration-context rule
+     * reads the name's position — `function`, a method position, or a parameter position — and refuses
+     * them. The block case pins only the statement-start form: a function body whose first statement
+     * is the call and whose second is a block (`function load() { require(spec) { run(); } }`) is
+     * indistinguishable from an object method by this token look, and stays filed as #4818 beside the
+     * callee-bound and regex-lost shapes.
      */
     it.each([
         {
@@ -1922,8 +1970,20 @@ describe('package scripts and gitignore', () => {
             source: 'class Loaded extends require(spec) {}',
         },
         {
-            label: 'a require call before an asi block',
+            label: 'a statement-start require call before an asi block',
             source: 'require(spec)\n{ run(); }',
+        },
+        {
+            label: 'a require call after a line comment ending in a brace',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? // {\nrequire(spec) : undefined;",
+        },
+        {
+            label: 'a require call after a line comment ending in a parenthesis',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? // (\nrequire(spec) : undefined;",
+        },
+        {
+            label: 'a require call after a line comment ending in a comma',
+            source: "const spec = './unchecked.ts';\nconst loaded = flag ? // ,\nrequire(spec) : undefined;",
         },
     ])('refuses $label as a computed load', ({ source }) => {
         expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
