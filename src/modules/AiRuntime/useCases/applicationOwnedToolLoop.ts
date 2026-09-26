@@ -458,7 +458,7 @@ const DEVICE_MANIFEST_PAGE_TRUNCATED_WARNING =
 /** One built-in or scanned-external factory entry, merged the same way for a full or a paged read. */
 function buildDeviceManifestEntries(types: readonly string[]) {
     const external = getAgentDeviceFactoryManifest(types);
-    const descriptors = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
+    const descriptors = getAgentBuiltinDeviceFactoryManifest(types);
     const runtimeByType = new Map(
         getAgentBuiltinDeviceRuntimeManifest(descriptors.map((descriptor) => descriptor.type)).map((runtime) => [
             runtime.type,

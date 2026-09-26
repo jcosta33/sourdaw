@@ -82,9 +82,21 @@ function toManifestParameter(parameter: DeviceParameter, guidance: DeviceParamet
     return manifestParameter;
 }
 
-/** Arrangement owns catalog descriptors, never live node topology or latency. */
-export function getAgentBuiltinDeviceFactoryManifest(): readonly AgentBuiltinDeviceDescriptor[] {
-    const releasedDescriptors = BUILTIN_PLUGINS.filter((descriptor) => isDeviceReleaseAdmitted(descriptor.id));
+/**
+ * Arrangement owns catalog descriptors, never live node topology or latency.
+ *
+ * `types` narrows the released catalog before the per-descriptor fingerprint and preset work
+ * below, rather than after: every field this builds for one descriptor depends only on that
+ * descriptor and the shared preset library, never on which other descriptors are also being
+ * built, so narrowing first returns byte-identical entries at a fraction of the cost. A caller
+ * paging one type's parameters would otherwise pay for every other type's descriptor on each call.
+ */
+export function getAgentBuiltinDeviceFactoryManifest(
+    types?: readonly string[]
+): readonly AgentBuiltinDeviceDescriptor[] {
+    const releasedDescriptors = BUILTIN_PLUGINS.filter(
+        (descriptor) => isDeviceReleaseAdmitted(descriptor.id) && (types === undefined || types.includes(descriptor.id))
+    );
     const presetContracts = new Map(
         getFactoryPresetContractsByDeviceType(
             getFactoryPresets(),
