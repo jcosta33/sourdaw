@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  s_1c08b47ac3792f::t_ff8b23e865790c 721,724,762-778
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_1c08b47ac3792f::t_d26952ec92b54f 8-14,119-130,565-620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2d02ac3bfcaf6de0ce919555db704446ea1af971",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
