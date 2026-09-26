@@ -387,3 +387,42 @@ export const TEST_SUBCOMMAND_PREFIX_WORDS = new Set(['run', '-r', '--recursive']
  * (`pnpm --filter=x test`). Exported so the specs can pin the inventory like the prefix words.
  */
 export const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS = new Set(['--filter', '-F']);
+
+/**
+ * The DAW nouns a singular `test` may modify: `an existing test project` is something a reviewer
+ * opens, while `the existing test` with no such noun behind it names coverage. `file` stays out:
+ * `the existing test file` is the spec file far more often than an audio file. Exported so the
+ * specs can pin the inventory: dropping any member reddens the equality pin and that member's case.
+ */
+export const TEST_MODIFIED_NOUNS = [
+    'project',
+    'session',
+    'song',
+    'track',
+    'clip',
+    'take',
+    'tone',
+    'signal',
+    'recording',
+    'mix',
+    'sample',
+];
+
+/** The verbs that link a check's name to its status: `Gate is green`, `the suite stays clean`. */
+export const STATUS_LINKING_VERBS = ['is', 'are', 'was', 'were', 'stays', 'remains', 'goes', 'went', 'turns', 'turned'];
+
+/**
+ * The adverbs a status phrase may carry between its linking verb and its status: `Gate is still
+ * green`, `the pipeline is now green`. Exported so the specs can pin the inventory: dropping any
+ * member reddens the equality pin and that member's case.
+ */
+export const STATUS_ADVERBS = ['still', 'now', 'already', 'again'];
+
+/** The statuses a check is reported with. */
+export const CHECK_STATUSES = ['green', 'red', 'clean', 'passing', 'failing'];
+
+/** The nouns that make `Gate` the repository's check rather than the DAW device: `the Gate check`. */
+export const CHECK_RUN_NOUNS = ['check', 'job', 'run', 'workflow'];
+
+/** The verdict verbs a pipeline reports with: `the pipeline validates the head`. */
+export const PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];

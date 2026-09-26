@@ -43,7 +43,9 @@ import {
     CHECK_SCRIPT_FAMILIES,
     CLOSED_CLASS_FUNCTION_WORDS,
     ENGLISH_WORD_HEADS,
+    STATUS_ADVERBS,
     STEP_VERB_HEADS,
+    TEST_MODIFIED_NOUNS,
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
     TEST_SUBCOMMAND_PREFIX_WORDS,
@@ -1204,6 +1206,122 @@ describe('product-scope test instructions', () => {
         expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
     });
 
+    /** The adverbs a status phrase may carry, spec-owned on purpose: dropping any member reddens the equality pin. */
+    const STATUS_ADVERBS_UNDER_TEST = ['still', 'now', 'already', 'again'];
+
+    it('pins the adverbs a status phrase may carry between its linking verb and its status', () => {
+        expect(STATUS_ADVERBS).toEqual(STATUS_ADVERBS_UNDER_TEST);
+    });
+
+    it.each(STATUS_ADVERBS_UNDER_TEST)('refuses the Gate check reported through the adverb %s', (adverb) => {
+        const instructions = `Gate is ${adverb} green.`;
+
+        expect(narratingTestInstructionSegments(instructions)).toEqual([`Gate is ${adverb} green`]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['the Gate check with still', 'Gate is still green.', 'Gate is still green'],
+        ['the Gate check with already', 'Gate was already green.', 'Gate was already green'],
+        ['a suite with still', 'The suite is still green.', 'The suite is still green'],
+        ['the pipeline with now', 'The pipeline is now green.', 'The pipeline is now green'],
+    ])(
+        'refuses %s: one adverb between the linking verb and the status keeps the status phrase',
+        (_label, instructions, segment) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each([
+        ['a bold check name', '**Gate** is green.', '**Gate** is green'],
+        ['a backticked check name', '`Gate` is green.', '`Gate` is green'],
+        ['an underscored check name', '_Gate_ is green.', '_Gate_ is green'],
+        ['a bold status', 'Gate is **green**.', 'Gate is **green**'],
+        ['a bold suite', 'The **suite** is green.', 'The **suite** is green'],
+        ['a bold pipeline verdict', 'The **pipeline** passed.', 'The **pipeline** passed'],
+        ['a bold check name with its noun', '**Gate** check passed.', '**Gate** check passed'],
+    ])('refuses %s: emphasis and backticks never hide a multi-word check report', (_label, instructions, segment) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['the noise-gate device passing signal', 'Gate passes signal below the threshold.'],
+        ['a bold noise-gate device added to a track', 'Add a **Gate** to track 1 and confirm it closes.'],
+    ])('passes %s: emphasis removal leaves the DAW device a device', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['a diff reported clean', 'Diff is clean.', 'Diff is clean'],
+        ['a format run reported clean', 'Format is clean.', 'Format is clean'],
+        ['a diff reported green', 'Diff is green.', 'Diff is green'],
+    ])(
+        'refuses %s: a copula carrying only a check verdict keeps the English-word lead a launch',
+        (_label, instructions, segment) => {
+            expect(narratingTestInstructionSegments(instructions)).toEqual([segment]);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    );
+
+    it.each([
+        ['a tail reported unchanged', 'Tail is unchanged.'],
+        ['an echo effect still on', 'Echo is still on.'],
+        ['a diff reported empty', 'Diff is empty.'],
+    ])('passes %s: a copula followed by anything but a check verdict is a sentence', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    /**
+     * The DAW nouns a singular `test` may modify, spec-owned on purpose: dropping any member
+     * reddens the equality pin, and that member's case below then reads `existing test` as coverage.
+     */
+    const TEST_MODIFIED_NOUNS_UNDER_TEST = [
+        'project',
+        'session',
+        'song',
+        'track',
+        'clip',
+        'take',
+        'tone',
+        'signal',
+        'recording',
+        'mix',
+        'sample',
+    ];
+
+    it('pins the DAW nouns a singular test may modify', () => {
+        expect(TEST_MODIFIED_NOUNS).toEqual(TEST_MODIFIED_NOUNS_UNDER_TEST);
+    });
+
+    it.each(TEST_MODIFIED_NOUNS_UNDER_TEST)('passes an existing test %s a reviewer opens', (noun) => {
+        const step = `Open an existing test ${noun} and confirm it loads.`;
+
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it.each([
+        ['coverage claimed by the existing test', 'The existing test covers this case.'],
+        ['a rerun of the existing test', 'Rerun the existing test and confirm it passes.'],
+        ['the existing test reported passing', 'The existing test still passes.'],
+        ['coverage claimed by an existing test', 'An existing test covers it.'],
+    ])('refuses %s: a singular existing test modifying no DAW noun names coverage', (_label, instructions) => {
+        expect(narratingTestInstructionSegments(instructions)).toEqual([instructions.slice(0, -1)]);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        ['an existing test project', 'Open an existing test project and confirm it loads.'],
+        ['an existing test session', 'Load an existing test session and confirm it plays.'],
+    ])('passes %s: a singular existing test modifying a DAW noun is something a reviewer opens', (_label, step) => {
+        expect(narratingTestInstructionSegments(step)).toEqual([]);
+        expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
     it('refuses a pure command list', () => {
         const list = ['- `pnpm test:run scripts/__tests__/x.spec.ts` (140 passed)', '- `pnpm typecheck` (clean)'].join(
             '\n'
@@ -1952,6 +2070,12 @@ describe('product-scope test instructions', () => {
     ])('passes %s: launches, bare format, and bare test are not check runs', (_label, step) => {
         expect(testInstructionsNarrateChecks(step)).toBe(false);
         expect(() => assertObservableTestInstructions(step)).not.toThrow();
+    });
+
+    it('splits an abbreviation flood behind a long word in linear time', () => {
+        // Rescanning the text before every dot for its last token is quadratic in that text per
+        // dot — tens of seconds on this input; the per-character chain costs constant time per dot.
+        expect(testInstructionsNarrateChecks(`${'a'.repeat(4000)}${' e.g.'.repeat(800)}`)).toBe(false);
     });
 
     it('scans an unclosed-parenthesis flood in linear time and keeps flat parenthetical verdicts', () => {

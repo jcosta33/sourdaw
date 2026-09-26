@@ -12,9 +12,15 @@ import {
     CLOSED_CLASS_FUNCTION_WORDS,
     COMMAND_HEADS,
     ENGLISH_WORD_HEADS,
+    CHECK_RUN_NOUNS,
+    CHECK_STATUSES,
     FILLER_WORDS,
     OBSERVATION_CUE_STEMS,
+    PIPELINE_VERDICT_VERBS,
     REMAINDER_VOCABULARY,
+    STATUS_ADVERBS,
+    STATUS_LINKING_VERBS,
+    TEST_MODIFIED_NOUNS,
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
     TEST_SUBCOMMAND_PREFIX_WORDS,
@@ -454,15 +460,24 @@ function remainderToken(token: string): string {
  * Whether a command head or a command-shaped token (path, flag, dotted name) sits in the peeled
  * leading position. An English-word lead counts unless a closed-class function word directly
  * behind it shows English syntax: `make test` is the launch it reads as, while `Find the new
- * file`, `Head to 1:30`, and `Tail is unchanged` are sentences.
+ * file`, `Head to 1:30`, and `Tail is unchanged` are sentences. A copula that only carries a check
+ * verdict (`Diff is clean`, `Format is still green`) reports the command's result, so the lead
+ * stays launch material.
  */
 function leadsWithCommandMaterial(segment: string): boolean {
     const launch = peeledLaunch(segment);
     if (isEnglishWordLead(launch, segment)) {
-        return !CLOSED_CLASS_FUNCTION_WORDS.has(launchFollower(launch));
+        return !CLOSED_CLASS_FUNCTION_WORDS.has(launchFollower(launch)) || reportsOnlyCheckVerdict(launch, segment);
     }
     const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
     return COMMAND_HEADS.has(lead) || isCommandToken(lead);
+}
+
+/** Whether every word behind the peeled lead is one check verdict: `is clean`, `is still green`. */
+function reportsOnlyCheckVerdict(launch: PeeledLaunch, segment: string): boolean {
+    const tokens = unwrappedTokens(segment);
+    const lead = launch.lead.replace(TOKEN_EDGE_PUNCTUATION, '').toLowerCase();
+    return CHECK_VERDICT_ONLY.test(tokens.slice(tokens.indexOf(lead) + 1).join(' '));
 }
 
 /**
@@ -552,6 +567,7 @@ function splitOutsideQuotedSpans(line: string): string[] {
     const characters = [...line];
     const segments: string[] = [];
     let current = '';
+    let chain = 0;
     let quote: string | undefined;
     for (const [index, character] of characters.entries()) {
         const isQuote = character === '`' || character === "'" || character === '"';
@@ -562,29 +578,48 @@ function splitOutsideQuotedSpans(line: string): string[] {
         }
         if (quote === undefined && (character === '.' || character === ';')) {
             const next = characters[index + 1];
-            const closesAbbreviation = character === '.' && endsWithDottedAbbreviation(current);
+            const closesAbbreviation = character === '.' && isDottedAbbreviationChain(chain);
             if ((next === undefined || /\s/.test(next)) && !closesAbbreviation) {
                 segments.push(current);
                 current = '';
+                chain = 0;
                 continue;
             }
         }
         current += character;
+        chain = nextAbbreviationChain(chain, character);
     }
     segments.push(current);
     return segments;
 }
 
-/** A dotted abbreviation up to its closing dot, as the whole text it is tested against. */
-const DOTTED_ABBREVIATION = new RegExp(`^${DOTTED_ABBREVIATION_SOURCE}$`, 'u');
+/** One letter, for the abbreviation chain's per-character test. */
+const LETTER_ONLY = /^\p{L}$/u;
 
 /**
- * Whether the text since the last whitespace (or the line start) is a dotted abbreviation missing
- * only its closing dot, so the dot that follows closes the abbreviation rather than the sentence.
- * A single letter (`Press A.`) carries no inner dot and still ends its sentence.
+ * The length of the letter-dot alternation (`e`, `e.`, `e.g`) the current token holds from its
+ * start once `character` joins it, or -1 once the token breaks the alternation; whitespace starts
+ * a new token. Tracked per character so the abbreviation test at a dot costs constant time rather
+ * than a rescan of the text before it.
  */
-function endsWithDottedAbbreviation(text: string): boolean {
-    return DOTTED_ABBREVIATION.test(text.slice(text.search(/\S*$/)));
+function nextAbbreviationChain(chain: number, character: string): number {
+    if (/\s/.test(character)) {
+        return 0;
+    }
+    if (chain < 0) {
+        return -1;
+    }
+    const continues = chain % 2 === 0 ? LETTER_ONLY.test(character) : character === '.';
+    return continues ? chain + 1 : -1;
+}
+
+/**
+ * Whether the current token is a dotted abbreviation missing only its closing dot (`e.g`, `N.B`):
+ * single letters joined by dots, ending on a letter. A single letter (`Press A.`) carries no inner
+ * dot and still ends its sentence.
+ */
+function isDottedAbbreviationChain(chain: number): boolean {
+    return chain >= 3 && chain % 2 === 1;
 }
 
 /** Whether the code point just before `index` is a letter or digit, so a quote at `index` cannot open a span. */
@@ -608,26 +643,33 @@ function isInWordApostrophe(characters: readonly string[], index: number): boole
  * `x.spec.ts` filename, because the dots around it are word boundaries. A bare `test` stays out:
  * a test tone or a test take is something a reviewer plays or records, so only the plural (`Covered
  * by tests`) or a qualified suite (`unit suite`, `the test suite`) names coverage. `existing`
- * qualifies only the plural and the suite: `the existing tests` names coverage, while `an existing
+ * names coverage on the plural, the suite, and a singular `test` that modifies none of the DAW
+ * nouns in `TEST_MODIFIED_NOUNS`: `the existing test covers this` is coverage, while `an existing
  * test project` is something a reviewer opens.
  */
-const TEST_SUITE_WORDS =
-    /\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?))\b|__tests__\//i;
+const TEST_SUITE_WORDS = new RegExp(
+    `\\b(?:specs?|e2e|tests|test suites?|(?:unit|integration|end-to-end)[- ](?:tests?|suites?)|existing[- ](?:tests|suites?|test(?![- ](?:${TEST_MODIFIED_NOUNS.join('|')})s?\\b)))\\b|__tests__/`,
+    'i'
+);
 
-/** The verbs that link a check's name to its status: `Gate is green`, `the suite stays clean`. */
-const STATUS_LINKING_VERBS = ['is', 'are', 'was', 'were', 'stays', 'remains', 'goes', 'went', 'turns', 'turned'];
+/**
+ * A check verdict, as a pattern fragment: a linking verb, an optional adverb, and a status (`is
+ * green`, `is still clean`, `turned red`).
+ */
+const CHECK_VERDICT_SOURCE = `(?:${STATUS_LINKING_VERBS.join('|')})\\s+(?:(?:${STATUS_ADVERBS.join('|')})\\s+)?(?:${CHECK_STATUSES.join('|')})\\b`;
 
-/** The statuses a check is reported with. */
-const CHECK_STATUSES = ['green', 'red', 'clean', 'passing', 'failing'];
+/** A status phrase behind a check's name, as a pattern fragment: ` is green`, ` was already red`. */
+const STATUS_PHRASE = `\\s+${CHECK_VERDICT_SOURCE}`;
 
-/** A status phrase behind a check's name, as a pattern fragment: ` is green`, ` turned red`. */
-const STATUS_PHRASE = `\\s+(?:${STATUS_LINKING_VERBS.join('|')})\\s+(?:${CHECK_STATUSES.join('|')})\\b`;
+/** Words that are exactly a check verdict and nothing else: `is clean`, `is still green`. */
+const CHECK_VERDICT_ONLY = new RegExp(`^${CHECK_VERDICT_SOURCE}$`);
 
-/** The nouns that make `Gate` the repository's check rather than the DAW device: `the Gate check`. */
-const CHECK_RUN_NOUNS = ['check', 'job', 'run', 'workflow'];
-
-/** The verdict verbs a pipeline reports with: `the pipeline validates the head`. */
-const PIPELINE_VERDICT_VERBS = ['validates', 'validated', 'passes', 'passed', 'fails', 'failed'];
+/**
+ * Markdown emphasis markers and backticks, removed before the multi-word check-name and status
+ * patterns read a segment, so `**Gate** is green` and `The \`suite\` is green` read as the plain
+ * sentences they render as.
+ */
+const EMPHASIS_AND_BACKTICKS = /[*_~`]/g;
 
 /**
  * The repository's own check names, matched case-sensitively as the proper nouns they are.
@@ -660,12 +702,13 @@ const TEST_RUNNER_NAMES = /\b(?:Vitest|Playwright)\b/;
 const CI_WORD = /\bCI\b/;
 
 function namesTestSuite(segment: string): boolean {
+    const plain = segment.replace(EMPHASIS_AND_BACKTICKS, '');
     return (
         TEST_SUITE_WORDS.test(segment) ||
         TEST_RUNNER_NAMES.test(segment) ||
         CI_WORD.test(segment) ||
-        REPOSITORY_CHECK_NAMES.test(segment) ||
-        SUITE_OR_PIPELINE_STATUS.test(segment)
+        REPOSITORY_CHECK_NAMES.test(plain) ||
+        SUITE_OR_PIPELINE_STATUS.test(plain)
     );
 }
 
