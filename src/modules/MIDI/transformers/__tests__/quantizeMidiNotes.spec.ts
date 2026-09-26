@@ -92,6 +92,27 @@ describe('quantizeMidiNotes', () => {
         expect(result[0]?.startBeat).toBeCloseTo(0.6, 5);
     });
 
+    it('swings the second and fourth sixteenths on a 1/16 grid, leaving the sixteenths on eighth-note lines straight', () => {
+        // gridSize 0.25 (1/16 at 4/4), swing 1.0 (full). Step indices 0, 1, 2, 3.
+        // Odd steps (1, 3) — the sixteenths at 0.25 and 0.75 — are delayed by
+        // swing * gridSize / 2 = 0.125. Even steps (0, 2) stay put.
+        const notes = [note(0), note(0.25), note(0.5), note(0.75)];
+
+        const result = quantizeMidiNotes({ notes, gridSize: 0.25, swing: 1.0 });
+
+        expect(result.map((n) => n.startBeat)).toEqual([0, 0.375, 0.5, 0.875]);
+    });
+
+    it('swings every second beat on a 1/4 grid', () => {
+        // gridSize 1 (1/4 at 4/4), swing 1.0 (full). Step indices 0, 1, 2, 3.
+        // Odd steps (1, 3) are delayed by swing * gridSize / 2 = 0.5.
+        const notes = [note(0), note(1), note(2), note(3)];
+
+        const result = quantizeMidiNotes({ notes, gridSize: 1, swing: 1.0 });
+
+        expect(result.map((n) => n.startBeat)).toEqual([0, 1.5, 2, 3.5]);
+    });
+
     it('returns a new array (does not mutate the input notes)', () => {
         const original = [note(0.3)];
         const originalBeat = original[0]!.startBeat;
