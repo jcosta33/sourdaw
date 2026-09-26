@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { isValidMidiNoteExpression } from '../../../models/MidiNote';
 import { projectDrumPreviewCandidateNotes } from '../projectDrumPreviewCandidateNotes';
 
 const sourceNotes = [
@@ -55,6 +56,40 @@ describe('projectDrumPreviewCandidateNotes', () => {
             ])
         );
         expect(notes?.some(({ id }) => id.endsWith('n-edge') && id.startsWith('preview-'))).toBe(false);
+    });
+
+    it.each([
+        ['ghost-note-pocket' as const, 'snare' as const, '00000000-0000-4000-8000-000000000004'],
+        ['syncopated-hats' as const, 'hi-hat' as const, '00000000-0000-4000-8000-000000000005'],
+    ])('%s keeps a shortened copy of a curved note’s expression inside its own span', (recipe, role, branchId) => {
+        const curvedNote = {
+            id: 'n-curved',
+            pitch: 38,
+            startBeat: 1,
+            duration: 0.5,
+            velocity: 100,
+            channel: 9,
+            expression: {
+                pressure: [
+                    { offsetBeats: 0.05, value: 60 },
+                    { offsetBeats: 0.25, value: 90 },
+                ],
+            },
+        };
+        const other = { id: 'n-other', pitch: 38, startBeat: 3, duration: 0.5, velocity: 90, channel: 9 };
+
+        const results = projectDrumPreviewCandidateNotes({
+            branchId,
+            endBeat: 4,
+            notes: [curvedNote, other],
+            recipe,
+            role,
+            startBeat: 0,
+        });
+
+        const copy = results?.find((note) => note.id.endsWith('-n-curved') && note.id.startsWith('preview-'));
+        expect(copy?.expression).toEqual({ pressure: [{ offsetBeats: 0.05, value: 60 }] });
+        expect(isValidMidiNoteExpression(copy?.expression, copy!.duration)).toBe(true);
     });
 
     it.each([
