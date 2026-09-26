@@ -18,6 +18,7 @@ import {
     type SemanticCiRecord,
     type SemanticReviewContextPort,
 } from '../semanticReviewContext.ts';
+import { SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME } from '../semanticReviewWorkflowContract.ts';
 
 const HEAD = 'a'.repeat(40);
 const MERGE_BASE = 'b'.repeat(40);
@@ -28,9 +29,21 @@ const GREEN_CHECK: SemanticCheckRun = { id: 1, name: 'Semantic review', conclusi
 const RUN: SemanticActionRun = { id: 456, path: ADVISORY_WORKFLOW_PATH, event: ADVISORY_WORKFLOW_EVENT };
 const ARTIFACT: SemanticArtifact = {
     id: 789,
-    name: 'semantic-review-42-456',
+    name: 'semantic-review-42-456-1',
     expiresAt: '2099-01-01T00:00:00.000Z',
 };
+
+/**
+ * The producer's own upload-name template (`semanticReviewWorkflowContract.ts`), which
+ * `healthGatesWorkflow.spec.ts` already pins against the live `.github/workflows/semantic-review.yml`.
+ * Substituting concrete values here, rather than hand-writing a fixture name, ties this spec to that
+ * producer contract instead of to a name this file invented independently of it.
+ */
+function producerArtifactName(pr: number, runId: number, attempt: number): string {
+    return SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME.replace('${{ env.PR_NUMBER }}', String(pr))
+        .replace('${{ github.run_id }}', String(runId))
+        .replace('${{ github.run_attempt }}', String(attempt));
+}
 
 function signal(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
@@ -223,7 +236,7 @@ describe('semantic review context', () => {
             unresolvedQuestions: 2,
             artifact: {
                 id: 789,
-                name: 'semantic-review-42-456',
+                name: 'semantic-review-42-456-1',
                 expiresAt: '2099-01-01T00:00:00.000Z',
             },
         });
@@ -326,7 +339,7 @@ describe('semantic review context', () => {
         const { port, calls } = makePort({
             checkRuns: [GREEN_CHECK],
             actionRuns: [RUN],
-            artifacts: [{ id: 789, name: 'semantic-review-42-456', expiresAt: '2026-08-31T23:59:59.000Z' }],
+            artifacts: [{ id: 789, name: 'semantic-review-42-456-1', expiresAt: '2026-08-31T23:59:59.000Z' }],
             now: Date.parse('2026-09-01T00:00:00.000Z'),
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
@@ -512,12 +525,12 @@ describe('semantic review context', () => {
                 if (runId === 456) {
                     return [ARTIFACT];
                 }
-                return [{ id: 1, name: 'semantic-review-42-999', expiresAt: '2099-01-01T00:00:00.000Z' }];
+                return [{ id: 1, name: 'semantic-review-42-999-1', expiresAt: '2099-01-01T00:00:00.000Z' }];
             },
             archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
         });
         const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
-        expect(result.artifact.name).toBe('semantic-review-42-456');
+        expect(result.artifact.name).toBe('semantic-review-42-456-1');
         expect(result.artifact.id).toBe(789);
     });
 
@@ -535,19 +548,19 @@ describe('semantic review context', () => {
                 if (runId === 456) {
                     return [ARTIFACT];
                 }
-                return [{ id: 1, name: 'semantic-review-42-999', expiresAt: '2099-01-01T00:00:00.000Z' }];
+                return [{ id: 1, name: 'semantic-review-42-999-1', expiresAt: '2099-01-01T00:00:00.000Z' }];
             },
             archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
         });
         const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
-        expect(result.artifact.name).toBe('semantic-review-42-456');
+        expect(result.artifact.name).toBe('semantic-review-42-456-1');
     });
 
     it('refuses an artifact bound to a different pull request', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
             actionRuns: [RUN],
-            artifacts: [{ id: 789, name: 'semantic-review-99-456', expiresAt: '2099-01-01T00:00:00.000Z' }],
+            artifacts: [{ id: 789, name: 'semantic-review-99-456-1', expiresAt: '2099-01-01T00:00:00.000Z' }],
         });
         expect(resolveSemanticReviewContext(42, HEAD, port)).toEqual({
             format: SEMANTIC_CI_FORMAT,
@@ -563,8 +576,8 @@ describe('semantic review context', () => {
             checkRuns: [GREEN_CHECK],
             actionRuns: [RUN],
             artifacts: [
-                { id: 1, name: 'semantic-review-99-999', expiresAt: '2099-01-01T00:00:00.000Z' },
-                { id: 789, name: 'semantic-review-42-456', expiresAt: '2099-01-01T00:00:00.000Z' },
+                { id: 1, name: 'semantic-review-99-999-1', expiresAt: '2099-01-01T00:00:00.000Z' },
+                { id: 789, name: 'semantic-review-42-456-1', expiresAt: '2099-01-01T00:00:00.000Z' },
             ],
             archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
         });
@@ -572,6 +585,60 @@ describe('semantic review context', () => {
             state: 'assessed',
             assessedHeadSha: HEAD,
         });
+    });
+
+    it('records an artifact bound to a different run id as no-assessment with reason mismatch', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [{ id: 1, name: 'semantic-review-42-999-1', expiresAt: '2099-01-01T00:00:00.000Z' }],
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
+            state: 'no-assessment',
+            reason: 'mismatch',
+        });
+    });
+
+    it('records a two-part legacy artifact name as no-assessment with reason absent', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [{ id: 1, name: 'semantic-review-42-456', expiresAt: '2099-01-01T00:00:00.000Z' }],
+        });
+        expect(resolveSemanticReviewContext(42, HEAD, port)).toMatchObject({
+            state: 'no-assessment',
+            reason: 'absent',
+        });
+    });
+
+    it.each([
+        ['ascending', ['semantic-review-42-456-1', 'semantic-review-42-456-2']],
+        ['descending', ['semantic-review-42-456-2', 'semantic-review-42-456-1']],
+    ])('selects the highest-attempt artifact for this pr and run regardless of listing order (%s)', (_label, names) => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: names.map((name, index) => ({ id: index + 1, name, expiresAt: '2099-01-01T00:00:00.000Z' })),
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
+        });
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.artifact.name).toBe('semantic-review-42-456-2');
+    });
+
+    it("selects the artifact named by the producer workflow's own upload-name template", () => {
+        // Derived from `SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME`
+        // (`scripts/semanticReviewWorkflowContract.ts`), which `healthGatesWorkflow.spec.ts` already
+        // pins byte-for-byte against the live `.github/workflows/semantic-review.yml` upload step, so
+        // this case ties the reader to the producer's real template rather than to a hand-written name.
+        const name = producerArtifactName(42, RUN.id, 1);
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [{ id: 789, name, expiresAt: '2099-01-01T00:00:00.000Z' }],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
+        });
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.artifact.name).toBe(name);
     });
 
     it('refuses a report bound to a different pull request', () => {
@@ -669,6 +736,7 @@ describe('semantic review context', () => {
                                 { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after)' },
                                 { path: 'src/d.ts', reason: 'total-evidence-budget-exhausted (context)' },
                                 { path: 'src/e.ts', reason: 'region-exceeds-per-region-budget (contract)' },
+                                { path: 'src/f.ts', reason: 'hunk-beyond-file (after, contract)' },
                             ],
                         },
                     })
@@ -682,6 +750,114 @@ describe('semantic review context', () => {
             'region-exceeds-per-region-budget (after)',
             'total-evidence-budget-exhausted (context)',
             'region-exceeds-per-region-budget (contract)',
+            'hunk-beyond-file (after, contract)',
+        ]);
+    });
+
+    it('keeps a withheld contract-carrying path named as such, apart from an anonymous bulk trim', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'total-evidence-budget-exhausted (after, contract)',
+                                },
+                                { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/reviewDossier.ts', reason: 'total-evidence-budget-exhausted (after, contract)' },
+            { path: 'src/big.ts', reason: 'total-evidence-budget-exhausted (after)' },
+        ]);
+    });
+
+    it('accepts the contract-marked comma qualifier and the retired withheld code for reading', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'region-exceeds-per-region-budget (after, contract)',
+                                },
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'total-evidence-budget-exhausted (before, contract)',
+                                },
+                                { path: 'scripts/old.ts', reason: 'contract-evidence-withheld (after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated.map((entry) => entry.reason)).toEqual([
+            'region-exceeds-per-region-budget (after, contract)',
+            'total-evidence-budget-exhausted (before, contract)',
+            'contract-evidence-withheld (after)',
+        ]);
+    });
+
+    it('normalises a parameterised reason with an unknown or duplicated qualifier term', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                { path: 'src/b.ts', reason: 'region-exceeds-per-region-budget (after, bogus)' },
+                                { path: 'src/c.ts', reason: 'region-exceeds-per-region-budget (after, after)' },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'src/b.ts', reason: 'unrecognized-reason' },
+            { path: 'src/c.ts', reason: 'unrecognized-reason' },
         ]);
     });
 

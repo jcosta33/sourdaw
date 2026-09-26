@@ -144,20 +144,42 @@ export type AudioGraphStripState = Readonly<{
 }>;
 
 /**
+ * One row of a bacteria device's modulation-assignment table, already mapped
+ * onto the engine's own source/target grammar and amount scale
+ * (`NumericBacteriaModAssignment`,
+ * `src/modules/Bacteria/models/BacteriaModulationIds.ts`).
+ *
+ * Numeric rather than the UI's string ids because both carriers' engines take
+ * this shape directly: the wasm boundary and the native wire both index a
+ * fixed source/target table with small integers, and mapping happens once,
+ * beside the grammar it depends on, rather than again on each backend.
+ */
+export type NativeModAssignmentRow = Readonly<{
+    sourceId: number;
+    targetParam: number;
+    amount: number;
+}>;
+
+/**
  * A device as it travels a graph command, carrying the native sample bank key
- * beside project truth.
+ * and modulation-assignment table beside project truth.
  *
- * Not project truth and never read off a saved device: the bank store keys it,
- * and `projectDeviceForNativeBody` sets it for the one device type whose
- * native body is built from a staged bank rather than from `parameterValues`.
+ * Neither is project truth and neither is ever read off a saved device: the
+ * bank store keys `sampleBankKey`, and a bacteria device's `deviceState`
+ * chunk (opaque to this backend) is what `modAssignments` is mapped from.
+ * `projectDeviceForNativeBody` sets each for the one device type whose
+ * native body needs it beyond `parameterValues`.
  *
- * It lives on the command device rather than the project view because the
+ * Both live on the command device rather than the project view because the
  * Arrangement device is assigned to the project view at injected call sites
  * such as `buildDeviceChain`, and an optional property the Arrangement device
  * lacks makes the type-aware lint resolve those calls to the injectable's
  * `any` signature.
  */
-export type AudioGraphDevice = Device & { sampleBankKey?: string };
+export type AudioGraphDevice = Device & {
+    sampleBankKey?: string;
+    modAssignments?: readonly NativeModAssignmentRow[];
+};
 
 /**
  * A device chain, in project order, as one splice.
@@ -568,6 +590,26 @@ export type AudioGraphSetDeviceBypassCommand = Readonly<{
     bypassed: boolean;
 }>;
 
+/**
+ * Replace a bacteria device's whole modulation-assignment table on the
+ * backend's own instance, at the next audio callback.
+ *
+ * The live counterpart of {@link AudioGraphDevice.modAssignments}: a live
+ * edit — add, remove, or reorder a row — reaches an already-built strip
+ * through this, exactly as {@link AudioGraphSetDeviceParametersCommand} is
+ * the live counterpart of `parameterValues`. The table has no per-entry
+ * removal on either carrier, so this always replaces the whole thing —
+ * `assignments: []` clears it and adds nothing back, which is how a user's
+ * last row removal reaches the engine.
+ *
+ * A bacteria device only; a backend refuses this aimed at any other type.
+ */
+export type AudioGraphSetDeviceModAssignmentsCommand = Readonly<{
+    kind: 'set-device-mod-assignments';
+    target: AudioGraphDeviceTarget;
+    assignments: readonly NativeModAssignmentRow[];
+}>;
+
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
     playback: AudioGraphClipPlayback;
@@ -807,6 +849,7 @@ export type AudioGraphCommand =
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphSetDeviceParametersCommand
     | AudioGraphSetDeviceBypassCommand
+    | AudioGraphSetDeviceModAssignmentsCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphSendMidiNoteCommand

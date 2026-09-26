@@ -13,10 +13,15 @@ import {
     SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
     SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
     SEMANTIC_COMMAND_LIST_MAX_REPEAT,
-    type SemanticCommandListEntity,
     type SemanticCommandListItem,
+    type SemanticCommandListMatch,
     type SemanticCommandListSelector,
 } from '../models/SemanticCommandList';
+import {
+    collectSemanticCommandListCandidates,
+    resolveSemanticCommandListSelector,
+    type SemanticCommandListCandidate,
+} from '../services/semanticCommandListCandidates';
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
@@ -30,19 +35,7 @@ import {
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
-
-type Candidate = {
-    id: string;
-    entity: SemanticCommandListEntity;
-    name?: string;
-    kind?: string;
-    type?: string;
-    trackId?: string;
-    muted?: boolean;
-    locked?: boolean;
-    bypassed?: boolean;
-    enabled?: boolean;
-};
+import { CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
 
 /**
  * A rejection reason reaches the chat, and a provider-authored argument is unbounded text. A
@@ -56,6 +49,19 @@ export type ArbitraryCommandListSelectorEvidence = {
     excludedIds: string[];
     protectedExclusions: string[];
     preconditions: Array<{ stableId: string; fingerprint: string }>;
+    /**
+     * The selector fields a `match` was compiled with, present only when the selector used one.
+     * The evidence validator re-resolves this against its own context through the same shared
+     * resolver; a different resolved id set means the precondition no longer holds.
+     */
+    predicate?: {
+        entity: SemanticCommandListSelector['entity'];
+        where?: SemanticCommandListSelector['where'];
+        match: SemanticCommandListMatch;
+        condition?: SemanticCommandListSelector['condition'];
+        excludeIds?: string[];
+        quantity: SemanticCommandListSelector['quantity'];
+    };
 };
 
 export type ArbitraryCommandListDirectTargetEvidence = {
@@ -138,52 +144,6 @@ function isSafeId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= 256;
 }
 
-function collectCandidates(context: ProjectContext): Candidate[] {
-    const tracks = context.tracks.map((track) => ({
-        id: track.id,
-        entity: 'track' as const,
-        name: track.name,
-        kind: track.kind,
-        muted: track.muted,
-    }));
-    const clips = context.tracks.flatMap((track) =>
-        track.clips.map((clip) => ({
-            id: clip.id,
-            entity: 'clip' as const,
-            name: clip.name,
-            type: clip.type,
-            trackId: track.id,
-            muted: clip.muted,
-            locked: clip.locked,
-        }))
-    );
-    const devices = context.tracks.flatMap((track) =>
-        track.devices.map((device) => ({
-            id: device.id,
-            entity: 'device' as const,
-            name: device.name,
-            type: device.type,
-            trackId: track.id,
-            bypassed: device.bypassed,
-        }))
-    );
-    const lanes = (context.automationLanes ?? []).map((lane) => ({
-        id: lane.id,
-        entity: 'automation-lane' as const,
-        name: lane.name,
-        trackId: lane.trackId,
-        enabled: lane.enabled,
-    }));
-    const adjustmentLayers = (context.adjustmentLayers ?? []).map((layer) => ({
-        id: layer.id,
-        entity: 'adjustment-layer' as const,
-        name: layer.name,
-        type: layer.effectType,
-        enabled: layer.enabled,
-    }));
-    return [...tracks, ...clips, ...devices, ...lanes, ...adjustmentLayers];
-}
-
 function containsForbiddenProviderAuthority(value: unknown): boolean {
     if (!isRecord(value)) {
         return Array.isArray(value) && value.some(containsForbiddenProviderAuthority);
@@ -212,43 +172,38 @@ function parseIdList(value: unknown, label: string): string[] | RejectedCompilat
 }
 
 function resolveSelector(input: {
-    candidates: readonly Candidate[];
+    candidates: readonly SemanticCommandListCandidate[];
+    context: ProjectContext;
     selector: SemanticCommandListSelector;
     itemId: string;
 }): { stableIds: string[]; evidence: ArbitraryCommandListSelectorEvidence } | RejectedCompilation {
-    const where = input.selector.where ?? {};
-    const candidates = input.candidates.filter((candidate) => {
-        if (candidate.entity !== input.selector.entity) {
-            return false;
-        }
-        if (Object.entries(where).some(([key, value]) => candidate[key as keyof Candidate] !== value)) {
-            return false;
-        }
-        return (
-            input.selector.condition === undefined ||
-            candidate[input.selector.condition.field] === input.selector.condition.equals
-        );
+    const resolution = resolveSemanticCommandListSelector({
+        candidates: input.candidates,
+        context: input.context,
+        itemId: input.itemId,
+        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
+        selector: input.selector,
     });
-    const explicitlyExcludedIds = input.selector.excludeIds ?? [];
-    const excludedIds = new Set(explicitlyExcludedIds);
-    const stableIds = candidates.filter((candidate) => !excludedIds.has(candidate.id)).map((candidate) => candidate.id);
-    if (stableIds.length !== input.selector.quantity.exactly) {
-        // Structured target evidence: zero resolutions is a missing target, any
-        // other mismatch means the provider saw different candidates than it
-        // meant — the correction names them instead of rerolling blind.
+    if (resolution.status === 'rejected') {
         return {
             status: 'rejected',
-            reason: `Bulk selector ${input.itemId} resolved ${String(stableIds.length)} targets, not its exact quantity.`,
-            detail: {
-                kind: stableIds.length === 0 ? 'missing-target' : 'ambiguous-target',
-                itemId: input.itemId,
-                entity: input.selector.entity,
-                resolvedCount: stableIds.length,
-                expectedCount: input.selector.quantity.exactly,
-                candidateIds: stableIds.slice(0, 8),
-            },
+            reason: resolution.reason,
+            ...(resolution.detail === undefined
+                ? {}
+                : {
+                      detail: {
+                          kind: resolution.detail.kind,
+                          itemId: input.itemId,
+                          entity: input.selector.entity,
+                          resolvedCount: resolution.detail.resolvedCount,
+                          expectedCount: resolution.detail.expectedCount,
+                          candidateIds: resolution.detail.candidateIds,
+                      },
+                  }),
         };
     }
+    const { stableIds } = resolution;
+    const explicitlyExcludedIds = input.selector.excludeIds ?? [];
     return {
         stableIds,
         evidence: {
@@ -257,9 +212,21 @@ function resolveSelector(input: {
             excludedIds: [...explicitlyExcludedIds],
             protectedExclusions: [],
             preconditions: stableIds.map((stableId) => {
-                const candidate = candidates.find((entry) => entry.id === stableId);
+                const candidate = input.candidates.find((entry) => entry.id === stableId);
                 return { stableId, fingerprint: JSON.stringify(candidate) };
             }),
+            ...(input.selector.match === undefined
+                ? {}
+                : {
+                      predicate: {
+                          entity: input.selector.entity,
+                          where: input.selector.where,
+                          match: input.selector.match,
+                          condition: input.selector.condition,
+                          excludeIds: input.selector.excludeIds,
+                          quantity: input.selector.quantity,
+                      },
+                  }),
         },
     };
 }
@@ -916,7 +883,8 @@ function getDeclaredBatchLocalBinding(
         !BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(item.name) ||
         typeof binding !== 'string' ||
         !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
-        (item.selector !== undefined && item.selector.quantity.exactly !== 1) ||
+        (item.selector !== undefined &&
+            (!('exactly' in item.selector.quantity) || item.selector.quantity.exactly !== 1)) ||
         repeat !== 1
     ) {
         return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded creation item.' };
@@ -1197,7 +1165,10 @@ export function compileArbitraryCommandList(input: {
         return sortedItems;
     }
     const items = sortedItems.items;
-    const candidates = collectCandidates(input.context);
+    const candidates = collectSemanticCommandListCandidates({
+        context: input.context,
+        roleFamilyByCanonicalRole: CANONICAL_ROLE_TO_RECIPE_ROLE,
+    });
     const commands: ToolCallResult[] = [];
     const evidence: ArbitraryCommandListSelectorEvidence[] = [];
     const compiledItems: CompiledItemEvidence[] = [];
@@ -1354,7 +1325,7 @@ export function compileArbitraryCommandList(input: {
         if (selector.targetArgument in item.arguments) {
             return { status: 'rejected', reason: 'Provider may not supply target IDs for a semantic bulk selector.' };
         }
-        const resolved = resolveSelector({ candidates, selector, itemId: item.id });
+        const resolved = resolveSelector({ candidates, context: input.context, selector, itemId: item.id });
         if ('status' in resolved) {
             return resolved;
         }

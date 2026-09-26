@@ -54,6 +54,14 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-26 — a read tool whose largest answer never fit its own receipt budget (escaped via PR #2011)
+
+PR #2011 shipped `device.factory-manifest.read` returning a whole descriptor's `parameters` array in one receipt, checked only against a synthetic small descriptor. Several real descriptors (Fermenter, Bacteria, Gluten, Crust, and every other descriptor declaring a `legalSet`) exceed the loop's per-call receipt budget alone, even requested one type at a time — the narrowest request the schema allowed — so the planner could never read their parameter bounds, legal values, or guidance; the tool always returned `tool-receipt-too-large` for them instead.
+
+Blind spot: review verified the generic budget-enforcement mechanism (`boundReceipt`) and the tool's schema shape, but never checked the tool's own worst-case output against the budget it was bound by — a receipt shape can be correct and still be an answer the route can never deliver.
+
+Probe that would have caught it: for every registered type the tool can name, request it alone with no other arguments and measure the real receipt (`JSON.stringify` byte length, exactly as the loop measures it) against the per-call budget; a type whose single-type, otherwise-default request already fails is the finding, and a `legalSet`-declaring type failing it is the reproduction to keep.
+
 ### 2026-09-21 — level context was complete before serialization, not after it (escaped via PR #4392)
 
 PR #4392 (`5c476c92153`) projected linear/decibel pairs into `ProjectContext`, while the full provider serializer dropped most decibel fields and the delta snapshot tracked neither nested sends/clips nor gain-lane ranges.
@@ -313,3 +321,22 @@ whether the cleared receipt was the one recovery began from, or whether the remo
 Probe that would have caught it: write a replacement receipt for the same lane inside the recovery
 child before it returns code 0 and require recovery to return non-zero with the replacement bytes
 preserved; then make the unlink throw and require recovery to report the failure.
+
+### 2026-09-26 — quantize swing ignored the grid and a spec pinned the deviation (introduced in 6fa76ee35e; fixed in #4788)
+
+A bulk MIDI remediation commit made quantize swing always delay the eighth-note "and" by a fixed
+half-beat unit, whatever grid the user chose, and added a spec row asserting exactly that. On a 1/16
+grid the swung positions therefore never moved and beat 0.5 moved instead, which no established DAW
+does: Logic, Ableton and Pro Tools swing every second step of the selected grid. The pinned row made
+the deviation look like a contract to every later reader.
+
+Blind spot: review checked that the spec discriminated the code and never asked whether the pinned
+musical law matched professional convention; a green, mutation-sensitive row proved only
+self-consistency.
+
+Probe that would have caught it: for any timing, quantize, swing, or grid semantic, state the law an
+established DAW applies and evaluate the change at two grids (1/16 and 1/4 here); a result that
+cannot be reproduced in a reference DAW is a finding unless a decision record names the deliberate
+difference. Then quantize the output a second time: a destructive quantize must leave its own output
+in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
+an offset.

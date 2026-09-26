@@ -12,13 +12,17 @@ function findOwningTrack(deviceId: string): Track | undefined {
 }
 
 /**
- * Whether this write moved the device's projected sample bank — the one
+ * Whether this write moved the device's projected sample bank — a
  * `deviceState` change a rolling native session cannot hear on its own
- * (#4203). Every other `deviceState` field a device carries either has no
- * native projection or is folded into a body's parameters, which the native
- * session already re-reads on its own schedule; only a Levain bank pick
- * rebuilds a *held* instance, because the engine has no door to change which
- * bank an instance was built from.
+ * (#4203): a Levain bank pick rebuilds a *held* instance, because the engine
+ * has no door to change which bank an instance was built from. Every other
+ * field either has no native projection or is folded into a body's
+ * parameters, which the native session re-reads on its own schedule — except
+ * Bacteria's modulation-routing table, which has a native projection that is
+ * neither folded into parameters nor re-read mid-roll. That table only
+ * reaches the native session through the Bacteria panel's `updateDevicePatch`
+ * door, so an inbound `setDeviceState` with no panel mounted misses it too
+ * (tracked by #4764).
  */
 function projectedBankKeyChanged(before: Track, after: Track, deviceId: string): boolean {
     const beforeDevice = before.devices.find((device) => device.id === deviceId);

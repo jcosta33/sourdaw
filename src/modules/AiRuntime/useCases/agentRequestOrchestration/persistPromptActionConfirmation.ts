@@ -29,6 +29,7 @@ type PersistPromptActionConfirmationInput = {
     agentApproval: NonNullable<ConfirmationProposal['agentApproval']>;
     affectedIds: NonNullable<ConfirmationProposal['affectedIds']>;
     protectedUnchanged: NonNullable<ConfirmationProposal['protectedUnchanged']>;
+    matchSelectorPredicates?: ConfirmationProposal['matchSelectorPredicates'];
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -75,6 +76,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             semanticDiff,
             affectedIds: input.affectedIds,
             protectedUnchanged: input.protectedUnchanged,
+            matchSelectorPredicates: input.matchSelectorPredicates,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

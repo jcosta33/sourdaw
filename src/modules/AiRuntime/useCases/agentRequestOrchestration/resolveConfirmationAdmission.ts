@@ -17,6 +17,7 @@ import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
 import { type CommandVerifiedBatchReceipt } from './confirmedBatchOutcomeSupport';
+import { revalidateApprovedMatchSelectors } from './revalidateApprovedMatchSelectors';
 
 type ApprovalDivergence = Extract<
     ReturnType<typeof refreshVersionedCommandBatchForApproval>,
@@ -247,6 +248,22 @@ async function resolveConfirmationAdmission(input: {
             return {
                 status: 'handled',
                 result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),
+            };
+        }
+        // A `match` selector's own precondition check only ever compares fingerprints of ids it
+        // already resolved, so a track the compiled predicate never saw can start matching without
+        // moving that check at all. Re-resolve every carried selector against the live project
+        // before trusting the rebind below to carry the same targets forward.
+        const predicateRevalidation = revalidateApprovedMatchSelectors(
+            confirmation.approvalSnapshot.matchSelectorPredicates ?? []
+        );
+        if (predicateRevalidation.status === 'invalidated') {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.invalidateForProjectChange(
+                    confirmation,
+                    predicateRevalidation.detail
+                ),
             };
         }
         const refreshed = refreshVersionedCommandBatchForApproval({

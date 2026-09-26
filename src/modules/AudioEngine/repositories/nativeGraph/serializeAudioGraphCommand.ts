@@ -51,10 +51,16 @@ import {
     type AudioGraphSendMidiNoteCommand,
     type AudioGraphSendTap,
     type AudioGraphClearMidiCommand,
+    type AudioGraphSetDeviceBypassCommand,
+    type AudioGraphSetDeviceModAssignmentsCommand,
+    type AudioGraphSetDeviceParametersCommand,
     type AudioGraphSetTransportCommand,
     type AudioGraphStepWrite,
     type AudioGraphStripParameterTarget,
     type AudioGraphStripState,
+    type AudioGraphWriteDeviceParameterCommand,
+    type AudioGraphWriteParameterCommand,
+    type NativeModAssignmentRow,
 } from '../../models/AudioGraphBackend';
 
 /** `DevicePayload` in `graph.rs`: project truth minus the opaque state. */
@@ -67,6 +73,7 @@ export type NativeGraphWireDevice = Readonly<{
     externalPluginId?: string;
     externalInstanceId?: string;
     sampleBankKey?: string;
+    modAssignments?: readonly NativeModAssignmentRow[];
 }>;
 
 /** `ClipSourcePayload` in `graph.rs`: the identity, never the realisation. */
@@ -137,6 +144,12 @@ export type NativeGraphWireCommand =
           values: Readonly<Record<string, number>>;
       }>
     | Readonly<{ kind: 'set-device-bypass'; trackId: string; deviceId: string; bypassed: boolean }>
+    | Readonly<{
+          kind: 'set-device-mod-assignments';
+          trackId: string;
+          deviceId: string;
+          assignments: readonly NativeModAssignmentRow[];
+      }>
     | Readonly<{ kind: 'schedule-clip'; playback: NativeGraphWireClipPlayback }>
     // The contract's device target is flattened here, because `graph.rs` reads
     // the strip and the device as the variant's own fields rather than as a
@@ -189,6 +202,7 @@ function serializeDevice(device: AudioGraphDevice): NativeGraphWireDevice {
         ...(device.externalPluginId !== undefined ? { externalPluginId: device.externalPluginId } : {}),
         ...(device.externalInstanceId !== undefined ? { externalInstanceId: device.externalInstanceId } : {}),
         ...(device.sampleBankKey !== undefined ? { sampleBankKey: device.sampleBankKey } : {}),
+        ...(device.modAssignments !== undefined ? { modAssignments: [...device.modAssignments] } : {}),
     };
 }
 
@@ -330,7 +344,78 @@ function serializeTransport(command: AudioGraphSetTransportCommand): NativeGraph
     };
 }
 
+/**
+ * Every command that writes onto an already-inserted device, addressed either
+ * by the contract's own `target` object (the two `write-*` commands, whose
+ * mirror wants that target nested) or by a `target.{trackId,deviceId}` pair
+ * flattened onto the variant's own fields (the three `set-device-*`
+ * commands) — split out of the main switch purely to keep that switch's own
+ * branch count reasoned-about; the five share no single shape, only a family.
+ */
+function serializeDeviceWrite(
+    command:
+        | AudioGraphWriteParameterCommand
+        | AudioGraphWriteDeviceParameterCommand
+        | AudioGraphSetDeviceParametersCommand
+        | AudioGraphSetDeviceBypassCommand
+        | AudioGraphSetDeviceModAssignmentsCommand
+): NativeGraphWireCommand {
+    switch (command.kind) {
+        case 'write-parameter':
+            return { kind: 'write-parameter', target: { ...command.target }, write: { ...command.write } };
+        case 'write-device-parameter':
+            return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
+        case 'set-device-parameters':
+            return {
+                kind: 'set-device-parameters',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                values: { ...command.values },
+            };
+        case 'set-device-bypass':
+            return {
+                kind: 'set-device-bypass',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                bypassed: command.bypassed,
+            };
+        case 'set-device-mod-assignments':
+            return {
+                kind: 'set-device-mod-assignments',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                assignments: [...command.assignments],
+            };
+    }
+    // Unreachable while the switch covers the narrowed union.
+    const unhandled: never = command;
+    throw new Error(`unhandled command: ${JSON.stringify(unhandled)}`);
+}
+
+type AudioGraphDeviceWriteCommand =
+    | AudioGraphWriteParameterCommand
+    | AudioGraphWriteDeviceParameterCommand
+    | AudioGraphSetDeviceParametersCommand
+    | AudioGraphSetDeviceBypassCommand
+    | AudioGraphSetDeviceModAssignmentsCommand;
+
+const DEVICE_WRITE_COMMAND_KINDS: ReadonlySet<AudioGraphDeviceWriteCommand['kind']> = new Set([
+    'write-parameter',
+    'write-device-parameter',
+    'set-device-parameters',
+    'set-device-bypass',
+    'set-device-mod-assignments',
+]);
+
+/** Narrows to the {@link serializeDeviceWrite} family by one membership test, not five case labels. */
+function isDeviceWriteCommand(command: AudioGraphCommand): command is AudioGraphDeviceWriteCommand {
+    return DEVICE_WRITE_COMMAND_KINDS.has(command.kind as AudioGraphDeviceWriteCommand['kind']);
+}
+
 export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGraphWireCommand {
+    if (isDeviceWriteCommand(command)) {
+        return serializeDeviceWrite(command);
+    }
     switch (command.kind) {
         case 'create-track-strip':
             return {
@@ -373,24 +458,6 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             };
         case 'remove-device':
             return { kind: 'remove-device', trackId: command.trackId, deviceId: command.deviceId };
-        case 'write-parameter':
-            return { kind: 'write-parameter', target: { ...command.target }, write: { ...command.write } };
-        case 'write-device-parameter':
-            return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
-        case 'set-device-parameters':
-            return {
-                kind: 'set-device-parameters',
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                values: { ...command.values },
-            };
-        case 'set-device-bypass':
-            return {
-                kind: 'set-device-bypass',
-                trackId: command.target.trackId,
-                deviceId: command.target.deviceId,
-                bypassed: command.bypassed,
-            };
         case 'schedule-clip':
             return { kind: 'schedule-clip', playback: serializePlayback(command.playback) };
         case 'schedule-midi':

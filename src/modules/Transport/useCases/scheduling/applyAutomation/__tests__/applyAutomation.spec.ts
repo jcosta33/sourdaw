@@ -17,7 +17,10 @@ import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue 
 import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
+import { tempoMapStore } from '../../../../stores/tempoMapStore';
+import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
+import { deviceReadBeatByTrack } from '../deviceReadBeatByTrack';
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -206,6 +209,10 @@ describe('applyAutomation', () => {
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(deriveVcaMultiplier).mockReturnValue(1);
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
+        // #4684: the tempo map is a real (unmocked) singleton shared across
+        // every case in this file; reset it so a case that mutates it cannot
+        // leak into the next regardless of run order.
+        tempoMapStore.set({ changes: [] });
     });
 
     it('should export applyAutomation', () => {
@@ -411,6 +418,296 @@ describe('applyAutomation', () => {
             const owned = applyAutomation(0);
 
             expect(owned.has('track-1')).toBe(false);
+        });
+    });
+
+    describe('#4684 device automation reads the compensated beat', () => {
+        it('reads a device lane one compensation delay behind the playhead, carrying the pre-step value until the compensated beat crosses it', () => {
+            // Track compensation 0.25s = 0.5 beat at 120 BPM (the real
+            // tempoMapStore/transportStore defaults: changes=[], tempo=120).
+            // A discontinuity epoch bump before each tick forces the device
+            // branch's slew to pass the curve value straight through, so the
+            // asserted write is the exact curve value rather than a partial glide.
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            // Establish this case's own discontinuity baseline instead of
+            // relying on `automationState.lastDiscontinuityEpoch` already
+            // being set by an earlier case in the file: that module-private
+            // state starts `undefined`, and the first-ever apply call never
+            // treats itself as a discontinuity (the `!== undefined` guard in
+            // applyAutomation.ts), so without this seed tick the case passes
+            // only when it runs after another case has already applied once.
+            // Filtered alone (`-t 4684`) it was the very first apply of the
+            // module and failed.
+            schedulerSession.discontinuityEpoch = 100;
+            applyAutomation(0);
+
+            schedulerSession.discontinuityEpoch = 101;
+            applyAutomation(4.25);
+            // Compensated beat: secondsBetweenBeats(4.25 beats@120bpm)=2.125s,
+            // minus 0.25s compensation = 1.875s → 3.75 beat (< 4 → pre-step 0).
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 3.75);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+
+            schedulerSession.discontinuityEpoch = 102;
+            applyAutomation(4.5);
+            // 4.5 beats = 2.25s, minus 0.25s = 2.0s → 4.0 beat (>= 4 → post-step 1).
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 4);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        it('keeps reading a gain lane at the playhead beat on the same compensated track', () => {
+            // Same non-zero compensation as the device-lane case above, but the
+            // gain family is scheduled ahead instead of read behind: it must
+            // keep reading currentBeat unchanged, unlike the device lane.
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            vi.mocked(getCurrentTime).mockReturnValue(12);
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
+
+            applyAutomation(4.25);
+
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 4.25);
+            expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', 0.75, 12.25);
+        });
+
+        it('reads the backdated material behind the landing beat right after a landing, never clamped to the landing beat', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            // Baseline tick establishes this case's own discontinuity epoch —
+            // see the order-independence comment on the first case above.
+            schedulerSession.discontinuityEpoch = 199;
+            applyAutomation(0);
+
+            // The scheduler just landed (play/resume, seek while playing, loop
+            // wrap, or follow-action jump) on beat 4: `scheduleAudioClips.ts`
+            // backdates a clip spanning that beat by the 0.25s (0.5 beat @ 120
+            // BPM) compensation, so the audio entering the devices right after
+            // the landing is the backdated 3.75, not the landing beat itself.
+            schedulerSession.discontinuityEpoch = 200;
+            applyAutomation(4.25);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 3.75);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+        });
+
+        it('advances past the step once the compensated read crosses it after a landing', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            schedulerSession.discontinuityEpoch = 210;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 211;
+            applyAutomation(4.25);
+
+            // 4.6 beats = 2.3s, minus the 0.25s compensation = 2.05s -> 4.1 beat
+            // (>= 4 -> post-step 1): the compensated read has now crossed the step.
+            schedulerSession.discontinuityEpoch = 212;
+            applyAutomation(4.6);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 4.1);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 1);
+        });
+
+        it('reads behind the landing beat on the landing tick itself when the playhead lands exactly on it', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            schedulerSession.discontinuityEpoch = 220;
+            applyAutomation(0);
+
+            // The landing (a jump or a fresh play/resume) puts the playhead
+            // exactly on beat 4. The audio entering the devices on this very
+            // tick is still the backdated 3.5 (4 - 0.5 beat); clamping to the
+            // landing beat would read ahead of what is actually sounding.
+            schedulerSession.discontinuityEpoch = 221;
+            applyAutomation(4);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 3.5);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+        });
+
+        it('holds the compensated read at the arrangement start when a landing falls inside the compensation window, never reading a negative beat', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 4 ? 0 : 1));
+
+            // A landing at beat 0.1 (0.05s) minus the 0.25s compensation is
+            // negative — the arrangement-start hold clamps the read to 0
+            // instead of reading before the arrangement even started.
+            schedulerSession.discontinuityEpoch = 230;
+            applyAutomation(0.1);
+            expect(getAutomationValueAtBeat).toHaveBeenCalledWith('lane-1', 0);
+        });
+
+        it('reads the compensated beat through the tempo map instead of a constant-tempo approximation', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+            // Only the beats between the tempo-map-correct read and the
+            // constant-tempo approximation disagree, so a regression that swaps
+            // the map-aware conversion for `currentBeat - compensation * tempo /
+            // 60` still passes every other assertion in this file and is caught
+            // only here.
+            vi.mocked(getAutomationValueAtBeat).mockImplementation((_laneId, beat) => (beat < 3.75 ? 0 : 1));
+
+            // Explicit 120 BPM anchor at beat 0, then 60 BPM from beat 4 (curve
+            // 'instant'): a non-empty tempo map governs its own start from its
+            // first change, ignoring `defaultTempo` entirely, so the 120 BPM
+            // region needs its own change rather than relying on the fallback.
+            // currentBeat 4.1 is 2s (beats 0-4 @ 120 BPM) + 0.1s (0.1 beat @ 60
+            // BPM) = 2.1s of playhead time. Minus the 0.25s compensation = 1.85s,
+            // which falls back inside the 120 BPM region (< 2s): 1.85 * 2 = 3.7
+            // beat — the correct, tempo-map-aware compensated read.
+            //
+            // The constant-tempo approximation instead divides the whole
+            // compensation window by the tempo governing the CURRENT beat (60
+            // BPM): 4.1 - 0.25 * 60 / 60 = 3.85 beat — past the 3.75 boundary,
+            // and wrongly read as the post-step value.
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-change-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-change-1', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+
+            schedulerSession.discontinuityEpoch = 300;
+            applyAutomation(0);
+            schedulerSession.discontinuityEpoch = 301;
+            applyAutomation(4.1);
+
+            // Binary-search floating point lands a hair off exact 3.7; the
+            // disagreement with the naive formula's 3.85 is what matters.
+            const readBeat = vi.mocked(getAutomationValueAtBeat).mock.calls.at(-1)?.[1];
+            expect(readBeat).toBeCloseTo(3.7, 9);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0);
+        });
+
+        it('gates a clip-owned device lane on the compensated beat, not the playhead beat, so it does not fire before the clip audio has reached the device', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+            (mutableTrackStore.value.tracks as Array<{ clips: unknown[] }>)[0]!.clips = [
+                { id: 'clip-1', startBeat: 4, endBeat: 8 },
+            ];
+            (mutableAutomationStore.value.lanes as Array<{ clipId?: string }>)[0]!.clipId = 'clip-1';
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+            schedulerSession.discontinuityEpoch = 400;
+            applyAutomation(0);
+
+            // Playhead beat 4.25 is inside the clip, but the compensated beat the
+            // device family actually reads (4.25 - 0.5 = 3.75) is not: the clip's
+            // own audio has not reached the device yet at this tick.
+            schedulerSession.discontinuityEpoch = 401;
+            applyAutomation(4.25);
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+            // The clip gate skipped this lane, but its compensated read beat
+            // must still land in deviceReadBeatByTrack (#4684) so modulation
+            // agrees this track wrote nothing this tick, rather than falling
+            // back to the raw playhead beat and reading a value applyAutomation
+            // itself never wrote.
+            expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(3.75);
+
+            // Playhead beat 4.75 -> compensated beat 4.25, now inside the clip.
+            schedulerSession.discontinuityEpoch = 402;
+            applyAutomation(4.75);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
+        });
+
+        it('records the compensated device-family read beat in deviceReadBeatByTrack, with no entry for a gain-only track', () => {
+            // #4684: this is the hand-off applyModulationToEngine reads so its
+            // own clip gate and curve read agree with this pass's clock.
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                        sends: [],
+                    },
+                    {
+                        id: 'track-2',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [],
+                        sends: [],
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        parameterId: 'builtin-eq:eq-low-gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                    {
+                        id: 'lane-gain-2',
+                        trackId: 'track-2',
+                        parameterId: 'gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+            // 4.25 beats @ 120 BPM = 2.125s, minus 0.25s compensation = 1.875s
+            // -> 3.75 beat (same conversion as the case above).
+            applyAutomation(4.25);
+
+            expect(deviceReadBeatByTrack.get('track-1')).toBeCloseTo(3.75);
+            expect(deviceReadBeatByTrack.has('track-2')).toBe(false);
+        });
+
+        it('drops a track from deviceReadBeatByTrack on the tick its device lane stops driving', () => {
+            // #4684: the map is cleared and rebuilt every tick (see
+            // deviceReadBeatByTrack.ts), so a track with no currently-driving
+            // device-family lane must not carry a stale entry from an earlier
+            // tick forward.
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                laneParameterId: 'builtin-eq:eq-low-gain',
+            });
+
+            applyAutomation(4.25);
+            expect(deviceReadBeatByTrack.has('track-1')).toBe(true);
+
+            // The track stops recording this lane: it stops driving before the
+            // read-beat record is reached this tick.
+            (mutableAutomationStore.value.lanes as Array<{ enabled?: boolean }>)[0]!.enabled = false;
+            applyAutomation(40);
+
+            expect(deviceReadBeatByTrack.has('track-1')).toBe(false);
         });
     });
 

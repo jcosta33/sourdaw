@@ -84,11 +84,23 @@ const SYNTH_FAMILY_IDS_UNDER_CENSUS = [
     'builtin-synth-brass',
 ] as const;
 
-const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [...EFFECT_IDS_UNDER_CENSUS, ...SYNTH_FAMILY_IDS_UNDER_CENSUS] as const;
+/**
+ * Standalone effect descriptor ids authored directly in their own descriptor
+ * file (`CrustDescriptor.ts`, `KneadDescriptor.ts`, `ProofDescriptor.ts`,
+ * `YeastDescriptor.ts`) rather than through the shared `declaredControl`
+ * fallback. Pinned rather than derived, matching `SYNTH_FAMILY_IDS_UNDER_CENSUS`.
+ */
+const STANDALONE_EFFECT_IDS_UNDER_CENSUS = ['crust', 'knead', 'proof', 'yeast'] as const;
+
+const AUTHORED_DESCRIPTOR_IDS_UNDER_CENSUS = [
+    ...EFFECT_IDS_UNDER_CENSUS,
+    ...SYNTH_FAMILY_IDS_UNDER_CENSUS,
+    ...STANDALONE_EFFECT_IDS_UNDER_CENSUS,
+] as const;
 
 /**
  * Every descriptor id in `BUILTIN_PLUGINS` whose parameter guidance has not
- * joined this census. This includes seven standalone effects as well as the
+ * joined this census. This includes three standalone effects as well as the
  * remaining instrument families; all still use shared fallback guidance.
  */
 const DESCRIPTOR_IDS_EXCLUDED = [
@@ -100,12 +112,8 @@ const DESCRIPTOR_IDS_EXCLUDED = [
     'faust-supersaw-unison',
     // Standalone effect descriptor files
     'bacteria',
-    'crust',
     'gluten',
     'grinder',
-    'knead',
-    'proof',
-    'yeast',
     // Standalone instrument descriptor files
     'builtin-crumbs',
     'fermenter',
@@ -215,6 +223,10 @@ const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
         'dutch-oven/high_cut',
         'The 12000 Hz default leaves the tail nearly unfiltered; deliberately darkening a bright tail needs the lower, more audible cut the window covers.',
     ],
+    [
+        'crust/release',
+        'The 0 ms default selects the program-dependent auto branch — apply_envelope forces auto whenever release is zero regardless of releaseAuto — so 50–400 ms describes the manual release window dialed in once a real value is set.',
+    ],
 ]);
 
 const EFFECT_DESCRIPTORS: readonly PluginDescriptor[] = [
@@ -227,7 +239,15 @@ const SYNTH_FAMILY_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGINS.fi
     (SYNTH_FAMILY_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
 );
 
-const AUTHORED_DESCRIPTORS: readonly PluginDescriptor[] = [...EFFECT_DESCRIPTORS, ...SYNTH_FAMILY_DESCRIPTORS];
+const STANDALONE_EFFECT_DESCRIPTORS: readonly PluginDescriptor[] = BUILTIN_PLUGINS.filter((descriptor) =>
+    (STANDALONE_EFFECT_IDS_UNDER_CENSUS as readonly string[]).includes(descriptor.id)
+);
+
+const AUTHORED_DESCRIPTORS: readonly PluginDescriptor[] = [
+    ...EFFECT_DESCRIPTORS,
+    ...SYNTH_FAMILY_DESCRIPTORS,
+    ...STANDALONE_EFFECT_DESCRIPTORS,
+];
 
 function requireGuidance(descriptor: PluginDescriptor): PluginDescriptorGuidance {
     if (!descriptor.guidance) {

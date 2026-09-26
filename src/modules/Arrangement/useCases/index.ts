@@ -41,6 +41,8 @@ export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
 export { setOfflineRenderDependencies } from './freezeBounce/offlineRenderDependencies';
 export { admitAgentRenderReceipt } from './freezeBounce/admitAgentRenderReceipt';
+export { resolveAgentMeasurementTargets } from './resolveAgentMeasurementTargets';
+export { renderAgentMeasurementTarget } from './renderAgentMeasurementTarget';
 export { setTrackInput } from './setTrackInput';
 export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';

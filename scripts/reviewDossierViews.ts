@@ -15,6 +15,15 @@ export function assessmentImpact(dossier: ReviewDossier): AssessmentImpact | und
     return dossier.assessmentImpact;
 }
 
+/**
+ * The acknowledgement recorded beside a `none` impact: why the delivered assessment had no effect,
+ * or undefined when the record carries none. It records an acknowledgement, never agreement, and
+ * confers no verdict, approval or merge authority.
+ */
+export function assessmentIgnoredReason(dossier: ReviewDossier): string | undefined {
+    return dossier.assessmentIgnoredReason;
+}
+
 export function completedStances(dossier: ReviewDossier): CompletedReviewStance[] {
     return dossier.events
         .filter((event) => event.kind === 'stance-completed')

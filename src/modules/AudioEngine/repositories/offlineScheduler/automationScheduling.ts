@@ -480,6 +480,13 @@ export function scheduleTrackAutomation({
                     value,
                 });
             if (binding.kind === 'segments') {
+                // `compensationDelaySec` shifts every emitted segment's frame
+                // exactly as `scheduleAutomationOnParam` shifts its AudioParam
+                // writes and `scheduleCurveWritePoints` shifts its frame writes
+                // above (M-038): clip audio is delayed by the track's latency
+                // compensation before it reaches the devices, so a device's
+                // segment-bound automation must land on that same delayed
+                // clock or the worklet steps it before the audio it shapes.
                 const segments = compileAutomationSegments(
                     points,
                     durationSeconds,
@@ -488,6 +495,7 @@ export function scheduleTrackAutomation({
                     sampleRate,
                     regionStartSeconds,
                     projectBeatToSeconds,
+                    compensationDelaySec,
                     {
                         // The lane's declared range runs before the device law,
                         // exactly where live runs it: `getAutomationValueAtBeat`

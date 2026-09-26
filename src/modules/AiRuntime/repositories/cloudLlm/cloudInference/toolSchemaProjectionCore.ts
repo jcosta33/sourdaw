@@ -38,6 +38,21 @@ const STRIPPED_BOUND_KEYWORDS = [
 
 const STRIPPED_BOUND_KEYWORD_SET = new Set<string>(STRIPPED_BOUND_KEYWORDS);
 
+/**
+ * The only keywords `walkSchemaNode` forwards to a strict wire schema unchanged,
+ * beside the keys it already rewrites or strips (bounds above, `properties`,
+ * `required`, `additionalProperties`, `minItems`, `items`, `oneOf`, `anyOf`,
+ * `allOf`, `$ref`). Both hosted dialects' live docs list `type`, `description`,
+ * `enum`, and `const` as supported, and the production tool catalog carries no
+ * other schema-node keyword (keyword inventory read against every registered tool
+ * schema, 2026-09-26). Anything else — `not`, `dependentRequired`,
+ * `dependentSchemas`, `if`/`then`/`else`, and any keyword neither dialect documents
+ * as supported — must not reach the wire silently: `projectOpenAiStrictToolSchema`'s
+ * own doc comment already names that same unsupported set. Add a keyword here only
+ * once both providers' live docs list it as supported, with a citation.
+ */
+const FORWARDED_KEYWORDS = new Set(['type', 'description', 'enum', 'const']);
+
 export type ToolSchemaProjectionMode = {
     /** OpenAI strict mode requires every property in `required`; Anthropic leaves optional properties optional. */
     forceAllRequired: boolean;
@@ -235,7 +250,14 @@ export function walkSchemaNode(
             projected[key] = walkComposedBranch(key, node, path, mode);
             continue;
         }
-        projected[key] = value;
+        if (FORWARDED_KEYWORDS.has(key)) {
+            projected[key] = value;
+            continue;
+        }
+        throw new ToolSchemaProjectionError(
+            pathString(path),
+            `keyword "${key}" is not supported by either hosted strict-schema dialect and cannot be forwarded`
+        );
     }
 
     if (isObjectSchemaNode(node)) {

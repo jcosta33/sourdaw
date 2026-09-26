@@ -180,8 +180,21 @@ function slewEvents(
     { alpha, tickSeconds, clampStep, quantiseEmit }: SlewConfig,
     windowEndSeconds: number
 ): CompiledAutomationEvent[] {
+    const clamp = clampStep ?? ((value: number) => value);
+    const quantise = quantiseEmit ?? ((value: number) => value);
+    // Live plays every device write through clampDeviceParameterValue then the
+    // param's own quantisation regardless of whether there is anything to
+    // smooth. An early return below skips the IIR, never this pair — otherwise
+    // a one-point (or zero-width-window) lane above its declared range exports
+    // the raw value while live plays the clamped one.
+    const clampAndQuantiseAll = (source: CompiledAutomationEvent[]): CompiledAutomationEvent[] =>
+        source.map((event) => ({
+            type: event.type,
+            timeSeconds: event.timeSeconds,
+            value: quantise(clamp(event.value)),
+        }));
     if (events.length <= 1 || tickSeconds <= 0) {
-        return events;
+        return clampAndQuantiseAll(events);
     }
     const startTime = events[0]!.timeSeconds;
     const lastEventTime = events.at(-1)!.timeSeconds;
@@ -191,15 +204,13 @@ function slewEvents(
     // value is finalTarget, so x(t) is finalTarget in the tail.
     const endTime = Math.max(lastEventTime, windowEndSeconds);
     if (endTime <= startTime) {
-        return events;
+        return clampAndQuantiseAll(events);
     }
     // AU-2: replicate the live device-param slew offline. Resample x(t) on the
     // slew tick grid and run the identical one-pole IIR (slewStep). The compiled
     // events already carry the true curve at <= tick resolution, so x[n] equals
     // what the live path reads and y[n] matches it sample-for-sample. Emit the
     // slewed samples as linear ramps.
-    const clamp = clampStep ?? ((value: number) => value);
-    const quantise = quantiseEmit ?? ((value: number) => value);
     const finalTarget = events.at(-1)!.value;
     // The value the glide can actually settle on. Live never dispatches past the
     // declared bound either, so an out-of-range tail settles at the bound.

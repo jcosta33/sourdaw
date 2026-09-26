@@ -57,10 +57,10 @@ describe('quantizeMidiNotes', () => {
         expect(result[0]?.startBeat).toBe(0.3);
     });
 
-    it('applies swing to offbeat (odd swing-unit) notes but not on-beat notes', () => {
-        // gridSize 0.5, swing 1.0 (full). Swing unit is 0.5 beats.
-        // A note at beat 0.0 is on-beat (swing unit index 0, even → no swing).
-        // A note at beat 0.5 is offbeat (swing unit index 1, odd → swing offset).
+    it('applies swing to offbeat (odd grid-step) notes but not on-beat notes', () => {
+        // gridSize 0.5, swing 1.0 (full). Each grid step is 0.5 beats.
+        // A note at beat 0.0 is on-beat (grid step index 0, even → no swing).
+        // A note at beat 0.5 is offbeat (grid step index 1, odd → swing offset).
         const notes = [note(0.0), note(0.5)];
 
         const result = quantizeMidiNotes({ notes, gridSize: 0.5, swing: 1.0 });
@@ -90,6 +90,27 @@ describe('quantizeMidiNotes', () => {
         const result = quantizeMidiNotes({ notes, gridSize: 0.5, swing: 1.0, strength: 0.5 });
 
         expect(result[0]?.startBeat).toBeCloseTo(0.6, 5);
+    });
+
+    it('swings the second and fourth sixteenths on a 1/16 grid, leaving the sixteenths on eighth-note lines straight', () => {
+        // gridSize 0.25 (1/16 at 4/4), swing 1.0 (full). Step indices 0, 1, 2, 3.
+        // Odd steps (1, 3) — the sixteenths at 0.25 and 0.75 — are delayed by
+        // swing * gridSize / 2 = 0.125. Even steps (0, 2) stay put.
+        const notes = [note(0), note(0.25), note(0.5), note(0.75)];
+
+        const result = quantizeMidiNotes({ notes, gridSize: 0.25, swing: 1.0 });
+
+        expect(result.map((n) => n.startBeat)).toEqual([0, 0.375, 0.5, 0.875]);
+    });
+
+    it('swings every second beat on a 1/4 grid', () => {
+        // gridSize 1 (1/4 at 4/4), swing 1.0 (full). Step indices 0, 1, 2, 3.
+        // Odd steps (1, 3) are delayed by swing * gridSize / 2 = 0.5.
+        const notes = [note(0), note(1), note(2), note(3)];
+
+        const result = quantizeMidiNotes({ notes, gridSize: 1, swing: 1.0 });
+
+        expect(result.map((n) => n.startBeat)).toEqual([0, 1.5, 2, 3.5]);
     });
 
     it('returns a new array (does not mutate the input notes)', () => {

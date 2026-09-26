@@ -1,5 +1,5 @@
-import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
-import { redo, undo } from '#/modules/Command/useCases';
+import { copySelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction, redo, undo } from '#/modules/Command/useCases';
 
 import { deselectAllClips } from '../deselectAllClips';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -44,7 +44,10 @@ export const editCommands: CallableCommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘X',
         action: () => {
-            cutSelectedClip();
+            // Dispatch the app action so the cut inherits handleCutClip's capture
+            // and lands in undo history; calling cutSelectedClip() directly would
+            // retire a comped clip's takes with nothing to restore them from.
+            void executeUserAppAction({ type: 'cutClip' });
         },
     },
     {

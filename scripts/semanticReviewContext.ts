@@ -169,21 +169,49 @@ const SCOPE_REASON_CODES: ReadonlySet<string> = new Set([
     'unit-overhead-exceeds-request-budget',
 ]);
 
-/** Producer reason codes that carry a parenthesised qualifier, e.g. `region-exceeds-per-region-budget (after)`. */
+/**
+ * Producer reason codes that carry a parenthesised qualifier, e.g. `region-exceeds-per-region-budget (after)`.
+ * `contract-evidence-withheld` is retired as an emitted code but stays here so records persisted before
+ * the change keep reading.
+ */
 const PARAMETERIZED_REASON_PREFIXES: readonly string[] = [
     'hunk-beyond-file',
     'region-exceeds-per-region-budget',
     'total-evidence-budget-exhausted',
+    'contract-evidence-withheld',
 ];
 
-/** The closed qualifier labels the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
+/** The closed single qualifier terms the producer emits after a parameterised prefix: the evidence sides plus `contract`. */
 const PARAMETERIZED_REASON_QUALIFIERS: ReadonlySet<string> = new Set([...EVIDENCE_SIDES, 'contract']);
+
+/**
+ * Whether a parenthesised qualifier is a producer shape: a single side (or the context label
+ * `contract`), or a side optionally followed by `contract` — no duplicates, no unknown terms.
+ */
+function isParameterizedQualifierList(qualifier: string): boolean {
+    const terms = qualifier.split(',').map((term) => term.trim());
+    if (terms.length === 0 || terms.length > 2) {
+        return false;
+    }
+    if (terms.some((term) => term === '')) {
+        return false;
+    }
+    if (new Set(terms).size !== terms.length) {
+        return false;
+    }
+    if (terms.some((term) => !PARAMETERIZED_REASON_QUALIFIERS.has(term))) {
+        return false;
+    }
+    return terms.length === 1 || terms[1] === 'contract';
+}
 
 function isParameterizedReason(reason: string): boolean {
     for (const prefix of PARAMETERIZED_REASON_PREFIXES) {
         const start = `${prefix} (`;
         if (reason.startsWith(start) && reason.endsWith(')')) {
-            return PARAMETERIZED_REASON_QUALIFIERS.has(reason.slice(start.length, -1));
+            if (isParameterizedQualifierList(reason.slice(start.length, -1))) {
+                return true;
+            }
         }
     }
     return false;
@@ -259,37 +287,58 @@ function sameNameChecksNewestFirst(checkRuns: readonly SemanticCheckRun[]): read
         .sort((left, right) => right.id - left.id);
 }
 
-/** The pull-request and run identity the producer encodes in an artifact name: `semantic-review-<pr>-<runId>`. */
-type ArtifactIdentity = { readonly pr: number; readonly runId: number };
+/**
+ * The pull-request, run, and attempt identity the producer encodes in an artifact name:
+ * `semantic-review-<pr>-<runId>-<attempt>`. The attempt is a third, separately incremented segment
+ * (`.github/workflows/semantic-review.yml`'s `Upload the advisory report` step), because a re-run
+ * reuses the run id: a run-scoped name would collide with the previous attempt's still-immutable
+ * artifact, fail the upload, and leave the softened download reading the superseded report.
+ */
+type ArtifactIdentity = { readonly pr: number; readonly runId: number; readonly attempt: number };
 
 function artifactIdentity(name: string): ArtifactIdentity | undefined {
     if (!name.startsWith(SEMANTIC_REVIEW_ARTIFACT_PREFIX)) {
         return undefined;
     }
-    const match = /^(\d+)-(\d+)$/.exec(name.slice(SEMANTIC_REVIEW_ARTIFACT_PREFIX.length));
+    const match = /^(\d+)-(\d+)-(\d+)$/.exec(name.slice(SEMANTIC_REVIEW_ARTIFACT_PREFIX.length));
     if (match === null) {
         return undefined;
     }
     const pr = Number(match[1]);
     const runId = Number(match[2]);
-    if (!Number.isSafeInteger(pr) || !Number.isSafeInteger(runId)) {
+    const attempt = Number(match[3]);
+    if (!Number.isSafeInteger(pr) || !Number.isSafeInteger(runId) || !Number.isSafeInteger(attempt)) {
         return undefined;
     }
-    return { pr, runId };
+    if (pr <= 0 || runId <= 0 || attempt <= 0) {
+        return undefined;
+    }
+    return { pr, runId, attempt };
 }
 
+/**
+ * The matching artifact with the highest attempt. A re-run of only the failed jobs does not re-run
+ * the producer's assessment job, so more than one attempt can exist for the same run only when the
+ * assessment itself was re-run — and the newest attempt is the one the check's conclusion describes.
+ * Scanning every candidate rather than returning the first match keeps the choice independent of
+ * listing order.
+ */
 function selectAssessmentArtifact(
     artifacts: readonly SemanticArtifact[],
     pr: number,
     runId: number
 ): { readonly artifact: SemanticArtifact; readonly identity: ArtifactIdentity } | undefined {
+    let best: { readonly artifact: SemanticArtifact; readonly identity: ArtifactIdentity } | undefined;
     for (const candidate of artifacts) {
         const identity = artifactIdentity(candidate.name);
-        if (identity !== undefined && identity.pr === pr && identity.runId === runId) {
-            return { artifact: candidate, identity };
+        if (identity === undefined || identity.pr !== pr || identity.runId !== runId) {
+            continue;
+        }
+        if (best === undefined || identity.attempt > best.identity.attempt) {
+            best = { artifact: candidate, identity };
         }
     }
-    return undefined;
+    return best;
 }
 
 function hasAssessmentArtifact(artifacts: readonly SemanticArtifact[]): boolean {

@@ -305,6 +305,26 @@ const INPUT_REFUSALS: readonly InputRefusalCase[] = [
         value: { ...INPUT, assessmentImpact: 7 },
         message: /input assessmentImpact must be none, limitation-only, stance-changed or finding-led, found 7/,
     },
+    {
+        label: 'a blank assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: '   ' },
+        message: /input assessmentIgnoredReason must be a non-blank string/,
+    },
+    {
+        label: 'an edge-untrimmed assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: ' padded reason ' },
+        message: /input assessmentIgnoredReason value at index 0 is not edge-trimmed/,
+    },
+    {
+        label: 'a multiline assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: 'first line\nsecond line' },
+        message: /input assessmentIgnoredReason value at index 0 contains a line separator/,
+    },
+    {
+        label: 'a credential-shaped assessment ignored reason',
+        value: { ...INPUT, assessmentIgnoredReason: `ghp_${'A'.repeat(24)}` },
+        message: /input assessmentIgnoredReason value at index 0 contains a GitHub token/,
+    },
 ];
 
 type BuildRefusalCase = { label: string; run: () => unknown; message: RegExp };
@@ -691,6 +711,22 @@ const BUILD_REFUSALS: readonly BuildRefusalCase[] = [
             }),
         message: /assessmentImpact finding-led contradicts accepted findings: the round carries none/,
     },
+    {
+        label: 'a reason beside a non-none impact',
+        run: () =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: {
+                    ...INPUT,
+                    assessmentImpact: 'stance-changed',
+                    assessmentIgnoredReason: 'the assessment surfaced nothing actionable',
+                },
+                discarded: [],
+                comments: [],
+                recommendation: 'approve',
+            }),
+        message: /assessmentIgnoredReason requires assessmentImpact none, found stance-changed/,
+    },
 ];
 
 describe('parseReviewDossierInput', () => {
@@ -849,6 +885,27 @@ describe('buildReviewDossier', () => {
         });
         expect(replayed.fromPersisted).toBe(true);
         expect(replayed.canonical).toBe(findingLed.canonical);
+    });
+
+    it('carries the assessmentIgnoredReason beside a none impact and covers it in the digest', () => {
+        const REASON = 'the withheld audio module is outside this change’s blast radius';
+        const build = (reason?: string) =>
+            buildReviewDossier({
+                plan: PLAN,
+                raw: { ...INPUT, assessmentIgnoredReason: reason },
+                discarded: [],
+                comments: [COMMENT],
+                recommendation: 'request-changes',
+            });
+
+        const without = build();
+        const withReason = build(REASON);
+
+        expect(without.dossier.assessmentIgnoredReason).toBeUndefined();
+        expect(withReason.dossier.assessmentIgnoredReason).toBe(REASON);
+        expect(without.dossier.dossierDigest).not.toBe(withReason.dossier.dossierDigest);
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(withReason.canonical)))).toBe(withReason.canonical);
+        expect(parseReviewDossier(JSON.parse(withReason.canonical)).assessmentIgnoredReason).toBe(REASON);
     });
 
     it('keeps the accepted-finding ids positional, matching the comments array', () => {

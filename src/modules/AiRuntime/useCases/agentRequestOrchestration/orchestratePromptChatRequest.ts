@@ -338,6 +338,7 @@ async function dispatchPromptPlan(input: {
                 agentApproval: compiledActionExecution.agentApproval,
                 affectedIds: confirmationDescription.affectedIds,
                 protectedUnchanged: confirmationDescription.protectedUnchanged,
+                matchSelectorPredicates: result.matchSelectorPredicates,
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,

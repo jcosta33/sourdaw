@@ -264,6 +264,66 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
         const events = compileAutomationEvents([point(0, 0.5)], 1, DEFAULT_TEMPO, [], 0, undefined, SLEW);
         expect(events).toEqual([{ type: 'set', timeSeconds: 0, value: 0.5 }]);
     });
+
+    // #4598: a one-point device lane above its declared range must still export
+    // the clamped value — live plays every write through
+    // clampDeviceParameterValue regardless of whether there is anything to
+    // smooth, and the `events.length <= 1` early return skipped that clamp.
+    it('clamps a single-point lane above its declared range (#4598)', () => {
+        const clampStep = (value: number): number => Math.min(12, Math.max(0, value));
+        const events = compileAutomationEvents([point(0, 20)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+            slew: { alpha: 0.4, tickSeconds: 0.01, clampStep },
+        });
+        expect(events.length).toBeGreaterThan(0);
+        for (const event of events) {
+            expect(event.value).toBe(12);
+        }
+    });
+
+    // Clamp then quantise — the same order the slewed path emits
+    // (`quantise(clamp(value))`). Swapping the order would quantise 20 to 20
+    // first and only then clamp it to 12.4, missing the round-to-12 this case
+    // pins.
+    it('clamps a single-point lane before quantising it (#4598)', () => {
+        const clampStep = (value: number): number => Math.min(12.4, Math.max(0, value));
+        const events = compileAutomationEvents([point(0, 20)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+            slew: { alpha: 0.4, tickSeconds: 0.01, clampStep, quantiseEmit: Math.round },
+        });
+        expect(events.length).toBeGreaterThan(0);
+        for (const event of events) {
+            expect(event.value).toBe(12);
+        }
+    });
+
+    // #4598: a multi-point device lane whose active window closes at or before
+    // the first event (the `endTime <= startTime` path — built the way the
+    // #4684 zero-width-window cases are, in compileAutomationSegments.spec.ts
+    // and automationScheduling.spec.ts) must still clamp what it does emit.
+    it('clamps a lane whose active window closes at the first event (#4598)', () => {
+        const clampStep = (value: number): number => Math.min(12, Math.max(0, value));
+        const events = compileAutomationEvents([point(0, 20), point(2, 25)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+            slew: { alpha: 0.4, tickSeconds: 0.01, clampStep },
+            activeWindowSeconds: { startSeconds: 0, endSeconds: 0 },
+        });
+        expect(events.length).toBeGreaterThan(1);
+        for (const event of events) {
+            expect(event.value).toBe(12);
+        }
+    });
+
+    // #4598: `tickSeconds: 0` disables the IIR grid entirely (the third early
+    // return) but the compiled curve still carries values above the declared
+    // range that must be clamped on the way out.
+    it('clamps every event when the slew tick is zero (#4598)', () => {
+        const clampStep = (value: number): number => Math.min(12, Math.max(0, value));
+        const events = compileAutomationEvents([point(0, 20), point(2, 25)], 1, DEFAULT_TEMPO, [], 0, undefined, {
+            slew: { alpha: 0.4, tickSeconds: 0, clampStep },
+        });
+        expect(events.length).toBeGreaterThan(1);
+        for (const event of events) {
+            expect(event.value).toBe(12);
+        }
+    });
 });
 
 describe('compileAutomationEvents — clip active window (AU-12)', () => {

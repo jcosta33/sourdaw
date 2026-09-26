@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockUndo, mockRedo, mockCopy, mockCut, mockPaste, mockSelectAll, mockDeselectAll } = vi.hoisted(() => ({
-    mockUndo: vi.fn().mockResolvedValue(undefined),
-    mockRedo: vi.fn().mockResolvedValue(undefined),
-    mockCopy: vi.fn(),
-    mockCut: vi.fn(),
-    mockPaste: vi.fn(),
-    mockSelectAll: vi.fn(),
-    mockDeselectAll: vi.fn(),
-}));
+const { mockExecuteUserAppAction, mockUndo, mockRedo, mockCopy, mockCut, mockPaste, mockSelectAll, mockDeselectAll } =
+    vi.hoisted(() => ({
+        mockExecuteUserAppAction: vi.fn().mockResolvedValue(undefined),
+        mockUndo: vi.fn().mockResolvedValue(undefined),
+        mockRedo: vi.fn().mockResolvedValue(undefined),
+        mockCopy: vi.fn(),
+        mockCut: vi.fn(),
+        mockPaste: vi.fn(),
+        mockSelectAll: vi.fn(),
+        mockDeselectAll: vi.fn(),
+    }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mockExecuteUserAppAction,
     undo: mockUndo,
     redo: mockRedo,
 }));
@@ -56,9 +58,14 @@ describe('editCommands', () => {
         expect(mockCopy).toHaveBeenCalledTimes(1);
     });
 
-    it('cut-clip calls cutSelectedClip', () => {
+    it('cut-clip dispatches the cutClip app action instead of calling cutSelectedClip directly', () => {
+        // The palette entry must route through executeUserAppAction so the cut is
+        // captured and undoable (issue #4554); a direct cutSelectedClip() call
+        // retires a comped clip's takes with no history entry.
         runAction('cut-clip');
-        expect(mockCut).toHaveBeenCalledTimes(1);
+        expect(mockExecuteUserAppAction).toHaveBeenCalledTimes(1);
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({ type: 'cutClip' });
+        expect(mockCut).not.toHaveBeenCalled();
     });
 
     it('paste-clip calls pasteClip', () => {

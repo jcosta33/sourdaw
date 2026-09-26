@@ -5,13 +5,15 @@
  * ceiling, and serialization. `reviewDossier.ts` owns the record's types, readers and validation;
  * this module owns turning a validated payload into canonical bytes and back-stop digests. It also
  * owns the `assessmentImpact` field's four-token vocabulary and reader, the one definition the
- * record reader and the caller-input parser share. Every import from the record module is type-only,
+ * record reader and the caller-input parser share, and the `assessmentIgnoredReason` acknowledgement's
+ * reader and `none`-only consistency rule. Every import from the record module is type-only,
  * so the dependency runs one way.
  */
 
 import { createHash } from 'node:crypto';
 
 import { canonicalJson, type JsonValue } from './canonicalRecord.ts';
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
 
 import type { DossierPayload, ReviewDossier, ReviewDossierEvent, ReviewDossierEventRecord } from './reviewDossier.ts';
@@ -79,6 +81,38 @@ export function assertAssessmentImpactConsistent(payload: DossierPayload): void 
     }
     if (impact === 'finding-led' && !payload.events.some((event) => event.kind === 'finding-accepted')) {
         fail('review dossier assessmentImpact finding-led contradicts accepted findings: the round carries none');
+    }
+}
+
+/**
+ * Reads the acknowledgement string a dossier or caller input carries, refusing any other shape. The
+ * value is a single trimmed, bounded, evidence-safe line: it is persisted into the record, so it
+ * carries the same publication-safety rules as every other recorded literal. The label defaults to
+ * the record's own field name; the caller-input parser passes its qualified label.
+ */
+export function readAssessmentIgnoredReason(value: unknown, label = 'assessmentIgnoredReason'): string {
+    if (typeof value !== 'string' || value.trim() === '') {
+        fail(`${label} must be a non-blank string, found ${JSON.stringify(value) ?? typeof value}`);
+    }
+    assertPublicationSafeEvidence(label, [value]);
+    return value;
+}
+
+/**
+ * What the record's own fields say about an acknowledgement it claims: a reason declares the
+ * assessment ignored, which only `none` can stand beside. A non-`none` impact already names the
+ * assessment's influence on the round, so a reason beside it contradicts the record; an absent
+ * impact is the historical shape, and a reason beside it is refused the same way. Runs on the read
+ * path too, so a persisted record cannot carry the contradiction; historical records predate the
+ * field and are untouched.
+ */
+export function assertAssessmentIgnoredReasonConsistent(payload: DossierPayload): void {
+    if (payload.assessmentIgnoredReason !== undefined && payload.assessmentImpact !== 'none') {
+        fail(
+            `review dossier assessmentIgnoredReason requires assessmentImpact none, found ${
+                payload.assessmentImpact ?? 'absent'
+            }`
+        );
     }
 }
 
@@ -198,6 +232,11 @@ export function computeDossierDigest(payload: DossierPayload, headDigest: string
     if (payload.assessmentImpact !== undefined) {
         record.assessmentImpact = payload.assessmentImpact;
     }
+    // Same historical tolerance as `assessmentImpact`: the acknowledgement rides the digest only
+    // when present, so records persisted before it existed keep their exact bytes.
+    if (payload.assessmentIgnoredReason !== undefined) {
+        record.assessmentIgnoredReason = payload.assessmentIgnoredReason;
+    }
     record.headDigest = headDigest;
     return sha256Hex(canonicalJson(record));
 }
@@ -221,6 +260,9 @@ export function buildDossier(payload: DossierPayload): ReviewDossier {
     };
     if (payload.assessmentImpact !== undefined) {
         dossier.assessmentImpact = payload.assessmentImpact;
+    }
+    if (payload.assessmentIgnoredReason !== undefined) {
+        dossier.assessmentIgnoredReason = payload.assessmentIgnoredReason;
     }
     return dossier;
 }
@@ -258,6 +300,9 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
     if (dossier.assessmentImpact !== undefined) {
         record.assessmentImpact = dossier.assessmentImpact;
     }
+    if (dossier.assessmentIgnoredReason !== undefined) {
+        record.assessmentIgnoredReason = dossier.assessmentIgnoredReason;
+    }
     record.headDigest = dossier.headDigest;
     record.dossierDigest = dossier.dossierDigest;
     return `${JSON.stringify(record, null, 4)}\n`;
@@ -266,7 +311,8 @@ export function serializeReviewDossier(dossier: ReviewDossier): string {
 /**
  * The payload a persisted dossier's own fields rebuild against a given event list. Both the append
  * path (in the record module) and the authorization digest below project a dossier this way, so the
- * projection lives in one place; `assessmentImpact` rides along so a rebuilt digest still covers it.
+ * projection lives in one place; `assessmentImpact` and `assessmentIgnoredReason` ride along so a
+ * rebuilt digest still covers them.
  */
 export function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEvent[]): DossierPayload {
     return {
@@ -280,6 +326,7 @@ export function dossierPayload(dossier: ReviewDossier, events: ReviewDossierEven
         limitations: dossier.limitations,
         recommendation: dossier.recommendation,
         assessmentImpact: dossier.assessmentImpact,
+        assessmentIgnoredReason: dossier.assessmentIgnoredReason,
     };
 }
 

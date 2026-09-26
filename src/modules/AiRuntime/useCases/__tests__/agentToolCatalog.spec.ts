@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
 
+import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../../models/DeviceManifestPageLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    AGENT_DEVICE_MANIFEST_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     getAgentToolCatalogSchemas,
     RECIPE_DISCOVERY_TOOL_NAME,
@@ -193,6 +195,34 @@ describe('agent tool catalog', () => {
         });
     });
 
+    it('publishes the device-manifest read contract with the shared parameter page limit and cursor grammar', () => {
+        const manifestSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === AGENT_DEVICE_MANIFEST_TOOL_NAME
+        );
+
+        expect(manifestSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                types: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 8,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+                page: {
+                    type: 'object',
+                    properties: {
+                        limit: { type: 'integer', minimum: 1, maximum: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT },
+                        cursor: { type: 'string', minLength: 1, maxLength: 2048, pattern: '^[A-Za-z0-9_-]+$' },
+                    },
+                    additionalProperties: false,
+                },
+            },
+            required: ['types'],
+            additionalProperties: false,
+        });
+    });
+
     it('publishes the complete semantic-list grammar from the public versioned contract', () => {
         const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
             (schema: ToolSchema) => schema.function.name === 'command.batch.propose'
@@ -242,6 +272,7 @@ describe('agent tool catalog', () => {
             'command.history',
             'render.request',
             'analysis.request',
+            'analysis.measure',
             'recipe.discover',
         ]);
 

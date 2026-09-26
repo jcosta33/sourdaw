@@ -657,6 +657,64 @@ describe('scheduleTrackAutomation', () => {
         );
     });
 
+    // #4684: a segments-bound device lane must land on the same PDC-delayed
+    // clock as the clips it shapes. `slewTickSeconds: 0` disables the offline
+    // device-param glide so the compiled segments show the raw, unslewed step.
+    it('shifts a segments-bound device lane later by the track compensation delay', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'fermenter-1:filterCutoff',
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0, curve: 'step', tension: 0 },
+                        { beat: 4, value: 1, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
+                {
+                    deviceId: 'fermenter-1',
+                    deviceType: 'fermenter',
+                    strategy: {
+                        resolveOfflineAutomation: (name: string) => {
+                            if (name !== 'filterCutoff') {
+                                return null;
+                            }
+                            return {
+                                kind: 'segments',
+                                apply: (segments) => {
+                                    scheduleParam('filterCutoff', segments);
+                                },
+                            };
+                        },
+                    },
+                },
+            ],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            sampleRate: 48_000,
+            compensationDelaySec: 0.01,
+            slewTickSeconds: 0,
+        });
+
+        type Segment = { startFrame: number; endFrame: number; startValue: number; endValue: number };
+        const segments = scheduleParam.mock.calls[0]![1] as Segment[];
+        // Opening segment holds the render-start value (0) across the 0.01s shift window.
+        expect(segments[0]).toEqual({ startFrame: 0, endFrame: 480, startValue: 0, endValue: 0 });
+        // The step to 1 lands at 2.01s = 96480 frames, not 96000.
+        const stepped = segments.find((segment) => segment.endValue === 1);
+        expect(stepped?.startFrame).toBe(96_480);
+        expect(stepped?.endFrame).toBe(96_480);
+    });
+
     it('does not let a native strategy steal a legacy bare Web Audio lane', () => {
         const delayMix = makeParam();
         const delayNode = {
@@ -843,6 +901,49 @@ describe('scheduleTrackAutomation', () => {
         expect(postStep).toHaveLength(2);
         expect(postStep[0]).toBeCloseTo(0.8, 10);
         expect(postStep[1]).toBeCloseTo(1, 10);
+    });
+
+    // #4598: a one-point device lane above the declared range compiled to
+    // `slewEvents`' `events.length <= 1` early return, which skipped the
+    // clamp/quantise pair every other early return already carried — so a
+    // one-point lane exported the raw value while live played the clamped one.
+    it('clamps a single-point device lane to the declared max (#4598)', () => {
+        const deviceParam = makeParam();
+        const deviceNode = {
+            inputNode: {} as AudioNode,
+            outputNode: {} as AudioNode,
+            namedNodes: { lfoDepth: { gain: deviceParam } as unknown as AudioNode },
+            nodes: [],
+        };
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:trem-depth',
+                    minValue: 0,
+                    maxValue: 2,
+                    points: [{ beat: 128, value: 2, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-tremolo', deviceNode)],
+            deviceParameterLaw: {
+                acceptsAutomation: () => true,
+                // The lane's own declared max (2) sits above the device's real
+                // ceiling (1) — only the device law can pull it down.
+                clampValue: ({ value }) => Math.min(1, Math.max(0, value)),
+                quantiseValue: ({ value }) => value,
+            },
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
+
+        expect(deviceParam.setValueAtTime).toHaveBeenCalledWith(1, 0);
+        expect(deviceParam.linearRampToValueAtTime).not.toHaveBeenCalled();
     });
 
     // These link tests carry the lane on `pan`, not `gain`. What they assert is
@@ -1217,6 +1318,292 @@ describe('scheduleTrackAutomation — multiple lanes on one device parameter', (
             parameterId: 'param',
             laneIds: ['lane-track'],
         });
+    });
+
+    it('keeps a clip lane whose window closes exactly at the region start from colliding with the lane opening there under compensation (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const regionStartClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 4 }],
+            ['clip-b', { startBeat: 4, endBeat: 8 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // clip-a's window closes exactly at the region start (beat 4):
+                // its compiled stream is the lone zero-length terminator
+                // `compileAutomationSegments`/`mergeAutomationSegmentStreams`
+                // document — before the fix, `compensationDelaySec > 0` turned
+                // it into a `[0, D]` hold that collides with clip-b opening at
+                // the same frame, and the merge withheld one of the two lanes.
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 4, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            regionStartSeconds: 4,
+            compensationDelaySec: 0.01,
+            clipBoundsById: regionStartClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        // Both lanes compile to a lone zero-length terminator at frame 0;
+        // clip-b's (later in lane-array order) is what the merge keeps —
+        // pinning the content, not just the call count, is what actually
+        // catches an opening hold re-introduced on the seed: that hold
+        // survives the clustering check (its own malformed terminator still
+        // sorts the stream as non-clashing) but corrupts this merged output.
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([{ startFrame: 0, endFrame: 0, startValue: 9, endValue: 9 }]);
+    });
+
+    // #4684: a multi-point clip lane whose visible window is zero-width at
+    // the region start compiles to SEVERAL events all sitting at time zero
+    // (the seed plus one or more events from the zero-width visible span in
+    // compileAutomationEvents) — the `events.length > 1` gate could not tell
+    // that apart from a real multi-event stream and opened a spurious
+    // `[0, D]` hold, inflating this stream's terminator frame past the
+    // neighboring clip's own opening frame. The merge then read that as a
+    // genuine overlap and withheld this lane entirely, losing its value.
+    it('keeps both lanes when a multi-point clip lane compiles to several zero-time events at the region start (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const regionStartClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 4 }],
+            ['clip-b', { startBeat: 4, endBeat: 8 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // clip-a's window closes exactly at the region start (beat 4),
+                // but unlike the lone-terminator case above it carries TWO
+                // points spanning past the clip end — its compiled stream is
+                // a seed `set@0` plus a `linear@0` from the zero-width
+                // visible span, not a single lone event.
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                        { beat: 8, value: 1, curve: 'linear', tension: 0 },
+                    ],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 4, value: 0.9, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            regionStartSeconds: 4,
+            compensationDelaySec: 0.5,
+            clipBoundsById: regionStartClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        const segments = scheduleParam.mock.calls[0]![0] as Array<{ endValue: number }>;
+        expect(segments.at(-1)?.endValue).toBeCloseTo(0.9);
+    });
+
+    it('keeps both lanes when the neighboring clip lane is itself a multi-point step stream (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const regionStartClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 4 }],
+            ['clip-b', { startBeat: 4, endBeat: 8 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                        { beat: 8, value: 1, curve: 'linear', tension: 0 },
+                    ],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [
+                        { beat: 4, value: 9, curve: 'step', tension: 0 },
+                        { beat: 6, value: 5, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            regionStartSeconds: 4,
+            compensationDelaySec: 0.5,
+            clipBoundsById: regionStartClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+    });
+
+    it('shifts a lone clip lane mid-render by the compensation, landing its handover on the same frame as a neighboring clip would (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const midRenderClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 2 }],
+            ['clip-b', { startBeat: 2, endBeat: 4 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                // clip-a's single point holds its value across the gap to
+                // clip-b's own opening frame — the same "terminator becomes a
+                // hold" merge Fixture D exercises above.
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                // clip-b's single point sits at beat 2 — mid-render, not the
+                // render's own region start — so before the fix its lone
+                // compiled event was never shifted by the compensation at
+                // all, landing its handover one frame early (200, not 201).
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 2, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            compensationDelaySec: 0.01,
+            clipBoundsById: midRenderClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls).toHaveLength(1);
+        // 2s + 0.01s compensation = 2.01s * 100 sampleRate = frame 201, not the
+        // unshifted 200 — the device write now lands on the same delayed
+        // clock as clip-b's own compensated audio.
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([
+            { startFrame: 0, endFrame: 201, startValue: 3, endValue: 3 },
+            { startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 },
+        ]);
+    });
+
+    it('control: without a compensation delay, the same lanes hand over at the unshifted frame (#4684)', () => {
+        const scheduleParam = vi.fn();
+        const onWithheldDeviceLanes = vi.fn();
+        const midRenderClipBounds = new Map([
+            ['clip-a', { startBeat: 0, endBeat: 2 }],
+            ['clip-b', { startBeat: 2, endBeat: 4 }],
+        ]);
+
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    id: 'lane-clip-a',
+                    clipId: 'clip-a',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 0, value: 3, curve: 'step', tension: 0 }],
+                }),
+                makeLane({
+                    id: 'lane-clip-b',
+                    clipId: 'clip-b',
+                    parameterId: 'device-1:param',
+                    minValue: 0,
+                    maxValue: 10,
+                    points: [{ beat: 2, value: 9, curve: 'step', tension: 0 }],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [deviceEntryRecording(scheduleParam)],
+            durationSeconds: 4,
+            defaultTempo: 120,
+            changes: [],
+            projectBeatToSeconds: identityBeat,
+            sampleRate: 100,
+            slewTickSeconds: 0.1,
+            clipBoundsById: midRenderClipBounds,
+            onWithheldDeviceLanes,
+        });
+
+        expect(onWithheldDeviceLanes).not.toHaveBeenCalled();
+        expect(scheduleParam.mock.calls[0]![0]).toEqual([
+            { startFrame: 0, endFrame: 200, startValue: 3, endValue: 3 },
+            { startFrame: 200, endFrame: 200, startValue: 9, endValue: 9 },
+        ]);
     });
 });
 

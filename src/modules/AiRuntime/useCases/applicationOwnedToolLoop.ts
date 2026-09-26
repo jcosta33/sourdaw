@@ -16,6 +16,7 @@ import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabili
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
+import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
     type HostedProviderTurn,
     type HostedTurnCall,
@@ -164,7 +165,18 @@ type RunApplicationOwnedToolLoopInput = {
         toolName: string;
         admit: (call: ToolCallResult) => ApplicationOwnedToolLoopInterpretationAdmission;
     };
+    /**
+     * The measurement read. It renders the project offline, so the caller binds it to the run's
+     * revision and the loop executes at most one call to it per turn. Without it the tool stays
+     * unavailable to this run.
+     */
+    measurement?: {
+        toolName: string;
+        execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<ApplicationToolReceipt>;
+    };
 };
+
+type MeasurementCallContext = { callId: string; turn: number; loopId: string; signal?: AbortSignal };
 
 type ParsedQuery = { status: 'valid'; input: QueryInput } | { status: 'invalid'; reason: string };
 
@@ -438,39 +450,15 @@ function executeCapabilities(call: ToolCallResult, callId: string, turn: number)
     };
 }
 
-function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
-    const typeValues = call.arguments.types;
-    if (
-        Object.keys(call.arguments).length !== 1 ||
-        !Array.isArray(typeValues) ||
-        typeValues.length === 0 ||
-        typeValues.length > 8
-    ) {
-        return failureReceipt({
-            callId,
-            toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
-            turn,
-            code: 'invalid-tool-arguments',
-            safeMessage: 'device.factory-manifest.read requires one bounded type set',
-            retryable: true,
-        });
-    }
-    const types: string[] = [];
-    for (const type of typeValues) {
-        if (typeof type !== 'string' || type.length === 0 || type.length > 256) {
-            return failureReceipt({
-                callId,
-                toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
-                turn,
-                code: 'invalid-tool-arguments',
-                safeMessage: 'device.factory-manifest.read requires one bounded type set',
-                retryable: true,
-            });
-        }
-        types.push(type);
-    }
+const DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING =
+    'External plugin metadata can be inferred; opaque plugin state is not exposed or patched.';
+const DEVICE_MANIFEST_PAGE_TRUNCATED_WARNING =
+    'Manifest page is truncated; continue with the same type, version and cursor.';
+
+/** One built-in or scanned-external factory entry, merged the same way for a full or a paged read. */
+function buildDeviceManifestEntries(types: readonly string[]) {
     const external = getAgentDeviceFactoryManifest(types);
-    const descriptors = getAgentBuiltinDeviceFactoryManifest().filter((device) => types.includes(device.type));
+    const descriptors = getAgentBuiltinDeviceFactoryManifest(types);
     const runtimeByType = new Map(
         getAgentBuiltinDeviceRuntimeManifest(descriptors.map((descriptor) => descriptor.type)).map((runtime) => [
             runtime.type,
@@ -506,20 +494,253 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
                   },
         };
     });
-    const manifest = { ...external, devices: [...builtins, ...external.devices] };
+    return [...builtins, ...external.devices];
+}
+
+type DeviceManifestPageArguments = { cursor?: string; limit?: number };
+
+/** The strict `page` argument contract for one `device.factory-manifest.read` call. */
+function parseDeviceManifestPageArgument(
+    pageValue: unknown
+): { status: 'absent' } | { status: 'valid'; page: DeviceManifestPageArguments } | { status: 'invalid' } {
+    if (pageValue === undefined) {
+        return { status: 'absent' };
+    }
+    if (
+        !isRecord(pageValue) ||
+        Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
+        (pageValue.cursor !== undefined &&
+            (typeof pageValue.cursor !== 'string' ||
+                pageValue.cursor.length === 0 ||
+                pageValue.cursor.length > AGENT_CATALOG_CURSOR_MAX_LENGTH ||
+                !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
+        (pageValue.limit !== undefined &&
+            (typeof pageValue.limit !== 'number' ||
+                !Number.isInteger(pageValue.limit) ||
+                pageValue.limit < 1 ||
+                pageValue.limit > DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT))
+    ) {
+        return { status: 'invalid' };
+    }
+    return {
+        status: 'valid',
+        page: {
+            ...(typeof pageValue.cursor === 'string' ? { cursor: pageValue.cursor } : {}),
+            ...(typeof pageValue.limit === 'number' ? { limit: pageValue.limit } : {}),
+        },
+    };
+}
+
+/** Binds a `parameters` page to the exact device type and version it was cut from. */
+type DeviceManifestParameterCursor = { schemaVersion: 1; type: string; version: string; offset: number };
+
+function encodeDeviceManifestParameterCursor(cursor: DeviceManifestParameterCursor): string {
+    const bytes = new TextEncoder().encode(JSON.stringify(cursor));
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+
+function decodeDeviceManifestParameterCursor(cursor: string): DeviceManifestParameterCursor | null {
+    try {
+        const base64 = cursor.replaceAll('-', '+').replaceAll('_', '/');
+        const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+        const binary = atob(padded);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+        if (
+            typeof value !== 'object' ||
+            value === null ||
+            Array.isArray(value) ||
+            Object.keys(value).length !== 4 ||
+            !('schemaVersion' in value) ||
+            !('type' in value) ||
+            !('version' in value) ||
+            !('offset' in value) ||
+            value.schemaVersion !== 1 ||
+            typeof value.type !== 'string' ||
+            typeof value.version !== 'string' ||
+            typeof value.offset !== 'number' ||
+            !Number.isSafeInteger(value.offset) ||
+            value.offset < 0
+        ) {
+            return null;
+        }
+        return { schemaVersion: 1, type: value.type, version: value.version, offset: value.offset };
+    } catch {
+        return null;
+    }
+}
+
+function deviceManifestFailure(input: { callId: string; turn: number; safeMessage: string }): ApplicationToolReceipt {
+    return failureReceipt({
+        callId: input.callId,
+        toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+        turn: input.turn,
+        code: 'invalid-tool-arguments',
+        safeMessage: input.safeMessage,
+        retryable: true,
+    });
+}
+
+function deviceManifestSuccess(input: {
+    callId: string;
+    turn: number;
+    data: unknown;
+    summary: string;
+    warnings: string[];
+}): ApplicationToolReceipt {
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
-        callId,
+        callId: input.callId,
         toolName: AGENT_DEVICE_MANIFEST_TOOL_NAME,
-        turn,
+        turn: input.turn,
         status: 'success',
         revision: null,
-        data: manifest,
-        summary: `${String(manifest.devices.length)} device factory manifest(s)`,
-        warnings: ['External plugin metadata can be inferred; opaque plugin state is not exposed or patched.'],
+        data: input.data,
+        summary: input.summary,
+        warnings: input.warnings,
         error: null,
     };
+}
+
+/**
+ * Reads one type's `parameters` window. Only reachable once the caller has already resolved a
+ * single requested type and a valid `page` argument, so the cursor's identity check has exactly
+ * one live entry to bind against.
+ */
+function executeDeviceManifestPage(input: {
+    type: string;
+    page: DeviceManifestPageArguments;
+    callId: string;
+    turn: number;
+}): ApplicationToolReceipt {
+    const { type, page, callId, turn } = input;
+    const entry = buildDeviceManifestEntries([type])[0];
+    const limit = page.limit ?? DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT;
+    if (entry === undefined) {
+        return deviceManifestSuccess({
+            callId,
+            turn,
+            data: {
+                schema: 'sourdaw.agent-device-factory-manifest',
+                schemaVersion: 1,
+                devices: [],
+                page: { limit, offset: 0, total: 0 },
+                nextCursor: null,
+                truncated: false,
+            },
+            summary: '0 device factory manifest(s)',
+            warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+        });
+    }
+    const totalParameters = entry.parameters.length;
+    let offset = 0;
+    if (page.cursor !== undefined) {
+        const decoded = decodeDeviceManifestParameterCursor(page.cursor);
+        if (decoded === null || decoded.type !== type || decoded.version !== entry.version) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read cursor does not match the requested type or version',
+            });
+        }
+        if (decoded.offset > totalParameters) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read cursor is outside the requested parameter page',
+            });
+        }
+        offset = decoded.offset;
+    }
+    const windowParameters = entry.parameters.slice(offset, offset + limit);
+    const nextOffset = offset + windowParameters.length;
+    const truncated = nextOffset < totalParameters;
+    return deviceManifestSuccess({
+        callId,
+        turn,
+        data: {
+            schema: 'sourdaw.agent-device-factory-manifest',
+            schemaVersion: 1,
+            devices: [{ ...entry, parameters: windowParameters }],
+            page: { limit, offset, total: totalParameters },
+            nextCursor: truncated
+                ? encodeDeviceManifestParameterCursor({
+                      schemaVersion: 1,
+                      type,
+                      version: entry.version,
+                      offset: nextOffset,
+                  })
+                : null,
+            truncated,
+        },
+        summary: `${String(windowParameters.length)} of ${String(totalParameters)} parameter(s) for ${type}`,
+        warnings: truncated
+            ? [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING, DEVICE_MANIFEST_PAGE_TRUNCATED_WARNING]
+            : [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+    });
+}
+
+function executeDeviceManifest(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+    const typeValues = call.arguments.types;
+    if (
+        Object.keys(call.arguments).some((key) => key !== 'types' && key !== 'page') ||
+        !Array.isArray(typeValues) ||
+        typeValues.length === 0 ||
+        typeValues.length > 8
+    ) {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read requires one bounded type set',
+        });
+    }
+    const types: string[] = [];
+    for (const type of typeValues) {
+        if (typeof type !== 'string' || type.length === 0 || type.length > 256) {
+            return deviceManifestFailure({
+                callId,
+                turn,
+                safeMessage: 'device.factory-manifest.read requires one bounded type set',
+            });
+        }
+        types.push(type);
+    }
+    const pageValue = call.arguments.page;
+    if (pageValue !== undefined && types.length !== 1) {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read page requires exactly one type',
+        });
+    }
+    const pageArgument = parseDeviceManifestPageArgument(pageValue);
+    if (pageArgument.status === 'invalid') {
+        return deviceManifestFailure({
+            callId,
+            turn,
+            safeMessage: 'device.factory-manifest.read page does not match the strict page contract',
+        });
+    }
+    if (pageArgument.status === 'valid') {
+        return executeDeviceManifestPage({ type: types[0]!, page: pageArgument.page, callId, turn });
+    }
+    const manifest = {
+        schema: 'sourdaw.agent-device-factory-manifest',
+        schemaVersion: 1,
+        devices: buildDeviceManifestEntries(types),
+    };
+    return deviceManifestSuccess({
+        callId,
+        turn,
+        data: manifest,
+        summary: `${String(manifest.devices.length)} device factory manifest(s)`,
+        warnings: [DEVICE_MANIFEST_EXTERNAL_PLUGIN_WARNING],
+    });
 }
 
 const catalogCategories = [
@@ -820,6 +1041,57 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
     }
 }
 
+async function executeMeasurement(
+    measurement: NonNullable<RunApplicationOwnedToolLoopInput['measurement']>,
+    call: ToolCallResult,
+    context: MeasurementCallContext
+): Promise<ApplicationToolReceipt> {
+    try {
+        return await measurement.execute(call, context);
+    } catch {
+        return failureReceipt({
+            callId: context.callId,
+            toolName: call.name,
+            turn: context.turn,
+            code: 'tool-execution-failed',
+            safeMessage: 'Measurement failed inside the application authority.',
+            retryable: true,
+        });
+    }
+}
+
+/**
+ * One turn's reads, in call order. Only the turn's first measurement call executes: each renders
+ * the project offline, so a later one in the same turn is refused without rendering.
+ */
+function executeTurnReads(input: {
+    calls: readonly IdentifiedToolCall[];
+    turn: number;
+    loopId: string;
+    measurement: RunApplicationOwnedToolLoopInput['measurement'];
+    signal?: AbortSignal;
+}): Promise<ApplicationToolReceipt>[] {
+    const { measurement, turn } = input;
+    const firstMeasurementIndex =
+        measurement === undefined ? -1 : input.calls.findIndex(({ call }) => call.name === measurement.toolName);
+    return input.calls.map(async ({ call, callId }, index) => {
+        if (measurement === undefined || call.name !== measurement.toolName) {
+            return executeSafeRead(call, callId, turn);
+        }
+        if (index !== firstMeasurementIndex) {
+            return failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'measure-per-turn-limit',
+                safeMessage: 'Only one measurement runs per turn; request it again in a later turn.',
+                retryable: true,
+            });
+        }
+        return executeMeasurement(measurement, call, { callId, turn, loopId: input.loopId, signal: input.signal });
+    });
+}
+
 function recordDisclosedCommandSchemas(
     calls: readonly { call: ToolCallResult }[],
     receipts: readonly ApplicationToolReceipt[],
@@ -1052,6 +1324,194 @@ function serializeRemainingBudgetNote(
     ].join('\n');
 }
 
+/** The compact stand-in for a read whose real receipt would not fit the turn's own receipt budget. */
+function turnReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    return failureReceipt({
+        callId: receipt.callId,
+        toolName: receipt.toolName,
+        turn: receipt.turn,
+        code: 'turn-receipt-budget-spent',
+        safeMessage: "This turn's receipt budget is spent; request this read again in a later turn.",
+        retryable: true,
+    });
+}
+
+/**
+ * The compact stand-in for a read whose real receipt would not fit the run's own receipt budget.
+ * The run's budget only grows turn over turn, so a read this large is refused for good: retrying
+ * cannot free space a later turn will not also have already spent.
+ */
+function runReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    return failureReceipt({
+        callId: receipt.callId,
+        toolName: receipt.toolName,
+        turn: receipt.turn,
+        code: 'run-receipt-budget-spent',
+        safeMessage: "The run's receipt budget cannot hold this read; plan with the receipts already delivered.",
+        retryable: false,
+    });
+}
+
+function receiptByteLength(receipt: ApplicationToolReceipt): number {
+    return byteLength(JSON.stringify(receipt));
+}
+
+/** Whichever of two receipts serializes smaller, by the same measure `boundReceipt` uses. */
+function smallerReceipt(first: ApplicationToolReceipt, second: ApplicationToolReceipt): ApplicationToolReceipt {
+    return receiptByteLength(first) <= receiptByteLength(second) ? first : second;
+}
+
+/**
+ * A later read's worst-case footprint for the walk below: whichever of its two possible refusals
+ * serializes larger, or its real receipt when that is smaller still. Reserving at this size keeps
+ * the walk's own fit test conservative — admitting a read's real receipt can never make an earlier
+ * candidate that already priced in this reservation turn out to have been too small. It is not a
+ * bound on this read's own eventual final form: a read reserved here at refusal size can still be
+ * admitted later at its full real size, which may serialize far larger than the reservation.
+ */
+function reservedLaterReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    const turnStandin = turnReceiptBudgetSpentReceipt(receipt);
+    const runStandin = runReceiptBudgetSpentReceipt(receipt);
+    const largerStandin = receiptByteLength(turnStandin) >= receiptByteLength(runStandin) ? turnStandin : runStandin;
+    return smallerReceipt(receipt, largerStandin);
+}
+
+/** Which cap a refused read's walk candidate failed, before the run-leftover reclassification pass. */
+type RefusalClassification = 'turn' | 'run';
+
+/**
+ * A refused read's final form: the smaller of its real receipt and the failure for its classified
+ * cap, never the bare failure — the walk below classifies against a reservation that can be larger
+ * than what the read's own real receipt turns out to need.
+ */
+function refusalFinalForm(
+    receipt: ApplicationToolReceipt,
+    classification: RefusalClassification
+): ApplicationToolReceipt {
+    const standin =
+        classification === 'run' ? runReceiptBudgetSpentReceipt(receipt) : turnReceiptBudgetSpentReceipt(receipt);
+    return smallerReceipt(receipt, standin);
+}
+
+function buildFinalReceiptList(
+    realReceipts: readonly ApplicationToolReceipt[],
+    classifications: ReadonlyMap<number, RefusalClassification>
+): ApplicationToolReceipt[] {
+    return realReceipts.map((receipt, index) => {
+        const classification = classifications.get(index);
+        return classification === undefined ? receipt : refusalFinalForm(receipt, classification);
+    });
+}
+
+/**
+ * Turns a `turn`-classified refusal into the non-retryable `run` form wherever its lone retry —
+ * issued a turn later — could not fit either the turn cap or what the run leaves once this turn's
+ * final list is charged. An instructed retry that the run cannot honour is worse than no retry at
+ * all, so this closes that gap after the walk below has picked each refusal's starting cap.
+ *
+ * Reclassification only ever moves `turn` to `run`, never back, and each pass recomputes the
+ * remainder from the current final list before testing every still-`turn` refusal against it, so
+ * the loop always reaches a fixed point: at most every refused read is reclassified once.
+ */
+function reclassifyUnfittingRetries(input: {
+    realReceipts: readonly ApplicationToolReceipt[];
+    turn: number;
+    totalReceiptBytesSoFar: number;
+    maxReceiptBytesPerTurn: number;
+    maxTotalReceiptBytes: number;
+    classifications: Map<number, RefusalClassification>;
+}): ApplicationToolReceipt[] {
+    const {
+        realReceipts,
+        turn,
+        totalReceiptBytesSoFar,
+        maxReceiptBytesPerTurn,
+        maxTotalReceiptBytes,
+        classifications,
+    } = input;
+    let finalList = buildFinalReceiptList(realReceipts, classifications);
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const remainder =
+            maxTotalReceiptBytes - totalReceiptBytesSoFar - byteLength(serializeReceiptContext(finalList, turn));
+        for (const [index, classification] of classifications.entries()) {
+            if (classification !== 'turn') {
+                continue;
+            }
+            const retryBytes = byteLength(serializeReceiptContext([realReceipts[index]!], turn + 1));
+            if (retryBytes <= remainder && retryBytes <= maxReceiptBytesPerTurn) {
+                continue;
+            }
+            classifications.set(index, 'run');
+            changed = true;
+        }
+        if (changed) {
+            finalList = buildFinalReceiptList(realReceipts, classifications);
+        }
+    }
+    return finalList;
+}
+
+/**
+ * Substitutes a compact budget-spent failure for every read whose real receipt would push the
+ * turn — or the run — past the context budget once every later call in the turn is also
+ * accounted for. Walked in call order, so a turn of several paged reads keeps as many real reads
+ * as the budget allows instead of failing the whole turn on the first receipt that would tip it
+ * over: the device manifest tool's own paging guidance ("read one type at a time") only helps a
+ * provider that follows it if reading several pages in one turn still lands a partial turn.
+ *
+ * The walk reserves every refused read at `reservedLaterReceipt`'s worst-case footprint before
+ * testing the next candidate, never at the read's own eventual final form, so the law this walk
+ * actually keeps is on the whole list, not on any one reservation: the final admitted list never
+ * serializes larger than the last candidate that admitted a real read. A read's real receipt is
+ * admitted whenever the whole real turn — reservations and all — actually fits both budgets.
+ *
+ * Each refusal starts classified by whichever cap its walk candidate failed: the run's budget only
+ * grows, so a candidate that overflowed it starts (and stays) the non-retryable
+ * `run-receipt-budget-spent` failure, while a candidate that overflowed only the turn's own budget
+ * starts the retryable `turn-receipt-budget-spent` failure. `reclassifyUnfittingRetries` then
+ * demotes a `turn` refusal to `run` wherever its own lone retry could not fit what the run leaves
+ * after this turn, so a refusal is never left retryable when the retry it instructs cannot be
+ * honoured.
+ */
+function admitTurnReadReceipts(input: {
+    realReceipts: readonly ApplicationToolReceipt[];
+    turn: number;
+    totalReceiptBytesSoFar: number;
+    maxReceiptBytesPerTurn: number;
+    maxTotalReceiptBytes: number;
+}): ApplicationToolReceipt[] {
+    const { realReceipts, turn, totalReceiptBytesSoFar, maxReceiptBytesPerTurn, maxTotalReceiptBytes } = input;
+
+    // Walk in call order, reserving every refused read at its worst-case footprint before testing
+    // the next candidate: admitting a later read's real receipt can then never make an earlier
+    // walk candidate turn out to have been too small.
+    const walked: ApplicationToolReceipt[] = [];
+    const classifications = new Map<number, RefusalClassification>();
+    for (const [index, receipt] of realReceipts.entries()) {
+        const candidate = [...walked, receipt, ...realReceipts.slice(index + 1).map(reservedLaterReceipt)];
+        const candidateBytes = byteLength(serializeReceiptContext(candidate, turn));
+        const fitsTurn = candidateBytes <= maxReceiptBytesPerTurn;
+        const fitsRun = totalReceiptBytesSoFar + candidateBytes <= maxTotalReceiptBytes;
+        if (fitsTurn && fitsRun) {
+            walked.push(receipt);
+            continue;
+        }
+        classifications.set(index, fitsRun ? 'turn' : 'run');
+        walked.push(reservedLaterReceipt(receipt));
+    }
+
+    return reclassifyUnfittingRetries({
+        realReceipts,
+        turn,
+        totalReceiptBytesSoFar,
+        maxReceiptBytesPerTurn,
+        maxTotalReceiptBytes,
+        classifications,
+    });
+}
+
 export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToolCatalogSchemas();
 
 export async function runApplicationOwnedToolLoop(
@@ -1270,6 +1730,7 @@ export async function runApplicationOwnedToolLoop(
             AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
             RECIPE_DISCOVERY_TOOL_NAME,
+            ...(input.measurement === undefined ? [] : [input.measurement.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
         const terminalCalls = identifiedCalls.filter(
@@ -1331,11 +1792,28 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const turnReceipts = await Promise.all(
-            safeReadCalls.map(async ({ call, callId }) =>
-                boundReceipt(executeSafeRead(call, callId, turn), limits.maxReceiptBytesPerCall)
-            )
+        const rawTurnReceipts = await Promise.all(
+            executeTurnReads({
+                calls: safeReadCalls,
+                turn,
+                loopId: input.loopId,
+                measurement: input.measurement,
+                signal: input.signal,
+            }).map(async (receipt) => boundReceipt(await receipt, limits.maxReceiptBytesPerCall))
         );
+        if (input.signal?.aborted) {
+            return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
+        }
+        // Over-budget reads are replaced with a compact retryable failure before admission, so a
+        // turn whose reads only barely overflow the budget still lands the reads that fit instead
+        // of failing the whole planning run.
+        const turnReceipts = admitTurnReadReceipts({
+            realReceipts: rawTurnReceipts,
+            turn,
+            totalReceiptBytesSoFar: totalReceiptBytes,
+            maxReceiptBytesPerTurn: limits.maxReceiptBytesPerTurn,
+            maxTotalReceiptBytes: limits.maxTotalReceiptBytes,
+        });
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
         const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);

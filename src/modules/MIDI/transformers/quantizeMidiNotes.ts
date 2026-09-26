@@ -1,6 +1,6 @@
-import { type MidiNote } from '../models/MidiNote';
+import { quantizeBeatToGrid } from '#/utils/Music/quantizeBeatToGrid';
 
-const SWING_UNIT_BEATS = 0.5;
+import { type MidiNote } from '../models/MidiNote';
 
 type QuantizeMidiNotesInput = {
     notes: readonly MidiNote[];
@@ -22,13 +22,7 @@ export function quantizeMidiNotes({
         if (targetIds && !targetIds.has(note.id)) {
             return note;
         }
-        const stepIndex = Math.round(note.startBeat / gridSize);
-        const quantizedBeat = stepIndex * gridSize;
-        const swingUnitIndex = Math.round(quantizedBeat / SWING_UNIT_BEATS);
-        const isOffbeat = swingUnitIndex % 2 !== 0;
-        const swingOffset = isOffbeat ? swing * (gridSize / 2) : 0;
-        const targetStartBeat = quantizedBeat + swingOffset;
-        const startBeat = note.startBeat + (targetStartBeat - note.startBeat) * strength;
+        const startBeat = quantizeBeatToGrid({ beat: note.startBeat, gridSize, strength, swing });
 
         return { ...note, startBeat };
     });

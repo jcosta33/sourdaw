@@ -81,7 +81,7 @@ describe('MIDI note transform handlers', () => {
     });
 
     it('quantize captures complete state, restores it exactly, and redoes deterministically', () => {
-        const before = seedNotes([note('a', 60, 0.11), note('b', 64, 0.47)]);
+        const before = seedNotes([note('a', 60, 0.11), note('b', 64, 0.3)]);
         const action = {
             type: 'quantizeNotes' as const,
             payload: { clipId: CLIP_ID, gridSize: 0.25, strength: 0.5, swing: 0.1 },

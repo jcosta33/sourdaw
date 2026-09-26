@@ -4,6 +4,7 @@ import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 
 import { type Track } from '../../models/Track';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
+import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { bounceInPlace } from '../../useCases/freezeBounce/bounceInPlace';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
@@ -35,6 +36,27 @@ function resolveEligibleTrackIds(): string[] {
     return (getTrackStoreState()?.tracks ?? []).filter(isConsolidateEligibleTrack).map((track) => track.id);
 }
 
+/**
+ * The clip ids each eligible track's bounce replaces, read before any bounce
+ * lands. A replace-destination bounce swaps only the track's ACTIVE clip
+ * collection for the rendered clip — `bounceTrack` leaves `alternatives` and
+ * `activeAlternativeId` untouched — so a hidden alternative's clips survive
+ * and their takes must not retire. Every replaced active id must retire its
+ * takes through the shared rule, though — otherwise the orphan take keeps
+ * naming a clip no track holds and its comp region silences the rendered
+ * replacement (#4518).
+ */
+function collectReplacedClipIdsByTrack(): ReadonlyMap<string, readonly string[]> {
+    const replaced = new Map<string, readonly string[]>();
+    for (const track of (getTrackStoreState()?.tracks ?? []).filter(isConsolidateEligibleTrack)) {
+        replaced.set(
+            track.id,
+            track.clips.map((clip) => clip.id)
+        );
+    }
+    return replaced;
+}
+
 export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>({
     execute: async (action) => {
         // Captured before the loop, while the command's storage transaction is
@@ -49,6 +71,7 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
         if (trackIds.length === 0) {
             return { status: 'no-write' };
         }
+        const replacedClipIds = collectReplacedClipIdsByTrack();
 
         // Collected rather than discarded: `bounceInPlace` resolves `false` when
         // the bounce refused (an unrenderable device on the track, see
@@ -56,6 +79,7 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
         // refused wrote nothing — reporting `written` for it would file an
         // inert undo entry with no change behind it.
         let wroteAnyTrack = false;
+        const writtenTrackIds: string[] = [];
         for (const trackId of trackIds) {
             // `recordUndoEntry: false` because this command owns one atomic undo unit for
             // the whole loop. Letting each bounce file its own callback entry would stack
@@ -64,7 +88,20 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
             // earlier bounces back rather than continue unwinding.
             const wrote = await bounceInPlace(trackId, { recordUndoEntry: false, transactionScope });
             wroteAnyTrack ||= wrote;
+            if (wrote) {
+                writtenTrackIds.push(trackId);
+            }
         }
+
+        // Retire takes only for tracks whose bounce landed: a refused track kept
+        // its clips, so its takes are still live and must not be removed. The
+        // retirement re-enters the captured transaction scope — an unscoped write
+        // after the loop's awaits would commit on its own frame and survive a
+        // commit-time abort that rolls the clip writes back, destroying takes on
+        // clips that survive with no undo entry behind the retirement.
+        transactionScope(() =>
+            removeTakesForClips(writtenTrackIds.flatMap((trackId) => replacedClipIds.get(trackId) ?? []))
+        );
 
         // A pure read settling the undo payload: `bounceInPlace` (via
         // `bounceTrack`) owns every write this loop produces, and each of those
@@ -85,7 +122,10 @@ export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>(
             return { label: 'Consolidate all tracks', inverseAction: null };
         }
 
-        const preConsolidateState = captureTrackClipStates(trackIds);
+        const preConsolidateState = captureTrackClipStates(
+            trackIds,
+            [...collectReplacedClipIdsByTrack().values()].flat()
+        );
         // Empty placeholder now; `execute()` fills it once every eligible
         // track's bounce lands, and both `inverseAction.payload.expected` and
         // `redoAction.payload.replacement` reference this same array, so the

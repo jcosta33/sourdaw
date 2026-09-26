@@ -1035,4 +1035,32 @@ describe('submitAdmittedPromptRequest', () => {
             ).resolves.toEqual({ status, runId: RUN_ID });
         }
     );
+
+    it('carries the planned match selector predicate records onto the persisted confirmation', async () => {
+        const matchSelectorPredicates = [
+            {
+                itemId: 'selector-1',
+                entity: 'track' as const,
+                match: { all: [{ roleFamily: 'drums' as const }] },
+                quantity: { unit: 'targets' as const, maximum: 8 },
+                stableIds: ['track-kick'],
+                actionPositions: [0],
+            },
+        ];
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: { actions: [action], rawText: 'Play', requiresConfirmation: true, matchSelectorPredicates },
+            projectRevision: 'revision-1',
+        });
+
+        const result = await submitAdmittedPromptRequest({ prompt: 'Play', source: 'prompt-bar' });
+
+        expect(result.status).toBe('awaiting-approval');
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(result.status);
+        }
+        expect(getPendingActionConfirmation(result.confirmationId)).toMatchObject({
+            approvalSnapshot: { matchSelectorPredicates },
+        });
+    });
 });

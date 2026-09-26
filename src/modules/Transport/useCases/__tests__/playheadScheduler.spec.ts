@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngine/useCases';
-import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
+import {
+    applyModulationToEngine,
+    startAutomationRecording,
+    stopAutomationRecording,
+} from '#/modules/Automation/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { type TempoMapStoreState } from '../../stores/tempoMapStore';
@@ -12,6 +16,7 @@ import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadSchedu
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
+import { deviceReadBeatByTrack } from '../scheduling/applyAutomation/deviceReadBeatByTrack';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
@@ -492,6 +497,21 @@ describe('playhead scheduler tick', () => {
         await fireTick();
 
         expect(vi.mocked(stopAllScheduled).mock.calls.length).toBe(stopCallsBefore);
+    });
+
+    // #4684: applyModulationToEngine's clip gate and curve read must agree
+    // with applyAutomation's own compensated device-family clock, which
+    // the scheduler hands over as the real (unmocked) deviceReadBeatByTrack
+    // singleton applyAutomation writes into — asserted by identity, since a
+    // fresh Map with the same current contents would prove nothing about the
+    // hand-off wiring itself.
+    it('hands applyModulationToEngine the same deviceReadBeatByTrack map applyAutomation writes into', async () => {
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+
+        expect(vi.mocked(applyModulationToEngine).mock.calls.at(-1)?.[3]).toBe(deviceReadBeatByTrack);
     });
 
     it('advances a semantic discontinuity epoch on a real scheduler loop wrap', async () => {

@@ -153,11 +153,29 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
 
 // An exhaustive factory has to cover every name this spec's module graph reads from the barrel, not
 // only the ones the spec drives. The mentor lesson generator binds `analyzeCurrentMix` while
-// its module evaluates, so omitting it fails the whole file at import rather than at a call.
+// its module evaluates, so omitting it fails the whole file at import rather than at a call. The
+// tool catalog reads the measurement metric ids while it evaluates, for the same reason.
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     analyzeAgentAuditionBuffer: mocks.analyzeAgentAuditionBuffer,
     analyzeCurrentMix: mocks.analyzeCurrentMix,
     detectTempo: mocks.detectTempo,
+    getAgentMeasurementMetricIds: () => [
+        'integratedLoudness',
+        'shortTermLoudnessMax',
+        'momentaryLoudnessMax',
+        'truePeak',
+        'rms',
+        'crestFactor',
+        'dynamicRangeEstimate',
+        'spectralCentroid',
+        'frequencyBandEnergy',
+        'stereoCorrelation',
+        'sideEnergyFraction',
+        'lowFrequencyStereoContent',
+        'transientDensity',
+        'onsetCount',
+    ],
+    measureAgentScopeRender: vi.fn(),
     summarizeFeatures: mocks.summarizeFeatures,
 }));
 

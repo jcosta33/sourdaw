@@ -22,7 +22,13 @@ import {
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
-import { PROJECT_DISCOVERY_TOOL_NAME, RECIPE_DISCOVERY_TOOL_NAME } from '../../agentToolCatalog';
+import {
+    AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
+    PROJECT_DISCOVERY_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
+} from '../../agentToolCatalog';
+import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProviderRouteView } from '../../getProviderRouteView';
@@ -1276,7 +1282,7 @@ describe('generateToolPlanningOutcome', () => {
         'find a warm reverb preset for the vocal and load it',
         'show the command history',
         'the bass is muddy, clean it up',
-    ])('never advertises recipe.discover to WebLLM for "%s"', async (prompt) => {
+    ])('never advertises recipe.discover or analysis.measure to WebLLM for "%s"', async (prompt) => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
@@ -1295,9 +1301,10 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
         expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
         expect(advertisedNames).not.toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(advertisedNames).not.toContain(ANALYSIS_MEASURE_TOOL_NAME);
     });
 
-    it('still advertises recipe.discover to a hosted cloud backend', async () => {
+    it('still advertises recipe.discover and analysis.measure to a hosted cloud backend', async () => {
         mocks.backendChain.value = ['cloud'];
         mocks.generateCloudToolCalls.mockResolvedValue({
             providerRequestId: null,
@@ -1318,7 +1325,9 @@ describe('generateToolPlanningOutcome', () => {
         ).resolves.toMatchObject({ status: 'complete' });
 
         const sentTools = mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(sentTools.map((tool: ToolSchema) => tool.function.name)).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        const sentNames = sentTools.map((tool: ToolSchema) => tool.function.name);
+        expect(sentNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
+        expect(sentNames).toContain(ANALYSIS_MEASURE_TOOL_NAME);
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(
@@ -1427,5 +1436,133 @@ describe('generateToolPlanningOutcome', () => {
         expect(error.message).not.toContain('sk-secret');
         expect(error.code).toBe('hosted-http-401');
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.not.stringContaining('sk-secret'));
+    });
+
+    describe('device.factory-manifest.read strict-null page arguments', () => {
+        // OpenAI's strict function calling sends every optional property explicitly, so a
+        // conforming reply carries a literal `null` for `page.cursor`/`page.limit` rather than
+        // omitting them. These rows drive a manifest read through the real
+        // `runApplicationOwnedToolLoop` + `generateToolPlanningOutcome` route, backed by the real
+        // `getPlanningProviderToolSchemas()` schema and only the provider request
+        // (`generateCloudToolCalls`) and provider-info (`getCloudProviderInfo`) boundaries mocked,
+        // so the real `admissibleToolCallArguments`/`admissibleSchemaValue` null-stripping in
+        // inference.ts is what the loop's paging admission actually sees.
+        function requestManifestTurn({
+            receiptContext,
+            directive,
+            history,
+            budgetNote,
+        }: {
+            receiptContext: string | null;
+            directive: HostedToolChoiceDirective;
+            history: HostedTurnHistory;
+            budgetNote: string;
+        }) {
+            const message = receiptContext ?? 'Read the device manifest.';
+            return generateToolPlanningOutcome(
+                'system',
+                message,
+                getPlanningProviderToolSchemas(),
+                undefined,
+                message,
+                undefined,
+                undefined,
+                undefined,
+                directive,
+                { firstUserMessage: 'Read the device manifest.', history, budgetNote }
+            );
+        }
+
+        it('pages a device manifest across two turns through the real strict-null admission route', async () => {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls
+                .mockResolvedValueOnce({
+                    providerRequestId: null,
+                    calls: [
+                        {
+                            id: 'manifest-page-1',
+                            name: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+                            arguments: { types: ['crust'], page: { cursor: null, limit: 4 } },
+                        },
+                    ],
+                    strictToolSchemas: true,
+                    usage: null,
+                })
+                .mockResolvedValueOnce({ providerRequestId: null, calls: [], strictToolSchemas: true, usage: null });
+
+            const firstResult = await runApplicationOwnedToolLoop({
+                loopId: 'loop-strict-null-manifest-page-1',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn: requestManifestTurn,
+            });
+
+            const firstReceipt = firstResult.receipts.find((receipt) => receipt.callId === 'manifest-page-1');
+            expect(firstReceipt).toMatchObject({
+                status: 'success',
+                data: { page: { offset: 0, limit: 4 }, nextCursor: expect.any(String) },
+            });
+            if (!firstReceipt) {
+                throw new Error('Expected a receipt for manifest-page-1.');
+            }
+            const nextCursor = (firstReceipt.data as { nextCursor: string }).nextCursor;
+
+            mocks.generateCloudToolCalls
+                .mockResolvedValueOnce({
+                    providerRequestId: null,
+                    calls: [
+                        {
+                            id: 'manifest-page-2',
+                            name: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+                            arguments: { types: ['crust'], page: { cursor: nextCursor, limit: null } },
+                        },
+                    ],
+                    strictToolSchemas: true,
+                    usage: null,
+                })
+                .mockResolvedValueOnce({ providerRequestId: null, calls: [], strictToolSchemas: true, usage: null });
+
+            const secondResult = await runApplicationOwnedToolLoop({
+                loopId: 'loop-strict-null-manifest-page-2',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn: requestManifestTurn,
+            });
+
+            const secondReceipt = secondResult.receipts.find((receipt) => receipt.callId === 'manifest-page-2');
+            expect(secondReceipt).toMatchObject({ status: 'success', data: { page: { offset: 4, limit: 8 } } });
+        });
+
+        it('reads two small device types unpaged when a strict-null page argument is stripped to absent', async () => {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls
+                .mockResolvedValueOnce({
+                    providerRequestId: null,
+                    calls: [
+                        {
+                            id: 'manifest-unpaged',
+                            name: AGENT_DEVICE_MANIFEST_TOOL_NAME,
+                            arguments: { types: ['builtin-distortion', 'builtin-gain'], page: null },
+                        },
+                    ],
+                    strictToolSchemas: true,
+                    usage: null,
+                })
+                .mockResolvedValueOnce({ providerRequestId: null, calls: [], strictToolSchemas: true, usage: null });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-strict-null-manifest-unpaged',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn: requestManifestTurn,
+            });
+
+            const receipt = result.receipts.find((entry) => entry.callId === 'manifest-unpaged');
+            expect(receipt).toMatchObject({ status: 'success' });
+            if (!receipt) {
+                throw new Error('Expected a receipt for manifest-unpaged.');
+            }
+            const devices = (receipt.data as { devices: readonly { type: string }[] }).devices;
+            expect(devices.map((device) => device.type)).toEqual(
+                expect.arrayContaining(['builtin-distortion', 'builtin-gain'])
+            );
+        });
     });
 });

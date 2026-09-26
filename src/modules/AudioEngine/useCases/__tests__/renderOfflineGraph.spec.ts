@@ -18,6 +18,7 @@ import { defaultTransportState, type TransportState } from '#/modules/Transport/
 import { projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
+import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphWireCommand } from '../../repositories/nativeGraph/serializeAudioGraphCommand';
@@ -829,6 +830,46 @@ describe('renderOffline — graph construction and lifecycle', () => {
             })
         );
         expect(track.gain).toBe(0.3);
+    });
+
+    // Native export capture (#4685 slice 2): `captureOfflineRenderInput` builds
+    // `nativeDevices` from `projectDeviceForNativeBody`, which folds a
+    // bacteria device's modulation-assignment table in through the runtime
+    // sink's `nativeModAssignments` hook rather than reading `deviceState`
+    // itself — the same seam `projectDeviceForNativeBody.spec.ts` proves in
+    // isolation. This proves the wiring one level up, where the native export
+    // actually reads the captured value from.
+    it('carries a bacteria device’s modulation-assignment rows into the captured native device', () => {
+        const track = TrackDummy.create({
+            id: 'bacteria-track',
+            devices: [
+                {
+                    id: 'device-a',
+                    name: 'Bacteria',
+                    type: 'bacteria',
+                    bypassed: false,
+                    parameterValues: {},
+                    deviceState: { version: 1, data: {} },
+                },
+            ],
+        });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [track] } as unknown as TrackStoreState })
+        );
+        const rows = [{ sourceId: 0, targetParam: 1, amount: 0.9 }];
+        setAudioDeviceRuntimeSink({
+            nativeModAssignments: ({ deviceType, deviceState }) => {
+                expect(deviceType).toBe('bacteria');
+                expect(deviceState).toEqual({ version: 1, data: {} });
+                return rows;
+            },
+        });
+        try {
+            const captured = captureOfflineRenderInput({ durationBeats: 1, sampleRate: 48_000 });
+            expect(captured.nativeDevices.get('device-a')).toEqual(expect.objectContaining({ modAssignments: rows }));
+        } finally {
+            setAudioDeviceRuntimeSink({});
+        }
     });
 
     it('rejects a non-finite duration with an export error before resolving any project state', async () => {

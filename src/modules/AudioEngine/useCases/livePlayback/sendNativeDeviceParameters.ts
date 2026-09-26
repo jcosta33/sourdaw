@@ -20,6 +20,15 @@
  * and a batch refused between them leaves the instrument holding half of each
  * patch.
  *
+ * A Bacteria modulation-assignment table rides the same batch, as one
+ * `set-device-mod-assignments` command appended after every parameter
+ * record (#4685 slice 2): the two travel as one gesture for the same reason
+ * the parameter records do, and appending it last matches the order
+ * `updateDevicePatch` already applies to the Web Audio worklet (parameters,
+ * then the table). Present-but-empty (`[]`) is sent — it clears the engine's
+ * table — while an absent `modAssignments` appends no command at all, so a
+ * plain parameter write never touches routing it was not asked to change.
+ *
  * Answers whether a session backend existed to send to, not whether the engine
  * accepted the batch — the write is fire-and-forget once a backend is present.
  * Callers decide the carrier before writing, on the same carried check the
@@ -29,7 +38,10 @@
 
 import {
     MAX_IMMEDIATE_DEVICE_PARAMETERS,
+    type AudioGraphCommand,
+    type AudioGraphSetDeviceModAssignmentsCommand,
     type AudioGraphSetDeviceParametersCommand,
+    type NativeModAssignmentRow,
 } from '../../models/AudioGraphBackend';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
@@ -38,6 +50,12 @@ export type NativeDeviceParameterWrite = Readonly<{
     trackId: string;
     deviceId: string;
     values: Readonly<Record<string, number>>;
+    /**
+     * A Bacteria modulation-assignment table to replace in the same batch, or
+     * absent to leave the engine's table untouched. `[]` is a valid table —
+     * it clears every row — and is sent, not treated as absent.
+     */
+    modAssignments?: readonly NativeModAssignmentRow[];
 }>;
 
 function recordsWithinCeiling(values: Readonly<Record<string, number>>): Readonly<Record<string, number>>[] {
@@ -56,11 +74,20 @@ export function sendNativeDeviceParameters(input: NativeDeviceParameterWrite): P
             return false;
         }
         const target = { trackId: input.trackId, deviceId: input.deviceId };
-        const commands = recordsWithinCeiling(input.values).map((values): AudioGraphSetDeviceParametersCommand => ({
-            kind: 'set-device-parameters',
-            target,
-            values,
-        }));
+        const commands: AudioGraphCommand[] = recordsWithinCeiling(input.values).map(
+            (values): AudioGraphSetDeviceParametersCommand => ({
+                kind: 'set-device-parameters',
+                target,
+                values,
+            })
+        );
+        if (input.modAssignments !== undefined) {
+            commands.push({
+                kind: 'set-device-mod-assignments',
+                target,
+                assignments: input.modAssignments,
+            } satisfies AudioGraphSetDeviceModAssignmentsCommand);
+        }
         if (commands.length === 0) {
             return true;
         }

@@ -618,6 +618,108 @@ describe('serializeAudioGraphCommandBatch', () => {
         expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
     });
 
+    /**
+     * A Bacteria device's modulation-assignment table, the other field that is
+     * neither project truth nor a parameter (#4685 slice 2): `map_device`
+     * reads it by this exact spelling to build the routing into the body.
+     */
+    it('carries a device modAssignments table onto the wire when set', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-bac',
+                        name: 'Bacteria',
+                        type: 'bacteria',
+                        bypassed: false,
+                        parameterValues: { mix: 0.5 },
+                        modAssignments: [{ sourceId: 0, targetParam: 1, amount: 0.9 }],
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        expect(inserted.device).toEqual({
+            id: 'dev-bac',
+            name: 'Bacteria',
+            type: 'bacteria',
+            bypassed: false,
+            parameterValues: { mix: 0.5 },
+            modAssignments: [{ sourceId: 0, targetParam: 1, amount: 0.9 }],
+        });
+    });
+
+    it('omits modAssignments for a device with no table to carry', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'insert-device',
+                    trackId: 'track-1',
+                    device: {
+                        id: 'dev-bac',
+                        name: 'Bacteria',
+                        type: 'bacteria',
+                        bypassed: false,
+                        parameterValues: { mix: 0.5 },
+                    },
+                    index: 0,
+                },
+            ],
+        });
+
+        const inserted = wire.commands[0];
+        if (inserted?.kind !== 'insert-device') {
+            throw new Error('the batch must serialize as insert-device');
+        }
+        expect(Object.keys(inserted.device)).toEqual(['id', 'name', 'type', 'bypassed', 'parameterValues']);
+    });
+
+    /**
+     * The same flattening as `set-device-parameters`: the contract nests the
+     * strip and device in a target, `graph.rs` reads them as the variant's
+     * own `trackId`/`deviceId` fields (#4685 slice 2).
+     */
+    it('flattens a set-device-mod-assignments batch onto the graph.rs spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-device-mod-assignments',
+                    target: { trackId: 'track-1', deviceId: 'dev-bac' },
+                    assignments: [
+                        { sourceId: 0, targetParam: 1, amount: 0.9 },
+                        { sourceId: 1, targetParam: 2, amount: -0.4 },
+                    ],
+                },
+            ],
+        });
+
+        const written = wire.commands[0];
+        if (written?.kind !== 'set-device-mod-assignments') {
+            throw new Error('the batch must serialize as set-device-mod-assignments');
+        }
+        expect(written).toEqual({
+            kind: 'set-device-mod-assignments',
+            trackId: 'track-1',
+            deviceId: 'dev-bac',
+            assignments: [
+                { sourceId: 0, targetParam: 1, amount: 0.9 },
+                { sourceId: 1, targetParam: 2, amount: -0.4 },
+            ],
+        });
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(written)).toEqual(['kind', 'trackId', 'deviceId', 'assignments']);
+    });
+
     /// #2865 — the native wire has no envelope vocabulary. A playback that
     /// carries one reaching this seam means a producer defect (the native
     /// producers gate envelope-carrying clips back onto Web Audio), and the

@@ -123,7 +123,7 @@ const measuredScriptBudgets = new Map<string, number>([
     ['typecheck:test', 6 * 1024 ** 3],
     ['test:e2e', 5.5 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],
-    ['deps:validate', 5.5 * 1024 ** 3],
+    ['deps:validate', 6.5 * 1024 ** 3],
 ]);
 
 export function pnpmScriptName(command: string, args: readonly string[]): string | undefined {

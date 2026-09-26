@@ -15,10 +15,12 @@ import {
     ASSESSMENT_IMPACT_MEMBERSHIP,
     ASSESSMENT_IMPACTS,
     buildDossier,
+    readAssessmentIgnoredReason,
     readAssessmentImpact,
 } from '../reviewDossierChain.ts';
 import {
     acceptedFindings,
+    assessmentIgnoredReason,
     assessmentImpact,
     completedStances,
     discardedDispositions,
@@ -338,6 +340,67 @@ describe('assessment impact', () => {
                 assembleWith({ assessmentImpact: 'stance-changed', limitations: [], events: noAcceptedFinding })
             )
         ).toBe('stance-changed');
+    });
+});
+
+describe('assessment ignored reason', () => {
+    const REASON = 'the withheld audio module is outside this change’s blast radius';
+
+    it('should round-trip the reason through assembly, serialize and parse', () => {
+        const dossier = assembleWith({ assessmentIgnoredReason: REASON });
+
+        expect(dossier.assessmentIgnoredReason).toBe(REASON);
+        const reparsed = parseReviewDossier(JSON.parse(serializeReviewDossier(dossier)));
+        expect(reparsed.assessmentIgnoredReason).toBe(REASON);
+        expect(assessmentIgnoredReason(reparsed)).toBe(REASON);
+        expect(serializeReviewDossier(reparsed)).toBe(serializeReviewDossier(dossier));
+    });
+
+    it('should cover the reason in dossierDigest, so two records differing only in it have different digests', () => {
+        const without = assembleWith({});
+        const withReason = assembleWith({ assessmentIgnoredReason: REASON });
+
+        expect(withReason.dossierDigest).not.toBe(without.dossierDigest);
+        // The acknowledgement never enters the event chain, so the head digest is unchanged.
+        expect(withReason.headDigest).toBe(without.headDigest);
+        expect(assessmentIgnoredReason(without)).toBeUndefined();
+    });
+
+    it.each(['finding-led', 'limitation-only', 'stance-changed'] as const)(
+        'should refuse a reason beside the %s impact, naming the field and the contradicting token',
+        (impact) => {
+            expect(() => assembleWith({ assessmentImpact: impact, assessmentIgnoredReason: REASON })).toThrow(
+                new RegExp(`assessmentIgnoredReason requires assessmentImpact none, found ${impact}`)
+            );
+        }
+    );
+
+    it('should refuse a blank reason and name the field', () => {
+        expect(() => assembleWith({ assessmentIgnoredReason: '   ' })).toThrow(
+            /assessmentIgnoredReason must be a non-blank string/
+        );
+    });
+
+    it('should refuse a multiline reason and name the field', () => {
+        expect(() => assembleWith({ assessmentIgnoredReason: 'first line\nsecond line' })).toThrow(
+            /assessmentIgnoredReason value at index 0 contains a line separator/
+        );
+    });
+
+    it('should refuse a credential-shaped reason and name the field', () => {
+        expect(() => assembleWith({ assessmentIgnoredReason: `ghp_${'A'.repeat(24)}` })).toThrow(
+            /assessmentIgnoredReason value at index 0 contains a GitHub token/
+        );
+    });
+
+    it('should refuse an edge-untrimmed reason and name the field', () => {
+        expect(() => assembleWith({ assessmentIgnoredReason: ' padded reason ' })).toThrow(
+            /assessmentIgnoredReason value at index 0 is not edge-trimmed/
+        );
+    });
+
+    it('should read a reason through the shared reader unchanged', () => {
+        expect(readAssessmentIgnoredReason('a reason')).toBe('a reason');
     });
 });
 
@@ -986,6 +1049,7 @@ describe('historical dossier records', () => {
         expect(() => parseReviewDossier(historical)).not.toThrow();
         expect(serializeReviewDossier(parseReviewDossier(historical))).toBe(HISTORICAL_UNPUBLISHED_RECORD);
         expect(assessmentImpact(parseReviewDossier(historical))).toBeUndefined();
+        expect(assessmentIgnoredReason(parseReviewDossier(historical))).toBeUndefined();
         expect(publishedReviewId(parseReviewDossier(historical))).toBeUndefined();
     });
 

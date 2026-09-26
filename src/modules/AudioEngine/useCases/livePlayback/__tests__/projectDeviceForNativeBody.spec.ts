@@ -32,7 +32,11 @@ describe('projectDeviceForNativeBody', () => {
         const unexpected = () => {
             throw new Error('Live projection was consulted');
         };
-        setAudioDeviceRuntimeSink({ projectNativeDeviceState: unexpected, nativeSampleBankKey: unexpected });
+        setAudioDeviceRuntimeSink({
+            projectNativeDeviceState: unexpected,
+            nativeSampleBankKey: unexpected,
+            nativeModAssignments: unexpected,
+        });
         const projected = projectDeviceForNativeBody(
             createDevice({ id: 'alternate', type: 'levain', parameterValues: { gain: 0.9 } }),
             {
@@ -40,6 +44,9 @@ describe('projectDeviceForNativeBody', () => {
                     expect(deviceState).toBeUndefined();
                     return 'levain:provided';
                 },
+                // Called unconditionally, the same as the bank-key hook above;
+                // this device names no table, so `null` is the honest answer.
+                nativeModAssignments: () => null,
                 projectNativeDeviceState: () => ({ gain: 0.25, 'invalid key': 1, ignored: Number.NaN }),
             }
         );
@@ -267,5 +274,35 @@ describe('projectDeviceForNativeBody', () => {
         const projected = projectDeviceForNativeBody(createDevice({ id: 'device-a', type: 'fermenter' }));
 
         expect(Object.hasOwn(projected, 'sampleBankKey')).toBe(false);
+    });
+
+    // A Bacteria device's modulation-assignment table rides the same seam as
+    // the bank key and the projected deviceState: only the owning module can
+    // decode `deviceState`, so this is where the sink's answer is folded into
+    // the record the native body receives (#4685 slice 2).
+    it('carries the modulation-assignment table the sink reads off a bacteria device’s state', () => {
+        setAudioDeviceRuntimeSink({
+            nativeModAssignments: ({ deviceType, deviceState }) => {
+                expect(deviceType).toBe('bacteria');
+                expect(deviceState).toBe(A_DEVICE_STATE);
+                return [{ sourceId: 0, targetParam: 1, amount: 0.9 }];
+            },
+        });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'bacteria', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(projected.modAssignments).toEqual([{ sourceId: 0, targetParam: 1, amount: 0.9 }]);
+    });
+
+    it('leaves the field off a device whose modulation-assignment hook answers null', () => {
+        setAudioDeviceRuntimeSink({ nativeModAssignments: () => null });
+
+        const projected = projectDeviceForNativeBody(
+            createDevice({ id: 'device-a', type: 'bacteria', deviceState: A_DEVICE_STATE })
+        );
+
+        expect(Object.hasOwn(projected, 'modAssignments')).toBe(false);
     });
 });

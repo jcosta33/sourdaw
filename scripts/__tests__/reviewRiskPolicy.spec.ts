@@ -1,10 +1,19 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { GOVERNANCE_TRANSITION_PATHS, parseReviewRiskPlan, planReviewRisk } from '../reviewRiskPolicy.ts';
-import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+import {
+    BOOTSTRAP_PATH,
+    commandEntries,
+    trustedDependencyGraphs,
+    trustedLocalImportClosure,
+} from '../trustedGithubWriteBootstrap.ts';
 
 import type { ReviewChangedPath } from '../reviewDiffSummary.ts';
 import type { ReviewRiskClass, ReviewRiskPlan, ReviewStanceId } from '../reviewRiskPolicy.ts';
+import type { TrustedGithubWriteCommand } from '../trustedGithubWriteBootstrap.ts';
 
 /**
  * The stance union each class earns, declared independently of the policy under test so an omission
@@ -40,6 +49,37 @@ function handwritten(path: string, added: number, deleted: number): ReviewChange
 
 function reviewPlan(paths: readonly ReviewChangedPath[]): ReviewRiskPlan {
     return planReviewRisk({ pr: 2999, headSha: 'head', baseSha: 'base', paths });
+}
+
+function readRepositorySource(): (path: string) => string | undefined {
+    const repositoryRoot = join(import.meta.dirname, '..', '..');
+    return (path: string): string | undefined => {
+        try {
+            return readFileSync(join(repositoryRoot, path), 'utf8');
+        } catch {
+            return undefined;
+        }
+    };
+}
+
+/**
+ * The per-command closure contract: the declared set must start with the loader, carry the runtime's
+ * own entry path at `[1]`, and equal exactly the static local-import closure of that entry plus the
+ * loader's own static closure. Entry and closure are both derived from the runtime, never from the
+ * declared array under test, so a swapped or truncated declaration reddens.
+ */
+function assertDeclaredClosure(
+    command: TrustedGithubWriteCommand,
+    declared: readonly string[],
+    readSource: (path: string) => string | undefined
+): void {
+    expect(declared[0], `${command} declared loader`).toBe(BOOTSTRAP_PATH);
+    expect(declared[1], `${command} declared entry`).toBe(commandEntries[command].path);
+    const expected = new Set(trustedLocalImportClosure(commandEntries[command].path, readSource));
+    for (const path of trustedLocalImportClosure(BOOTSTRAP_PATH, readSource)) {
+        expected.add(path);
+    }
+    expect(new Set(declared), `${command} declared closure`).toEqual(expected);
 }
 
 describe('planReviewRisk', () => {
@@ -163,6 +203,81 @@ describe('planReviewRisk', () => {
             const result = reviewPlan([handwritten(path, 1, 1)]);
             expect(result.riskClasses, path).toContain('native-security');
         }
+    });
+
+    /**
+     * The union pin above is blind to per-command drift: removing one path from one command's closure
+     * leaves the union unchanged when another command still declares it, so only the exact-closure
+     * spec notices. This check asserts the per-command property the union cannot: each command's
+     * declared closure equals exactly its static local-import closure (type-only edges included) plus
+     * the loader's own static closure — so a single command losing a closure entry, or gaining one it
+     * never statically imports, reddens this check. Classification stays with the union-wide checks
+     * above, which already cover every declared path.
+     */
+    it('should pin each command closure to its entry static local imports, per command', () => {
+        const readSource = readRepositorySource();
+
+        for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
+            assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+        }
+    });
+
+    /**
+     * The entry the closure is walked from must come from the runtime's own command table, never from
+     * the declared array itself: `declared[1]` is part of the value under test, so a declaration whose
+     * entry is swapped for another declared path — type-valid, the same set — would pass every check
+     * while the command dies with `ERR_MODULE_NOT_FOUND` mid-delivery. A same-set permutation leaves
+     * the entry-position assertion as the only thing that can fail, so removing it reddens this case.
+     */
+    it('should refuse a command declaration whose entry is not its runtime entry', () => {
+        const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const entry = declared[1]!;
+        const neighbour = declared[2]!;
+        declared[1] = neighbour;
+        declared[2] = entry;
+
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared entry/);
+    });
+
+    /**
+     * The loader must sit at `declared[0]`, not merely be present: the set comparison cannot see
+     * order, so a declaration that buries the loader still satisfies it. Swapping the loader out of
+     * position zero keeps the set identical, so only the loader-position assertion can fail.
+     */
+    it('should refuse a command declaration that does not start with the loader', () => {
+        const readSource = readRepositorySource();
+        const declared = [...trustedDependencyGraphs.deliver];
+        const loader = declared[0]!;
+        const neighbour = declared[2]!;
+        declared[0] = neighbour;
+        declared[2] = loader;
+
+        expect(() => assertDeclaredClosure('deliver', declared, readSource)).toThrow(/declared loader/);
+    });
+
+    /**
+     * The static closure is a deliberate superset of the executed graph: `import type` and
+     * `export type ... from` edges are counted even though Node's type stripping erases them, because
+     * the same union feeds the governance risk classification and must not shrink. This pins that
+     * over-approximation so a future scanner that dropped type-only edges would redden.
+     */
+    it('should include type-only import edges in the static closure', () => {
+        const readSource = (path: string): string | undefined => {
+            const fixtures: Record<string, string> = {
+                'scripts/entry.ts':
+                    "import type { A } from './typeOnly.ts';\nexport type { B } from './reExported.ts';",
+                'scripts/typeOnly.ts': 'export type A = string;',
+                'scripts/reExported.ts': 'export type B = number;',
+            };
+            return fixtures[path];
+        };
+
+        expect([...trustedLocalImportClosure('scripts/entry.ts', readSource)].sort()).toEqual([
+            'scripts/entry.ts',
+            'scripts/reExported.ts',
+            'scripts/typeOnly.ts',
+        ]);
     });
 
     it('should flag every undo marker: action name, CRDT document, project file, and bootstrap wiring', () => {

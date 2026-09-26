@@ -5,6 +5,7 @@ import { type CreativeRequestAuthority } from './CreativeInterpretation';
 import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
+import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
@@ -32,6 +33,8 @@ export type IntentResult = {
     providerProposal?: AgentRunProviderProposal;
     /** Direct stable targets proven from the provider's semantic list against one project snapshot. */
     providerKnownTargetIds?: string[];
+    /** Every `match` selector the compiled semantic list carried, for re-resolution before an approval rebind. */
+    matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     /** The immutable record of what this run's delegated request was admitted to mean. */
     creativeAuthority?: CreativeRequestAuthority;
 };

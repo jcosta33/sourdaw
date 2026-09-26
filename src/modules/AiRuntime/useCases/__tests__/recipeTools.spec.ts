@@ -16,7 +16,7 @@ type RecipeRoleName = 'vocal' | 'drums' | 'bass' | 'guitar' | 'keys' | 'bus' | '
 
 /**
  * The recipe role every canonical track role resolves to, restated here as a literal
- * expectation table independent of `CANONICAL_ROLE_TO_RECIPE_ROLE` in `discoverMixRecipes.ts`
+ * expectation table independent of `CANONICAL_ROLE_TO_RECIPE_ROLE` in `canonicalRoleFamilies.ts`
  * so a silent edit to that production table fails this spec instead of both agreeing.
  * `Record<CanonicalRole, ...>` over the full role union fails typecheck if a canonical role
  * this catalog can produce is ever left out.

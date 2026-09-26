@@ -1,10 +1,7 @@
 import { fromBacteriaModAssignmentsState } from '../models/BacteriaModAssignmentsState';
-import { mapBacteriaModAssignments } from '../models/BacteriaModulationIds';
+import { resolveMappedBacteriaModAssignments } from '../models/BacteriaModulationIds';
 
 import { type captureOfflineBacteria } from './captureOfflineBacteria';
-
-/** Mirrors the live worklet's own refusal in `BacteriaNode.setModAssignments`. */
-const MAX_MOD_ASSIGNMENTS = 64;
 
 export type PrepareOfflineBacteriaInput = {
     /** The device's persisted `deviceState` chunk, or undefined when it has none. */
@@ -38,11 +35,7 @@ export type PrepareOfflineBacteriaInput = {
  */
 export function prepareOfflineBacteria({ deviceState, port, captured }: PrepareOfflineBacteriaInput): void {
     const assignments = captured ? captured.assignments : fromBacteriaModAssignmentsState(deviceState);
-    if (!assignments || assignments.length === 0 || assignments.length > MAX_MOD_ASSIGNMENTS) {
-        return;
-    }
-
-    const mapped = mapBacteriaModAssignments(assignments);
+    const mapped = resolveMappedBacteriaModAssignments(assignments);
     if (!mapped) {
         return;
     }

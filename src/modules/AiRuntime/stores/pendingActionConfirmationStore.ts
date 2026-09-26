@@ -6,6 +6,7 @@ import { PENDING_ACTION_CONFIRMATION_RETENTION_POLICY } from '../models/AgentRet
 import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
 export type PendingActionExecution = {
@@ -110,6 +111,8 @@ type PendingActionApprovalSnapshot = {
     agentApproval?: PendingAgentRiskApproval;
     semanticDiff?: PendingActionSemanticDiff;
     protectedUnchanged: PendingActionProtectedObject[];
+    /** Every `match` selector the compiled batch carried, for re-resolution before an approval rebind. */
+    matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
 };
 
 type PendingActionConfirmationBase = {
@@ -306,6 +309,7 @@ type ProposePendingActionConfirmationInput = {
     semanticDiff?: PendingActionSemanticDiff;
     affectedIds?: string[];
     protectedUnchanged?: PendingActionProtectedObject[];
+    matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -338,6 +342,7 @@ export function proposePendingActionConfirmation(
         return null;
     }
 
+    const matchSelectorPredicates = input.matchSelectorPredicates && structuredClone(input.matchSelectorPredicates);
     const approvalSnapshot: PendingActionApprovalSnapshot = {
         actions: structuredClone(input.actions),
         actionLabels: structuredClone(input.actionLabels),
@@ -346,6 +351,7 @@ export function proposePendingActionConfirmation(
         agentApproval: input.agentApproval ? structuredClone(input.agentApproval) : undefined,
         semanticDiff: input.semanticDiff ? structuredClone(input.semanticDiff) : undefined,
         protectedUnchanged: structuredClone(input.protectedUnchanged ?? []),
+        matchSelectorPredicates,
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

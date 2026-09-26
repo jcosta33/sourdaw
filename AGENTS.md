@@ -197,6 +197,26 @@ re-published bundle keeps working; a persisted record that claims a publication 
 that claim alone, because its self-asserted `review-published` event is the caller's, so the named
 review must stand live and exact or the publication is refused for that failure.
 
+When the bundle's `semantic-ci.json` records a delivered assessment that withheld any scope entry or
+left any question unresolved, `review:publish` refuses a fresh publication unless the dossier either
+cites the assessment or declares it ignored. Citing it is a `limitation` naming the assessment's
+artifact identity or one of the paths it withheld — the round's own text, never a non-`none` impact
+token by itself. Declaring it ignored is `assessmentImpact: none` with an
+`assessmentIgnoredReason`: one bounded, single-line, evidence-safe reason the orchestrator records for
+why the assessment had no effect. A `none` with no reason is refused naming `assessmentIgnoredReason`
+and the withheld figure; a reason beside a non-`none` token is refused naming `assessmentIgnoredReason`
+and the token it contradicts. The reason is folded into the canonical record beside `assessmentImpact`
+and covered by `dossierDigest`, so the acknowledgement is bound to what was accepted; records persisted
+before it existed keep verifying byte-identically. It records an acknowledgement, never agreement, and
+confers no verdict, approval or merge authority — ADR 0047 still governs. When the record instead
+shows `no-assessment` — CI ran and delivered nothing for the head — `review:publish` refuses
+`assessmentImpact: none` outright, with or without a reason, and requires a limitation citing the
+record's own reason as the token `semantic-ci <reason>` (for example `semantic-ci red-check`),
+regardless of impact. A bundle with no `semantic-ci.json` file at all — a historical bundle prepared
+before `review:prepare` wrote the record — still carries no such requirement; a bundle whose manifest
+records generating that file but carries no such file on disk is refused instead of read as
+undelivered.
+
 A pull request that has taken the reviewer change-request escalation threshold — the constant
 `REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer
 `REQUEST_CHANGES` rounds refuses the next fresh reviewer publication until the orchestrator records an
