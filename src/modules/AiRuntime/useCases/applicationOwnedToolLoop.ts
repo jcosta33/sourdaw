@@ -1324,6 +1324,45 @@ function serializeRemainingBudgetNote(
     ].join('\n');
 }
 
+/** The compact stand-in for a read whose real receipt would not fit the turn's receipt budget. */
+function turnReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): ApplicationToolReceipt {
+    return failureReceipt({
+        callId: receipt.callId,
+        toolName: receipt.toolName,
+        turn: receipt.turn,
+        code: 'turn-receipt-budget-spent',
+        safeMessage: "This turn's receipt budget is spent; request this read again in a later turn.",
+        retryable: true,
+    });
+}
+
+/**
+ * Substitutes a compact budget-spent failure for every read whose real receipt would push the
+ * turn — or the run — past the context budget once every later call in the turn is also
+ * accounted for. Walked in call order, so a turn of several paged reads keeps as many real reads
+ * as the budget allows instead of failing the whole turn on the first receipt that would tip it
+ * over: the device manifest tool's own paging guidance ("read one type at a time") only helps a
+ * provider that follows it if reading several pages in one turn still lands a partial turn.
+ */
+function admitTurnReadReceipts(input: {
+    realReceipts: readonly ApplicationToolReceipt[];
+    turn: number;
+    totalReceiptBytesSoFar: number;
+    maxReceiptBytesPerTurn: number;
+    maxTotalReceiptBytes: number;
+}): ApplicationToolReceipt[] {
+    const { realReceipts, turn, totalReceiptBytesSoFar, maxReceiptBytesPerTurn, maxTotalReceiptBytes } = input;
+    const admitted: ApplicationToolReceipt[] = [];
+    for (const [index, receipt] of realReceipts.entries()) {
+        const candidate = [...admitted, receipt, ...realReceipts.slice(index + 1).map(turnReceiptBudgetSpentReceipt)];
+        const candidateBytes = byteLength(serializeReceiptContext(candidate, turn));
+        const fits =
+            candidateBytes <= maxReceiptBytesPerTurn && totalReceiptBytesSoFar + candidateBytes <= maxTotalReceiptBytes;
+        admitted.push(fits ? receipt : turnReceiptBudgetSpentReceipt(receipt));
+    }
+    return admitted;
+}
+
 export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToolCatalogSchemas();
 
 export async function runApplicationOwnedToolLoop(
@@ -1604,7 +1643,7 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const turnReceipts = await Promise.all(
+        const rawTurnReceipts = await Promise.all(
             executeTurnReads({
                 calls: safeReadCalls,
                 turn,
@@ -1616,6 +1655,16 @@ export async function runApplicationOwnedToolLoop(
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
         }
+        // Over-budget reads are replaced with a compact retryable failure before admission, so a
+        // turn whose reads only barely overflow the budget still lands the reads that fit instead
+        // of failing the whole planning run.
+        const turnReceipts = admitTurnReadReceipts({
+            realReceipts: rawTurnReceipts,
+            turn,
+            totalReceiptBytesSoFar: totalReceiptBytes,
+            maxReceiptBytesPerTurn: limits.maxReceiptBytesPerTurn,
+            maxTotalReceiptBytes: limits.maxTotalReceiptBytes,
+        });
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
         const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);

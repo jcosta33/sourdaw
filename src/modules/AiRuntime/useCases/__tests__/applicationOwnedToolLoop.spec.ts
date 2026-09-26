@@ -877,7 +877,7 @@ describe('application-owned tool loop', () => {
         expect(result).toMatchObject({ status: 'complete', toolCalls: [] });
     });
 
-    it('retains bounded current-turn receipts when their combined provider context exceeds budget', async () => {
+    it('substitutes a compact retryable failure for the current-turn receipts that would exceed the budget, and continues the run', async () => {
         vi.mocked(querySemanticProject).mockReturnValue({
             schema: 'sourdaw.semantic-project-query',
             schemaVersion: 1,
@@ -892,29 +892,161 @@ describe('application-owned tool loop', () => {
             warnings: [],
         });
 
-        const result = await runApplicationOwnedToolLoop({
-            loopId: 'loop-turn-receipts',
-            terminalToolNames: new Set(['setTempo']),
-            requestTurn: vi.fn().mockResolvedValue({
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: Array.from({ length: 3 }, (_, index) => ({
                     id: `query-turn-budget-${String(index)}`,
                     name: 'project.query',
                     arguments: { type: 'project-summary' },
                 })),
-            }),
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-turn-receipts',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
         });
 
+        expect(result).toMatchObject({ status: 'complete', toolCalls: [] });
+        expect(result.receipts).toMatchObject([
+            { callId: 'query-turn-budget-0', status: 'success' },
+            { callId: 'query-turn-budget-1', status: 'success' },
+            {
+                callId: 'query-turn-budget-2',
+                status: 'failure',
+                error: { code: 'turn-receipt-budget-spent', retryable: true },
+            },
+        ]);
+        expect(querySemanticProject).toHaveBeenCalledTimes(3);
+
+        const secondTurnReceiptContext = requestTurn.mock.calls[1]?.[0].receiptContext as string;
+        expect(secondTurnReceiptContext).toContain('query-turn-budget-0');
+        expect(secondTurnReceiptContext).toContain('query-turn-budget-1');
+        expect(secondTurnReceiptContext).toContain('query-turn-budget-2');
+    });
+
+    it('substitutes a compact retryable failure among three production-limit paged manifest reads in one turn, and a later turn for that type still succeeds', async () => {
+        const pagedTypes = ['fermenter', 'builtin-synth', 'crust'];
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: pagedTypes.map((type) => ({
+                    id: `page-${type}`,
+                    name: 'device.factory-manifest.read',
+                    arguments: { types: [type], page: {} },
+                })),
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-production-paged-manifest',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+            limits: { maxCallsPerTurn: 26, maxTotalCalls: 40 },
+        });
+
+        expect(result.status).not.toBe('rejected');
+        const budgetSpentReceipt = result.receipts.find(
+            (receipt) => receipt.error?.code === 'turn-receipt-budget-spent'
+        );
+        expect(budgetSpentReceipt).toBeDefined();
+        const retryType = pagedTypes.find((type) => `page-${type}` === budgetSpentReceipt?.callId);
+        if (retryType === undefined) {
+            throw new Error('Expected the substituted receipt to name one of the requested manifest types.');
+        }
+
+        const retryResult = await runApplicationOwnedToolLoop({
+            loopId: 'loop-production-paged-manifest-retry',
+            terminalToolNames: new Set(['setTempo']),
+            limits: { maxCallsPerTurn: 26, maxTotalCalls: 40 },
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: `retry-${retryType}`,
+                            name: 'device.factory-manifest.read',
+                            arguments: { types: [retryType], page: {} },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+        expect(retryResult.receipts).toEqual(
+            expect.arrayContaining([expect.objectContaining({ callId: `retry-${retryType}`, status: 'success' })])
+        );
+    });
+
+    it('does not disclose a command schema from a catalog discovery receipt replaced for the turn receipt budget', async () => {
+        // Two project.query fillers sized against this turn's own receipt-context serialization so
+        // admitting both still fits the turn's receipt budget, but admitting the real catalog
+        // discovery receipt on top of them does not: the discovery call is the one the budget
+        // spends, and the substitution must keep it out of what the run discloses.
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'project-summary',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'project-1', kind: 'project', name: 'x'.repeat(15_400) }],
+            nextCursor: null,
+            warnings: [],
+        });
+
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'discover-filler-0', name: 'project.query', arguments: { type: 'project-summary' } },
+                    { id: 'discover-filler-1', name: 'project.query', arguments: { type: 'project-summary' } },
+                    {
+                        id: 'discover-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                    },
+                ],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-discover-budget-spent',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result.receipts).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ callId: 'discover-filler-0', status: 'success' }),
+                expect.objectContaining({ callId: 'discover-filler-1', status: 'success' }),
+                expect.objectContaining({
+                    callId: 'discover-1',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'turn-receipt-budget-spent' }),
+                }),
+            ])
+        );
         expect(result).toMatchObject({
             status: 'rejected',
-            reason: 'Application tool receipts exceeded the bounded context budget.',
-            receipts: [
-                { callId: 'query-turn-budget-0', status: 'success' },
-                { callId: 'query-turn-budget-1', status: 'success' },
-                { callId: 'query-turn-budget-2', status: 'success' },
-            ],
+            reason: 'Provider command proposal referenced an undiscovered catalog command.',
         });
-        expect(querySemanticProject).toHaveBeenCalledTimes(3);
     });
 
     it('honors cancellation before requesting or executing a tool turn', async () => {

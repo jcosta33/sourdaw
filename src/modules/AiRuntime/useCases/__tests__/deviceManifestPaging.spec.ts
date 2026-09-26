@@ -191,18 +191,29 @@ describe('device.factory-manifest.read paging', () => {
     });
 
     it('refuses a cursor obtained for one type when replayed against another', async () => {
-        const source = await callDeviceManifest({
-            callId: 'cross-type-cursor-source',
-            arguments: { types: ['crust'], page: {} },
+        // The version check alone would already refuse a genuine crust cursor replayed against
+        // gluten, since the two descriptors carry different versions. Forging a cursor that keeps
+        // crust's own type but carries gluten's live version isolates the type comparison as the
+        // only check standing between this replay and a page from the wrong device.
+        const glutenSource = await callDeviceManifest({
+            callId: 'cross-type-cursor-gluten-version',
+            arguments: { types: ['gluten'], page: {} },
         });
-        const cursor = (source.data as ManifestPageData).nextCursor;
-        if (cursor === null) {
-            throw new Error('Expected crust to produce a continuation cursor.');
+        const glutenDevice = (glutenSource.data as ManifestPageData).devices[0];
+        if (!glutenDevice) {
+            throw new Error('Expected a gluten manifest entry.');
         }
+
+        const forgedCursor = encodeManifestCursor({
+            schemaVersion: 1,
+            type: 'crust',
+            version: glutenDevice.version,
+            offset: 1,
+        });
 
         const replay = await callDeviceManifest({
             callId: 'cross-type-cursor-replay',
-            arguments: { types: ['gluten'], page: { cursor } },
+            arguments: { types: ['gluten'], page: { cursor: forgedCursor } },
         });
 
         expect(replay).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
