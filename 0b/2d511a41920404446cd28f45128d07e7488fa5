@@ -1,0 +1,20 @@
+.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md
+  h_beb54bf43b47b7 1-61
+AGENTS.md
+  h_beb54bf43b47b7 230-240
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  h_beb54bf43b47b7 12,15,170-223
+scripts/reviewRoundEscalation.ts
+  h_beb54bf43b47b7 23-32,140-143,153-159,212-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0b2d511a41920404446cd28f45128d07e7488fa5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
