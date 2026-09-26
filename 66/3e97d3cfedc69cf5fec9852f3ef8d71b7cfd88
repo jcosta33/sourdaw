@@ -1,0 +1,209 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_1c08b47ac3792f::t_52db44b401ceb4 358-373,383
+AGENTS.md
+  s_1c08b47ac3792f::t_d2549ae5ad65b6 200-210,219
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_c4832e298b1d5c 1210
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_1c08b47ac3792f::t_861c3f5f189dfc 580,584,1079,1110,1123,1219,1249,1260,1283,1294,1318,1331,1353,1376
+scripts/__tests__/prepareReview.spec.ts
+  s_1c08b47ac3792f::t_3a63117b79dc63 223
+scripts/__tests__/publishReview.spec.ts
+  s_1c08b47ac3792f::t_9016dd278945a5 71,5013-5040,5067-5079,5096,5123-5125,5312-5445,5674,5682,5695,5704-6048
+scripts/__tests__/reviewDossier.spec.ts
+  s_1c08b47ac3792f::t_7f2852247f06f4 18,23,346-406,1052
+scripts/__tests__/reviewDossierPublication.spec.ts
+  s_1c08b47ac3792f::t_11bd14c5a4923b 308-327,714-729,890-910
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  s_1c08b47ac3792f::t_bcebe7888e0820 1-32,42-43,45-47,49-116,118-121,123-227,229-230,297-301,322
+scripts/reviewDossier.ts
+  s_1c08b47ac3792f::t_cabfad87292310 17,21,28,121-130,504-506,553,555-557,581,623,643-645
+scripts/reviewDossierBindings.ts
+  s_1c08b47ac3792f::t_0514044525d9c4 1-86
+scripts/reviewDossierChain.ts
+  s_1c08b47ac3792f::t_8d7cdfd311e3b1 8-9,16,87-118,235-239,264-266,303-305,314-315,329
+scripts/reviewDossierPublication.ts
+  s_1c08b47ac3792f::t_4a4c1818ff889c 24,62-68,224,234-240,382
+scripts/reviewDossierSemanticAssessment.ts
+  s_1c08b47ac3792f::t_728c523a0cc0de 1-16,24-112,114-130,133-157,172-175,182-195,208-227
+scripts/reviewDossierViews.ts
+  s_1c08b47ac3792f::t_07db3fd18669a4 18-26
+scripts/reviewPublicationBinding.ts
+  s_1c08b47ac3792f::t_16f8040c570cc8 31-35,54,125,131-132,135,139-143,146-155,162,285-293
+scripts/reviewRiskPolicy.ts
+  s_1c08b47ac3792f::t_e8d6856c1ce7f7 111,115
+scripts/trustedGithubWriteBootstrap.ts
+  s_1c08b47ac3792f::t_889d881ca472dc 163,226,237,261,272,297,310,333,351
+src/app/__tests__/bootstrap.spec.ts
+  s_1c08b47ac3792f::t_bdaa2d90747814 170-171,243-247,387,568,993-1006
+src/app/bootstrap.ts
+  s_1c08b47ac3792f::t_5edcf8f20367ca 64,164,334-337
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_1c08b47ac3792f::t_5ff47c8fb6316b 19
+src/modules/AiRuntime/models/AnalysisMeasureLimits.ts
+  s_1c08b47ac3792f::t_1446aa4d880500 1-9
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_1c08b47ac3792f::t_f77289d9241db4 275
+  s_1c08b47ac3792f::t_d9d6f6864630a0 6,13
+  s_1c08b47ac3792f::t_b738369326c559 198-222
+  s_2bfd55a4393d7c::t_0ba3221e0a3cf2 195-197
+src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts
+  s_1c08b47ac3792f::t_d7c2f04d78881d 1-693
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_1c08b47ac3792f::t_852b79bb778517 367
+  s_1c08b47ac3792f::t_8bef4dc05184f8 943,946,957,960,962-966,972-975
+  s_1c08b47ac3792f::t_51078538c64f9c 880,895-897,904-910,913-924
+  s_1c08b47ac3792f::t_2ef40f79a05009 925,927-942,944-945,947-956,958-959,961,967-971,976-979,981-984,1473-1485,1488-1510,1512-1533
+  s_1c08b47ac3792f::t_0fa37d5c78eec4 980,1511
+  s_1c08b47ac3792f::t_2aa07087f66e35 1486-1487
+  s_1c08b47ac3792f::t_a1cd533b8d636f 926,1536
+  s_1c08b47ac3792f::t_3df2d926a7f8bb 985-1158
+  s_1c08b47ac3792f::t_fbfc202b7d7aa2 1266-1271
+  s_1c08b47ac3792f::t_604e6938dc4e91 1265,1272-1273,1276
+  s_1c08b47ac3792f::t_78dacbe624a105 1159-1264,1274-1275,1277-1394
+  s_1c08b47ac3792f::t_b9c7fef21570dd 1395-1414,1416-1472
+  s_1c08b47ac3792f::t_76ef974c12f06f 1415
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_1c08b47ac3792f::t_07134fec47a6c8 156-157,162-178
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_1c08b47ac3792f::t_0aa4a6f955d5eb 2,11,23,40,207-247,403
+  s_1c08b47ac3792f::t_9eadc36837dd2e 30
+  s_1c08b47ac3792f::t_0dcf19d3eb7893 269,277-283
+  s_2bfd55a4393d7c::t_5c16a716ac2905 284
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_1c08b47ac3792f::t_a6482dd5d81682 168-176,179-180,1044-1094,1733,1796-1802,1804-1806
+  s_1c08b47ac3792f::t_5635db2707b1bf 19
+  s_1c08b47ac3792f::t_fc5f17fafea805 453-459,497-594,598,600,603-605,610-745
+  s_1c08b47ac3792f::t_56449f32708f7e 461
+  s_1c08b47ac3792f::t_95c1a2e68b892e 1328-1338,1456-1462,1477-1485,1492,1494,1503,1513-1514
+  s_1c08b47ac3792f::t_4a6d09f2de88c5 1795,1807-1816
+  s_1c08b47ac3792f::t_e69aeb36484913 1327,1339-1365,1371-1378,1463,1495-1497,1499-1500
+  s_1c08b47ac3792f::t_f3bad79e9c4ea7 1366-1370
+  s_1c08b47ac3792f::t_131a388c2c7228 1379-1455,1464-1476,1486-1487,1498,1507
+  s_1c08b47ac3792f::t_07bc81bc1e82df 1501-1502,1504-1506
+  s_1c08b47ac3792f::t_20bf6d13aa3db1 1488-1491,1493,1508-1512
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_1c08b47ac3792f::t_5ea90cee4893f8 1-216
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  s_1c08b47ac3792f::t_986b2c09b49808 12,122-133
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_1c08b47ac3792f::t_5d4090f682210c 25,27-30,1285,1304,1307,1328-1330
+  s_1c08b47ac3792f::t_4d532a9d4d9fa7 1504-1507
+  s_1c08b47ac3792f::t_23ac8e9b1d935b 1559-1562
+  s_1c08b47ac3792f::t_6c24907600b3dc 26,31
+  s_1c08b47ac3792f::t_05f306819ce4a1 1440-1503,1508-1558,1563-1567
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_1c08b47ac3792f::t_eb901f886b2c7b 51,441-444,454-455
+src/modules/AiRuntime/useCases/parseAnalysisMeasureArguments.ts
+  s_1c08b47ac3792f::t_b16e0b989628fe 1-127
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_1c08b47ac3792f::t_e39feaacfa508d 60,70,531-547
+src/modules/Arrangement/useCases/__tests__/renderAgentMeasurementTarget.spec.ts
+  s_1c08b47ac3792f::t_641c9bfb313204 1-73
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_1c08b47ac3792f::t_b7a99d5aaabc77 8,108-113,118
+src/modules/Arrangement/useCases/index.ts
+  s_1c08b47ac3792f::t_12fc59f70916ea 44-45
+src/modules/Arrangement/useCases/renderAgentMeasurementTarget.ts
+  s_1c08b47ac3792f::t_e46a516ba00bdc 1-45
+src/modules/Arrangement/useCases/resolveAgentMeasurementTargets.ts
+  s_1c08b47ac3792f::t_583233f6f55f99 1-203
+src/modules/Arrangement/useCases/selectOfflineRenderSubgraph.ts
+  s_1c08b47ac3792f::t_90187426d9a8ba 1-82
+src/modules/AudioAnalysis/models/AgentMeasurementMetricIds.ts
+  s_1c08b47ac3792f::t_ed87235d2a6f7e 1-24
+src/modules/AudioAnalysis/useCases/getAgentMeasurementMetricIds.ts
+  s_1c08b47ac3792f::t_981d2e050380d4 1-6
+src/modules/AudioAnalysis/useCases/index.ts
+  s_1c08b47ac3792f::t_9128e9156231f3 14-15
+src/modules/AudioAnalysis/useCases/measureAgentScopeRender.ts
+  s_1c08b47ac3792f::t_24f9cfb6f684fb 1-47
+src/modules/AudioEngine/useCases/index.ts
+  s_1c08b47ac3792f::t_38358d22ff4b07 158-159
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_1c08b47ac3792f::t_1528fe2c9c6994 784-813
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_1c08b47ac3792f::t_7001bada7a2d7b 40-45,49,51-54,56-60,62-66,68-74,117-126,161,298,404
+src/modules/AudioRendering/models/AgentMeasurementArtifact.ts
+  s_1c08b47ac3792f::t_86a23c7df4f336 1-15
+src/modules/AudioRendering/models/AgentMeasurementRetentionPolicy.ts
+  s_1c08b47ac3792f::t_ac427815a85687 1-5
+src/modules/AudioRendering/stores/agentMeasurementArtifactStore.ts
+  s_1c08b47ac3792f::t_3036ecac6a7e20 1-11
+src/modules/AudioRendering/stores/index.ts
+  s_1c08b47ac3792f::t_4e131e5b101f00 2
+src/modules/AudioRendering/useCases/__tests__/agentMeasurementArtifactRetention.spec.ts
+  s_1c08b47ac3792f::t_e9157f46da2d74 1-137
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScope.spec.ts
+  s_1c08b47ac3792f::t_e83395320a5c3b 1-140
+src/modules/AudioRendering/useCases/clearAgentMeasurementArtifacts.ts
+  s_1c08b47ac3792f::t_81d9efe2d1d0e6 1-8
+src/modules/AudioRendering/useCases/getAgentMeasurementArtifact.ts
+  s_1c08b47ac3792f::t_3d730b9acc106b 1-6
+src/modules/AudioRendering/useCases/getAgentMeasurementArtifacts.ts
+  s_1c08b47ac3792f::t_560f56e6adad42 1-9
+src/modules/AudioRendering/useCases/index.ts
+  s_1c08b47ac3792f::t_e98709cea5305f 16-19
+src/modules/AudioRendering/useCases/pruneExpiredAgentMeasurementArtifacts.ts
+  s_1c08b47ac3792f::t_5e149b6fe57d03 1-10
+src/modules/AudioRendering/useCases/renderAgentMeasurementScope.ts
+  s_1c08b47ac3792f::t_7120910edf8a1a 1-229
+src/modules/AudioRendering/useCases/retainAgentMeasurementArtifacts.ts
+  s_1c08b47ac3792f::t_526335192987e6 1-78
+src/modules/AudioRendering/useCases/scheduleAgentMeasurementArtifactExpiry.ts
+  s_1c08b47ac3792f::t_6752fda02f0e2d 1-31
+src/modules/Project/useCases/index.ts
+  s_1c08b47ac3792f::t_b17fe9f8a8865b 16
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_1c08b47ac3792f::t_53d8a935432717 3,114,229-265
+src/modules/Project/useCases/projectPersistence/helpers/agentMeasurementArtifactClearingState.ts
+  s_1c08b47ac3792f::t_8148da0507b122 1-16
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_1c08b47ac3792f::t_712e863a59a461 24-25,46-49
+src/modules/Project/useCases/projectPersistence/setAgentMeasurementArtifactsClearer.ts
+  s_1c08b47ac3792f::t_f3c9808e6db301 1-13
+src/modules/AiRuntime/models/DeviceManifestPageLimits.ts
+  s_1c08b47ac3792f::t_e76d5c78abf6c4 1-11
+src/modules/AiRuntime/useCases/__tests__/deviceManifestPaging.spec.ts
+  s_1c08b47ac3792f::t_d32477db8bf0d3 333-336,339,353-356
+  s_1c08b47ac3792f::t_7e8220e846f2eb 347-350
+  s_1c08b47ac3792f::t_7e533042787697 1-22,44-101,132-181,190-195,228,230-231,236-237,245,300-332,337-338,340-346,351-352,357-359
+  s_1c08b47ac3792f::t_e4ec753dafa00b 182-189
+  s_1c08b47ac3792f::t_60224d4ae9db9c 23-25,29-43
+  s_1c08b47ac3792f::t_c505105e981586 253-304
+  s_1c08b47ac3792f::t_f1f091dff3e9e0 102-131
+  s_1c08b47ac3792f::t_58fa300a4fa208 196-202,204-206,209-215,218
+  s_1c08b47ac3792f::t_98357af5b3dd64 26-28
+  s_1c08b47ac3792f::t_97362a13964b40 224-252
+.agents/skills/review-stances/correctness.md
+  s_1c08b47ac3792f::t_8e640320979efb 57-64
+src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
+  s_1c08b47ac3792f::t_c7a262ed27fd1f 85-99
+evidence/agent-campaign/manifest.json
+  s_1c08b47ac3792f::t_c39b6b3e4f9749 527
+  s_1c08b47ac3792f::t_22507e7f80ab3a 374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "663e97d3cfedc69cf5fec9852f3ef8d71b7cfd88",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
