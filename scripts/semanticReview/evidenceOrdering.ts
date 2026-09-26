@@ -9,8 +9,11 @@
  * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
  *    contract-carrying or a source a contract-carrying spec covers — so the budget stays on the change
  *    the contract lives in and no spec outranks the source it covers;
- * 2. a changed file whose rules need contract evidence, so the context charge its own rules declared
- *    cannot starve its reader, while the side stays behind genuine contract material;
+ * 2. a changed file whose rules need contract evidence — its own sides, attempted before the context
+ *    units those rules charge, while the side stays behind genuine contract material. That attempt order
+ *    is the whole guarantee: `fitUnitEvidence` reserves a bounded context share of the request
+ *    (`CONTEXT_BUDGET_SHARE`) before it offers these sides, so the unit's own sides can still be
+ *    withheld below its request while the charged documents are sent;
  * 3. contract-context units, the documents read at the contract source revision — ahead of bulk,
  *    behind the change's own contract material;
  * 4. bulk sides of the change.
@@ -86,8 +89,10 @@ export function classifyContractCarryingSides(
 
 /**
  * The changed paths whose rules declare a contract, decision or registration token. A file's own sides
- * are ordered ahead of the context documents its rules charge, so the charge cannot starve the reader
- * that made it chargeable.
+ * are attempted ahead of the context documents its rules charge, so the order keeps the charge from
+ * taking the reader's place — and that is all it keeps: the request fitter reserves the bounded context
+ * share before it offers these sides, so under a binding total the documents can still be sent while
+ * the unit's own sides are withheld below its request.
  */
 export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): ReadonlySet<string> {
     const needing = new Set<string>();
@@ -216,8 +221,10 @@ function unitSideOrder(unit: AdmissionUnit): number {
  *
  * 0. the change's own contract-carrying sides and the sources a contract-carrying spec covers;
  * 1. a changed file whose rules declare a contract, decision or registration token — its own
- *    before/after sides rank ahead of the context documents those rules charge, so the context cannot
- *    starve the reader that made it chargeable, while the side stays behind genuine contract material;
+ *    before/after sides are attempted ahead of the context documents those rules charge, while the side
+ *    stays behind genuine contract material. The tier is an attempt order, not a protection: the request
+ *    fitter reserves the bounded context share before it offers these sides, so under a binding total
+ *    the charged documents can still be sent while this unit's own sides are withheld below its request;
  * 2. contract-context units;
  * 3. bulk sides.
  *
@@ -514,11 +521,16 @@ export function admissionBytesBySide(
 }
 
 /**
- * The changed paths the admission content screen will mark `credential-shaped-content-excluded`, from
- * the same region text the screen reads: each side's hunks when the hunks were read, the whole side
- * otherwise. A file with a credential-shaped region on either side is excluded by the planner however
- * clean its other side, so the context gate must not charge a document no unit will read. This mirrors
- * `admitSide`'s slicing rather than reading again — the content was already read once for admission.
+ * The paths the admission content screen will mark `credential-shaped-content-excluded`, from the same
+ * region text the screen reads: each side's hunks when the hunks were read, the whole side otherwise.
+ *
+ * The set is keyed the way admission keys a region, not by the change: a before side is admitted under
+ * its previous path and an after side under the change's own path, so a rename whose previous side is
+ * credential-shaped records the previous path. That distinction is what the context gate reads. The
+ * planner skips a changed file only when its own path is in the excluded set, so this rename still
+ * plans a destination unit from its clean after side and must charge the context its rules declare,
+ * while a modified file — whose two sides share one path — is skipped by either side. This mirrors
+ * `admitSide`'s slicing rather than reading again: the content was already read once for admission.
  */
 export function credentialShapedPaths(
     changed: readonly SemanticChangedFile[],
@@ -546,7 +558,7 @@ export function credentialShapedPaths(
             entry?.before !== undefined &&
             sideHasCredential(entry.before, hunks?.before)
         ) {
-            credential.add(file.path);
+            credential.add(file.previousPath ?? file.path);
             continue;
         }
         if (kindHasAfterSide(file.kind) && entry?.after !== undefined && sideHasCredential(entry.after, hunks?.after)) {

@@ -17,10 +17,13 @@
  * boundary), a collected spec whose content imports a closure member or names one of those workflow
  * files, or a source such a spec covers — first, then a changed file whose rules declare a contract,
  * decision or registration token, then each contract-context region the caller supplies, then bulk
- * sides. The ranking admits the change's own contract material ahead of the context documents and keeps
- * a contract-needing file ahead of the context its own rules charge, but a region over the per-region
- * ceiling is never supplied: it is withheld and recorded, so a contract document larger than that
- * ceiling is never sent whatever its tier. Every withheld region is named, and that name carries the
+ * sides. The ranking admits the change's own contract material ahead of the context documents, and
+ * attempts a contract-needing file's own sides before the context those rules charge — an attempt order
+ * is the whole guarantee, because `fitUnitEvidence` reserves a bounded context share of the request
+ * before it offers the unit's own regions, so under a binding total the charged documents can still be
+ * sent while the unit's own sides are withheld below its request. A region over the per-region ceiling
+ * is never supplied: it is withheld and recorded, so a contract document larger than that ceiling is
+ * never sent whatever its tier. Every withheld region is named, and that name carries the
  * region's own content class — contract-carrying per side, or a contract-context region — never its
  * admission tier: a tier-0 spec-covered source and a tier-1 contract-needing file read the plain side
  * qualifier, because the tier is only the order admission attempts the record in. Each side is
@@ -365,6 +368,21 @@ function withheldCauseCode(cause: WithheldRegionCause): string {
 }
 
 /**
+ * Whether a withheld region carries the contract class, from its own side and the contract-carrying
+ * classification of that side.
+ *
+ * A context region always does: it is a document read at the contract source revision, supplied as
+ * context because a rule declared it needs a contract, so its own path and content never decide its
+ * class. Every other region reads the classification of the side the region comes from. Both routes
+ * name a withheld reference through this one rule, so the same reference reads the same reason
+ * whichever route produced it — a caller-supplied context path that no contract-carrying
+ * classification covers is still named contract on both.
+ */
+export function withheldRegionCarriesContract(side: EvidenceSide, classifiedContractCarrying: boolean): boolean {
+    return side === 'context' || classifiedContractCarrying;
+}
+
+/**
  * Whether a region belongs to a contract-carrying path, decided from the path and content of the side
  * the region comes from. Contract-context regions carry no changed path and are always contract.
  */
@@ -372,21 +390,17 @@ function isContractCarryingRegion(
     request: { readonly changedPath?: string; readonly side: EvidenceSide },
     contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
 ): boolean {
-    if (request.changedPath === undefined) {
-        return true;
-    }
-    const sides = contractCarryingSides.get(request.changedPath);
-    if (sides === undefined) {
-        return false;
-    }
-    return request.side === 'before' ? sides.before : sides.after;
+    const sides = request.changedPath === undefined ? undefined : contractCarryingSides.get(request.changedPath);
+    const side = request.side === 'before' ? sides?.before : sides?.after;
+    return withheldRegionCarriesContract(request.side, side ?? false);
 }
 
 /**
  * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code —
  * `region-exceeds-per-region-budget`, `total-evidence-budget-exhausted`, or `hunk-beyond-file` — and
- * `contract` joins the side qualifier for a contract-carrying region, so the same withheld reference
- * reads the same whichever route produced it. Every other region keeps the plain `<code> (<side>)` form.
+ * `contract` joins the side qualifier for a region `withheldRegionCarriesContract` classifies contract,
+ * so the same withheld reference reads the same whichever route produced it. Every other region keeps
+ * the plain `<code> (<side>)` form.
  *
  * The qualifier names the region's own content class — the side's `contractCarrying` classification, or
  * the contract-context class — and never the admission tier. A source a contract-carrying spec covers
@@ -651,17 +665,22 @@ function admitUnit(
 /**
  * Whether any screened changed file that can contribute admissible evidence plans a unit whose rules
  * declare a contract, decision or registration token. A file whose every side is over the per-region
- * ceiling, or carries a credential-shaped side the content screen will exclude, produces no unit, so it
- * must not charge the contract documents no request will read. The caller screens paths before calling.
+ * ceiling, or whose own path the content screen excluded, produces no unit, so it must not charge the
+ * contract documents no request will read.
+ *
+ * The own path decides, because that is what the planner skips on. A rename whose previous path was
+ * excluded for a credential still plans a destination unit from its clean after side, so this gate
+ * charges the context that unit's rules declare and will read; consulting the previous path here would
+ * withhold the contract a planned unit asked for. The caller screens paths before calling.
  */
 function planNeedsContractContext(
     files: readonly SemanticChangedFile[],
     admissionBytes: ReadonlyMap<string, AdmissionSideBytes>,
-    credentialShaped: ReadonlySet<string>
+    credentialExcludedPaths: ReadonlySet<string>
 ): boolean {
     const contractNeeding = contractNeedingPaths(files);
     for (const file of files) {
-        if (credentialShaped.has(file.path)) {
+        if (credentialExcludedPaths.has(file.path)) {
             continue;
         }
         const bytes = admissionBytes.get(file.path);
@@ -725,14 +744,15 @@ export function collectEvidence(input: {
         input.headSha
     );
     const specCovered = specCoveredSources(assessed, contents);
-    const credentialShaped = credentialShapedPaths(assessed, contents, hunksByPath);
+    const credentialExcludedPaths = credentialShapedPaths(assessed, contents, hunksByPath);
     // The default contract documents are charged only when a planned unit that can actually exist — an
-    // eligible, credential-free file with at least one admissible side and contract-declaring rules —
-    // will read them.
+    // eligible file whose own path the content screen kept, with at least one admissible side and
+    // contract-declaring rules — will read them. A rename's excluded previous path leaves that unit
+    // standing on its clean after side, so it still charges the context it declared.
     const contextPaths = new Set<string>();
     const includeDefault =
         input.includeDefaultContractContext === true &&
-        planNeedsContractContext(assessed, bytesBySide, credentialShaped);
+        planNeedsContractContext(assessed, bytesBySide, credentialExcludedPaths);
     if (includeDefault) {
         for (const path of contractContextCandidates(input.port, input.contractSourceSha)) {
             contextPaths.add(path);

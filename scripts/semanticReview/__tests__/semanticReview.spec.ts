@@ -1208,6 +1208,53 @@ describe('contract-carrying admission', () => {
         ]);
     });
 
+    it('withholds a contract-needing unit below its request while the documents it charged are sent', async () => {
+        // The admission tier is an attempt order, not a protection. `fitUnitEvidence` reserves the
+        // bounded context share of the request before it offers the unit's own regions, so on a 280-line
+        // edit whose rules need the undo contract the charged documents are sent while both of the unit's
+        // own sides are withheld; with the documents absent the after side — attempted first, being the
+        // smaller — still fits the whole budget. Setting `CONTEXT_BUDGET_SHARE` to 0 hands the own sides
+        // the whole budget and fails the first arm of this case.
+        const path = 'src/modules/Project/undo.ts';
+        const before = 'const beforeValue = 1;\n'.repeat(280);
+        const after = 'const afterValue = 2;\n'.repeat(280);
+        const scanWith = async (documents: boolean) => {
+            const blobs: Record<string, string> = {
+                [`${MERGE_BASE}:${path}`]: before,
+                [`${HEAD}:${path}`]: after,
+            };
+            if (documents) {
+                blobs[`${MERGE_BASE}:AGENTS.md`] = '# AGENTS.md contract\n';
+                blobs[`${MERGE_BASE}:.agents/decisions/README.md`] = '# Decisions\n';
+            }
+            return runScan({
+                ...scanPorts(
+                    constantProvider(0.05),
+                    fakeSource({ files: [changedFile(path, { added: 280, deleted: 280 })], blobs }),
+                    fixedClock(1_000)
+                ),
+                // Large enough that collection withholds nothing: the reduction must come from fitting.
+                limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            });
+        };
+        const charged = await scanWith(true);
+        const chargedUnit = charged.previews.find((preview) => preview.path === path);
+        expect(chargedUnit?.evidenceIds.length).toBeGreaterThan(0);
+        // The documents the unit's rules charged are the whole payload this unit was sent.
+        expect(chargedUnit?.evidenceIds.every((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
+        expect(charged.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'unit-evidence-reduced-below-request-budget (before, after)',
+        });
+        const bare = await scanWith(false);
+        const bareUnit = bare.previews.find((preview) => preview.path === path);
+        expect(bareUnit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('a'))).toBe(true);
+        expect(bare.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'unit-evidence-reduced-below-request-budget (before)',
+        });
+    });
+
     it('charges no contract context when the content screen drops the only reading unit', () => {
         // D3: a modified contract-needing file whose after side is credential-shaped is excluded by the
         // content screen and skipped by the planner, yet the gate charged the context documents from the
@@ -1369,6 +1416,36 @@ describe('contract-carrying admission', () => {
                 (entry) =>
                     entry.path === 'src/modules/Project/undo.ts' &&
                     entry.reason === 'credential-shaped-content-excluded'
+            )
+        ).toBe(true);
+    });
+
+    it('charges the default contract context when a rename moves a credential-shaped previous side', async () => {
+        // The screen records the path admission reads: the previous path for a before side, the change's
+        // own path for an after side. Consulting it by the destination alone read this rename as
+        // credential-shaped while the planner skips a file only when its own path is excluded, so the
+        // destination unit was planned from its clean after side, declared the undo contract, and got no
+        // context at all — a limitation naming a contract the run should have supplied. Keying the
+        // before side by its previous path charges the documents that unit will read.
+        const awsShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const previousPath = 'src/modules/Project/legacy-key.ts';
+        const path = 'src/modules/Project/undo.ts';
+        const source = fakeSource({
+            files: [changedFile(path, { kind: 'renamed', previousPath, added: 1, deleted: 1 })],
+            blobs: {
+                [`${MERGE_BASE}:${previousPath}`]: `export const key = '${awsShaped}';\nexport const undo = true;\n`,
+                [`${HEAD}:${path}`]: 'export const undo = false;\n',
+                [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n',
+                [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n',
+            },
+        });
+        const result = await runScan(scanPorts(constantProvider(0.05), source, fixedClock(1_000)));
+        const unit = result.previews.find((preview) => preview.path === path);
+        expect(unit).toBeDefined();
+        expect(unit?.evidenceIds.some((evidenceId) => evidenceId.startsWith('c'))).toBe(true);
+        expect(
+            result.report.scope.excluded.some(
+                (entry) => entry.path === previousPath && entry.reason === 'credential-shaped-content-excluded'
             )
         ).toBe(true);
     });
@@ -2303,6 +2380,58 @@ describe('contract classification follows each side on both routes', () => {
                 }
             )
         ).toBe('region-exceeds-per-region-budget (context, contract)');
+    });
+
+    it('names a caller-supplied context region contract on both routes, whatever its path classifies as', async () => {
+        // R3: the scan names every context request contract — `isContractCarryingRegion` returns true for
+        // a region carrying no changed path — while verify recomputed the class from the reference's own
+        // path and content. A context path that no contract-carrying classification covers therefore read
+        // `(context, contract)` from the scan and `(context)` from verify for the same reference.
+        const contextPath = 'docs/notes.md';
+        const oversized = '# notes\n'.repeat(200);
+        const files = { [`${MERGE_BASE}:${contextPath}`]: oversized };
+        const set = collectEvidence({
+            port: fakeSource({ files: [], blobs: files }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits,
+            contractPaths: [contextPath],
+        });
+        expect(set.truncated).toEqual([
+            { path: contextPath, reason: 'region-exceeds-per-region-budget (context, contract)' },
+        ]);
+        expect(await verifyWithheldReason({ path: contextPath, side: 'context' }, files)).toBe(
+            'region-exceeds-per-region-budget (context, contract)'
+        );
+        // The verify route's other withheld cause reads the same one class.
+        const { runVerify } = await import('../verify.ts');
+        const beyond = await runVerify({
+            ports: {
+                source: fakeSource({ files: [], blobs: files }),
+                provider: constantProvider({ supported: 0.5, contradicted: 0.25, insufficient_context: 0.25 }),
+                cache: new MapCache(),
+                clock: fixedClock(1_000),
+                signal: new AbortController().signal,
+                log: () => undefined,
+            },
+            revision: BASE_REVISION,
+            profile: SEMANTIC_BUDGET_PROFILES.local,
+            limits,
+            findings: [
+                {
+                    findingId: 'f1',
+                    headSha: HEAD,
+                    claim: 'a claim',
+                    expectedBehavior: 'expected',
+                    evidenceReferences: [{ path: contextPath, side: 'context', startLine: 500, endLine: 520 }],
+                },
+            ],
+            runId: 'verify-context-class',
+        });
+        expect(beyond.report.scope.truncated).toEqual([
+            { path: contextPath, reason: 'hunk-beyond-file (context, contract)' },
+        ]);
     });
 });
 

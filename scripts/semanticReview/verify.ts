@@ -29,6 +29,7 @@ import {
     evidenceSidePrefix,
     isContractCarryingContent,
     isSensitivePath,
+    withheldRegionCarriesContract,
     withheldRegionReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
@@ -380,7 +381,7 @@ function collectFindingEvidence(input: {
             truncated.push({
                 path: reference.path,
                 reason: withheldRegionReason(
-                    isContractCarryingContent(reference.path, text),
+                    withheldRegionCarriesContract(reference.side, isContractCarryingContent(reference.path, text)),
                     reference.side,
                     'hunk-beyond-file'
                 ),
@@ -411,7 +412,11 @@ function collectFindingEvidence(input: {
         if (regionCost(evidenceReference, region) > input.limits.maxRegionBytes) {
             truncated.push({
                 path: reference.path,
-                reason: withheldRegionReason(isContractCarryingContent(reference.path, text), reference.side, 'region'),
+                reason: withheldRegionReason(
+                    withheldRegionCarriesContract(reference.side, isContractCarryingContent(reference.path, text)),
+                    reference.side,
+                    'region'
+                ),
             });
             limitations.push(
                 `finding evidence ${reference.path} (${reference.side}) was not supplied: it exceeds the per-region budget`
