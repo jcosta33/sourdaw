@@ -299,6 +299,53 @@ const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
 /// proves against the real engine that it does not.
 const MAX_BACTERIA_MOD_ASSIGNMENTS: usize = 64;
 
+/// Modulation sources the bacteria engine's per-sample table addresses.
+///
+/// Mirrors `daw_dsp::bacteria::engine::MOD_SOURCE_COUNT`, restated here for
+/// the same reason [`MAX_BACTERIA_MOD_ASSIGNMENTS`] is: `daw-dsp` also builds
+/// to wasm, and widening its public surface for a constant this crate can
+/// otherwise just restate would cost a wasm rebuild and manifest restamp for
+/// no behavioural change. `BacteriaEngine::add_mod_assignment` drops a row
+/// naming a source at or past this ceiling with a bare `return` rather than
+/// refusing it, so a door that let one through would admit a batch the engine
+/// only partly honours;
+/// `a_bacteria_mod_assignment_source_id_past_the_mirrored_ceiling_is_refused_by_the_engine_too`
+/// proves this mirror does not drift from the real ceiling unnoticed.
+const BACTERIA_MOD_SOURCE_COUNT: usize = 16;
+
+/// Modulation targets the bacteria engine's per-sample table addresses.
+///
+/// Mirrors `daw_dsp::bacteria::engine::PARAM_TARGET_COUNT`, restated here for
+/// the same reason [`BACTERIA_MOD_SOURCE_COUNT`] is. That constant is itself
+/// `BAND_MODULE_BASE + MAX_BANDS * BAND_MODULE_STRIDE` on the engine side —
+/// 16 globals plus 6 bands of 16 per-band slots each, 112 in total — an
+/// arithmetic this crate has no reason to reproduce beyond the flat count.
+/// `a_bacteria_mod_assignment_target_param_past_the_mirrored_ceiling_is_refused_by_the_engine_too`
+/// proves this mirror does not drift from the real ceiling unnoticed.
+const BACTERIA_MOD_TARGET_COUNT: usize = 112;
+
+/// Refuses one modulation-assignment row whose `source_id` or `target_param`
+/// names no engine source or target, so a validating door catches exactly
+/// what `BacteriaEngine::add_mod_assignment`
+/// (`crates/daw-dsp/src/bacteria/engine.rs`) would otherwise drop with a bare
+/// `return` — the module contract (module docs above, `graph.rs:32-35`)
+/// requires the batch refuse rather than let the engine play a partial table.
+fn bacteria_mod_assignment_route_refusal(source_id: u8, target_param: u16) -> Option<String> {
+    if source_id as usize >= BACTERIA_MOD_SOURCE_COUNT {
+        return Some(format!(
+            "sourceId {source_id} names no engine modulation source, past the ceiling of \
+             {BACTERIA_MOD_SOURCE_COUNT}"
+        ));
+    }
+    if target_param as usize >= BACTERIA_MOD_TARGET_COUNT {
+        return Some(format!(
+            "targetParam {target_param} names no engine modulation target, past the ceiling of \
+             {BACTERIA_MOD_TARGET_COUNT}"
+        ));
+    }
+    None
+}
+
 /// MIDI channels a note can sound on.
 ///
 /// Mirrors the engine's own address space, which is where the ceiling comes
@@ -2520,6 +2567,11 @@ fn map_device(
             ));
         }
         for row in rows {
+            if let Some(reason) =
+                bacteria_mod_assignment_route_refusal(row.source_id, row.target_param)
+            {
+                return Err(format!("device '{}' {reason}", device.id));
+            }
             finite(row.amount as f64, "modAssignments amount")
                 .map_err(|reason| format!("device '{}' {reason}", device.id))?;
         }
@@ -3683,6 +3735,21 @@ fn map_command(
                      {MAX_BACTERIA_MOD_ASSIGNMENTS}",
                     assignments.len()
                 ));
+            }
+            // Validated whole before any op is pushed, the same law
+            // `map_device`'s construction-time check enforces: an out-of-range
+            // row here would otherwise reach `BacteriaEngine::add_mod_assignment`
+            // (`crates/daw-dsp/src/bacteria/engine.rs`), which drops it with a
+            // bare `return`, leaving the engine holding a partial table under
+            // an admitted batch.
+            for row in assignments {
+                if let Some(reason) =
+                    bacteria_mod_assignment_route_refusal(row.source_id, row.target_param)
+                {
+                    return Err(format!(
+                        "set-device-mod-assignments: device '{device_id}' {reason}"
+                    ));
+                }
             }
             // Charged the same way a `SetDeviceParameters` record's keys are:
             // one unit per row plus one for the clear this always issues,
@@ -14039,6 +14106,77 @@ mod tests {
         );
     }
 
+    /// A bacteria device naming a mod-assignment row whose `source_id`
+    /// addresses no engine modulation source refuses whole at construction —
+    /// `BacteriaEngine::add_mod_assignment`
+    /// (`crates/daw-dsp/src/bacteria/engine.rs`) would otherwise drop just
+    /// that row with a bare `return` and silently admit the rest of the
+    /// table.
+    #[test]
+    fn a_bacteria_device_naming_a_mod_assignment_source_id_past_the_ceiling_at_construction_refuses(
+    ) {
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Bus",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": false,
+                               "parameterValues": json!({}),
+                               "modAssignments": [
+                                   { "sourceId": 0, "targetParam": 1, "amount": 0.5 },
+                                   { "sourceId": BACTERIA_MOD_SOURCE_COUNT, "targetParam": 1,
+                                     "amount": 0.5 }
+                               ] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a sourceId naming no engine source at construction must refuse");
+
+        assert!(
+            refusal.contains("d-bac") && refusal.contains("sourceId"),
+            "the refusal must name the device and the field, got: {refusal}"
+        );
+    }
+
+    /// A bacteria device naming a mod-assignment row whose `target_param`
+    /// addresses no engine modulation target refuses whole at construction,
+    /// for the same reason the `source_id` case above does.
+    #[test]
+    fn a_bacteria_device_naming_a_mod_assignment_target_param_past_the_ceiling_at_construction_refuses(
+    ) {
+        let refusal = map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Bus",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-bac", "type": "bacteria", "bypassed": false,
+                               "parameterValues": json!({}),
+                               "modAssignments": [
+                                   { "sourceId": 0, "targetParam": 1, "amount": 0.5 },
+                                   { "sourceId": 0, "targetParam": BACTERIA_MOD_TARGET_COUNT,
+                                     "amount": 0.5 }
+                               ] } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a targetParam naming no engine target at construction must refuse");
+
+        assert!(
+            refusal.contains("d-bac") && refusal.contains("targetParam"),
+            "the refusal must name the device and the field, got: {refusal}"
+        );
+    }
+
     /// JSON syntax has no token for `NaN` or `Infinity` at all, so no wire
     /// batch can ever spell this field non-finite directly that way. A finite
     /// JSON double past `f32`'s range is a different story: it decodes to a
@@ -14346,6 +14484,96 @@ mod tests {
         );
     }
 
+    /// A `sourceId` naming no engine modulation source refuses the whole live
+    /// door write, the same law the construction-time check enforces —
+    /// `BacteriaEngine::add_mod_assignment`
+    /// (`crates/daw-dsp/src/bacteria/engine.rs`) would otherwise drop just
+    /// that row with a bare `return` and admit the rest of the batch alone.
+    #[test]
+    fn set_device_mod_assignments_with_a_source_id_naming_no_engine_source_refuses() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": [
+                      { "sourceId": BACTERIA_MOD_SOURCE_COUNT, "targetParam": 1, "amount": 0.5 }
+                  ] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a sourceId naming no engine source on the live door must refuse");
+
+        assert!(
+            refusal.contains("sourceId") && refusal.contains("d-bac"),
+            "the refusal must name the field and the device, got: {refusal}"
+        );
+    }
+
+    /// A `targetParam` naming no engine modulation target refuses the whole
+    /// live door write, for the same reason the `sourceId` case above does.
+    #[test]
+    fn set_device_mod_assignments_with_a_target_param_naming_no_engine_target_refuses() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": [
+                      { "sourceId": 0, "targetParam": BACTERIA_MOD_TARGET_COUNT, "amount": 0.5 }
+                  ] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a targetParam naming no engine target on the live door must refuse");
+
+        assert!(
+            refusal.contains("targetParam") && refusal.contains("d-bac"),
+            "the refusal must name the field and the device, got: {refusal}"
+        );
+    }
+
+    /// The ids one below each ceiling name the last real engine source and
+    /// target, so a row carrying both maps rather than refuses — the
+    /// boundary the two refusal tests above approach from the other side.
+    #[test]
+    fn set_device_mod_assignments_at_the_source_and_target_boundary_is_accepted() {
+        let mut registry = registry_with_mapped_bacteria("d-bac", "t1", 7);
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-device-mod-assignments", "trackId": "t1", "deviceId": "d-bac",
+                  "assignments": [
+                      { "sourceId": BACTERIA_MOD_SOURCE_COUNT - 1,
+                        "targetParam": BACTERIA_MOD_TARGET_COUNT - 1, "amount": 0.5 }
+                  ] }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a row at the boundary of both ceilings must map");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [
+                    GraphCommand::ClearModAssignments(7),
+                    GraphCommand::AddModAssignment {
+                        effect_id: 7,
+                        source_id,
+                        target_param,
+                        ..
+                    },
+                ] if *source_id as usize == BACTERIA_MOD_SOURCE_COUNT - 1
+                    && *target_param as usize == BACTERIA_MOD_TARGET_COUNT - 1
+            ),
+            "a boundary row must map to a clear plus one add carrying those ids, got {} ops",
+            mapped.ops.len()
+        );
+    }
+
     /// The live door's own mirror of the construction-time refusal
     /// (`a_bacteria_device_naming_a_mod_assignment_amount_past_f32_range_at_construction_refuses`
     /// above): `1e39` decodes cleanly into `ModAssignmentPayload::amount`'s
@@ -14408,6 +14636,107 @@ mod tests {
             render(&sixty_five),
             "a 65th mod-assignment row changed the render, so the engine did not refuse it at \
              this crate's mirrored ceiling of {MAX_BACTERIA_MOD_ASSIGNMENTS}"
+        );
+    }
+
+    /// Proves [`BACTERIA_MOD_SOURCE_COUNT`] against the real (private) engine
+    /// ceiling without reading it, the same way the row-count mirror proof
+    /// above does: render A is 64 valid rows filling the table; render B
+    /// replaces one interior row with a `source_id` at the mirrored ceiling —
+    /// an address `BacteriaEngine::add_mod_assignment` refuses, so the row
+    /// after it takes the freed 64th slot and B ends up identical to A;
+    /// render C instead uses `source_id` one below the ceiling — an address
+    /// the engine accepts, so that row itself consumes the 64th slot and the
+    /// row after it is dropped for the table being full, changing the render.
+    /// A mirror one too high would make B differ from A (the engine would
+    /// have accepted the address B means to test); one too low would make C
+    /// match A (the engine would have refused it too).
+    #[test]
+    fn a_bacteria_mod_assignment_source_id_past_the_mirrored_ceiling_is_refused_by_the_engine_too()
+    {
+        const RATE: f32 = 48_000.0;
+        // LFO1 -> band0 gain; LFO1 free-runs every sample regardless of
+        // whatever else the engine is doing, so its contribution never
+        // depends on anything but the assignment table itself.
+        let valid_row = (0u8, 1u16, 0.9f32);
+
+        let render = |rows: &[(u8, u16, f32)]| {
+            let mut engine = daw_dsp::bacteria::engine::BacteriaEngine::new(RATE);
+            for &(source_id, target_param, amount) in rows {
+                engine.add_mod_assignment(source_id, target_param, amount);
+            }
+            let mut left = vec![0.3f32; 256];
+            let mut right = vec![0.3f32; 256];
+            engine.process_block(&mut left, &mut right);
+            (left, right)
+        };
+
+        let a: Vec<(u8, u16, f32)> = vec![valid_row; 64];
+
+        let mut b: Vec<(u8, u16, f32)> = vec![valid_row; 63];
+        b.push((BACTERIA_MOD_SOURCE_COUNT as u8, 1, 0.9));
+        b.push(valid_row);
+
+        let mut c: Vec<(u8, u16, f32)> = vec![valid_row; 63];
+        c.push((BACTERIA_MOD_SOURCE_COUNT as u8 - 1, 1, 0.0));
+        c.push(valid_row);
+
+        assert_eq!(
+            render(&a),
+            render(&b),
+            "the engine accepted a sourceId at the mirrored ceiling of \
+             {BACTERIA_MOD_SOURCE_COUNT}, so this crate's mirror is stale"
+        );
+        assert_ne!(
+            render(&a),
+            render(&c),
+            "the engine refused a sourceId one below the mirrored ceiling of \
+             {BACTERIA_MOD_SOURCE_COUNT}, so this crate's mirror is stale"
+        );
+    }
+
+    /// Proves [`BACTERIA_MOD_TARGET_COUNT`] against the real (private) engine
+    /// ceiling, by the same construction
+    /// [`a_bacteria_mod_assignment_source_id_past_the_mirrored_ceiling_is_refused_by_the_engine_too`]
+    /// uses for `source_id`, varying `target_param` instead.
+    #[test]
+    fn a_bacteria_mod_assignment_target_param_past_the_mirrored_ceiling_is_refused_by_the_engine_too()
+     {
+        const RATE: f32 = 48_000.0;
+        let valid_row = (0u8, 1u16, 0.9f32);
+
+        let render = |rows: &[(u8, u16, f32)]| {
+            let mut engine = daw_dsp::bacteria::engine::BacteriaEngine::new(RATE);
+            for &(source_id, target_param, amount) in rows {
+                engine.add_mod_assignment(source_id, target_param, amount);
+            }
+            let mut left = vec![0.3f32; 256];
+            let mut right = vec![0.3f32; 256];
+            engine.process_block(&mut left, &mut right);
+            (left, right)
+        };
+
+        let a: Vec<(u8, u16, f32)> = vec![valid_row; 64];
+
+        let mut b: Vec<(u8, u16, f32)> = vec![valid_row; 63];
+        b.push((0, BACTERIA_MOD_TARGET_COUNT as u16, 0.9));
+        b.push(valid_row);
+
+        let mut c: Vec<(u8, u16, f32)> = vec![valid_row; 63];
+        c.push((0, BACTERIA_MOD_TARGET_COUNT as u16 - 1, 0.0));
+        c.push(valid_row);
+
+        assert_eq!(
+            render(&a),
+            render(&b),
+            "the engine accepted a targetParam at the mirrored ceiling of \
+             {BACTERIA_MOD_TARGET_COUNT}, so this crate's mirror is stale"
+        );
+        assert_ne!(
+            render(&a),
+            render(&c),
+            "the engine refused a targetParam one below the mirrored ceiling of \
+             {BACTERIA_MOD_TARGET_COUNT}, so this crate's mirror is stale"
         );
     }
 
