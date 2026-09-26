@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "63eb606fd95fae0387682c1e1f150e5fdb5b02bc019a207997cd6d289d23fea5"
+                    "digest": "01913a59c738b24b624f957993fb27cbc9eb90983b999a6e1c3e2680fdf80e40"
                 }
             ]
         },

@@ -20,6 +20,25 @@ function receiptByteLength(receipt: unknown): number {
     return new TextEncoder().encode(JSON.stringify(receipt)).byteLength;
 }
 
+const WORST_CASE_CALL_ID_LENGTH = 256;
+const WORST_CASE_CALL_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
+type ForgedManifestCursor = { schemaVersion: 1; type: string; version: string; offset: number };
+
+/**
+ * Builds a `device.factory-manifest.read` parameter cursor the same base64url way the loop's own
+ * `encodeDeviceManifestParameterCursor` does, so a tampered field reaches the cursor decoder
+ * instead of being turned away earlier by the cursor string-format check.
+ */
+function encodeManifestCursor(cursor: ForgedManifestCursor): string {
+    const bytes = new TextEncoder().encode(JSON.stringify(cursor));
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+
 async function callDeviceManifest(input: { callId: string; arguments: Record<string, unknown> }) {
     const requestTurn = vi
         .fn()
@@ -78,6 +97,36 @@ describe('device.factory-manifest.read paging', () => {
         }
     });
 
+    it('pages every released builtin type at the shared parameter page limit within budget using a worst-case call id', async () => {
+        const worstCaseCallId = 'w'.repeat(WORST_CASE_CALL_ID_LENGTH);
+        expect(worstCaseCallId).toHaveLength(WORST_CASE_CALL_ID_LENGTH);
+        expect(worstCaseCallId).toMatch(WORST_CASE_CALL_ID_PATTERN);
+
+        const descriptors = getAgentBuiltinDeviceFactoryManifest();
+        expect(descriptors.length).toBeGreaterThan(0);
+
+        for (const descriptor of descriptors) {
+            let cursor: string | undefined;
+            let step = 0;
+            for (;;) {
+                step += 1;
+                if (step > 40) {
+                    throw new Error(`Paging did not terminate for device type: ${descriptor.type}`);
+                }
+                const receipt = await callDeviceManifest({
+                    callId: worstCaseCallId,
+                    arguments: { types: [descriptor.type], page: cursor === undefined ? {} : { cursor } },
+                });
+                expect(receipt.status).toBe('success');
+                const data = receipt.data as ManifestPageData;
+                if (data.nextCursor === null) {
+                    break;
+                }
+                cursor = data.nextCursor;
+            }
+        }
+    });
+
     it("returns Crust's oversampling legal set through a second parameters page", async () => {
         const first = await callDeviceManifest({
             callId: 'crust-legal-page-1',
@@ -128,6 +177,14 @@ describe('device.factory-manifest.read paging', () => {
             label: 'a limit past the published maximum',
             arguments: { types: ['crust'], page: { limit: DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT + 1 } },
         },
+        {
+            label: 'a limit below the lower bound of one',
+            arguments: { types: ['crust'], page: { limit: 0 } },
+        },
+        {
+            label: 'a non-integer limit',
+            arguments: { types: ['crust'], page: { limit: 2.5 } },
+        },
     ])('refuses $label as invalid tool arguments', async ({ arguments: callArguments }) => {
         const receipt = await callDeviceManifest({ callId: 'invalid-page-argument', arguments: callArguments });
         expect(receipt).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
@@ -146,6 +203,58 @@ describe('device.factory-manifest.read paging', () => {
         const replay = await callDeviceManifest({
             callId: 'cross-type-cursor-replay',
             arguments: { types: ['gluten'], page: { cursor } },
+        });
+
+        expect(replay).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
+    });
+
+    it('refuses a forged parameter cursor whose offset exceeds the live parameter total', async () => {
+        const source = await callDeviceManifest({
+            callId: 'offset-overflow-source',
+            arguments: { types: ['crust'], page: {} },
+        });
+        const sourceData = source.data as ManifestPageData;
+        const device = sourceData.devices[0];
+        if (!device) {
+            throw new Error('Expected a crust manifest entry.');
+        }
+
+        const forgedCursor = encodeManifestCursor({
+            schemaVersion: 1,
+            type: 'crust',
+            version: device.version,
+            offset: sourceData.page.total + 1,
+        });
+
+        const replay = await callDeviceManifest({
+            callId: 'offset-overflow-replay',
+            arguments: { types: ['crust'], page: { cursor: forgedCursor } },
+        });
+
+        expect(replay).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
+    });
+
+    it('refuses a forged parameter cursor carrying a negative offset', async () => {
+        const source = await callDeviceManifest({
+            callId: 'negative-offset-source',
+            arguments: { types: ['crust'], page: {} },
+        });
+        const sourceData = source.data as ManifestPageData;
+        const device = sourceData.devices[0];
+        if (!device) {
+            throw new Error('Expected a crust manifest entry.');
+        }
+
+        const forgedCursor = encodeManifestCursor({
+            schemaVersion: 1,
+            type: 'crust',
+            version: device.version,
+            offset: -1,
+        });
+
+        const replay = await callDeviceManifest({
+            callId: 'negative-offset-replay',
+            arguments: { types: ['crust'], page: { cursor: forgedCursor } },
         });
 
         expect(replay).toMatchObject({ status: 'failure', error: { code: 'invalid-tool-arguments' } });
