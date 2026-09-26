@@ -179,17 +179,9 @@ describe('compileAutomationSegments — compensationDelaySec', () => {
         // an opening hold (which needs a *later* event), so this one was never
         // shifted at all: 2s * 100 = frame 200, not 201.
         const identity = (beat: number): number => beat;
-        const segments = compileAutomationSegments(
-            [point(2, 9, 'step')],
-            4,
-            60,
-            [],
-            100,
-            0,
-            identity,
-            0.01,
-            { activeWindowSeconds: { startSeconds: 2, endSeconds: 4 } }
-        );
+        const segments = compileAutomationSegments([point(2, 9, 'step')], 4, 60, [], 100, 0, identity, 0.01, {
+            activeWindowSeconds: { startSeconds: 2, endSeconds: 4 },
+        });
         expect(segments).toEqual([{ startFrame: 201, endFrame: 201, startValue: 9, endValue: 9 }]);
     });
 });

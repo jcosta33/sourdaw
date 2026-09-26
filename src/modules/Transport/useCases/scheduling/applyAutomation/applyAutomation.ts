@@ -273,7 +273,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
             // itself. This read follows that backdated material rather than
             // clamping to the landing beat, which would read ahead of what
             // is actually sounding.
-            beat = Math.min(currentBeat, Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1)));
+            beat = Math.min(
+                currentBeat,
+                Math.max(0, samplesToBeat(changes, currentSeconds - compensation, defaultTempo, 1))
+            );
         }
         compensatedBeatByTrack.set(trackId, beat);
         return beat;
