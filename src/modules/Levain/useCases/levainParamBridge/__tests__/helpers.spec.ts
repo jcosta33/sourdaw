@@ -541,19 +541,22 @@ describe('createLevainBridge', () => {
             expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['close']);
         });
 
-        it('keeps the successor’s names when a load superseded before it resolves settles later', async () => {
+        it('keeps the successor’s names when a load superseded before it resolves settles later, surviving a later rejection too', async () => {
             const first = Promise.withResolvers<readonly MicPositionType[] | null>();
             const second = Promise.withResolvers<readonly MicPositionType[] | null>();
             // Keyed by instrument id rather than call order, so registration's
             // own initial load (a different instrument id) doesn't consume
             // either resolver meant for the two explicit calls below.
-            const responsesByInstrument = new Map([
+            const responsesByInstrument = new Map<string, Promise<readonly MicPositionType[] | null>>([
                 ['cello', first.promise],
                 ['viola', second.promise],
             ]);
-            const deps = makeDeps(
-                (_deviceId, _port, instrumentId) => responsesByInstrument.get(instrumentId) ?? Promise.resolve(null)
-            );
+            const deps = makeDeps((_deviceId, _port, instrumentId) => {
+                if (instrumentId === 'flute') {
+                    return Promise.reject(new Error('boom'));
+                }
+                return responsesByInstrument.get(instrumentId) ?? Promise.resolve(null);
+            });
             const bridge = createLevainBridge(deps);
             void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
             deps.setLoadedMicPositions.mockClear();
@@ -569,6 +572,15 @@ describe('createLevainBridge', () => {
 
             expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
             expect(deps.setLoadedMicPositions).not.toHaveBeenCalledWith('d1', ['room']);
+
+            // A's late resolution must not have corrupted the bridge's
+            // committed-bank record with its own (earlier-started, later
+            // arriving) names: a further load that rejects has to restore
+            // B's bank, not A's, proving the record itself still holds
+            // B's commit rather than only the transient store write above.
+            await bridge.loadSamplesForInstrument('d1', 'flute');
+
+            expect(deps.setLoadedMicPositions).toHaveBeenLastCalledWith('d1', ['close']);
         });
 
         it('restores the last committed bank when the load that supersedes an uncommitted resolution rejects', async () => {
