@@ -1,0 +1,31 @@
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_1c08b47ac3792f::t_63f4442a12df33 41-55,58,60,64-66,70-73,90-91,96,98-100,120-121,123-124,128,131-141,267
+  s_1c08b47ac3792f::t_a2d4195f1fb5b7 252-253,256-258,264-266
+  s_1c08b47ac3792f::t_28e47e7bddbfcd 116
+  s_1c08b47ac3792f::t_fb87b0ede6384a 142
+  s_1c08b47ac3792f::t_bddf275184414e 74-89,92-95,97,101-111,115,117-119,122,125-127,129-130
+  s_1c08b47ac3792f::t_7388fd9d4ec9d9 112-114
+  s_1c08b47ac3792f::t_b7ebf1af52f541 255
+src/modules/Project/models/CanonicalTrackRole.ts
+  s_1c08b47ac3792f::t_3e36b8e2652247 33
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_1c08b47ac3792f::t_076a8e6848fab8 120-141
+  s_1c08b47ac3792f::t_b26a4cd2d30758 142-144
+  s_1c08b47ac3792f::t_8f9418c57a587d 145-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "16d8cc8096083b1cd5a2bbf807ea435b7cce49be",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
