@@ -236,6 +236,29 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotImportSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
         expect(bareModuleSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
     });
+
+    it('collects aliased and wrapped require callees as static specifiers', () => {
+        expect(snapshotImportSpecifiers("(0, require)('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("(require)('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const load = createRequire(import.meta.url);\nload('yaml')")).toEqual([
+            'yaml',
+        ]);
+        expect(
+            snapshotImportSpecifiers(
+                "import { createRequire as makeRequire } from 'node:module';\nmakeRequire(import.meta.url)('yaml')"
+            )
+        ).toEqual(['node:module', 'yaml']);
+        expect(snapshotImportSpecifiers("require.call(null, 'yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
+    });
+
+    it('does not let a statement-position regex hide a later static import', () => {
+        expect(snapshotImportSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual([
+            'yaml',
+        ]);
+        expect(bareModuleSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual(['yaml']);
+    });
 });
 
 describe('trusted GitHub write snapshot launcher', () => {

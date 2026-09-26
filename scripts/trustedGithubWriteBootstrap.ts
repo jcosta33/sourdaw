@@ -464,15 +464,25 @@ const LOADER_EXEMPT_SPECIFIER = 'yaml';
  * of string and template literals cannot contribute; only real import/require forms at code depth can.
  * That keeps an example in this comment from being refused as a dependency.
  */
+const importSpecifiersCache = new Map<string, string[]>();
+
 export function snapshotImportSpecifiers(source: string): string[] {
+    const cached = importSpecifiersCache.get(source);
+    if (cached !== undefined) {
+        return [...cached];
+    }
     const specifiers = new Set<string>();
     scanImportSpecifiers(source, 0, source.length, specifiers);
-    return [...specifiers];
+    const result = [...specifiers];
+    importSpecifiersCache.set(source, result);
+    return [...result];
 }
 
 const COMPUTED_DYNAMIC_IMPORT_SHAPE = 'import(...)';
 const COMPUTED_REQUIRE_SHAPE = 'require(...)';
 const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
+
+const computedDynamicSpecifiersCache = new Map<string, string[]>();
 
 /**
  * The module-loading shapes whose specifier is computed rather than a literal the snapshot can
@@ -482,18 +492,21 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * ignore, because the snapshot writes only the declared sources into a temporary directory and a
  * computed specifier then resolves nothing there — the command dies mid-delivery with
  * `ERR_MODULE_NOT_FOUND` while every graph check reports coverage it does not have. Each such shape
- * is refused, naming the file and the shape.
- *
- * The decided shapes above are the ones a syntax walk can resolve. The shapes it cannot decide are
- * filed as #4818 rather than claimed here: a callee bound to a name (`const load = require;
- * load(expr)`), a specifier the lexer loses behind a statement-position regex literal, and a call
- * the declaration-context rule cannot separate from a declaration (a block whose first statement is
- * a call followed by another block). None weakens the claim for the decided shapes.
+ * is refused, naming the file and the shape. Wrapped and bound callees — `(0, require)(expr)`,
+ * `(require)(expr)`, `const load = require; load(expr)`, an aliased `createRequire` import, and
+ * `require.call(null, expr)` — are resolved through the single-file binding pass, so they are
+ * refused too rather than silently skipped.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
+    const cached = computedDynamicSpecifiersCache.get(source);
+    if (cached !== undefined) {
+        return [...cached];
+    }
     const shapes = new Set<string>();
     scanComputedDynamicSpecifiers(source, 0, source.length, shapes);
-    return [...shapes];
+    const result = [...shapes];
+    computedDynamicSpecifiersCache.set(source, result);
+    return [...result];
 }
 
 function scanComputedDynamicSpecifiers(
@@ -573,6 +586,561 @@ function scanComputedTemplate(source: string, index: number, end: number, shapes
 
 type ComputedDynamicLoad = { shape: string; end: number };
 
+/** A resolved module-load call site: the call holding the specifier and the specifier's bounds. */
+type LoadSite = {
+    shape: string;
+    openParen: number;
+    callEnd: number;
+    specifierStart: number;
+    specifierEnd: number;
+    keywordIndex: number;
+    declarationCandidate: boolean;
+};
+
+/** A single-file binding of a name to a module loader, with its declaration position. */
+type LoaderBinding = { kind: 'require' | 'createRequire'; index: number };
+type LoaderBindingTable = ReadonlyMap<string, readonly LoaderBinding[]>;
+
+const loaderBindingsCache = new Map<string, LoaderBindingTable>();
+
+function loaderBindingsFor(source: string): LoaderBindingTable {
+    let table = loaderBindingsCache.get(source);
+    if (table === undefined) {
+        // A loader binding can only be formed from a `require` or `createRequire` spelling; skip the
+        // whole pass when neither appears, which is the common case for the ESM sources scanned here.
+        table =
+            source.includes('require') || source.includes('createRequire') ? collectLoaderBindings(source) : new Map();
+        loaderBindingsCache.set(source, table);
+    }
+    return table;
+}
+
+function nearestLoaderBinding(bindings: readonly LoaderBinding[], index: number): LoaderBinding | undefined {
+    let found: LoaderBinding | undefined;
+    for (const binding of bindings) {
+        if (binding.index >= index) {
+            break;
+        }
+        found = binding;
+    }
+    return found;
+}
+
+/**
+ * Skip a template literal without recursing into the import scanner: scan to the closing backtick,
+ * honouring escapes, and treat each `${…}` interpolation as an opaque balanced brace region. The
+ * binding pass and the line-comment walk use this so collecting bindings never re-enters the
+ * scanner that consults the bindings.
+ */
+function skipTemplateOpaque(source: string, index: number): number {
+    let cursor = index + 1;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor + 1;
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            const after = skipBalancedDelimitedOpaque(source, cursor + 1, source.length, '{', '}');
+            cursor = after === undefined ? source.length : after;
+            continue;
+        }
+        cursor += 1;
+    }
+    return source.length;
+}
+
+/**
+ * A balanced `open`/`close` delimiter skip that never recurses into the import scanner: comments,
+ * strings, templates (opaquely), and regex literals are skipped wholesale.
+ */
+function skipBalancedDelimitedOpaque(
+    source: string,
+    start: number,
+    end: number,
+    open: string,
+    close: string
+): number | undefined {
+    let cursor = start;
+    let depth = 0;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = skipTemplateOpaque(source, cursor);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
+            continue;
+        }
+        if (character === open) {
+            depth += 1;
+        } else if (character === close) {
+            depth -= 1;
+            if (depth === 0) {
+                return cursor + 1;
+            }
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+/** A balanced-parenthesis skip that never recurses into the import scanner. */
+function skipBalancedParensOpaque(source: string, index: number): number | undefined {
+    if (source[index] !== '(') {
+        return undefined;
+    }
+    let cursor = index;
+    let depth = 0;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = skipTemplateOpaque(source, cursor);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
+            continue;
+        }
+        if (character === '(') {
+            depth += 1;
+        } else if (character === ')') {
+            depth -= 1;
+            if (depth === 0) {
+                return cursor + 1;
+            }
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+/**
+ * The bounded single-file binding pass. A `const`/`let`/`var` whose initializer is the `require`
+ * identifier or a `createRequire(<expr>)` call binds a require function; a `createRequire` specifier
+ * imported (optionally aliased) from `node:module` binds the createRequire function itself. Only
+ * declaration initializers are read. A scope that shadows a loader in a way this pass cannot see —
+ * a parameter, or any binding this pass does not record — leaves the name resolved to the loader,
+ * which is the fail-closed reading: the call is refused rather than guessed.
+ */
+function collectLoaderBindings(source: string): LoaderBindingTable {
+    const bindings = new Map<string, LoaderBinding[]>();
+    let index = 0;
+    while (index < source.length) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
+            continue;
+        }
+        if (quote === '`') {
+            index = skipTemplateOpaque(source, index);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (isKeywordAt(source, index, 'import')) {
+            const imported = readCreateRequireImport(source, index);
+            if (imported !== undefined) {
+                pushBinding(bindings, imported.name, { kind: 'createRequire', index });
+                index = imported.end;
+                continue;
+            }
+        }
+        if (
+            isKeywordAt(source, index, 'const') ||
+            isKeywordAt(source, index, 'let') ||
+            isKeywordAt(source, index, 'var')
+        ) {
+            const declared = readLoaderDeclaration(source, index);
+            if (declared !== undefined) {
+                pushBinding(bindings, declared.name, { kind: declared.kind, index });
+                index = declared.end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    return bindings;
+}
+
+function pushBinding(bindings: Map<string, LoaderBinding[]>, name: string, binding: LoaderBinding): void {
+    const list = bindings.get(name);
+    if (list === undefined) {
+        bindings.set(name, [binding]);
+    } else {
+        list.push(binding);
+    }
+}
+
+/** The `createRequire` (optionally aliased) specifier imported from `node:module` at `importIndex`. */
+function readCreateRequireImport(source: string, importIndex: number): { name: string; end: number } | undefined {
+    const cursor = skipWhitespace(source, importIndex + 6);
+    if (source[cursor] !== '{') {
+        return undefined;
+    }
+    const openBrace = cursor;
+    const closeBrace = skipBalancedDelimitedOpaque(source, openBrace, source.length, '{', '}');
+    if (closeBrace === undefined) {
+        return undefined;
+    }
+    let search = skipWhitespace(source, openBrace + 1);
+    let name: string | undefined;
+    while (search < closeBrace - 1) {
+        if (isKeywordAt(source, search, 'createRequire')) {
+            let after = skipWhitespace(source, search + 'createRequire'.length);
+            name = 'createRequire';
+            if (isKeywordAt(source, after, 'as')) {
+                after = skipWhitespace(source, after + 2);
+                const start = after;
+                if (!isIdentifierStart(source[after])) {
+                    return undefined;
+                }
+                while (isIdentifierContinue(source[after])) {
+                    after += 1;
+                }
+                name = source.slice(start, after);
+            }
+            break;
+        }
+        search += 1;
+    }
+    if (name === undefined) {
+        return undefined;
+    }
+    let afterBrace = skipWhitespace(source, closeBrace);
+    if (!isKeywordAt(source, afterBrace, 'from')) {
+        return undefined;
+    }
+    afterBrace = skipWhitespace(source, afterBrace + 4);
+    const quote = source[afterBrace];
+    if (quote !== "'" && quote !== '"') {
+        return undefined;
+    }
+    const module = readQuotedValue(source, afterBrace, quote);
+    if (module === undefined || module.value !== 'node:module') {
+        return undefined;
+    }
+    return { name, end: module.end };
+}
+
+/** A `const`/`let`/`var` declaration whose initializer is `require` or `createRequire(<expr>)`. */
+function readLoaderDeclaration(
+    source: string,
+    keywordIndex: number
+): { name: string; kind: 'require' | 'createRequire'; end: number } | undefined {
+    const keywordLength = source.startsWith('const', keywordIndex) ? 5 : 3;
+    let cursor = skipWhitespace(source, keywordIndex + keywordLength);
+    const nameStart = cursor;
+    if (!isIdentifierStart(source[cursor])) {
+        return undefined;
+    }
+    while (isIdentifierContinue(source[cursor])) {
+        cursor += 1;
+    }
+    const name = source.slice(nameStart, cursor);
+    cursor = skipWhitespace(source, cursor);
+    if (source[cursor] !== '=') {
+        return undefined;
+    }
+    cursor = skipWhitespace(source, cursor + 1);
+    if (isKeywordAt(source, cursor, 'require') && !isPrecededByDotAccess(source, cursor)) {
+        return { name, kind: 'require', end: cursor + 'require'.length };
+    }
+    if (isKeywordAt(source, cursor, 'createRequire') && !isPrecededByDotAccess(source, cursor)) {
+        const open = skipWhitespace(source, cursor + 'createRequire'.length);
+        if (source[open] === '(') {
+            const after = skipBalancedParensOpaque(source, open);
+            if (after !== undefined) {
+                return { name, kind: 'require', end: after };
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The `(` that opens the call whose callee expression ends at `calleeEnd`, unwrapping a
+ * parenthesised or comma parenthesised callee (`(require)(…)`, `(0, require)(…)`), or `undefined`.
+ */
+function callOpenParen(source: string, calleeEnd: number, calleeIndex: number): number | undefined {
+    const cursor = skipWhitespace(source, calleeEnd);
+    if (source[cursor] === '(') {
+        return cursor;
+    }
+    if (source.startsWith('?.', cursor)) {
+        const after = skipWhitespace(source, cursor + 2);
+        return source[after] === '(' ? after : undefined;
+    }
+    if (source[cursor] === ')') {
+        const beforeCallee = previousSignificantCharacter(source, calleeIndex - 1);
+        if (beforeCallee === undefined || (source[beforeCallee] !== '(' && source[beforeCallee] !== ',')) {
+            return undefined;
+        }
+        const after = skipWhitespace(source, cursor + 1);
+        if (source.startsWith('?.', after)) {
+            const inner = skipWhitespace(source, after + 2);
+            return source[inner] === '(' ? inner : undefined;
+        }
+        return source[after] === '(' ? after : undefined;
+    }
+    return undefined;
+}
+
+/** The first argument-level `,` inside `[start, end)`, or `undefined` when none exists. */
+function topLevelArgumentComma(source: string, start: number, end: number): number | undefined {
+    let cursor = start;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
+            continue;
+        }
+        if (character === '(' || character === '[' || character === '{') {
+            const after = skipBalancedDelimited(source, cursor, end, character, matchingTypeDelimiter(character));
+            cursor = after === undefined ? end : after;
+            continue;
+        }
+        if (character === ',') {
+            return cursor;
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+/**
+ * Resolve the load call whose callee is `require`/`createRequire` (ending at `calleeEnd`), including
+ * `.call`/`.apply` on a require callee and wrapped callees. `declarationCandidate` marks a bare
+ * `require(` whose list may be a declaration's parameter list instead of a call.
+ */
+function resolveLoadSite(
+    source: string,
+    calleeIndex: number,
+    calleeEnd: number,
+    kind: 'require' | 'createRequire',
+    declarationCandidate: boolean
+): LoadSite | undefined {
+    const cursor = skipWhitespace(source, calleeEnd);
+    if (kind === 'require' && (source[cursor] === '.' || source.startsWith('?.', cursor))) {
+        const afterDot =
+            source[cursor] === '.' ? skipWhitespace(source, cursor + 1) : skipWhitespace(source, cursor + 2);
+        const method = readWordForward(source, afterDot);
+        if (method === 'call' || method === 'apply') {
+            const openParen = callOpenParen(source, afterDot + method.length, afterDot);
+            if (openParen === undefined) {
+                return undefined;
+            }
+            const callEnd = endOfBalancedCall(source, openParen);
+            const contentEnd = callEnd - 1;
+            const comma = topLevelArgumentComma(source, openParen + 1, contentEnd);
+            if (comma === undefined) {
+                return undefined;
+            }
+            return {
+                shape: COMPUTED_REQUIRE_SHAPE,
+                openParen,
+                callEnd,
+                specifierStart: skipWhitespace(source, comma + 1),
+                specifierEnd: contentEnd,
+                keywordIndex: calleeIndex,
+                declarationCandidate: false,
+            };
+        }
+        // Not `.call`/`.apply`; fall through to the call-open walk, which admits `?.` optional calls
+        // and refuses plain member access such as `require.resolve` here is only reached after the
+        // caller already moved past `resolve`.
+    }
+    const openParen = callOpenParen(source, calleeEnd, calleeIndex);
+    if (openParen === undefined) {
+        return undefined;
+    }
+    if (kind === 'createRequire') {
+        const afterFirstCall = skipBalancedParens(source, openParen);
+        if (afterFirstCall === undefined) {
+            return undefined;
+        }
+        let second = skipWhitespace(source, afterFirstCall);
+        if (source.startsWith('?.', second) && source[skipWhitespace(source, second + 2)] === '(') {
+            second = skipWhitespace(source, second + 2);
+        }
+        if (source[second] !== '(') {
+            return undefined;
+        }
+        const callEnd = endOfBalancedCall(source, second);
+        return {
+            shape: COMPUTED_CREATE_REQUIRE_SHAPE,
+            openParen: second,
+            callEnd,
+            specifierStart: skipWhitespace(source, second + 1),
+            specifierEnd: callEnd - 1,
+            keywordIndex: calleeIndex,
+            declarationCandidate: false,
+        };
+    }
+    const callEnd = endOfBalancedCall(source, openParen);
+    return {
+        shape: COMPUTED_REQUIRE_SHAPE,
+        openParen,
+        callEnd,
+        specifierStart: skipWhitespace(source, openParen + 1),
+        specifierEnd: callEnd - 1,
+        keywordIndex: calleeIndex,
+        declarationCandidate,
+    };
+}
+
+/**
+ * The load site at `index` for `require`, `createRequire`, or a loader binding. `import` is handled
+ * separately because its dynamic form cannot be wrapped or bound. A binding call resolves to the
+ * nearest preceding loader binding; shadowing this pass cannot see leaves that resolution in place.
+ */
+function loadSiteAt(source: string, index: number): LoadSite | undefined {
+    if (isKeywordAt(source, index, 'require')) {
+        if (isPrecededByDotAccess(source, index)) {
+            return undefined;
+        }
+        let calleeEnd = index + 'require'.length;
+        let declarationCandidate = true;
+        const cursor = skipWhitespace(source, calleeEnd);
+        if (source[cursor] === '.') {
+            const afterDot = skipWhitespace(source, cursor + 1);
+            if (isKeywordAt(source, afterDot, 'resolve')) {
+                calleeEnd = afterDot + 'resolve'.length;
+                declarationCandidate = false;
+            }
+        } else if (source.startsWith('?.', cursor)) {
+            const afterDot = skipWhitespace(source, cursor + 2);
+            if (isKeywordAt(source, afterDot, 'resolve')) {
+                calleeEnd = afterDot + 'resolve'.length;
+                declarationCandidate = false;
+            }
+        }
+        return resolveLoadSite(source, index, calleeEnd, 'require', declarationCandidate);
+    }
+    if (isKeywordAt(source, index, 'createRequire')) {
+        if (isPrecededByDotAccess(source, index)) {
+            return undefined;
+        }
+        return resolveLoadSite(source, index, index + 'createRequire'.length, 'createRequire', false);
+    }
+    if (isIdentifierStart(source[index])) {
+        const word = readWordForward(source, index);
+        const bindings = loaderBindingsFor(source).get(word);
+        if (bindings !== undefined) {
+            const binding = nearestLoaderBinding(bindings, index);
+            if (binding !== undefined && !isPrecededByDotAccess(source, index)) {
+                return resolveLoadSite(source, index, index + word.length, binding.kind, false);
+            }
+        }
+    }
+    return undefined;
+}
+
+/** The computed-load verdict for a resolved site, or `undefined` when the specifier is static. */
+function computedDynamicLoadFromSite(source: string, site: LoadSite): ComputedDynamicLoad | undefined {
+    if (
+        site.declarationCandidate &&
+        isParameterListRegion(source, site.keywordIndex, site.specifierStart, site.specifierEnd, site.callEnd)
+    ) {
+        return undefined;
+    }
+    if (staticSpecifierEnd(source, site.specifierStart, site.specifierEnd) !== undefined) {
+        return undefined;
+    }
+    return { shape: site.shape, end: site.callEnd };
+}
+
+/** The literal value of a static specifier site, or `undefined` when it is not a static literal. */
+function staticSpecifierForSite(source: string, site: LoadSite): ReadSpecifier | undefined {
+    if (staticSpecifierEnd(source, site.specifierStart, site.specifierEnd) === undefined) {
+        return undefined;
+    }
+    return readStaticSpecifierValue(source, site.specifierStart, site.specifierEnd);
+}
+
+/** The string or static-template value of a literal specifier, through grouping and angle brackets. */
+function readStaticSpecifierValue(source: string, start: number, end: number): ReadSpecifier | undefined {
+    let cursor = skipWhitespace(source, start);
+    if (cursor >= end) {
+        return undefined;
+    }
+    while (source[cursor] === '<') {
+        const afterType = skipTypeArguments(source, cursor, end);
+        if (afterType === undefined) {
+            return undefined;
+        }
+        cursor = skipWhitespace(source, afterType);
+        if (cursor >= end) {
+            return undefined;
+        }
+    }
+    while (source[cursor] === '(') {
+        const close = skipBalancedParens(source, cursor);
+        if (close === undefined || close - 1 > end) {
+            return undefined;
+        }
+        const inner = readStaticSpecifierValue(source, cursor + 1, close - 1);
+        if (inner === undefined) {
+            return undefined;
+        }
+        return { value: inner.value, end: close };
+    }
+    const first = source[cursor];
+    if (first === "'" || first === '"') {
+        return readQuotedValue(source, cursor, first);
+    }
+    if (first === '`') {
+        return readStaticTemplateValue(source, cursor);
+    }
+    return undefined;
+}
+
 function readComputedDynamicLoad(source: string, index: number): ComputedDynamicLoad | undefined {
     if (isKeywordAt(source, index, 'import') && !isPrecededByDotAccess(source, index)) {
         const afterKeyword = skipWhitespace(source, index + 6);
@@ -581,48 +1149,8 @@ function readComputedDynamicLoad(source: string, index: number): ComputedDynamic
         }
         return undefined;
     }
-    if (isKeywordAt(source, index, 'require') && !isPrecededByDotAccess(source, index)) {
-        let cursor = skipWhitespace(source, index + 7);
-        if (source[cursor] === '.') {
-            const afterDot = skipWhitespace(source, cursor + 1);
-            if (isKeywordAt(source, afterDot, 'resolve')) {
-                cursor = afterDot + 7;
-            }
-        } else if (source.startsWith('?.', cursor)) {
-            const afterDot = skipWhitespace(source, cursor + 2);
-            if (isKeywordAt(source, afterDot, 'resolve')) {
-                cursor = afterDot + 7;
-            }
-        }
-        cursor = skipWhitespace(source, cursor);
-        if (source.startsWith('?.', cursor) && source[skipWhitespace(source, cursor + 2)] === '(') {
-            cursor = skipWhitespace(source, cursor + 2);
-        }
-        if (source[cursor] === '(') {
-            return computedDynamicLoad(source, cursor, COMPUTED_REQUIRE_SHAPE, index, true);
-        }
-        return undefined;
-    }
-    if (isKeywordAt(source, index, 'createRequire') && !isPrecededByDotAccess(source, index)) {
-        const afterKeyword = skipWhitespace(source, index + 13);
-        if (source[afterKeyword] === '(') {
-            const afterFirstCall = skipBalancedParens(source, afterKeyword);
-            if (afterFirstCall !== undefined) {
-                let secondCallCursor = skipWhitespace(source, afterFirstCall);
-                if (
-                    source.startsWith('?.', secondCallCursor) &&
-                    source[skipWhitespace(source, secondCallCursor + 2)] === '('
-                ) {
-                    secondCallCursor = skipWhitespace(source, secondCallCursor + 2);
-                }
-                if (source[secondCallCursor] === '(') {
-                    return computedDynamicLoad(source, secondCallCursor, COMPUTED_CREATE_REQUIRE_SHAPE, index, false);
-                }
-            }
-        }
-        return undefined;
-    }
-    return undefined;
+    const site = loadSiteAt(source, index);
+    return site === undefined ? undefined : computedDynamicLoadFromSite(source, site);
 }
 
 function computedDynamicLoad(
@@ -703,10 +1231,8 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
     // A later member is preceded by `}` (the previous method's body) or `;` (the previous member),
     // not by the body's `{`, so the one-token look refuses it. The enclosing construct decides
     // instead: a `}`/`;`-preceded name inside a class, interface, or type-literal body is a member
-    // declaration whatever precedes it, while the same name in a statement block stays a call. A
-    // block whose first statement is a call followed by another block (`{ require(spec) { … } }`) is
-    // indistinguishable from an object method by this token look, and is filed as #4818 rather than
-    // silently misread as a declaration.
+    // declaration whatever precedes it, while the same name in a statement block stays a call — the
+    // header walk in `classLikeBodyOpenBefore` tells the two bodies apart.
     let cursor = keywordIndex - 1;
     while (cursor >= 0) {
         const character = source[cursor];
@@ -780,9 +1306,9 @@ function isMemberInsideClassLikeBody(source: string, keywordIndex: number): bool
 
 /**
  * The index of the `{` that opens the innermost brace-delimited region containing `keywordIndex`,
- * skipping braces that belong to string, template, or comment content on the way, or `undefined`
- * when no such brace precedes the name. Regex literals are not skipped here: a brace inside a regex
- * body is an expression token this walk does not read.
+ * skipping braces that belong to string, template, comment, or regex-literal content on the way, or
+ * `undefined` when no such brace precedes the name. A brace inside a regex body (`/}/`) is an
+ * expression token this walk must not read as a delimiter.
  */
 function enclosingBraceOpen(source: string, keywordIndex: number): number | undefined {
     let cursor = keywordIndex - 1;
@@ -818,6 +1344,13 @@ function enclosingBraceOpen(source: string, keywordIndex: number): number | unde
             const open = skipTemplateBackward(source, cursor);
             cursor = open === undefined ? cursor - 1 : open - 1;
             continue;
+        }
+        if (character === '/') {
+            const open = regexLiteralOpenBackward(source, cursor);
+            if (open !== undefined) {
+                cursor = open - 1;
+                continue;
+            }
         }
         if (character === '}') {
             depth += 1;
@@ -867,18 +1400,15 @@ const BLOCK_INTRODUCER_KEYWORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether the `{` at `openIndex` opens a class, interface, or type-literal body. The scan walks back
- * over the header — a name, a `type Name =` clause, a heritage or implements clause, and balanced
- * parentheses or brackets inside them — and stops, refusing, at any statement or block keyword or
- * unmatched punctuation, so a `type` keyword in an earlier statement cannot claim a later block.
+ * The index of the previous significant character before `cursor` — skipping whitespace, line and
+ * block comments, string and template literals, and regex literals — or `-1` when none exists. The
+ * backward walks share this so a quote, brace, or slash inside a literal never reads as a token.
  */
-function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
-    let cursor = openIndex - 1;
-    let delimiterDepth = 0;
+function skipBackwardTrivia(source: string, cursor: number): number {
     while (cursor >= 0) {
         const character = source[cursor];
         if (character === undefined) {
-            return false;
+            return -1;
         }
         if (isWhiteSpace(character) || isLineTerminator(character)) {
             cursor -= 1;
@@ -887,7 +1417,7 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
         if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
             const open = source.lastIndexOf('/*', cursor - 1);
             if (open === -1) {
-                return false;
+                return -1;
             }
             cursor = open - 1;
             continue;
@@ -907,23 +1437,200 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
             cursor = open === undefined ? cursor - 1 : open - 1;
             continue;
         }
+        if (character === '/') {
+            const open = regexLiteralOpenBackward(source, cursor);
+            if (open !== undefined) {
+                cursor = open - 1;
+                continue;
+            }
+        }
+        return cursor;
+    }
+    return -1;
+}
+
+/**
+ * The index just before the opening delimiter of the balanced `open`/`close` group whose closing
+ * delimiter is at `closeIndex`, or `undefined` when none closes before the start of input. Skips
+ * strings, templates, comments, and regex literals inside the group.
+ */
+function skipBackwardBalancedDelimited(
+    source: string,
+    closeIndex: number,
+    open: string,
+    close: string
+): number | undefined {
+    let cursor = closeIndex - 1;
+    let depth = 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const blockOpen = source.lastIndexOf('/*', cursor - 1);
+            if (blockOpen === -1) {
+                return undefined;
+            }
+            cursor = blockOpen - 1;
+            continue;
+        }
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            const quoteOpen = skipQuotedBackward(source, cursor, character);
+            cursor = quoteOpen === undefined ? cursor - 1 : quoteOpen - 1;
+            continue;
+        }
+        if (character === '`') {
+            const templateOpen = skipTemplateBackward(source, cursor);
+            cursor = templateOpen === undefined ? cursor - 1 : templateOpen - 1;
+            continue;
+        }
+        if (character === '/') {
+            const regexOpen = regexLiteralOpenBackward(source, cursor);
+            if (regexOpen !== undefined) {
+                cursor = regexOpen - 1;
+                continue;
+            }
+        }
+        if (character === close) {
+            depth += 1;
+            cursor -= 1;
+            continue;
+        }
+        if (character === open) {
+            depth -= 1;
+            if (depth === 0) {
+                return cursor - 1;
+            }
+            cursor -= 1;
+            continue;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/**
+ * Whether the `{` at `openIndex` opens a class, interface, or type-literal body. The enclosing
+ * construct is read from the header tokens with balanced `<>`, `()`, and `[]` and a proper
+ * terminator, so a generic header (`class ModuleLoader<T>`, `interface Loader<T> extends Base<T>`),
+ * a type alias whose object-literal type is this `{` (`type Loader = {`), and a type-annotated
+ * object literal (`const l: {`) are bodies, while a block after a completed `type` alias
+ * (`type Specifier = string\n{ … }`) or after any other complete statement is not.
+ */
+function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
+    const before = skipBackwardTrivia(source, openIndex - 1);
+    if (before < 0) {
+        return false;
+    }
+    const character = source[before];
+    if (character === '=') {
+        return typeAliasBodyOpenBefore(source, openIndex);
+    }
+    if (character === ':') {
+        return annotationBodyOpenBefore(source, openIndex);
+    }
+    if (character === '>' || isIdentifierStart(character)) {
+        return classInterfaceBodyOpenBefore(source, openIndex);
+    }
+    return false;
+}
+
+/** Whether a `type Name [<…>] =` header immediately precedes the `{` at `openIndex`. */
+function typeAliasBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = skipBackwardTrivia(source, openIndex - 1);
+    if (cursor < 0 || source[cursor] !== '=') {
+        return false;
+    }
+    cursor = skipBackwardTrivia(source, cursor - 1);
+    if (cursor < 0) {
+        return false;
+    }
+    if (source[cursor] === '>') {
+        const afterOpen = skipBackwardBalancedDelimited(source, cursor, '<', '>');
+        if (afterOpen === undefined) {
+            return false;
+        }
+        cursor = skipBackwardTrivia(source, afterOpen);
+        if (cursor < 0) {
+            return false;
+        }
+    }
+    if (!isIdentifierContinue(source[cursor])) {
+        return false;
+    }
+    const name = readWordBackward(source, cursor);
+    const beforeName = skipBackwardTrivia(source, cursor - name.length);
+    if (beforeName < 0) {
+        return false;
+    }
+    return readWordBackward(source, beforeName) === 'type';
+}
+
+/** Whether a `const`/`let`/`var Name :` annotation immediately precedes the `{` at `openIndex`. */
+function annotationBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = skipBackwardTrivia(source, openIndex - 1);
+    if (cursor < 0 || source[cursor] !== ':') {
+        return false;
+    }
+    cursor = skipBackwardTrivia(source, cursor - 1);
+    if (cursor < 0 || !isIdentifierContinue(source[cursor])) {
+        return false;
+    }
+    const name = readWordBackward(source, cursor);
+    const beforeName = skipBackwardTrivia(source, cursor - name.length);
+    if (beforeName < 0) {
+        return false;
+    }
+    const keyword = readWordBackward(source, beforeName);
+    return keyword === 'const' || keyword === 'let' || keyword === 'var';
+}
+
+/**
+ * Whether a `class` or `interface` header — a name, optional generics, and optional
+ * `extends`/`implements` clauses with balanced `<>`, `()`, and `[]` — immediately precedes the `{`
+ * at `openIndex`. A `>` in the walk that belongs to an arrow (`=>`) is not read as a generic close.
+ */
+function classInterfaceBodyOpenBefore(source: string, openIndex: number): boolean {
+    let cursor = openIndex - 1;
+    while (true) {
+        cursor = skipBackwardTrivia(source, cursor);
+        if (cursor < 0) {
+            return false;
+        }
+        const character = source[cursor];
+        if (character === '>') {
+            if (cursor >= 1 && source[cursor - 1] === '=') {
+                cursor -= 2;
+                continue;
+            }
+            const afterOpen = skipBackwardBalancedDelimited(source, cursor, '<', '>');
+            if (afterOpen === undefined) {
+                return false;
+            }
+            cursor = afterOpen;
+            continue;
+        }
         if (character === ')' || character === ']') {
-            delimiterDepth += 1;
-            cursor -= 1;
-            continue;
-        }
-        if ((character === '(' || character === '[') && delimiterDepth > 0) {
-            delimiterDepth -= 1;
-            cursor -= 1;
-            continue;
-        }
-        if (delimiterDepth > 0) {
-            cursor -= 1;
+            const afterOpen = skipBackwardBalancedDelimited(source, cursor, character === ')' ? '(' : '[', character);
+            if (afterOpen === undefined) {
+                return false;
+            }
+            cursor = afterOpen;
             continue;
         }
         if (isIdentifierContinue(character)) {
             const word = readWordBackward(source, cursor);
-            if (word === 'class' || word === 'interface' || word === 'type') {
+            if (word === 'class' || word === 'interface') {
                 return true;
             }
             if (BLOCK_INTRODUCER_KEYWORDS.has(word)) {
@@ -932,13 +1639,12 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
             cursor -= word.length;
             continue;
         }
-        if (character === '.' || character === ',' || character === '=' || character === '|' || character === '&') {
+        if (character === '.' || character === ',') {
             cursor -= 1;
             continue;
         }
         return false;
     }
-    return false;
 }
 
 /** The opening quote of the string literal whose closing quote is at `index`, or `undefined`. */
@@ -1022,7 +1728,7 @@ function lineCommentOpenBefore(source: string, cursor: number): number | undefin
             continue;
         }
         if (character === '`') {
-            index = scanTemplate(source, index, cursor, new Set());
+            index = skipTemplateOpaque(source, index);
             continue;
         }
         index += 1;
@@ -1094,6 +1800,11 @@ function skipBalancedDelimited(
         }
         if (quote === '`') {
             cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
             continue;
         }
         const character = source[cursor];
@@ -1491,53 +2202,13 @@ function scanImportSpecifiers(
                 continue;
             }
         }
-        if (isKeywordAt(source, index, 'require')) {
-            if (!isPrecededByDotAccess(source, index)) {
-                let cursor = skipWhitespace(source, index + 7);
-                if (source[cursor] === '.') {
-                    const afterDot = skipWhitespace(source, cursor + 1);
-                    if (isKeywordAt(source, afterDot, 'resolve')) {
-                        cursor = afterDot + 7;
-                    }
-                } else if (source.startsWith('?.', cursor)) {
-                    const afterDot = skipWhitespace(source, cursor + 2);
-                    if (isKeywordAt(source, afterDot, 'resolve')) {
-                        cursor = afterDot + 7;
-                    }
-                }
-                cursor = skipWhitespace(source, cursor);
-                if (source.startsWith('?.', cursor) && source[skipWhitespace(source, cursor + 2)] === '(') {
-                    cursor = skipWhitespace(source, cursor + 2);
-                }
-                const spec = readDynamicImportSpecifier(source, cursor);
-                if (spec !== undefined) {
-                    specifiers.add(spec.value);
-                    index = spec.end;
-                    continue;
-                }
-            }
-        }
-        if (isKeywordAt(source, index, 'createRequire')) {
-            if (!isPrecededByDotAccess(source, index)) {
-                const afterKeyword = skipWhitespace(source, index + 13);
-                if (source[afterKeyword] === '(') {
-                    const afterFirstCall = skipBalancedParens(source, afterKeyword);
-                    if (afterFirstCall !== undefined) {
-                        let secondCallCursor = skipWhitespace(source, afterFirstCall);
-                        if (
-                            source.startsWith('?.', secondCallCursor) &&
-                            source[skipWhitespace(source, secondCallCursor + 2)] === '('
-                        ) {
-                            secondCallCursor = skipWhitespace(source, secondCallCursor + 2);
-                        }
-                        const spec = readDynamicImportSpecifier(source, secondCallCursor);
-                        if (spec !== undefined) {
-                            specifiers.add(spec.value);
-                            index = spec.end;
-                            continue;
-                        }
-                    }
-                }
+        const site = loadSiteAt(source, index);
+        if (site !== undefined) {
+            const spec = staticSpecifierForSite(source, site);
+            if (spec !== undefined) {
+                specifiers.add(spec.value);
+                index = spec.end;
+                continue;
             }
         }
         index += 1;
@@ -1578,6 +2249,19 @@ function isIdentifierContinue(character: string | undefined): boolean {
     return character !== undefined && /[A-Za-z0-9_$]/.test(character);
 }
 
+function isIdentifierStart(character: string | undefined): boolean {
+    return character !== undefined && /[A-Za-z_$]/.test(character);
+}
+
+/** The identifier word starting at `start`, read forward to its last character. */
+function readWordForward(source: string, start: number): string {
+    let cursor = start;
+    while (cursor < source.length && isIdentifierContinue(source[cursor])) {
+        cursor += 1;
+    }
+    return source.slice(start, cursor);
+}
+
 function isLineTerminator(character: string): boolean {
     return character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029';
 }
@@ -1597,6 +2281,12 @@ function skipComment(source: string, index: number): number | undefined {
     return undefined;
 }
 
+/**
+ * Keywords after which a `/` opens a regular-expression literal because the keyword expects an
+ * expression. `else` and `do` belong here: each is followed by a statement, so `if (x) run(); else
+ * /re/.test(y)` is a regex. `extends` is deliberately absent — it expects a type or class
+ * expression, never a regex — so a division after a heritage clause is not read as a regex.
+ */
 const REGEX_PREFIX_KEYWORDS = new Set([
     'return',
     'throw',
@@ -1610,8 +2300,16 @@ const REGEX_PREFIX_KEYWORDS = new Set([
     'of',
     'instanceof',
     'new',
-    'extends',
+    'do',
+    'else',
 ]);
+
+/**
+ * Keywords whose parenthesised header is followed by a statement rather than an expression, so a
+ * `/` after the closing parenthesis opens a regex (`if (x) /re/`). The parenthesis must be the
+ * header's own — `if (x) foo() /re/` still divides, because the `)` before the `/` closes `foo()`.
+ */
+const CONTROL_HEADER_KEYWORDS = new Set(['if', 'for', 'while', 'with', 'switch', 'catch']);
 
 function skipRegexLiteral(source: string, index: number): number | undefined {
     if (source[index] !== '/') {
@@ -1658,12 +2356,18 @@ function skipRegexLiteral(source: string, index: number): number | undefined {
     return undefined;
 }
 
-function canStartRegexLiteral(source: string, index: number): boolean {
-    let cursor = index - 1;
+/**
+ * The index of the previous non-whitespace, non-block-comment character before `cursor`, or
+ * `undefined` when none exists. Block comments are transparent — a slash after a block comment
+ * reads the token before the comment — but string, template, and regex literals are not skipped
+ * here: the caller classifies them, because a `/` after any of those is division. This is the
+ * regex-decision hot path, so it stays a single backward walk with no forward line scan.
+ */
+function previousSignificantCharacter(source: string, cursor: number): number | undefined {
     while (cursor >= 0) {
         const character = source[cursor];
         if (character === undefined) {
-            break;
+            return undefined;
         }
         if (isWhiteSpace(character) || isLineTerminator(character)) {
             cursor -= 1;
@@ -1672,31 +2376,178 @@ function canStartRegexLiteral(source: string, index: number): boolean {
         if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
             const open = source.lastIndexOf('/*', cursor - 1);
             if (open === -1) {
-                return false;
+                return undefined;
             }
             cursor = open - 1;
             continue;
         }
-        if ('([{;=,.!?:~%^&*+<>|'.includes(character) || character === '-' || character === '}') {
-            return true;
+        return cursor;
+    }
+    return undefined;
+}
+
+/**
+ * The opening `/` of the regex literal whose closing `/` is at `closeSlash`, or `undefined` when
+ * `closeSlash` is not a regex close. Walks the regex body backward — escaping, character classes,
+ * and newline termination — then confirms the opening `/` is in regex position, so a division
+ * slash is never mistaken for a close.
+ */
+function regexLiteralOpenBackward(source: string, closeSlash: number): number | undefined {
+    let cursor = closeSlash - 1;
+    let inClass = false;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
         }
-        if (character === ')' || character === ']' || character === '"' || character === "'" || character === '`') {
-            return false;
+        if (cursor >= 1 && source[cursor - 1] === '\\') {
+            cursor -= 2;
+            continue;
         }
-        if (isIdentifierContinue(character)) {
-            let start = cursor;
-            while (start >= 0 && isIdentifierContinue(source[start])) {
-                start -= 1;
+        if (inClass) {
+            if (character === '[') {
+                inClass = false;
             }
-            const identifier = source.slice(start + 1, cursor + 1);
-            return REGEX_PREFIX_KEYWORDS.has(identifier);
+            cursor -= 1;
+            continue;
         }
-        if (character >= '0' && character <= '9') {
-            return false;
+        if (character === ']') {
+            inClass = true;
+            cursor -= 1;
+            continue;
         }
+        if (character === '/') {
+            return canStartRegexLiteral(source, cursor) ? cursor : undefined;
+        }
+        if (isLineTerminator(character)) {
+            return undefined;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/**
+ * The opening `(` that matches the closing `)` at `closeParen`, or `undefined` when none does.
+ * Skips strings, templates, comments, and regex literals inside the parentheses so a quote, brace,
+ * or slash within them cannot end the walk early.
+ */
+function matchingOpenParenBackward(source: string, closeParen: number): number | undefined {
+    let cursor = closeParen - 1;
+    let depth = 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return undefined;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            cursor = lineComment - 1;
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            const open = skipQuotedBackward(source, cursor, character);
+            cursor = open === undefined ? cursor - 1 : open - 1;
+            continue;
+        }
+        if (character === '`') {
+            const open = skipTemplateBackward(source, cursor);
+            cursor = open === undefined ? cursor - 1 : open - 1;
+            continue;
+        }
+        if (character === '/') {
+            const open = regexLiteralOpenBackward(source, cursor);
+            if (open !== undefined) {
+                cursor = open - 1;
+                continue;
+            }
+        }
+        if (character === ')') {
+            depth += 1;
+            cursor -= 1;
+            continue;
+        }
+        if (character === '(') {
+            depth -= 1;
+            if (depth === 0) {
+                return cursor;
+            }
+            cursor -= 1;
+            continue;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/**
+ * Whether a `/` may open a regex after the `)` at `closeParen`: only when that parenthesis closes a
+ * control-flow header (`if`, `for`, `while`, `with`, `switch`, `catch`), whose body is a statement.
+ * A `)` closing a call or grouping is an expression end, so a following `/` is division.
+ */
+function closingParenAllowsRegex(source: string, closeParen: number): boolean {
+    const open = matchingOpenParenBackward(source, closeParen);
+    if (open === undefined) {
         return false;
     }
-    return true;
+    const beforeOpen = previousSignificantCharacter(source, open - 1);
+    if (beforeOpen === undefined || !isIdentifierContinue(source[beforeOpen])) {
+        return false;
+    }
+    return CONTROL_HEADER_KEYWORDS.has(readWordBackward(source, beforeOpen));
+}
+
+/**
+ * The regex-versus-division decision, made from the previous significant token rather than the
+ * single preceding character. A `/` opens a regex after an operator, `(`, `[`, `{`, `,`, `;`, `:`,
+ * `=`, `!`, `&`, `|`, `?`, `=>`, a keyword that expects an expression, or at the start of input;
+ * it is division after an identifier, number, string, template, regex literal, `)`, `]`, `}`, or
+ * `++`/`--`. The `)` case consults the control-header context so `if (x) /re/` is a regex while
+ * `foo() / 2` divides.
+ */
+function canStartRegexLiteral(source: string, index: number): boolean {
+    const previous = previousSignificantCharacter(source, index - 1);
+    if (previous === undefined) {
+        return true;
+    }
+    const character = source[previous];
+    if (character === ')') {
+        return closingParenAllowsRegex(source, previous);
+    }
+    if (character === '}' || character === ']') {
+        return false;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+        return false;
+    }
+    if (character === '+' || character === '-') {
+        // `++`/`--` end an expression, so a `/` after either is division.
+        return source[previous - 1] !== character;
+    }
+    if (character === '/') {
+        // A `/` that closes a regex is an expression end; any other `/` is a division operator,
+        // after which a regex may start (`a / /re/`).
+        return regexLiteralOpenBackward(source, previous) === undefined;
+    }
+    if (isIdentifierContinue(character)) {
+        return REGEX_PREFIX_KEYWORDS.has(readWordBackward(source, previous));
+    }
+    if (isDecimalDigit(character)) {
+        return false;
+    }
+    return character !== undefined && '([{;=,.!?:~%^&*+<>|'.includes(character);
 }
 
 function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
@@ -1971,10 +2822,9 @@ function localModuleDependencies(path: string, source: string): string[] {
  * so the walk crosses an undeclared intermediate instead of stopping at it. The walk refuses rather
  * than silently truncates: a reached module with no source, or a computed `import(expr)` /
  * `require(expr)` / `createRequire(...)(expr)` specifier, throws — those shapes cannot be resolved from
- * a snapshot and must not be skipped. The computed shapes it cannot decide — a callee bound to a name,
- * a specifier the lexer loses behind a statement-position regex, and a call the declaration-context
- * rule cannot separate from a declaration — are filed as #4818 and are not claimed here. The loader
- * itself is deliberately absent from a command's
+ * a snapshot and must not be skipped. Wrapped and bound callees are resolved through the single-file
+ * binding pass, and a binding whose shadowing the pass cannot decide is refused rather than guessed.
+ * The loader itself is deliberately absent from a command's
  * executed graph — no executed source may import it, which `assertTrustedSourceGraph` refuses — so a
  * command's declared set is exactly this closure plus the loader's own static-import closure. Exported
  * so the specs pinning each command's declared set to its static closure can see over- and

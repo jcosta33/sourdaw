@@ -2140,6 +2140,115 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * The regex-versus-division decision comes from the previous significant token, not the single
+     * preceding character. A statement-position regex after the `)` of a control header
+     * (`if (x) /re/`) and after `else` must be read as a regex so a quote or `//` inside its body
+     * cannot divert the scan from a later load, while a `/` after a `}` object literal is division
+     * so `{} / import(name) / 2` still sees the computed import.
+     */
+    it('decides regex versus division from the previous significant token', () => {
+        expect(snapshotComputedDynamicSpecifiers('if (verbose) /[\'"]/.test(line);\nrequire(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('if (url) /^https?:\\/\\//.test(url);\nrequire(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers("if (x) run(); else /don't/.test(line);\nrequire(spec);")).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = {} / import(name) / 2;')).toEqual(['import(...)']);
+    });
+
+    /**
+     * A statement block after a completed `type` alias must not be read as a class-like body, while a
+     * generic or type-annotated header must be. The enclosing construct comes from the header tokens
+     * — balanced `<>`, `()`, `[]`, and a terminator — not one punctuation mark, so a computed load in
+     * the statement block stays refused and a require-named member in a generic class, interface,
+     * type literal, or annotated object literal stays admitted, even when a regex literal in the body
+     * holds a brace.
+     */
+    it('reads a block after a completed type alias as statements, not a type-literal body', () => {
+        const source = 'type Specifier = string\n{ doSetup(); require(spec) {} }';
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    it.each([
+        {
+            label: 'a require-named member of a generic class after a preceding method',
+            source: 'class ModuleLoader<T> { load() {} require(specifier: string) { return specifier; } }',
+        },
+        {
+            label: 'a require-named member of a generic interface after a preceding property',
+            source: 'interface Loader<T> extends Base<T> { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named member of a type-annotated object literal after a preceding property',
+            source: 'const l: { version: string; require(specifier: string): unknown }',
+        },
+        {
+            label: 'a require-named class member after a regex literal holding a brace',
+            source: 'class ModuleLoader { static readonly closer = /}/; require(specifier: string) { return specifier; } }',
+        },
+    ])('admits $label that names require without loading anything', ({ source }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
+    });
+
+    /**
+     * A load whose callee is wrapped or bound is still a load. The scanner resolves the callee
+     * through grouping and comma parentheses, `.call`/`.apply`, and a single-file binding pass that
+     * records `const`/`let`/`var` bindings initialised to `require` or `createRequire(...)` and
+     * `createRequire` aliases imported from `node:module`, so a non-literal argument is refused and a
+     * literal one is collected.
+     */
+    it.each([
+        {
+            label: 'a comma-wrapped require callee',
+            source: '(0, require)(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a parenthesised require callee',
+            source: '(require)(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require bound to a const',
+            source: 'const load = require;\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a createRequire result bound to a const',
+            source: 'const load = createRequire(import.meta.url);\nload(spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'an aliased createRequire import used through its binding',
+            source: "import { createRequire as makeRequire } from 'node:module';\nmakeRequire(import.meta.url)(spec);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a require.call with a computed specifier',
+            source: 'require.call(null, spec);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a require.apply with a computed specifier',
+            source: 'require.apply(null, args);',
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', ({ source, shape }) => {
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([shape]);
+    });
+
+    // A loader binding shadowed in a nested scope is undecidable for the bounded pass: the inner
+    // declaration hides the loader, and a call through the name may or may not be a load. Fail
+    // closed and refuse rather than guessing.
+    it('refuses a call through a loader binding shadowed in a nested scope', () => {
+        const source = 'const load = require;\nfunction run() { const load = createLoader(); load(spec); }';
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual(['require(...)']);
+    });
+
+    /**
      * A parenthesized list whose first argument is a parameter list — `name: type`, `name?: type`,
      * `...args: type`, or a destructuring pattern followed by a type — is a TypeScript declaration,
      * never a call: no module specifier can take that shape, so it must not be read as a computed
