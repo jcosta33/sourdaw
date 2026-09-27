@@ -66,7 +66,9 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         pushUndoEntry(
             'Add CC point',
             () => removeMidiCC(clipId, cc.id),
-            () => addMidiCC(clipId, controller, value, beat)
+            // Redo must re-create the point under the SAME id: a fresh id would
+            // leave the undo side removing an id the store no longer holds.
+            () => addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id)
         );
     };
 
@@ -131,7 +133,9 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             removeMidiCC(clipId, ccId);
             pushUndoEntry(
                 'Remove CC point',
-                () => addMidiCC(clipId, ctrl, value, beat, channel),
+                // Re-add under the removed point's own id so the redo side's
+                // remove still names a point the store holds.
+                () => addMidiCC(clipId, ctrl, value, beat, channel, ccId),
                 () => removeMidiCC(clipId, ccId)
             );
         } else {

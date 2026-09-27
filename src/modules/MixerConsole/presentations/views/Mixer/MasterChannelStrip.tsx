@@ -4,10 +4,12 @@ import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { type AppAction } from '#/utils/handlerContract';
 import { cn } from '#/utils/Styles/cn';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
@@ -24,25 +26,12 @@ function restoreEngineFromProjectTruth(): void {
     setMasterGain(storeMasterGain, true);
 }
 
-async function dispatchMasterGainAction(
-    value: number,
-    expectedPercent: number,
-    coalesceWithPrevious?: boolean
-): Promise<void> {
+async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?: boolean): Promise<void> {
     const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
     if (options) {
-        await executeUserAppAction(
-            {
-                type: 'setMasterGain',
-                payload: { gain: value, expectedPercent },
-            },
-            options
-        );
+        await executeUserAppAction(action, options);
     } else {
-        await executeUserAppAction({
-            type: 'setMasterGain',
-            payload: { gain: value, expectedPercent },
-        });
+        await executeUserAppAction(action);
     }
 }
 
@@ -92,6 +81,12 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     // is what lets a later commit's `expectedPercent` read the store only
     // after an earlier, barrier-held commit has actually landed.
     const pendingCommit = useRef<Promise<void>>(Promise.resolve());
+    // Recency stamp arming the double-click reset's coalescing. Only a
+    // gesture settle's own recording arms it, and only when its commit
+    // actually recorded an undo entry: a jittered first click re-committing
+    // the unchanged gain records nothing, so the reset must be its own undo
+    // step rather than join the stack top (#4616). A discrete commit never
+    // re-arms it — see `commitMasterGain`.
     const lastGrooveSettleTime = useRef(0);
 
     /**
@@ -119,13 +114,32 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         }
     };
 
-    const commitMasterGain = async (value: number, token: number, coalesceWithPrevious?: boolean): Promise<void> => {
+    const commitMasterGain = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
+        let coalesceWithPrevious = false;
+        if (!wasGestureSettle && performance.now() - lastGrooveSettleTime.current <= 500) {
+            coalesceWithPrevious = true;
+            lastGrooveSettleTime.current = 0;
+        }
         try {
             const expectedPercent = transportStore.value?.masterGain;
             if (expectedPercent === undefined) {
                 return;
             }
-            await dispatchMasterGainAction(value, expectedPercent, coalesceWithPrevious);
+            const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
+            await dispatchMasterGainAction(action, coalesceWithPrevious);
+            // Only a gesture settle's own recording arms the window; a
+            // discrete commit never re-arms. A keyboard nudge records too,
+            // but letting it re-arm would chain the next burst of nudges into
+            // one undo group and take away stepping back a single nudge. And
+            // the stack top must be the entry THIS dispatch recorded — for
+            // this action class the undo entry stores the dispatched action
+            // object by reference — so a foreign recording landing inside the
+            // held-open await (the persistence barrier can hold it for real
+            // time) must not arm the reset.
+            const stackTop = undoHistoryStore.value?.past.at(-1);
+            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
+                lastGrooveSettleTime.current = performance.now();
+            }
         } catch (error) {
             logger.error(new Error('Master channel strip commit failed for action: setMasterGain', { cause: error }));
         } finally {
@@ -152,15 +166,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         setGestureGain(value);
         setMasterGain(value * 100, true);
 
-        let coalesceWithPrevious = false;
-        if (wasOpen) {
-            lastGrooveSettleTime.current = performance.now();
-        } else if (performance.now() - lastGrooveSettleTime.current <= 500) {
-            coalesceWithPrevious = true;
-            lastGrooveSettleTime.current = 0;
-        }
-
-        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token, coalesceWithPrevious));
+        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token, wasOpen));
     };
 
     const displayGain = gestureGain ?? masterGain / 100;

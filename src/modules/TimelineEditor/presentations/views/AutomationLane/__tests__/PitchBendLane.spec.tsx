@@ -202,12 +202,19 @@ describe('PitchBendLane', () => {
             undoFn!();
             expect(removePitchBend).toHaveBeenCalledWith('clip-1', expect.any(String));
 
+            // Redo must re-add the point under its own id, so the undo side's
+            // remove keeps naming a point the store holds.
+            const addedPB = vi.mocked(addPitchBend).mock.results[0]?.value;
+            expect(addedPB).toBeDefined();
+
             vi.mocked(addPitchBend).mockClear();
             redoFn!();
             expect(addPitchBend).toHaveBeenCalledWith(
                 'clip-1',
                 valueFromY(76, 80),
-                beatFromX(48, defaultProps.beatWidth)
+                beatFromX(48, defaultProps.beatWidth),
+                0,
+                addedPB?.id
             );
         });
 
@@ -640,7 +647,7 @@ describe('PitchBendLane', () => {
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             vi.mocked(addPitchBend).mockClear();
             undoFn!();
-            expect(addPitchBend).toHaveBeenCalledWith('clip-1', 20, 0, 0);
+            expect(addPitchBend).toHaveBeenCalledWith('clip-1', 20, 0, 0, 'pb-a');
         });
     });
 });

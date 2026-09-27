@@ -5,6 +5,21 @@ import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
+import type { AppAction } from '#/utils/handlerContract';
+
+/**
+ * The action entry the fake stacks push when a write "records": shaped like
+ * `ActionUndoEntry` where it matters, since production reads it through the
+ * union's `kind` discriminant and compares its `action` against the dispatched
+ * object by reference — which is how `createUndoEntry` stores it.
+ */
+type RecordedActionEntry = { kind: 'action'; action: AppAction };
+
+const makeRecordedEntry = (action: AppAction): RecordedActionEntry => ({
+    kind: 'action',
+    action,
+});
+
 // Mock hooks
 const storeMocks = vi.hoisted(() => ({
     useStore: vi.fn<() => { masterGain: number }>(() => ({
@@ -37,12 +52,34 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 }));
 
 const commandMocks = vi.hoisted(() => ({
-    executeUserAppAction: vi.fn(() => Promise.resolve()),
+    executeUserAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: commandMocks.executeUserAppAction,
+}));
+
+const undoStoreMocks = vi.hoisted(() => ({
+    // The undo stack top the strip's record gate reads. A stable sentinel is
+    // what makes "nothing recorded" observable: the gate arms only when the top
+    // is the action entry THIS dispatch recorded — the same object the dispatch
+    // mock received — so the sentinel must hold its identity while the stack
+    // stands still, and a recording write must replace it with an action entry
+    // whose `action` is that object.
+    stackTop: undefined as { readonly marker: string } | RecordedActionEntry | undefined,
+}));
+
+vi.mock('#/modules/Command/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/stores')>()),
+    undoHistoryStore: {
+        get value() {
+            return {
+                past: undoStoreMocks.stackTop === undefined ? [] : [undoStoreMocks.stackTop],
+                future: [],
+            };
+        },
+    },
 }));
 
 // Mock child components
@@ -101,6 +138,7 @@ describe('MasterChannelStrip', () => {
         storeMocks.useStore.mockReturnValue({ masterGain: 80 });
         storeMocks.transportStoreValue = { masterGain: 80 };
         commandMocks.executeUserAppAction.mockResolvedValue(undefined);
+        undoStoreMocks.stackTop = undefined;
     });
 
     it('should render with correct width class', () => {
@@ -644,6 +682,18 @@ describe('MasterChannelStrip', () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
 
+        // The groove tap settle really changes the master gain, so its dispatch
+        // records an undo entry. The dispatch mock is where the test models that
+        // recording — pushing an action entry whose `action` IS the object this
+        // dispatch received, the way `createUndoEntry` stores it by reference —
+        // because the transport store mock never moves. Without it the gate
+        // correctly stays cold and the reset below would not coalesce with
+        // anything.
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
+            return Promise.resolve();
+        });
+
         fader.setAttribute('data-transient', 'true');
         fireEvent.change(fader, { target: { value: '0.5' } });
         fader.removeAttribute('data-transient');
@@ -669,5 +719,211 @@ describe('MasterChannelStrip', () => {
             },
             { coalesceWithPrevious: true }
         );
+    });
+
+    it('arms the double-click reset to coalesce when the groove tap settle recorded an undo entry', async () => {
+        undoStoreMocks.stackTop = { marker: 'older-entry' };
+        let resolveSettleDispatch = (): void => undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            (action) =>
+                new Promise<void>((resolve) => {
+                    // The write records as the dispatch resolves: the fake
+                    // stack top becomes an action entry whose `action` IS this
+                    // dispatch's object — what `createUndoEntry` stores by
+                    // reference in production.
+                    resolveSettleDispatch = () => {
+                        undoStoreMocks.stackTop = makeRecordedEntry(action);
+                        resolve();
+                    };
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        // Groove tap: transient opens the gesture, settle dispatches and is
+        // held open the way a persistence barrier holds the snapshot write.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // The settle's write lands and records: the undo stack's top moves to
+        // this settle's own entry.
+        await act(async () => {
+            resolveSettleDispatch();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset, a discrete settle inside the window, may
+        // join the settle only because the settle recorded.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '1' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            { type: 'setMasterGain', payload: { gain: 1, expectedPercent: 80 } },
+            { coalesceWithPrevious: true }
+        );
+    });
+
+    it('leaves the double-click reset uncoalesced when the groove tap settled unchanged and recorded nothing', async () => {
+        undoStoreMocks.stackTop = { marker: 'older-entry' };
+        let resolveSettleDispatch = (): void => undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSettleDispatch = resolve;
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        // The jittered first click: the transient samples somewhere else
+        // (0.5), then the gesture settles back at the unchanged 0.8 — the
+        // zero-change payload production's `handleSetMasterGain.isNoop`
+        // swallows, so the dispatch records nothing. The transient must
+        // differ from the fader's rendered value and the settle from the
+        // transient, or the input's native value tracker drops the event
+        // without ever reaching `onChange`.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.8' } });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // The dispatch lands and records nothing: the stack top stands.
+        await act(async () => {
+            resolveSettleDispatch();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset, inside the window: with nothing recorded the
+        // gate must stay cold and the reset must be its own undo step.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '1' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 1, expectedPercent: 80 },
+        });
+    });
+
+    it('does not arm coalescing when a foreign setMasterGain records inside the held-open settle window', async () => {
+        // The demonstrated false arm: the settle's dispatch await is held open
+        // by the persistence barrier and the storage transaction, and a FOREIGN
+        // setMasterGain — an action-bridge set or an Auto-Fix Mix move — lands
+        // and records inside that window. The stack top moves, but it is not
+        // this settle's entry, so the reference check must leave the stamp
+        // cold: arming here would let one Cmd+Z revert the foreign edit
+        // together with the user's reset.
+        undoStoreMocks.stackTop = { marker: 'older-entry' };
+        let resolveSettleDispatch = (): void => undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSettleDispatch = resolve;
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        // Groove tap: transient opens the gesture, settle dispatches and is
+        // held open the way a persistence barrier holds the snapshot write.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // While the settle's dispatch is still open, a foreign setMasterGain
+        // lands and records: the top moves, to an entry that is not this
+        // settle's.
+        await act(async () => {
+            undoStoreMocks.stackTop = makeRecordedEntry({
+                type: 'setMasterGain',
+                payload: { gain: 0.25, expectedPercent: 80 },
+            });
+        });
+
+        // The settle resolves having recorded nothing — its value matched the
+        // store, so the zero-change handler swallowed it.
+        await act(async () => {
+            resolveSettleDispatch();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset inside the window must be its own undo step.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '1' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 1, expectedPercent: 80 },
+        });
+    });
+
+    /**
+     * A discrete keyboard settle records too — the entry it pushes is exactly
+     * as real as a gesture settle's — but it must not re-arm the coalescing
+     * window: only a gesture settle's own recording arms. Re-arming from a
+     * nudge would chain the next burst of nudges into one undo group, and a
+     * single nudge could no longer be stepped back alone.
+     */
+    it('does not arm coalescing when a discrete keyboard settle recorded, so the next nudge stays its own undo step', async () => {
+        undoStoreMocks.stackTop = { marker: 'older-entry' };
+        // The first nudge — a settle with no gesture open — records: the fake
+        // stack top becomes an action entry whose `action` IS this dispatch's
+        // object, the way `createUndoEntry` stores it.
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
+            return Promise.resolve();
+        });
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.5' } });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(1, {
+            type: 'setMasterGain',
+            payload: { gain: 0.5, expectedPercent: 80 },
+        });
+
+        // The second nudge, well inside the 500 ms window: the recording
+        // first nudge must not have armed the window, so this one joins
+        // nothing and undo steps back one nudge at a time.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'setMasterGain',
+            payload: { gain: 0.6, expectedPercent: 80 },
+        });
     });
 });

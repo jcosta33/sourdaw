@@ -5236,6 +5236,14 @@ const schemaDefinitions = [
         additionalProperties: false,
     },
     {
+        type: 'object',
+        properties: {
+            outputId: 0,
+        },
+        required: ['outputId'],
+        additionalProperties: false,
+    },
+    {
         type: 'literal',
         value: 'push2',
     },
@@ -5244,12 +5252,12 @@ const schemaDefinitions = [
         value: 'push3',
     },
     {
-        anyOf: [638, 639],
+        anyOf: [639, 640],
     },
     {
         type: 'object',
         properties: {
-            model: 640,
+            model: 641,
         },
         required: ['model'],
         additionalProperties: false,
@@ -5316,7 +5324,7 @@ const schemaDefinitions = [
         value: 'chord',
     },
     {
-        anyOf: [84, 647, 648, 649, 650],
+        anyOf: [84, 648, 649, 650, 651],
     },
     {
         type: 'literal',
@@ -5325,7 +5333,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 652,
+            type: 653,
         },
         required: ['type'],
         additionalProperties: false,
@@ -5337,7 +5345,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 654,
+            type: 655,
         },
         required: ['type'],
         additionalProperties: false,
@@ -5349,7 +5357,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 656,
+            type: 657,
             index: 1,
         },
         required: ['type', 'index'],
@@ -5370,7 +5378,7 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 659,
+            type: 660,
         },
         required: ['type'],
         additionalProperties: false,
@@ -5382,20 +5390,20 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            type: 661,
+            type: 662,
         },
         required: ['type'],
         additionalProperties: false,
     },
     {
-        anyOf: [653, 655, 657, 658, 660, 662],
+        anyOf: [654, 656, 658, 659, 661, 663],
     },
     {
         type: 'object',
         properties: {
             active: 42,
-            stepType: 651,
-            noteSelector: 663,
+            stepType: 652,
+            noteSelector: 664,
             velocity: 1,
             velocityOverride: 42,
             gateMul: 1,
@@ -5420,14 +5428,14 @@ const schemaDefinitions = [
     },
     {
         type: 'array',
-        items: 664,
+        items: 665,
     },
     {
         type: 'object',
         properties: {
             processorId: 0,
-            steps: 665,
-            expectedSteps: 665,
+            steps: 666,
+            expectedSteps: 666,
         },
         required: ['processorId', 'steps'],
         additionalProperties: false,
@@ -5491,13 +5499,13 @@ const schemaDefinitions = [
         value: 'mutation',
     },
     {
-        anyOf: [435, 601, 650, 668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679],
+        anyOf: [435, 601, 651, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680],
     },
     {
         type: 'object',
         properties: {
             id: 0,
-            type: 680,
+            type: 681,
             name: 0,
             bypassed: 42,
             params: 216,
@@ -5512,9 +5520,9 @@ const schemaDefinitions = [
     {
         type: 'object',
         properties: {
-            processor: 681,
+            processor: 682,
             atIndex: 1,
-            grooveAssignments: 682,
+            grooveAssignments: 683,
         },
         required: ['processor', 'atIndex'],
         additionalProperties: false,
@@ -5523,9 +5531,9 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             processorId: 0,
-            type: 680,
+            type: 681,
             name: 0,
-            restore: 683,
+            restore: 684,
         },
         required: ['processorId', 'type', 'name'],
         additionalProperties: false,
@@ -5534,7 +5542,7 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             processorId: 0,
-            expectedProcessor: 681,
+            expectedProcessor: 682,
             expectedIndex: 1,
         },
         required: ['processorId', 'expectedProcessor', 'expectedIndex'],
@@ -5904,24 +5912,25 @@ const schemaIdByActionType = {
     toggleNodeView: 125,
     setControlSurface: 636,
     addCvOutput: 637,
-    connectPush: 641,
+    removeCvOutput: 638,
+    connectPush: 642,
     disconnectPush: 125,
     exportDawProject: 125,
     importDawProject: 125,
-    loadRaveModel: 642,
-    setRaveBlend: 643,
+    loadRaveModel: 643,
+    setRaveBlend: 644,
     enableWarping: 179,
-    setWarpAlgorithm: 644,
-    setWarpPitchShift: 645,
-    setYeastProcessorParam: 646,
-    setYeastArpPattern: 666,
-    setYeastProcessorBypass: 667,
-    addYeastProcessor: 684,
-    removeYeastProcessor: 685,
-    reorderYeastProcessor: 686,
-    commitRecording: 687,
+    setWarpAlgorithm: 645,
+    setWarpPitchShift: 646,
+    setYeastProcessorParam: 647,
+    setYeastArpPattern: 667,
+    setYeastProcessorBypass: 668,
+    addYeastProcessor: 685,
+    removeYeastProcessor: 686,
+    reorderYeastProcessor: 687,
+    commitRecording: 688,
     discardRecording: 179,
-    restoreRecording: 688,
+    restoreRecording: 689,
 } as const satisfies Readonly<Record<AppActionType, number>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

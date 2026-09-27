@@ -14,6 +14,7 @@ vi.mock('../generationHandlerHelpers', () => ({
     VALID_VOICINGS: new Set<string>(),
     getPlayheadBeat: vi.fn(),
     resolveOrCreateMidiTrack: vi.fn(),
+    resolveGenerationTrackPlan: vi.fn(() => ({ kind: 'existing', trackId: 't1' })),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -144,7 +145,7 @@ describe('createGenerationHandler', () => {
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('builds a describe label from the action style and configured suffix', () => {
+    it('builds a describe label and a clip-discard inverse for an existing target track', () => {
         const handler = createGenerationHandler({
             validStyles: new Set(['pop']),
             defaultStyle: 'pop',
@@ -153,7 +154,26 @@ describe('createGenerationHandler', () => {
             applyToTrack: vi.fn(),
         } as any);
 
+        vi.mocked(helpers.resolveGenerationTrackPlan).mockReturnValue({ kind: 'existing', trackId: 't1' });
+
         const description = handler.describe({ type: 'generateChordProgression', payload: { style: 'jazz' } } as any);
-        expect(description).toEqual({ label: 'Generate jazz chord progression' });
+        expect(description.label).toBe('Generate jazz chord progression');
+        expect(description.inverseAction?.type).toBe('discardDuplicatedClip');
+    });
+
+    it('builds a track-discard inverse when no MIDI track exists yet', () => {
+        const handler = createGenerationHandler({
+            validStyles: new Set(['pop']),
+            defaultStyle: 'pop',
+            labelSuffix: 'melody',
+            trackNamePrefix: 'Melody',
+            applyToTrack: vi.fn(),
+        } as any);
+
+        vi.mocked(helpers.resolveGenerationTrackPlan).mockReturnValue({ kind: 'create' });
+
+        const description = handler.describe({ type: 'generateMelody', payload: { style: 'simple' } } as any);
+        expect(description.label).toBe('Generate simple melody');
+        expect(description.inverseAction?.type).toBe('discardCreatedTrack');
     });
 });

@@ -66,7 +66,9 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         pushUndoEntry(
             'Add pitch bend point',
             () => removePitchBend(clipId, pb.id),
-            () => addPitchBend(clipId, value, beat)
+            // Redo must re-create the point under the SAME id: a fresh id would
+            // leave the undo side removing an id the store no longer holds.
+            () => addPitchBend(clipId, pb.value, pb.beat, pb.channel, pb.id)
         );
     };
 
@@ -132,7 +134,9 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             removePitchBend(clipId, pbId);
             pushUndoEntry(
                 'Remove pitch bend point',
-                () => addPitchBend(clipId, value, beat, channel),
+                // Re-add under the removed point's own id so the redo side's
+                // remove still names a point the store holds.
+                () => addPitchBend(clipId, value, beat, channel, pbId),
                 () => removePitchBend(clipId, pbId)
             );
         } else {
