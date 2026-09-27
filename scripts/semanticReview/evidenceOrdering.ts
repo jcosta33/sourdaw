@@ -240,7 +240,13 @@ export function specCoveredSources(
     admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>
 ): ReadonlyMap<string, string> {
     const changedPaths = new Set(changed.map((file) => file.path));
-    const filesByPath = new Map(changed.map((file) => [file.path, file]));
+    const filesByPath = new Map<string, SemanticChangedFile>();
+    for (const file of changed) {
+        filesByPath.set(file.path, file);
+        if (file.previousPath !== undefined) {
+            filesByPath.set(file.previousPath, file);
+        }
+    }
     const covered = new Map<string, string>();
     // The covering spec whose own position ranks first under the comparator's keys: the smallest side figure
     // the spec's own unit carries, then the lexicographically first path. The comparator ranks a pair by the
@@ -252,8 +258,8 @@ export function specCoveredSources(
         if (candidateFile === undefined || incumbentFile === undefined) {
             return false;
         }
-        const candidateBytes = coveringSpecRankBytes(candidateFile.kind, admissionBytesBySide.get(candidate));
-        const incumbentBytes = coveringSpecRankBytes(incumbentFile.kind, admissionBytesBySide.get(incumbent));
+        const candidateBytes = coveringSpecRankBytes(candidateFile.kind, admissionBytesBySide.get(candidateFile.path));
+        const incumbentBytes = coveringSpecRankBytes(incumbentFile.kind, admissionBytesBySide.get(incumbentFile.path));
         if (candidateBytes !== incumbentBytes) {
             return candidateBytes < incumbentBytes;
         }
@@ -272,6 +278,14 @@ export function specCoveredSources(
             }
         }
     };
+    // A spec covers from the side's own path: a renamed or copied spec whose previous path was collected
+    // still covers what its before content imports, and the covering spec the source is recorded against is
+    // that collected path, so the covered source stays in the collected-spec bucket.
+    const collectSide = (sidePath: string, content: string | undefined, specPath: string): void => {
+        if (content !== undefined && isCollectedSpec(sidePath)) {
+            collect(sidePath, content, specPath);
+        }
+    };
     for (const file of changed) {
         const entry = contents.get(file.path);
         const beforePath = file.previousPath ?? file.path;
@@ -283,15 +297,8 @@ export function specCoveredSources(
         if (!contractByContent) {
             continue;
         }
-        // A spec covers from the side's own path: a renamed or copied spec whose previous path was collected
-        // still covers what its before content imports, while a destination that is no longer collected
-        // covers nothing from its after side.
-        if (before !== undefined && isCollectedSpec(beforePath)) {
-            collect(beforePath, before, file.path);
-        }
-        if (after !== undefined && isCollectedSpec(file.path)) {
-            collect(file.path, after, file.path);
-        }
+        collectSide(beforePath, before, beforePath);
+        collectSide(file.path, after, file.path);
     }
     // One transitive level: each covered source's own re-exports and imports are the material the spec that
     // covers it reaches through it. The snapshot keeps the walk to exactly one level rather than a full
@@ -509,7 +516,13 @@ export function admissionUnits(
     plannedPaths: ReadonlySet<string>
 ): readonly AdmissionUnit[] {
     const contractNeeding = contractNeedingPaths(changed);
-    const filesByPath = new Map(changed.map((file) => [file.path, file]));
+    const filesByPath = new Map<string, SemanticChangedFile>();
+    for (const file of changed) {
+        filesByPath.set(file.path, file);
+        if (file.previousPath !== undefined) {
+            filesByPath.set(file.previousPath, file);
+        }
+    }
     const units: AdmissionUnit[] = [];
     for (const file of changed) {
         const sides = sidesByPath.get(file.path);
@@ -523,7 +536,7 @@ export function admissionUnits(
             // A source that is itself contract-carrying already earns tier 0 by its own classification, so it
             // keeps its own non-spec position and class rather than being demoted into the covering spec's
             // bucket; only a bulk source, promoted solely because a spec covers it, is carried by that spec.
-            if (pathContractCarrying || !covered || coveringSpec === undefined) {
+            if (pathContractCarrying || !covered || coveringSpecPath === undefined || coveringSpec === undefined) {
                 return {
                     path: file.path,
                     pathContractCarrying,
@@ -533,7 +546,9 @@ export function admissionUnits(
                 };
             }
             return {
-                path: coveringSpec.path,
+                // The covering spec's collected path — for a rename or copy out of collection this is the
+                // previous path that carried the contract, so the source stays in the collected-spec bucket.
+                path: coveringSpecPath,
                 pathContractCarrying:
                     (sidesByPath.get(coveringSpec.path)?.before ?? false) ||
                     (sidesByPath.get(coveringSpec.path)?.after ?? false),

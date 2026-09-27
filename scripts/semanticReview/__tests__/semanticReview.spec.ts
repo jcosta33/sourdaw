@@ -1468,7 +1468,9 @@ describe('contract-carrying admission', () => {
             ['tools/renamed.ts', { before: beforeContent, after: 'export const renamed = 1;\n' }],
             [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
         ]);
-        expect(specCoveredSources(renamed, renamedContents, bytesBySide).get(sourcePath)).toBe('tools/renamed.ts');
+        expect(specCoveredSources(renamed, renamedContents, bytesBySide).get(sourcePath)).toBe(
+            'scripts/__tests__/renamed.spec.ts'
+        );
 
         const copied: SemanticChangedFile[] = [
             {
@@ -1486,27 +1488,30 @@ describe('contract-carrying admission', () => {
             ['tools/copied.ts', { before: beforeContent, after: 'export const copied = 1;\n' }],
             [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
         ]);
-        expect(specCoveredSources(copied, copiedContents, bytesBySide).get(sourcePath)).toBe('tools/copied.ts');
+        expect(specCoveredSources(copied, copiedContents, bytesBySide).get(sourcePath)).toBe(
+            'scripts/__tests__/copied.spec.ts'
+        );
     });
 
     it('caps a covered source at a modified coverer whose after side is the smaller floor', () => {
-        // F3: the floor is the minimum of the coverer's two sides. Here the after side is the smaller one, so
-        // capping at the before side alone would leave the source's after unit behind the coverer's after.
+        // F3: the floor is the minimum of the coverer's two sides. The source is deleted, so its only side is
+        // before and does not coincide with the coverer's cheaper after side; only the minimum-over-sides keeps
+        // the source's before unit ahead of that after side.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/afterFloor.spec.ts';
         const sourcePath = 'scripts/semanticReview/afterFloorSource.ts';
         const specSide = `${workflowLine}import { s } from '../afterFloorSource.ts';\n`;
         const changed: SemanticChangedFile[] = [
             { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
-            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            { path: sourcePath, kind: 'deleted', binary: false, generated: false, added: 0, deleted: 1 },
         ];
         const contents = new Map<string, { before?: string; after?: string }>([
             [coverPath, { before: specSide, after: specSide }],
-            [sourcePath, { after: 'export const s = 1;\n' }],
+            [sourcePath, { before: 'export const s = 1;\n' }],
         ]);
         const bytesBySide = new Map<string, AdmissionSideBytes>([
             [coverPath, { before: 10_000, after: 1_000 }],
-            [sourcePath, { before: 0, after: 5_000 }],
+            [sourcePath, { before: 5_000, after: 0 }],
         ]);
         const sidesByPath = new Map<string, ContractCarryingSides>([
             [coverPath, { before: true, after: true }],
@@ -1523,8 +1528,81 @@ describe('contract-carrying admission', () => {
         );
         const index = (path: string, side: 'before' | 'after'): number =>
             units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
-        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'after'));
-        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'after'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
+    });
+
+    it('keeps a renamed-out coverer from promoting its large source to the non-spec front', () => {
+        // F1: a spec renamed out of collection still covers what its before content imports, but the source
+        // must be carried by that collected path, not the non-collected destination. Carrying the destination
+        // would rank the source non-spec at the front, so its 95 KB charge starves the four small specs; the
+        // collected path keeps it in the spec bucket, behind them.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const renamedPath = 'tools/renamedOut.ts';
+        const renamedFromPath = 'scripts/__tests__/renamedOut.spec.ts';
+        const sourcePath = 'scripts/hugeSource.ts';
+        const specPaths = ['s1', 's2', 's3', 's4'].map((name) => `scripts/__tests__/${name}.spec.ts`);
+
+        const renamedBefore = `${workflowLine}import { huge } from '../hugeSource.ts';\n${sizedLine(5_000, 'cover')}`;
+        const renamedAfter = sizedLine(5_000, 'coverAfter');
+        const sourceSide = sizedLines(10, 9_500, 'huge');
+        const specSide = `${workflowLine}${sizedLine(2_000, 'small')}`;
+
+        const files: SemanticChangedFile[] = [
+            {
+                path: renamedPath,
+                previousPath: renamedFromPath,
+                kind: 'renamed',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 1,
+            },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 10, deleted: 0 },
+            ...specPaths.map((path) => changedFile(path, { kind: 'added', added: 2, deleted: 0 })),
+        ];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${renamedFromPath}`]: renamedBefore,
+            [`${HEAD}:${renamedPath}`]: renamedAfter,
+            [`${HEAD}:${sourcePath}`]: sourceSide,
+            ...Object.fromEntries(specPaths.flatMap((path) => [[`${HEAD}:${path}`, specSide]])),
+        };
+        const hunks = new Map<string, PathHunks>([
+            [
+                renamedPath,
+                {
+                    path: renamedPath,
+                    previousPath: renamedFromPath,
+                    before: oneLineHunks(3, 1),
+                    after: oneLineHunks(1, 1),
+                },
+            ],
+            [sourcePath, { path: sourcePath, before: [], after: oneLineHunks(1, 10) }],
+            ...specPaths.map((path): [string, PathHunks] => [path, { path, before: [], after: oneLineHunks(2, 1) }]),
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs, hunks }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        // The four small specs keep their units: the source's 95 KB charge does not outrank them.
+        expect(specPaths.every((path) => planned.units.some((unit) => unit.path === path))).toBe(true);
     });
 
     it('names a withheld region by its own content class rather than its admission tier', () => {
