@@ -5,18 +5,26 @@ import { PITCH_BEND_CENTER } from '#/utils/midiData';
 import { MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
+import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
+import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 
 const CENTS_PER_SEMITONE = 100;
 
 export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        function handleWebMidiPitchBend(channel: number, lsb: number, msb: number, timeStamp?: number): void {
+        function handleWebMidiPitchBend(
+            channel: number,
+            lsb: number,
+            msb: number,
+            timeStamp?: number | CapturedInputEventTime
+        ): void {
             // Expression now shares the note events' serial tail (audit MD-3),
             // so it can be voiced a turn or more after it arrived. Addressing
             // its own arrival frame keeps it landing where it was performed.
@@ -36,6 +44,13 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
             const baseDetune = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId).detune : 0;
 
             if (mpeEnabled && channel >= MPE_FIRST_MEMBER_CHANNEL) {
+                setMemberExpression(channel, { pitchBend: bendValue });
+                pendingMemberAdmission.record(channel, {
+                    dimension: 'pitchBend',
+                    value: bendValue,
+                    eventTime,
+                    bendRangeSemitones,
+                });
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel === undefined) {
                     return;
@@ -44,6 +59,12 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                 if (!noteData) {
                     return;
                 }
+                recordHeldNoteExpression(noteData, {
+                    dimension: 'pitchBend',
+                    value: bendValue,
+                    eventTime,
+                    bendRangeSemitones,
+                });
                 noteData.pitchBend = bendValue;
                 // The wire delta alone has no depth. Capture the range it was
                 // performed against so recording can persist it and playback

@@ -1,17 +1,26 @@
 import { inject } from '#/infra/di/inject';
 import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
 
-import { CC_ALL_NOTES_OFF, CC_ALL_SOUND_OFF, MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
+import {
+    CC_ALL_NOTES_OFF,
+    CC_ALL_SOUND_OFF,
+    isDataEntryCc,
+    MPE_FIRST_MEMBER_CHANNEL,
+} from '../../models/MidiControllerState';
 import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { ingestChannelControlChange } from '../../repositories/webMidi/ingestChannelControlChange';
+import { memberExpressionState, setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
+import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordHeldNoteExpression } from './recordHeldNoteExpression';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { routePedalToBodies } from './routePedalToBodies';
 
 const CC_CHANNEL_VOLUME = 7;
@@ -20,7 +29,12 @@ const PAN_RANGE = 50;
 
 export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        function handleWebMidiCC(channel: number, cc: number, value: number, timeStamp?: number): void {
+        function handleWebMidiCC(
+            channel: number,
+            cc: number,
+            value: number,
+            timeStamp?: number | CapturedInputEventTime
+        ): void {
             const learnState = deps.getMidiLearnState();
             if (learnState?.isLearning && learnState.learningTarget) {
                 deps.completeMidiLearn(channel, cc);
@@ -34,7 +48,46 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             // a Data Entry write; dispatching it as an ordinary CC as well
             // would let a controller declaring its bend range also move
             // whatever the user mapped to controller 6.
+            const mpeEnabled = getMpeEnabled();
+            const heldNoteKey = channelToNote.get(channel);
+            const heldNote = heldNoteKey === undefined ? undefined : activeNotes.get(heldNoteKey);
+            let pendingBend: number | undefined;
+            if (pendingMemberAdmission.has(channel)) {
+                pendingBend = memberExpressionState.get(channel)?.pitchBend;
+            }
+            let earlierBendRange: number | undefined;
+            if (
+                mpeEnabled &&
+                channel >= MPE_FIRST_MEMBER_CHANNEL &&
+                isDataEntryCc(cc) &&
+                (heldNote?.pitchBend !== undefined || pendingBend !== undefined)
+            ) {
+                earlierBendRange = resolveBendRangeSemitones({ channel, mpeEnabled });
+            }
             const controlChange = ingestChannelControlChange({ channel, cc, value });
+            if (controlChange.consumed && earlierBendRange !== undefined) {
+                const bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
+                if (bendRangeSemitones !== earlierBendRange) {
+                    const eventTime = resolveInputEventTime({ timeStamp });
+                    if (heldNote?.pitchBend !== undefined) {
+                        recordHeldNoteExpression(heldNote, {
+                            dimension: 'pitchBend',
+                            value: heldNote.pitchBend,
+                            eventTime,
+                            bendRangeSemitones,
+                        });
+                        heldNote.pitchBendRangeSemitones = bendRangeSemitones;
+                    }
+                    if (pendingBend !== undefined) {
+                        pendingMemberAdmission.record(channel, {
+                            dimension: 'pitchBend',
+                            value: pendingBend,
+                            eventTime,
+                            bendRangeSemitones,
+                        });
+                    }
+                }
+            }
             if (controlChange.consumed) {
                 return;
             }
@@ -52,10 +105,14 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             }
 
             if (getMpeEnabled() && cc === MPE_SLIDE_CC && channel >= MPE_FIRST_MEMBER_CHANNEL) {
+                setMemberExpression(channel, { slide: value });
+                const eventTime = resolveInputEventTime({ timeStamp });
+                pendingMemberAdmission.record(channel, { dimension: 'slide', value, eventTime });
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel !== undefined) {
                     const noteData = activeNotes.get(noteForChannel);
                     if (noteData) {
+                        recordHeldNoteExpression(noteData, { dimension: 'slide', value, eventTime });
                         noteData.slide = value;
                         // Reach the instrument voice through the one expression
                         // surface the scheduled path also uses (audit MD-2).
@@ -72,9 +129,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                             // tail (audit MD-3), so it can be voiced a turn or
                             // more after it arrived. Addressing its own arrival
                             // frame keeps it landing where it was performed.
-                            sampleFrame: resolveInputDispatchFrame({
-                                eventTime: resolveInputEventTime({ timeStamp }),
-                            }),
+                            sampleFrame: resolveInputDispatchFrame({ eventTime }),
                         });
                     }
                 }

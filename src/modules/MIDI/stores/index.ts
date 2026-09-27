@@ -4,8 +4,10 @@
 export {
     defaultMidiStoreState,
     isValidMidiProbabilitySeed,
+    isValidMidiNoteExpression,
     LEGACY_MIDI_PROBABILITY_SEED,
     midiStore,
+    sanitizeMidiStoreState,
 } from './midiStore';
 export type { MidiNote, MidiStoreState } from './midiStore';
 

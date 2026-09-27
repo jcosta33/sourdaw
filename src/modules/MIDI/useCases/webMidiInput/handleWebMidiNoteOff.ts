@@ -1,18 +1,20 @@
 import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
 import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
-import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
+import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 
 function secondsToBeats(seconds: number, tempo: number): number {
     return (seconds * tempo) / 60;
@@ -64,7 +66,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         channel: number,
         note: number,
         releaseVelocity: number = 0,
-        timeStamp?: number
+        timeStamp?: number | CapturedInputEventTime
     ): Promise<void> {
         // When the key was released, not when this handler got its turn. The
         // recorded note length is the difference between two of these, so both
@@ -93,36 +95,61 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         if (instrumentTrack && yeastDevice) {
             const context = audioEngine.context;
             const sampleTime = dispatchFrame;
-            const processedEvents = await deps.processRealtimeMidiInput({
-                context,
-                rackId: yeastDevice.id,
-                routeId: instrumentTrack.id,
-                trackId: instrumentTrack.id,
-                note,
-                velocity: 0,
-                channel,
-                isNoteOn: false,
-                sampleTime,
-                sampleRate: context.sampleRate,
-                noteInstanceId: noteData.noteInstanceId,
-            });
-            const strip = audioEngine.getTrackStrip(instrumentTrack.id);
-            function emitGrandBouleOff(deviceId: string, midiNote: number): void {
-                void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
-            }
-            const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
-            for (const event of processedEvents) {
-                if (event.kind.type !== 'noteOff') {
-                    continue;
+            const pendingRelease = pendingYeastRelease.begin(
+                `${instrumentTrackId}:${yeastDevice.id}`,
+                noteData.yeastVoiceReleases ?? new Map(),
+                noteData.yeastGeneratedVoices ?? new Map(),
+                instrumentTrackId,
+                noteData.channel
+            );
+            try {
+                const processedEvents = await deps.processRealtimeMidiInput({
+                    context,
+                    rackId: yeastDevice.id,
+                    routeId: instrumentTrack.id,
+                    trackId: instrumentTrack.id,
+                    note,
+                    velocity: 0,
+                    channel,
+                    isNoteOn: false,
+                    sampleTime,
+                    sampleRate: context.sampleRate,
+                    noteInstanceId: noteData.noteInstanceId,
+                });
+                const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
+                for (const event of processedEvents) {
+                    if (event.kind.type !== 'noteOff') {
+                        continue;
+                    }
+                    const eventSampleFrame = Math.max(earliestDispatchFrame, Math.round(event.timeSamples));
+                    if (
+                        pendingYeastRelease.releaseEvent({
+                            routeId: `${instrumentTrackId}:${yeastDevice.id}`,
+                            trackId: event.trackId,
+                            noteInstanceId: event.noteInstanceId,
+                            channel: event.kind.channel,
+                            pitch: event.kind.note,
+                            sampleFrame: eventSampleFrame,
+                            releaseVelocity,
+                        })
+                    ) {
+                        continue;
+                    }
+                    if (
+                        event.noteInstanceId !== undefined ||
+                        (event.trackId !== undefined && event.trackId !== instrumentTrackId) ||
+                        event.kind.channel !== noteData.channel ||
+                        pendingYeastRelease.wasRetired(pendingRelease, event.kind.note)
+                    ) {
+                        continue;
+                    }
+                    pendingYeastRelease.release(pendingRelease, event.kind.note, eventSampleFrame, releaseVelocity);
                 }
-                routeYeastNoteOffToInstrument(
-                    instrumentTrack,
-                    strip,
-                    event.kind.note,
-                    releaseVelocity,
-                    emitGrandBouleOff,
-                    Math.max(earliestDispatchFrame, Math.round(event.timeSamples))
-                );
+            } catch (error: unknown) {
+                logger.warn('[MIDI] Yeast note release failed:', error);
+                pendingYeastRelease.releaseAll(pendingRelease);
+            } finally {
+                pendingYeastRelease.finish(pendingRelease);
             }
         }
 
@@ -227,24 +254,14 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 noteData.velocity ?? DEFAULT_NOTE_VELOCITY
             );
 
-            if (getMpeEnabled()) {
-                if (noteData.pressure !== undefined) {
-                    midiNote.pressure = noteData.pressure;
-                }
-                if (noteData.slide !== undefined) {
-                    midiNote.slide = noteData.slide;
-                }
-                if (noteData.pitchBend !== undefined) {
-                    midiNote.pitchBend = noteData.pitchBend;
-                    // Persist the depth alongside the wire delta. Without it
-                    // playback re-interprets every recorded bend at the MPE
-                    // default, so a controller set to ±12 records +6 semitones
-                    // and plays back +24 (audit MD-8).
-                    midiNote.pitchBendRangeSemitones = noteData.pitchBendRangeSemitones;
-                }
+            if (!getMpeEnabled()) {
+                deps.appendRecordedMidiNote({ clipId, note: midiNote });
+                return;
             }
-
-            deps.appendRecordedMidiNote({ clipId, note: midiNote });
+            const recordedNote = withRecordedNoteExpression(midiNote, noteData, (seconds) =>
+                secondsToBeats(seconds, tempo)
+            );
+            deps.appendRecordedMidiNote({ clipId, note: recordedNote });
         }
     };
 });

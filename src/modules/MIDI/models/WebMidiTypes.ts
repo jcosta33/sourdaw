@@ -48,6 +48,37 @@ export type ToasterNoteRoute = {
     pad: number;
 };
 
+/** One expression change of a held note, `offsetSeconds` after its note-on. */
+export type HeldNoteExpressionPoint = {
+    offsetSeconds: number;
+    value: number;
+    /** Bend range in force at this point; only present on pitch-bend trails. */
+    bendRangeSemitones?: number;
+};
+
+/**
+ * One dimension's changes after note-on while the note is held. `initial` is
+ * the value that was in effect at note-on (undefined when none was), captured
+ * because the live scalar on the active note moves with every change.
+ */
+export type HeldNoteExpressionTrail = {
+    initial: number | undefined;
+    initialBendRangeSemitones?: number;
+    points: HeldNoteExpressionPoint[];
+};
+
+export type HeldNoteExpressionTrails = {
+    pressure?: HeldNoteExpressionTrail;
+    slide?: HeldNoteExpressionTrail;
+    pitchBend?: HeldNoteExpressionTrail;
+};
+
+export type GeneratedYeastVoice = {
+    pitch: number;
+    channel: number;
+    release: (sampleFrame?: number, releaseVelocity?: number) => void;
+};
+
 export type ActiveNoteData = {
     startTime: number;
     startBeat: number;
@@ -61,6 +92,10 @@ export type ActiveNoteData = {
     instrumentTrackId: string;
     /** Stable runtime identity carried through the Yeast note-on/note-off pair. */
     noteInstanceId?: string;
+    /** Release closures bound to the exact controls that voiced transformed pitches. */
+    yeastVoiceReleases?: Map<number, (sampleFrame?: number, releaseVelocity?: number) => void>;
+    /** Worker-generated identity owns each captured transformed voice. */
+    yeastGeneratedVoices?: Map<string, GeneratedYeastVoice>;
     pressure?: number;
     slide?: number;
     pitchBend?: number;
@@ -70,6 +105,8 @@ export type ActiveNoteData = {
      * instead of leaving playback to guess.
      */
     pitchBendRangeSemitones?: number;
+    /** MPE expression changes after note-on, recorded as a curve at note-off. */
+    expressionTrails?: HeldNoteExpressionTrails;
     osc?: OscillatorNode & { _env?: GainNode };
     /** When the note was sent to a Fermenter instance, stores the device ID for noteOff routing */
     fermenterDeviceId?: string;

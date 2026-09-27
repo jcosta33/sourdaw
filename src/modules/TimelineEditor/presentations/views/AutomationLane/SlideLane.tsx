@@ -15,6 +15,16 @@ type SlideLaneProps = {
 
 const getSlide = (note: { slide?: number }): number => note.slide ?? 0;
 
+const getSlideCurve = (note: { expression?: { slide?: { offsetBeats: number; value: number }[] } }) =>
+    note.expression?.slide;
+
 export const SlideLane = (props: SlideLaneProps): ReactElement => (
-    <NotePropertyLane {...props} getValue={getSlide} setValue={setNoteSlide} label="Slide" undoLabel="Change slide" />
+    <NotePropertyLane
+        {...props}
+        getValue={getSlide}
+        getCurve={getSlideCurve}
+        setValue={setNoteSlide}
+        label="Slide"
+        undoLabel="Change slide"
+    />
 );

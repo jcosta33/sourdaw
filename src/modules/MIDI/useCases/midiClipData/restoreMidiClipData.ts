@@ -1,4 +1,5 @@
 import {
+    isValidMidiNoteExpression,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
     type MidiCC,
@@ -6,6 +7,7 @@ import {
     type MidiPitchBend,
 } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 
 const INVALID_MIDI_CLIP_DATA_SNAPSHOT = 'Invalid MIDI clip data snapshot';
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
@@ -85,7 +87,10 @@ function isValidMidiNote(value: unknown): value is MidiNote {
         hasValidOptionalNumber({ value, key: 'pitchBend' }) &&
         hasValidOptionalNumber({ value, key: 'pitchBendRangeSemitones' }) &&
         hasValidOptionalNumber({ value, key: 'channel' }) &&
-        hasValidOptionalString({ value, key: 'articulation' })
+        hasValidOptionalString({ value, key: 'articulation' }) &&
+        (!Object.hasOwn(value, 'expression') ||
+            value.expression === undefined ||
+            isValidMidiNoteExpression(value.expression, value.duration))
     );
 }
 
@@ -163,7 +168,14 @@ export function restoreMidiClipData({
     midiStore.set({
         ...state,
         notesByClipId:
-            validatedNotes === null ? state.notesByClipId : { ...state.notesByClipId, [clipId]: [...validatedNotes] },
+            validatedNotes === null
+                ? state.notesByClipId
+                : {
+                      ...state.notesByClipId,
+                      [clipId]: validatedNotes.map((note) =>
+                          note.expression === undefined ? note : cloneMidiNoteForAdmission(note)
+                      ),
+                  },
         ccByClipId:
             validatedControlChanges === null
                 ? state.ccByClipId

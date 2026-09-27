@@ -1,5 +1,7 @@
 import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
+import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
+
 import type { MidiCC, MidiNote, MidiPitchBend } from '../models/MidiNote';
 
 export type MidiGlobalTimeState = {
@@ -276,7 +278,13 @@ function takeTargetNoteId(cursor: IdentityCursor, request: MidiGeneratedNoteIden
     return targetNoteId;
 }
 
-function createSplitRightHalf(note: MidiNote, duration: number, id: string): MidiNote {
+/**
+ * The part of `note` from `fromOffset` beats after its start, rebased onto the
+ * target clip's origin. Recorded expression stays where it was performed: the
+ * half starts from the value in effect at the split and keeps the later points.
+ */
+function createSplitRightHalf(note: MidiNote, fromOffset: number, duration: number, id: string): MidiNote {
+    const sliced = sliceMidiNoteExtent(note, { fromOffset, duration });
     const rightHalf: MidiNote = {
         id,
         pitch: note.pitch,
@@ -286,14 +294,14 @@ function createSplitRightHalf(note: MidiNote, duration: number, id: string): Mid
         probability: note.probability ?? DEFAULT_NOTE_PROBABILITY,
     };
 
-    if (note.pressure !== undefined) {
-        rightHalf.pressure = note.pressure;
+    if (sliced.pressure !== undefined) {
+        rightHalf.pressure = sliced.pressure;
     }
-    if (note.slide !== undefined) {
-        rightHalf.slide = note.slide;
+    if (sliced.slide !== undefined) {
+        rightHalf.slide = sliced.slide;
     }
-    if (note.pitchBend !== undefined) {
-        rightHalf.pitchBend = note.pitchBend;
+    if (sliced.pitchBend !== undefined) {
+        rightHalf.pitchBend = sliced.pitchBend;
     }
     // Per-note expression that the field-by-field rebuild used to drop:
     // the MPE channel carries voice routing, and the bend range is what
@@ -306,6 +314,9 @@ function createSplitRightHalf(note: MidiNote, duration: number, id: string): Mid
     }
     if (note.articulation !== undefined) {
         rightHalf.articulation = note.articulation;
+    }
+    if (sliced.expression !== undefined) {
+        rightHalf.expression = sliced.expression;
     }
 
     return rightHalf;
@@ -347,7 +358,7 @@ function transformSplit(
                 if (!Number.isFinite(leftDuration)) {
                     return { status: 'rejected', state };
                 }
-                leftNotes.push({ ...note, duration: leftDuration });
+                leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
                 if (noteEnd > command.splitBeat) {
                     const rightDuration = noteEnd - command.splitBeat;
                     if (!Number.isFinite(rightDuration)) {
@@ -364,7 +375,9 @@ function transformSplit(
                     if (!targetNoteId) {
                         return { status: 'rejected', state };
                     }
-                    rightNotes.push(createSplitRightHalf(note, rightDuration, targetNoteId));
+                    rightNotes.push(
+                        createSplitRightHalf(note, command.splitBeat - note.startBeat, rightDuration, targetNoteId)
+                    );
                 }
                 continue;
             }
@@ -392,7 +405,9 @@ function transformSplit(
                 if (!targetNoteId) {
                     return { status: 'rejected', state };
                 }
-                rightNotes.push(createSplitRightHalf(note, rightDuration, targetNoteId));
+                rightNotes.push(
+                    createSplitRightHalf(note, command.splitBeat - note.startBeat, rightDuration, targetNoteId)
+                );
             }
             continue;
         }
@@ -415,7 +430,7 @@ function transformSplit(
         if (!Number.isFinite(leftDuration) || !Number.isFinite(rightDuration)) {
             return { status: 'rejected', state };
         }
-        leftNotes.push({ ...note, duration: leftDuration });
+        leftNotes.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: leftDuration }));
         const request: MidiGeneratedNoteIdentityRequest = {
             role: 'split-right',
             sourceClipId: command.sourceClipId,
@@ -427,7 +442,7 @@ function transformSplit(
         if (!targetNoteId) {
             return { status: 'rejected', state };
         }
-        rightNotes.push(createSplitRightHalf(note, rightDuration, targetNoteId));
+        rightNotes.push(createSplitRightHalf(note, command.splitBeat - note.startBeat, rightDuration, targetNoteId));
     }
 
     const existingRightNotes = state.notesByClipId[command.targetClipId] ?? [];
@@ -473,6 +488,9 @@ function createDuplicateClone(note: MidiNote, id: string): MidiNote {
     }
     if (note.articulation !== undefined) {
         clone.articulation = note.articulation;
+    }
+    if (note.expression !== undefined) {
+        clone.expression = note.expression;
     }
 
     return clone;

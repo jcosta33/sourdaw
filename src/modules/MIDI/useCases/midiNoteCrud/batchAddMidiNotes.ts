@@ -1,15 +1,10 @@
 import { createMidiError } from '../../errors/MidiError';
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 
-type NoteInput = {
-    id?: string;
-    pitch: number;
-    startBeat: number;
-    duration: number;
-    velocity?: number;
-};
+type NoteInput = Omit<MidiNote, 'id' | 'velocity'> & { id?: string; velocity?: number };
 
 /**
  * Insert multiple MIDI notes into a clip in a single store mutation.
@@ -45,5 +40,5 @@ export function batchAddMidiNotes(clipId: string, notes: NoteInput[]): MidiNote[
         },
     });
 
-    return createdNotes;
+    return createdNotes.map(cloneMidiNoteForAdmission);
 }

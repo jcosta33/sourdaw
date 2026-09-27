@@ -1,12 +1,16 @@
 import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { createMidiNote } from '../../models/MidiNote';
+import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 /**
  * Splits each selected note that spans the given beat position into two notes (R-A5).
  *
- * Both halves retain the original note's velocity and expression data.
+ * Both halves retain the original note's velocity and expression data. Recorded
+ * expression stays where it was performed: the left half keeps the points
+ * before the split, and the right half starts from the value in effect at the
+ * split and keeps the rest.
  * Notes that do not span the beat are left unchanged.
  * The split beat must be strictly inside the note (not at start or end).
  */
@@ -31,24 +35,15 @@ export function splitNoteAtBeat(clipId: string, selectedIds: string[], beat: num
                 continue;
             }
 
-            const leftDuration = beat - note.startBeat;
+            const splitOffset = beat - note.startBeat;
             const rightDuration = noteEnd - beat;
 
-            result.push({ ...note, duration: leftDuration });
+            result.push(sliceMidiNoteExtent(note, { fromOffset: 0, duration: splitOffset }));
             result.push({
-                ...createMidiNote(
-                    note.pitch,
-                    beat,
-                    rightDuration,
-                    note.velocity,
-                    note.probability ?? DEFAULT_NOTE_PROBABILITY
-                ),
-                pressure: note.pressure,
-                slide: note.slide,
-                pitchBend: note.pitchBend,
-                pitchBendRangeSemitones: note.pitchBendRangeSemitones,
-                channel: note.channel,
-                articulation: note.articulation,
+                ...sliceMidiNoteExtent(note, { fromOffset: splitOffset, duration: rightDuration }),
+                id: createMidiNote(note.pitch, beat, rightDuration).id,
+                startBeat: beat,
+                probability: note.probability ?? DEFAULT_NOTE_PROBABILITY,
             });
         }
         return result;

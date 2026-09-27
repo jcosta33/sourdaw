@@ -3,17 +3,24 @@ import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
+import { captureGestureBeat } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
+import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
+import { memberExpressionState } from '../../repositories/webMidi/memberExpressionState';
+import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
+import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordHeldNoteExpression } from './recordHeldNoteExpression';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 
@@ -23,6 +30,7 @@ import { resolveNativeNoteSink } from './resolveNativeNoteSink';
  * the note-off path tears the voice down regardless.
  */
 const HOLD_UNTIL_NOTE_OFF_SECONDS = 60;
+let nextNoteInstanceSerial = 0;
 
 export const handleWebMidiNoteOn = inject({
     ...midiMessageHandlerDependencies,
@@ -33,23 +41,46 @@ export const handleWebMidiNoteOn = inject({
             channel: number,
             note: number,
             velocity: number,
-            timeStamp?: number
+            timeStamp?: number | CapturedInputEventTime
         ): Promise<void> {
             if (velocity === 0) {
                 await handleWebMidiNoteOff(channel, note, 0, timeStamp);
                 return;
             }
 
+            const generation = memberExpressionGeneration.current;
+            const eventTime = resolveInputEventTime({ timeStamp });
+            let admittedBeat: number;
+            if (typeof timeStamp === 'object' && timeStamp !== null && Number.isFinite(timeStamp.recordingBeat)) {
+                admittedBeat = timeStamp.recordingBeat!;
+            } else {
+                admittedBeat = captureGestureBeat();
+            }
+
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
+            const memberExpression = mpeEnabled && channel >= 1 ? memberExpressionState.get(channel) : undefined;
+            let initialBendRangeSemitones: number | undefined;
+            if (memberExpression?.pitchBend !== undefined) {
+                initialBendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
+            }
+            const memberAdmission = mpeEnabled && channel >= 1 ? pendingMemberAdmission.begin(channel) : undefined;
             const channelNoteKey = mpeEnabled && channel >= 1 ? channelToNote.get(channel) : undefined;
             const noteToRelease =
                 activeNotes.get(noteKey) ??
                 (channelNoteKey === undefined ? undefined : activeNotes.get(channelNoteKey));
-            if (noteToRelease) {
-                await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
-            } else if (channelNoteKey !== undefined) {
-                channelToNote.delete(channel);
+            let admittedChanges: ReturnType<typeof pendingMemberAdmission.take>;
+            try {
+                if (noteToRelease) {
+                    await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
+                } else if (channelNoteKey !== undefined) {
+                    channelToNote.delete(channel);
+                }
+            } finally {
+                admittedChanges = pendingMemberAdmission.take(memberAdmission);
+            }
+            if (generation !== memberExpressionGeneration.current) {
+                return;
             }
 
             deps.stepRecordNoteOn(note, velocity);
@@ -66,21 +97,32 @@ export const handleWebMidiNoteOn = inject({
             // the main thread (audit MD-1). Everything downstream — the voice
             // dispatch frame and the recorded note length — is measured from
             // this instant instead of the clock reading at handler-run time.
-            const eventTime = resolveInputEventTime({ timeStamp });
             const dispatchFrame = resolveInputDispatchFrame({ eventTime });
             const dispatchTime = dispatchFrame / engine.context.sampleRate;
-            const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(eventTime * engine.context.sampleRate)}`;
+            const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(eventTime * engine.context.sampleRate)}:${++nextNoteInstanceSerial}`;
+            const pitchBendRangeSemitones = initialBendRangeSemitones;
 
             const noteData: ActiveNoteData = {
                 startTime: eventTime,
-                startBeat: transport ? deps.playheadPositionRef.current : 0,
+                startBeat: transport ? admittedBeat : 0,
                 channel,
                 note,
                 velocity,
                 trackId: targetTrackId,
                 instrumentTrackId: targetTrackId,
                 noteInstanceId,
+                pressure: memberExpression?.pressure,
+                slide: memberExpression?.slide,
+                pitchBend: memberExpression?.pitchBend,
+                pitchBendRangeSemitones,
             };
+            for (const change of admittedChanges) {
+                recordHeldNoteExpression(noteData, change);
+                noteData[change.dimension] = change.value;
+                if (change.dimension === 'pitchBend') {
+                    noteData.pitchBendRangeSemitones = change.bendRangeSemitones;
+                }
+            }
             activeNotes.set(noteKey, noteData);
 
             if (mpeEnabled && channel >= 1) {
@@ -98,7 +140,7 @@ export const handleWebMidiNoteOn = inject({
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
             const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
-            if (yeastDevice) {
+            if (instrumentTrack && yeastDevice) {
                 const sampleTime = dispatchFrame;
                 let processedEvents;
                 try {
@@ -118,13 +160,55 @@ export const handleWebMidiNoteOn = inject({
                 } catch (error: unknown) {
                     // The note was registered before this awaited step; un-register it so a
                     // rejected note-on leaves no phantom active note behind.
-                    activeNotes.delete(noteKey);
-                    if (channelToNote.get(channel) === noteKey) {
-                        channelToNote.delete(channel);
+                    // After a reset, the same key can belong to a new note.
+                    if (activeNotes.get(noteKey) === noteData) {
+                        activeNotes.delete(noteKey);
+                        if (channelToNote.get(channel) === noteKey) {
+                            channelToNote.delete(channel);
+                        }
                     }
                     throw error;
                 }
+                // Reset released the registered note while the worker was
+                // processing. Never voice its late result in the new session.
+                if (generation !== memberExpressionGeneration.current || activeNotes.get(noteKey) !== noteData) {
+                    if (activeNotes.get(noteKey) === noteData) {
+                        activeNotes.delete(noteKey);
+                        if (channelToNote.get(channel) === noteKey) {
+                            channelToNote.delete(channel);
+                        }
+                    }
+                    return;
+                }
                 const earliestDispatchFrame = Math.round(engine.context.currentTime * engine.context.sampleRate);
+                const startCapturedVoice = (
+                    pitch: number,
+                    voiceChannel: number,
+                    generatedId: string | undefined,
+                    sampleFrame: number,
+                    start: () => void,
+                    release: (sampleFrame?: number, releaseVelocity?: number) => void
+                ): void => {
+                    pendingYeastRelease.retire(
+                        `${instrumentTrackId}:${yeastDevice.id}`,
+                        voiceChannel,
+                        pitch,
+                        sampleFrame
+                    );
+                    if (generatedId === undefined) {
+                        noteData.yeastVoiceReleases?.get(pitch)?.(sampleFrame, 0);
+                        start();
+                        (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
+                    } else {
+                        noteData.yeastGeneratedVoices?.get(generatedId)?.release(sampleFrame, 0);
+                        start();
+                        (noteData.yeastGeneratedVoices ??= new Map()).set(generatedId, {
+                            pitch,
+                            channel: voiceChannel,
+                            release,
+                        });
+                    }
+                };
                 for (const event of processedEvents) {
                     const eventSampleFrame = Math.max(earliestDispatchFrame, Math.round(event.timeSamples));
                     if (event.kind.type === 'noteOn') {
@@ -133,7 +217,18 @@ export const handleWebMidiNoteOn = inject({
                         const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
                         if (fermenterDevice) {
                             const deviceNode = resolveDeviceNode(strip, { type: 'fermenter' });
-                            deviceNode?.fermenterControls?.noteOn(eventNote, eventVelocity, eventSampleFrame, channel);
+                            if (deviceNode?.fermenterControls) {
+                                const control = deviceNode.fermenterControls;
+                                startCapturedVoice(
+                                    eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
+                                    eventSampleFrame,
+                                    () =>
+                                        control.noteOn(eventNote, eventVelocity, eventSampleFrame, event.kind.channel),
+                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, event.kind.channel)
+                                );
+                            }
                             continue;
                         }
                         const grandBouleDevice = instrumentTrack?.devices.find(
@@ -141,12 +236,30 @@ export const handleWebMidiNoteOn = inject({
                         );
                         if (grandBouleDevice) {
                             const deviceNode = resolveDeviceNode(strip, { type: 'grand-boule' });
-                            deviceNode?.grandBouleControls?.noteOn(
-                                eventNote,
-                                eventVelocity / 127,
-                                eventSampleFrame,
-                                channel
-                            );
+                            if (deviceNode?.grandBouleControls) {
+                                const control = deviceNode.grandBouleControls;
+                                startCapturedVoice(
+                                    eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
+                                    eventSampleFrame,
+                                    () =>
+                                        control.noteOn(
+                                            eventNote,
+                                            eventVelocity / 127,
+                                            eventSampleFrame,
+                                            event.kind.channel
+                                        ),
+                                    (sampleFrame, releaseVelocity) => {
+                                        control.noteOff(eventNote, sampleFrame, releaseVelocity, event.kind.channel);
+                                        void deps.eventBus.emit('midi.noteOff', {
+                                            deviceId: grandBouleDevice.id,
+                                            midiNote: eventNote,
+                                            releaseVelocity,
+                                        });
+                                    }
+                                );
+                            }
                             void deps.eventBus.emit('midi.noteOn', {
                                 deviceId: grandBouleDevice.id,
                                 midiNote: eventNote,
@@ -157,7 +270,18 @@ export const handleWebMidiNoteOn = inject({
                         const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
                         if (levainDevice) {
                             const deviceNode = resolveDeviceNode(strip, { type: 'levain' });
-                            deviceNode?.levainControls?.noteOn(eventNote, eventVelocity, eventSampleFrame, channel);
+                            if (deviceNode?.levainControls) {
+                                const control = deviceNode.levainControls;
+                                startCapturedVoice(
+                                    eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
+                                    eventSampleFrame,
+                                    () =>
+                                        control.noteOn(eventNote, eventVelocity, eventSampleFrame, event.kind.channel),
+                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, event.kind.channel)
+                                );
+                            }
                             continue;
                         }
                         const synthParams = deps.getSynthParamsForTrack(instrumentTrackId);
@@ -172,30 +296,34 @@ export const handleWebMidiNoteOn = inject({
                         );
                     } else if (event.kind.type === 'noteOff') {
                         const eventNote = event.kind.note;
-                        const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
-                        if (fermenterDevice) {
-                            const deviceNode = resolveDeviceNode(strip, { type: 'fermenter' });
-                            deviceNode?.fermenterControls?.noteOff(eventNote, eventSampleFrame, channel);
+                        if (
+                            pendingYeastRelease.releaseEvent({
+                                routeId: `${instrumentTrackId}:${yeastDevice.id}`,
+                                trackId: event.trackId,
+                                noteInstanceId: event.noteInstanceId,
+                                channel: event.kind.channel,
+                                pitch: eventNote,
+                                sampleFrame: eventSampleFrame,
+                            })
+                        ) {
                             continue;
                         }
-                        const grandBouleDevice = instrumentTrack?.devices.find(
-                            (device) => device.type === 'grand-boule'
-                        );
-                        if (grandBouleDevice) {
-                            const deviceNode = resolveDeviceNode(strip, { type: 'grand-boule' });
-                            deviceNode?.grandBouleControls?.noteOff(eventNote, eventSampleFrame, undefined, channel);
-                            void deps.eventBus.emit('midi.noteOff', {
-                                deviceId: grandBouleDevice.id,
-                                midiNote: eventNote,
-                            });
+                        if (event.trackId !== undefined && event.trackId !== instrumentTrackId) {
                             continue;
                         }
-                        const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
-                        if (levainDevice) {
-                            const deviceNode = resolveDeviceNode(strip, { type: 'levain' });
-                            deviceNode?.levainControls?.noteOff(eventNote, eventSampleFrame, channel);
+                        if (event.noteInstanceId !== undefined) {
+                            const voice = noteData.yeastGeneratedVoices?.get(event.noteInstanceId);
+                            if (voice?.pitch === eventNote && voice.channel === event.kind.channel) {
+                                voice.release(eventSampleFrame);
+                                noteData.yeastGeneratedVoices?.delete(event.noteInstanceId);
+                            }
                             continue;
                         }
+                        if (event.kind.channel !== channel) {
+                            continue;
+                        }
+                        noteData.yeastVoiceReleases?.get(eventNote)?.(eventSampleFrame);
+                        noteData.yeastVoiceReleases?.delete(eventNote);
                     }
                 }
                 return;

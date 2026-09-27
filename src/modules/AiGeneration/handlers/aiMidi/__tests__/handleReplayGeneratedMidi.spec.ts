@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
+
 import { handleReplayGeneratedMidi } from '../handleReplayGeneratedMidi';
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +38,54 @@ const sourceClip = {
 };
 const sourceNotes = [{ id: 'source-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
 const generatedNotes = [{ id: 'generated-note', pitch: 36, startBeat: 0, duration: 1, velocity: 90 }];
+const invalidCurves: Array<{ name: string; note: MidiClipNoteSnapshot }> = [
+    {
+        name: 'duration endpoint',
+        note: { ...generatedNotes[0]!, expression: { pressure: [{ offsetBeats: 1, value: 90 }] } },
+    },
+    { name: 'zero offset', note: { ...generatedNotes[0]!, expression: { pressure: [{ offsetBeats: 0, value: 90 }] } } },
+    {
+        name: 'past duration',
+        note: { ...generatedNotes[0]!, expression: { pressure: [{ offsetBeats: 2, value: 90 }] } },
+    },
+    {
+        name: 'duplicate offsets',
+        note: {
+            ...generatedNotes[0]!,
+            expression: {
+                slide: [
+                    { offsetBeats: 0.25, value: 90 },
+                    { offsetBeats: 0.25, value: 80 },
+                ],
+            },
+        },
+    },
+    {
+        name: 'out of order',
+        note: {
+            ...generatedNotes[0]!,
+            expression: {
+                slide: [
+                    { offsetBeats: 0.75, value: 90 },
+                    { offsetBeats: 0.25, value: 80 },
+                ],
+            },
+        },
+    },
+    { name: 'empty curve', note: { ...generatedNotes[0]!, expression: { slide: [] } } },
+    {
+        name: 'pressure above range',
+        note: { ...generatedNotes[0]!, expression: { pressure: [{ offsetBeats: 0.5, value: 128 }] } },
+    },
+    {
+        name: 'slide above range',
+        note: { ...generatedNotes[0]!, expression: { slide: [{ offsetBeats: 0.5, value: 128 }] } },
+    },
+    {
+        name: 'bend above range',
+        note: { ...generatedNotes[0]!, expression: { pitchBend: [{ offsetBeats: 0.5, value: 8192 }] } },
+    },
+];
 
 describe('handleReplayGeneratedMidi', () => {
     beforeEach(() => {
@@ -43,6 +93,123 @@ describe('handleReplayGeneratedMidi', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'source-track', kind: 'midi', clips: [sourceClip] }],
         });
+    });
+
+    it('refuses a generated expression endpoint before creating a clip', async () => {
+        mocks.hasDurableMidiGenerationResult.mockReturnValue(true);
+        const result = await handleReplayGeneratedMidi.execute({
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-clip',
+                    source: { trackId: 'source-track', clip: sourceClip, notes: sourceNotes },
+                    targetTrackId: 'source-track',
+                    clip: { ...sourceClip, id: 'generated-clip' },
+                    notes: [{ ...generatedNotes[0]!, expression: { pressure: [{ offsetBeats: 1, value: 90 }] } }],
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it.each(invalidCurves)('refuses $name before any create-track side effect', async ({ note }) => {
+        mocks.hasDurableMidiGenerationResult.mockReturnValue(true);
+        const track = {
+            id: 'generated-track',
+            kind: 'midi',
+            clips: [
+                {
+                    id: 'generated-clip',
+                    trackId: 'generated-track',
+                    name: 'Generated',
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'midi',
+                },
+            ],
+        };
+        const result = await handleReplayGeneratedMidi.execute({
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-track',
+                    source: { trackId: 'source-track', clip: sourceClip, notes: sourceNotes },
+                    trackJson: JSON.stringify(track),
+                    trackIndex: 1,
+                    clip: { ...sourceClip, id: 'generated-clip', trackId: 'generated-track', name: 'Generated' },
+                    notes: [note],
+                },
+            },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.restoreTrack).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it('validates replace-notes expected and replacement arrays before idempotency or mutation', async () => {
+        mocks.hasDurableMidiGenerationResult.mockReturnValue(true);
+        const cases: Array<{ expectedNotes: MidiClipNoteSnapshot[]; replacementNotes: MidiClipNoteSnapshot[] }> = [
+            { expectedNotes: [invalidCurves[0]!.note], replacementNotes: generatedNotes },
+            { expectedNotes: sourceNotes, replacementNotes: [invalidCurves[1]!.note] },
+        ];
+        for (const { expectedNotes, replacementNotes } of cases) {
+            const result = await handleReplayGeneratedMidi.execute({
+                type: 'replayGeneratedMidi',
+                payload: {
+                    operation: {
+                        kind: 'replace-notes',
+                        trackId: 'source-track',
+                        clip: sourceClip,
+                        expectedNotes,
+                        replacementNotes,
+                    },
+                },
+            });
+            expect(result).toEqual({ status: 'conflict' });
+        }
+        expect(mocks.hasDurableMidiGenerationResult).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it('keeps an already durable valid expression replay idempotent', async () => {
+        mocks.hasDurableMidiGenerationResult.mockReturnValue(true);
+        const result = await handleReplayGeneratedMidi.execute({
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'replace-notes',
+                    trackId: 'source-track',
+                    clip: sourceClip,
+                    expectedNotes: sourceNotes,
+                    replacementNotes: [
+                        { ...generatedNotes[0]!, expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] } },
+                    ],
+                },
+            },
+        });
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it('validates a create-clip source array before source lookup or addClip', async () => {
+        const result = await handleReplayGeneratedMidi.execute({
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-clip',
+                    source: { trackId: 'source-track', clip: sourceClip, notes: [invalidCurves[0]!.note] },
+                    targetTrackId: 'source-track',
+                    clip: { ...sourceClip, id: 'generated-clip' },
+                    notes: generatedNotes,
+                },
+            },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.hasDurableMidiGenerationResult).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
     });
 
     it('replaces notes only when the serialized source snapshot is still exact', async () => {

@@ -18,4 +18,10 @@ export type MidiNote = {
     pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
+    /** Expression changes after note-on, per dimension; offsets are beats after `startBeat`. */
+    expression?: {
+        pressure?: { offsetBeats: number; value: number }[];
+        slide?: { offsetBeats: number; value: number }[];
+        pitchBend?: { offsetBeats: number; value: number }[];
+    };
 };

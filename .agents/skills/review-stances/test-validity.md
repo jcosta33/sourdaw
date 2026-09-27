@@ -8,6 +8,8 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Standing probes
 
+- For a queued MIDI expression test, cover both sides of the note lifetime: note-on before each member gesture, and every admitted gesture before note-off and the next same-channel note. Assert the recorded note fields through the byte dispatcher; a mocked handler call order that ends before release can pass while the curve is lost (PR #805).
+
 - Apply the standard mechanical probe the Review section of `AGENTS.md` defines; this file does not
   restate it.
 - A spec-only diff that turns red to green is the highest-risk diff class: for every hunk, read the

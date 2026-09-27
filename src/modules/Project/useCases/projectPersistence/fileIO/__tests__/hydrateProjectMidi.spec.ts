@@ -20,6 +20,51 @@ const midi: MidiStoreState = {
 };
 
 describe('hydrateProjectMidi', () => {
+    it('preserves absent slide and explicit minimum as distinct saved note states', () => {
+        const saved = serializeProjectMidi({
+            notesByClipId: {
+                'clip-1': [
+                    {
+                        id: 'absent',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 1,
+                        velocity: 100,
+                        expression: { slide: [{ offsetBeats: 0.5, value: 100 }] },
+                    },
+                    { id: 'minimum', pitch: 60, startBeat: 1, duration: 1, velocity: 100, slide: 0 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const hydrated = hydrateProjectMidi(saved).notesByClipId['clip-1'];
+        expect(hydrated?.[0]).not.toHaveProperty('slide');
+        expect(hydrated?.[0]?.expression?.slide).toEqual([{ offsetBeats: 0.5, value: 100 }]);
+        expect(hydrated?.[1]?.slide).toBe(0);
+    });
+    it('owns expression points from the imported MIDI block', () => {
+        const source = {
+            notesByClipId: {
+                'clip-1': [
+                    {
+                        ...midi.notesByClipId['clip-1']![0]!,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const loaded = hydrateProjectMidi(source);
+        const sourceNote = source.notesByClipId['clip-1'][0];
+        if (!sourceNote) {
+            throw new Error('Expected source MIDI note');
+        }
+        sourceNote.expression.pressure[0]!.value = 10;
+        sourceNote.expression.pressure.push({ offsetBeats: 0.75, value: 20 });
+        expect(loaded.notesByClipId['clip-1']?.[0]?.expression?.pressure).toEqual([{ offsetBeats: 0.5, value: 90 }]);
+    });
     it('preserves the unsigned u32 probability seed across serialization and hydration', () => {
         const roundTripped = hydrateProjectMidi(serializeProjectMidi(midi));
 

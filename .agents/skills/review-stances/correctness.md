@@ -59,6 +59,12 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
+
+PR #805 replaced one MIDI event tail with a global note tail and per-channel expression tails. Its first review caught unrelated-channel expression delayed by a pending note, but the revised note-off still waited only on the global note tail. A pending note-on followed by pressure, CC74, bend and release therefore committed the note before the last gestures reached it; the next note on that member channel could start before the old bend finished.
+
+Blind spot: the review checked note-on before expression and unrelated-channel latency, but not expression before note-off or the next note. Probe: hold the note-on's async worker, admit pressure, CC74, bend, release and another note on the same channel, then observe the recorded first note's three curve points and the exact execution order. Keep an idle unrelated channel immediate.
+
 ### 2026-09-27 — a covered-source promotion that outranked every unrelated collected spec (escaped via PR #4826; measured in review of that head; fix handed to #4846)
 
 PR #4826, the change that closed #4824, promoted a source a contract-carrying spec covers into the

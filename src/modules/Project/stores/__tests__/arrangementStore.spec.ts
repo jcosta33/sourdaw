@@ -82,6 +82,35 @@ function createValidSnapshot(id: string): ArrangementSnapshot {
 }
 
 describe('sanitize_arrangement_store_state', () => {
+    it('keeps valid saved MIDI identity but excludes malformed expression from inactive snapshots', () => {
+        const valid = createValidSnapshot('valid');
+        const goodNote = {
+            id: 'good',
+            pitch: 60,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            expression: { pressure: [{ offsetBeats: 1, value: 90 }] },
+        };
+        valid.midi.notesByClipId.clip = [goodNote];
+        const validState = { arrangements: [valid], activeArrangementId: 'valid' };
+        expect(sanitize_arrangement_store_state(validState)).toBe(validState);
+
+        const malformed = createValidSnapshot('inactive');
+        malformed.midi.notesByClipId.clip = [
+            {
+                ...goodNote,
+                expression: { pressure: [{ offsetBeats: 2, value: 90 }] },
+            },
+        ];
+        const sanitized = sanitize_arrangement_store_state({
+            arrangements: [valid, malformed],
+            activeArrangementId: 'valid',
+        });
+        expect(sanitized.arrangements[0]).toBe(valid);
+        expect(sanitized.arrangements[1]?.midi.notesByClipId.clip?.[0]).not.toHaveProperty('expression');
+        expect(sanitized.arrangements[1]?.midi.notesByClipId.clip?.[0]).toMatchObject({ id: 'good', duration: 2 });
+    });
     it('should reset non-object persisted arrangement state', () => {
         expect(sanitize_arrangement_store_state('corrupt')).toEqual(defaultArrangementStoreState);
         expect(sanitize_arrangement_store_state(null)).toEqual(defaultArrangementStoreState);

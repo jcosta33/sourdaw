@@ -429,6 +429,60 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(midiStore.value?.pitchBendByClipId[provisional.id]).toEqual(pitchBend);
     });
 
+    it('restores a recorded MIDI note with its expression curves after undo and redo', async () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, clips: [] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [] });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        const notes = [
+            {
+                id: 'note-1',
+                pitch: 60,
+                startBeat: 4,
+                duration: 2,
+                velocity: 100,
+                pressure: 10,
+                pitchBendRangeSemitones: 48,
+                expression: {
+                    pressure: [
+                        { offsetBeats: 1, value: 90 },
+                        { offsetBeats: 1.8, value: 20 },
+                    ],
+                    slide: [{ offsetBeats: 1, value: 64 }],
+                    pitchBend: [
+                        { offsetBeats: 0.5, value: 4096 },
+                        { offsetBeats: 1.5, value: 0 },
+                    ],
+                },
+            },
+        ];
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { [provisional.id]: notes },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        flushAutomergeStorageWrites();
+
+        await stopRecording(8);
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toBeUndefined();
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+    });
+
     it('restores the recorded clip once when the redo target is already present', async () => {
         const [provisional] = startRecording(4);
         if (!provisional) {

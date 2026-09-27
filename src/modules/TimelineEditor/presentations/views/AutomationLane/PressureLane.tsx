@@ -15,10 +15,14 @@ type PressureLaneProps = {
 
 const getPressure = (note: { pressure?: number }): number => note.pressure ?? 0;
 
+const getPressureCurve = (note: { expression?: { pressure?: { offsetBeats: number; value: number }[] } }) =>
+    note.expression?.pressure;
+
 export const PressureLane = (props: PressureLaneProps): ReactElement => (
     <NotePropertyLane
         {...props}
         getValue={getPressure}
+        getCurve={getPressureCurve}
         setValue={setNotePressure}
         label="Pressure"
         undoLabel="Change pressure"

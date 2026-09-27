@@ -1,3 +1,4 @@
+import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -11,8 +12,15 @@ import {
     setArrangementEventBus,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, executeAppActionBatch } from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
@@ -160,6 +168,121 @@ afterEach(() => {
 });
 
 describe('handleRestoreMidiClipNotes', () => {
+    it('rejects an out-of-duration curve before replay writes, including a nested source guard', () => {
+        arrangeCopyFixture();
+        const invalid = {
+            ...targetNote(),
+            expression: { pressure: [{ offsetBeats: 1, value: 90 }] },
+        };
+        const action: RestoreMidiClipNotesAction = {
+            type: 'restoreMidiClipNotes',
+            payload: { clipId: targetClipId, expectedNotes: [targetNote()], notes: [invalid] },
+        };
+        const before = structuredClone(midiStore.value);
+
+        expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(action.payload)).toBe(false);
+        expect(requireValidate()(action, { actions: [action], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreMidiClipNotes.execute(action)).toEqual({ status: 'conflict' });
+        expect(midiStore.value).toEqual(before);
+
+        const guarded: RestoreMidiClipNotesAction = {
+            ...action,
+            payload: {
+                ...action.payload,
+                notes: [targetNote()],
+                articulationReplayGuard: {
+                    trackId,
+                    sourceClipId,
+                    expectedSourceNotes: [
+                        { ...sourceNote(), expression: { pressure: [{ offsetBeats: 1, value: 90 }] } },
+                    ],
+                    expectedTrackFrozen: false,
+                    expectedSourceClipLocked: false,
+                    expectedTargetClipLocked: false,
+                },
+            },
+        };
+        expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(guarded.payload)).toBe(false);
+        expect(requireValidate()(guarded, { actions: [guarded], actionIndex: 0 })).toBe(false);
+        expect(handleRestoreMidiClipNotes.execute(guarded)).toEqual({ status: 'conflict' });
+        expect(midiStore.value).toEqual(before);
+    });
+
+    it('refuses an invalid expression through a fresh command without advancing document or undo', async () => {
+        resetCrdtProjectAuthority('restore MIDI note admission');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        arrangeCopyFixture();
+        registerHandlerMap({ restoreMidiClipNotes: handleRestoreMidiClipNotes });
+        clearUndoHistory();
+        flushAutomergeStorageWrites();
+        const invalid: RestoreMidiClipNotesAction = {
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: targetClipId,
+                expectedNotes: [targetNote()],
+                notes: [{ ...targetNote(), expression: { pressure: [{ offsetBeats: 1, value: 90 }] } }],
+            },
+        };
+        const document = getCrdtDoc('root');
+        if (!document) {
+            throw new Error('Expected CRDT document');
+        }
+        const heads = getHeads(document);
+        const before = structuredClone(midiStore.value);
+        const past = undoStore.value?.past.length;
+
+        await expect(executeAppAction(invalid)).rejects.toThrow();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value).toEqual(before);
+        expect(getHeads(getCrdtDoc('root')!)).toEqual(heads);
+        expect(undoStore.value?.past.length).toBe(past);
+        removeCrdtDoc('root');
+    });
+
+    it('owns validated handler restore curves through the document flush', async () => {
+        resetCrdtProjectAuthority('restore MIDI curve ownership');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        arrangeCopyFixture();
+        registerHandlerMap({ restoreMidiClipNotes: handleRestoreMidiClipNotes });
+        clearUndoHistory();
+        flushAutomergeStorageWrites();
+        const restored = {
+            ...targetNote(),
+            expression: {
+                pressure: [{ offsetBeats: 0.25, value: 90 }],
+                slide: [{ offsetBeats: 0.25, value: 40 }],
+                pitchBend: [{ offsetBeats: 0.25, value: 20 }],
+            },
+        };
+        const action: RestoreMidiClipNotesAction = {
+            type: 'restoreMidiClipNotes',
+            payload: { clipId: targetClipId, expectedNotes: [targetNote()], notes: [restored] },
+        };
+        expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(action.payload)).toBe(true);
+        expect(requireValidate()(action, { actions: [action], actionIndex: 0 })).toBe(true);
+        expect(handleRestoreMidiClipNotes.execute(action)).toEqual({ status: 'written' });
+        expect(midiStoreSnapshot(targetClipId)?.[0]?.expression).toEqual(restored.expression);
+        for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
+            restored.expression[dimension][0]!.offsetBeats = 0.5;
+            restored.expression[dimension].push({ offsetBeats: 0.5, value: 1 });
+            restored.expression[dimension] = [{ offsetBeats: 0.4, value: 1 }];
+        }
+        flushAutomergeStorageWrites();
+        const document = getCrdtDoc<{ midi?: { notesByClipId: Record<string, MidiClipNoteSnapshot[]> } }>('root');
+        const expected = {
+            pressure: [{ offsetBeats: 0.25, value: 90 }],
+            slide: [{ offsetBeats: 0.25, value: 40 }],
+            pitchBend: [{ offsetBeats: 0.25, value: 20 }],
+        };
+        expect(document?.midi?.notesByClipId[targetClipId]?.[0]?.expression).toEqual(expected);
+        expect(midiStoreSnapshot(targetClipId)?.[0]?.expression).toEqual(expected);
+        removeCrdtDoc('root');
+    });
+
     it('admits copyMidiArticulations into an atomic compensated batch when the restore guard matches live state', async () => {
         const action = arrangeCopyFixture();
         registerArticulationHandlers();

@@ -10,8 +10,11 @@ type ResolveInputEventTimeInput = {
      * this one before handing the event over, so native input reaches here on
      * the same footing as the browser's.
      */
-    timeStamp: number | undefined;
+    timeStamp: number | CapturedInputEventTime | undefined;
 };
+
+/** An audio-clock instant authenticated at message admission, before any worker wait. */
+export type CapturedInputEventTime = Readonly<{ audioTime: number; recordingBeat?: number }>;
 
 /**
  * Instant, on the AudioContext clock, at which a live MIDI event arrived.
@@ -24,17 +27,19 @@ type ResolveInputEventTimeInput = {
  *
  * The two clocks share no epoch, so the arrival instant is recovered from an
  * elapsed interval rather than by translating between origins: both
- * `performance.now()` and `currentTime` are sampled here, and the time already
- * spent waiting is subtracted. That makes the result independent of *when*
- * this runs — a message held behind the serial input tail resolves to the same
- * instant it would have resolved to on arrival.
+ * `performance.now()` and `currentTime` are sampled at input admission, and
+ * the time already spent waiting is subtracted. The captured audio-clock
+ * instant then survives any later queue or worker wait unchanged.
  *
  * Falls back to "now" whenever no usable timestamp exists, which is the
  * behaviour that predates this.
  */
 export function resolveInputEventTime({ timeStamp }: ResolveInputEventTimeInput): number {
+    if (timeStamp !== null && typeof timeStamp === 'object' && Number.isFinite(timeStamp.audioTime)) {
+        return timeStamp.audioTime;
+    }
     const now = audioEngine.context.currentTime;
-    if (timeStamp === undefined || !Number.isFinite(timeStamp)) {
+    if (typeof timeStamp !== 'number' || !Number.isFinite(timeStamp)) {
         return now;
     }
 

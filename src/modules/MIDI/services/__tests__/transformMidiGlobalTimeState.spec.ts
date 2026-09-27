@@ -257,6 +257,28 @@ describe('transformMidiGlobalTimeState', () => {
         expect(result.state.pitchBendByClipId).toBe(prepared.pitchBendByClipId);
     });
 
+    it('keeps a note’s recorded expression on its duplicate', () => {
+        const sourceNote = {
+            id: 'source-note',
+            pitch: 60,
+            startBeat: 1,
+            duration: 1,
+            velocity: 100,
+            expression: { pressure: [{ offsetBeats: 0.2, value: 40 }] },
+        };
+        const prepared = state({
+            notesByClipId: { source: [sourceNote], target: [] },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'copy-notes', sourceClipId: 'source', targetClipId: 'target' }],
+            targetNoteIds: ['note-copy'],
+        });
+
+        expect(result.state.notesByClipId.target?.[0]?.expression).toEqual(sourceNote.expression);
+    });
+
     it('preserves discard-window cases and source ordering', () => {
         const prepared = state({
             notesByClipId: {

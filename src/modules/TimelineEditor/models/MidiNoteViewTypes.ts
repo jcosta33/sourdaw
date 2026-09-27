@@ -13,6 +13,14 @@ export type MidiNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    pitchBendRangeSemitones?: number;
+    channel?: number;
+    articulation?: string;
+    expression?: {
+        pressure?: Array<{ offsetBeats: number; value: number }>;
+        slide?: Array<{ offsetBeats: number; value: number }>;
+        pitchBend?: Array<{ offsetBeats: number; value: number }>;
+    };
 };
 
 export type MidiCC = {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
@@ -35,6 +36,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         getTrackStrip: get_track_strip,
     },
     getCompensationDelay: () => 0,
+    getDefaultBendRangeSemitones: () => 48,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiControl: async () => true,
@@ -51,6 +53,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
 type HandleWebMidiNoteOnDependencies = Parameters<typeof handleWebMidiNoteOn._factory>[0];
 
@@ -97,6 +100,107 @@ describe('handleWebMidiNoteOn', () => {
         faust_instrument_types.value = new Set();
         audio_clock.currentTime = 2;
     });
+
+    it('captures a wrapped native beat at direct note-on before its first await', async () => {
+        const previous = transportStore.value;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => 0.12,
+        });
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        try {
+            const fn = handleWebMidiNoteOn._factory(make_dependencies({ playheadPositionRef: { current: 7.95 } }));
+            await fn(1, 60, 100);
+            expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(0.12);
+        } finally {
+            transportStore.set(previous);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
+    });
+
+    it.each(['fermenter', 'grand-boule', 'levain'] as const)(
+        'releases a Yeast-transformed %s note-off through the control that voiced it after strip reorder',
+        async (deviceType) => {
+            const originalOff = vi.fn();
+            const replacementOff = vi.fn();
+            const eventBusEmit = vi.fn(async () => {});
+            const controls = (noteOff: ReturnType<typeof vi.fn>, noteOn: (...args: unknown[]) => void) => ({
+                noteOff,
+                noteOn,
+            });
+            const strip = {
+                gainNode: {},
+                deviceNodes: [] as Array<{
+                    deviceId: string;
+                    type: string;
+                    fermenterControls: ReturnType<typeof controls>;
+                    grandBouleControls: ReturnType<typeof controls>;
+                    levainControls: ReturnType<typeof controls>;
+                }>,
+            };
+            const replacement = {
+                deviceId: 'replacement',
+                type: deviceType,
+                fermenterControls: controls(replacementOff, () => {}),
+                grandBouleControls: controls(replacementOff, () => {}),
+                levainControls: controls(replacementOff, () => {}),
+            };
+            const original = {
+                deviceId: 'original',
+                type: deviceType,
+                fermenterControls: controls(originalOff, () => {
+                    strip.deviceNodes.unshift(replacement);
+                }),
+                grandBouleControls: controls(originalOff, () => {
+                    strip.deviceNodes.unshift(replacement);
+                }),
+                levainControls: controls(originalOff, () => {
+                    strip.deviceNodes.unshift(replacement);
+                }),
+            };
+            strip.deviceNodes.push(original);
+            ensure_track_strip.mockReturnValue(strip);
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                devices: [
+                                    { id: 'yeast-1', type: 'yeast' },
+                                    { id: 'original', type: deviceType },
+                                ],
+                            },
+                        ],
+                        selectedTrackId: 'track-1',
+                    }),
+                    processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                        { timeSamples: 96_000, kind: { type: 'noteOn', channel: 1, note: 67, velocity: 100 } },
+                        { timeSamples: 96_100, kind: { type: 'noteOff', channel: 1, note: 67 } },
+                    ],
+                    eventBus: { emit: eventBusEmit, on: () => () => {} },
+                })
+            );
+
+            await fn(1, 60, 100);
+            if (deviceType === 'grand-boule') {
+                expect(originalOff).toHaveBeenCalledWith(67, 96_100, undefined, 1);
+            } else {
+                expect(originalOff).toHaveBeenCalledWith(67, 96_100, 1);
+            }
+            expect(replacementOff).not.toHaveBeenCalled();
+            if (deviceType === 'grand-boule') {
+                expect(eventBusEmit).toHaveBeenCalledWith(
+                    'midi.noteOff',
+                    expect.objectContaining({ deviceId: 'original', midiNote: 67 })
+                );
+            }
+        }
+    );
 
     it('should emit Yeast-routed Grand Boule note-on events with the device id', async () => {
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
@@ -217,7 +321,7 @@ describe('handleWebMidiNoteOn', () => {
         await noteOn(2, 60, 100);
 
         const noteInstanceId = activeNotes.get(createWebMidiNoteKey(2, 60))?.noteInstanceId;
-        expect(noteInstanceId).toBe('track-1:2:60:96000');
+        expect(noteInstanceId).toMatch(/^track-1:2:60:96000:\d+$/);
         expect(processRealtimeMidiInput).toHaveBeenNthCalledWith(
             1,
             expect.objectContaining({ isNoteOn: true, noteInstanceId })
@@ -360,6 +464,80 @@ describe('handleWebMidiNoteOn', () => {
 
         expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(false);
         expect(channelToNote.has(1)).toBe(false);
+    });
+
+    it('does not voice a worker result after the input was reset', async () => {
+        let finishWorker!: (events: TestMidiEvent[]) => void;
+        const worker = new Promise<TestMidiEvent[]>((resolve) => {
+            finishWorker = resolve;
+        });
+        const voiced = vi.fn();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: () => worker,
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [{ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOn: voiced } }],
+        });
+        const pending = fn(1, 60, 100);
+        expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(true);
+
+        resetChannelControllerState();
+        activeNotes.clear();
+        channelToNote.clear();
+        finishWorker([{ timeSamples: 96_240, kind: { type: 'noteOn', channel: 1, note: 60, velocity: 100 } }]);
+        await pending;
+
+        expect(voiced).not.toHaveBeenCalled();
+        expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(false);
+    });
+
+    it('does not erase a fresh same-key note when the retired worker rejects', async () => {
+        let rejectWorker!: (error: Error) => void;
+        const worker = new Promise<TestMidiEvent[]>((_resolve, reject) => {
+            rejectWorker = reject;
+        });
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'yeast-1', type: 'yeast' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: () => worker,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        const pending = fn(1, 60, 100);
+        const key = createWebMidiNoteKey(1, 60);
+        resetChannelControllerState();
+        const fresh = {
+            startTime: 3,
+            startBeat: 1,
+            channel: 1,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+        };
+        activeNotes.set(key, fresh);
+        channelToNote.set(1, key);
+        rejectWorker(new Error('retired worker'));
+        await expect(pending).rejects.toThrow('retired worker');
+        expect(activeNotes.get(key)).toBe(fresh);
+        expect(channelToNote.get(1)).toBe(key);
     });
 
     it('routes a Fermenter note-on to the device and records its id for later release', async () => {

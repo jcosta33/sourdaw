@@ -769,6 +769,38 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(cc?.id).toBe('cc-clip-midi-0');
     });
 
+    it('reopens a saved note with its recorded pressure, slide and bend curves unchanged', async () => {
+        const note = {
+            id: 'note-curves',
+            pitch: 60,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            probability: 100,
+            pressure: 10,
+            slide: 40,
+            pitchBend: 0,
+            pitchBendRangeSemitones: 48,
+            expression: {
+                pressure: [
+                    { offsetBeats: 1, value: 90 },
+                    { offsetBeats: 1.8, value: 20 },
+                ],
+                slide: [{ offsetBeats: 1, value: 64 }],
+                pitchBend: [
+                    { offsetBeats: 0.5, value: 4096 },
+                    { offsetBeats: 1.5, value: 0 },
+                ],
+            },
+        };
+        const project = makeProject();
+        project.midi.notesByClipId['clip-midi'] = [note];
+
+        await applyImportedProjectData({ data: project });
+
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([note]);
+    });
+
     it('exposes the imported tracks on the active arrangement snapshot', async () => {
         await applyImportedProjectData({ data: makeProject() });
 
@@ -780,6 +812,10 @@ describe('applyImportedProjectData round-trip hydration', () => {
     it('rejects malformed hydration data without resetting the live project', async () => {
         const malformedMidi = makeProject();
         Reflect.set(malformedMidi.midi.notesByClipId, 'clip-midi', null);
+        const malformedExpression = makeProject();
+        Reflect.set(malformedExpression.midi.notesByClipId['clip-midi']![0]!, 'expression', {
+            pressure: { offsetBeats: 0.5, value: 90 },
+        });
         const malformedMeta = makeProject();
         Reflect.deleteProperty(malformedMeta.meta, 'name');
         const malformedDevice = makeProject();
@@ -787,7 +823,13 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const malformedAutomation = makeProject();
         Reflect.set(malformedAutomation.automation.lanes, 0, { points: [] });
 
-        for (const malformed of [malformedMidi, malformedMeta, malformedDevice, malformedAutomation]) {
+        for (const malformed of [
+            malformedMidi,
+            malformedExpression,
+            malformedMeta,
+            malformedDevice,
+            malformedAutomation,
+        ]) {
             trackStore.set({ tracks: [], selectedTrackId: null });
             vi.mocked(resetModuleStoresToDefault).mockClear();
             prepareCachedAudioBuffersFromIdb.mockClear();
@@ -901,13 +943,26 @@ describe('applyImportedProjectData round-trip hydration', () => {
                 velocity: 100,
                 probability: 100,
                 pressure: 0,
-                slide: 0,
                 pitchBend: 0,
             },
         ]);
         expect(arrangementStore.value?.arrangements.map(({ id, name }) => ({ id, name }))).toEqual([
             { id: 'ideas', name: 'Ideas' },
         ]);
+        const explicitMinimumProject = makeProject();
+        explicitMinimumProject.arrangements = [{ id: 'ideas', name: 'Ideas' }];
+        explicitMinimumProject.activeArrangementId = 'ideas';
+        Reflect.set(explicitMinimumProject.arrangement, 'tracks', [
+            {
+                ...sparseTrack,
+                clips: sparseTrack.clips.map((clip) => ({
+                    ...clip,
+                    notes: [{ ...clip.notes[0], slide: 0 }],
+                })),
+            },
+        ]);
+        await expect(applyImportedProjectData({ data: explicitMinimumProject })).resolves.toBe(true);
+        expect(arrangementStore.value?.arrangements[0]?.midi.notesByClipId['sparse-midi-clip']?.[0]?.slide).toBe(0);
     });
 
     it('normalizes missing version-1 automation fields before strict validation', async () => {

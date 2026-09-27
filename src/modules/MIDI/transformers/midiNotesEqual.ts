@@ -1,3 +1,5 @@
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { type MidiNote } from '../models/MidiNote';
 
 function midiNoteEqual(left: MidiNote, right: MidiNote): boolean {
@@ -13,7 +15,8 @@ function midiNoteEqual(left: MidiNote, right: MidiNote): boolean {
         left.pitchBend === right.pitchBend &&
         left.pitchBendRangeSemitones === right.pitchBendRangeSemitones &&
         left.channel === right.channel &&
-        left.articulation === right.articulation
+        left.articulation === right.articulation &&
+        valuesEqual(left.expression, right.expression)
     );
 }
 

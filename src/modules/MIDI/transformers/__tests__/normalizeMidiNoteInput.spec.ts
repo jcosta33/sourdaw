@@ -21,6 +21,39 @@ describe('normalizeMidiNoteInput', () => {
         });
     });
 
+    it('keeps supported optional fields while normalizing the base note', () => {
+        const result = normalizeMidiNoteInput({
+            id: 'copy',
+            pitch: 60,
+            startBeat: 2,
+            duration: 2,
+            velocity: 91,
+            probability: 73,
+            pressure: 31,
+            slide: 42,
+            pitchBend: -2048,
+            pitchBendRangeSemitones: 12,
+            channel: 3,
+            articulation: 'accent',
+            expression: { slide: [{ offsetBeats: 0.5, value: 80 }] },
+        });
+        expect(result).toEqual({
+            id: 'copy',
+            pitch: 60,
+            startBeat: 2,
+            duration: 2,
+            velocity: 91,
+            probability: 73,
+            pressure: 31,
+            slide: 42,
+            pitchBend: -2048,
+            pitchBendRangeSemitones: 12,
+            channel: 3,
+            articulation: 'accent',
+            expression: { slide: [{ offsetBeats: 0.5, value: 80 }] },
+        });
+    });
+
     it('rounds and clamps pitch to [0, 127]', () => {
         expect(normalizeMidiNoteInput({ id: 'a', pitch: 60.4, startBeat: 0, duration: 1 }).pitch).toBe(60);
         expect(normalizeMidiNoteInput({ id: 'b', pitch: 60.6, startBeat: 0, duration: 1 }).pitch).toBe(61);

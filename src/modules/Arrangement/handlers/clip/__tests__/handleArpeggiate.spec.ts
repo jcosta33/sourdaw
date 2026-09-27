@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { handleArpeggiate } from '../handleArpeggiate';
 
@@ -180,4 +180,105 @@ describe('handleArpeggiate', () => {
         expect(handleArpeggiate.undoable).toBe(true);
         expect(handleArpeggiate.requiresAbortCompensation).toBe(false);
     });
+});
+
+describe('handleArpeggiate against the real MIDI store', () => {
+    const CLIP_ID = 'clip-curved-chord';
+
+    beforeEach(() => {
+        vi.resetModules();
+        vi.doUnmock('#/modules/MIDI/useCases');
+    });
+
+    // This describe is the file's last suite, so no later test in this file
+    // reads the module registry through the mocked barrel; leaving it
+    // unmocked keeps `vi.doMock`'s partial factory from having to satisfy
+    // the whole barrel's coverage.
+    afterEach(() => {
+        vi.resetModules();
+    });
+
+    // The extended timeout covers reloading the real, unmocked MIDI and
+    // Arrangement barrels below: genuine module initialization, not
+    // application work, that the default 5s budget is too tight for.
+    it('admits the syncopated arpeggio inverse and returns the clip to its curved source notes', async () => {
+        // Imported after the reset above so this test's stores, and the ones
+        // `restoreMidiClipNotes`'s noteTransformReplayGuard check reads
+        // through the freshly unmocked barrel, are the same module
+        // instances; the module registry resets between tests.
+        const { midiStore } = await import('#/modules/MIDI/stores');
+        const { projectSyncopatedArpeggio, restoreMidiClipNotes } = await import('#/modules/MIDI/useCases');
+        // Imported by relative path, not the aggregated `useCases`/`stores`
+        // barrels: those re-export every file in the module, so importing
+        // them here would force-load Arrangement use cases that need far
+        // more of the MIDI barrel than this suite's mock provides.
+        const { defaultTrackState } = await import('../../../stores/trackStore');
+        const { addClip } = await import('../../../useCases/clip/addClip');
+        const { createTrack } = await import('../../../useCases/createTrack');
+        const { setTrackStoreState } = await import('../../../useCases/setTrackStoreState');
+        const { handleArpeggiate: realHandleArpeggiate } = await import('../handleArpeggiate');
+
+        const TRACK_ID = 'track-chords';
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [createTrack({ id: TRACK_ID, kind: 'midi', name: 'Chords' })],
+        });
+        if (
+            addClip({
+                id: CLIP_ID,
+                trackId: TRACK_ID,
+                startBeat: 0,
+                endBeat: 8,
+                name: 'Chords Phrase',
+                type: 'midi',
+            }) === null
+        ) {
+            throw new Error('Expected a MIDI clip fixture');
+        }
+
+        const sourceNotes = [
+            {
+                id: 'c1',
+                pitch: 60,
+                startBeat: 0,
+                duration: 2,
+                velocity: 100,
+                channel: 0,
+                pressure: 10,
+                expression: { pressure: [{ offsetBeats: 1, value: 90 }] },
+            },
+            { id: 'e1', pitch: 64, startBeat: 0, duration: 2, velocity: 90, channel: 0 },
+        ];
+        midiStore.set({ notesByClipId: { [CLIP_ID]: sourceNotes }, ccByClipId: {}, pitchBendByClipId: {} });
+
+        const projection = projectSyncopatedArpeggio({ notes: sourceNotes });
+        if (!projection) {
+            throw new Error('Expected a syncopated arpeggio projection from the curved chord fixture');
+        }
+        const addedNotes = projection.addedNotes.map((note, index) => ({ id: `arp-${String(index)}`, ...note }));
+
+        const action = {
+            type: 'arpeggiate' as const,
+            payload: {
+                clipId: CLIP_ID,
+                expectedTrackId: TRACK_ID,
+                trackName: 'Chords',
+                expectedTrackFrozen: false,
+                clipName: 'Chords Phrase',
+                expectedClipLocked: false,
+                expectedNotes: sourceNotes,
+                addedNotes,
+            },
+        };
+
+        expect(realHandleArpeggiate.execute(action)).toEqual({ status: 'written' });
+
+        const inverse = realHandleArpeggiate.describe(action).inverseAction;
+        if (inverse?.type !== 'restoreMidiClipNotes') {
+            throw new Error('Expected a restoreMidiClipNotes inverse action');
+        }
+
+        expect(restoreMidiClipNotes(inverse.payload)).toBe('written');
+        expect(midiStore.value?.notesByClipId[CLIP_ID]).toEqual(sourceNotes);
+    }, 15000);
 });

@@ -50,9 +50,16 @@ describe('midiNotesEqual', () => {
             { ...base, pitchBendRangeSemitones: (base.pitchBendRangeSemitones ?? 0) + 1 },
             { ...base, channel: (base.channel ?? 0) + 1 },
             { ...base, articulation: 'accent' },
+            { ...base, expression: { pressure: [{ offsetBeats: 0.5, value: 10 }] } },
         ];
         for (const right of mutated) {
             expect(midiNotesEqual([base], [right])).toBe(false);
         }
+    });
+
+    it('returns false when two notes carry a pressure curve differing only in one point value', () => {
+        const left = note({ duration: 4, expression: { pressure: [{ offsetBeats: 1, value: 90 }] } });
+        const right = note({ duration: 4, expression: { pressure: [{ offsetBeats: 1, value: 91 }] } });
+        expect(midiNotesEqual([left], [right])).toBe(false);
     });
 });

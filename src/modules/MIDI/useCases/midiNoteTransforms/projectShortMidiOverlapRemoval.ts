@@ -1,4 +1,5 @@
 import { type MidiNote } from '../../models/MidiNote';
+import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 
 type ProjectShortMidiOverlapRemovalInput = {
     notes: readonly MidiNote[];
@@ -81,7 +82,13 @@ export function projectShortMidiOverlapRemoval({
     }
 
     return {
-        notes: notes.map((note) => ({ ...note, duration: nextDurations.get(note.id) ?? note.duration })),
+        notes: notes.map((note) => {
+            const nextDuration = nextDurations.get(note.id);
+            if (nextDuration === undefined) {
+                return note;
+            }
+            return sliceMidiNoteExtent(note, { fromOffset: 0, duration: nextDuration });
+        }),
         shortenedNotes: notes.flatMap((note) => {
             const shortened = shortenedById.get(note.id);
             return shortened ? [shortened] : [];

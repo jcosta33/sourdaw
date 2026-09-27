@@ -27,6 +27,8 @@ import {
     removeMidiNote,
     moveMidiNote,
     removeNotesByIds,
+    replaceMidiNotesIfUnchanged,
+    restoreMidiNoteMembershipIfUnchanged,
     resizeMidiNote,
     setNoteVelocity,
     setNotesForClip,
@@ -46,6 +48,7 @@ import { getTransportState } from '#/modules/Transport/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { clampMidiData7 } from '#/utils/midiData';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {
@@ -175,7 +178,69 @@ function arrangementPlayheadToClipBeat(playheadBeat: number, placement: ClipPlac
  * pitch/start/duration/velocity would mint a new id and drop the rest.
  */
 function snapshotClipNotes(clipId: string) {
-    return getNotesForClip(clipId).map((node) => ({ ...node }));
+    return getNotesForClip(clipId).map((node) => structuredClone(node));
+}
+
+function pushEditedNoteUndo(
+    label: string,
+    clipId: string,
+    before: ReturnType<typeof snapshotClipNotes>,
+    after: ReturnType<typeof snapshotClipNotes>,
+    editedIds: readonly string[]
+): void {
+    const beforeById = new Map(before.map((note) => [note.id, note]));
+    const afterById = new Map(after.map((note) => [note.id, note]));
+    const changed = editedIds.flatMap((id) => {
+        const earlier = beforeById.get(id);
+        const later = afterById.get(id);
+        if (!earlier || !later) {
+            throw new Error('Cannot capture MIDI note edit: target note is missing');
+        }
+        return valuesEqual(earlier, later) ? [] : [{ earlier, later }];
+    });
+    if (changed.length === 0) {
+        return;
+    }
+    pushUndoEntry(
+        label,
+        () =>
+            replaceMidiNotesIfUnchanged(
+                clipId,
+                changed.map(({ earlier, later }) => ({
+                    expected: later,
+                    replacement: earlier,
+                }))
+            ),
+        () =>
+            replaceMidiNotesIfUnchanged(
+                clipId,
+                changed.map(({ earlier, later }) => ({
+                    expected: earlier,
+                    replacement: later,
+                }))
+            )
+    );
+}
+
+function pushMembershipUndo(
+    label: string,
+    clips: readonly {
+        clipId: string;
+        before: ReturnType<typeof snapshotClipNotes>;
+        after: ReturnType<typeof snapshotClipNotes>;
+    }[]
+): void {
+    pushUndoEntry(
+        label,
+        () =>
+            restoreMidiNoteMembershipIfUnchanged(
+                clips.map(({ clipId, before, after }) => ({ clipId, expected: after, replacement: before }))
+            ),
+        () =>
+            restoreMidiNoteMembershipIfUnchanged(
+                clips.map(({ clipId, before, after }) => ({ clipId, expected: before, replacement: after }))
+            )
+    );
 }
 
 /**
@@ -1002,10 +1067,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     const copies = batchAddMidiNotes(
                         cid,
                         srcNotes.map((node) => ({
+                            ...node,
+                            id: undefined,
                             pitch: clampMidiData7(node.pitch + preview.pitchDelta),
                             startBeat: Math.max(0, node.startBeat + preview.beatDelta),
-                            duration: node.duration,
-                            velocity: node.velocity,
                         }))
                     );
                     allCopyIds.push(...copies.map((context) => context.id));
@@ -1074,15 +1139,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     notes.find((node) => node.id === noteId) ??
                     openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && (override.beat !== origBeat || override.duration !== origDuration)) {
+                    const snapshotBefore = snapshotClipNotes(noteClipId);
                     resizeMidiNote(noteClipId, noteId, override.beat, override.duration);
-                    pushUndoEntry(
-                        'Resize MIDI note',
-                        // In-place geometry restore: resizing keeps the note's id
-                        // and every expression field, where a remove+add round
-                        // trip would mint a new id and drop the rest.
-                        () => resizeMidiNote(noteClipId, noteId, origBeat, origDuration),
-                        () => resizeMidiNote(noteClipId, noteId, override.beat, override.duration)
-                    );
+                    const snapshotAfter = snapshotClipNotes(noteClipId);
+                    pushEditedNoteUndo('Resize MIDI note', noteClipId, snapshotBefore, snapshotAfter, [noteId]);
                 }
             } else if (mode === 'resize-right' && preview?.durationOverride?.has(noteId)) {
                 const newDuration = preview.durationOverride.get(noteId)!;
@@ -1090,15 +1150,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     notes.find((node) => node.id === noteId) ??
                     openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && newDuration !== origDuration) {
+                    const snapshotBefore = snapshotClipNotes(noteClipId);
                     resizeMidiNote(noteClipId, noteId, undefined, newDuration);
-                    pushUndoEntry(
-                        'Resize MIDI note',
-                        // In-place geometry restore: resizing keeps the note's id
-                        // and every expression field, where a remove+add round
-                        // trip would mint a new id and drop the rest.
-                        () => resizeMidiNote(noteClipId, noteId, undefined, origDuration),
-                        () => resizeMidiNote(noteClipId, noteId, undefined, newDuration)
-                    );
+                    const snapshotAfter = snapshotClipNotes(noteClipId);
+                    pushEditedNoteUndo('Resize MIDI note', noteClipId, snapshotBefore, snapshotAfter, [noteId]);
                 }
             }
         }
@@ -1245,11 +1300,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const notesBefore = snapshotClipNotes(ownerClipId);
             removeMidiNote(ownerClipId, hit.note.id);
             const notesAfter = snapshotClipNotes(ownerClipId);
-            pushUndoEntry(
-                'Delete MIDI note',
-                () => setNotesForClip(ownerClipId, notesBefore),
-                () => setNotesForClip(ownerClipId, notesAfter)
-            );
+            pushMembershipUndo('Delete MIDI note', [{ clipId: ownerClipId, before: notesBefore, after: notesAfter }]);
         }
     };
 
@@ -1287,18 +1338,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     clipId: entry.clipId,
                     after: snapshotClipNotes(entry.clipId),
                 }));
-                pushUndoEntry(
+                pushMembershipUndo(
                     `Delete ${notesWithClip.length} note${notesWithClip.length > 1 ? 's' : ''}`,
-                    () => {
-                        for (const entry of clipSnapshots) {
-                            setNotesForClip(entry.clipId, entry.before);
-                        }
-                    },
-                    () => {
-                        for (const entry of snapshotsAfter) {
-                            setNotesForClip(entry.clipId, entry.after);
-                        }
-                    }
+                    clipSnapshots.map((entry) => ({
+                        ...entry,
+                        after: snapshotsAfter.find((after) => after.clipId === entry.clipId)!.after,
+                    }))
                 );
             }
             setSelectedNoteIds(new Set());
@@ -1367,10 +1412,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     const copies = batchAddMidiNotes(
                         cid,
                         clipNotes.map((node) => ({
-                            pitch: node.pitch,
+                            ...node,
+                            id: undefined,
                             startBeat: node.startBeat + span,
-                            duration: node.duration,
-                            velocity: node.velocity,
                         }))
                     );
                     allCopyIds.push(...copies.map((context) => context.id));
@@ -1430,28 +1474,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (singleClip !== null) {
                 event.preventDefault();
                 const ids = [...selectedNoteIds];
-                const clipNotesArr = singleClip === clipId ? notes : (openedClipNotes?.[singleClip] ?? []);
-                const beforeDurations = clipNotesArr
-                    .filter((node) => ids.includes(node.id))
-                    .map((node) => ({ id: node.id, duration: node.duration }));
+                const snapshotBefore = snapshotClipNotes(singleClip);
                 legatoNotes(singleClip, ids);
-                const postNotes = getNotesForClip(singleClip);
-                const afterDurations = postNotes
-                    .filter((node) => ids.includes(node.id))
-                    .map((node) => ({ id: node.id, duration: node.duration }));
-                pushUndoEntry(
-                    'Legato notes',
-                    () => {
-                        for (const b of beforeDurations) {
-                            resizeMidiNote(singleClip, b.id, undefined, b.duration);
-                        }
-                    },
-                    () => {
-                        for (const alpha of afterDurations) {
-                            resizeMidiNote(singleClip, alpha.id, undefined, alpha.duration);
-                        }
-                    }
-                );
+                const snapshotAfter = snapshotClipNotes(singleClip);
+                pushEditedNoteUndo('Legato notes', singleClip, snapshotBefore, snapshotAfter, ids);
             }
         }
 
@@ -1471,14 +1497,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     event.preventDefault();
                     event.stopPropagation();
                     const ids = [...selectedNoteIds];
-                    const snapshotBefore = getNotesForClip(singleClip).map((node) => ({ ...node }));
+                    const snapshotBefore = snapshotClipNotes(singleClip);
                     splitNoteAtBeat(singleClip, ids, splitBeat);
-                    const snapshotAfter = getNotesForClip(singleClip).map((node) => ({ ...node }));
-                    pushUndoEntry(
-                        'Split notes at cursor',
-                        () => setNotesForClip(singleClip, snapshotBefore),
-                        () => setNotesForClip(singleClip, snapshotAfter)
-                    );
+                    const snapshotAfter = snapshotClipNotes(singleClip);
+                    pushMembershipUndo('Split notes at cursor', [
+                        { clipId: singleClip, before: snapshotBefore, after: snapshotAfter },
+                    ]);
                     setSelectedNoteIds(new Set());
                 }
             }
@@ -1497,14 +1521,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (singleClip !== null) {
                 event.preventDefault();
                 const ids = [...selectedNoteIds];
-                const snapshotBefore = getNotesForClip(singleClip).map((node) => ({ ...node }));
+                const snapshotBefore = snapshotClipNotes(singleClip);
                 joinNotes(singleClip, ids);
-                const snapshotAfter = getNotesForClip(singleClip).map((node) => ({ ...node }));
-                pushUndoEntry(
-                    'Join notes',
-                    () => setNotesForClip(singleClip, snapshotBefore),
-                    () => setNotesForClip(singleClip, snapshotAfter)
-                );
+                const snapshotAfter = snapshotClipNotes(singleClip);
+                pushMembershipUndo('Join notes', [
+                    { clipId: singleClip, before: snapshotBefore, after: snapshotAfter },
+                ]);
                 setSelectedNoteIds(new Set());
             }
         }

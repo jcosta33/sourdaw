@@ -1,5 +1,6 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 type MidiNote = ReturnType<typeof getNotesForClip>[number];
 
@@ -29,7 +30,8 @@ function areMidiNotesEqual(alpha: MidiNote, beta: MidiNote): boolean {
         alpha.pitchBend === beta.pitchBend &&
         alpha.pitchBendRangeSemitones === beta.pitchBendRangeSemitones &&
         alpha.channel === beta.channel &&
-        alpha.articulation === beta.articulation
+        alpha.articulation === beta.articulation &&
+        valuesEqual(alpha.expression, beta.expression)
     );
 }
 

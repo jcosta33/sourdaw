@@ -82,7 +82,11 @@ function hasReplayGuard(action: RestoreMidiClipNotesAction): boolean {
 }
 
 export const handleRestoreMidiClipNotes = createHandler<'restoreMidiClipNotes'>({
-    execute: (action) => ({ status: restoreMidiClipNotes(action.payload) }),
+    execute: (action) => ({
+        status: isRestoreMidiClipNotesReplayArguments(action.payload)
+            ? restoreMidiClipNotes(action.payload)
+            : 'conflict',
+    }),
     validate: (action, context) =>
         isRestoreMidiClipNotesReplayArguments(action.payload) && getRestoreStatus(action, context) !== 'conflict',
     canReapplyAfterDivergence: (action, context) =>

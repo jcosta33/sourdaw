@@ -2,6 +2,7 @@ import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from
 import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 import { snapshotMidiClipData } from './snapshotMidiClipData';
@@ -45,9 +46,11 @@ function projectVisibleNote({ source, note }: { source: MidiGlueSource; note: Mi
         return null;
     }
     return {
-        ...note,
+        ...sliceMidiNoteExtent(note, {
+            fromOffset: clippedStartBeat - note.startBeat,
+            duration: clippedEndBeat - clippedStartBeat,
+        }),
         startBeat: clippedStartBeat + source.beatOffset,
-        duration: clippedEndBeat - clippedStartBeat,
     };
 }
 

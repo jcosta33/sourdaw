@@ -1,4 +1,5 @@
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 
 import {
     getRestoreMidiClipNotesStatus,
@@ -37,7 +38,7 @@ export function restoreMidiClipNotes({
     if (notesBucketPresent === false) {
         delete notesByClipId[clipId];
     } else {
-        notesByClipId[clipId] = notes.map((note) => ({ ...note }));
+        notesByClipId[clipId] = notes.map((note) => cloneMidiNoteForAdmission({ ...note }));
     }
     midiStore.set({
         ...state,

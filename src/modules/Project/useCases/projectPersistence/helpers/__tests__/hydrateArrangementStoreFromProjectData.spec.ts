@@ -103,6 +103,59 @@ function projectData(): ProjectData {
 }
 
 describe('hydrateArrangementStoreFromProjectData', () => {
+    it('owns inline fallback and saved arrangement expression independently of the imported source', () => {
+        const inlineData = projectData();
+        const track = projectTrack('midi-track', 'unused');
+        const sourceNote = {
+            id: 'inline-note',
+            pitch: 60,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+        };
+        track.clips[0] = { ...track.clips[0]!, type: 'midi', notes: [sourceNote] };
+        inlineData.arrangement.tracks = [track];
+        hydrateArrangementStoreFromProjectData({ data: inlineData });
+        sourceNote.expression.pressure[0]!.value = 10;
+        sourceNote.expression.pressure.push({ offsetBeats: 1, value: 20 });
+        expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]?.expression?.pressure).toEqual([
+            { offsetBeats: 0.5, value: 90 },
+        ]);
+        expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]).not.toHaveProperty('slide');
+
+        const savedData = projectData();
+        const savedNote = {
+            id: 'saved-note',
+            pitch: 61,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            expression: { slide: [{ offsetBeats: 0.5, value: 80 }] },
+        };
+        savedData.arrangements = [
+            {
+                id: 'saved',
+                name: 'Saved',
+                tracks: { tracks: [track], selectedTrackId: 'midi-track' },
+                midi: { notesByClipId: { [track.clips[0].id]: [savedNote] }, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ];
+        savedData.activeArrangementId = 'saved';
+        hydrateArrangementStoreFromProjectData({ data: savedData, preserveSavedArrangements: true });
+        savedNote.expression.slide[0]!.value = 10;
+        savedNote.expression.slide.push({ offsetBeats: 1, value: 20 });
+        expect(
+            arrangementStore.value?.arrangements[0]?.midi.notesByClipId[track.clips[0].id]?.[0]?.expression?.slide
+        ).toEqual([{ offsetBeats: 0.5, value: 80 }]);
+        expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]?.expression?.slide).toEqual([
+            { offsetBeats: 0.5, value: 80 },
+        ]);
+        expect(arrangementStore.value?.arrangements[0]?.midi.notesByClipId[track.clips[0].id]?.[0]).not.toHaveProperty(
+            'slide'
+        );
+        expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]).not.toHaveProperty('slide');
+    });
     afterEach(() => {
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         trackStore.set({ tracks: [], selectedTrackId: null });

@@ -25,6 +25,7 @@ export { getChordTrackHandlers } from './getChordTrackHandlers';
 // ── Note Creation ─────────────────────────────────────────────────────────────
 export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
+export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 export { downloadMidiFile } from './exportMidiFile';
@@ -109,6 +110,8 @@ export { setNoteProbability } from './midiNoteCrud/setNoteProbability';
 export { setNoteVelocity } from './midiNoteCrud/setNoteVelocity';
 export { setNoteVelocities } from './midiNoteCrud/setNoteVelocities';
 export { setNotesForClip } from './midiNoteCrud/setNotesForClip';
+export { replaceMidiNotesIfUnchanged } from './midiNoteCrud/replaceMidiNotesIfUnchanged';
+export { restoreMidiNoteMembershipIfUnchanged } from './midiNoteCrud/restoreMidiNoteMembershipIfUnchanged';
 export { shiftClipMidiNotes } from './midiNoteCrud/shiftClipMidiNotes';
 export { shiftMidiNotesAfterBeat } from './midiNoteCrud/shiftMidiNotesAfterBeat';
 export { splitMidiNotesAtBeat } from './midiNoteCrud/splitMidiNotesAtBeat';

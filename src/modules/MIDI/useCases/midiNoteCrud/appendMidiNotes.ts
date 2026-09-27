@@ -1,5 +1,6 @@
-import { isValidMidiArticulation } from '../../models/MidiNote';
+import { isValidMidiArticulation, isValidMidiNoteExpression, type MidiNoteExpression } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 
 type AppendMidiNoteInput = {
     pitch: number;
@@ -13,6 +14,7 @@ type AppendMidiNoteInput = {
     pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
+    expression?: MidiNoteExpression;
 };
 
 type AppendMidiNotesInput = {
@@ -32,6 +34,7 @@ const OPTIONAL_APPEND_NOTE_KEYS = [
     'pitchBendRangeSemitones',
     'channel',
     'articulation',
+    'expression',
 ] as const;
 const ALLOWED_APPEND_NOTE_KEYS = new Set<string>([...REQUIRED_APPEND_NOTE_KEYS, ...OPTIONAL_APPEND_NOTE_KEYS]);
 
@@ -64,11 +67,14 @@ function isExactAppendNote(value: unknown): value is AppendMidiNoteInput {
     if (!isPlainObject(value) || !hasExactAppendNoteKeys(value)) {
         return false;
     }
+    const duration = value.duration;
+    if (!isFiniteNumber(duration)) {
+        return false;
+    }
 
     return (
         isFiniteNumber(value.pitch) &&
         isFiniteNumber(value.startBeat) &&
-        isFiniteNumber(value.duration) &&
         isFiniteNumber(value.velocity) &&
         isAbsentOrValid(value, 'probability', isFiniteNumber) &&
         isAbsentOrValid(value, 'pressure', isFiniteNumber) &&
@@ -76,7 +82,8 @@ function isExactAppendNote(value: unknown): value is AppendMidiNoteInput {
         isAbsentOrValid(value, 'pitchBend', isFiniteNumber) &&
         isAbsentOrValid(value, 'pitchBendRangeSemitones', isFiniteNumber) &&
         isAbsentOrValid(value, 'channel', isFiniteNumber) &&
-        isAbsentOrValid(value, 'articulation', isValidMidiArticulation)
+        isAbsentOrValid(value, 'articulation', isValidMidiArticulation) &&
+        isAbsentOrValid(value, 'expression', (candidate) => isValidMidiNoteExpression(candidate, duration))
     );
 }
 
@@ -95,7 +102,7 @@ export function appendMidiNotes({ clipId, notes }: AppendMidiNotesInput): void {
     }
 
     const appendedNotes = validatedNotes.map((note) => ({
-        ...note,
+        ...cloneMidiNoteForAdmission(note),
         // Full UUID, like every other note-id mint in this module. Truncating
         // to 32 bits made repeated pastes into one clip birthday-bound: two
         // notes sharing an id merge under selection, removeNotesByIds and undo.

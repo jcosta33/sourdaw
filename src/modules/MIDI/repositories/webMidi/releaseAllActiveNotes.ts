@@ -1,3 +1,4 @@
+import { pendingYeastRelease } from './pendingYeastRelease';
 import { releaseActiveToasterNote } from './releaseActiveToasterNote';
 import { activeNotes, channelToNote } from './state';
 
@@ -31,8 +32,18 @@ function findDeviceNode(strip: WebMidiInstrumentStrip | undefined, deviceId: str
     return strip?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
 }
 
+function releaseYeastVoices(noteData: ActiveNoteData): void {
+    for (const release of noteData.yeastVoiceReleases?.values() ?? []) {
+        release();
+    }
+    for (const voice of noteData.yeastGeneratedVoices?.values() ?? []) {
+        voice.release();
+    }
+}
+
 function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput): void {
     releaseActiveToasterNote(noteData, input.getTrackStrip);
+    releaseYeastVoices(noteData);
 
     // Every device the note-on recorded gets its own release. Note-off is
     // channel-optional by design (audit MD-2): omitting the member channel
@@ -94,6 +105,7 @@ function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput)
  * release leaves it stuck on with no gesture left to stop it.
  */
 export function releaseAllActiveNotes(input: ReleaseAllActiveNotesInput): void {
+    pendingYeastRelease.releaseAllPending();
     for (const noteData of activeNotes.values()) {
         releaseOne(noteData, input);
     }

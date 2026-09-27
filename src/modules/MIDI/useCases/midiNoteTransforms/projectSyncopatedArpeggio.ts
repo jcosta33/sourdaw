@@ -1,5 +1,7 @@
 import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
+import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
+
 export type SyncopatedArpeggioNoteProjection = Omit<MidiClipNoteSnapshot, 'id'>;
 
 export type SyncopatedArpeggioChordWindow = {
@@ -84,12 +86,11 @@ export function projectSyncopatedArpeggio({
         let stepIndex = 0;
         for (let startBeat = group.startBeat + OFFBEAT_OFFSET_BEATS; startBeat < endBeat; startBeat += STEP_BEATS) {
             const source = voicedNotes[stepIndex % voicedNotes.length]!;
-            const { id: _sourceNoteId, ...expression } = source;
-            addedNotes.push({
-                ...expression,
-                startBeat,
+            const { id: _sourceNoteId, ...projection } = sliceMidiNoteExtent(source, {
+                fromOffset: startBeat - source.startBeat,
                 duration: GATE_BEATS,
             });
+            addedNotes.push(projection);
             stepIndex += 1;
         }
     }

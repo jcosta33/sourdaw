@@ -1,4 +1,5 @@
 import { type MidiNote } from '../../models/MidiNote';
+import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
 import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 /** Minimum legato note length: a 1/64 note. */
@@ -76,7 +77,7 @@ export function legatoNotes(clipId: string, selectedIds: string[]): void {
             }
 
             const newDuration = Math.max(MIN_DURATION, targetEnd - note.startBeat);
-            return { ...note, duration: newDuration };
+            return sliceMidiNoteExtent(note, { fromOffset: 0, duration: newDuration });
         });
     });
 }

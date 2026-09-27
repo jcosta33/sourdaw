@@ -225,15 +225,14 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/MIDI/stores', async () => {
-    // The graph consumes isValidMidiProbabilitySeed via arrangementStore, so
-    // the factory must provide it. Exactly this one key is exposed: a full
-    // importOriginal spread would also provide the names this spec's
-    // exemption row in checkBarrelMockCoverage.ts lists as still missing,
-    // staling that row.
-    const { isValidMidiProbabilitySeed } =
+    // Keep real validation and sanitation for the Project consumers reached
+    // through this graph. The mocked store remains the interaction seam.
+    const { isValidMidiProbabilitySeed, isValidMidiNoteExpression, sanitizeMidiStoreState } =
         await vi.importActual<typeof import('#/modules/MIDI/stores')>('#/modules/MIDI/stores');
     return {
         isValidMidiProbabilitySeed,
+        isValidMidiNoteExpression,
+        sanitizeMidiStoreState,
         midiStore: {
             get value() {
                 return mocks.midiStoreValue.value;

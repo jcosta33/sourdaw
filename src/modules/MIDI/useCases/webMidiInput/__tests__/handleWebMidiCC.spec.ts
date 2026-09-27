@@ -27,6 +27,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         setTrackPan: set_track_pan,
     },
     applyNoteExpression: apply_note_expression,
+    getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
@@ -600,6 +601,33 @@ describe('handleWebMidiCC', () => {
     });
 
     describe('registered parameters (audit MD-8)', () => {
+        it('records a held MPE bend when RPN 0 changes its default range', () => {
+            mpe_enabled.value = true;
+            const noteKey = createWebMidiNoteKey(4, 60);
+            activeNotes.set(noteKey, {
+                channel: 4,
+                note: 60,
+                trackId: 'track-a',
+                instrumentTrackId: 'track-a',
+                startTime: 0,
+                startBeat: 0,
+                pitchBend: 4096,
+            });
+            channelToNote.set(4, noteKey);
+            const fn = handleWebMidiCC._factory(make_dependencies());
+
+            fn(4, 101, 0);
+            fn(4, 100, 0);
+            fn(4, 6, 12);
+
+            expect(activeNotes.get(noteKey)?.pitchBendRangeSemitones).toBe(12);
+            expect(activeNotes.get(noteKey)?.expressionTrails?.pitchBend).toEqual({
+                initial: 4096,
+                initialBendRangeSemitones: 48,
+                points: [{ offsetSeconds: 2, value: 4096, bendRangeSemitones: 12 }],
+            });
+        });
+
         it('does not dispatch the RPN select or Data Entry messages as ordinary CCs', () => {
             target_track_id.value = 'track-1';
             const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number, position: number) => void>();

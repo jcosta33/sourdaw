@@ -1,4 +1,4 @@
-import { isChordTrackState, isGrooveTemplateState } from '#/modules/MIDI/stores';
+import { isChordTrackState, isGrooveTemplateState, isValidMidiNoteExpression } from '#/modules/MIDI/stores';
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
 import {
@@ -267,7 +267,9 @@ function isMidiNote(value: unknown): boolean {
             record: value,
             keys: ['probability', 'pressure', 'slide', 'pitchBend'],
             type: 'number',
-        })
+        }) &&
+        (value.expression === undefined ||
+            (typeof value.duration === 'number' && isValidMidiNoteExpression(value.expression, value.duration)))
     );
 }
 

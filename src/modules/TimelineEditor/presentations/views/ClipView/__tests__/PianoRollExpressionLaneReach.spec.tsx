@@ -31,7 +31,19 @@ import { PianoRoll } from '../PianoRoll';
 // canvas, so spying on it observes the lane's draws.
 const ctx2d = document.createElement('canvas').getContext('2d')!;
 
-type ProbeNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+type ProbeNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    pressure?: number;
+    slide?: number;
+    expression?: {
+        pressure?: Array<{ offsetBeats: number; value: number }>;
+        slide?: Array<{ offsetBeats: number; value: number }>;
+    };
+};
 type ProbeMidiState = {
     notesByClipId: Record<string, ProbeNote[]>;
     ccByClipId: Record<string, unknown[]>;
@@ -325,5 +337,43 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
         // And painting it addresses clip-2, not the primary clip.
         fireEvent.pointerDown(laneCanvas, { pointerId: 1, clientX: 90, clientY: 2 });
         expect(setNoteVelocity).toHaveBeenCalledWith('clip-2', 'n2', 127);
+    });
+
+    it('draws recorded pressure and slide curves through the direct PianoRoll expression selector', () => {
+        midiState.notesByClipId = {
+            'clip-1': [
+                {
+                    ...FAR_NOTE,
+                    startBeat: 0,
+                    duration: 2,
+                    pressure: 10,
+                    slide: 30,
+                    expression: {
+                        pressure: [{ offsetBeats: 0.5, value: 80 }],
+                        slide: [{ offsetBeats: 1, value: 90 }],
+                    },
+                },
+            ],
+        };
+        trackState.tracks[0] = {
+            id: 'track-1',
+            kind: 'midi',
+            color: 'oklch(0.5 0.1 200)',
+            clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 256 }],
+            devices: [{ type: 'fermenter' }],
+        };
+        const lineTo = vi.spyOn(ctx2d, 'lineTo');
+        render(<PianoRoll {...defaultProps} selectedNoteIds={new Set(['n-far'])} />);
+        act(() => invokeToolbarHandler('onToggleExpressionView'));
+
+        lineTo.mockClear();
+        act(() => invokeToolbarHandler('onActiveExpressionLaneChange', 'pressure'));
+        expect(screen.getByLabelText('pressure lane').querySelector('canvas')).toBeTruthy();
+        expect(lineTo).toHaveBeenCalled();
+
+        lineTo.mockClear();
+        act(() => invokeToolbarHandler('onActiveExpressionLaneChange', 'slide'));
+        expect(screen.getByLabelText('slide lane').querySelector('canvas')).toBeTruthy();
+        expect(lineTo).toHaveBeenCalled();
     });
 });

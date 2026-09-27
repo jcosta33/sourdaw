@@ -1,13 +1,17 @@
 import { logger } from '#/infra/logger/appLogger';
+import { captureGestureBeat } from '#/modules/Transport/stores';
 
-import { type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
+import { activeNotes } from '../../repositories/webMidi/state';
 
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
+import { resolveInputEventTime } from './resolveInputEventTime';
 
 /**
  * Serial tail for note events.
@@ -34,6 +38,19 @@ let midiInputTail: Promise<void> | null = null;
  * ordering the finding actually needs and nothing more.
  */
 const channelTails = new Map<number, Promise<void>>();
+let dispatchGeneration = memberExpressionGeneration.current;
+
+function currentGeneration(): number {
+    const generation = memberExpressionGeneration.current;
+    if (generation !== dispatchGeneration) {
+        // Old, in-flight work may still settle, but a new input/target/MPE
+        // session must not wait behind it or inherit its queued gestures.
+        midiInputTail = null;
+        channelTails.clear();
+        dispatchGeneration = generation;
+    }
+    return generation;
+}
 
 function logHandlerFailure(error: unknown): void {
     logger.warn('[MIDI] Web MIDI event handling failed:', error);
@@ -49,11 +66,39 @@ function trackChannelTail(channel: number, work: Promise<void>): void {
     });
 }
 
-function dispatchNoteHandler(channel: number, handler: () => Promise<void> | void): void {
+function admittedRelease(channel: number, note: number): () => boolean {
+    const key = createWebMidiNoteKey(channel, note);
+    const admittedNote = activeNotes.get(key);
+    return () => admittedNote !== undefined && activeNotes.get(key) === admittedNote;
+}
+
+function dispatchNoteHandler(
+    channel: number,
+    handler: () => Promise<void> | void,
+    shouldReleaseStale: () => boolean = () => false
+): Promise<void> | void {
+    const generation = currentGeneration();
     const previous = midiInputTail;
+    const channelPrevious = channelTails.get(channel);
+    const run = (): Promise<void> | void => {
+        if (generation === memberExpressionGeneration.current || shouldReleaseStale()) {
+            return handler();
+        }
+        return undefined;
+    };
     // An idle tail runs the handler synchronously up to its first await, so a
     // note is not deferred a turn just to be queued behind nothing.
-    const started = previous === null ? Promise.resolve(handler()) : previous.then(handler);
+    let started: Promise<void>;
+    try {
+        if (previous === null && channelPrevious === undefined) {
+            started = Promise.resolve(run());
+        } else {
+            started = Promise.all([previous, channelPrevious]).then(run);
+        }
+    } catch (error: unknown) {
+        logHandlerFailure(error);
+        return undefined;
+    }
     const queued = started.catch(logHandlerFailure);
     midiInputTail = queued;
     trackChannelTail(channel, queued);
@@ -63,58 +108,76 @@ function dispatchNoteHandler(channel: number, handler: () => Promise<void> | voi
         }
         return undefined;
     });
+    return queued;
 }
 
-function dispatchExpressionHandler(channel: number, handler: () => void): void {
+function dispatchExpressionHandler(channel: number, handler: () => void): Promise<void> | void {
+    const generation = currentGeneration();
+    const run = (): void => {
+        if (generation === memberExpressionGeneration.current) {
+            handler();
+        }
+    };
     const pending = channelTails.get(channel);
     if (pending === undefined) {
         // Nothing outstanding on this channel: voice it now, at its own
         // arrival frame. This is the common case and it costs nothing.
         try {
-            handler();
+            run();
         } catch (error: unknown) {
             logHandlerFailure(error);
         }
-        return;
+        return undefined;
     }
 
     // Something on this channel is still in flight. Queue behind it, and make
     // this the channel's tail so later expression on the same channel stays in
     // arrival order rather than overtaking it.
-    trackChannelTail(channel, pending.then(handler).catch(logHandlerFailure));
+    const queued = pending.then(run).catch(logHandlerFailure);
+    trackChannelTail(channel, queued);
+    return queued;
 }
 
-export function handleWebMidiMessage(event: WebMidiInputMessage): void {
+/** Completion of accepted work, when that message had to wait in a queue. */
+export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> | void {
     const message = parseWebMidiMessage(event);
     if (!message) {
-        return;
+        return undefined;
     }
 
-    const timeStamp = message.timeStamp;
+    const timeStamp = { audioTime: resolveInputEventTime({ timeStamp: message.timeStamp }) };
 
     const channel = message.channel;
 
     switch (message.type) {
-        case 'noteOn':
-            dispatchNoteHandler(channel, () => handleWebMidiNoteOn(channel, message.note, message.velocity, timeStamp));
-            break;
-        case 'noteOff':
-            dispatchNoteHandler(channel, () =>
-                handleWebMidiNoteOff(channel, message.note, message.releaseVelocity, timeStamp)
+        case 'noteOn': {
+            const admittedTime = { ...timeStamp, recordingBeat: captureGestureBeat() };
+            return dispatchNoteHandler(
+                channel,
+                () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime),
+                message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
             );
-            break;
+        }
+        case 'noteOff':
+            return dispatchNoteHandler(
+                channel,
+                async () => {
+                    await handleWebMidiNoteOff(channel, message.note, message.releaseVelocity, timeStamp);
+                },
+                admittedRelease(channel, message.note)
+            );
         case 'cc':
-            dispatchExpressionHandler(channel, () => handleWebMidiCC(channel, message.cc, message.value, timeStamp));
-            break;
+            return dispatchExpressionHandler(channel, () => {
+                handleWebMidiCC(channel, message.cc, message.value, timeStamp);
+            });
         case 'channelPressure':
-            dispatchExpressionHandler(channel, () =>
+            return dispatchExpressionHandler(channel, () =>
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
-            break;
         case 'pitchBend':
-            dispatchExpressionHandler(channel, () =>
-                handleWebMidiPitchBend(channel, message.lsb, message.msb, timeStamp)
-            );
-            break;
+            return dispatchExpressionHandler(channel, () => {
+                handleWebMidiPitchBend(channel, message.lsb, message.msb, timeStamp);
+            });
     }
+    return undefined;
 }

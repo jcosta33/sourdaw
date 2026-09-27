@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    defaultTransportState,
+    playheadPositionRef,
+    setGestureClockSource,
+    transportStore,
+} from '#/modules/Transport/stores';
+
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
+const ensure_track_strip = vi.hoisted(() => vi.fn(() => ({ gainNode: {}, deviceNodes: [] })));
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 type TestMidiEvent = {
@@ -14,22 +22,32 @@ type TestMidiEvent = {
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
 }));
+vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({ getTargetTrackId: () => 'track-1' }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         context: audio_clock,
         getTrackStrip: get_track_strip,
+        ensureTrackStrip: ensure_track_strip,
     },
+    applyNoteExpression: () => {},
     getCompensationDelay: () => 0,
+    getDefaultBendRangeSemitones: () => 48,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiControl: async () => true,
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
+    startFaustNote: vi.fn(() => () => {}),
 }));
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
+const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
+const { handleWebMidiChannelPressure } = await import('../handleWebMidiChannelPressure');
+const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
+const { handleWebMidiCC } = await import('../handleWebMidiCC');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
 type HandleWebMidiNoteOffDependencies = Parameters<typeof handleWebMidiNoteOff._factory>[0];
 
@@ -163,6 +181,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
         await fn(0, 60);
@@ -205,6 +224,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
         await fn(0, 60);
@@ -248,12 +268,13 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-a',
             startTime: 0,
             startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
         await fn(0, 60);
 
         expect(process_realtime_midi_input).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-a' }));
-        expect(get_track_strip).toHaveBeenCalledWith('track-a');
+        expect(get_track_strip).not.toHaveBeenCalled();
         expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_480);
     });
 
@@ -812,5 +833,609 @@ describe('handleWebMidiNoteOff', () => {
 
             expect(send_native_live_midi_note).not.toHaveBeenCalled();
         });
+    });
+});
+
+describe('handleWebMidiNoteOff recording held MPE expression', () => {
+    type RecordedNote = {
+        pitch?: number;
+        startBeat?: number;
+        pressure?: number;
+        slide?: number;
+        pitchBend?: number;
+        pitchBendRangeSemitones?: number;
+        duration: number;
+        expression?: Record<string, Array<{ offsetBeats: number; value: number }>>;
+    };
+
+    const MEMBER_CHANNEL = 1;
+    const PITCH = 60;
+
+    let recorded: RecordedNote[];
+    let noteOff: (channel: number, note: number, velocity?: number, timeStamp?: { audioTime: number }) => Promise<void>;
+    let pitchBend: (channel: number, lsb: number, msb: number, timeStamp?: { audioTime: number }) => void;
+    let controlChange: (channel: number, cc: number, value: number, timeStamp?: { audioTime: number }) => void;
+
+    function recordingDependencies(transport: { isRecording: boolean }, armed: boolean) {
+        return make_dependencies({
+            getTrackStoreState: () => ({
+                tracks: [
+                    {
+                        id: 'track-1',
+                        armed,
+                        devices: [],
+                        clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 }],
+                    },
+                ],
+                selectedTrackId: 'track-1',
+            }),
+            getTransportStoreValue: () => ({ ...transport, overdubEnabled: false, isLooping: false, tempo: 120 }),
+            playheadPositionRef: { current: 0 },
+            createMidiNote: (pitch: number, startBeat: number, duration: number, velocity: number) => ({
+                id: 'recorded',
+                pitch,
+                startBeat,
+                duration,
+                velocity,
+            }),
+            appendRecordedMidiNote: ({ note }: { note: RecordedNote }) => {
+                recorded.push(note);
+            },
+            getMidiLearnState: () => null,
+            applyMidiMappings: () => {},
+            getSynthParamsForTrack: () => ({ detune: 0, release: 0.3 }),
+        });
+    }
+
+    function holdNote(
+        initial: { pressure?: number; slide?: number; pitchBend?: number; pitchBendRangeSemitones?: number } = {}
+    ): void {
+        const key = createWebMidiNoteKey(MEMBER_CHANNEL, PITCH);
+        activeNotes.set(key, {
+            channel: MEMBER_CHANNEL,
+            note: PITCH,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+            ...initial,
+        });
+        channelToNote.set(MEMBER_CHANNEL, key);
+    }
+
+    /** Moves the harness clock, so a message with no timestamp arrives at `seconds`. */
+    function at(seconds: number): void {
+        audio_clock.currentTime = seconds;
+    }
+
+    function setUp(transport = { isRecording: true }, armed = true): void {
+        const dependencies = recordingDependencies(transport, armed);
+        noteOff = handleWebMidiNoteOff._factory(dependencies);
+        pitchBend = handleWebMidiPitchBend._factory(dependencies);
+        controlChange = handleWebMidiCC._factory(dependencies);
+    }
+
+    function makeNoteOn(priorRelease: typeof noteOff = noteOff) {
+        return handleWebMidiNoteOn._factory({
+            ...recordingDependencies({ isRecording: true }, true),
+            handleWebMidiNoteOff: priorRelease,
+            stepRecordNoteOn: () => {},
+            scheduleNote: () => null,
+            scheduleKitNote: () => null,
+            getDrumKitByIndex: () => null,
+            getDrumKitDefByIndex: () => null,
+            scheduleDrumKitNote: () => {},
+        });
+    }
+
+    /** Bend as the wire sends it: a signed delta from centre split into its 7-bit halves. */
+    function sendBend(delta: number): void {
+        const raw = delta + 8192;
+        pitchBend(MEMBER_CHANNEL, raw & 0x7f, raw >> 7);
+    }
+
+    function setBendRange(semitones: number): void {
+        controlChange(MEMBER_CHANNEL, 101, 0);
+        controlChange(MEMBER_CHANNEL, 100, 0);
+        controlChange(MEMBER_CHANNEL, 6, semitones);
+    }
+
+    beforeEach(() => {
+        activeNotes.clear();
+        channelToNote.clear();
+        resetChannelControllerState();
+        mpe_enabled.value = true;
+        audio_clock.currentTime = 0;
+        audio_clock.baseLatency = 0;
+        audio_clock.outputLatency = 0;
+        recorded = [];
+        setUp();
+    });
+
+    it('keeps direct member gestures at their admitted onset and offsets while predecessor release waits', async () => {
+        at(0.9);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 10, { audioTime: 0.9 });
+        controlChange(MEMBER_CHANNEL, 74, 20, { audioTime: 0.9 });
+        pitchBend(MEMBER_CHANNEL, 0, 72, { audioTime: 0.9 });
+        holdNote();
+        let finishPredecessor!: () => void;
+        const predecessor = new Promise<void>((resolve) => {
+            finishPredecessor = resolve;
+        });
+        const noteOn = makeNoteOn(async (channel, pitch) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, pitch));
+            channelToNote.delete(channel);
+            await predecessor;
+        });
+
+        at(1);
+        const pending = noteOn(MEMBER_CHANNEL, 62, 100, { audioTime: 1, recordingBeat: 2 });
+        at(1.25);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 80, { audioTime: 1.25 });
+        controlChange(MEMBER_CHANNEL, 74, 90, { audioTime: 1.25 });
+        pitchBend(MEMBER_CHANNEL, 0, 96, { audioTime: 1.25 });
+        at(3.1);
+        finishPredecessor();
+        await pending;
+        at(4);
+        await noteOff(MEMBER_CHANNEL, 62, 0, { audioTime: 4 });
+
+        expect(recorded[0]).toMatchObject({
+            startBeat: 2,
+            pressure: 10,
+            slide: 20,
+            pitchBend: 1024,
+            expression: {
+                pressure: [{ offsetBeats: 0.5, value: 80 }],
+                slide: [{ offsetBeats: 0.5, value: 90 }],
+                pitchBend: [{ offsetBeats: 0.5, value: 4096 }],
+            },
+        });
+    });
+
+    it('keeps a direct member bend-range change at its admitted offset while predecessor release waits', async () => {
+        setBendRange(12);
+        at(0.9);
+        pitchBend(MEMBER_CHANNEL, 0, 96, { audioTime: 0.9 });
+        holdNote();
+        let finishPredecessor!: () => void;
+        const predecessor = new Promise<void>((resolve) => {
+            finishPredecessor = resolve;
+        });
+        const noteOn = makeNoteOn(async (channel, pitch) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, pitch));
+            channelToNote.delete(channel);
+            await predecessor;
+        });
+
+        at(1);
+        const pending = noteOn(MEMBER_CHANNEL, 62, 100, { audioTime: 1, recordingBeat: 2 });
+        at(1.25);
+        setBendRange(48);
+        at(3.1);
+        finishPredecessor();
+        await pending;
+        at(4);
+        await noteOff(MEMBER_CHANNEL, 62, 0, { audioTime: 4 });
+
+        expect(recorded[0]).toMatchObject({
+            pitchBend: 1024,
+            pitchBendRangeSemitones: 48,
+            expression: { pitchBend: [{ offsetBeats: 0.5, value: 4096 }] },
+        });
+    });
+
+    it('cancels a direct member admission when input resets during predecessor release', async () => {
+        at(0.9);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 10, { audioTime: 0.9 });
+        holdNote();
+        let finishPredecessor!: () => void;
+        const predecessor = new Promise<void>((resolve) => {
+            finishPredecessor = resolve;
+        });
+        const noteOn = makeNoteOn(async (channel, pitch) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, pitch));
+            channelToNote.delete(channel);
+            await predecessor;
+        });
+        at(1);
+        const pending = noteOn(MEMBER_CHANNEL, 62, 100, { audioTime: 1, recordingBeat: 2 });
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 80, { audioTime: 1.25 });
+        resetChannelControllerState();
+        finishPredecessor();
+        await pending;
+
+        expect(activeNotes.has(createWebMidiNoteKey(MEMBER_CHANNEL, 62))).toBe(false);
+        expect(recorded).toEqual([]);
+        const fresh = makeNoteOn();
+        await fresh(MEMBER_CHANNEL, 64, 100, { audioTime: 4, recordingBeat: 8 });
+        expect(activeNotes.get(createWebMidiNoteKey(MEMBER_CHANNEL, 64))?.pressure).toBeUndefined();
+    });
+
+    it.each([0, 0.01])('records expression already on the member channel %s seconds before note-on', async (lead) => {
+        const noteOn = makeNoteOn();
+        setBendRange(12);
+        at(1 - lead);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 20);
+        controlChange(MEMBER_CHANNEL, 74, 30);
+        sendBend(4096);
+
+        at(1);
+        await noteOn(MEMBER_CHANNEL, PITCH, 100);
+        at(1.25);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 60);
+        controlChange(MEMBER_CHANNEL, 74, 70);
+        sendBend(2048);
+        at(2);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]).toMatchObject({
+            pressure: 20,
+            slide: 30,
+            pitchBend: 4096,
+            pitchBendRangeSemitones: 12,
+            expression: {
+                pressure: [{ offsetBeats: 0.5, value: 60 }],
+                slide: [{ offsetBeats: 0.5, value: 70 }],
+                pitchBend: [{ offsetBeats: 0.5, value: 2048 }],
+            },
+        });
+    });
+
+    it('treats expression delivered after note-on at the same timestamp as the note-on scalar', async () => {
+        const noteOn = makeNoteOn();
+        setBendRange(12);
+        at(1);
+        await noteOn(MEMBER_CHANNEL, PITCH, 100);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 20);
+        controlChange(MEMBER_CHANNEL, 74, 30);
+        sendBend(4096);
+        at(1.25);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 60);
+        controlChange(MEMBER_CHANNEL, 74, 70);
+        sendBend(2048);
+        at(2);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]).toMatchObject({
+            pressure: 20,
+            slide: 30,
+            pitchBend: 4096,
+            pitchBendRangeSemitones: 12,
+            expression: {
+                pressure: [{ offsetBeats: 0.5, value: 60 }],
+                slide: [{ offsetBeats: 0.5, value: 70 }],
+                pitchBend: [{ offsetBeats: 0.5, value: 2048 }],
+            },
+        });
+    });
+
+    it('uses the bend range in force at note-on after a pre-note range change', async () => {
+        at(0.9);
+        sendBend(4096);
+        setBendRange(12);
+        at(1);
+        await makeNoteOn()(MEMBER_CHANNEL, PITCH, 100);
+        at(2);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pitchBend).toBe(4096);
+        expect(recorded[0]?.pitchBendRangeSemitones).toBe(12);
+    });
+
+    it('uses the latest member value when the channel is assigned to another note', async () => {
+        const noteOn = makeNoteOn();
+        at(0);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 20);
+        await noteOn(MEMBER_CHANNEL, PITCH, 100);
+        at(0.5);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        at(0.9);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 35);
+        at(1);
+        await noteOn(MEMBER_CHANNEL, PITCH, 100);
+        at(2);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[1]?.pressure).toBe(35);
+        expect(recorded[1]?.expression).toBeUndefined();
+    });
+
+    it('does not seed a note from another member channel or invent absent expression', async () => {
+        at(0.9);
+        handleWebMidiChannelPressure(2, 90);
+        controlChange(2, 74, 80);
+        pitchBend(2, 0, 96);
+
+        at(1);
+        await makeNoteOn()(MEMBER_CHANNEL, PITCH, 100);
+        at(2);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pressure).toBeUndefined();
+        expect(recorded[0]?.slide).toBeUndefined();
+        expect(recorded[0]?.pitchBend).toBeUndefined();
+        expect(recorded[0]?.expression).toBeUndefined();
+    });
+
+    it('does not seed a member note from disabled-MPE or master-channel traffic', async () => {
+        at(0.9);
+        mpe_enabled.value = false;
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 90);
+        controlChange(MEMBER_CHANNEL, 74, 80);
+        sendBend(4096);
+        mpe_enabled.value = true;
+        handleWebMidiChannelPressure(0, 91);
+        controlChange(0, 74, 81);
+        pitchBend(0, 0, 96);
+
+        at(1);
+        await makeNoteOn()(MEMBER_CHANNEL, PITCH, 100);
+        at(2);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pressure).toBeUndefined();
+        expect(recorded[0]?.slide).toBeUndefined();
+        expect(recorded[0]?.pitchBend).toBeUndefined();
+    });
+
+    it('stores a pressure swell as the note-on value plus a curve of the later changes', async () => {
+        holdNote({ pressure: 10 });
+        at(0.5);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 90);
+        at(0.9);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 20);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.duration).toBe(2);
+        expect(recorded[0]?.pressure).toBe(10);
+        expect(recorded[0]?.expression?.pressure).toEqual([
+            { offsetBeats: 1, value: 90 },
+            { offsetBeats: 1.8, value: 20 },
+        ]);
+    });
+
+    it('stores a member-channel bend curve with no scalar when no bend preceded note-on', async () => {
+        holdNote();
+        at(0.25);
+        sendBend(4096);
+        at(0.75);
+        sendBend(0);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded[0]).not.toHaveProperty('pitchBend');
+        expect(recorded[0]?.expression?.pitchBend).toEqual([
+            { offsetBeats: 0.5, value: 4096 },
+            { offsetBeats: 1.5, value: 0 },
+        ]);
+        expect(recorded[0]?.pitchBendRangeSemitones).toBe(48);
+    });
+
+    it('keeps the bend in effect at note-on as the scalar', async () => {
+        holdNote({ pitchBend: -2048, pitchBendRangeSemitones: 48 });
+        at(0.25);
+        sendBend(4096);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded[0]?.pitchBend).toBe(-2048);
+        expect(recorded[0]?.expression?.pitchBend).toEqual([{ offsetBeats: 0.5, value: 4096 }]);
+    });
+
+    it('keeps the performed depth of each bend when RPN 0 grows during a held note', async () => {
+        setBendRange(12);
+        holdNote({ pitchBend: 4096, pitchBendRangeSemitones: 12 });
+        at(0.25);
+        sendBend(4096);
+        at(0.75);
+        setBendRange(48);
+        sendBend(2048);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pitchBendRangeSemitones).toBe(48);
+        expect(recorded[0]?.pitchBend).toBe(1024); // 6 semitones at the stored range
+        expect(recorded[0]?.expression?.pitchBend).toEqual([
+            { offsetBeats: 1.5, value: 2048 }, // 12 semitones
+        ]);
+    });
+
+    it('records a held bend changing depth when RPN 0 shrinks or reaches zero', async () => {
+        setBendRange(48);
+        holdNote();
+        at(0.25);
+        sendBend(2048);
+        at(0.5);
+        setBendRange(12);
+        at(0.75);
+        setBendRange(0);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pitchBendRangeSemitones).toBe(48);
+        expect(recorded[0]?.expression?.pitchBend).toEqual([
+            { offsetBeats: 0.5, value: 2048 },
+            { offsetBeats: 1, value: 512 },
+            { offsetBeats: 1.5, value: 0 },
+        ]);
+    });
+
+    it('stores a CC74 slide change as one slide point', async () => {
+        holdNote();
+        at(0.5);
+        controlChange(MEMBER_CHANNEL, 74, 64);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded[0]?.expression?.slide).toEqual([{ offsetBeats: 1, value: 64 }]);
+    });
+
+    it('stores a repeated pressure value once', async () => {
+        holdNote({ pressure: 10 });
+        at(0.25);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 70);
+        at(0.5);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 70);
+        at(0.75);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 70);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded[0]?.expression?.pressure).toEqual([{ offsetBeats: 0.5, value: 70 }]);
+    });
+
+    it('treats a pressure message at note-on as the note-on value', async () => {
+        holdNote({ pressure: 10 });
+        at(0);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 30);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded[0]?.pressure).toBe(30);
+        expect(recorded[0]).not.toHaveProperty('expression');
+    });
+
+    it.each([
+        ['not recording', { isRecording: false }, true],
+        ['recording on an unarmed track', { isRecording: true }, false],
+    ])('stores nothing when %s', async (_case, transport, armed) => {
+        setUp(transport, armed);
+        holdNote({ pressure: 10 });
+        at(0.5);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 90);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        expect(recorded).toEqual([]);
+    });
+
+    it('bounds a long pressure stream to 4096 points, keeping the first and the last', async () => {
+        holdNote({ pressure: 0 });
+        const changes = 5000;
+        for (let index = 1; index <= changes; index += 1) {
+            at(index / (changes + 1));
+            handleWebMidiChannelPressure(MEMBER_CHANNEL, index % 2 === 0 ? 20 : 90);
+        }
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH, 0);
+
+        // Seconds to beats at 120 BPM, the conversion the note's duration uses.
+        const beatsAt = (seconds: number): number => (seconds * 120) / 60;
+        const curve = recorded[0]?.expression?.pressure ?? [];
+        expect(curve.length).toBeLessThanOrEqual(4096);
+        expect(curve[0]).toEqual({ offsetBeats: beatsAt(1 / (changes + 1)), value: 90 });
+        expect(curve.at(-1)).toEqual({ offsetBeats: beatsAt(changes / (changes + 1)), value: 20 });
+    });
+
+    it('records admission beat and queued member gestures through delayed same-member retrigger', async () => {
+        const previousTransport = transportStore.value;
+        let nativeBeat = 2;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => nativeBeat,
+        });
+        let finishWorker!: () => void;
+        const worker = new Promise<void>((resolve) => {
+            finishWorker = resolve;
+        });
+        const deps = recordingDependencies({ isRecording: true }, true);
+        const routedTrackState = () => ({
+            tracks: [
+                {
+                    id: 'track-1',
+                    armed: true,
+                    devices: [{ id: 'yeast-1', type: 'yeast' }],
+                    clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        });
+        const release = handleWebMidiNoteOff._factory({
+            ...deps,
+            getTrackStoreState: routedTrackState,
+            processRealtimeMidiInput: async () => {
+                await worker;
+                return [];
+            },
+        });
+        const noteOn = handleWebMidiNoteOn._factory({
+            ...deps,
+            handleWebMidiNoteOff: release,
+            getTrackStoreState: routedTrackState,
+            processRealtimeMidiInput: async () => [],
+            stepRecordNoteOn: () => {},
+            scheduleNote: () => null,
+            scheduleKitNote: () => null,
+            getDrumKitByIndex: () => null,
+            getDrumKitDefByIndex: () => null,
+            scheduleDrumKitNote: () => {},
+        });
+        vi.doMock('../handleWebMidiNoteOn', () => ({ handleWebMidiNoteOn: noteOn }));
+        vi.doMock('../handleWebMidiNoteOff', () => ({ handleWebMidiNoteOff: release }));
+        vi.doMock('../handleWebMidiCC', () => ({ handleWebMidiCC: controlChange }));
+        vi.doMock('../handleWebMidiChannelPressure', () => ({ handleWebMidiChannelPressure }));
+        vi.doMock('../handleWebMidiPitchBend', () => ({ handleWebMidiPitchBend: pitchBend }));
+        const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
+        const clock = vi.spyOn(performance, 'now');
+        const send = (bytes: number[], timeStamp: number): void => {
+            void handleWebMidiMessage({ data: new Uint8Array(bytes), timeStamp });
+        };
+
+        try {
+            const olderKey = createWebMidiNoteKey(MEMBER_CHANNEL, 65);
+            activeNotes.set(olderKey, {
+                channel: MEMBER_CHANNEL,
+                note: 65,
+                velocity: 90,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(MEMBER_CHANNEL, olderKey);
+            at(1);
+            playheadPositionRef.current = 2;
+            clock.mockReturnValue(1000);
+            send([0x91, PITCH, 100], 1000);
+            at(1.25);
+            clock.mockReturnValue(1250);
+            send([0xd1, 80], 1250);
+            send([0xb1, 74, 90], 1250);
+            send([0xe1, 0, 96], 1250);
+            at(2);
+            clock.mockReturnValue(2000);
+            send([0x81, PITCH, 0], 2000);
+            expect(recorded).toHaveLength(0);
+            at(3.1);
+            playheadPositionRef.current = 6;
+            nativeBeat = 6;
+            clock.mockReturnValue(3100);
+            finishWorker();
+            await vi.waitFor(() => expect(recorded).toHaveLength(2));
+            expect(recorded.find((note) => note.pitch === 60)).toMatchObject({
+                startBeat: 2,
+                duration: 2,
+                expression: {
+                    pressure: [{ offsetBeats: 0.5, value: 80 }],
+                    slide: [{ offsetBeats: 0.5, value: 90 }],
+                    pitchBend: [{ offsetBeats: 0.5, value: 4096 }],
+                },
+            });
+        } finally {
+            finishWorker();
+            clock.mockRestore();
+            playheadPositionRef.current = 0;
+            transportStore.set(previousTransport);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
     });
 });

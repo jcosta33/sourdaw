@@ -138,6 +138,18 @@ const INVALID_SNAPSHOT_CASES = [
         }),
     },
     {
+        label: 'expression curve point at or past duration',
+        snapshots: createSnapshots({
+            notesSnapshot: [
+                {
+                    ...createNote('note-invalid'),
+                    duration: 4,
+                    expression: { pressure: [{ offsetBeats: 9, value: 90 }] },
+                },
+            ],
+        }),
+    },
+    {
         label: 'control-change extra key',
         snapshots: createSnapshots({ controlChangeSnapshot: [{ ...createControlChange('cc-invalid'), extra: true }] }),
     },
@@ -381,6 +393,49 @@ describe('restoreMidiClipData', () => {
 
         expect(mocks.set).not.toHaveBeenCalled();
         expect(mocks.state.value).toBe(previousState);
+    });
+
+    it('restores a note carrying a valid expression curve and reads it back unchanged', () => {
+        const noteWithCurve = {
+            ...createNote('note-with-curve'),
+            duration: 4,
+            expression: { pressure: [{ offsetBeats: 1, value: 90 }] },
+        };
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: [noteWithCurve],
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+
+        expect(requireMidiState().notesByClipId['clip-restore']).toEqual([noteWithCurve]);
+    });
+
+    it('owns every admitted expression dimension after caller edits nested points and arrays', () => {
+        const noteWithCurve = {
+            ...createNote('owned-curve'),
+            duration: 2,
+            expression: {
+                pressure: [{ offsetBeats: 0.5, value: 90 }],
+                slide: [{ offsetBeats: 0.5, value: 40 }],
+                pitchBend: [{ offsetBeats: 0.5, value: 20 }],
+            },
+        };
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: [noteWithCurve],
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+        const admitted = requireMidiState().notesByClipId['clip-restore']?.[0];
+        const expectedValues = { pressure: 90, slide: 40, pitchBend: 20 };
+        for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
+            noteWithCurve.expression[dimension][0]!.offsetBeats = 2;
+            noteWithCurve.expression[dimension].push({ offsetBeats: 2, value: 1 });
+            noteWithCurve.expression[dimension] = [{ offsetBeats: 1.5, value: 1 }];
+            expect(admitted?.expression?.[dimension]).toEqual([{ offsetBeats: 0.5, value: expectedValues[dimension] }]);
+        }
     });
 
     it('rejects a non-numeric pitch bend range', () => {
