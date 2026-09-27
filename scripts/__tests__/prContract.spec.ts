@@ -928,6 +928,29 @@ describe('product-scope test instructions', () => {
         }
     );
 
+    it.each(TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST)(
+        'refuses a test subcommand behind the %s option with quoted values',
+        (option) => {
+            for (const quote of ['"', "'", '`']) {
+                for (const value of ['x', 'x y', '']) {
+                    for (const separator of ['=', ' ']) {
+                        const instructions = `pnpm ${option}${separator}${quote}${value}${quote} test and confirm the fader moves.`;
+
+                        expect(testInstructionsNarrateChecks(instructions), instructions).toBe(true);
+                    }
+                }
+            }
+        }
+    );
+
+    it('keeps a quoted filter on an app launch and a quoted clip label as reviewer steps', () => {
+        const launch = 'Launch the desktop app with pnpm --filter="mixer view" dev and confirm the fader moves.';
+        const clip = 'Select the "test" clip and confirm the waveform appears.';
+
+        expect(testInstructionsNarrateChecks(launch)).toBe(false);
+        expect(testInstructionsNarrateChecks(clip)).toBe(false);
+    });
+
     it.each([
         ['a run subcommand word', 'pnpm run test and confirm the fader moves.'],
         ['a spaced filter value', 'pnpm --filter x test and confirm the fader moves.'],

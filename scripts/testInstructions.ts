@@ -513,7 +513,19 @@ function unwrappedTokens(segment: string): string[] {
 
 /** The segment's tokens in their written letter case, quoted spans unwrapped and edge punctuation stripped. */
 function spelledTokens(segment: string): string[] {
-    const unwrapped = segment.replace(QUOTED_SPAN, (span) => ` ${span.slice(1, -1)} `);
+    const unwrapped = segment.replace(QUOTED_SPAN, (span, _capture: string, offset: number) => {
+        const beforeQuote = segment.slice(0, offset);
+        const precedingToken = beforeQuote.trimEnd().split(/\s+/).at(-1) ?? '';
+        if (precedingToken.endsWith('=') && TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(precedingToken.slice(0, -1))) {
+            // Shell quotes keep the value attached to an inline option.
+            return '_';
+        }
+        if (beforeQuote !== beforeQuote.trimEnd() && TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(precedingToken)) {
+            // A spaced quoted value is still one argument, even when its content has spaces or is empty.
+            return ' _ ';
+        }
+        return ` ${span.slice(1, -1)} `;
+    });
     return unwrapped.split(/\s+/).map((token) => token.replace(TOKEN_EDGE_PUNCTUATION, ''));
 }
 
