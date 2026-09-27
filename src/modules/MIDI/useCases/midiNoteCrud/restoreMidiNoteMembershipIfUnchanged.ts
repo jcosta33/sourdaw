@@ -39,7 +39,7 @@ function findChangedOwnedIds(
     plan: MidiNoteMembershipPlan,
     current: readonly MidiNote[],
     ownedIds: Set<string>,
-    liveOwners: ReadonlyMap<string, ReadonlySet<string>>
+    liveOwners: ReadonlyMap<string, readonly string[]>
 ): { changedIds: Set<string>; expectedIds: ReadonlySet<string> } {
     const expectedById = new Map(plan.expected.map((note) => [note.id, note]));
     const replacementById = new Map(plan.replacement.map((note) => [note.id, note]));
@@ -56,7 +56,7 @@ function findChangedOwnedIds(
         ownedIds.add(id);
         changedIds.add(id);
         const owners = liveOwners.get(id);
-        if (owners && (owners.size !== 1 || !owners.has(plan.clipId))) {
+        if (owners && (owners.length !== 1 || owners[0] !== plan.clipId)) {
             throw new Error('Cannot restore MIDI notes: note ownership changed');
         }
         const live = current.find((note) => note.id === id);
@@ -78,11 +78,11 @@ export function restoreMidiNoteMembershipIfUnchanged(plans: readonly MidiNoteMem
     }
     const clipIds = new Set<string>();
     const ownedIds = new Set<string>();
-    const liveOwners = new Map<string, Set<string>>();
+    const liveOwners = new Map<string, string[]>();
     for (const [liveClipId, notes] of Object.entries(state.notesByClipId)) {
         for (const note of notes) {
-            const owners = liveOwners.get(note.id) ?? new Set<string>();
-            owners.add(liveClipId);
+            const owners = liveOwners.get(note.id) ?? [];
+            owners.push(liveClipId);
             liveOwners.set(note.id, owners);
         }
     }

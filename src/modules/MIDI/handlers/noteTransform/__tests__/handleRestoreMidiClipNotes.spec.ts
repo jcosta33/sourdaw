@@ -241,6 +241,48 @@ describe('handleRestoreMidiClipNotes', () => {
         removeCrdtDoc('root');
     });
 
+    it('owns validated handler restore curves through the document flush', async () => {
+        resetCrdtProjectAuthority('restore MIDI curve ownership');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        arrangeCopyFixture();
+        registerHandlerMap({ restoreMidiClipNotes: handleRestoreMidiClipNotes });
+        clearUndoHistory();
+        flushAutomergeStorageWrites();
+        const restored = {
+            ...targetNote(),
+            expression: {
+                pressure: [{ offsetBeats: 0.25, value: 90 }],
+                slide: [{ offsetBeats: 0.25, value: 40 }],
+                pitchBend: [{ offsetBeats: 0.25, value: 20 }],
+            },
+        };
+        const action: RestoreMidiClipNotesAction = {
+            type: 'restoreMidiClipNotes',
+            payload: { clipId: targetClipId, expectedNotes: [targetNote()], notes: [restored] },
+        };
+        expect(handleRestoreMidiClipNotes.validateSessionActionArguments?.(action.payload)).toBe(true);
+        expect(requireValidate()(action, { actions: [action], actionIndex: 0 })).toBe(true);
+        expect(handleRestoreMidiClipNotes.execute(action)).toEqual({ status: 'written' });
+        expect(midiStoreSnapshot(targetClipId)?.[0]?.expression).toEqual(restored.expression);
+        for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
+            restored.expression[dimension][0]!.offsetBeats = 0.5;
+            restored.expression[dimension].push({ offsetBeats: 0.5, value: 1 });
+            restored.expression[dimension] = [{ offsetBeats: 0.4, value: 1 }];
+        }
+        flushAutomergeStorageWrites();
+        const document = getCrdtDoc<{ midi?: { notesByClipId: Record<string, MidiClipNoteSnapshot[]> } }>('root');
+        const expected = {
+            pressure: [{ offsetBeats: 0.25, value: 90 }],
+            slide: [{ offsetBeats: 0.25, value: 40 }],
+            pitchBend: [{ offsetBeats: 0.25, value: 20 }],
+        };
+        expect(document?.midi?.notesByClipId[targetClipId]?.[0]?.expression).toEqual(expected);
+        expect(midiStoreSnapshot(targetClipId)?.[0]?.expression).toEqual(expected);
+        removeCrdtDoc('root');
+    });
+
     it('admits copyMidiArticulations into an atomic compensated batch when the restore guard matches live state', async () => {
         const action = arrangeCopyFixture();
         registerArticulationHandlers();

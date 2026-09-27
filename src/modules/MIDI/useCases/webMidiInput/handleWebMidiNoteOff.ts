@@ -97,7 +97,10 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const sampleTime = dispatchFrame;
             const pendingRelease = pendingYeastRelease.begin(
                 `${instrumentTrackId}:${yeastDevice.id}`,
-                noteData.yeastVoiceReleases ?? new Map()
+                noteData.yeastVoiceReleases ?? new Map(),
+                noteData.noteInstanceId,
+                instrumentTrackId,
+                noteData.channel
             );
             try {
                 const processedEvents = await deps.processRealtimeMidiInput({
@@ -115,18 +118,32 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 });
                 const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
                 for (const event of processedEvents) {
+                    if (event.kind.type !== 'noteOff') {
+                        continue;
+                    }
+                    const eventSampleFrame = Math.max(earliestDispatchFrame, Math.round(event.timeSamples));
                     if (
-                        event.kind.type !== 'noteOff' ||
+                        pendingYeastRelease.releaseEvent({
+                            routeId: `${instrumentTrackId}:${yeastDevice.id}`,
+                            trackId: event.trackId,
+                            noteInstanceId: event.noteInstanceId,
+                            channel: event.kind.channel,
+                            pitch: event.kind.note,
+                            sampleFrame: eventSampleFrame,
+                            releaseVelocity,
+                        })
+                    ) {
+                        continue;
+                    }
+                    if (
+                        (event.noteInstanceId !== undefined && event.noteInstanceId !== noteData.noteInstanceId) ||
+                        (event.trackId !== undefined && event.trackId !== instrumentTrackId) ||
+                        event.kind.channel !== noteData.channel ||
                         pendingYeastRelease.wasRetired(pendingRelease, event.kind.note)
                     ) {
                         continue;
                     }
-                    pendingYeastRelease.release(
-                        pendingRelease,
-                        event.kind.note,
-                        Math.max(earliestDispatchFrame, Math.round(event.timeSamples)),
-                        releaseVelocity
-                    );
+                    pendingYeastRelease.release(pendingRelease, event.kind.note, eventSampleFrame, releaseVelocity);
                 }
             } catch (error: unknown) {
                 logger.warn('[MIDI] Yeast note release failed:', error);

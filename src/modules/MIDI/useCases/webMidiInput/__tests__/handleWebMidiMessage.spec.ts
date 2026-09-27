@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    defaultTransportState,
+    playheadPositionRef,
+    setGestureClockSource,
+    transportStore,
+} from '#/modules/Transport/stores';
+
 import { memberExpressionState } from '../../../repositories/webMidi/memberExpressionState';
 import { resetChannelControllerState } from '../../../repositories/webMidi/resetChannelControllerState';
 import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabledInternal';
@@ -331,5 +338,38 @@ describe('handleWebMidiMessage', () => {
         expect(bendFrame).toBe(98_528);
 
         performance_now.mockRestore();
+    });
+
+    it('captures the wrapped native transport beat before a queued note-on can wait', async () => {
+        const previous = transportStore.value;
+        let nativeBeat = 0.12;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        playheadPositionRef.current = 7.95;
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => nativeBeat,
+        });
+        let finishFirst!: () => void;
+        const first = new Promise<void>((resolve) => {
+            finishFirst = resolve;
+        });
+        handle_note_on.mockReset();
+        handle_note_on.mockImplementationOnce(() => first);
+        try {
+            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            nativeBeat = 0.15;
+            const queued = handleWebMidiMessage(midi_event([0x91, 62, 100]));
+            nativeBeat = 1.25;
+            finishFirst();
+            await queued;
+            expect(handle_note_on).toHaveBeenNthCalledWith(1, 1, 60, 100, { audioTime: 2, recordingBeat: 0.12 });
+            expect(handle_note_on).toHaveBeenNthCalledWith(2, 1, 62, 100, { audioTime: 2, recordingBeat: 0.15 });
+        } finally {
+            transportStore.set(previous);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
     });
 });

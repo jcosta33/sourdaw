@@ -7,6 +7,7 @@ import {
     type MidiPitchBend,
 } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 
 const INVALID_MIDI_CLIP_DATA_SNAPSHOT = 'Invalid MIDI clip data snapshot';
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
@@ -167,7 +168,14 @@ export function restoreMidiClipData({
     midiStore.set({
         ...state,
         notesByClipId:
-            validatedNotes === null ? state.notesByClipId : { ...state.notesByClipId, [clipId]: [...validatedNotes] },
+            validatedNotes === null
+                ? state.notesByClipId
+                : {
+                      ...state.notesByClipId,
+                      [clipId]: validatedNotes.map((note) =>
+                          note.expression === undefined ? note : cloneMidiNoteForAdmission(note)
+                      ),
+                  },
         ccByClipId:
             validatedControlChanges === null
                 ? state.ccByClipId

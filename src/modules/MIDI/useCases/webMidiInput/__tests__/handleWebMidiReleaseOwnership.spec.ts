@@ -58,6 +58,7 @@ const { resetMidiState } = await import('../../../repositories/webMidi/lifecycle
 
 describe('live Yeast release ownership across input reset', () => {
     beforeEach(() => {
+        resetMidiState({ getTrackStrip: () => strip, releaseNativeNote: () => {} });
         activeNotes.clear();
         channelToNote.clear();
         noteOnControl.mockReset();
@@ -74,6 +75,181 @@ describe('live Yeast release ownership across input reset', () => {
         target.value = 'track-1';
         clock.currentTime = 1;
     });
+
+    it.each(['fermenter', 'grand-boule', 'levain'] as const)(
+        'routes retained %s generated offs from later note-on and note-off worker results to the captured control',
+        async (deviceType) => {
+            const firstOff = vi.fn();
+            const nextOff = vi.fn();
+            const firstOn = vi.fn();
+            const nextOn = vi.fn();
+            const firstControls = { noteOn: firstOn, noteOff: firstOff };
+            const nextControls = { noteOn: nextOn, noteOff: nextOff };
+            const firstNode = {
+                deviceId: 'first',
+                type: deviceType,
+                fermenterControls: firstControls,
+                grandBouleControls: firstControls,
+                levainControls: firstControls,
+            };
+            const nextNode = {
+                deviceId: 'next',
+                type: deviceType,
+                fermenterControls: nextControls,
+                grandBouleControls: nextControls,
+                levainControls: nextControls,
+            };
+            strip.deviceNodes.splice(0, strip.deviceNodes.length, firstNode);
+            const sourceIds: string[] = [];
+            let laterConsumer: 'noteOn' | 'noteOff' = 'noteOn';
+            let successorPitch = 69;
+            const deps = {
+                getCompensationDelay: () => 0,
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            armed: false,
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'first', type: deviceType },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                playheadPositionRef: { current: 0 },
+                getSynthParamsForTrack: () => ({ release: 0.3 }),
+                processRealtimeMidiInput: async (request: {
+                    isNoteOn: boolean;
+                    note: number;
+                    noteInstanceId?: string;
+                }) => {
+                    if (request.isNoteOn && request.note === 60) {
+                        sourceIds.push(request.noteInstanceId!);
+                        return [
+                            {
+                                timeSamples: 48_000,
+                                trackId: 'track-1',
+                                noteInstanceId: request.noteInstanceId,
+                                kind: { type: 'noteOn' as const, channel: 1, note: 67, velocity: 100 },
+                            },
+                        ];
+                    }
+                    if (!request.isNoteOn && request.note === 60) {
+                        return [];
+                    }
+                    const oldOff = {
+                        timeSamples: 170_000,
+                        trackId: 'track-1',
+                        noteInstanceId: sourceIds[0],
+                        kind: { type: 'noteOff' as const, channel: 1, note: 67 },
+                    };
+                    const wrongRouteOff = { ...oldOff, timeSamples: 160_000, trackId: 'track-2' };
+                    const wrongChannelOff = {
+                        ...oldOff,
+                        timeSamples: 160_000,
+                        kind: { type: 'noteOff' as const, channel: 2, note: 67 },
+                    };
+                    if (request.isNoteOn) {
+                        const events = [
+                            {
+                                timeSamples: 150_000,
+                                trackId: 'track-1',
+                                noteInstanceId: request.noteInstanceId,
+                                kind: { type: 'noteOn' as const, channel: 1, note: successorPitch, velocity: 100 },
+                            },
+                        ];
+                        if (laterConsumer === 'noteOn') {
+                            return [wrongRouteOff, wrongChannelOff, oldOff, ...events];
+                        }
+                        return events;
+                    }
+                    return [
+                        wrongRouteOff,
+                        wrongChannelOff,
+                        oldOff,
+                        {
+                            timeSamples: 180_000,
+                            trackId: 'track-1',
+                            noteInstanceId: request.noteInstanceId,
+                            kind: { type: 'noteOff' as const, channel: 1, note: successorPitch },
+                        },
+                    ];
+                },
+                stepRecordNoteOn: () => {},
+                stepRecordNoteOff: () => {},
+                eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
+                scheduleNote: () => null,
+                scheduleKitNote: () => null,
+                getDrumKitByIndex: () => null,
+                getDrumKitDefByIndex: () => null,
+                scheduleDrumKitNote: () => {},
+                isDeviceCarriedByNativeSession: () => false,
+                sendNativeLiveMidiNote: async () => true,
+                soundsNativeNotes: () => false,
+            };
+            const release = handleWebMidiNoteOff._factory(deps);
+            const strike = handleWebMidiNoteOn._factory({ ...deps, handleWebMidiNoteOff: release });
+
+            await strike(1, 60, 100);
+            await release(1, 60);
+            expect(firstOff).not.toHaveBeenCalled();
+            strip.deviceNodes.unshift(nextNode);
+            clock.currentTime = 2;
+            await strike(1, 62, 100);
+            expect(firstOff).toHaveBeenCalledTimes(1);
+            expect(firstOff.mock.calls[0]?.[0]).toBe(67);
+            expect(firstOff.mock.calls[0]?.[1]).toBe(170_000);
+            expect(nextOff).not.toHaveBeenCalled();
+            await release(1, 62);
+            expect(firstOff).toHaveBeenCalledTimes(1);
+            expect(nextOff).toHaveBeenCalledTimes(1);
+            expect(nextOff.mock.calls[0]?.[0]).toBe(69);
+
+            resetMidiState({ getTrackStrip: () => strip, releaseNativeNote: () => {} });
+            strip.deviceNodes.splice(0, strip.deviceNodes.length, firstNode);
+            firstOff.mockClear();
+            nextOff.mockClear();
+            sourceIds.length = 0;
+            successorPitch = 67;
+            laterConsumer = 'noteOff';
+            clock.currentTime = 1;
+            await strike(1, 60, 100);
+            await release(1, 60);
+            strip.deviceNodes.unshift(nextNode);
+            clock.currentTime = 2;
+            await strike(1, 62, 100);
+            expect(firstOff).toHaveBeenCalledTimes(1);
+            expect(firstOff.mock.calls[0]?.[1]).toBe(150_000);
+            expect(nextOff).not.toHaveBeenCalled();
+            await release(1, 62);
+            expect(firstOff).toHaveBeenCalledTimes(1);
+            expect(nextOff).toHaveBeenCalledTimes(1);
+            expect(nextOff.mock.calls[0]?.[0]).toBe(67);
+
+            resetMidiState({ getTrackStrip: () => strip, releaseNativeNote: () => {} });
+            strip.deviceNodes.splice(0, strip.deviceNodes.length, firstNode);
+            firstOff.mockClear();
+            nextOff.mockClear();
+            sourceIds.length = 0;
+            laterConsumer = 'noteOff';
+            successorPitch = 69;
+            clock.currentTime = 1;
+            await strike(1, 60, 100);
+            await release(1, 60);
+            strip.deviceNodes.unshift(nextNode);
+            clock.currentTime = 2;
+            await strike(1, 62, 100);
+            expect(firstOff).not.toHaveBeenCalled();
+            await release(1, 62);
+            expect(firstOff).toHaveBeenCalledTimes(1);
+            expect(firstOff.mock.calls[0]?.[1]).toBe(170_000);
+            expect(nextOff).toHaveBeenCalledTimes(1);
+            expect(nextOff.mock.calls[0]?.[0]).toBe(69);
+        }
+    );
 
     it('releases on worker failure but preserves a successful deferred voice while completing recording', async () => {
         const recorded: Array<{ pitch: number; duration: number }> = [];
@@ -274,7 +450,8 @@ describe('live Yeast release ownership across input reset', () => {
         expect(newId).not.toBe(oldId);
         expect(noteOnControl).toHaveBeenCalledTimes(1);
         expect(reorderedNoteOnControl).toHaveBeenCalledTimes(1);
-        expect(noteOffControl).toHaveBeenLastCalledWith(67, 101_056, 1);
+        expect(noteOffControl).toHaveBeenLastCalledWith(67, undefined, 1);
+        expect(noteOffControl).toHaveBeenCalledTimes(1);
         expect(noteOffControl.mock.invocationCallOrder.at(-1)).toBeLessThan(
             reorderedNoteOnControl.mock.invocationCallOrder[0]!
         );
@@ -312,8 +489,8 @@ describe('live Yeast release ownership across input reset', () => {
         const offsBeforeLoneWorker = noteOffControl.mock.calls.length;
         finishLoneRelease([{ timeSamples: 192_000, kind: { type: 'noteOff', channel: 1, note: 67 } }]);
         await loneOff;
-        expect(noteOffControl).toHaveBeenCalledTimes(offsBeforeLoneWorker + 1);
-        expect(noteOffControl).toHaveBeenLastCalledWith(67, expect.any(Number), 1);
+        expect(noteOffControl).toHaveBeenCalledTimes(offsBeforeLoneWorker);
+        expect(noteOffControl).toHaveBeenLastCalledWith(67, undefined, 1);
         expect(otherNoteOffControl).not.toHaveBeenCalled();
         expect(recorded).toHaveLength(3);
 

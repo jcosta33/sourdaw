@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
+import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
@@ -98,6 +99,27 @@ describe('handleWebMidiNoteOn', () => {
         mpe_enabled.value = false;
         faust_instrument_types.value = new Set();
         audio_clock.currentTime = 2;
+    });
+
+    it('captures a wrapped native beat at direct note-on before its first await', async () => {
+        const previous = transportStore.value;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => 0.12,
+        });
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        try {
+            const fn = handleWebMidiNoteOn._factory(make_dependencies({ playheadPositionRef: { current: 7.95 } }));
+            await fn(1, 60, 100);
+            expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(0.12);
+        } finally {
+            transportStore.set(previous);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
     });
 
     it.each(['fermenter', 'grand-boule', 'levain'] as const)(

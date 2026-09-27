@@ -1,3 +1,4 @@
+import { pendingYeastRelease } from './pendingYeastRelease';
 import { releaseActiveToasterNote } from './releaseActiveToasterNote';
 import { activeNotes, channelToNote } from './state';
 
@@ -101,6 +102,7 @@ function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput)
  * release leaves it stuck on with no gesture left to stop it.
  */
 export function releaseAllActiveNotes(input: ReleaseAllActiveNotesInput): void {
+    pendingYeastRelease.releaseAllPending();
     for (const noteData of activeNotes.values()) {
         releaseOne(noteData, input);
     }

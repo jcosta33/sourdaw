@@ -190,16 +190,22 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: { value: null },
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
-    defaultMidiStoreState: { notesByClipId: {} },
-    midiStore: mocks.midiStore,
-    // Not exercised by this spec — stubbed only because this spec's module graph
-    // reaches these transitively (through unrelated use cases that share the
-    // barrel), same reasoning as the Arrangement/stores stubs above.
-    isValidMidiProbabilitySeed: vi.fn(),
-    chordTrackStore: { value: null },
-    grooveTemplateStore: { value: null },
-}));
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
+    const { isValidMidiNoteExpression, sanitizeMidiStoreState } =
+        await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    return {
+        isValidMidiNoteExpression,
+        sanitizeMidiStoreState,
+        defaultMidiStoreState: { notesByClipId: {} },
+        midiStore: mocks.midiStore,
+        // Not exercised by this spec — stubbed only because this spec's module graph
+        // reaches these transitively (through unrelated use cases that share the
+        // barrel), same reasoning as the Arrangement/stores stubs above.
+        isValidMidiProbabilitySeed: vi.fn(),
+        chordTrackStore: { value: null },
+        grooveTemplateStore: { value: null },
+    };
+});
 
 // Fully mocked (not spread from importOriginal): the real barrel reaches
 // toasterSubscriber → AudioEngine/useCases (already exhaustively mocked

@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
+import { captureGestureBeat } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -46,10 +47,12 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const generation = memberExpressionGeneration.current;
-            const admittedBeat =
-                typeof timeStamp === 'object' && timeStamp !== null && Number.isFinite(timeStamp.recordingBeat)
-                    ? timeStamp.recordingBeat!
-                    : deps.playheadPositionRef.current;
+            let admittedBeat: number;
+            if (typeof timeStamp === 'object' && timeStamp !== null && Number.isFinite(timeStamp.recordingBeat)) {
+                admittedBeat = timeStamp.recordingBeat!;
+            } else {
+                admittedBeat = captureGestureBeat();
+            }
 
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
@@ -168,7 +171,7 @@ export const handleWebMidiNoteOn = inject({
                     start: () => void,
                     release: (sampleFrame?: number, releaseVelocity?: number) => void
                 ): void => {
-                    pendingYeastRelease.retire(`${instrumentTrackId}:${yeastDevice.id}`, pitch, sampleFrame);
+                    pendingYeastRelease.retire(`${instrumentTrackId}:${yeastDevice.id}`, channel, pitch, sampleFrame);
                     start();
                     (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
                 };
@@ -245,6 +248,25 @@ export const handleWebMidiNoteOn = inject({
                         );
                     } else if (event.kind.type === 'noteOff') {
                         const eventNote = event.kind.note;
+                        if (
+                            pendingYeastRelease.releaseEvent({
+                                routeId: `${instrumentTrackId}:${yeastDevice.id}`,
+                                trackId: event.trackId,
+                                noteInstanceId: event.noteInstanceId,
+                                channel: event.kind.channel,
+                                pitch: eventNote,
+                                sampleFrame: eventSampleFrame,
+                            })
+                        ) {
+                            continue;
+                        }
+                        if (
+                            (event.noteInstanceId !== undefined && event.noteInstanceId !== noteInstanceId) ||
+                            (event.trackId !== undefined && event.trackId !== instrumentTrackId) ||
+                            event.kind.channel !== channel
+                        ) {
+                            continue;
+                        }
                         noteData.yeastVoiceReleases?.get(eventNote)?.(eventSampleFrame);
                         noteData.yeastVoiceReleases?.delete(eventNote);
                     }

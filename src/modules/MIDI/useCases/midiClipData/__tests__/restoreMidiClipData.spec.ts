@@ -412,6 +412,32 @@ describe('restoreMidiClipData', () => {
         expect(requireMidiState().notesByClipId['clip-restore']).toEqual([noteWithCurve]);
     });
 
+    it('owns every admitted expression dimension after caller edits nested points and arrays', () => {
+        const noteWithCurve = {
+            ...createNote('owned-curve'),
+            duration: 2,
+            expression: {
+                pressure: [{ offsetBeats: 0.5, value: 90 }],
+                slide: [{ offsetBeats: 0.5, value: 40 }],
+                pitchBend: [{ offsetBeats: 0.5, value: 20 }],
+            },
+        };
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: [noteWithCurve],
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+        const admitted = requireMidiState().notesByClipId['clip-restore']?.[0];
+        const expectedValues = { pressure: 90, slide: 40, pitchBend: 20 };
+        for (const dimension of ['pressure', 'slide', 'pitchBend'] as const) {
+            noteWithCurve.expression[dimension][0]!.offsetBeats = 2;
+            noteWithCurve.expression[dimension].push({ offsetBeats: 2, value: 1 });
+            noteWithCurve.expression[dimension] = [{ offsetBeats: 1.5, value: 1 }];
+            expect(admitted?.expression?.[dimension]).toEqual([{ offsetBeats: 0.5, value: expectedValues[dimension] }]);
+        }
+    });
+
     it('rejects a non-numeric pitch bend range', () => {
         expect(() => {
             restoreMidiClipData({

@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { playheadPositionRef } from '#/modules/Transport/stores';
+import { captureGestureBeat } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
@@ -151,7 +151,7 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
 
     switch (message.type) {
         case 'noteOn': {
-            const admittedTime = { ...timeStamp, recordingBeat: playheadPositionRef.current };
+            const admittedTime = { ...timeStamp, recordingBeat: captureGestureBeat() };
             return dispatchNoteHandler(
                 channel,
                 () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime),

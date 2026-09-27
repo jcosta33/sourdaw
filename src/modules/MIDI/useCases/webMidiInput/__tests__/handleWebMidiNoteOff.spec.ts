@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { playheadPositionRef } from '#/modules/Transport/stores';
+import {
+    defaultTransportState,
+    playheadPositionRef,
+    setGestureClockSource,
+    transportStore,
+} from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
@@ -1228,6 +1233,13 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
     });
 
     it('records admission beat and queued member gestures through delayed same-member retrigger', async () => {
+        const previousTransport = transportStore.value;
+        let nativeBeat = 2;
+        transportStore.set({ ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 7.95 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => nativeBeat,
+        });
         let finishWorker!: () => void;
         const worker = new Promise<void>((resolve) => {
             finishWorker = resolve;
@@ -1302,6 +1314,7 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
             expect(recorded).toHaveLength(0);
             at(3.1);
             playheadPositionRef.current = 6;
+            nativeBeat = 6;
             clock.mockReturnValue(3100);
             finishWorker();
             await vi.waitFor(() => expect(recorded).toHaveLength(2));
@@ -1318,6 +1331,11 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
             finishWorker();
             clock.mockRestore();
             playheadPositionRef.current = 0;
+            transportStore.set(previousTransport);
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
         }
     });
 });
