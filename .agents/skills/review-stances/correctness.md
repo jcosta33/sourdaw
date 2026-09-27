@@ -59,18 +59,20 @@ carries it in addition.
 
 ## Lessons from escapes
 
-### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured and pinned in #4828; fix handed to #4835)
+### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
 
-PR #4775 added the trusted-snapshot scanner's declaration recognition — class, interface, enum,
-namespace and type headers — so a generic class header or a completed type alias would stop being
-mistaken for a loader body. The recognition names the header forms it accepts and treats every other
-`{` as a body or an object literal, so eight grammar-legal TypeScript forms that each hold a
-`require(specifier: string): unknown` member — a nested property type, a parameter annotation, a
-return type, a class-property annotation, a conditional-type branch, a mapped type, a
-decorator-preceded member, and a union with a negative literal type — are refused as computed loads,
-and the graph assertion stops a command whose source loads nothing. The defect reached `main`
-through that pull request and was measured while reviewing #4828, which pinned the eight forms as a
-documented fail-closed bound and handed the fix to #4835.
+PR #4775 added the trusted-snapshot scanner's declaration recognition — class, interface and type
+headers — so a generic class header or a completed type alias would stop being mistaken for a loader
+body. The recognition names the header forms it accepts, treats an `enum`, `namespace` or `module`
+header as a terminator that refuses, and treats every other `{` as a body or an object literal, so
+eight grammar-legal TypeScript forms that each hold a `require(specifier: string): unknown` member —
+a nested property type, a parameter annotation, a return type, a class-property annotation, a
+conditional-type branch, a mapped type, a decorator-preceded member, and a union with a negative
+literal type — are refused as computed loads once another member precedes that one — except the
+decorator form, which refuses alone — and the graph assertion stops a command whose source loads
+nothing. The defect reached `main` through that pull request; the refusals were measured while
+reviewing the later change #4828, which handed the fix to #4835 and pinned nothing, so no bound on
+these forms survives in the merged revision.
 
 Blind spot: the review's stances attacked the miss direction (a load the scanner fails to see) and
 the accepted-literal direction, and probed the declaration headers the change added; none asked
@@ -81,8 +83,16 @@ which reads as a defect in the source rather than in the scanner.
 Probe that would have caught it: enumerate the TypeScript forms that place an object type where the
 recogniser only expects a header — nested property, parameter, return, property annotation,
 conditional branch, mapped type, decorator member, literal-union member — and drive
-`snapshotComputedDynamicSpecifiers` on each; any form that returns a specifier is the finding, and
-the same enumeration must include the forms the rule does accept so the pin covers both directions.
+`snapshotComputedDynamicSpecifiers` on each, twice: once with the named member first in its body and
+once with another member such as `version: string;` ahead of it, the union form nested in a
+class-like body so that position is the only difference between the two readings. Seven forms return
+`[]` alone and `['require(...)']` ahead-of-member, so the member position alone decides them; the
+decorator form returns `['require(...)']` for both, refusing even when it is first. Any form that
+returns a specifier is the finding, a form admitted alone reads as a legal source, and the same
+enumeration must include the forms the rule does accept so the pin covers both directions. Measure a
+genuine computed load in the same scratch script — `const p = './x.ts'; require(p);` must still
+return `['require(...)']` — because an empty result for a declaration form is otherwise
+indistinguishable from a scanner that never ran.
 
 ### 2026-09-26 — a read tool whose largest answer never fit its own receipt budget (escaped via PR #2011)
 
