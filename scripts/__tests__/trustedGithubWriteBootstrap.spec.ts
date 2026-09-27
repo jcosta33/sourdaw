@@ -555,6 +555,57 @@ describe('snapshotImportSpecifiers', () => {
                 'function make() { const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
             )
         ).toEqual(['require(...)']);
+        // An optional/definite marker and a type annotation between the name and `=` still name a
+        // loader field, and the module the field loads is what the read-back reaches.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader: NodeRequire = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader?: NodeRequire = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader!: NodeRequire = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `declare` field emits nothing at runtime, so it does not shadow the parent's loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { declare loader: NodeRequire; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A class name inside a parameter's default or annotation names a value or a type, not the
+        // parameter, so it does not shadow the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x = H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter whose own name is the class name shadows it, whichever order the class is declared in.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function f(H) { const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function f() { const H = Object; const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
+            )
+        ).toEqual([]);
     });
 
     /**

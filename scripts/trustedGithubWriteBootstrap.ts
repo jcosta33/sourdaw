@@ -653,9 +653,12 @@ function collectLoaderBindings(source: string): LoaderRead {
     const bindings = new Map<string, LoaderBindingKind>();
     const classFields = new Map<number, ClassFieldsEntry>();
     const localBindings = new Map<string, LocalInstance[]>();
-    const classNames = { names: new Set<string>(), firstChars: new Set<string>() };
     const pendingReadBacks: Array<{ name: string; sourceStart: number; nameIndex: number; end: number }> = [];
     const requireIsFileOwnName = declaresRequireName(source);
+    // Register every class declaration up front so a shadow declared before a forward class can decide
+    // against the whole file's class names; members and fields are still read in the pass below.
+    collectClassDeclarations(source, classFields);
+    const classNames = collectClassNameSets(classFields);
     let index = 0;
     while (index < source.length) {
         const commentEnd = skipComment(source, index);
@@ -737,15 +740,11 @@ function collectLoaderBindings(source: string): LoaderRead {
             const open = classBodyOpenAfterClass(source, index);
             if (open !== undefined) {
                 if (isClassDeclarationPosition(source, index)) {
-                    const entry = classEntryFromOpen(source, classFields, open);
-                    if (entry.name !== '') {
-                        classNames.names.add(entry.name);
-                        classNames.firstChars.add(entry.name.charAt(0));
-                    }
+                    classEntryFromOpen(source, classFields, open);
                 } else {
                     registerClassExpression(classFields, open);
                 }
-                recordClassMembers(source, classFields, open, requireIsFileOwnName);
+                recordClassMembers(source, classFields, open);
             }
             index += 'class'.length;
             continue;
@@ -795,6 +794,64 @@ function registerClassExpression(classFields: Map<number, ClassFieldsEntry>, ope
         entry = { name: '', scopeChain: [], parentName: undefined, fields: new Map(), members: new Set() };
         classFields.set(open, entry);
     }
+}
+
+/**
+ * Registers every class body — a declaration or an expression — by its body brace, without scanning its
+ * members, so the full set of declared class names is known before the binding pass. A shadow declared
+ * before a forward class then decides against the whole file's names rather than only the classes seen
+ * so far. The lightweight scan only acts on the `class` keyword.
+ */
+function collectClassDeclarations(source: string, classFields: Map<number, ClassFieldsEntry>): void {
+    let index = 0;
+    while (index < source.length) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
+            continue;
+        }
+        if (quote === '`') {
+            index = scanTemplate(source, index, source.length, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (isKeywordAt(source, index, 'class') && !isPrecededByDotAccess(source, index)) {
+            const open = classBodyOpenAfterClass(source, index);
+            if (open !== undefined) {
+                if (isClassDeclarationPosition(source, index)) {
+                    classEntryFromOpen(source, classFields, open);
+                } else {
+                    registerClassExpression(classFields, open);
+                }
+            }
+        }
+        index += 1;
+    }
+}
+
+/** The class names a file declares, with their first characters for a cheap membership precheck. */
+function collectClassNameSets(classFields: ReadonlyMap<number, ClassFieldsEntry>): {
+    names: Set<string>;
+    firstChars: Set<string>;
+} {
+    const names = new Set<string>();
+    const firstChars = new Set<string>();
+    for (const entry of classFields.values()) {
+        if (entry.name !== '') {
+            names.add(entry.name);
+            firstChars.add(entry.name.charAt(0));
+        }
+    }
+    return { names, firstChars };
 }
 
 /**
@@ -1540,7 +1597,8 @@ function readLoaderDefaultBindingAt(
         return undefined;
     }
     const after = skipWhitespace(source, index + name.length);
-    if (source[after] !== '=' || source[after + 1] === '=' || source[after + 1] === '>') {
+    const equals = fieldEqualsAfter(source, after, source.length);
+    if (equals === undefined) {
         // A shorthand pattern entry reading a class field's loader back is the one binding a name
         // takes without an initializer of its own.
         if (source[after] !== ',' && source[after] !== '}') {
@@ -1558,7 +1616,7 @@ function readLoaderDefaultBindingAt(
         // a class declared after the read-back still carries its field.
         return { name, kind: 'require', nameIndex: index, end: after, pendingSource };
     }
-    const loader = readLoaderExpression(source, skipWhitespace(source, after + 1), requireIsFileOwnName, known);
+    const loader = readLoaderExpression(source, skipWhitespace(source, equals + 1), requireIsFileOwnName, known);
     // The member test walks back over comments, so it runs only where a name would otherwise bind.
     if (loader === undefined || isPrecededByDotAccess(source, index)) {
         return undefined;
@@ -1748,10 +1806,27 @@ function readParameterShadowAt(
         return undefined;
     }
     const name = readWordForward(source, index);
-    if (name === undefined || !classNames.names.has(name) || !isParameterListNameAt(source, index)) {
+    if (name === undefined || !classNames.names.has(name) || !isParameterOwnNameAt(source, index)) {
         return undefined;
     }
     return { name, classRef: undefined, scopeChain: enclosingScopeChain(source, index), end: index + name.length };
+}
+
+/**
+ * Whether the name at `index` is a parameter's own binding name, rather than an identifier inside its
+ * default value or its type annotation. A `=`, `:`, `<`, or `?` before the name marks a default, an
+ * annotation, a generic argument, or a conditional, none of which bind the name as the parameter.
+ */
+function isParameterOwnNameAt(source: string, index: number): boolean {
+    if (!isParameterListNameAt(source, index)) {
+        return false;
+    }
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined) {
+        return false;
+    }
+    const character = source.charAt(before);
+    return character !== '=' && character !== ':' && character !== '<' && character !== '?';
 }
 
 /**
@@ -1880,12 +1955,7 @@ function classBodyOpenAfterClass(source: string, keywordStart: number): number |
  * the body's top level, skipping method bodies and field initializers so their locals cannot read as
  * members.
  */
-function recordClassMembers(
-    source: string,
-    classFields: Map<number, ClassFieldsEntry>,
-    open: number,
-    requireIsFileOwnName: boolean
-): void {
+function recordClassMembers(source: string, classFields: Map<number, ClassFieldsEntry>, open: number): void {
     const entry = classEntryFromOpen(source, classFields, open);
     const close = skipBalancedDelimited(source, open, source.length, '{', '}');
     if (close === undefined) {
@@ -1912,22 +1982,8 @@ function recordClassMembers(
             cursor = skipClassBodyRegion(source, cursor, close - 1);
             continue;
         }
-        if (!head.static) {
+        if (!head.static && !head.isDeclare) {
             entry.members.add(head.name);
-            // A literal loader field is recorded here so a class declared after its read-back still
-            // carries the field; a field bound through a name the binding pass resolves is recorded by
-            // that pass in source order instead.
-            if (source[head.afterName] === '=') {
-                const loader = readLoaderExpression(
-                    source,
-                    skipWhitespace(source, head.afterName + 1),
-                    requireIsFileOwnName,
-                    new Map()
-                );
-                if (loader !== undefined) {
-                    entry.fields.set(head.name, loader.kind);
-                }
-            }
         }
         cursor = head.next;
     }
@@ -2003,17 +2059,19 @@ const CLASS_MEMBER_MODIFIERS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The name a class body member declares at `start`, with whether it is static, the position right after
- * the name, and the position after the member, or `undefined` when `start` does not begin a plain named
- * member (a computed member, an index signature, a decorator, or a stray token).
+ * The name a class body member declares at `start`, with whether it is static, whether `declare` marks it
+ * type-only, the position right after the name, and the position after the member, or `undefined` when
+ * `start` does not begin a plain named member (a computed member, an index signature, a decorator, or a
+ * stray token).
  */
 function readClassMemberHead(
     source: string,
     start: number,
     end: number
-): { name: string; static: boolean; afterName: number; next: number } | undefined {
+): { name: string; static: boolean; isDeclare: boolean; afterName: number; next: number } | undefined {
     let cursor = start;
     let isStatic = false;
+    let isDeclare = false;
     while (cursor < end) {
         const word = readWordForward(source, cursor);
         if (word === undefined || !CLASS_MEMBER_MODIFIERS.has(word)) {
@@ -2029,6 +2087,9 @@ function readClassMemberHead(
         if (word === 'static') {
             isStatic = true;
         }
+        if (word === 'declare') {
+            isDeclare = true;
+        }
         cursor = afterWord;
     }
     if (source[cursor] === '*') {
@@ -2040,9 +2101,15 @@ function readClassMemberHead(
     }
     const afterName = skipWhitespace(source, cursor + name.length);
     if (source[afterName] === '(' || source[afterName] === '<' || source[afterName] === '?') {
-        return { name, static: isStatic, afterName, next: skipClassMethodMember(source, afterName, end) };
+        return {
+            name,
+            static: isStatic,
+            isDeclare,
+            afterName,
+            next: skipClassMethodMember(source, afterName, end),
+        };
     }
-    return { name, static: isStatic, afterName, next: skipClassFieldMember(source, afterName, end) };
+    return { name, static: isStatic, isDeclare, afterName, next: skipClassFieldMember(source, afterName, end) };
 }
 
 /** Whether the character at `index` can begin a class member name. */
@@ -2144,6 +2211,24 @@ function skipUntilMethodBody(source: string, cursor: number, end: number): numbe
         cursor += 1;
     }
     return end;
+}
+
+/**
+ * The `=` a field initializer opens after a member name, crossing an optional `?` or `!` marker and an
+ * optional `: Type` annotation, or `undefined` when no initializer follows. A `:` opens a type
+ * annotation whose type is skipped in full, so an object, conditional, or generic type cannot hide the
+ * initializer (#4835).
+ */
+function fieldEqualsAfter(source: string, cursor: number, end: number): number | undefined {
+    cursor = skipWhitespace(source, cursor);
+    if (source[cursor] === '?' || source[cursor] === '!') {
+        cursor = skipWhitespace(source, cursor + 1);
+    }
+    if (source[cursor] === ':') {
+        cursor = skipTypeExpression(source, cursor + 1, end);
+        cursor = skipWhitespace(source, cursor);
+    }
+    return source[cursor] === '=' && source[cursor + 1] !== '=' && source[cursor + 1] !== '>' ? cursor : undefined;
 }
 
 /** Skips a field's type annotation and initializer to the next `;` or `,` at the class body's top level. */
@@ -2250,13 +2335,16 @@ function isStaticClassField(source: string, index: number): boolean {
 
 /** Whether the use at `index` is a class field name — a property the class declares, never a local use. */
 function isClassFieldNameAt(source: string, index: number, nameLength: number): boolean {
-    const equals = skipWhitespace(source, index + nameLength);
-    return (
-        source[equals] === '=' &&
-        source[equals + 1] !== '=' &&
-        source[equals + 1] !== '>' &&
-        isMemberInsideClassLikeBody(source, index)
-    );
+    if (!isMemberInsideClassLikeBody(source, index)) {
+        return false;
+    }
+    const after = skipWhitespace(source, index + nameLength);
+    if (source[after] === '=') {
+        return source[after + 1] !== '=' && source[after + 1] !== '>';
+    }
+    // A field's name is followed by an annotation `:`, an optional `?`, or a definite `!`, even when it
+    // carries no initializer — a `declare` field included.
+    return source[after] === ':' || source[after] === '?' || source[after] === '!';
 }
 
 /**
