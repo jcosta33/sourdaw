@@ -39,9 +39,9 @@ import { parseReviewRiskPlan, type ReviewRiskPlan } from './reviewRiskPolicy.ts'
 import {
     REASSESSMENT_FILE_NAME,
     REVIEW_ROUND_ESCALATION_THRESHOLD,
-    assertReviewRoundNotFrozen,
     countReviewerRequestChangesRounds,
     gateReviewRoundEscalation,
+    logReviewRoundWarning,
     type ReviewReassessment,
 } from './reviewRoundEscalation.ts';
 
@@ -182,18 +182,16 @@ function observedReviewRoundCount(number: number, head: string, port: PublishRev
 }
 
 /**
- * The round-cap decision on its own — the freeze, and the escalation duty read from the public
- * history — so a publication takes it before the approval context and the comment preflight it
- * would otherwise report instead. A fresh approval publication reads its approval context before the
- * dossier gate, and a manifest no approval context can be read from is exactly a state the round-cap
- * refusal must still reach, because that refusal is the only text naming the reassessment an
- * escalated head is missing and the routes out of a frozen one (#4754).
+ * Check the round escalation duty before approval context and comment preflight. A fresh approval
+ * publication reads its approval context before the dossier gate, so a missing reassessment must
+ * still be named first even when the manifest is unreadable (#4754).
  */
 export function assertReviewRoundPublicationAdmitted(input: {
     number: number;
     head: string;
     bundle: string;
     port: PublishReviewPort;
+    logWarning?: boolean;
 }): void {
     if (hasRiskPlan(input.bundle, input.port) && bundleRecordsPublication(input.bundle, input.port)) {
         // The head replays a review it already posted, which the round cap does not bound: the
@@ -201,10 +199,12 @@ export function assertReviewRoundPublicationAdmitted(input: {
         return;
     }
     const observedCount = observedReviewRoundCount(input.number, input.head, input.port);
+    if (input.logWarning !== false) {
+        logReviewRoundWarning(input.number, observedCount, input.port.log);
+    }
     if (observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return;
     }
-    assertReviewRoundNotFrozen(observedCount);
     if (!hasRiskPlan(input.bundle, input.port)) {
         // A bundle with no risk plan publishes exactly as before, and for it this refusal is already
         // reachable through the gate below, which names the manifest a reassessment must bind.
@@ -239,7 +239,7 @@ function readReviewRoundEscalation(
     bundle: string,
     port: PublishReviewPort
 ): ReviewReassessment | undefined {
-    assertReviewRoundPublicationAdmitted({ number, head, bundle, port });
+    assertReviewRoundPublicationAdmitted({ number, head, bundle, port, logWarning: false });
     const observedCount = observedReviewRoundCount(number, head, port);
     if (observedCount < REVIEW_ROUND_ESCALATION_THRESHOLD) {
         return undefined;

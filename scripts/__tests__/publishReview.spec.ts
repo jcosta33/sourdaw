@@ -71,7 +71,7 @@ import {
 import {
     REASSESSMENT_FILE_NAME,
     REVIEW_ROUND_ESCALATION_THRESHOLD,
-    REVIEW_ROUND_FREEZE_THRESHOLD,
+    REVIEW_ROUND_WARNING_THRESHOLD,
 } from '../reviewRoundEscalation.ts';
 import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
 
@@ -5139,6 +5139,7 @@ describe('fresh reviewer dossier publication', () => {
             writeFileSync(join(bundle, 'semantic-ci.json'), JSON.stringify(input.semanticCi));
         }
         const calls: string[] = [];
+        const logs: string[] = [];
         const writes: { path: string; contents: string }[] = [];
         const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
         const port: PublishReviewPort = {
@@ -5179,7 +5180,7 @@ describe('fresh reviewer dossier publication', () => {
             },
             publicReviews: () => input.publicReviews ?? [],
             publicReviewComments: () => input.publicReviewComments ?? [],
-            log: () => undefined,
+            log: (message) => logs.push(message),
         };
         if (input.writable !== false) {
             port.writeBundleText = (path: string, contents: string) => {
@@ -5192,6 +5193,7 @@ describe('fresh reviewer dossier publication', () => {
             bundle,
             port,
             calls,
+            logs,
             writes,
             posted,
             readDossier: () => readJsonFile(join(bundle, 'dossier.json')),
@@ -6165,10 +6167,13 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('freezes a head at the freeze threshold even when its manifest cannot supply the base', () => {
+    it('still refuses a head at the warning threshold without a reassessment before reading approval context', () => {
         const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
             manifest: { pr: number, baseRefName: 'main', headSha: head },
-            publicReviews: Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD }, (_, index) => ({
+            approvalContextReadsManifest: true,
+            publicReviews: Array.from({ length: REVIEW_ROUND_WARNING_THRESHOLD }, (_, index) => ({
                 id: index + 1,
                 state: 'CHANGES_REQUESTED',
                 commitId: head,
@@ -6177,13 +6182,62 @@ describe('fresh reviewer dossier publication', () => {
             })),
         });
         try {
-            expect(() => publishReview(number, fixture.port)).toThrow(/review round freeze/);
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round escalation/);
+            expect(fixture.calls).not.toContain('approvalContext');
             expect(fixture.posted.review).toBeUndefined();
             expect(fixture.writes).toEqual([]);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
     });
+
+    it.each([REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
+        'publishes at %s rounds with a warning and a valid reassessment',
+        (rounds) => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput(),
+                publicReviews: Array.from({ length: rounds }, (_, index) => ({
+                    id: index + 1,
+                    state: 'CHANGES_REQUESTED',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    body: 'round',
+                })),
+            });
+            try {
+                writeFileSync(
+                    join(fixture.bundle, REASSESSMENT_FILE_NAME),
+                    JSON.stringify({
+                        format: 'reassessment-v1',
+                        pr: number,
+                        headSha: head,
+                        baseSha: base,
+                        roundsObserved: rounds,
+                        threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                        action: 'continue',
+                        reason: 'Reviewed the churn and scoped the remaining finding',
+                    })
+                );
+                expect(publishReview(number, fixture.port)).toBe(99);
+                expect(fixture.calls).toContain('post');
+                expect(fixture.logs).toContainEqual(
+                    expect.stringContaining(
+                        `review-round-warning:${number}:request-changes=${rounds}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}`
+                    )
+                );
+                const persisted = parseReviewDossier(fixture.readDossier());
+                expect(persisted.events).toContainEqual(
+                    expect.objectContaining({
+                        kind: 'review-reassessed',
+                        roundsObserved: rounds,
+                    })
+                );
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        }
+    );
 
     it('refuses an escalated approval publication whose manifest cannot supply the base it needs', () => {
         const fixture = dossierFixture({
@@ -6279,7 +6333,7 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('replays a recorded publication at or above the threshold without a reassessment instead of refusing', () => {
+    it('replays a recorded publication at the warning threshold without another reassessment', () => {
         const landedReview = {
             id: 99,
             state: 'APPROVED',
@@ -6291,7 +6345,7 @@ describe('fresh reviewer dossier publication', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
             dossier: dossierInput(),
-            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+            publicReviews: Array.from({ length: REVIEW_ROUND_WARNING_THRESHOLD }, (_, index) => ({
                 id: index + 1,
                 state: 'CHANGES_REQUESTED',
                 commitId: head,
@@ -6308,7 +6362,7 @@ describe('fresh reviewer dossier publication', () => {
                     pr: number,
                     headSha: head,
                     baseSha: base,
-                    roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
+                    roundsObserved: REVIEW_ROUND_WARNING_THRESHOLD,
                     threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
                     action: 'continue',
                     reason: 're-scoped the change and re-dispatched the remaining stances',
@@ -6321,6 +6375,7 @@ describe('fresh reviewer dossier publication', () => {
             rmSync(join(fixture.bundle, REASSESSMENT_FILE_NAME));
             expect(publishReview(number, fixture.port)).toBe(99);
             expect(fixture.calls.filter((call) => call === 'post')).toHaveLength(1);
+            expect(fixture.logs.filter((line) => line.includes('review-round-warning'))).toHaveLength(1);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
