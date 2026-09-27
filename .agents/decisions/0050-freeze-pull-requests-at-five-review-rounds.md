@@ -2,7 +2,7 @@
 type: adr
 id: 0050
 title: A pull request freezes at its fifth review round
-status: accepted
+status: superseded
 date: 2026-09-25
 owner: The Sourdaw team
 sources:
@@ -12,6 +12,15 @@ sources:
 ---
 
 # 0050 — A pull request freezes at its fifth review round
+
+## Superseded 2026-09-27
+
+The owner replaced the five-round freeze with an advisory warning. At five reviewer
+`REQUEST_CHANGES` rounds and every later count, `review:prepare`, `review:publish`, and
+`review:repair` warn the agent to examine review churn and remaining findings. A fresh
+publication can continue with a valid, head-bound reassessment and every other existing
+publication requirement. The three-round reassessment gate continues at all higher counts.
+The context and decision below record the former policy, not the current behavior.
 
 ## Context
 
