@@ -18,6 +18,10 @@ scripts/reviewPublicationBinding.ts
   h_beb54bf43b47b7 30,339-343,356-364
 scripts/semanticReviewContext.ts
   h_beb54bf43b47b7 18-24,39,48,77-90,105-107,113-118,124-125,144-145,529
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_2bfd55a4393d7c::t_0575834f4a192b 6
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_2bfd55a4393d7c::t_211d5677fba5f4 21
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -27,6 +31,16 @@ scripts/semanticReviewContext.ts
   "humans": {
     "h_beb54bf43b47b7": {
       "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_2bfd55a4393d7c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }
   }
 }

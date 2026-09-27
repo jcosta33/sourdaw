@@ -1,16 +1,9 @@
-.agents/skills/review-stances/correctness.md
-  h_beb54bf43b47b7 54-58,62,63,64-75,76-85,86-95,96
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.7.4",
-  "base_commit_sha": "30991a488ff8cf0f13f246b0b6153604b31902a6",
+  "base_commit_sha": "8cbce3cceb29f93cec7eb01a92a568e47ea639ef",
   "prompts": {},
-  "humans": {
-    "h_beb54bf43b47b7": {
-      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
-    }
-  },
   "sessions": {
     "s_2bfd55a4393d7c": {
       "agent_id": {

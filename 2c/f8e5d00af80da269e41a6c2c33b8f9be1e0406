@@ -272,6 +272,8 @@ src/utils/createHandler.ts
   h_beb54bf43b47b7 23-27,89
 src/utils/handlerContract.ts
   h_beb54bf43b47b7 1360-1369,2994-2995
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_ed5aa36a3ba357::t_a25a0bef92ba65 42-89
 ---
 {
   "schema_version": "authorship/3.0.0",
