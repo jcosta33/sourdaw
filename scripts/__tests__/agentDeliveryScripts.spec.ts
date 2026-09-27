@@ -1742,6 +1742,124 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
+     * The four shapes #4818 reproduces, refused through the same graph assertion every executed
+     * source passes. Each one is decided by a separate rule, so each carries its own reproduction:
+     * a statement-position regex after a control header's `)` or after `else` swallowed the rest of
+     * the file behind the apostrophe it opened; `(0, require)` and `(require)` are the `require`
+     * callee wrapped rather than spelled; a name bound to a created require or to an aliased
+     * `createRequire` reaches the same loader; an operand-position object literal's `}` divides
+     * rather than opening a regex that swallows the call; and a regex holding `}` or `]` sitting in a
+     * binding pattern made the argument list look like a parameter list. Three boundary cases pin the
+     * two rules narrowed afterwards: a `{` after an arrow's `=>` or after a generic list is a block
+     * body, not an operand-position object literal, so its `}` keeps the statement-end reading, and
+     * `else` is the keyword only when no `.`, `#`, or identifier character precedes it.
+     */
+    it.each([
+        {
+            label: 'a statement-position regex after a control header',
+            poisoned: "if (ok) /don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a statement-position regex after an else',
+            poisoned: "if (x) run(); else /don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a statement-position regex after an arrow body',
+            poisoned: "const f = () => {}\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a statement-position regex after a generic class body',
+            poisoned: "class Registry<T> { value!: T }\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a division after a private else member',
+            poisoned:
+                'class Gauge {\n    #else = 2;\n    ratio() {\n        return this.#else / require(specifier) / 2;\n    }\n}',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a statement-position regex before a dynamic import',
+            poisoned: "if (ok) /don't/.test(line);\nawait import(specifier);",
+            shape: 'import(...)',
+        },
+        {
+            label: 'a comma-sequence require callee',
+            poisoned: '(0, require)(specifier);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a parenthesised require callee',
+            poisoned: '(require)(specifier);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a name bound to a created require',
+            poisoned: 'const load = createRequire(import.meta.url);\nload(specifier);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a name bound to an aliased createRequire import',
+            poisoned:
+                "import { createRequire as makeRequire } from 'node:module';\nmakeRequire(import.meta.url)(specifier);",
+            shape: 'createRequire(...)(...)',
+        },
+        {
+            label: 'a load after an operand-position object literal divided by it',
+            poisoned: 'const r = {} / import(specifier) / 2;',
+            shape: 'import(...)',
+        },
+        {
+            label: 'a load after a declaration object literal divided by it',
+            poisoned: 'const r = {} / require(specifier) / 2;',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a type alias type literal at statement position',
+            poisoned: "type T = { a: number }\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after an intersection type literal at statement position',
+            poisoned: "type T = A & { b: number }\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a division through a private member named after a control keyword',
+            poisoned:
+                'class Gauge {\n    #while(n) { return n; }\n    ratio() {\n        return this.#while(1) / require(specifier) / 2;\n    }\n}',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load reached through a bound name beside a nested declaration of it',
+            poisoned: 'const load = require;\nfunction outer(s) { return s; }\nload(specifier);',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after an object literal divided in a return',
+            poisoned: 'function f() { return {} / require(specifier) / 2; }',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a regex brace in the argument list',
+            poisoned: "const specifier = 'yaml';\nrequire({ a: /}:/, b: specifier }['b']);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a regex bracket in an array binding pattern',
+            poisoned: "const specifier = 'yaml';\nrequire([/]:/, specifier]['1']);",
+            shape: 'require(...)',
+        },
+    ])('refuses $label as a computed load', async ({ poisoned, shape }) => {
+        expect(await snapshotRefusalFor(poisoned)).toContain(
+            `scripts/deliverPullRequest.ts loads a module through a computed ${shape} specifier, which the trusted snapshot cannot resolve`
+        );
+    });
+
+    /**
      * The computed-load refusal must never fire when the first argument is a literal the snapshot can
      * resolve, whatever follows it: a second options argument, an options object on `require.resolve`,
      * an `as` cast, or a trailing comma all leave the specifier static, and `snapshotImportSpecifiers`
