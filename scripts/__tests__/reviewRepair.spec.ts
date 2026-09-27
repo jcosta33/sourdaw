@@ -744,6 +744,31 @@ describe('selectEligibleRepairs', () => {
             });
         });
 
+        it('should keep refusing when a conflicting record is followed by a superseding one', () => {
+            // The conflict is sticky: the second record does not descend the first's head, so the
+            // thread is unsafe; a third record that validly supersedes the running candidate cannot
+            // launder the earlier conflict away.
+            const first = repairRecord();
+            const conflicting = repairRecord({ commit: LATER_COMMIT });
+            const superseding = repairRecord({ head: LATER_HEAD, commit: LATER_COMMIT });
+            const selection = selectRepairs(
+                [
+                    threadState({
+                        replies: [repairReply(11, first), repairReply(12, conflicting), repairReply(13, superseding)],
+                    }),
+                ],
+                inReviewedRange,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [{ thread: THREAD, reason: 'author recorded 3 distinct repair records' }],
+                ignored: [],
+            });
+        });
+
         it('should refuse a superseding re-record when the reviewer already confirmed the earlier record', () => {
             const first = repairRecord();
             const second = repairRecord({ head: LATER_HEAD });
