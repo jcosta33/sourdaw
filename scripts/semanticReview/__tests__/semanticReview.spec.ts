@@ -1186,6 +1186,52 @@ describe('contract-carrying admission', () => {
         expect(set.withheldSides.own.get(subjectPath)).toBeUndefined();
     });
 
+    it('keeps each side of a covered source ahead of every coverer when the coverers differ per side', () => {
+        // One coverer is minimal on the before side and the other on the after side, so a single coverer
+        // chosen for both sides would still let one of them outrank the source one side away. Each side must
+        // tie the coverer that is earliest for that side.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { asym } from '../asymSource.ts';\n";
+        const pad = (bytes: number): string => 'y'.repeat(bytes);
+        const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaBeforeMin.spec.ts';
+        const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzAfterMin.spec.ts';
+        const subjectPath = 'scripts/semanticReview/asymSource.ts';
+
+        // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side. Their
+        // minima cross — `aaaBeforeMin`'s before is smaller than `zzzAfterMin`'s after — so a single coverer
+        // chosen by its smallest side picks `aaaBeforeMin` and hands the source its large after figure.
+        const aaaBefore = `${workflowLine}${importLine}${pad(10)}`;
+        const aaaAfter = `${workflowLine}${importLine}${pad(2_000)}`;
+        const zzzBefore = `${workflowLine}${importLine}${pad(1_500)}`;
+        const zzzAfter = `${workflowLine}${importLine}${pad(100)}`;
+        const subjectSide = 'export const asym = 1;\n';
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(aaaSpecPath), changedFile(zzzSpecPath), changedFile(subjectPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${aaaSpecPath}`]: aaaBefore,
+                    [`${HEAD}:${aaaSpecPath}`]: aaaAfter,
+                    [`${MERGE_BASE}:${zzzSpecPath}`]: zzzBefore,
+                    [`${HEAD}:${zzzSpecPath}`]: zzzAfter,
+                    [`${MERGE_BASE}:${subjectPath}`]: subjectSide,
+                    [`${HEAD}:${subjectPath}`]: subjectSide,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const refIndex = (path: string, side: 'before' | 'after'): number =>
+            set.references.findIndex((reference) => reference.path === path && reference.side === side);
+        // The source's before side precedes both coverers' before sides, and its after side precedes both
+        // coverers' after sides.
+        expect(refIndex(subjectPath, 'before')).toBeLessThan(refIndex(aaaSpecPath, 'before'));
+        expect(refIndex(subjectPath, 'before')).toBeLessThan(refIndex(zzzSpecPath, 'before'));
+        expect(refIndex(subjectPath, 'after')).toBeLessThan(refIndex(aaaSpecPath, 'after'));
+        expect(refIndex(subjectPath, 'after')).toBeLessThan(refIndex(zzzSpecPath, 'after'));
+    });
+
     it('names a withheld region by its own content class rather than its admission tier', () => {
         // The qualifier is the region's own content class, never the admission tier. `vocabulary.ts` is a
         // source its contract-carrying spec covers, so it is ordered in that spec's tier, yet its withheld
