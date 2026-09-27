@@ -12,12 +12,13 @@ import {
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
+import { PianoRollToolbar } from '../PianoRollToolbar';
 
-// Quantize-grid label contract shared by both menus (#4801): gridSize is
-// beats, labels are note values in 4/4 — a 1-beat grid is the 1/4 note. The
-// piano-roll pills and the clip menu's quantize items must name the same grid
-// identically, so both menus are asserted against this one table and cannot
-// drift.
+// Quantize-grid label contract shared by all three surfaces (#4801): gridSize
+// is beats, labels are note values in 4/4 — a 1-beat grid is the 1/4 note.
+// The piano-roll menu's pills, the clip menu's quantize items, and the
+// piano-roll toolbar's snap buttons must name the same grid identically, so
+// all three surfaces are asserted against this one table and cannot drift.
 const QUANTIZE_GRID_LABELS = {
     1: '1/4',
     0.5: '1/8',
@@ -67,6 +68,39 @@ vi.mock('#/components/daw/DawMenuInlineEditor', () => ({
 
 vi.mock('#/components/daw/DawSwatchButton', () => ({
     DawSwatchButton: () => <button type="button">swatch</button>,
+}));
+
+// The toolbar surface is the only renderer of the radix slider here; neither
+// menu imports it, so this mock cannot disturb the menu surfaces.
+vi.mock('#/components/ui/slider', () => ({
+    Slider: ({
+        value,
+        onValueChange,
+        min,
+        max,
+        step,
+        className,
+        'aria-label': ariaLabel,
+    }: {
+        value: number[];
+        onValueChange: (v: number[]) => void;
+        min: number;
+        max: number;
+        step: number;
+        className?: string;
+        'aria-label'?: string;
+    }) => (
+        <input
+            type="range"
+            value={value[0]}
+            min={min}
+            max={max}
+            step={step}
+            className={className}
+            aria-label={ariaLabel}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
+        />
+    ),
 }));
 
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
@@ -222,5 +256,44 @@ describe('quantize grid labels', () => {
             type: 'quantizeNoteLengths',
             payload: { clipId: 'clip-midi', gridSize: 0.25 },
         });
+    });
+
+    it('labels the piano-roll toolbar snap pills with the same note values for the same gridSizes (#4801)', () => {
+        const onGridSnapChange = vi.fn();
+        renderWithTooltip(
+            <PianoRollToolbar
+                gridSnap={0.25}
+                onGridSnapChange={onGridSnapChange}
+                scaleRoot={0}
+                onScaleRootChange={vi.fn()}
+                scaleType="chromatic"
+                onScaleTypeChange={vi.fn()}
+                isFolded={false}
+                onToggleFolded={vi.fn()}
+                constrainToScale={false}
+                onToggleConstrainToScale={vi.fn()}
+                stepInput={false}
+                onToggleStepInput={vi.fn()}
+                showGhostNotes={false}
+                onToggleGhostNotes={vi.fn()}
+                chordMode={false}
+                onToggleChordMode={vi.fn()}
+                chordType="major"
+                onChordTypeChange={vi.fn()}
+                paintMode={false}
+                onTogglePaintMode={vi.fn()}
+                lassoMode={false}
+                onToggleLassoMode={vi.fn()}
+                notePreviewEnabled={false}
+                onToggleNotePreview={vi.fn()}
+                zoom={1}
+                onZoomChange={vi.fn()}
+            />
+        );
+
+        for (const gridSize of QUANTIZE_GRID_SIZES) {
+            fireEvent.click(screen.getByRole('button', { name: QUANTIZE_GRID_LABELS[gridSize] }));
+            expect(onGridSnapChange).toHaveBeenCalledWith(gridSize);
+        }
     });
 });
