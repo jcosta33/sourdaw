@@ -74,20 +74,27 @@ const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
  * would stop matching. The value heuristic separates those names from ordinary identifiers; a bare
  * mixed-case alphabetic value is a reference, not key material.
  *
- * The quoted alternative reads an opening delimiter run — one to four of `'`, `"` or a backtick, the
- * scanner's `[\x60'"\s=]{0,5}` ceiling — and a terminator that is any single delimiter, whitespace, a
- * semicolon, or end of input. The captured run stops at the first delimiter, whitespace, or
- * semicolon, so a mismatched pair (`'…"`), a value closed by end of input, a space, a semicolon, or a
- * four-quote run are all withheld, and a nested delimiter (`'''…"…'''`) or an escaped delimiter
- * (`\"`) still ends the run and is admitted. The scanner's escaped-newline terminator (`\\[nr]`) is
- * deliberately not modelled: the scanner pairs it with an entropy gate and a value allowlist this
- * screen cannot apply, so reading it in isolation over-withholds ordinary camel-case values; it is
- * filed as #4579 to be modelled with those gates.
+ * The separator is the scanner's operator alternation (`=|>|:{1,3}=|\|\||:|=>|\?=|,`), so a
+ * walrus `:=`, an arrow `=>`, a doubled `==` (the opening run below absorbs the second `=`), a `||`
+ * fallback, a Makefile-style `?=`, and a comma-separated `key, value` all reach the value test; the
+ * screen used to read only `=` and `:`, so each of those forms was admitted (#4579). The quoted
+ * alternative then reads the scanner's opening run — one to five of `'`, `"`, a backtick,
+ * whitespace, or `=` (the scanner's `[\x60'"\s=]{0,5}`, the whitespace sharing the five-character
+ * budget), requiring at least one true delimiter so a bare value keeps its own branch — and a
+ * terminator that is any single delimiter, whitespace, a semicolon, an escaped newline (`\\[nr]`),
+ * or end of input. The bare alternative absorbs the same run's whitespace and `=` before its value,
+ * so `key == value` reaches the value test whether or not the value is quoted. The captured run
+ * stops at the first delimiter, whitespace, semicolon, or backslash, so a mismatched pair (`'…"`), a
+ * value closed by end of input, a space, a semicolon, an escaped newline, or a five-quote run are
+ * all withheld, and a nested delimiter (`'''…"…'''`) or an escaped delimiter (`\"`) still ends the
+ * run and is admitted. What stays deliberately unmodelled is
+ * the scanner's entropy gate and value allowlist: the floor here is sixteen characters with no
+ * entropy test, a policy #4579 records as context rather than a defect.
  */
 const SECRET_ASSIGNMENT = new RegExp(
-    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:` +
-        `['"\\x60]{1,4}(?<quoted>[^'"\\x60\\s;]{16,})(?=['"\\x60\\s;]|$)` +
-        `|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
+    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
+        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );
 
