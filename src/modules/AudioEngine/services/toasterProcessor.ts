@@ -8,7 +8,7 @@
  *   { type: 'init' }
  *   { type: 'noteOn', pad, velocity, note, sampleFrame? }
  *   { type: 'noteOff', pad, sampleFrame? }
- *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams: [{ id, value }], restoreEngineType? }
+ *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams: [{ id, value }] }
  *   { type: 'cancelScheduled' }
  *   { type: 'fillState', active }
  *   { type: 'param', name, value }
@@ -19,7 +19,6 @@
 
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import { mapToasterKitParamToDspParam } from '../models/ToasterKitParamNames';
-import { TOASTER_PAD_PARAM_IDS } from '../models/ToasterPadParamIds';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
@@ -130,16 +129,6 @@ const PAD_PARAM_MAP: Record<string, string> = {
     engineType: 'engine_type',
 };
 
-/**
- * Numeric id of the pad `engine_type` write, for the sound-lock restore that
- * follows a locked hit. The scheduled-hit path must not marshal strings from
- * inside `process()` (#4633), so the restore crosses as an id like every
- * other lock. `Record` access is typed `number | undefined`; the entry is a
- * static literal and the shipped-wasm pin spec asserts it, so the dispatch
- * guard below is a type witness, not a runtime expectation.
- */
-const PAD_PARAM_ID_ENGINE_TYPE = TOASTER_PAD_PARAM_IDS.engineType;
-
 function toEngineKitParamValue(name: string, value: number): number {
     // ToasterKit persists delayTime in milliseconds; StereoDelay::set_param
     // consumes seconds and multiplies by sample rate. Both the live camelCase
@@ -164,9 +153,10 @@ type ToasterMsg =
           sampleFrame: number;
           // Numeric TOASTER_PAD_PARAM_IDS entries, translated on the main
           // thread: applying a string-keyed lock here would heap-allocate in
-          // the wasm glue inside process() (#4633).
+          // the wasm glue inside process() (#4633). Each entry is staged as a
+          // per-hit lock overlay — consumed by the note_on that follows and
+          // cleared, never persisted to the pad (#4636).
           padParams: Array<{ id: number; value: number }>;
-          restoreEngineType?: number;
           fillCondition?: 'fill' | 'not-fill';
       }
     | { type: 'cancelScheduled' }
@@ -188,7 +178,6 @@ type ToasterQueued =
           note?: number;
           sampleFrame: number;
           padParams: Array<{ id: number; value: number }>;
-          restoreEngineType?: number;
           fillCondition?: 'fill' | 'not-fill';
       };
 
@@ -340,13 +329,14 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 if (msg.fillCondition === 'not-fill' && this._fillActive) {
                     break;
                 }
+                // Locks stage into the engine's per-hit overlay: note_on
+                // consumes and clears them, so a locked step never rewrites
+                // the pad — and no parameter, engine type included, needs a
+                // restore write afterwards (#4636).
                 for (const param of msg.padParams) {
-                    inst.set_pad_param_by_id(msg.pad, param.id, param.value);
+                    inst.set_pad_param_lock_by_id(msg.pad, param.id, param.value);
                 }
                 inst.note_on(msg.pad, msg.velocity, msg.note ?? 60);
-                if (msg.restoreEngineType !== undefined && PAD_PARAM_ID_ENGINE_TYPE !== undefined) {
-                    inst.set_pad_param_by_id(msg.pad, PAD_PARAM_ID_ENGINE_TYPE, msg.restoreEngineType);
-                }
                 break;
             case 'cancelScheduled': {
                 // Fill/tempo edits invalidate sequencer hits, but must not erase

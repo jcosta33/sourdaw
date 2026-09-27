@@ -2221,6 +2221,19 @@ export class ToasterInstance {
         wasm.toasterinstance_set_pad_param_by_id(this.__wbg_ptr, pad, param_id, value);
     }
     /**
+     * Stage a per-hit parameter lock without string marshaling or touching
+     * persistent pad state. The pad's next `note_on` overlays the staged
+     * values on that hit and clears them, so a sequencer step's lock applies
+     * to its own step only (#4636); the engine type rides the same overlay,
+     * which is why no post-hit restore write exists anymore.
+     * @param {number} pad
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_pad_param_lock_by_id(pad, param_id, value) {
+        wasm.toasterinstance_set_pad_param_lock_by_id(this.__wbg_ptr, pad, param_id, value);
+    }
+    /**
      * Set a global parameter (master_gain, reverb_*, delay_*).
      * @param {string} name
      * @param {number} value

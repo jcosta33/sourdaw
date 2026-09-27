@@ -5,9 +5,11 @@
 
 use super::engines::{DrumEngineResources, DrumEngineType};
 use super::lofi::LofiProcessor;
-use super::pad::Pad;
+use super::pad::{
+    pad_param_name_for_id, Pad, PadLockOverlay, EMPTY_PAD_LOCK_OVERLAY, PAD_LOCK_PARAM_COUNT,
+};
 use super::transient::TransientShaper;
-use super::voice::DrumVoice;
+use super::voice::{DrumVoice, PadLockOverrides};
 use crate::params::{MASTER_GAIN, THRESHOLD};
 use crate::primitives::{flush_denormal, ProcessLifecycle};
 
@@ -265,6 +267,11 @@ pub struct ToasterEngine {
     pads: Vec<Pad>,
     voices: Vec<DrumVoice>,
     transient_shapers: Vec<TransientShaper>,
+    /// Per-pad staged parameter locks for the pad's next hit
+    /// (`set_pad_param_lock_by_id`); `note_on` consumes and clears the entry
+    /// (#4636). Sized once at construction — never resized on the render
+    /// thread.
+    pad_lock_overlays: Vec<PadLockOverlay>,
     // Internal mix buses (4 stereo buses)
     bus_buffers_l: [Vec<f32>; NUM_BUSES],
     bus_buffers_r: [Vec<f32>; NUM_BUSES],
@@ -354,6 +361,7 @@ impl ToasterEngine {
             pads,
             voices,
             transient_shapers,
+            pad_lock_overlays: vec![EMPTY_PAD_LOCK_OVERLAY; num_pads],
             bus_buffers_l,
             bus_buffers_r,
             bus_effects,
@@ -374,7 +382,32 @@ impl ToasterEngine {
             return;
         }
 
-        let pad_cfg = &self.pads[pad_idx];
+        // Consume the hit's staged parameter locks. The overlay belongs to
+        // this hit and dies here: persistent pad state never carries it, so a
+        // later unlocked hit voices the pad's own settings — the Elektron
+        // p-lock convention #4636 restores. Taking before the mute/solo gates
+        // keeps a silenced hit from leaking its locks into the next one.
+        let staged = std::mem::take(&mut self.pad_lock_overlays[pad_idx]);
+
+        // A locked hit voices from an overlaid clone of the pad. Applying the
+        // staged values through `Pad::set_param` gives the clone the same
+        // clamps, the same engine-param reset on `engine_type`, and the same
+        // values `trigger` would have read from the persistent write — the hit
+        // renders exactly as before, only the persistence is gone. Ascending
+        // id order puts `engine_type` (the highest id) last, the relative
+        // order the sequencer's paramLocks-then-soundLock write had.
+        let overlaid_pad: Option<Pad> = if staged.iter().any(Option::is_some) {
+            let mut overlaid = self.pads[pad_idx].clone();
+            for (param_id, value) in staged.iter().enumerate() {
+                if let (Some(name), Some(value)) = (pad_param_name_for_id(param_id as u32), value) {
+                    overlaid.set_param(name, *value);
+                }
+            }
+            Some(overlaid)
+        } else {
+            None
+        };
+        let pad_cfg = overlaid_pad.as_ref().unwrap_or(&self.pads[pad_idx]);
         if pad_cfg.muted {
             return;
         }
@@ -425,7 +458,6 @@ impl ToasterEngine {
         // Normalize velocity from MIDI 0-127 to 0.0-1.0
         let vel_norm = (velocity / 127.0).clamp(0.0, 1.0);
 
-        let pad_cfg = &self.pads[pad_idx];
         self.voices[voice_idx].trigger(
             pad,
             pad_cfg,
@@ -433,6 +465,15 @@ impl ToasterEngine {
             midi_note,
             self.sample_rate,
         );
+        // The trigger-time parameters are baked into the voice from `pad_cfg`;
+        // the render-time ones (pan gains, routing, sends, transient gains)
+        // ride as per-voice snapshots so the locked hit — and only that hit —
+        // sounds with them (#4636). Reassigned on every trigger: a recycled
+        // voice starts clean.
+        self.voices[voice_idx].lock_overrides = match overlaid_pad.as_ref() {
+            Some(overlaid) => PadLockOverrides::from_staged(&staged, overlaid),
+            None => PadLockOverrides::default(),
+        };
     }
 
     pub fn note_off(&mut self, pad: u8) {
@@ -496,28 +537,32 @@ impl ToasterEngine {
     /// Dispatches through `set_pad_param` so clamps, the transient-shaper
     /// forwarding, and the engine-type reset stay single-sourced: the numeric
     /// path must be the same write, not a copy of it.
+    ///
+    /// This is the persistent write — panel edits and kit sync. A scheduled
+    /// hit's locks stage through `set_pad_param_lock_by_id` instead (#4636).
     pub fn set_pad_param_by_id(&mut self, pad: u8, param_id: u32, value: f32) {
-        let name = match param_id {
-            0 => "volume",
-            1 => "pan",
-            2 => "muted",
-            3 => "soloed",
-            4 => "choke_group",
-            5 => "tune",
-            6 => "decay",
-            7 => "tone",
-            8 => "drive",
-            9 => "filter_cutoff",
-            10 => "filter_resonance",
-            11 => "send_reverb",
-            12 => "send_delay",
-            13 => "transient_attack",
-            14 => "transient_sustain",
-            15 => "bus_route",
-            16 => "engine_type",
-            _ => return,
+        let Some(name) = pad_param_name_for_id(param_id) else {
+            return;
         };
         self.set_pad_param(pad, name, value);
+    }
+
+    /// Stage a per-hit parameter lock for a pad without touching persistent
+    /// pad state.
+    ///
+    /// The sequencer's scheduled-hit path calls this inside the worklet's
+    /// `process()` — a numeric write into a pre-sized slot, no string
+    /// marshaling (#4633) and no allocation (#4636). The pad's next `note_on`
+    /// overlays the staged values on a clone of the pad for that one hit and
+    /// clears the slot, so a lock sounds on its own step only while every
+    /// unlocked step voices the pad's current settings.
+    pub fn set_pad_param_lock_by_id(&mut self, pad: u8, param_id: u32, value: f32) {
+        let pad_idx = pad as usize;
+        let id_idx = param_id as usize;
+        if pad_idx >= self.pads.len() || id_idx >= PAD_LOCK_PARAM_COUNT {
+            return;
+        }
+        self.pad_lock_overlays[pad_idx][id_idx] = Some(value);
     }
 
     pub fn set_pad_param(&mut self, pad: u8, name: &str, value: f32) {
@@ -643,16 +688,37 @@ impl ToasterEngine {
                 let pad_idx = voice.pad_index as usize;
 
                 if pad_idx < self.pads.len() {
-                    // Per-pad transient shaping
+                    // Render-time reads a locked hit carries on its own voice
+                    // (#4636); an unlocked voice is all `None` and every read
+                    // falls through to the pad's live state.
+                    let overrides = voice.lock_overrides;
+
+                    // Per-pad transient shaping. A locked gain is swapped in
+                    // for this voice's sample and restored afterwards: the
+                    // shaper's envelope state stays shared per pad, and the
+                    // lock never re-persists into it.
                     if pad_idx < self.transient_shapers.len() {
-                        sample = self.transient_shapers[pad_idx].process(sample);
+                        let shaper = &mut self.transient_shapers[pad_idx];
+                        if overrides.transient_attack.is_some()
+                            || overrides.transient_sustain.is_some()
+                        {
+                            let (attack, sustain) = shaper.gains();
+                            shaper.set_attack(overrides.transient_attack.unwrap_or(attack));
+                            shaper.set_sustain(overrides.transient_sustain.unwrap_or(sustain));
+                            sample = shaper.process(sample);
+                            shaper.set_attack(attack);
+                            shaper.set_sustain(sustain);
+                        } else {
+                            sample = shaper.process(sample);
+                        }
                     }
 
                     let pad = &self.pads[pad_idx];
 
                     // Constant-power pan
-                    let l_gain = self.pad_l_gains[pad_idx];
-                    let r_gain = self.pad_r_gains[pad_idx];
+                    let (l_gain, r_gain) = overrides
+                        .pan_gains
+                        .unwrap_or((self.pad_l_gains[pad_idx], self.pad_r_gains[pad_idx]));
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
 
@@ -671,7 +737,7 @@ impl ToasterEngine {
                     let pad_dry_routed = pad_idx < u16::BITS as usize
                         && self.pad_dry_routed_mask & (1_u16 << pad_idx) != 0;
                     if !pad_dry_routed {
-                        let bus = pad.bus_route;
+                        let bus = overrides.bus_route.unwrap_or(pad.bus_route);
                         if bus >= 1 && (bus as usize) <= NUM_BUSES {
                             let bi = (bus as usize) - 1;
                             self.bus_buffers_l[bi][i] += sl;
@@ -684,8 +750,8 @@ impl ToasterEngine {
                     }
 
                     // Send levels (always go to global fx regardless of bus)
-                    reverb_send += sample * pad.send_reverb;
-                    delay_send += sample * pad.send_delay;
+                    reverb_send += sample * overrides.send_reverb.unwrap_or(pad.send_reverb);
+                    delay_send += sample * overrides.send_delay.unwrap_or(pad.send_delay);
                 } else {
                     // Fallback: straight to master
                     left[i] += sample;
@@ -738,5 +804,69 @@ impl ToasterEngine {
             }
         }
         oldest_idx
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // #4636 — the overlay is the whole fix: staging must not touch pad state,
+    // the consuming hit must not persist it, and the entry must clear so the
+    // next hit starts clean.
+    #[test]
+    fn staged_lock_leaves_pad_state_untouched_and_clears_at_note_on() {
+        const TUNE_ID: u32 = 5; // TOASTER_PAD_PARAM_IDS.tune
+        const PAN_ID: u32 = 1; // TOASTER_PAD_PARAM_IDS.pan
+        let mut engine = ToasterEngine::new(48_000.0, 16);
+
+        engine.set_pad_param_lock_by_id(0, TUNE_ID, 7.0);
+        engine.set_pad_param_lock_by_id(0, PAN_ID, 1.0);
+        assert_eq!(engine.pads[0].tune, 0.0, "staging must not touch the pad");
+        assert_eq!(engine.pads[0].pan, 0.0, "staging must not touch the pad");
+
+        engine.note_on(0, 100.0, 60);
+
+        assert_eq!(
+            engine.pads[0].tune, 0.0,
+            "the hit must not persist the lock"
+        );
+        assert_eq!(engine.pads[0].pan, 0.0, "the hit must not persist the lock");
+        assert!(
+            engine.pad_lock_overlays[0].iter().all(Option::is_none),
+            "note_on consumes and clears the pad's overlay"
+        );
+        let overrides = engine.voices[0].lock_overrides;
+        assert!(
+            overrides.pan_gains.is_some(),
+            "a render-time lock rides the voice as a per-hit snapshot"
+        );
+
+        // The next unlocked hit re-voices the pad and the voice starts clean.
+        engine.note_on(0, 100.0, 60);
+        assert!(
+            engine.voices[1].lock_overrides.pan_gains.is_none(),
+            "an unlocked hit carries no overrides"
+        );
+    }
+
+    // A silenced hit still consumes its overlay: locks staged on a muted pad
+    // must not wait around to leak into the hit that unmutes it.
+    #[test]
+    fn muted_hit_consumes_its_overlay() {
+        const TUNE_ID: u32 = 5;
+        let mut engine = ToasterEngine::new(48_000.0, 16);
+        engine.set_pad_param(0, "muted", 1.0);
+        engine.set_pad_param_lock_by_id(0, TUNE_ID, 7.0);
+
+        engine.note_on(0, 100.0, 60);
+
+        assert!(
+            engine.pad_lock_overlays[0].iter().all(Option::is_none),
+            "a silenced hit still clears its locks"
+        );
+        engine.set_pad_param(0, "muted", 0.0);
+        engine.note_on(0, 100.0, 60);
+        assert_eq!(engine.pads[0].tune, 0.0);
     }
 }

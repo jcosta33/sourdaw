@@ -83,6 +83,15 @@ impl ToasterInstance {
         self.engine.set_pad_param_by_id(pad, param_id, value);
     }
 
+    /// Stage a per-hit parameter lock without string marshaling or touching
+    /// persistent pad state. The pad's next `note_on` overlays the staged
+    /// values on that hit and clears them, so a sequencer step's lock applies
+    /// to its own step only (#4636); the engine type rides the same overlay,
+    /// which is why no post-hit restore write exists anymore.
+    pub fn set_pad_param_lock_by_id(&mut self, pad: u8, param_id: u32, value: f32) {
+        self.engine.set_pad_param_lock_by_id(pad, param_id, value);
+    }
+
     /// Transfer or restore ownership of a pad's dry contribution to output 0.
     pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
         self.engine.set_pad_dry_routed(pad, routed);
@@ -215,6 +224,153 @@ mod tests {
         assert_eq!(
             by_id_out, by_name_out,
             "every numeric pad id must be the same write as its string name"
+        );
+    }
+
+    /// Render `blocks` of the left output channel into a Vec for comparison.
+    fn render_left(instance: &mut ToasterInstance, blocks: usize) -> Vec<f32> {
+        let mut out = Vec::new();
+        for _ in 0..blocks {
+            let ptr = instance.process(128);
+            out.extend_from_slice(unsafe { std::slice::from_raw_parts(ptr, 128) });
+        }
+        out
+    }
+
+    /// Let every voice and effect tail fall silent so the next hit starts from
+    /// the same quiescent state in each compared instance.
+    fn drain_to_silence(instances: [&mut ToasterInstance; 3]) {
+        for instance in instances {
+            render_left(instance, 1_000);
+        }
+    }
+
+    #[test]
+    fn numeric_pad_lock_setter_does_not_allocate() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        assert_no_alloc(|| {
+            // 0..=16 spans every lockable id; u32::MAX guards the unmapped
+            // fall-through. Consuming the staged overlay at note_on — clone,
+            // apply, trigger, snapshot — is the same render-thread path and
+            // must not allocate either (#4636).
+            for param_id in 0..=16 {
+                instance.set_pad_param_lock_by_id(0, param_id, 0.5);
+            }
+            instance.set_pad_param_lock_by_id(0, u32::MAX, 0.5);
+            instance.note_on(0, 100.0, 60);
+        });
+    }
+
+    // #4636 — a sequencer step's parameter lock applies to its own hit only;
+    // the next unlocked hit voices the pad's own settings.
+    //
+    // Rendered comparisons need identical instance histories to be bit-exact
+    // (the lofi/shaper state carries a hit's residue), so the second-hit
+    // reference is the manual write/restore convention: persist the lock,
+    // strike, write the base value back. The overlay must reproduce exactly
+    // that — minus the restore.
+    #[test]
+    fn pad_lock_overlay_applies_to_exactly_one_hit() {
+        const TUNE_ID: u32 = 5; // TOASTER_PAD_PARAM_IDS.tune
+        let mut locked = ToasterInstance::new(48_000.0, 16);
+        let mut persistent = ToasterInstance::new(48_000.0, 16);
+        let mut restored = ToasterInstance::new(48_000.0, 16);
+        let mut plain = ToasterInstance::new(48_000.0, 16);
+
+        locked.set_pad_param_lock_by_id(0, TUNE_ID, 7.0);
+        locked.note_on(0, 100.0, 60);
+        persistent.set_pad_param(0, "tune", 7.0);
+        persistent.note_on(0, 100.0, 60);
+        restored.set_pad_param(0, "tune", 7.0);
+        restored.note_on(0, 100.0, 60);
+        restored.set_pad_param(0, "tune", 0.0);
+        plain.note_on(0, 100.0, 60);
+
+        let locked_hit = render_left(&mut locked, 8);
+        let persistent_hit = render_left(&mut persistent, 8);
+        assert_eq!(
+            locked_hit, persistent_hit,
+            "a locked hit must render exactly as the persistent write rendered it"
+        );
+        assert_eq!(
+            locked_hit,
+            render_left(&mut restored, 8),
+            "a locked hit must render exactly as a hit under the write/restore convention"
+        );
+        assert_ne!(
+            locked_hit,
+            render_left(&mut plain, 8),
+            "the lock must be audible on its own hit"
+        );
+
+        drain_to_silence([&mut locked, &mut persistent, &mut restored]);
+
+        locked.note_on(0, 100.0, 60);
+        persistent.note_on(0, 100.0, 60);
+        restored.note_on(0, 100.0, 60);
+        let locked_next = render_left(&mut locked, 8);
+        let persistent_next = render_left(&mut persistent, 8);
+        let restored_next = render_left(&mut restored, 8);
+        assert_eq!(
+            locked_next, restored_next,
+            "the overlay cleared after one hit: the unlocked hit voices the pad's own tune"
+        );
+        assert_ne!(
+            persistent_next, restored_next,
+            "control: the persistent write still leaks into the next hit"
+        );
+    }
+
+    // #4636 — a sound lock rides the same overlay: the hit picks its engine at
+    // note_on, and the pad's own engine returns for the next hit with no
+    // restore write anywhere.
+    #[test]
+    fn pad_lock_overlay_engine_type_selects_the_engine_without_restore() {
+        const ENGINE_TYPE_ID: u32 = 16; // TOASTER_PAD_PARAM_IDS.engineType
+        const KICK: f32 = 0.0; // DrumEngineType::Kick — pad 0's own engine
+        const SNARE: f32 = 1.0; // DrumEngineType::Snare
+        let mut locked = ToasterInstance::new(48_000.0, 16);
+        let mut persistent = ToasterInstance::new(48_000.0, 16);
+        let mut restored = ToasterInstance::new(48_000.0, 16);
+        let mut plain = ToasterInstance::new(48_000.0, 16);
+
+        // Pad 0 defaults to Kick; the lock swaps in Snare for its own hit.
+        locked.set_pad_param_lock_by_id(0, ENGINE_TYPE_ID, SNARE);
+        locked.note_on(0, 100.0, 60);
+        persistent.set_pad_param(0, "engine_type", SNARE);
+        persistent.note_on(0, 100.0, 60);
+        restored.set_pad_param(0, "engine_type", SNARE);
+        restored.note_on(0, 100.0, 60);
+        restored.set_pad_param(0, "engine_type", KICK);
+        plain.note_on(0, 100.0, 60);
+
+        let locked_hit = render_left(&mut locked, 8);
+        assert_eq!(
+            locked_hit,
+            render_left(&mut persistent, 8),
+            "the sound-locked hit must render exactly as the persistent engine swap did"
+        );
+        assert_ne!(
+            locked_hit,
+            render_left(&mut plain, 8),
+            "the sound lock must be audible on its own hit"
+        );
+
+        drain_to_silence([&mut locked, &mut persistent, &mut restored]);
+
+        locked.note_on(0, 100.0, 60);
+        persistent.note_on(0, 100.0, 60);
+        restored.note_on(0, 100.0, 60);
+        let locked_next = render_left(&mut locked, 8);
+        let restored_next = render_left(&mut restored, 8);
+        assert_eq!(
+            locked_next, restored_next,
+            "the pad's own engine voices the next hit with no restore write"
+        );
+        assert_ne!(
+            render_left(&mut persistent, 8),
+            restored_next,
+            "control: the persistent engine swap still leaks into the next hit"
         );
     }
 

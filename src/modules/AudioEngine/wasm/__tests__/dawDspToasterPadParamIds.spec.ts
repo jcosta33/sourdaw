@@ -45,4 +45,23 @@ describe('checked-in Toaster WASM pad parameter ids', () => {
             expect(renderLockedHit({ id }), `${name} (id ${id})`).toEqual(renderLockedHit({ name }));
         }
     });
+
+    // The scheduled-hit path now stages locks through the per-hit overlay
+    // (#4636): a hit rendered from staged locks must be byte-identical to the
+    // persistent write it replaced — only the persistence changed.
+    it('every id renders the same through the per-hit lock overlay as through the persistent write', () => {
+        for (const [name, id] of Object.entries(TOASTER_PAD_PARAM_IDS)) {
+            const toaster = new ToasterInstance(48_000, 16);
+            try {
+                toaster.set_pad_param_lock_by_id(0, id, LOCK_VALUE);
+                toaster.note_on(0, 127, 60);
+                const base = toaster.process(FRAMES);
+                expect(Array.from(new Float32Array(wasm.memory.buffer, base, FRAMES)), `${name} (id ${id})`).toEqual(
+                    renderLockedHit({ id })
+                );
+            } finally {
+                toaster.free();
+            }
+        }
+    });
 });

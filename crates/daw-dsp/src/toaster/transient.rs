@@ -32,6 +32,13 @@ impl TransientShaper {
         self.sustain_gain = gain.clamp(0.0, 2.0);
     }
 
+    /// The installed (attack, sustain) gains. A hit that locked either one
+    /// swaps its value in for its own samples and restores these afterwards,
+    /// so the lock never re-persists into the pad's shared shaper (#4636).
+    pub fn gains(&self) -> (f32, f32) {
+        (self.attack_gain, self.sustain_gain)
+    }
+
     #[inline]
     pub fn process(&mut self, input: f32) -> f32 {
         let rect = input.abs();
