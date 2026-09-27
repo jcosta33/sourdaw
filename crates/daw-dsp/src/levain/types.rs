@@ -405,15 +405,12 @@ pub fn macro_time_scale(position: f32) -> f32 {
 // Mic position
 // ---------------------------------------------------------------------------
 
+/// One mic position's mix settings: level, pan, and whether it sounds.
 #[derive(Debug, Clone, Copy)]
 pub struct MicPosition {
-    pub id: MicId,
     pub volume: f32,
     pub pan: f32,
-    pub delay_samples: u32,
     pub enabled: bool,
-    pub stereo_width: f32,
-    pub phase_invert: bool,
     /// Pre-computed constant-power pan gains (avoid sqrt per sample).
     pub cached_pan_l: f32,
     pub cached_pan_r: f32,
@@ -430,13 +427,9 @@ impl MicPosition {
 impl Default for MicPosition {
     fn default() -> Self {
         let mut pos = Self {
-            id: 0,
             volume: 1.0,
             pan: 0.0,
-            delay_samples: 0,
             enabled: true,
-            stereo_width: 1.0,
-            phase_invert: false,
             cached_pan_l: 0.707,
             cached_pan_r: 0.707,
         };

@@ -55,14 +55,13 @@ import { getTrackStoreState } from './getTrackStoreState';
  * `removeTakesForClips`, since their collection rewrite never reaches
  * `removeClip`. `pasteClip` removes only ids it minted moments earlier.
  *
- * Two routes still drop pre-existing clips without retiring their takes, and
- * that gap is filed rather than covered here: Delete Time and Delete Time Range
- * drop clips through `removeClipSatelliteData` alone, and undoing the
- * `splitClip` action removes the right half directly. The orphan comp region
- * then advances the comp cursor, so the replacement clip is silent over that
- * span in live playback and in the offline render. The time routes are defect
- * #4520 and the split action's undo is #4521; this capture deliberately does
- * not extend either of them.
+ * Two more routes drop pre-existing clips outside `removeClip`, and both retire
+ * the takes through their own transactions rather than through this capture:
+ * Delete Time and Delete Time Range retire the fully-removed clips' takes in
+ * their publish sweep and carry the retired lanes in the operation's own
+ * restore plan (#4520), and undoing the `splitClip` action retires and
+ * reinstates the right half's takes through the `restoreClipSplitState`
+ * payload (#4521). This capture deliberately does not extend to either.
  */
 export function captureTrackClipStates(
     trackIds: readonly string[],

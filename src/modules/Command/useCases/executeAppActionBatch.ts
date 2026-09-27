@@ -16,6 +16,7 @@ import {
     type HandlerDescribeResult,
     type HandlerExecutionResult,
     type HandlerPostCommitEffect,
+    type HandlerValidationContext,
 } from '#/utils/handlerContract';
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
@@ -448,6 +449,12 @@ function appendAbortFailures(
         result = `${result}; abort rollback failed: ${rollbackFailure}`;
     }
     return result;
+}
+
+function describeValidationConflict(prepared: PreparedBatchAction, context: HandlerValidationContext): string {
+    const conflict = `Action conflicts with current project state: ${prepared.action.type}`;
+    const refusal = prepared.handler.validationRefusalReason?.(prepared.action, context);
+    return refusal ? `${conflict}: ${refusal}` : conflict;
 }
 
 async function compensateAttemptedBatch(
@@ -899,17 +906,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
 
             const validationActions = preparedActions.map((prepared) => prepared.action);
             for (const [actionIndex, prepared] of preparedActions.entries()) {
-                if (
-                    prepared.handler.validate &&
-                    !prepared.handler.validate(prepared.action, {
-                        actions: validationActions,
-                        actionIndex,
-                        signal: options?.signal,
-                    })
-                ) {
+                const validationContext = { actions: validationActions, actionIndex, signal: options?.signal };
+                if (prepared.handler.validate && !prepared.handler.validate(prepared.action, validationContext)) {
                     return {
                         status: 'conflicted',
-                        reason: `Action conflicts with current project state: ${prepared.action.type}`,
+                        reason: describeValidationConflict(prepared, validationContext),
                         actions: [],
                     };
                 }

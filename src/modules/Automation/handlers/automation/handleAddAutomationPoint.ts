@@ -1,6 +1,6 @@
 import { gainLaneLevelLaw, type LevelResolution, resolveLevelFields } from '#/utils/audioLevelLaw';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { addAutomationPoint } from '../../useCases/automation/addAutomationPoint';
 import { getAutomationLaneCeiling } from '../../useCases/automation/getAutomationLaneCeiling';
@@ -9,6 +9,7 @@ import { isLinearGainAutomationLane } from '../../useCases/automation/isLinearGa
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
 type AddAutomationPointAction = Extract<AppAction, { type: 'addAutomationPoint' }>;
+type AddAutomationLaneAction = Extract<AppAction, { type: 'addAutomationLane' }>;
 
 function ensurePointId(action: { payload: { pointId?: string } }): string {
     if (action.payload.pointId) {
@@ -73,14 +74,93 @@ function requestedValue(action: AddAutomationPointAction): LevelResolution {
     return resolveLevelFields({ deltaDb }, currentValue, law);
 }
 
+function findFollowerRefusal(lane: StoredAutomationLane): string | null {
+    if (!lane.linkedLaneId) {
+        return null;
+    }
+    return `Lane "${lane.parameterName}" follows automation lane ${lane.linkedLaneId}; add points to its source lane instead.`;
+}
+
+function earlierBatchActions(context: HandlerValidationContext): readonly AppAction[] {
+    return context.actions.slice(0, context.actionIndex);
+}
+
+/** The member earlier in this batch that creates the lane this point is written to, if any. */
+function findEarlierLaneProducer(
+    action: AddAutomationPointAction,
+    context: HandlerValidationContext
+): AddAutomationLaneAction | undefined {
+    return earlierBatchActions(context).find(
+        (candidate): candidate is AddAutomationLaneAction =>
+            candidate.type === 'addAutomationLane' && candidate.payload.laneId === action.payload.laneId
+    );
+}
+
+function statesDecibels(action: AddAutomationPointAction): boolean {
+    return action.payload.valueDb !== undefined || action.payload.deltaDb !== undefined;
+}
+
+/**
+ * A point is admitted onto a lane the project holds, unless that lane follows
+ * another, or onto a lane an earlier member of this batch creates. Only a gain
+ * lane holds amplitudes decibels describe; a lane the batch has not created yet
+ * is judged by the parameter its producer names, because the store cannot be
+ * asked about it until that producer has run.
+ */
+function findAddAutomationPointRefusal(
+    action: AddAutomationPointAction,
+    context: HandlerValidationContext
+): string | null {
+    const lane = findLane(action.payload.laneId);
+    if (lane) {
+        return findFollowerRefusal(lane);
+    }
+    const producer = findEarlierLaneProducer(action, context);
+    if (!producer) {
+        return `Automation lane ${action.payload.laneId} is neither in the project nor created earlier in this batch.`;
+    }
+    if (statesDecibels(action) && producer.payload.parameterId !== 'gain') {
+        return `Lane "${producer.payload.parameterName}" does not hold gain amplitudes, so its points are stated in the lane's own units rather than in decibels.`;
+    }
+    return null;
+}
+
+function countEarlierBatchPointsBefore(action: AddAutomationPointAction, context: HandlerValidationContext): number {
+    return earlierBatchActions(context).filter(
+        (candidate) =>
+            candidate.type === 'addAutomationPoint' &&
+            candidate.payload.laneId === action.payload.laneId &&
+            candidate.payload.beat < action.payload.beat
+    ).length;
+}
+
+/**
+ * Where this point lands among its lane's points once every earlier member of
+ * the batch has run, or null when no lane will be there to hold it.
+ */
+function findInsertedPointIndex(
+    action: AddAutomationPointAction,
+    context: HandlerValidationContext | undefined
+): number | null {
+    const lane = findLane(action.payload.laneId);
+    const earlierBatchPoints = context ? countEarlierBatchPointsBefore(action, context) : 0;
+    if (lane) {
+        return lane.points.filter((point) => point.beat < action.payload.beat).length + earlierBatchPoints;
+    }
+    if (!context || !findEarlierLaneProducer(action, context)) {
+        return null;
+    }
+    return earlierBatchPoints;
+}
+
 export const handleAddAutomationPoint = createHandler<'addAutomationPoint'>({
+    validate: (action, context) => findAddAutomationPointRefusal(action, context) === null,
+    validationRefusalReason: findAddAutomationPointRefusal,
     execute: (action) => {
         const lane = findLane(action.payload.laneId);
-        if (lane?.linkedLaneId) {
-            return {
-                status: 'conflict',
-                reason: `Lane "${lane.parameterName}" follows automation lane ${lane.linkedLaneId}; add points to its source lane instead.`,
-            };
+        const followerRefusal = lane ? findFollowerRefusal(lane) : null;
+        if (followerRefusal) {
+            return { status: 'conflict', reason: followerRefusal };
         }
         const requested = requestedValue(action);
         if (!requested.ok) {
@@ -98,13 +178,12 @@ export const handleAddAutomationPoint = createHandler<'addAutomationPoint'>({
         });
         return { status: 'written' };
     },
-    describe: (action) => {
-        const lane = findLane(action.payload.laneId);
-        if (!lane) {
+    describe: (action, context) => {
+        const insertedIndex = findInsertedPointIndex(action, context);
+        if (insertedIndex === null) {
             return { label: 'Add automation point' };
         }
         const pointId = ensurePointId(action);
-        const insertedIndex = lane.points.filter((point) => point.beat < action.payload.beat).length;
         return {
             label: 'Add automation point',
             inverseAction: {
