@@ -341,6 +341,31 @@ describe('snapshotImportSpecifiers', () => {
     });
 
     /**
+     * A file that declares `require` itself — as a parameter, a `const`/`let`/`var` name, a
+     * destructuring target, or a catch parameter — reads every bare `require` in it as that
+     * declaration, so no name is bound to the loader through one and the file keeps the merge base's
+     * reading. The four shapes load nothing, and reading them as loads refused sources that reach no
+     * module (#4828). The declaration is the file's, not the scope's: the file's own shadowing wins.
+     */
+    it('drops the loader binding when the file declares require itself', () => {
+        expect(snapshotComputedDynamicSpecifiers('function f(require) { const load = require; load(spec); }')).toEqual(
+            []
+        );
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\nconst load = require;\nload(spec);')).toEqual(
+            []
+        );
+        expect(
+            snapshotComputedDynamicSpecifiers('const { require } = box;\nconst load = require;\nload(spec);')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('try {} catch (require) { const load = require; load(spec); }')
+        ).toEqual([]);
+        expect(snapshotImportSpecifiers("const require = fake;\nconst load = require;\nload('yaml');")).toEqual([]);
+        // The binding a file that does not declare `require` still makes, which is the rule's other half.
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nload(spec);')).toEqual(['require(...)']);
+    });
+
+    /**
      * A type literal's `}` is not an operand-position object literal's `}`: treating it as one
      * mislexed the statement-position regex after it and let its apostrophe swallow the file (#4828).
      * Only the argument, array, sequence, `return`, arrow, and declaration-assignment positions keep
@@ -364,6 +389,23 @@ describe('snapshotImportSpecifiers', () => {
         // divided `/` is a real load and is collected, while the computed form is refused above.
         expect(snapshotImportSpecifiers("const r = {} / import('yaml') / 2;")).toEqual(['yaml']);
         expect(snapshotImportSpecifiers("const r = {} / require('yaml') / 2;")).toEqual(['yaml']);
+    });
+
+    /**
+     * The close-brace walk must answer each `/` once. `canStartRegexLiteral` re-enters itself through
+     * `lineCommentOpenBefore`, because skipping a comment, string, or regex needs the same question
+     * answered at an earlier index, so the cost of a line of repeated `} /` delimiters grew by about
+     * nine times every four repetitions before the answers were memoised (#4828). The bound is loose:
+     * the repaired scan takes under two milliseconds at this length, while the walk without the memo
+     * took 9.7 s at 32 repetitions and 271 s here.
+     */
+    it('scans a line of repeated close-brace divisions in bounded time', () => {
+        const source = `${'} / '.repeat(40)};`;
+        const startedAt = performance.now();
+        const shapes = snapshotComputedDynamicSpecifiers(source);
+        const elapsedMs = performance.now() - startedAt;
+        expect(shapes).toEqual([]);
+        expect(elapsedMs).toBeLessThan(2_000);
     });
 });
 

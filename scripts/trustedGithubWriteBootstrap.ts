@@ -512,7 +512,7 @@ function scanComputedDynamicSpecifiers(
     end: number,
     shapes: Set<string>,
     stopAtDepthZero = false,
-    bindings: ReadonlyMap<string, LoaderBindingKind> = NO_LOADER_BINDINGS
+    bindings: LoaderRead = NO_LOADER_READ
 ): number {
     let index = start;
     let depth = stopAtDepthZero ? 1 : null;
@@ -567,7 +567,7 @@ function scanComputedTemplate(
     index: number,
     end: number,
     shapes: Set<string>,
-    bindings: ReadonlyMap<string, LoaderBindingKind> = NO_LOADER_BINDINGS
+    bindings: LoaderRead = NO_LOADER_READ
 ): number {
     let cursor = index + 1;
     while (cursor < end) {
@@ -593,18 +593,31 @@ type ComputedDynamicLoad = { shape: string; end: number };
 /** The module loader a name reaches: the `require` function, or the `createRequire` factory. */
 type LoaderBindingKind = 'require' | 'createRequire';
 
-const NO_LOADER_BINDINGS: ReadonlyMap<string, LoaderBindingKind> = new Map();
+/**
+ * What one file's text says about the module loader: the names it binds to a loader, and whether it
+ * declares `require` itself. A file that declares the name reads every bare `require` identifier in it
+ * as that declaration rather than as the loader, so neither a bound name nor the literal callee is
+ * that loader there.
+ */
+type LoaderRead = {
+    readonly names: ReadonlyMap<string, LoaderBindingKind>;
+    readonly requireIsFileOwnName: boolean;
+};
+
+const NO_LOADER_READ: LoaderRead = { names: new Map(), requireIsFileOwnName: false };
 
 /**
- * The names this file binds to a module loader. A load can be spelled through a name as well as
- * through the literal callee — `(0, require)(expr)`, `(require)(expr)`,
+ * The loader names this file binds. A load can be spelled through a name as well as through the
+ * literal callee — `(0, require)(expr)`, `(require)(expr)`,
  * `const load = createRequire(import.meta.url); load(expr)`, and an aliased `createRequire` import —
  * and each of those hid the load from the scan. The pass is single-file and one level deep: a name
  * bound to another bound name (`const b = a; b(spec)`), a `.resolve` or `.bind` member, and a
- * destructured binding keep the merge base's reading.
+ * destructured binding keep the merge base's reading. A file that declares `require` itself binds
+ * nothing through that identifier, which `declaresRequireName` reads.
  */
-function collectLoaderBindings(source: string): ReadonlyMap<string, LoaderBindingKind> {
+function collectLoaderBindings(source: string): LoaderRead {
     const bindings = new Map<string, LoaderBindingKind>();
+    const requireIsFileOwnName = declaresRequireName(source);
     let index = 0;
     while (index < source.length) {
         const commentEnd = skipComment(source, index);
@@ -626,7 +639,7 @@ function collectLoaderBindings(source: string): ReadonlyMap<string, LoaderBindin
             index = regexEnd;
             continue;
         }
-        const declared = readLoaderDeclarationAt(source, index);
+        const declared = readLoaderDeclarationAt(source, index, requireIsFileOwnName);
         if (declared !== undefined && isEveryUseACallLike(source, declared)) {
             bindings.set(declared.name, declared.kind);
             index = declared.end;
@@ -640,7 +653,231 @@ function collectLoaderBindings(source: string): ReadonlyMap<string, LoaderBindin
         }
         index += 1;
     }
-    return bindings;
+    return { names: bindings, requireIsFileOwnName };
+}
+
+/**
+ * Whether the file declares the name `require` as anything but the module loader — a parameter, a
+ * `const`/`let`/`var` name, a `function`/`class` name, a destructuring target, or a catch parameter.
+ * The declaration makes every bare `require` identifier in the file that declaration, so no name may be
+ * bound to the loader through one and no literal `require(...)` call is that loader:
+ * `function f(require) { const load = require; load(spec) }`, `const require = fake; const load =
+ * require; load(spec)`, and `const { require } = box; (0, require)(spec)` all load nothing, and
+ * reading them as loads refused sources that reach no module (#4828). Two declarations keep the
+ * loader: an ambient `declare function require`, and a name bound to a created require
+ * (`const require = createRequire(import.meta.url)`), because each declares the loader itself. The
+ * reading is the file's, not the scope's, exactly as `isEveryUseACallLike` reads a redeclaration, and
+ * it errs toward the file's own shadowing.
+ */
+function declaresRequireName(source: string): boolean {
+    let index = 0;
+    while (index < source.length) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
+            continue;
+        }
+        if (quote === '`') {
+            index = scanTemplate(source, index, source.length, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (
+            isKeywordAt(source, index, 'require') &&
+            !isPrecededByDotAccess(source, index) &&
+            isRequireDeclarationAt(source, index)
+        ) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+/**
+ * Whether the `require` at `index` declares the name rather than naming the loader. A declaration
+ * keyword before it, a parameter list or catch parameter around it, or a destructuring pattern entry
+ * makes it a declaration; an ambient `declare function require` and a name bound to a created require
+ * declare the loader itself, so both keep it. The parameter test is the parenthesis the name sits in —
+ * a list that closes before a body, a return type, or an arrow, or that opens a `catch` clause — which
+ * is what keeps the comma-sequence and parenthesised callees (`(0, require)(spec)`, `(require)(spec)`)
+ * reading as the loader.
+ */
+function isRequireDeclarationAt(source: string, index: number): boolean {
+    const keywordEnd = previousSignificantCharacter(source, index - 1);
+    const keyword = declarationKeywordBefore(source, index);
+    if (keyword !== undefined && keywordEnd !== undefined) {
+        const beforeKeyword = previousSignificantCharacter(source, keywordEnd - keyword.length);
+        // An ambient `declare function require` declares the loader itself, and so does a name bound
+        // to a created require — `const require = createRequire(import.meta.url)` — either way the
+        // file keeps reading every `require` identifier as that loader.
+        if (beforeKeyword !== undefined && readWordBackward(source, beforeKeyword) === 'declare') {
+            return false;
+        }
+        return keyword === 'function' || keyword === 'class' || !bindsCreatedRequire(source, index);
+    }
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined) {
+        return false;
+    }
+    const character = source.charAt(before);
+    if (character === '{' || character === '[' || character === ':') {
+        return isBindingPatternEntryAt(source, index);
+    }
+    if (character === ',') {
+        return isBindingPatternEntryAt(source, index) || isParameterListNameAt(source, index);
+    }
+    return character === '(' && isParameterListNameAt(source, index);
+}
+
+/**
+ * Whether the `require` name at `index` is an entry of a binding pattern: a `{…}` or `[…]` whose
+ * opener stands where a pattern can — after `const`/`let`/`var`, or as another pattern entry, a
+ * parameter, or a nested pattern. The walk inward from the entry covers nested patterns such as
+ * `const { a: [require] } = box`, so only the outer opener's position is read. A pattern and an object
+ * literal share their shape, so an entry this test cannot place errs toward the file's own shadowing.
+ */
+function isBindingPatternEntryAt(source: string, index: number): boolean {
+    const open = enclosingOpenerBefore(source, index, '{[');
+    if (open === undefined) {
+        return false;
+    }
+    const beforeOpen = previousSignificantCharacter(source, open - 1);
+    if (beforeOpen === undefined) {
+        return false;
+    }
+    const character = source.charAt(beforeOpen);
+    if (',([{:'.includes(character)) {
+        return true;
+    }
+    if (!isIdentifierContinue(character)) {
+        return false;
+    }
+    return ASSIGNMENT_DECLARATION_KEYWORDS.has(readWordBackward(source, beforeOpen));
+}
+
+/** Whether a `require` declared at the name index `index` is the target of `= createRequire(…)`. */
+function bindsCreatedRequire(source: string, index: number): boolean {
+    const declared = readLoaderDeclaration(source, index, false);
+    return declared !== undefined && declared.name === 'require' && declared.kind === 'require';
+}
+
+/** The declaration keyword immediately before the name at `index`, when it declares that name. */
+function declarationKeywordBefore(source: string, index: number): string | undefined {
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined || !isIdentifierContinue(source[before])) {
+        return undefined;
+    }
+    const word = readWordBackward(source, before);
+    const wordStart = before - word.length + 1;
+    return !isMemberNameAt(source, wordStart) && DECLARATION_KEYWORDS.has(word) ? word : undefined;
+}
+
+/**
+ * Whether the `require` name at `index` sits in a parameter list. The innermost parenthesis enclosing
+ * it decides: a list that closes before a body, a return type, or an arrow is a declaration, and a
+ * `catch` clause's list is one too. A list closed before a call is an argument list — `(0, require)`
+ * and `(require)` are the wrapped callee — and a header keyword's parenthesis is an expression.
+ */
+function isParameterListNameAt(source: string, index: number): boolean {
+    const open = enclosingOpenerBefore(source, index, '(');
+    if (open === undefined) {
+        return false;
+    }
+    const close = skipBalancedParens(source, open);
+    if (close === undefined) {
+        return false;
+    }
+    const after = skipWhitespace(source, close + 1);
+    if (source.startsWith('=>', after)) {
+        return true;
+    }
+    if (source[after] !== '{' && source[after] !== ':') {
+        return false;
+    }
+    const wordEnd = previousSignificantCharacter(source, open - 1);
+    const word = wordEnd === undefined ? '' : readWordBackward(source, wordEnd);
+    return word === 'catch' || !CONTROL_HEADER_KEYWORDS.has(word);
+}
+
+/**
+ * The opener from `openers` that opens the innermost region containing `index`, or `undefined` when no
+ * such opener encloses it. The walk skips whitespace, comments, string, template, and regex literals,
+ * counts every nested delimiter as depth, and ends where a different kind of opener begins the region,
+ * so the returned opener is the one that holds the name.
+ */
+function enclosingOpenerBefore(source: string, index: number, openers: string): number | undefined {
+    let cursor = index - 1;
+    let depth = 0;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/') {
+            const commentOpen = cursor >= 1 && source[cursor - 1] === '*' ? source.lastIndexOf('/*', cursor - 1) : -1;
+            if (commentOpen !== -1) {
+                cursor = commentOpen - 1;
+                continue;
+            }
+            const lineComment = lineCommentOpenBefore(source, cursor);
+            if (lineComment !== undefined) {
+                cursor = lineComment - 1;
+                continue;
+            }
+            const regexOpen = regexLiteralOpenBackward(source, cursor);
+            if (regexOpen !== undefined) {
+                cursor = regexOpen - 1;
+                continue;
+            }
+        }
+        if (character === '"' || character === "'") {
+            const quoteOpen = skipQuotedBackward(source, cursor, character);
+            cursor = quoteOpen === undefined ? cursor - 1 : quoteOpen - 1;
+            continue;
+        }
+        if (character === '`') {
+            const templateOpen = skipTemplateBackward(source, cursor);
+            cursor = templateOpen === undefined ? cursor - 1 : templateOpen - 1;
+            continue;
+        }
+        if (character === ')' || character === '}' || character === ']') {
+            depth += 1;
+            cursor -= 1;
+            continue;
+        }
+        if (openers.includes(character)) {
+            if (depth === 0) {
+                return cursor;
+            }
+            depth -= 1;
+            cursor -= 1;
+            continue;
+        }
+        if (character === '(' || character === '{' || character === '[') {
+            if (depth === 0) {
+                return undefined;
+            }
+            depth -= 1;
+            cursor -= 1;
+            continue;
+        }
+        cursor -= 1;
+    }
+    return undefined;
 }
 
 /**
@@ -703,13 +940,7 @@ function isEveryUseACallLike(source: string, binding: LoaderBinding): boolean {
  * than `(`, `.`, or `?.` and is refused by the call-like check above.
  */
 function isShadowingDeclaration(source: string, index: number): boolean {
-    const before = previousSignificantCharacter(source, index - 1);
-    if (before === undefined || !isIdentifierContinue(source[before])) {
-        return false;
-    }
-    const word = readWordBackward(source, before);
-    const wordStart = before - word.length + 1;
-    return !isMemberNameAt(source, wordStart) && DECLARATION_KEYWORDS.has(word);
+    return declarationKeywordBefore(source, index) !== undefined;
 }
 
 /** The declaration keywords that bind a name again, which drops a loader binding of that name. */
@@ -718,9 +949,15 @@ const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(['function', 'class', 
 type LoaderBinding = { name: string; kind: LoaderBindingKind; nameIndex: number; end: number };
 
 /** The loader binding a `const`/`let`/`var` declaration at `index` makes, if any. */
-function readLoaderDeclarationAt(source: string, index: number): LoaderBinding | undefined {
+function readLoaderDeclarationAt(
+    source: string,
+    index: number,
+    requireIsFileOwnName: boolean
+): LoaderBinding | undefined {
     const keyword = ['const', 'let', 'var'].find((candidate) => isKeywordAt(source, index, candidate));
-    return keyword === undefined ? undefined : readLoaderDeclaration(source, index + keyword.length);
+    return keyword === undefined
+        ? undefined
+        : readLoaderDeclaration(source, index + keyword.length, requireIsFileOwnName);
 }
 
 /**
@@ -728,7 +965,11 @@ function readLoaderDeclarationAt(source: string, index: number): LoaderBinding |
  * is anything else — a loader *call* (`const load = require('yaml')`) loads rather than binds, and a
  * name bound to another name is not resolved here.
  */
-function readLoaderDeclaration(source: string, start: number): LoaderBinding | undefined {
+function readLoaderDeclaration(
+    source: string,
+    start: number,
+    requireIsFileOwnName: boolean
+): LoaderBinding | undefined {
     const nameStart = skipWhitespace(source, start);
     const name = readWordForward(source, nameStart);
     if (name === undefined) {
@@ -744,7 +985,9 @@ function readLoaderDeclaration(source: string, start: number): LoaderBinding | u
         if (source[after] === '(' || source[after] === '.' || source.startsWith('?.', after)) {
             return undefined;
         }
-        return { name, kind: 'require', nameIndex: nameStart, end: after };
+        // A file that declares `require` itself reads this identifier as that declaration, not as the
+        // loader, so nothing is bound through it.
+        return requireIsFileOwnName ? undefined : { name, kind: 'require', nameIndex: nameStart, end: after };
     }
     if (!isKeywordAt(source, cursor, 'createRequire')) {
         return undefined;
@@ -792,15 +1035,12 @@ type BoundCallee = {
  * list, so `pass(require)(spec)` is not this shape. `callOpen` is the parenthesis that holds the
  * specifier, the second call for a bound `createRequire` factory. The left identifier boundary keeps
  * a name merely ending in a bound name (`download(spec)`) out of the rule, and a member call
- * (`registry.load(spec)`) is not the binding.
+ * (`registry.load(spec)`) is not the binding. A file that declares `require` itself reads the bare
+ * operand as that declaration, so the parenthesised form is no callee there either.
  */
-function readBoundCallee(
-    source: string,
-    index: number,
-    bindings: ReadonlyMap<string, LoaderBindingKind>
-): BoundCallee | undefined {
+function readBoundCallee(source: string, index: number, bindings: LoaderRead): BoundCallee | undefined {
     if (source[index] === '(') {
-        if (!startsCalleeExpression(source, index)) {
+        if (!startsCalleeExpression(source, index) || bindings.requireIsFileOwnName) {
             return undefined;
         }
         const close = skipBalancedParens(source, index);
@@ -820,7 +1060,7 @@ function readBoundCallee(
     if (name === undefined) {
         return undefined;
     }
-    const kind = bindings.get(name);
+    const kind = bindings.names.get(name);
     if (kind === undefined || isPrecededByDotAccess(source, index)) {
         return undefined;
     }
@@ -889,11 +1129,7 @@ function readWordForward(source: string, index: number): string | undefined {
     return source.slice(index, cursor);
 }
 
-function readComputedDynamicLoad(
-    source: string,
-    index: number,
-    bindings: ReadonlyMap<string, LoaderBindingKind>
-): ComputedDynamicLoad | undefined {
+function readComputedDynamicLoad(source: string, index: number, bindings: LoaderRead): ComputedDynamicLoad | undefined {
     if (isKeywordAt(source, index, 'import') && !isPrecededByDotAccess(source, index)) {
         const afterKeyword = skipWhitespace(source, index + 6);
         if (source[afterKeyword] === '(') {
@@ -901,7 +1137,11 @@ function readComputedDynamicLoad(
         }
         return undefined;
     }
-    if (isKeywordAt(source, index, 'require') && !isPrecededByDotAccess(source, index)) {
+    if (
+        isKeywordAt(source, index, 'require') &&
+        !isPrecededByDotAccess(source, index) &&
+        !bindings.requireIsFileOwnName
+    ) {
         let cursor = skipWhitespace(source, index + 7);
         if (source[cursor] === '.') {
             const afterDot = skipWhitespace(source, cursor + 1);
@@ -1759,7 +1999,7 @@ function scanImportSpecifiers(
     end: number,
     specifiers: Set<string>,
     stopAtDepthZero = false,
-    bindings: ReadonlyMap<string, LoaderBindingKind> = NO_LOADER_BINDINGS
+    bindings: LoaderRead = NO_LOADER_READ
 ): number {
     let index = start;
     let depth = stopAtDepthZero ? 1 : null;
@@ -1831,7 +2071,7 @@ function scanImportSpecifiers(
             }
         }
         if (isKeywordAt(source, index, 'require')) {
-            if (!isPrecededByDotAccess(source, index)) {
+            if (!isPrecededByDotAccess(source, index) && !bindings.requireIsFileOwnName) {
                 let cursor = skipWhitespace(source, index + 7);
                 if (source[cursor] === '.') {
                     const afterDot = skipWhitespace(source, cursor + 1);
@@ -1898,7 +2138,7 @@ function scanTemplate(
     index: number,
     end: number,
     specifiers: Set<string>,
-    bindings: ReadonlyMap<string, LoaderBindingKind> = NO_LOADER_BINDINGS
+    bindings: LoaderRead = NO_LOADER_READ
 ): number {
     let cursor = index + 1;
     while (cursor < end) {
@@ -2012,7 +2252,33 @@ function skipRegexLiteral(source: string, index: number): number | undefined {
     return undefined;
 }
 
+/**
+ * Answers to `canStartRegexLiteral` for the source being scanned, keyed by the `/`'s index. The
+ * question is a pure function of one source and one index, but the backward walks it opens re-enter it
+ * through `lineCommentOpenBefore` — comments, strings, and regex literals must be skipped to read the
+ * token before a `}` or `)` — so a line of repeated delimiters asked it an exponential number of times
+ * (`'} / '.repeat(32)` cost ~2.3 s, #4828). The memo ends that: every index is answered once, so the
+ * nested walks only revisit a region whose question is already answered. One source is retained,
+ * because a scan threads a single source through every nested call.
+ */
+let regexPrefixSource: string | undefined;
+let regexPrefixAnswers = new Map<number, boolean>();
+
 function canStartRegexLiteral(source: string, index: number): boolean {
+    if (regexPrefixSource !== source) {
+        regexPrefixSource = source;
+        regexPrefixAnswers = new Map();
+    }
+    const answered = regexPrefixAnswers.get(index);
+    if (answered !== undefined) {
+        return answered;
+    }
+    const answer = readCanStartRegexLiteral(source, index);
+    regexPrefixAnswers.set(index, answer);
+    return answer;
+}
+
+function readCanStartRegexLiteral(source: string, index: number): boolean {
     let cursor = index - 1;
     while (cursor >= 0) {
         const character = source[cursor];
