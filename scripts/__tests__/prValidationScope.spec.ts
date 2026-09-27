@@ -129,9 +129,9 @@ describe('required affected verification', () => {
             .filter((name) => /^(?:tuner|export).*\.spec\.tsx?$/.test(name))
             .map((name) => `tests/e2e/${name}`);
         const inventory = [SMOKE_SPEC, ...familySpecs, 'tests/e2e/undo.spec.ts'];
-        for (const [path, prefix] of [
-            [TUNER, 'tuner'],
-            [EXPORT, 'export'],
+        for (const { path, prefix } of [
+            { path: TUNER, prefix: 'tuner' },
+            { path: EXPORT, prefix: 'export' },
         ]) {
             const expected = familySpecs.filter((spec) => spec.startsWith(`tests/e2e/${prefix}`)).sort();
             expect(expected.length).toBeGreaterThan(0);
