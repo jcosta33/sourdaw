@@ -7,8 +7,12 @@ vi.mock('#/utils/desktopBridge', () => ({
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 import { getState } from '../getState';
 import { resetMidiState } from '../lifecycle/resetMidiState';
+import { memberExpressionState, setMemberExpression } from '../memberExpressionState';
+import { resetChannelControllerState } from '../resetChannelControllerState';
 import { WEB_MIDI_IDENTITY_SCHEME, selectedInputIdStorageKey } from '../selectedInputIdStorageKeys';
+import { setMpeEnabledInternal } from '../setMpeEnabledInternal';
 import { setState } from '../setState';
+import { setTargetTrackId } from '../setTargetTrackId';
 import { activeNotes, channelToNote, midiLearn } from '../state';
 import { subscribe } from '../subscribe';
 
@@ -17,6 +21,9 @@ describe('webMidi state accessors', () => {
         window.localStorage.clear();
         activeNotes.clear();
         channelToNote.clear();
+        resetChannelControllerState();
+        setMpeEnabledInternal(false);
+        setTargetTrackId(null);
         midiLearn.active = false;
         midiLearn.callback = null;
         setState(
@@ -62,6 +69,20 @@ describe('webMidi state accessors', () => {
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);
+    });
+
+    it('drops pre-note member expression on reset, mode, and target changes', () => {
+        setMemberExpression(1, { pressure: 41, slide: 63, pitchBend: 2048 });
+        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined, releaseNativeNote: () => {} });
+        expect(memberExpressionState.get(1)).toBeUndefined();
+
+        setMemberExpression(1, { pressure: 41 });
+        setMpeEnabledInternal(true);
+        expect(memberExpressionState.get(1)).toBeUndefined();
+
+        setMemberExpression(1, { slide: 63 });
+        setTargetTrackId('track-2');
+        expect(memberExpressionState.get(1)).toBeUndefined();
     });
 
     // `resetMidiState` is the transport stop/seek path: it releases sounding

@@ -3,6 +3,7 @@ import { desktopInvoke } from '#/utils/desktopBridge';
 import { type WebMidiInputMessage } from '../../../models/WebMidiTypes';
 import { getNativeEventUnlisten } from '../getNativeEventUnlisten';
 import { mapNativeMidiTimestamp } from '../mapNativeMidiTimestamp';
+import { resetChannelControllerState } from '../resetChannelControllerState';
 import { resetNativeMidiTimeAnchor } from '../resetNativeMidiTimeAnchor';
 import { setNativeEventUnlisten } from '../setNativeEventUnlisten';
 
@@ -91,6 +92,7 @@ export async function selectMidiInputNative({
 }: SelectMidiInputNativeInput): Promise<void> {
     selectionGeneration += 1;
     const generation = selectionGeneration;
+    resetChannelControllerState();
 
     const currentUnlisten = getNativeEventUnlisten();
     if (currentUnlisten) {
@@ -116,8 +118,11 @@ export async function selectMidiInputNative({
 
     const { desktopListen } = await import('#/utils/desktopBridge');
     const newUnlisten = await desktopListen('midi-message', (event) => {
-        // Read first: this is the closest we get to the instant the message
-        // reached us, and every line below adds to the gap.
+        if (generation !== selectionGeneration) {
+            return;
+        }
+        // Read before decoding: this is the closest we get to the instant the
+        // current port's message reached us, and every line below adds to the gap.
         const receivedAtMs = performance.now();
 
         if (!isNativeMidiMessageEvent(event)) {

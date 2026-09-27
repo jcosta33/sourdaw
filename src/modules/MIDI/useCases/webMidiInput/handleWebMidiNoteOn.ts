@@ -7,10 +7,12 @@ import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
+import { memberExpressionState } from '../../repositories/webMidi/memberExpressionState';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
@@ -70,6 +72,11 @@ export const handleWebMidiNoteOn = inject({
             const dispatchFrame = resolveInputDispatchFrame({ eventTime });
             const dispatchTime = dispatchFrame / engine.context.sampleRate;
             const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(eventTime * engine.context.sampleRate)}`;
+            const memberExpression = mpeEnabled && channel >= 1 ? memberExpressionState.get(channel) : undefined;
+            let pitchBendRangeSemitones: number | undefined;
+            if (memberExpression?.pitchBend !== undefined) {
+                pitchBendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
+            }
 
             const noteData: ActiveNoteData = {
                 startTime: eventTime,
@@ -80,6 +87,10 @@ export const handleWebMidiNoteOn = inject({
                 trackId: targetTrackId,
                 instrumentTrackId: targetTrackId,
                 noteInstanceId,
+                pressure: memberExpression?.pressure,
+                slide: memberExpression?.slide,
+                pitchBend: memberExpression?.pitchBend,
+                pitchBendRangeSemitones,
             };
             activeNotes.set(noteKey, noteData);
 

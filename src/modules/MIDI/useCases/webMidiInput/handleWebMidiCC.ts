@@ -11,6 +11,7 @@ import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { ingestChannelControlChange } from '../../repositories/webMidi/ingestChannelControlChange';
+import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -83,6 +84,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             }
 
             if (getMpeEnabled() && cc === MPE_SLIDE_CC && channel >= MPE_FIRST_MEMBER_CHANNEL) {
+                setMemberExpression(channel, { slide: value });
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel !== undefined) {
                     const noteData = activeNotes.get(noteForChannel);

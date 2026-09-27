@@ -1,6 +1,7 @@
 import { applyNoteExpression } from '#/modules/AudioEngine/useCases';
 
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
@@ -11,6 +12,8 @@ export function handleWebMidiChannelPressure(channel: number, pressure: number, 
     if (!getMpeEnabled() || channel < 1) {
         return;
     }
+
+    setMemberExpression(channel, { pressure });
 
     const noteForChannel = channelToNote.get(channel);
     if (noteForChannel === undefined) {

@@ -24,6 +24,7 @@ vi.mock('../../setNativeEventUnlisten', () => ({
 }));
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
+import { memberExpressionState, setMemberExpression } from '../../memberExpressionState';
 import { selectMidiInputNative } from '../selectMidiInputNative';
 
 describe('selectMidiInputNative', () => {
@@ -40,6 +41,7 @@ describe('selectMidiInputNative', () => {
         const previousUnlisten = vi.fn();
         const onMidiMessageMock = vi.fn<(event: WebMidiInputMessage) => void>();
         getNativeEventUnlistenMock.mockReturnValue(previousUnlisten);
+        setMemberExpression(1, { pressure: 80 });
 
         await selectMidiInputNative({ portIndex: 2, onMidiMessage: onMidiMessageMock });
 
@@ -48,6 +50,7 @@ describe('selectMidiInputNative', () => {
         expect(desktopInvokeMock).toHaveBeenCalledWith('open_midi_input', { portIndex: 2 });
         expect(desktopListenMock).toHaveBeenCalledWith('midi-message', expect.any(Function));
         expect(setNativeEventUnlistenMock).toHaveBeenNthCalledWith(2, newUnlisten);
+        expect(memberExpressionState.get(1)).toBeUndefined();
     });
 
     it('should forward valid native MIDI message bytes to the MIDI handler', async () => {
@@ -80,7 +83,7 @@ describe('selectMidiInputNative', () => {
         expect(onMidiMessageMock).not.toHaveBeenCalled();
     });
 
-    it('should register a new native listener callback after unlistening the previous one', async () => {
+    it('drops callbacks from the previous native port after switching', async () => {
         const previousUnlisten = vi.fn();
         const firstCallback = vi.fn<(event: WebMidiInputMessage) => void>();
         const secondCallback = vi.fn<(event: WebMidiInputMessage) => void>();
@@ -96,9 +99,8 @@ describe('selectMidiInputNative', () => {
         firstListener({ payload: { data: [144, 60, 127] } });
         secondListener({ payload: { data: [144, 61, 127] } });
 
-        expect(firstCallback).toHaveBeenCalledTimes(1);
+        expect(firstCallback).not.toHaveBeenCalled();
         expect(secondCallback).toHaveBeenCalledTimes(1);
-        expect(firstCallback.mock.calls[0]![0].data).toEqual(new Uint8Array([144, 60, 127]));
         expect(secondCallback.mock.calls[0]![0].data).toEqual(new Uint8Array([144, 61, 127]));
     });
 
