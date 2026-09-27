@@ -26,9 +26,12 @@ import {
 import {
     assertEvidenceIntegrity,
     compareLexicographic,
+    CREDENTIAL_SHAPED_WITHHELD_CODE,
     evidenceSidePrefix,
     isContractCarryingContent,
     isSensitivePath,
+    SENSITIVE_PATH_WITHHELD_CODE,
+    withheldRegionCarriesContract,
     withheldRegionReason,
     type SemanticEvidenceLimits,
     type SemanticEvidenceSet,
@@ -348,7 +351,7 @@ function collectFindingEvidence(input: {
         if (isSensitivePath(reference.path)) {
             // Recorded as incomplete scope: a finding's evidence is not a unit of its own, so counting
             // it as an exclusion would break the manifest's arithmetic as well as the completion state.
-            truncated.push({ path: reference.path, reason: 'evidence-withheld-sensitive-path' });
+            truncated.push({ path: reference.path, reason: SENSITIVE_PATH_WITHHELD_CODE });
             limitations.push(`finding evidence ${reference.path} was withheld: it is on the sensitive-path list`);
             continue;
         }
@@ -365,7 +368,10 @@ function collectFindingEvidence(input: {
         }
         const unsafe = sensitiveContentReason(text);
         if (unsafe !== undefined) {
-            truncated.push({ path: reference.path, reason: 'evidence-withheld-credential-shaped' });
+            // Before any bounds decision, matching the scan route's order: content that must not leave
+            // the machine names the credential cause on both routes even when the named range is also
+            // past the file, because that is why nothing left.
+            truncated.push({ path: reference.path, reason: CREDENTIAL_SHAPED_WITHHELD_CODE });
             limitations.push(`finding evidence ${reference.path} was withheld: it contains ${unsafe}`);
             continue;
         }
@@ -374,13 +380,14 @@ function collectFindingEvidence(input: {
         // request never used. The screen above still judges the whole file, because withholding has to
         // be decided on everything the file holds rather than on the part being quoted. The same slice
         // the scan path applies clamps the range, and a range that starts past the file names no line
-        // this revision holds: both routes then refuse and record the same hunk-beyond-file reference.
+        // this revision holds: both routes then refuse and record the same hunk-beyond-file reference,
+        // a side the screen kept.
         const sliced = sliceLines(text, { startLine: reference.startLine, endLine: reference.endLine });
         if (sliced === undefined) {
             truncated.push({
                 path: reference.path,
                 reason: withheldRegionReason(
-                    isContractCarryingContent(reference.path, text),
+                    withheldRegionCarriesContract(reference.side, isContractCarryingContent(reference.path, text)),
                     reference.side,
                     'hunk-beyond-file'
                 ),
@@ -411,7 +418,11 @@ function collectFindingEvidence(input: {
         if (regionCost(evidenceReference, region) > input.limits.maxRegionBytes) {
             truncated.push({
                 path: reference.path,
-                reason: withheldRegionReason(isContractCarryingContent(reference.path, text), reference.side, 'region'),
+                reason: withheldRegionReason(
+                    withheldRegionCarriesContract(reference.side, isContractCarryingContent(reference.path, text)),
+                    reference.side,
+                    'region'
+                ),
             });
             limitations.push(
                 `finding evidence ${reference.path} (${reference.side}) was not supplied: it exceeds the per-region budget`
@@ -441,9 +452,7 @@ export type RunVerifyInput = {
     readonly runId: string;
 };
 
-export type RunVerifyResult = {
-    readonly report: SemanticVerifyReport;
-};
+export type RunVerifyResult = { readonly report: SemanticVerifyReport };
 
 type VerifyAccumulation = {
     assessments: FindingAssessment[];
@@ -586,20 +595,6 @@ async function assessFindings(input: {
     return accumulation;
 }
 
-/**
- * The profile the verify pass runs under: the base profile's attempt, retry, and timing controls with
- * the profile's verify byte budgets in their places, so the budget controller and the provider request
- * enforce exactly the budgets the finding's evidence was collected under.
- */
-function verifyBudgetProfile(profile: SemanticBudgetProfile): SemanticBudgetProfile {
-    return {
-        ...profile,
-        maxStatePlusQuestionBytes: profile.verify.maxStatePlusQuestionBytes,
-        maxRequestBytes: profile.verify.maxRequestBytes,
-        maxTotalSubmittedBytes: profile.verify.maxTotalSubmittedBytes,
-    };
-}
-
 export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult> {
     const startedAt = new Date(input.ports.clock.now()).toISOString();
     const rulesDigest = computeVerifyQuestionsDigest(input.findings);
@@ -614,7 +609,12 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
     // budgets, so a region the collector admits is one the request can carry and the run's stated
     // byte ceiling is the one actually enforced. The scan-sized request budgets would withhold a
     // finding's referenced regions and starve its questions into abstaining for want of evidence.
-    const profile = verifyBudgetProfile(input.profile);
+    const profile: SemanticBudgetProfile = {
+        ...input.profile,
+        maxStatePlusQuestionBytes: input.profile.verify.maxStatePlusQuestionBytes,
+        maxRequestBytes: input.profile.verify.maxRequestBytes,
+        maxTotalSubmittedBytes: input.profile.verify.maxTotalSubmittedBytes,
+    };
     const limits: SemanticEvidenceLimits = {
         maxRegionBytes: profile.verify.maxRegionBytes,
         maxTotalBytes: profile.verify.maxTotalSubmittedBytes,

@@ -920,6 +920,87 @@ describe('semantic review context', () => {
         ]);
     });
 
+    it('keeps a reduced-unit entry that names the sides the fitter dropped', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'crates/daw-dsp/src/big.rs',
+                                    reason: 'unit-evidence-reduced-below-request-budget (after)',
+                                },
+                                {
+                                    path: 'crates/daw-dsp/src/wider.rs',
+                                    reason: 'unit-evidence-reduced-below-request-budget (after, context)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'crates/daw-dsp/src/big.rs', reason: 'unit-evidence-reduced-below-request-budget (after)' },
+            {
+                path: 'crates/daw-dsp/src/wider.rs',
+                reason: 'unit-evidence-reduced-below-request-budget (after, context)',
+            },
+        ]);
+    });
+
+    it('keeps the three-term reduced-unit reason the fitter emits when it cuts every side', () => {
+        // The fitter unions the own before/after drops with the context drop, so a unit cut on all three
+        // sides emits `(before, after, context)`. Restoring the two-term qualifier cap would normalise
+        // this real producer shape to `unrecognized-reason`; the projection must keep it. This guards the
+        // previous repair's three-term qualifier support, not this change's context gate.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'src/modules/Project/cut.ts',
+                                    reason: 'unit-evidence-reduced-below-request-budget (before, after, context)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            {
+                path: 'src/modules/Project/cut.ts',
+                reason: 'unit-evidence-reduced-below-request-budget (before, after, context)',
+            },
+        ]);
+    });
+
     it('accepts the contract-marked comma qualifier and the retired withheld code for reading', () => {
         const { port } = makePort({
             checkRuns: [GREEN_CHECK],
@@ -989,6 +1070,56 @@ describe('semantic review context', () => {
         expect(result.scope.truncated).toEqual([
             { path: 'src/b.ts', reason: 'unrecognized-reason' },
             { path: 'src/c.ts', reason: 'unrecognized-reason' },
+        ]);
+    });
+
+    it('keeps the withheld qualifier to the region classes the producer emits', () => {
+        // `withheldRegionReason` names the region's own content class: a spec-covered source's own side
+        // reads plain, a contract-carrying side and a contract-context region carry the contract term.
+        // The tier is an attempt order over the record and never joins the qualifier; a tier term here
+        // would project to `unrecognized-reason` and stop the scan and verify references reading alike.
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({
+                'scan.json': JSON.stringify(
+                    scanReport({
+                        scope: {
+                            discovered: 4,
+                            eligible: 3,
+                            assessed: 2,
+                            cacheHits: 0,
+                            excluded: [{ path: 'docs/README.md', reason: 'no-applicable-rule' }],
+                            unassessed: [{ path: 'src/a.ts', reason: 'budget-exhausted-before-admission' }],
+                            truncated: [
+                                {
+                                    path: 'scripts/semanticReview/vocabulary.ts',
+                                    reason: 'region-exceeds-per-region-budget (after)',
+                                },
+                                {
+                                    path: 'scripts/reviewDossier.ts',
+                                    reason: 'region-exceeds-per-region-budget (after, contract)',
+                                },
+                                {
+                                    path: '.agents/decisions/README.md',
+                                    reason: 'region-exceeds-per-region-budget (context, contract)',
+                                },
+                            ],
+                        },
+                    })
+                ),
+            }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.scope.truncated).toEqual([
+            { path: 'scripts/semanticReview/vocabulary.ts', reason: 'region-exceeds-per-region-budget (after)' },
+            { path: 'scripts/reviewDossier.ts', reason: 'region-exceeds-per-region-budget (after, contract)' },
+            {
+                path: '.agents/decisions/README.md',
+                reason: 'region-exceeds-per-region-budget (context, contract)',
+            },
         ]);
     });
 

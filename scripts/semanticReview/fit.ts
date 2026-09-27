@@ -12,7 +12,8 @@
  * supplied instead of answering from a third of it.
  */
 
-import type { EvidenceReference, EvidenceSide } from './contracts.ts';
+import { EVIDENCE_SIDES, type EvidenceReference, type EvidenceSide } from './contracts.ts';
+
 import type { SemanticEvidenceSet } from './evidence.ts';
 
 /**
@@ -141,4 +142,19 @@ export function fitUnitEvidence(
         },
         dropped: ownFitted.dropped + contextFitted.dropped,
     };
+}
+
+/**
+ * The reduced-unit record's reason. When the per-request fitter dropped sides, the reason names them
+ * in the fixed side order so a reader can tell which side was cut. The caller emits it only for a unit
+ * whose fitter actually dropped a side, so a unit reduced by nothing but the collector's own
+ * withholding is never recorded as a request-budget reduction; the plain form stays here as the shape
+ * reports persisted before that guard carry, and stays readable to `semanticReviewContext`.
+ */
+export function unitReductionReason(dropped: ReadonlySet<EvidenceSide>): string {
+    const sides = [...dropped].sort((left, right) => EVIDENCE_SIDES.indexOf(left) - EVIDENCE_SIDES.indexOf(right));
+    if (sides.length === 0) {
+        return 'unit-evidence-reduced-below-request-budget';
+    }
+    return `unit-evidence-reduced-below-request-budget (${sides.join(', ')})`;
 }

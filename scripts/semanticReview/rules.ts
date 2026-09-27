@@ -38,9 +38,7 @@ export type ScanOutcome = (typeof SCAN_OUTCOMES)[number];
  * threshold is an ordinary no, not a third state. `insufficient_context` is reserved for evidence the
  * application knows it did not send, which is a fact rather than a probability.
  */
-export type RuleThresholds = {
-    readonly fire: number;
-};
+export type RuleThresholds = { readonly fire: number };
 
 export type RuleInvestigationCategory =
     'test-validity' | 'project-integrity' | 'realtime' | 'security-platform' | 'architecture-integration';
@@ -577,6 +575,16 @@ export function semanticRule(id: SemanticRuleId): SemanticRule {
 /** The rules whose applicability predicate admits at least one of the changed paths. */
 export function applicableRules(paths: readonly string[]): SemanticRule[] {
     return SEMANTIC_RULES.filter((rule) => paths.some((path) => rule.appliesTo(path)));
+}
+
+/**
+ * Whether a unit's applicable rules declare a contract, decision or registration token. The planner
+ * reads it to decide which context to attach to a unit, and the collector's planned-unit predicate
+ * reads it to decide which documents to charge and how to order them; one definition is what keeps the
+ * charge and the attachment from disagreeing about which rules need context.
+ */
+export function unitNeedsContractContext(rules: readonly SemanticRule[]): boolean {
+    return rules.some((rule) => rule.requiredEvidence.some((token) => /contract|decision|registration/iu.test(token)));
 }
 
 /**

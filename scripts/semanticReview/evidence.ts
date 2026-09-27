@@ -11,15 +11,41 @@
  * context. The whole repository is never sent. When a region is dropped, truncated, or unavailable,
  * that is recorded as a limitation: an omitted region is not evidence that the region is safe.
  *
- * Admission is ranked in three tiers: a contract-carrying side — a trusted GitHub-write closure member,
+ * Admission is ranked in four tiers: a contract-carrying side — a trusted GitHub-write closure member,
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
- * boundary), or a collected spec whose content imports a closure member or names one of those workflow
- * files — first, then each contract-context region the caller supplies, then bulk sides, and every
- * withheld region is named, so the same budget is spent where the contract lives and the change's own
- * contract material outranks the context documents. Each side is classified from the path and content it
- * carries, so a deleted or moved spec still counts from its before side, and a side of a path that is
- * contract-carrying on either side keeps its bulk companion ahead of a purely bulk path.
+ * boundary), a collected spec whose content imports a closure member or names one of those workflow
+ * files, or a source such a spec covers and whose unit will be planned — first, then a changed file
+ * whose unit the planner will plan and whose rules declare a contract, decision or registration token,
+ * then each contract-context region the caller supplies, then bulk sides. The ranking admits the
+ * change's own contract material ahead of the context documents, and attempts a planned
+ * contract-needing file's own sides before the context those rules charge. One predicate,
+ * `plannedUnitPaths` — the files whose own path the screen keeps, whose rules admit them, and which
+ * carry a side admission mints a region for — gates the charge of the default contract documents, a
+ * contract-needing file's tier-1 promotion, and the tier-0 promotion of a source a contract-carrying
+ * spec covers. A file that produces no unit is gated out of all three; a side contract-carrying by its
+ * own path and content holds tier 0 by that classification, and the reserve the request fitter takes is
+ * keyed on the context the unit carries, never on this predicate. The predicate is a
+ * pre-admission proxy, not a promise of what a request carries: it cannot know a unit's serialized
+ * request budget, so a file it admits that the request fitter then leaves no region for is still
+ * excluded by `planUnits`, and the document that file charged is read by nothing. The order decides
+ * what the collector's total withholds and the order each unit's own and context regions are attempted
+ * in, because the request fitter walks a unit's regions in the order admission handed them over and
+ * spends that unit's budget first-come; it is not a claim that the carriage of a request is independent
+ * of the order. A priority change therefore moves which region fits at a byte boundary, and a unit
+ * whose budget sits on that boundary carries a different set of regions without its admitted set
+ * changing at all. When that total binds before the context tier the document is withheld at admission,
+ * no contract-context region reaches the request fitter, and the reserve that fitter takes whenever a
+ * unit carries context has nothing to hold.
+ * A region over the per-region ceiling
+ * is never supplied: it is withheld and recorded, so a contract document larger than that ceiling is
+ * never sent whatever its tier. Every withheld region is named, and that name carries the
+ * region's own content class — contract-carrying per side, or a contract-context region — never its
+ * admission tier: a tier-0 spec-covered source and a tier-1 contract-needing file read the plain side
+ * qualifier, because the tier is only the order admission attempts the record in. Each side is
+ * classified from the path and content it carries, so a deleted or moved spec still counts from its
+ * before side, and a side of a path that is contract-carrying on either side keeps its bulk companion
+ * ahead of a purely bulk path.
  */
 
 import {
@@ -35,7 +61,11 @@ import {
     chargeableRegionBytes,
     classifyContractCarryingSides,
     compareLexicographic,
+    contractNeedingPaths,
+    credentialShapedPaths,
+    plannedUnitPaths,
     readChangedContents,
+    specCoveredSources,
     type AdmissionUnit,
     type ChangedFileContents,
     type ContractCarryingSides,
@@ -281,7 +311,25 @@ function regionFor(port: SemanticSourcePort, revisionSha: string, path: string):
     return port.readFile(revisionSha, path);
 }
 
-/** Records the side of a withheld region against its owning changed file, or globally for context. */
+/**
+ * The scope-exclusion code the content screen records in `excluded`, and the withheld-scope code it
+ * records in `truncated`. They are two vocabularies, not two spellings of one: an exclusion says the
+ * path contributed no unit and was skipped whole, while a withheld code says why the reference never
+ * left the machine. Only the scan records an exclusion, because only it plans units; both routes record
+ * the withheld code, and `CREDENTIAL_SHAPED_WITHHELD_CODE` is shared so one withheld reference cannot
+ * read two reasons.
+ */
+const CREDENTIAL_SHAPED_EXCLUSION_CODE = 'credential-shaped-content-excluded';
+
+/** The content screen's withheld cause, emitted by the scan's admission and by verify's finding evidence. */
+export const CREDENTIAL_SHAPED_WITHHELD_CODE = 'evidence-withheld-credential-shaped';
+
+/** The path screen's withheld cause, emitted by both routes for a path the sensitive-path list covers. */
+export const SENSITIVE_PATH_WITHHELD_CODE = 'evidence-withheld-sensitive-path';
+
+/**
+ * Records the side of a withheld region against its owning changed file, or globally for context.
+ */
 function recordWithheldSide(
     request: RegionRequest,
     ownWithheldSides: Map<string, Set<EvidenceSide>>,
@@ -300,22 +348,45 @@ function recordWithheldSide(
 }
 
 /**
+ * Withholds one side whose own content the screen refuses, when the region the side named cannot be
+ * sliced: the region's text does not exist, so the side's content is what an equivalent whole-side
+ * region would have carried. Returns whether it withheld, having recorded the credential cause both
+ * routes share. No scope exclusion is recorded: the slices the screen did admit may still leave, and
+ * `credentialShapedPaths` keys the context gate from those same slices.
+ */
+function withholdCredentialShapedSide(
+    state: RegionAdmissionState,
+    request: RegionRequest,
+    raw: string,
+    label: string
+): boolean {
+    const unsafe = sensitiveContentReason(raw);
+    if (unsafe === undefined) {
+        return false;
+    }
+    state.truncated.push({ path: request.path, reason: CREDENTIAL_SHAPED_WITHHELD_CODE });
+    state.limitations.push(`evidence for ${request.path} (${label}) was withheld: it contains ${unsafe}`);
+    recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
+    return true;
+}
+
+/**
  * Admits one side of one file: each changed hunk as its own region, or the whole side when the hunks
  * were not read. Per-hunk regions are what make a change assessable at all — a whole-file side
  * exceeded the per-region budget for 17 of this change's 32 paths, and one suspicious line now costs
  * that hunk rather than the whole file.
+ *
+ * A hunk that names lines the revision does not hold is withheld with the first cause that applies on
+ * both routes: the content screen's credential cause when the side's content is credential-shaped, and
+ * `hunk-beyond-file` only for a side the screen keeps.
  */
 function admitSide(
+    state: RegionAdmissionState,
+    admit: (region: RegionRequest, text: string, regionLabel: string) => void,
     request: Omit<RegionRequest, 'range'>,
     raw: string,
     label: string,
-    ranges: readonly LineRange[] | undefined,
-    admit: (region: RegionRequest, text: string, regionLabel: string) => void,
-    truncated: SemanticScopeExclusion[],
-    limitations: string[],
-    ownWithheldSides: Map<string, Set<EvidenceSide>>,
-    contextWithheldSides: Set<EvidenceSide>,
-    contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
+    ranges: readonly LineRange[] | undefined
 ): void {
     if (ranges === undefined || ranges.length === 0) {
         admit(request, raw, label);
@@ -324,16 +395,16 @@ function admitSide(
     for (const range of ranges) {
         const sliced = sliceLines(raw, range);
         if (sliced === undefined) {
-            truncated.push({
-                path: request.path,
-                reason: withheldRegionReason(
-                    isContractCarryingRegion(request, contractCarryingSides),
-                    label,
-                    'hunk-beyond-file'
-                ),
-            });
-            limitations.push(`evidence for ${request.path} (${label}) names lines this revision does not hold`);
-            recordWithheldSide(request, ownWithheldSides, contextWithheldSides);
+            if (!withholdCredentialShapedSide(state, request, raw, label)) {
+                state.truncated.push({
+                    path: request.path,
+                    reason: withheldReason(request, label, 'hunk-beyond-file', state.contractCarryingSides),
+                });
+                state.limitations.push(
+                    `evidence for ${request.path} (${label}) names lines this revision does not hold`
+                );
+                recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
+            }
             continue;
         }
         admit({ ...request, range: sliced.range }, sliced.text, label);
@@ -354,6 +425,21 @@ function withheldCauseCode(cause: WithheldRegionCause): string {
 }
 
 /**
+ * Whether a withheld region carries the contract class, from its own side and the contract-carrying
+ * classification of that side.
+ *
+ * A context region always does: it is a document read at the contract source revision, supplied as
+ * context because a rule declared it needs a contract, so its own path and content never decide its
+ * class. Every other region reads the classification of the side the region comes from. Both routes
+ * name a withheld reference through this one rule, so the same reference reads the same reason
+ * whichever route produced it — a caller-supplied context path that no contract-carrying
+ * classification covers is still named contract on both.
+ */
+export function withheldRegionCarriesContract(side: EvidenceSide, classifiedContractCarrying: boolean): boolean {
+    return side === 'context' || classifiedContractCarrying;
+}
+
+/**
  * Whether a region belongs to a contract-carrying path, decided from the path and content of the side
  * the region comes from. Contract-context regions carry no changed path and are always contract.
  */
@@ -361,21 +447,29 @@ function isContractCarryingRegion(
     request: { readonly changedPath?: string; readonly side: EvidenceSide },
     contractCarryingSides: ReadonlyMap<string, ContractCarryingSides>
 ): boolean {
-    if (request.changedPath === undefined) {
-        return true;
-    }
-    const sides = contractCarryingSides.get(request.changedPath);
-    if (sides === undefined) {
-        return false;
-    }
-    return request.side === 'before' ? sides.before : sides.after;
+    const sides = request.changedPath === undefined ? undefined : contractCarryingSides.get(request.changedPath);
+    const side = request.side === 'before' ? sides?.before : sides?.after;
+    return withheldRegionCarriesContract(request.side, side ?? false);
 }
 
 /**
  * The one withheld-region vocabulary the scan and verify routes share. The cause stays the code —
  * `region-exceeds-per-region-budget`, `total-evidence-budget-exhausted`, or `hunk-beyond-file` — and
- * `contract` joins the side qualifier for a contract-carrying region, so the same withheld reference
- * reads the same whichever route produced it. Every other region keeps the plain `<code> (<side>)` form.
+ * `contract` joins the side qualifier for a region `withheldRegionCarriesContract` classifies contract,
+ * so the same withheld reference reads the same whichever route produced it. Every other region keeps
+ * the plain `<code> (<side>)` form.
+ *
+ * Two causes carry no side qualifier, because each is decided before a region has a side class to join:
+ * `CREDENTIAL_SHAPED_WITHHELD_CODE`, which the scan's admission and verify's finding evidence both emit,
+ * and `SENSITIVE_PATH_WITHHELD_CODE`, which the path screen emits on both. Neither is the
+ * scope-exclusion code `credential-shaped-content-excluded`: that code is recorded only in `excluded`,
+ * by the scan alone, because only the scan plans units and an exclusion is what the planner skips on.
+ *
+ * The qualifier names the region's own content class — the side's `contractCarrying` classification, or
+ * the contract-context class — and never the admission tier. A source a contract-carrying spec covers
+ * ranks in that spec's tier and a contract-needing file ranks above the context its rules charge, yet
+ * both are recorded with the plain side form because their own content carries no contract. The tier is
+ * the order admission attempts the record in, not a property of what was withheld.
  */
 export function withheldRegionReason(contractCarrying: boolean, side: string, cause: WithheldRegionCause): string {
     const base = withheldCauseCode(cause);
@@ -435,11 +529,13 @@ function admitRegion(state: RegionAdmissionState, request: RegionRequest, raw: s
         // otherwise be counted as two discoveries. The side is kept in the limitation.
         if (!state.excludedPaths.has(request.path)) {
             state.excludedPaths.add(request.path);
-            state.excluded.push({ path: request.path, reason: 'credential-shaped-content-excluded' });
+            state.excluded.push({ path: request.path, reason: CREDENTIAL_SHAPED_EXCLUSION_CODE });
         }
         // Recorded as incomplete scope as well as a note: a unit whose evidence was withheld was not
-        // assessed, and a run that reported completion would have claimed otherwise.
-        state.truncated.push({ path: request.path, reason: 'evidence-withheld' });
+        // assessed, and a run that reported completion would have claimed otherwise. The exclusion above
+        // and the withheld code below are separate vocabularies — the exclusion is the scope decision,
+        // the code is why nothing left the machine — and `verify.ts` emits the same code.
+        state.truncated.push({ path: request.path, reason: CREDENTIAL_SHAPED_WITHHELD_CODE });
         state.limitations.push(`evidence for ${request.path} (${label}) was withheld: it contains ${unsafe}`);
         recordWithheldSide(request, state.ownWithheldSides, state.contextWithheldSides);
         return;
@@ -523,19 +619,7 @@ function createRegionAdmission(
     const admit = (request: RegionRequest, raw: string, label: string): void => admitRegion(state, request, raw, label);
     return {
         admit,
-        admitSide: (request, raw, label, ranges): void =>
-            admitSide(
-                request,
-                raw,
-                label,
-                ranges,
-                admit,
-                state.truncated,
-                state.limitations,
-                state.ownWithheldSides,
-                state.contextWithheldSides,
-                state.contractCarryingSides
-            ),
+        admitSide: (request, raw, label, ranges): void => admitSide(state, admit, request, raw, label, ranges),
         references: state.references,
         contents: state.contents,
         attribution: state.attribution,
@@ -563,7 +647,7 @@ function recordScreenExclusions(
         }
         admission.excluded.push({ path: file.path, reason });
         if (reason === 'sensitive-content-excluded') {
-            admission.truncated.push({ path: file.path, reason: 'evidence-withheld-sensitive-path' });
+            admission.truncated.push({ path: file.path, reason: SENSITIVE_PATH_WITHHELD_CODE });
             admission.limitations.push(`evidence for ${file.path} was withheld: it is on the sensitive-path list`);
         }
     }
@@ -632,6 +716,41 @@ function admitUnit(
 }
 
 /**
+ * Whether any file `plannedUnitPaths` admits plans a unit whose rules declare a contract, decision or
+ * registration token. A file that produces no unit charges nothing: one whose own path the content
+ * screen excluded, whose rules admit it no question, or whose every side holds no region admission can
+ * mint — over the per-region ceiling, or with no side to slice — is not in the predicate's set, so it
+ * cannot charge the contract documents.
+ *
+ * The predicate is pre-admission, so this gate is too: a file it admits can still be excluded by the
+ * request fitter as `no-evidence-region-within-budget`, and the document charged for it is then read by
+ * nothing. The gate trades that residual charge for the documents it would otherwise read for a file no
+ * request can carry.
+ *
+ * The own path decides, because that is what the planner skips on. A rename whose previous path was
+ * excluded for a credential still plans a destination unit from its clean after side, so this gate
+ * charges the context that unit's rules declare and will read; consulting the previous path here would
+ * withhold the contract a planned unit asked for. A rename credentialed on both sides is keyed on both
+ * paths by `credentialShapedPaths`, so it charges nothing here and plans nothing either. The caller
+ * screens paths before calling.
+ */
+function planNeedsContractContext(files: readonly SemanticChangedFile[], plannedPaths: ReadonlySet<string>): boolean {
+    const contractNeeding = contractNeedingPaths(files);
+    for (const path of plannedPaths) {
+        if (contractNeeding.has(path)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** The default contract-context candidates, read at the contract source revision. */
+function contractContextCandidates(port: SemanticSourcePort, contractSourceSha: string): string[] {
+    const candidates = ['AGENTS.md', '.agents/decisions/README.md'];
+    return candidates.filter((path) => port.readFile(contractSourceSha, path) !== undefined);
+}
+
+/**
  * Collects bounded evidence for one change. `mergeBaseSha` supplies before-side content and
  * `contractSourceSha` supplies the contracts used as semantic context; `headSha` supplies after-side
  * content. Deleted code keeps its before-side identity.
@@ -643,6 +762,8 @@ export function collectEvidence(input: {
     contractSourceSha: string;
     limits: SemanticEvidenceLimits;
     contractPaths?: readonly string[];
+    /** Whether to add the default contract documents, gated on a planned unit that will actually read them. */
+    includeDefaultContractContext?: boolean;
 }): SemanticEvidenceSet {
     const changed = [...input.port.changedFiles(input.mergeBaseSha, input.headSha)];
     // Read once for the whole change: one `git diff` answers for every path, and an empty map means
@@ -672,11 +793,33 @@ export function collectEvidence(input: {
         input.mergeBaseSha,
         input.headSha
     );
+    const specCovered = specCoveredSources(assessed, contents);
+    const credentialExcludedPaths = credentialShapedPaths(assessed, contents, hunksByPath);
+    // The one predicate the charge and the order both read: the files whose own path the screen keeps,
+    // whose rules admit them, and which carry a side admission mints a region for.
+    const regionCeiling = input.limits.maxRegionBytes;
+    const plannedPaths = plannedUnitPaths(assessed, contents, hunksByPath, regionCeiling, credentialExcludedPaths);
+    // The default contract documents are charged only when the predicate finds a planned unit that
+    // declares a contract token — an eligible file, with contract-declaring rules. That is the proxy and
+    // not a promise: a unit the per-request fitter then leaves no region for is excluded by the planner
+    // and the document charged for it is read by nothing. A rename's excluded previous path leaves that
+    // unit standing on its clean after side, so it still charges the context it declared.
+    const contextPaths = new Set<string>();
+    const includeDefault =
+        input.includeDefaultContractContext === true && planNeedsContractContext(assessed, plannedPaths);
+    if (includeDefault) {
+        for (const path of contractContextCandidates(input.port, input.contractSourceSha)) {
+            contextPaths.add(path);
+        }
+    }
+    for (const path of input.contractPaths ?? []) {
+        contextPaths.add(path);
+    }
     // Read each contract-context region once, so its chargeable bytes rank it with the contract class
     // and its content is admitted from that same read. A region that cannot be read still mints a unit,
     // so its unavailability is recorded in admission order rather than after every changed-file unit.
     const contractContextContent = new Map<string, string>();
-    const contractContexts = (input.contractPaths ?? []).map((path) => {
+    const contractContexts = Array.from(contextPaths).map((path) => {
         const raw = regionFor(input.port, input.contractSourceSha, path);
         if (raw !== undefined) {
             contractContextContent.set(path, raw);
@@ -686,7 +829,14 @@ export function collectEvidence(input: {
             admissionBytes: raw === undefined ? 0 : chargeableRegionBytes(raw, input.limits.maxRegionBytes),
         };
     });
-    const units = admissionUnits(assessed, contractCarryingSides, bytesBySide, contractContexts);
+    const units = admissionUnits(
+        assessed,
+        contractCarryingSides,
+        bytesBySide,
+        contractContexts,
+        specCovered,
+        plannedPaths
+    );
 
     const admission = createRegionAdmission(input.limits, contractCarryingSides);
 
