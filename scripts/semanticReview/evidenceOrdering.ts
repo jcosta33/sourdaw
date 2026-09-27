@@ -9,20 +9,22 @@
  * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
  *    contract-carrying, or a bulk source a contract-carrying spec covers when that source's unit will be
  *    planned — so the budget stays on the change the contract lives in and every planned source a spec covers
- *    is attempted before that spec. A bulk covered source is ranked with the specs that cover it at the
- *    larger of its own side figure and each coverer's, so the pair sits at the larger member's size rather
- *    than at the front of the tier, the pair rank keeps the source ahead of every coverer, and the source
- *    competes with unrelated specs at its anchor's position rather than being guaranteed ahead of them. A
- *    source that is itself contract-carrying keeps its
- *    own position and class, so a contract-carrying non-spec path never outranks it on size alone. The
- *    attempt order is not a survival promise at either profile: admission charges regions against a binding
- *    total, so the covered source can be withheld while its coverer is planned (the plan then holds the spec
+ *    is attempted before that spec. A bulk covered source is ranked with the spec that covers it at the
+ *    larger of its own side figure and its paired coverer's — the coverer whose largest side is smallest —
+ *    so the pair sits at the larger member's size rather than at the front of the tier, the pair rank keeps
+ *    the source ahead of every coverer, and the source competes with unrelated specs at its anchor's
+ *    position rather than being guaranteed ahead of them, the anchor naming that position's path. A source
+ *    that is itself contract-carrying keeps its own position and class, so a contract-carrying non-spec path
+ *    never outranks it on size alone. The attempt order is not a survival promise at either profile:
+ *    admission charges regions against a binding total, so the covered source can be withheld while its
+ *    coverer is planned (the plan then holds the spec
  *    without the source it covers), or the contract-carrying coverer can be withheld while the source is
- *    planned. Any planned unit can be withheld, a contract-context document the rules charged as much as a
- *    changed file's side, and the head can plan as many units as the merge base while still withholding a
- *    different one: in a sweep of generated ci-binding families (a covered source, its coverer, and unrelated
- *    spec and bulk paths sized to bind the ci total), the head withheld a unit the merge base admitted in 19
- *    of 400 and 51 of 1000 families;
+ *    planned. Any planned unit that carries a chargeable byte can be withheld, a contract-context document
+ *    the rules charged as much as a changed file's side, and the head can plan as many units as the merge
+ *    base while still withholding a different one. A unit whose only region is zero bytes never exceeds the
+ *    total, so it is planned at every total and is not part of that loss. In a sweep of generated ci-binding
+ *    families (a covered source, its coverer, and unrelated spec and bulk paths sized to bind the ci total),
+ *    the head withheld such a unit the merge base admitted in 19 of 400 and 51 of 1000 families;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at

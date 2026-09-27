@@ -34,6 +34,8 @@ import {
     admissionBytesBySide,
     admissionUnits,
     classifyContractCarryingSides,
+    compareAdmissionUnits,
+    compareLexicographic,
     readChangedContents,
     specCoveredSources,
     type AdmissionSideBytes,
@@ -1016,11 +1018,10 @@ describe('contract-carrying admission', () => {
         // deleted path, an over-ceiling path, a credentialed path, a rename, a copy and an added file —
         // the covered sources' hunks filled the 98,304-byte total down to 11 bytes, and the deleted path's
         // own before side, the over-ceiling path's own before side and the covering spec's own unit were
-        // all excluded as `no-admissible-evidence`. Ordering a covered source at the larger of its own
-        // figure and the covering spec's figure is what restores them: the source's large side keeps its own
-        // figure, so the pair sits behind the four unrelated specs, the source still precedes its own spec,
-        // and the deleted, over-ceiling and covering-spec units the front-of-tier promotion starved are
-        // planned again.
+        // all excluded as `no-admissible-evidence`. Ranking a covered source with the spec that covers it
+        // restores them: the source's large side keys the pair behind the four unrelated specs rather than at
+        // the front of the tier, and the case reads that the source still precedes its own spec and that the
+        // deleted, over-ceiling and covering-spec units the front-of-tier promotion starved are planned again.
         const sizedLine = (bytes: number, tag: string): string => {
             const prefix = `export const ${tag} = '`;
             return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
@@ -1248,9 +1249,10 @@ describe('contract-carrying admission', () => {
 
     it('keeps a source larger than every coverer ahead of every coverer when the paired coverer is not the first path', () => {
         // A source larger than all of its coverers is the largest member of every pair it forms, so its own
-        // figure is the key every coverer ties, and it must stay ahead of each of them whatever a coverer's
-        // path or its own figure is. The fixture puts the paired coverer's path between the source's and the
-        // other coverers' paths.
+        // figure is the key every coverer ties. It takes the position of the lexicographically first coverer,
+        // which is not the coverer it is paired with for its figure, and a coverer whose path sorts before the
+        // paired coverer's still orders after the source — so the anchor choice is what keeps the source ahead
+        // of a coverer the pair's own path would not.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { shared } from '../shared.ts';\n";
         const anchorSpecPath = 'scripts/semanticReview/__tests__/aaaAnchor.spec.ts';
@@ -1273,7 +1275,7 @@ describe('contract-carrying admission', () => {
         // `cccSmall` is the coverer the source is paired with (its largest side, 100, is the smallest);
         // `bbbBig` carries the largest figure; `aaaAnchor` is neither, and is the lexicographically first
         // coverer. The source's own 1,000-byte figure is the largest, so all four key at 1,000, and the
-        // source stays ahead of each of them.
+        // source's position is the anchor's path.
         const bytesBySide = new Map<string, AdmissionSideBytes>([
             [anchorSpecPath, { before: 300, after: 300 }],
             [bigSpecPath, { before: 500, after: 500 }],
@@ -1507,6 +1509,136 @@ describe('contract-carrying admission', () => {
             units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
         expect(index(unrelatedPath, 'before')).toBeLessThan(index(sourcePath, 'before'));
         expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
+    });
+
+    it("admits a covered source at its coverer's position before an equal-figure unrelated path", () => {
+        // A covered bulk source and an added project path reach one admission rank with the same figure. The
+        // source takes its covering spec's position, whose path the competitor's would beat in a path
+        // tie-break, and the source is the unit the binding total admits. This is the ranking a covered source
+        // draws from the spec that covers it: an unrelated path of the same size does not take its place.
+        const coverPath = 'scripts/semanticReview/__tests__/coverAll.spec.ts';
+        const sourcePath = 'scripts/bulkSource.ts';
+        const competitorPath = 'src/modules/Project/zShape.ts';
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const pad = (bytes: number, ...prefix: readonly string[]): string => {
+            const head = prefix.join('');
+            return `${head}${'y'.repeat(bytes - Buffer.byteLength(head))}`;
+        };
+        const coverSide = pad(4_000, workflowLine, "import { b } from '../../bulkSource.ts';\n");
+        const sourceSide = pad(1_000, 'export const b = 1;\n');
+        const competitorSide = pad(4_000, 'const value = 1;\n');
+        const files: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            { path: competitorPath, kind: 'added', binary: false, generated: false, added: 250, deleted: 0 },
+        ];
+        const port = fakeSource({
+            files,
+            blobs: {
+                [`${HEAD}:${coverPath}`]: coverSide,
+                [`${HEAD}:${sourcePath}`]: sourceSide,
+                [`${HEAD}:${competitorPath}`]: competitorSide,
+            },
+        });
+        const contents = readChangedContents(port, MERGE_BASE, HEAD, files);
+        const hunks = new Map<string, PathHunks>();
+        const bytesBySide = admissionBytesBySide(files, contents, hunks, 100_000, MERGE_BASE, HEAD);
+        const sidesByPath = classifyContractCarryingSides(files, contents);
+        const covered = specCoveredSources(files, contents, bytesBySide);
+        expect(covered.get(sourcePath)).toEqual([coverPath]);
+        const units = admissionUnits(
+            files,
+            sidesByPath,
+            bytesBySide,
+            [],
+            covered,
+            new Set(files.map((entry) => entry.path))
+        );
+        const sourceUnit = units.find((unit) => unit.kind === 'changed' && unit.file.path === sourcePath);
+        const competitorUnit = units.find((unit) => unit.kind === 'changed' && unit.file.path === competitorPath);
+        if (sourceUnit === undefined || competitorUnit === undefined) {
+            throw new Error('both the covered source and the competitor must produce a unit');
+        }
+        // The pair keys at the coverer's figure, the competitor shares that figure, and the competitor's path
+        // would win the tie-break against the position the source takes.
+        expect(sourceUnit.order.admissionBytes).toBe(competitorUnit.order.admissionBytes);
+        expect(sourceUnit.order.path).toBe(coverPath);
+        expect(sidesByPath.get(sourcePath)?.after).toBe(false);
+        expect(compareLexicographic(competitorPath, coverPath)).toBeGreaterThan(0);
+        expect(units[0]).toBe(sourceUnit);
+        const set = collectEvidence({
+            port,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 100_000, maxTotalBytes: 8_500 },
+        });
+        expect(set.references.map((reference) => reference.path)).toContain(sourcePath);
+        expect(set.references.map((reference) => reference.path)).not.toContain(competitorPath);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === competitorPath && entry.reason === 'total-evidence-budget-exhausted (after)'
+            )
+        ).toBe(true);
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        expect(planned.units.some((unit) => unit.path === sourcePath)).toBe(true);
+    });
+
+    it('admits the lexicographically first of two equal-figure covered sources under a binding total', () => {
+        // Two sources keyed at their shared coverer's figure, with equal figures of their own, so they reach
+        // one position with nothing left between them but their own paths. The case lists them in both orders
+        // and reads that the same source is admitted first each way, so the order does not depend on the order
+        // the caller lists the change's files in.
+        const coverPath = 'scripts/semanticReview/__tests__/equalCover.spec.ts';
+        const aPath = 'scripts/semanticReview/equalA.ts';
+        const bPath = 'scripts/semanticReview/equalB.ts';
+        const coverAfter = `const workflow = '.github/workflows/semantic-review.yml';\nimport { a } from '../equalA.ts';\nimport { b } from '../equalB.ts';\n`;
+        const changed = (paths: readonly string[]): SemanticChangedFile[] => [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            ...paths.map((path): SemanticChangedFile => ({
+                path,
+                kind: 'added',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 0,
+            })),
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { after: coverAfter }],
+            [aPath, { after: 'export const a = 1;\n' }],
+            [bPath, { after: 'export const b = 1;\n' }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: false, after: true }],
+            [aPath, { before: false, after: false }],
+            [bPath, { before: false, after: false }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 0, after: 40_000 }],
+            [aPath, { before: 0, after: 20_000 }],
+            [bPath, { before: 0, after: 20_000 }],
+        ]);
+        const firstListed = (paths: readonly string[]): string => {
+            const files = changed(paths);
+            const units = admissionUnits(
+                files,
+                sidesByPath,
+                bytesBySide,
+                [],
+                specCoveredSources(files, contents, bytesBySide),
+                new Set(files.map((file) => file.path))
+            );
+            const sourceUnits = units.filter((unit) => unit.kind === 'changed' && unit.file.path !== coverPath);
+            const [first, second] = sourceUnits;
+            if (first === undefined || second === undefined) {
+                throw new Error('both covered sources must produce a unit');
+            }
+            expect(compareAdmissionUnits(first, second)).toBeLessThan(0);
+            return first.kind === 'changed' ? first.file.path : '';
+        };
+        expect(firstListed([bPath, aPath])).toBe(aPath);
+        expect(firstListed([aPath, bPath])).toBe(aPath);
     });
 
     it('lets an unrelated spec take the order from a covered source whose pair key ties its byte figure', () => {
