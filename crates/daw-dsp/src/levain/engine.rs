@@ -288,6 +288,10 @@ impl LevainEngine {
         // bank loads, and a bank swap is not a mixer reset.
         self.num_mics = pending.num_mics;
         self.apply_instrument(&pending.instrument_id);
+        for (realism, tone) in self.realism.iter_mut().zip(self.tone.iter_mut()) {
+            realism.reset();
+            tone.reset();
+        }
         self.fallback.enabled = false;
         self.expression
             .crossfader
@@ -628,19 +632,15 @@ impl LevainEngine {
                     .get(from_voice)
                     .is_some_and(|voice| voice.active && voice.note == from_note)
                 {
-                    // The incoming zones enter at the outgoing lead stream's
-                    // own playhead, so the slur adds no second attack. This is
-                    // the fallback for an interval the bank has no recorded
-                    // transition for; a registered transition takes the
-                    // `TrueTransition` arm above and never reaches here.
-                    let outgoing_position = self.voice_pool.voices[from_voice].lead_position();
+                    // The incoming zones enter at the outgoing streams' elapsed
+                    // time, so the slur adds no second attack even when mic
+                    // positions have different decoded sample rates.
                     self.voice_pool.voices[from_voice].start_crossfade(
                         &zones,
                         note,
                         glide_time,
                         self.sample_rate,
                         &self.sample_pool,
-                        outgoing_position,
                     );
                     self.voice_pool.voices[from_voice].note = note;
                     // A synthetic glide reuses the sounding voice, so it

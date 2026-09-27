@@ -83,6 +83,39 @@ fn add_sine(instance: &mut LevainInstance, hz: f32) -> u32 {
         .expect("sample adds to a uniquely-owned bank")
 }
 
+fn stage_rate_take(
+    instance: &mut LevainInstance,
+    zone_id: u32,
+    mic: u8,
+    hz: f32,
+    rate: f32,
+    frames: u32,
+) {
+    stage_rate_take_keys(instance, zone_id, mic, hz, rate, frames, 0, 127);
+}
+
+fn stage_rate_take_keys(
+    instance: &mut LevainInstance,
+    zone_id: u32,
+    mic: u8,
+    hz: f32,
+    rate: f32,
+    frames: u32,
+    key_lo: u8,
+    key_hi: u8,
+) {
+    let data = (0..frames)
+        .map(|frame| (frame as f32 / rate * hz * std::f32::consts::TAU).sin() * 0.5)
+        .collect();
+    let sample_id = instance
+        .add_sample(data, frames, 1, rate)
+        .expect("sample adds to a uniquely-owned bank");
+    instance.add_zone(
+        zone_id, sample_id, SUSTAIN, NOTE, 0.0, key_lo, key_hi, 0, 127, 0, 1, mic, false, 1, 0,
+        frames, 0, 0.0, 0.001, 0.1, 1.0, 0.2,
+    );
+}
+
 /// Stage `takes` into a begun bank. Sustains loop the whole recording;
 /// release takes are one-shots.
 fn stage_takes(instance: &mut LevainInstance, takes: &[Take]) {
@@ -539,6 +572,166 @@ fn a_synthetic_glide_carries_every_mic_layer_to_the_new_note() {
         transposed(MIC_1_HZ, target),
         "after a synthetic glide",
     );
+}
+
+#[test]
+fn synthetic_glide_preserves_elapsed_time_across_mic_sample_rates() {
+    for (lead_rate, other_rate) in [(48_000.0, 24_000.0), (24_000.0, 48_000.0)] {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.set_param("humanize", 0.0);
+        instance.set_param("mic_0_pan", -1.0);
+        instance.set_param("mic_1_pan", 1.0);
+        instance.begin_sample_bank(NEUTRAL_INSTRUMENT);
+        stage_rate_take(
+            &mut instance,
+            0,
+            0,
+            451.0,
+            lead_rate,
+            (lead_rate / 2.0) as u32,
+        );
+        stage_rate_take(
+            &mut instance,
+            1,
+            1,
+            451.0,
+            other_rate,
+            (other_rate / 2.0) as u32,
+        );
+        commit(&mut instance, 2);
+
+        instance.note_on(NOTE, VELOCITY);
+        render(&mut instance, 4_800);
+        instance.note_on(NOTE + 2, VELOCITY);
+        render(&mut instance, 1_024);
+        let after = render(&mut instance, BLOCK);
+
+        assert_eq!(instance.active_voices(), 1);
+        let drift = max_abs_diff(&after.left, &after.right);
+        assert!(
+            drift < 0.01,
+            "the same performance on {lead_rate} and {other_rate} Hz mics drifted by {drift} after the glide",
+        );
+    }
+}
+
+#[test]
+fn synthetic_glide_uses_the_outgoing_lead_when_the_incoming_mic_was_missing() {
+    let perform = |mic_0_had_outgoing_zone: bool| {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.set_param("humanize", 0.0);
+        instance.set_param("mic_0_pan", -1.0);
+        instance.set_param("mic_1_pan", 1.0);
+        instance.begin_sample_bank(NEUTRAL_INSTRUMENT);
+        if mic_0_had_outgoing_zone {
+            stage_rate_take_keys(&mut instance, 0, 0, 451.0, 48_000.0, 24_000, NOTE, NOTE);
+        }
+        let next_id = u32::from(mic_0_had_outgoing_zone);
+        stage_rate_take_keys(
+            &mut instance,
+            next_id,
+            1,
+            451.0,
+            24_000.0,
+            12_000,
+            NOTE,
+            NOTE,
+        );
+        stage_rate_take_keys(
+            &mut instance,
+            next_id + 1,
+            0,
+            451.0,
+            48_000.0,
+            24_000,
+            NOTE + 2,
+            NOTE + 2,
+        );
+        commit(&mut instance, 2);
+        instance.note_on(NOTE, VELOCITY);
+        render(&mut instance, 4_800);
+        instance.note_on(NOTE + 2, VELOCITY);
+        render(&mut instance, 4_800);
+        assert_eq!(instance.active_voices(), 1);
+        render(&mut instance, BLOCK).left
+    };
+
+    let expected = perform(true);
+    let after = perform(false);
+    let drift = max_abs_diff(&after, &expected);
+    assert!(peak(&expected) > 0.05, "the incoming mic is silent");
+    assert!(
+        drift < 0.01,
+        "the newly available mic starts {drift} away from the outgoing lead's time"
+    );
+}
+
+#[test]
+fn bank_commit_clears_dormant_mic_tone_history() {
+    let setup = || {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.set_param("humanize", 0.0);
+        instance.set_param("tone", 1.0);
+        instance.set_param("mic_1_pan", 1.0);
+        instance
+    };
+    let load_one = |instance: &mut LevainInstance, mic: u8, hz: f32, frames: u32| {
+        instance.begin_sample_bank(NEUTRAL_INSTRUMENT);
+        stage_rate_take(instance, 0, mic, hz, SAMPLE_RATE, frames);
+        commit(instance, 2);
+    };
+
+    let mut reused = setup();
+    load_one(&mut reused, 1, 660.0, 7_331);
+    reused.note_on(NOTE, VELOCITY);
+    render(&mut reused, 7_331);
+    load_one(&mut reused, 0, 440.0, 2_401);
+    reused.note_on(NOTE, VELOCITY);
+    render(&mut reused, 2_401);
+    load_one(&mut reused, 1, 440.0, FRAME_COUNT);
+    reused.note_on(NOTE, VELOCITY);
+    let after = render(&mut reused, BLOCK);
+
+    let mut fresh = setup();
+    load_one(&mut fresh, 1, 440.0, FRAME_COUNT);
+    fresh.note_on(NOTE, VELOCITY);
+    let expected = render(&mut fresh, BLOCK);
+    let drift = max_abs_diff(&after.right, &expected.right);
+    assert!(
+        peak(&expected.right) > 1e-4,
+        "the reference mic is silent: peak={}, voices={}",
+        peak(&expected.right),
+        fresh.active_voices()
+    );
+    assert!(
+        drift < 1e-6,
+        "bank C inherited {drift} of bank A's mic-1 Tone history"
+    );
+}
+
+#[test]
+fn failed_bank_commit_keeps_the_sounding_mic_tone_history() {
+    let mut baseline = LevainInstance::new(SAMPLE_RATE, 8);
+    let mut pending = LevainInstance::new(SAMPLE_RATE, 8);
+    for instance in [&mut baseline, &mut pending] {
+        instance.set_param("humanize", 0.0);
+        instance.set_param("tone", 1.0);
+        load(
+            instance,
+            NEUTRAL_INSTRUMENT,
+            2,
+            &[Take::sustain(1, MIC_1_HZ)],
+        );
+        instance.note_on(NOTE, VELOCITY);
+        render(instance, 7_331);
+    }
+
+    pending.begin_sample_bank(NEUTRAL_INSTRUMENT);
+    assert!(!pending.commit_sample_bank(), "an empty bank cannot commit");
+    let expected = render(&mut baseline, BLOCK);
+    let after = render(&mut pending, BLOCK);
+    assert!(peak(&expected.right) > 1e-4, "the sounding bank is silent");
+    assert_eq!(max_abs_diff(&after.right, &expected.right), 0.0);
 }
 
 #[test]

@@ -421,7 +421,7 @@ impl SamplePlayback {
     ///
     /// Used by crossfade legato to start the incoming zone where the outgoing
     /// voice already is, rather than at the zone's first frame. `position` is
-    /// in frames of *this* stream, which is what makes it musically right:
+    /// in frames of *this* stream:
     /// wherever the held note had got to, the slurred note is at least that
     /// far past its own recorded onset, so the transition adds no second
     /// attack. Positions past the end fold back into the loop when there is
@@ -1012,10 +1012,9 @@ impl LevainVoice {
     /// the crossfade-legato fallback for a slur with no recorded interval
     /// sample. Each mic position crosses from its own outgoing stream into
     /// its own zone for the new note; a position with no zone for it fades
-    /// out. `target_start_position` is where the incoming zones' playheads
-    /// start, in their own frames; the caller passes the outgoing lead
-    /// stream's position so the new zones enter past their recorded onset
-    /// instead of re-articulating it, all positions on one timeline.
+    /// out. Each incoming stream starts at its outgoing stream's elapsed
+    /// sample time, converted to the incoming recording's frame rate. A mic
+    /// with no outgoing zone uses the outgoing lead stream's time.
     pub fn start_crossfade(
         &mut self,
         new_zones: &NoteZones,
@@ -1023,8 +1022,12 @@ impl LevainVoice {
         crossfade_time_secs: f32,
         sample_rate: f32,
         pool: &SamplePool,
-        target_start_position: f64,
     ) {
+        let lead = &self.playback[self.lead_mic];
+        let lead_rate = pool
+            .get(lead.sample_id)
+            .map_or(self.sample_rate, |sample| sample.sample_rate);
+        let lead_time = (lead.position - f64::from(lead.start)) / f64::from(lead_rate);
         for (mic, (playback, outgoing)) in self
             .playback
             .iter_mut()
@@ -1035,6 +1038,14 @@ impl LevainVoice {
             *outgoing = playback.clone();
             match new_zones.zone(mic) {
                 Some(zone) => {
+                    let elapsed = if outgoing.active {
+                        let outgoing_rate = pool
+                            .get(outgoing.sample_id)
+                            .map_or(self.sample_rate, |sample| sample.sample_rate);
+                        (outgoing.position - f64::from(outgoing.start)) / f64::from(outgoing_rate)
+                    } else {
+                        lead_time
+                    };
                     playback.configure_with_pool(
                         &zone.sample,
                         note,
@@ -1042,7 +1053,11 @@ impl LevainVoice {
                         pool,
                         self.sample_rate,
                     );
-                    playback.seek_to(target_start_position);
+                    let incoming_rate = pool
+                        .get(playback.sample_id)
+                        .map_or(self.sample_rate, |sample| sample.sample_rate);
+                    playback
+                        .seek_to(f64::from(playback.start) + elapsed * f64::from(incoming_rate));
                 }
                 None => playback.active = false,
             }
@@ -1106,12 +1121,6 @@ impl LevainVoice {
         );
         self.layer_attached[mic] = true;
         self.layer_active = true;
-    }
-
-    /// Playhead of the lead mic position's primary stream, in its own frames.
-    #[inline]
-    pub fn lead_position(&self) -> f64 {
-        self.playback[self.lead_mic].position
     }
 
     /// Update this block's CC1-derived blend weights for the primary zone and
@@ -2061,14 +2070,7 @@ mod tests {
         // Crossfade legato: the incoming primary reconfigures against the pool.
         let mut voice = LevainVoice::new(output_rate);
         voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
-        voice.start_crossfade(
-            &NoteZones::single(zone_alt),
-            71,
-            0.05,
-            output_rate,
-            &pool,
-            0.0,
-        );
+        voice.start_crossfade(&NoteZones::single(zone_alt), 71, 0.05, output_rate, &pool);
         // zone_alt's root is 71 and the slur targets note 71: pitch-neutral, so
         // the ratio is the whole base speed.
         let expected = ratio;
