@@ -1,0 +1,44 @@
+scripts/prepareReview.ts
+  s_ed5aa36a3ba357::t_0025b963414cf8 28,217-218
+scripts/reviewPublicationBinding.ts
+  s_ed5aa36a3ba357::t_02c5de303d0f33 194,202-204,242
+  s_ed5aa36a3ba357::t_fdb700bbd2ee3c 44,185-187
+scripts/__tests__/prepareReview.spec.ts
+  s_ed5aa36a3ba357::t_d9549f6faf2431 24
+  s_ed5aa36a3ba357::t_2eb48367fc5015 212-236
+  s_ed5aa36a3ba357::t_43da280e36f512 237-244,247
+scripts/publishReview.ts
+  s_ed5aa36a3ba357::t_23fe0231e9a3a1 231-232,239
+.agents/skills/delivery-orchestration/SKILL.md
+  s_ed5aa36a3ba357::t_a4c672a9674890 273-277
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  s_ed5aa36a3ba357::t_d5e31a6c887415 12,183-194,214-215,220-231
+scripts/__tests__/publishReview.spec.ts
+  s_ed5aa36a3ba357::t_c7d9dce2f19152 6170,6172-6173,6175-6176,6185-6186,6194-6233,6237-6238,6240
+  s_ed5aa36a3ba357::t_aaa11be9896f1f 74,5183,5196
+  s_ed5aa36a3ba357::t_d659edc9cbc9c2 5142
+  s_ed5aa36a3ba357::t_944b5f2668ea68 6234-6236,6239,6241,6336,6348,6365,6378
+AGENTS.md
+  s_ed5aa36a3ba357::t_39d4ec2ea093c6 229,231-232,236-241
+.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md
+  s_ed5aa36a3ba357::t_05d2544ed2307c 5,16-23
+  s_ed5aa36a3ba357::t_e3c7f49390e94d 24
+scripts/reviewRoundEscalation.ts
+  s_ed5aa36a3ba357::t_183578ed2c1415 24-25,124,138-142,153,215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fe398950dbb907c293538d4d3721acc68fbea5cb",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
