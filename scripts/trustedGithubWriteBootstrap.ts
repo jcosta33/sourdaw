@@ -745,11 +745,7 @@ function collectLoaderBindings(source: string): LoaderRead {
         if (isKeywordAt(source, index, 'class') && !isPrecededByDotAccess(source, index)) {
             const open = classBodyOpenAfterClass(source, index);
             if (open !== undefined) {
-                if (isClassDeclarationPosition(source, index)) {
-                    classEntryFromOpen(source, classFields, open);
-                } else {
-                    registerClassExpression(classFields, open);
-                }
+                registerClassAt(source, classFields, open, index);
                 recordClassMembers(source, classFields, open);
             }
             index += 'class'.length;
@@ -797,9 +793,36 @@ function pushLocalBinding(
 function registerClassExpression(classFields: Map<number, ClassFieldsEntry>, open: number): void {
     let entry = classFields.get(open);
     if (entry === undefined) {
-        entry = { name: '', scopeChain: [], parentName: undefined, fields: new Map(), members: new Set() };
+        entry = {
+            name: '',
+            scopeChain: [],
+            parentName: undefined,
+            fields: new Map(),
+            members: new Set(),
+            unmodelled: false,
+        };
         classFields.set(open, entry);
     }
+}
+
+/**
+ * Registers the class whose keyword starts at `classKeywordIndex` — a declaration or an expression —
+ * and marks it unmodelled when a decorator precedes the keyword, so a read-back through a decorated
+ * class keeps the merge base's reading instead of resolving to its members.
+ */
+function registerClassAt(
+    source: string,
+    classFields: Map<number, ClassFieldsEntry>,
+    open: number,
+    classKeywordIndex: number
+): ClassFieldsEntry {
+    const entry = isClassDeclarationPosition(source, classKeywordIndex)
+        ? classEntryFromOpen(source, classFields, open)
+        : (registerClassExpression(classFields, open), classFields.get(open)!);
+    if (decoratorOpenBefore(source, classKeywordIndex) !== undefined) {
+        entry.unmodelled = true;
+    }
+    return entry;
 }
 
 /**
@@ -833,11 +856,7 @@ function collectClassDeclarations(source: string, classFields: Map<number, Class
         if (isKeywordAt(source, index, 'class') && !isPrecededByDotAccess(source, index)) {
             const open = classBodyOpenAfterClass(source, index);
             if (open !== undefined) {
-                if (isClassDeclarationPosition(source, index)) {
-                    classEntryFromOpen(source, classFields, open);
-                } else {
-                    registerClassExpression(classFields, open);
-                }
+                registerClassAt(source, classFields, open, index);
             }
         }
         index += 1;
@@ -1409,6 +1428,12 @@ type ClassFieldsEntry = {
     parentName: string | undefined;
     fields: Map<string, LoaderBindingKind>;
     members: Set<string>;
+    /**
+     * Whether the class body holds a construct the member walk does not fully consume — a decorator, a
+     * static block, or a computed member value — so the members it records are unreliable. A read-back
+     * through an unmodelled class keeps the merge base's reading instead of resolving to a field.
+     */
+    unmodelled: boolean;
 };
 
 /**
@@ -2131,12 +2156,61 @@ function declaresClassName(classFields: ReadonlyMap<number, ClassFieldsEntry>, n
 }
 
 /**
+ * The `@` of the decorator immediately before `index` — a `@name`, `@ns.name`, `@name(args)`, or any
+ * namespaced or call spelling of those — or `undefined` when no decorator precedes the keyword. A
+ * decorator sits where a declaration modifier does, so it neither turns a declaration into an expression
+ * nor hides the member it decorates.
+ */
+function decoratorOpenBefore(source: string, index: number): number | undefined {
+    let cursor = previousSignificantCharacter(source, index - 1);
+    if (cursor === undefined) {
+        return undefined;
+    }
+    if (source.charAt(cursor) === ')') {
+        const open = matchingOpenDelimiterBackward(source, cursor, '(', ')');
+        if (open === undefined) {
+            return undefined;
+        }
+        cursor = previousSignificantCharacter(source, open - 1);
+        if (cursor === undefined) {
+            return undefined;
+        }
+    }
+    if (!isIdentifierContinue(source.charAt(cursor))) {
+        return undefined;
+    }
+    while (true) {
+        const word = readWordBackward(source, cursor);
+        const wordStart = cursor - word.length + 1;
+        const before = previousSignificantCharacter(source, wordStart - 1);
+        if (before === undefined) {
+            return undefined;
+        }
+        if (source.charAt(before) === '@') {
+            return before;
+        }
+        if (source.charAt(before) === '.') {
+            const previous = previousSignificantCharacter(source, before - 1);
+            if (previous === undefined || !isIdentifierContinue(source.charAt(previous))) {
+                return undefined;
+            }
+            cursor = previous;
+            continue;
+        }
+        return undefined;
+    }
+}
+
+/**
  * Whether the `class` keyword at `index` stands in statement position, and so declares its name in the
  * enclosing scope, rather than in expression position (`= class`, `(class`, `[class`, `, class`), where
- * the name is bound only inside the expression. Statement boundaries and the declaration modifiers
- * admit a declaration; anything else leaves the keyword an expression.
+ * the name is bound only inside the expression. Statement boundaries, the declaration modifiers, and a
+ * decorator admit a declaration; anything else leaves the keyword an expression.
  */
 function isClassDeclarationPosition(source: string, index: number): boolean {
+    if (decoratorOpenBefore(source, index) !== undefined) {
+        return true;
+    }
     const before = previousSignificantCharacter(source, index - 1);
     if (before === undefined) {
         return true;
@@ -2233,6 +2307,13 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
         if (cursor >= close - 1) {
             return;
         }
+        // A decorator is outside the model, so the class's members are unreliable: mark it unmodelled
+        // and skip the decorator whole.
+        if (source[cursor] === '@') {
+            entry.unmodelled = true;
+            cursor = skipClassBodyRegion(source, cursor, close - 1);
+            continue;
+        }
         if (source[cursor] === '[') {
             const computed = readComputedMemberName(source, cursor, close - 1);
             if (computed !== undefined) {
@@ -2246,6 +2327,13 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
         const head = readClassMemberHead(source, cursor, close - 1);
         if (head === undefined) {
             cursor = skipClassBodyRegion(source, cursor, close - 1);
+            continue;
+        }
+        // A static block `static { … }` is outside the model, so the class's members are unreliable:
+        // mark it unmodelled and skip the block whole.
+        if (head.name === 'static' && source[head.afterName] === '{') {
+            entry.unmodelled = true;
+            cursor = skipClassBodyRegion(source, head.afterName, close - 1);
             continue;
         }
         if (!head.static && !head.isDeclare) {
@@ -2958,6 +3046,12 @@ function isDeclarationContext(source: string, keywordIndex: number): boolean {
     // or return type, and an arrow body all put a member there, and the token alone cannot separate
     // them from an object literal, so each keeps the merge base's reading.
     let cursor = keywordIndex - 1;
+    // A decorator `@ns.dec(...)` before the name is skipped whole, so the construct before it decides
+    // whether the name is a member rather than the decorator's tail reading as a non-modifier token.
+    const decoratorStart = decoratorOpenBefore(source, keywordIndex);
+    if (decoratorStart !== undefined) {
+        cursor = decoratorStart - 1;
+    }
     while (cursor >= 0) {
         const character = source[cursor];
         if (character === undefined) {
@@ -3175,6 +3269,7 @@ function classEntryFromOpen(
             parentName: info?.parentName,
             fields: new Map(),
             members: new Set(),
+            unmodelled: false,
         };
         classFields.set(open, entry);
     }
@@ -3387,6 +3482,11 @@ function resolveInstanceField(
         seen.add(current);
         const entry = classFields.get(current);
         if (entry === undefined) {
+            return undefined;
+        }
+        // A class the walk did not fully consume yields no shape, so the read-back keeps the merge
+        // base's reading rather than deciding either way through an unreliable member set.
+        if (entry.unmodelled) {
             return undefined;
         }
         if (entry.members.has(fieldName)) {

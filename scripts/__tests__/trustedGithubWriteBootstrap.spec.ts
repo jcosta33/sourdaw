@@ -919,8 +919,9 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nconst f = (H) => H\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
-        // A namespaced member decorator is skipped whole, so the real member is read: a subclass field
-        // shadows the parent's loader, and a field that loads is a load.
+        // A decorator makes the class unmodelled, so a read-back through it keeps the merge base's
+        // reading — on a member in either direction, and on a declaration whatever the decorator
+        // spelling, its arguments, or a modifier after it.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { loader = require; }\nclass D extends H { @ns.dec loader = console.log; }\nconst { loader } = new D();\nloader(spec);'
@@ -930,14 +931,35 @@ describe('snapshotImportSpecifiers', () => {
             snapshotComputedDynamicSpecifiers(
                 'class H { @ns.dec loader = require; }\nconst { loader } = new H();\nloader(spec);'
             )
-        ).toEqual(['require(...)']);
-        // A decorated class declaration stays undecided: the decorator hides the class from the scan, so
-        // the read-back keeps the merge base's reading.
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @dec class H { loader = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @a.b.c(1) class H { loader = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
         expect(
             snapshotComputedDynamicSpecifiers(
                 '@dec class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
+        // A static block makes the class unmodelled, so the members after it keep the base reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { static {} loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A decorated `require` member declares the name, so the parameter list is not a loader call.
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @dec require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { @dec(arg) require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @ns.dec require(spec) {} }')).toEqual([]);
+        // A `using` loader declaration stays undecided, so the name binds no loader.
+        expect(snapshotComputedDynamicSpecifiers('using load = require;\nload(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('await using load = require;\nload(spec);')).toEqual([]);
         // A statically computed member name is recorded but its loader value is not, so the read-back
         // keeps the merge base's reading.
         expect(
