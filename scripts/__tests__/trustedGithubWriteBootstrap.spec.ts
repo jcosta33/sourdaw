@@ -668,9 +668,11 @@ describe('snapshotImportSpecifiers', () => {
                 'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public loader = null) {} }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
+        // The same comparison leaves the parameter's own loader initializer the only source of the
+        // reading: this class has no parent, so nothing but that initializer can report the load.
         expect(
             snapshotComputedDynamicSpecifiers(
-                'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+                'class H { constructor(public a = b < c, public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
         // The splitter keeps reading parameters past that comparison, so a parameter property declared
