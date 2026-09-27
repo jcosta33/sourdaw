@@ -740,3 +740,24 @@ Do not:
 - **Forget a mock in `injectDependencies`.** The helper throws if you do — don't disable the check. Every dep gets a mock, even the ones you "don't care about" (use `spy<T>()` with no overrides for those).
 - **Snapshot-test dynamic UI.** Snapshots are for stable, literal structure. If a component renders varying content, assert on the content explicitly.
 - **Leak mocks across files.** Module-level `vi.mock(...)` is scoped to its spec file — but be disciplined and don't rely on test-file ordering.
+
+## Required pull-request scope and nightly coverage
+
+`Gate` requires validation, the affected browser plan, its selected E2E workflows and hardware
+proof, and applicable CodeQL execution. The aggregate and its assertion step always run, including
+after cancellation, and reject cancelled or unexpectedly skipped dependencies. Approving reviews
+start no additional test train.
+
+The deterministic selector in `scripts/prValidationScope.ts` reads the complete Git diff between
+immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`
+with the selected files and reasons. Product changes run the offline smoke set and complete browser
+suite with hardware admission, including presentation files, shared application code, test helpers,
+dependencies, deleted tests and unknown paths. Changed E2E specs run directly. Documentation and
+known review tooling avoid browser execution. An AI judgment cannot waive deterministic coverage.
+Missing selected files and malformed plans fail.
+CodeQL runs for JavaScript/TypeScript and relevant workflow or security configuration changes;
+the PR secret scan and dependency review remain in required validation even when CodeQL is skipped.
+
+The nightly keeps the full E2E matrix, Browser AI hardware admission, platform and desktop proofs,
+full-history secret scan and security analysis. Production deployment remains downstream of that
+full successful train. Scoped PR coverage supplements rather than replaces this full-load gate.

@@ -686,11 +686,8 @@ function assertDeclaredClosure(
 type WorkflowRecord = Record<string, unknown>;
 
 const GATE_SUMMARY_NAME = 'Gate';
-// `!cancelled()` rather than `always()`: the summary must still evaluate failed
-// and skipped dependencies on a live run. This workflow answers pull_request
-// only, so a review event cannot mint a skipped Gate that GitHub would treat as
-// a required-check success.
-const AUTHORIZED_GATE_CONDITION = '${{ !cancelled() }}';
+// A cancelled dependency must still reach the required aggregate's assertion.
+const REQUIRED_GATE_CONDITION = '${{ always() }}';
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
 
@@ -748,7 +745,7 @@ function validationWorkflow(): WorkflowRecord {
     return asWorkflowRecord(document.toJS(), 'validation workflow');
 }
 
-function stableInformationalGateSummary(workflow: WorkflowRecord): WorkflowRecord {
+function stableRequiredGateSummary(workflow: WorkflowRecord): WorkflowRecord {
     for (const [jobId, value] of Object.entries(workflowRecordAt(workflow, 'jobs'))) {
         const name = asWorkflowRecord(value, jobId).name;
         if (typeof name !== 'string') {
@@ -985,7 +982,7 @@ describe('package scripts and gitignore', () => {
         expect(gitignore).toContain('.agents/review-bundles/');
     });
 
-    it('keeps the informational Gate summary stable and validates job outcomes', () => {
+    it('keeps the required Gate summary stable and validates selected job outcomes', () => {
         const { document, workflow } = healthGateWorkflow();
         expect(document.errors).toEqual([]);
         const events = workflowRecordAt(workflow, 'on');
@@ -995,38 +992,43 @@ describe('package scripts and gitignore', () => {
         const concurrency = workflowRecordAt(workflow, 'concurrency');
         expect(concurrency.group).toBe(PULL_REQUEST_CONCURRENCY_GROUP);
         expect(concurrency['cancel-in-progress']).toBe(true);
-        // Scope classification lives in the called validation lane now, and on the pull_request
-        // event — the only event that can reach `Gate` — it must still run unconditionally. The
-        // one clause it carries is the review-lane guard: heavy-gates calls the same lane on
-        // review events, where only an approved review may run it.
         const validation = validationWorkflow();
-        expect(workflowJob(validation, 'decide').if).toBe(
-            "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'"
-        );
+        expect(Object.keys(workflowRecordAt(validation, 'on'))).toEqual(['workflow_call']);
+        expect(
+            workflowRecordAt(workflowRecordAt(workflowRecordAt(validation, 'on'), 'workflow_call'), 'inputs')
+        ).toHaveProperty('browser', { description: expect.any(String), required: true, type: 'boolean' });
+        expect(Object.hasOwn(workflowJob(validation, 'decide'), 'if')).toBe(false);
 
-        const gate = stableInformationalGateSummary(workflow);
+        const gate = stableRequiredGateSummary(workflow);
         const eventDependentGate = structuredClone(workflow);
         workflowJob(eventDependentGate, 'gate').name =
             "${{ github.event_name == 'workflow_dispatch' && 'Gate' || 'Gate' }}";
-        expect(() => stableInformationalGateSummary(eventDependentGate)).toThrow(
+        expect(() => stableRequiredGateSummary(eventDependentGate)).toThrow(
             'workflow job check names must be event-independent'
         );
         const renamedGate = structuredClone(workflow);
         workflowJob(renamedGate, 'gate').name = 'Health summary';
-        expect(() => stableInformationalGateSummary(renamedGate)).toThrow(
+        expect(() => stableRequiredGateSummary(renamedGate)).toThrow(
             'the gate job must emit the stable Gate summary check name'
         );
         const duplicateGate = structuredClone(workflow);
         workflowJob(duplicateGate, 'validation').name = GATE_SUMMARY_NAME;
-        expect(() => stableInformationalGateSummary(duplicateGate)).toThrow(
+        expect(() => stableRequiredGateSummary(duplicateGate)).toThrow(
             'only the gate job may emit the stable Gate summary check name'
         );
-        expect(gate.if).toBe(AUTHORIZED_GATE_CONDITION);
-        const gateStep = workflowStep(gate, 'Require every job to have succeeded or been skipped');
+        expect(gate.if).toBe(REQUIRED_GATE_CONDITION);
+        expect(workflowArrayAt(gate, 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
+        const gateStep = workflowStep(gate, 'Require selected checks to succeed');
+        expect(gateStep.if).toBe(REQUIRED_GATE_CONDITION);
         expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
+        expect(gateStep.run).toContain('.scope.result == "success"');
+        expect(gateStep.run).toContain('.validation.result == "success"');
+        expect(gateStep.run).toContain('.affected.result == "success"');
+        expect(gateStep.run).toContain('.codeql.result == "success"');
+        expect(gateStep.run).toContain('.codeql.result == "skipped"');
     });
 
-    it('runs CodeQL only in the approved heavy lane', () => {
+    it('runs full CodeQL only in the nightly lane', () => {
         const source = readFileSync(join(import.meta.dirname, '../../.github/workflows/nightly.yml'), 'utf8');
         const document = parseDocument(source);
         expect(document.errors).toEqual([]);

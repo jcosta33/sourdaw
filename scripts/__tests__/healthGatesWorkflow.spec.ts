@@ -45,16 +45,7 @@ import {
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
 
-const REVIEW_CONDITION = "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
-const APPROVED_REVIEW_CONDITION = "github.event.review.state == 'approved'";
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
-const HEAVY_CONDITION = "needs.validation.outputs.heavy == 'true'";
-// An approved review of a fork pull request runs with a read-only
-// GITHUB_TOKEN, and the code-scanning upload carve-out covers only the
-// `pull_request` event, so the SARIF upload would be refused and fail the run
-// on the head. The fork's code is scanned by the nightly once it merges.
-const HEAVY_SARIF_CONDITION =
-    "needs.validation.outputs.heavy == 'true' && github.event.pull_request.head.repo.full_name == github.repository";
 const FORCED_SCOPE_OUTPUTS = {
     heavy: 'true',
     rust: 'true',
@@ -81,16 +72,12 @@ const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && need
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
-// `Gate` is a required status check, GitHub counts a `skipped` conclusion as
-// satisfying one, and it prefers the newest run of that name. So this condition
-// must be the one predicate that cannot be false on this workflow's only event:
-// anything richer lets `gate` skip and mint a passing required check over a red
-// head, which is what a `pull_request_review` trigger did in production.
-const GATE_CONDITION = '${{ !cancelled() }}';
-const HEAVY_GATE_CONDITION =
-    "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
+// A cancelled upstream job must still reach the required assertion. GitHub
+// accepts skipped required checks, so the summary and its sole step use always().
+const GATE_CONDITION = '${{ always() }}';
+const HEAVY_GATE_CONDITION = '${{ always() }}';
 const HEALTH_GATES_TRIGGERS = ['pull_request'] as const;
-const HEAVY_GATES_TRIGGERS = ['pull_request_review'] as const;
+const HEAVY_GATES_TRIGGERS = ['workflow_call'] as const;
 const NIGHTLY_TRIGGERS = ['schedule', 'workflow_dispatch'] as const;
 const VALIDATION_TRIGGERS = ['workflow_call'] as const;
 const VALIDATION_CALL = './.github/workflows/validation.yml';
@@ -98,8 +85,6 @@ const REQUIRED_CHECK_NAME = 'Gate';
 const HEAVY_SUMMARY_NAME = 'HeavyGate';
 const NIGHTLY_CRON = '23 3 * * *';
 const NIGHTLY_CONCURRENCY_GROUP = 'nightly-${{ github.run_id }}';
-const HEAVY_CONCURRENCY_GROUP =
-    "heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}";
 const NIGHTLY_HEAVY_CONDITION = "needs.decide.outputs.heavy == 'true'";
 const NIGHTLY_E2E_WIRING = {
     needs: 'decide',
@@ -134,7 +119,6 @@ const PULL_REQUEST_EXCLUDED_JOBS = [
     'e2e',
     'e2e-report',
     'browser-ai-webgpu',
-    'codeql',
     'secrets',
     'deploy-web',
     'nightly-report',
@@ -145,8 +129,7 @@ const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}
 const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./i;
 const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
 const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
-const BROWSER_AI_WEBGPU_CONDITION =
-    "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'";
+const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
 const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
@@ -160,11 +143,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-// The required Gate depends on the shared validation call and nothing else. A
-// `uses:` job reports failure when any job inside it failed, so this is not a
-// weaker summary than the old flat list — and `VALIDATION_JOBS` below is what
-// keeps a leg from silently leaving the lane.
-const GATE_MEMBERS = ['validation'] as const;
+const GATE_MEMBERS = ['scope', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -182,12 +161,7 @@ const VALIDATION_JOBS = [
     'dependency-review',
     'pr-secrets',
 ] as const;
-const HEAVY_GATE_MEMBERS = ['validation', 'e2e', 'browser-ai-webgpu', 'codeql', 'secrets'] as const;
-// Nothing here ever runs on a pull-request push, so naming any of it in `Gate`
-// would list jobs that are always `skipped` — a claim of coverage the required
-// check does not have. `e2e-report` is doubly excluded: it merges blob
-// artifacts and observes nothing about the product at all.
-const HEAVY_ONLY_JOBS = ['e2e', 'e2e-report', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web'] as const;
+const HEAVY_GATE_MEMBERS = ['e2e', 'e2e-report', 'browser-ai-webgpu'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
 // A dispatch runs on whichever ref the person firing it chose, so the branch
@@ -298,19 +272,15 @@ const RELEASE_SIDE_EFFECTS = [
     /release:propose/u,
     /release:cut/u,
 ] as const;
-// The two suites are Gate members, so their scope conditions decide when the
-// required check may legitimately conclude on a skip. `unit` runs on every push
-// touching the web scope; `e2e` is heavy-lane only, so a push run skips it and
-// an approving review, the nightly, or a dispatch is where it decides the Gate.
-// Widening either condition would silently retire a proof from the merge path.
+// Unit and selected E2E both reach the required Gate through reusable callers.
 const SUITE_JOB_WIRING = {
     unit: { workflow: 'validation', needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
     e2e: {
         workflow: 'heavy',
-        needs: 'validation',
-        if: "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'",
+        needs: undefined,
+        if: 'fromJSON(inputs.matrix).include[0] != null',
     },
-} satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs: string; if: string }>>;
+} satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs?: string; if: string }>>;
 // The four scope conditions no other pin reads. Each is the whole definition
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
@@ -467,6 +437,40 @@ function assertWorkflowPermissions(candidate: UnknownRecord): void {
     }
 }
 
+function assertRequiredScopePlan(candidate: UnknownRecord): void {
+    const scope = jobAt(candidate, 'scope');
+    const outputs = recordAt(scope, 'outputs');
+    for (const name of ['matrix', 'browser', 'browser-ai', 'codeql']) {
+        if (outputs[name] !== `\${{ steps.plan.outputs.${name} }}`) {
+            throw new Error(`required scope must export ${name} from its plan`);
+        }
+    }
+    if (Object.keys(outputs).length !== 4) {
+        throw new Error('required scope must export exactly the selected checks');
+    }
+    const checkout = recordAt(stepNamed(scope, 'Checkout'), 'with');
+    if (checkout['fetch-depth'] !== 0 || checkout['persist-credentials'] !== false) {
+        throw new Error('required scope must read complete history without persisted credentials');
+    }
+    const node = recordAt(stepNamed(scope, 'Set up Node'), 'with');
+    if (node['node-version'] !== '24.19.0') {
+        throw new Error('required scope must use the pinned Node version');
+    }
+    const plan = stepNamed(scope, 'Plan affected checks');
+    if (
+        plan.id !== 'plan' ||
+        plan.run !== 'node scripts/prValidationScope.ts plan' ||
+        recordAt(plan, 'env').BASE_SHA !== '${{ github.event.pull_request.base.sha }}' ||
+        recordAt(plan, 'env').HEAD_SHA !== '${{ github.event.pull_request.head.sha }}'
+    ) {
+        throw new Error('required scope must plan from immutable base and head revisions');
+    }
+    const upload = recordAt(stepNamed(scope, 'Upload scope manifest'), 'with');
+    if (upload.path !== 'pr-validation-scope.json' || upload['if-no-files-found'] !== 'error') {
+        throw new Error('required scope must publish its manifest or fail');
+    }
+}
+
 function runScopeScript(
     script: string,
     eventName: string,
@@ -480,6 +484,7 @@ function runScopeScript(
             env: {
                 ...process.env,
                 EVENT: eventName,
+                BROWSER: 'false',
                 RUST: 'false',
                 SERVER: 'false',
                 E2E: 'false',
@@ -509,8 +514,8 @@ function runScopeScript(
 
 function assertScopeContract(candidate: UnknownRecord): string {
     const decide = jobAt(candidate, 'decide');
-    if (decide.if !== REVIEW_CONDITION) {
-        throw new Error('decide must only admit submitted approved reviews');
+    if (decide.if !== undefined) {
+        throw new Error('decide must run for every pull request');
     }
     const outputs = recordAt(decide, 'outputs');
     for (const [name, reference] of Object.entries(SCOPE_OUTPUT_REFERENCES)) {
@@ -519,10 +524,8 @@ function assertScopeContract(candidate: UnknownRecord): string {
         }
     }
     // The decide outputs reach callers only through the `workflow_call` export
-    // list: deleting one leaves `needs.validation.outputs.<name>` empty while
-    // every pin above stays green, which is how the approved-review heavy lane
-    // could skip under a green HeavyGate. Pin the exact export set and each
-    // forwarding value.
+    // list: deleting one leaves a reusable caller with an empty output while
+    // every pin above stays green. Pin the exact export set and forwarding value.
     const callerOutputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'outputs');
     const exportedNames = Object.keys(callerOutputs).sort();
     if (JSON.stringify(exportedNames) !== JSON.stringify(Object.keys(SCOPE_OUTPUT_REFERENCES).sort())) {
@@ -536,6 +539,9 @@ function assertScopeContract(candidate: UnknownRecord): string {
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
+    }
+    if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
+        throw new Error('shared validation must receive the selected browser decision');
     }
     return stringAt(scope, 'run');
 }
@@ -781,16 +787,6 @@ function assertNightlyConcurrencyContract(candidate: UnknownRecord): void {
     }
 }
 
-function assertHeavyConcurrencyContract(candidate: UnknownRecord): void {
-    const concurrency = recordAt(candidate, 'concurrency');
-    if (concurrency.group !== HEAVY_CONCURRENCY_GROUP) {
-        throw new Error('the heavy lane must group approving reviews by pull request and everything else by run id');
-    }
-    if (concurrency['cancel-in-progress'] !== false) {
-        throw new Error('the heavy lane must not cancel an in-progress run');
-    }
-}
-
 // GitHub evaluates a job-level `concurrency` as its own group, independent of
 // the workflow-level one: a constant group with `cancel-in-progress: true` on
 // a matrix job would let queued shards cancel in-progress ones. The
@@ -1015,10 +1011,8 @@ function cloneWorkflows(label: string): WorkflowSet {
     };
 }
 
-// Both suites owe two things: the scope condition that says when a skip is
-// legitimate, and a shard step that fails its job. `unit` decides the required
-// Gate through the validation lane it lives in; `e2e` decides HeavyGate. A
-// softened shard step in either reports a failing suite as a passing summary.
+// Both suites owe a scope condition that makes a skip legitimate and a run
+// step that fails its job. Each reaches the required Gate through a caller.
 function assertBlockingSuites(set: WorkflowSet): void {
     for (const [job, expectedWiring] of Object.entries(SUITE_JOB_WIRING)) {
         const suite = jobAt(set[expectedWiring.workflow], job);
@@ -1219,9 +1213,14 @@ function withWorkflowFiles(files: readonly string[]): () => void {
 }
 
 // The SARIF upload is the only write this job needs: `contents: write` would
-// hand a workflow that runs on review of foreign code a token that can push,
+// hand the pull-request workflow a token that can push,
 // and dropping `security-events: write` would fail the upload on the head.
-function assertHeavyCodeQlPermissions(candidate: UnknownRecord): void {
+function assertRequiredCodeQlPermissions(candidate: UnknownRecord): void {
+    for (const [jobId, value] of Object.entries(recordAt(candidate, 'jobs'))) {
+        if (jobId !== 'codeql' && asRecord(value, jobId).permissions !== undefined) {
+            throw new Error(`the ${jobId} job must inherit read-only workflow permissions`);
+        }
+    }
     const permissions = recordAt(jobAt(candidate, 'codeql'), 'permissions');
     if (
         permissions.contents !== 'read' ||
@@ -1230,7 +1229,7 @@ function assertHeavyCodeQlPermissions(candidate: UnknownRecord): void {
         Object.keys(permissions).length !== 3
     ) {
         throw new Error(
-            'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+            'the required CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
         );
     }
 }
@@ -1261,7 +1260,7 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
         );
     }
     if (jobAt(set.health, 'gate').if !== GATE_CONDITION) {
-        throw new Error('Gate must carry no predicate that could skip it');
+        throw new Error('Gate must run after cancellation');
     }
     for (const [file, candidate] of workflowFiles(set).filter(([file]) => file !== 'health-gates.yml')) {
         for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
@@ -1271,7 +1270,7 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
         }
     }
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
-        throw new Error('the heavy workflow must own exactly the review event that health-gates.yml gave up');
+        throw new Error('heavy-gates.yml must be reusable-only');
     }
     if (JSON.stringify(Object.keys(recordAt(set.validation, 'on'))) !== JSON.stringify([...VALIDATION_TRIGGERS])) {
         throw new Error('validation.yml must be reusable-only');
@@ -1286,6 +1285,7 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
 }
 
 function assertJobGraph(set: WorkflowSet): void {
+    assertRequiredScopePlan(set.health);
     const dependencyReview = jobAt(set.validation, 'dependency-review');
     if (dependencyReview.needs !== 'decide' || dependencyReview.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
         throw new Error('dependency review must gate on the pull request payload rather than the triggering event');
@@ -1293,35 +1293,46 @@ function assertJobGraph(set: WorkflowSet): void {
     if (stepNamed(dependencyReview, 'Review dependency changes').uses !== DEPENDENCY_REVIEW_ACTION) {
         throw new Error('dependency review action must remain pinned');
     }
-    if (jobAt(set.heavy, 'codeql').if !== HEAVY_SARIF_CONDITION) {
-        throw new Error(
-            'the CodeQL upload must refuse fork pull requests, whose read-only token cannot write the SARIF result'
-        );
+    const health = set.health;
+    if (jobAt(health, 'validation').uses !== VALIDATION_CALL || jobAt(health, 'validation').needs !== 'scope') {
+        throw new Error('required validation must consume the affected scope');
     }
-    if (jobAt(set.heavy, 'secrets').if !== HEAVY_CONDITION) {
-        throw new Error('the secret scan must consume the heavy scope output');
+    if (jobAt(health, 'validation').if !== undefined) {
+        throw new Error('required validation must run on every pull request');
     }
-    if (jobAt(set.heavy, 'codeql').needs !== 'validation' || jobAt(set.heavy, 'secrets').needs !== 'validation') {
-        throw new Error('security scans must depend on the validation call that publishes the scope');
+    if (recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}") {
+        throw new Error('required browser smoke must consume the affected scope');
     }
-    for (const [file, candidate] of [
-        ['health-gates.yml', set.health],
-        ['heavy-gates.yml', set.heavy],
-    ] as const) {
-        if (jobAt(candidate, 'validation').uses !== VALIDATION_CALL) {
-            throw new Error(`${file} must call the shared validation lane rather than redefine it`);
-        }
+    const browserInput = recordAt(recordAt(recordAt(set.validation, 'on'), 'workflow_call'), 'inputs');
+    if (
+        JSON.stringify(browserInput.browser) !==
+        JSON.stringify({
+            description: 'Whether the affected plan requires browser smoke.',
+            required: true,
+            type: 'boolean',
+        })
+    ) {
+        throw new Error('shared validation must require the affected browser decision');
     }
-    // Only an approved review may run the review lane: without the predicate
-    // the caller still executes on a comment-only or changes-requested
-    // submission, and every skipped leg inside it lands on the head as a
-    // `Validation / …` check run beside the push lane's. The push lane's own
-    // caller stays unconditional — it is the run that mints `Gate`.
-    if (jobAt(set.heavy, 'validation').if !== APPROVED_REVIEW_CONDITION) {
-        throw new Error('the heavy validation lane must refuse non-approved reviews, which may mint no green verdict');
+    const affected = jobAt(health, 'affected');
+    if (
+        affected.uses !== './.github/workflows/heavy-gates.yml' ||
+        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation'])
+    ) {
+        throw new Error('required affected E2E must wait for scope and successful validation');
     }
-    if (jobAt(set.health, 'validation').if !== undefined) {
-        throw new Error('the health validation lane must run on every pull request');
+    if (
+        recordAt(affected, 'with').matrix !== '${{ needs.scope.outputs.matrix }}' ||
+        recordAt(affected, 'with')['browser-ai'] !== "${{ needs.scope.outputs.browser-ai == 'true' }}"
+    ) {
+        throw new Error('required affected E2E must consume the selected matrix and hardware scope');
+    }
+    const codeql = jobAt(health, 'codeql');
+    if (codeql.needs !== 'scope' || codeql.if !== "needs.scope.outputs.codeql == 'true'") {
+        throw new Error('required CodeQL must answer to the selected security scope');
+    }
+    if (Object.keys(recordAt(set.heavy, 'jobs')).some((job) => ['validation', 'codeql', 'secrets'].includes(job))) {
+        throw new Error('reusable browser checks must not repeat validation or security scans');
     }
     if (JSON.stringify(Object.keys(recordAt(set.validation, 'jobs'))) !== JSON.stringify([...VALIDATION_JOBS])) {
         throw new Error('validation.yml must hold exactly the pinned job list, in order');
@@ -1403,17 +1414,12 @@ function assertSummaryMembership(set: WorkflowSet): void {
             throw new Error(`gate must depend on ${job}`);
         }
     }
-    for (const job of HEAVY_ONLY_JOBS) {
-        if (gateNeeds.includes(job)) {
-            throw new Error(`${job} never runs on a pull-request push and must stay outside the required Gate`);
-        }
-    }
     if (gateNeeds.length !== GATE_MEMBERS.length) {
         throw new Error('gate must depend on exactly the pinned member list');
     }
     const heavyGate = jobAt(set.heavy, 'heavy-gate');
     if (heavyGate.name !== HEAVY_SUMMARY_NAME || heavyGate.if !== HEAVY_GATE_CONDITION) {
-        throw new Error('the heavy summary must keep its own name and its non-approved-review predicate');
+        throw new Error('the reusable browser summary must retain its non-skipping condition');
     }
     if (JSON.stringify(arrayAt(heavyGate, 'needs')) !== JSON.stringify([...HEAVY_GATE_MEMBERS])) {
         throw new Error('HeavyGate must depend on exactly the pinned member list');
@@ -1442,8 +1448,8 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (job.name !== BROWSER_AI_WEBGPU_JOB_NAME) {
         throw new Error('Browser AI WebGPU job must retain its stable name');
     }
-    if (job.needs !== 'validation' || job.if !== BROWSER_AI_WEBGPU_CONDITION) {
-        throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
+    if (job.needs !== undefined || job.if !== BROWSER_AI_WEBGPU_CONDITION) {
+        throw new Error('Browser AI WebGPU job must retain its selected hardware condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
         throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
@@ -1454,8 +1460,8 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
     }
-    // It decides `HeavyGate` rather than the required `Gate`: no pull-request
-    // run executes it, so naming it in `Gate` would list an always-skipped job.
+    // The browser summary observes this job, then reaches the required Gate
+    // through the pull-request workflow's affected caller.
     if (!arrayAt(jobAt(candidate, 'heavy-gate'), 'needs').includes(BROWSER_AI_WEBGPU_JOB)) {
         throw new Error('the heavy summary must depend on the Browser AI WebGPU job');
     }
@@ -1762,19 +1768,16 @@ function assertGateContract(candidate: UnknownRecord, jobId: string, expectedNam
     if (gate['continue-on-error'] !== undefined) {
         throw new Error(`the ${expectedName} job must not continue on error`);
     }
-    const step = stepNamed(gate, 'Require every job to have succeeded or been skipped');
-    // A conditional guard step can skip, and a skipped step fails nothing:
-    // the summary job then succeeds unconditionally.
-    if (step.if !== undefined) {
-        throw new Error(`the ${jobId} guard step must stay unconditional`);
+    const stepName =
+        jobId === 'gate' ? 'Require selected checks to succeed' : 'Require selected browser jobs to succeed';
+    const step = stepNamed(gate, stepName);
+    if (step.if !== '${{ always() }}') {
+        throw new Error(`the ${jobId} guard step must run after cancellation`);
     }
     if (recordAt(step, 'env').RESULTS !== '${{ toJSON(needs) }}') {
         throw new Error(`${jobId} must receive all dependency results through its environment`);
     }
     const script = stringAt(step, 'run');
-    if (!script.includes('.value.result != "success" and .value.result != "skipped"')) {
-        throw new Error(`${jobId} must reject every result other than success or skipped`);
-    }
     return script;
 }
 
@@ -2556,7 +2559,10 @@ describe('health gates workflow contract', () => {
         expect(Object.keys(recordAt(heavyWorkflow, 'on')).sort()).toEqual([...HEAVY_GATES_TRIGGERS]);
         expect(Object.keys(recordAt(validationWorkflow, 'on'))).toEqual([...VALIDATION_TRIGGERS]);
         expect(Object.keys(recordAt(nightly, 'on')).sort()).toEqual([...NIGHTLY_TRIGGERS]);
-        expect(recordAt(recordAt(heavyWorkflow, 'on'), 'pull_request_review').types).toEqual(['submitted']);
+        expect(recordAt(recordAt(heavyWorkflow, 'on'), 'workflow_call').inputs).toMatchObject({
+            matrix: { required: true, type: 'string' },
+            'browser-ai': { required: true, type: 'boolean' },
+        });
         expect(nightly.name).toBe('Nightly');
         expect(() => assertRequiredCheckIsolation(workflowSet())).not.toThrow();
         expect(() => assertPullRequestWorkflowIsolation(workflow)).not.toThrow();
@@ -2571,10 +2577,8 @@ describe('health gates workflow contract', () => {
         );
 
         const skippableGate = cloneWorkflows('skippable gate');
-        jobAt(skippableGate.health, 'gate').if = HEAVY_GATE_CONDITION;
-        expect(() => assertRequiredCheckIsolation(skippableGate)).toThrow(
-            'Gate must carry no predicate that could skip it'
-        );
+        jobAt(skippableGate.health, 'gate').if = '${{ !cancelled() }}';
+        expect(() => assertRequiredCheckIsolation(skippableGate)).toThrow('Gate must run after cancellation');
 
         const shadowedGate = cloneWorkflows('shadowed gate');
         jobAt(shadowedGate.heavy, 'heavy-gate').name = REQUIRED_CHECK_NAME;
@@ -2592,9 +2596,7 @@ describe('health gates workflow contract', () => {
 
         const scheduleInHeavy = cloneWorkflows('schedule in heavy');
         recordAt(scheduleInHeavy.heavy, 'on').schedule = [{ cron: NIGHTLY_CRON }];
-        expect(() => assertRequiredCheckIsolation(scheduleInHeavy)).toThrow(
-            'the heavy workflow must own exactly the review event that health-gates.yml gave up'
-        );
+        expect(() => assertRequiredCheckIsolation(scheduleInHeavy)).toThrow('heavy-gates.yml must be reusable-only');
 
         const leakingDeploy = asRecord(structuredClone(workflow), 'leaking deploy workflow');
         recordAt(leakingDeploy, 'jobs')[DEPLOY_WEB_JOB] = jobAt(nightly, DEPLOY_WEB_JOB);
@@ -2649,7 +2651,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
-        expect(() => assertHeavyConcurrencyContract(heavyWorkflow)).not.toThrow();
+        expect(heavyWorkflow.concurrency).toBeUndefined();
         expect(() => assertNoJobLevelConcurrency(workflow, 'health-gates.yml')).not.toThrow();
         expect(() => assertNoJobLevelConcurrency(validationWorkflow, 'validation.yml')).not.toThrow();
         expect(() => assertNoJobLevelConcurrency(heavyWorkflow, 'heavy-gates.yml')).not.toThrow();
@@ -2668,7 +2670,7 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {
+    it('keeps the pull-request grouping key and forbids cancelling matrix shards', () => {
         const cancellingReview = asRecord(structuredClone(workflow), 'cancelling review workflow');
         recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] =
             "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
@@ -2690,14 +2692,6 @@ describe('health gates workflow contract', () => {
         expect(() => assertNightlyConcurrencyContract(cancellingNightly)).toThrow(
             'nightly must not cancel an in-progress train'
         );
-        // Flattening the group to a bare run id isolates every approving
-        // review onto its own group, so two approvals on one pull request run
-        // the heavy lane concurrently instead of serially.
-        const flattenedHeavy = asRecord(structuredClone(heavyWorkflow), 'flattened heavy group heavyWorkflow');
-        recordAt(flattenedHeavy, 'concurrency').group = 'heavy-gates-${{ github.run_id }}';
-        expect(() => assertHeavyConcurrencyContract(flattenedHeavy)).toThrow(
-            'the heavy lane must group approving reviews by pull request and everything else by run id'
-        );
         // A constant job-level group with cancellation on the e2e matrix would
         // let queued shards cancel the in-progress ones: GitHub evaluates a
         // job-level `concurrency` as its own group, independent of the
@@ -2717,7 +2711,7 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('runs the heavy security lane only for approved reviews, and the full train on the nightly', () => {
+    it('keeps the required scope and full nightly train separate', () => {
         const scopeScript = assertScopeContract(validationWorkflow);
         expect(runScopeScript(scopeScript, 'pull_request')).toEqual({
             heavy: 'false',
@@ -2727,7 +2721,6 @@ describe('health gates workflow contract', () => {
             web: 'false',
             code: 'false',
         });
-        expect(runScopeScript(scopeScript, 'pull_request_review')).toMatchObject({ heavy: 'true' });
         const nightlyScope = assertNightlyScopeContract(nightly);
         expect(runScopeScript(nightlyScope, 'schedule')).toEqual(FORCED_SCOPE_OUTPUTS);
         expect(runScopeScript(nightlyScope, 'workflow_dispatch')).toEqual(FORCED_SCOPE_OUTPUTS);
@@ -2736,9 +2729,9 @@ describe('health gates workflow contract', () => {
         expect(() => assertNightlyScopeContract(gatedNightly)).toThrow(
             'nightly decide must run on every scheduled and dispatched run'
         );
-        const nonApproval = asRecord(structuredClone(validationWorkflow), 'non-approval validationWorkflow');
-        jobAt(nonApproval, 'decide').if = "github.event_name != 'pull_request_review'";
-        expect(() => assertScopeContract(nonApproval)).toThrow('decide must only admit submitted approved reviews');
+        const skippableDecide = asRecord(structuredClone(validationWorkflow), 'skippable decide');
+        jobAt(skippableDecide, 'decide').if = 'false';
+        expect(() => assertScopeContract(skippableDecide)).toThrow('decide must run for every pull request');
         const undisclosedWebScope = asRecord(
             structuredClone(validationWorkflow),
             'undisclosed web scope validationWorkflow'
@@ -2747,9 +2740,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertScopeContract(undisclosedWebScope)).toThrow(
             'decide web output must expose steps.scope.outputs.web'
         );
-        // Deleting the `heavy` export leaves `needs.validation.outputs.heavy`
-        // empty, so the whole approved-review heavy lane skips while HeavyGate
-        // still reports green: the export list is part of the contract.
+        // Caller outputs are pinned even when the heavy flag is false on PRs.
         const unexportedHeavy = asRecord(structuredClone(validationWorkflow), 'unexported heavy validationWorkflow');
         delete recordAt(recordAt(recordAt(unexportedHeavy, 'on'), 'workflow_call'), 'outputs').heavy;
         expect(() => assertScopeContract(unexportedHeavy)).toThrow(
@@ -2763,7 +2754,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertProseSkippingJobs(validationWorkflow)).not.toThrow();
         expect(() => assertGateScriptScopeClaims(validationWorkflow)).not.toThrow();
 
-        expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
+        expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true', BROWSER: 'true' })).toEqual({
             heavy: 'false',
             rust: 'true',
             server: 'true',
@@ -2775,6 +2766,7 @@ describe('health gates workflow contract', () => {
             rust: 'false',
             code: 'true',
         });
+        expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' }).e2e).toBe('false');
 
         const exemptMetadata = asRecord(structuredClone(validationWorkflow), 'metadata-exempt validationWorkflow');
         const filterOptions = recordAt(stepNamed(jobAt(exemptMetadata, 'decide'), 'Filter changed paths'), 'with');
@@ -2839,6 +2831,7 @@ describe('health gates workflow contract', () => {
         for (const [name] of PATHS_FILTER_VERDICT_ENV) {
             expect(() => runScopeScript(scopeScript, 'pull_request', { [name]: '' })).toThrow('No scope verdict');
         }
+        expect(() => runScopeScript(scopeScript, 'pull_request', { BROWSER: '' })).toThrow('No scope verdict');
 
         // Mutation-kill: a first attempt that fails the job on a transient 500
         // blocks Gate again, and a retry carrying its own softening would
@@ -2952,7 +2945,7 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('keeps the required Gate on the validation lane and the heavy jobs on their own summary', () => {
+    it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();
 
         const eventGatedDependencyReview = cloneWorkflows('event-gated dependency review');
@@ -2960,17 +2953,6 @@ describe('health gates workflow contract', () => {
         expect(() => assertJobGraph(eventGatedDependencyReview)).toThrow(
             'dependency review must gate on the pull request payload rather than the triggering event'
         );
-
-        // The finding that took `e2e` back out of `Gate`: it is a heavy-lane job
-        // that no pull-request run executes, so listing it claimed a coverage
-        // the required check never had.
-        for (const heavyOnly of HEAVY_ONLY_JOBS) {
-            const overGated = cloneWorkflows(`over-gated ${heavyOnly}`);
-            arrayAt(jobAt(overGated.health, 'gate'), 'needs').push(heavyOnly);
-            expect(() => assertJobGraph(overGated)).toThrow(
-                `${heavyOnly} never runs on a pull-request push and must stay outside the required Gate`
-            );
-        }
 
         const blindNightly = cloneWorkflows('blind nightly');
         const nightlyNeeds = arrayAt(jobAt(blindNightly.nightly, 'nightly-report'), 'needs');
@@ -3021,28 +3003,21 @@ describe('health gates workflow contract', () => {
         ungatedNeeds.splice(ungatedNeeds.indexOf('validation'), 1);
         expect(() => assertJobGraph(ungatedValidation)).toThrow('gate must depend on validation');
 
-        // A review that does not approve may mint no green verdict: drop the
-        // predicate and the reusable lane runs on every submission, landing
-        // its skipped legs on the head as `Validation / …` check runs.
-        const ungatedReviewLane = cloneWorkflows('ungated review lane');
-        delete jobAt(ungatedReviewLane.heavy, 'validation').if;
-        expect(() => assertJobGraph(ungatedReviewLane)).toThrow(
-            'the heavy validation lane must refuse non-approved reviews, which may mint no green verdict'
+        const disconnectedAffected = cloneWorkflows('disconnected affected E2E');
+        jobAt(disconnectedAffected.health, 'affected').needs = 'validation';
+        expect(() => assertJobGraph(disconnectedAffected)).toThrow(
+            'required affected E2E must wait for scope and successful validation'
         );
 
-        // A fork's approved review runs with a read-only token, so a CodeQL
-        // job gated only on scope would fail its SARIF upload on the head.
-        const forkBlindCodeql = cloneWorkflows('fork-blind codeql');
-        jobAt(forkBlindCodeql.heavy, 'codeql').if = HEAVY_CONDITION;
-        expect(() => assertJobGraph(forkBlindCodeql)).toThrow(
-            'the CodeQL upload must refuse fork pull requests, whose read-only token cannot write the SARIF result'
+        const unselectedCodeql = cloneWorkflows('unselected CodeQL');
+        jobAt(unselectedCodeql.health, 'codeql').if = 'false';
+        expect(() => assertJobGraph(unselectedCodeql)).toThrow(
+            'required CodeQL must answer to the selected security scope'
         );
 
         const gatedPushLane = cloneWorkflows('gated push lane');
-        jobAt(gatedPushLane.health, 'validation').if = APPROVED_REVIEW_CONDITION;
-        expect(() => assertJobGraph(gatedPushLane)).toThrow(
-            'the health validation lane must run on every pull request'
-        );
+        jobAt(gatedPushLane.health, 'validation').if = 'false';
+        expect(() => assertJobGraph(gatedPushLane)).toThrow('required validation must run on every pull request');
 
         // A leg dropped out of the shared lane leaves the required Gate without
         // failing anything: the summary still passes, on less evidence.
@@ -3052,20 +3027,18 @@ describe('health gates workflow contract', () => {
 
         const inlinedLane = cloneWorkflows('inlined lane');
         delete jobAt(inlinedLane.health, 'validation').uses;
-        expect(() => assertJobGraph(inlinedLane)).toThrow(
-            'health-gates.yml must call the shared validation lane rather than redefine it'
-        );
+        expect(() => assertJobGraph(inlinedLane)).toThrow('required validation must consume the affected scope');
 
-        const disconnected = cloneWorkflows('disconnected security');
-        jobAt(disconnected.heavy, 'secrets').needs = 'e2e';
-        expect(() => assertJobGraph(disconnected)).toThrow(
-            'security scans must depend on the validation call that publishes the scope'
+        const wrongBrowserScope = cloneWorkflows('wrong browser scope');
+        recordAt(jobAt(wrongBrowserScope.health, 'validation'), 'with').browser = false;
+        expect(() => assertJobGraph(wrongBrowserScope)).toThrow(
+            'required browser smoke must consume the affected scope'
         );
 
         const renamedHeavySummary = cloneWorkflows('renamed heavy summary');
         jobAt(renamedHeavySummary.heavy, 'heavy-gate').name = 'Heavy summary';
         expect(() => assertJobGraph(renamedHeavySummary)).toThrow(
-            'the heavy summary must keep its own name and its non-approved-review predicate'
+            'the reusable browser summary must retain its non-skipping condition'
         );
 
         const narrowedHeavySummary = cloneWorkflows('narrowed heavy summary');
@@ -3107,7 +3080,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
         expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
         expect(() => assertValidationScopeConditions(validationWorkflow)).not.toThrow();
-        expect(() => assertHeavyCodeQlPermissions(heavyWorkflow)).not.toThrow();
+        expect(() => assertRequiredCodeQlPermissions(workflow)).not.toThrow();
 
         // Mutation-kill: a job-level softening anywhere reports that leg green
         // whatever it proved — the review-found hole, on the lint job.
@@ -3179,18 +3152,24 @@ describe('health gates workflow contract', () => {
             'the Rust workspace leg must answer to the Rust and server scopes'
         );
 
-        // Mutation-kill: `contents: write` hands a review-triggered workflow a
-        // token that can push; dropping the SARIF write fails the upload.
+        // CodeQL alone receives SARIF upload permission. The caller and shared
+        // validation workflow retain read-only permissions.
         const widenedCodeQl = cloneWorkflows('widened codeql permissions');
-        recordAt(jobAt(widenedCodeQl.heavy, 'codeql'), 'permissions').contents = 'write';
-        expect(() => assertHeavyCodeQlPermissions(widenedCodeQl.heavy)).toThrow(
-            'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        recordAt(jobAt(widenedCodeQl.health, 'codeql'), 'permissions').contents = 'write';
+        expect(() => assertRequiredCodeQlPermissions(widenedCodeQl.health)).toThrow(
+            'the required CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
         );
 
         const narrowedCodeQl = cloneWorkflows('narrowed codeql permissions');
-        delete recordAt(jobAt(narrowedCodeQl.heavy, 'codeql'), 'permissions')['security-events'];
-        expect(() => assertHeavyCodeQlPermissions(narrowedCodeQl.heavy)).toThrow(
-            'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        delete recordAt(jobAt(narrowedCodeQl.health, 'codeql'), 'permissions')['security-events'];
+        expect(() => assertRequiredCodeQlPermissions(narrowedCodeQl.health)).toThrow(
+            'the required CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        );
+
+        const widenedScope = cloneWorkflows('widened scope permissions');
+        jobAt(widenedScope.health, 'scope').permissions = { contents: 'write' };
+        expect(() => assertRequiredCodeQlPermissions(widenedScope.health)).toThrow(
+            'the scope job must inherit read-only workflow permissions'
         );
     });
 
@@ -3377,7 +3356,7 @@ describe('health gates workflow contract', () => {
         const fastLane = asRecord(structuredClone(heavyWorkflow), 'fast-lane Browser AI heavyWorkflow');
         jobAt(fastLane, BROWSER_AI_WEBGPU_JOB).if = "needs.decide.outputs.e2e == 'true'";
         expect(() => assertBrowserAiWebGpuJob(fastLane)).toThrow(
-            'Browser AI WebGPU job must retain its heavy E2E scope condition'
+            'Browser AI WebGPU job must retain its selected hardware condition'
         );
 
         const defaultMatrix = asRecord(structuredClone(heavyWorkflow), 'default-matrix Browser AI heavyWorkflow');
@@ -3467,12 +3446,30 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('requires every gate dependency to have succeeded or been skipped', () => {
+    it('requires selected PR and browser checks to succeed, including after cancellation', () => {
         const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
-        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'success'))).toBe(0);
-        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'skipped'))).toBe(0);
-        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'failure'))).not.toBe(0);
-        expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'cancelled'))).not.toBe(0);
+        const requiredResults = (codeql: 'true' | 'false', overrides: Record<string, JobResult> = {}) =>
+            JSON.stringify({
+                scope: {
+                    result: overrides.scope ?? 'success',
+                    outputs: { browser: 'true', 'browser-ai': 'false', codeql },
+                },
+                validation: { result: overrides.validation ?? 'success' },
+                affected: { result: overrides.affected ?? 'success' },
+                codeql: { result: overrides.codeql ?? (codeql === 'true' ? 'success' : 'skipped') },
+            });
+        expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
+        expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
+        for (const dependency of ['scope', 'validation', 'affected', 'codeql']) {
+            for (const result of ['failure', 'cancelled', 'skipped'] as const) {
+                expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
+            }
+        }
+        expect(runResultsGuard(gateScript, requiredResults('false', { codeql: 'success' }))).not.toBe(0);
+        expect(
+            runResultsGuard(gateScript, requiredResults('true').replace('"browser":"true"', '"browser":""'))
+        ).not.toBe(0);
+        expect(runResultsGuard(gateScript, '{}')).not.toBe(0);
         const renamedGate = asRecord(structuredClone(workflow), 'renamed gate workflow');
         jobAt(renamedGate, 'gate').name = 'Health summary';
         expect(() => assertGateContract(renamedGate, 'gate', 'Gate', GATE_CONDITION)).toThrow(
@@ -3491,36 +3488,65 @@ describe('health gates workflow contract', () => {
         // A conditional guard step can skip, and a skipped step fails
         // nothing: the job then succeeds unconditionally.
         const conditionalGateGuard = asRecord(structuredClone(workflow), 'conditional-guard gate workflow');
-        stepNamed(jobAt(conditionalGateGuard, 'gate'), 'Require every job to have succeeded or been skipped').if =
-            'false';
+        stepNamed(jobAt(conditionalGateGuard, 'gate'), 'Require selected checks to succeed').if = 'false';
         expect(() => assertGateContract(conditionalGateGuard, 'gate', 'Gate', GATE_CONDITION)).toThrow(
-            'the gate guard step must stay unconditional'
+            'the gate guard step must run after cancellation'
         );
 
         const heavyGateScript = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
-        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'success'))).toBe(0);
-        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'skipped'))).toBe(0);
-        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'failure'))).not.toBe(0);
-        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'cancelled'))).not.toBe(0);
-        // The required Gate never sees the heavy jobs, so this filter is the
-        // only thing that refuses their failures: a weakened one would report
-        // a red heavy leg as a passing summary.
-        const weakenedHeavyFilter = asRecord(structuredClone(heavyWorkflow), 'weakened heavy filter heavyWorkflow');
-        const weakenedStep = stepNamed(
-            jobAt(weakenedHeavyFilter, 'heavy-gate'),
-            'Require every job to have succeeded or been skipped'
-        );
-        weakenedStep.run = stringAt(weakenedStep, 'run').replace(
-            '.value.result != "success" and .value.result != "skipped"',
-            '.value.result == "cancelled"'
-        );
-        expect(() => assertGateContract(weakenedHeavyFilter, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)).toThrow(
-            'heavy-gate must reject every result other than success or skipped'
-        );
+        const browserResults = (e2e: JobResult, report: JobResult, hardware: JobResult) =>
+            JSON.stringify({
+                e2e: { result: e2e },
+                'e2e-report': { result: report },
+                'browser-ai-webgpu': { result: hardware },
+            });
+        const selectedMatrix = JSON.stringify({ include: [{ id: 1, specs: ['tests/e2e/export.spec.ts'] }] });
+        const emptyMatrix = JSON.stringify({ include: [] });
+        expect(
+            runResultsGuard(heavyGateScript, browserResults('success', 'success', 'skipped'), {
+                MATRIX: selectedMatrix,
+                BROWSER_AI: 'false',
+            })
+        ).toBe(0);
+        expect(
+            runResultsGuard(heavyGateScript, browserResults('skipped', 'skipped', 'skipped'), {
+                MATRIX: emptyMatrix,
+                BROWSER_AI: 'false',
+            })
+        ).toBe(0);
+        expect(
+            runResultsGuard(heavyGateScript, browserResults('success', 'success', 'success'), {
+                MATRIX: selectedMatrix,
+                BROWSER_AI: 'true',
+            })
+        ).toBe(0);
+        for (const result of ['failure', 'cancelled', 'skipped'] as const) {
+            expect(
+                runResultsGuard(heavyGateScript, browserResults(result, 'success', 'skipped'), {
+                    MATRIX: selectedMatrix,
+                    BROWSER_AI: 'false',
+                })
+            ).not.toBe(0);
+        }
+        expect(
+            runResultsGuard(heavyGateScript, browserResults('success', 'skipped', 'skipped'), {
+                MATRIX: selectedMatrix,
+                BROWSER_AI: 'false',
+            })
+        ).not.toBe(0);
+        expect(
+            runResultsGuard(heavyGateScript, browserResults('success', 'success', 'skipped'), {
+                MATRIX: selectedMatrix,
+                BROWSER_AI: 'true',
+            })
+        ).not.toBe(0);
+        expect(
+            runResultsGuard(heavyGateScript, browserResults('skipped', 'skipped', 'skipped'), {
+                MATRIX: '{"include":[{"id":1,"specs":[]}]}',
+                BROWSER_AI: 'false',
+            })
+        ).not.toBe(0);
 
-        // The same two softenings on the heavy summary: HeavyGate is not
-        // ruleset-required, but it is the only verdict an approving review
-        // run mints for the heavy lane.
         const softenedHeavyGate = asRecord(structuredClone(heavyWorkflow), 'softened heavy gate heavyWorkflow');
         jobAt(softenedHeavyGate, 'heavy-gate')['continue-on-error'] = true;
         expect(() => assertGateContract(softenedHeavyGate, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)).toThrow(
@@ -3531,28 +3557,22 @@ describe('health gates workflow contract', () => {
             structuredClone(heavyWorkflow),
             'conditional-guard heavy gate heavyWorkflow'
         );
-        stepNamed(
-            jobAt(conditionalHeavyGateGuard, 'heavy-gate'),
-            'Require every job to have succeeded or been skipped'
-        ).if = 'false';
+        stepNamed(jobAt(conditionalHeavyGateGuard, 'heavy-gate'), 'Require selected browser jobs to succeed').if =
+            'false';
         expect(() =>
             assertGateContract(conditionalHeavyGateGuard, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)
-        ).toThrow('the heavy-gate guard step must stay unconditional');
+        ).toThrow('the heavy-gate guard step must run after cancellation');
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {
-        expect(() => assertCredentiallessScanner(heavyWorkflow)).not.toThrow();
         expect(() => assertCredentiallessScanner(nightly)).not.toThrow();
-        const targetControlledScanner = asRecord(
-            structuredClone(heavyWorkflow),
-            'target-controlled scanner heavyWorkflow'
-        );
+        const targetControlledScanner = asRecord(structuredClone(nightly), 'target-controlled scanner nightly');
         recordAt(stepNamed(jobAt(targetControlledScanner, 'secrets'), 'Checkout trusted scanner'), 'with').ref =
             SCAN_TARGET_REF;
         expect(() => assertCredentiallessScanner(targetControlledScanner)).toThrow(
             'secret scanner must come from the trusted base and retain no credentials'
         );
-        const tokenBearingScanner = asRecord(structuredClone(heavyWorkflow), 'token-bearing scanner heavyWorkflow');
+        const tokenBearingScanner = asRecord(structuredClone(nightly), 'token-bearing scanner nightly');
         jobAt(tokenBearingScanner, 'secrets').env = { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' };
         expect(() => assertCredentiallessScanner(tokenBearingScanner)).toThrow(
             'secret scan job must not reference GitHub tokens or repository secrets'

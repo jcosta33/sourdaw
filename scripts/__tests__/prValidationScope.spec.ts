@@ -1,0 +1,374 @@
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+
+import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_SPEC } from '../prValidationScope';
+
+const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'];
+const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
+const PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx';
+const GENERAL_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx';
+const MIDI_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/MidiSection.tsx';
+const AUTO_SAVE_INTERVAL_SPEC = 'tests/e2e/autoSaveInterval.spec.ts';
+const UI_SCALE_KEYBOARD_SPEC = 'tests/e2e/uiScaleKeyboardTestId.spec.ts';
+const MIDI_VELOCITY_KEYBOARD_SPEC = 'tests/e2e/midiVelocityKeyboardTestId.spec.ts';
+const PREFERENCE_SPECS = [
+    AUTO_SAVE_INTERVAL_SPEC,
+    'tests/e2e/preferencesDialogDeepTestId.spec.ts',
+    'tests/e2e/shortcutBehavioralE2E.spec.ts',
+    'tests/e2e/browserDisplayScale.spec.ts',
+    'tests/e2e/transportResponsive.spec.ts',
+    'tests/e2e/pianoRollDockAcceptance.spec.ts',
+    UI_SCALE_KEYBOARD_SPEC,
+    MIDI_VELOCITY_KEYBOARD_SPEC,
+];
+const MIXER = 'src/modules/MixerConsole/presentations/views/MixerPanel.tsx';
+const EXPANDED_MIXER = 'src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx';
+const MASTER_MIXER = 'src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx';
+const SOLO_SAFE_SPEC = 'tests/e2e/soloSafeToggleTestId.spec.ts';
+const MASTER_GAIN_SPECS = ['tests/e2e/masterChannelTestId.spec.ts', 'tests/e2e/masterGainKeyboardTestId.spec.ts'];
+const TRANSPORT = 'src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx';
+const METRONOME_VOLUME_SPEC = 'tests/e2e/metronomeVolumeSliderTestId.spec.ts';
+const COUNT_IN_CYCLE_SPEC = 'tests/e2e/countInCycleTestId.spec.ts';
+const MIXER_SPECS_FOR_CONTROLS = [
+    'mixer',
+    'mixerAdvanced',
+    'mixerAiHealthTestId',
+    'mixerBusMasterChain',
+    'mixerChannelGainTestId',
+    'mixerChannelWidthKeyboardTestId',
+    'mixerDeepTemplateTestId',
+    'mixerFullWorkflowTestId',
+    'mixerSnapshotRecallTestId',
+    'mixerSnapshotTestId',
+    'mixerSendsRoutingTestId',
+    'mixerStripDeviceChain',
+    'mixerTestId',
+    'mixerUndoRedo',
+    'mixerWidthSendsTestId',
+    'soloSafeToggleTestId',
+    'masterChannelTestId',
+    'masterGainKeyboardTestId',
+].map((name) => `tests/e2e/${name}.spec.ts`);
+const TRANSPORT_SPECS_FOR_CONTROLS = [
+    'transport',
+    'transportAdvanced',
+    'transportAndWorkspaceDeep',
+    'transportCompleteLifecycle',
+    'transportDeep',
+    'transportResponsive',
+    'transportTemplateTestId',
+    'transportTestId',
+    'mixerUndoRedo',
+    'metronomeVolumeSliderTestId',
+    'countInCycleTestId',
+].map((name) => `tests/e2e/${name}.spec.ts`);
+const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
+const folders: string[] = [];
+
+function temporaryRoot(): string {
+    const folder = mkdtempSync(join(tmpdir(), 'pr-validation-scope-'));
+    folders.push(folder);
+    return folder;
+}
+
+function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
+    return plan.matrix.include.flatMap((group) => group.specs).sort();
+}
+
+function fullInventory(inventory: readonly string[]): string[] {
+    return Array.from(new Set(inventory))
+        .filter((spec) => spec !== SMOKE_SPEC)
+        .sort();
+}
+
+afterEach(() => {
+    for (const folder of folders.splice(0)) {
+        rmSync(folder, { recursive: true, force: true });
+    }
+});
+
+describe('required affected verification', () => {
+    it('runs browser verification inside the required PR Gate, never on approval', () => {
+        const health = parse(readFileSync('.github/workflows/health-gates.yml', 'utf8'));
+        const heavy = parse(readFileSync('.github/workflows/heavy-gates.yml', 'utf8'));
+        expect(Object.keys(heavy.on)).toEqual(['workflow_call']);
+        expect(health.jobs.gate.needs).toContain('affected');
+    });
+
+    it('does not start browser or security analysis for documentation', () => {
+        expect(selectValidationPlan(['docs/06-testing.md', 'AGENTS.md'], INVENTORY)).toMatchObject({
+            browser: false,
+            browserAi: false,
+            codeql: false,
+            matrix: { include: [] },
+        });
+    });
+
+    it('keeps known review tooling security checked without browser execution', () => {
+        expect(
+            selectValidationPlan(['scripts/publishReview.ts', 'scripts/__tests__/reviewDossier.spec.ts'], INVENTORY)
+        ).toMatchObject({ browser: false, browserAi: false, codeql: true, matrix: { include: [] } });
+    });
+
+    it.each([TUNER, EXPORT])('widens product presentation %s to every browser proof', (path) => {
+        const familySpecs = readdirSync('tests/e2e')
+            .filter((name) => /^(?:tuner|export).*\.spec\.tsx?$/.test(name))
+            .map((name) => `tests/e2e/${name}`);
+        const inventory = [
+            SMOKE_SPEC,
+            ...familySpecs,
+            'tests/e2e/browserDisplayScale.spec.ts',
+            'tests/e2e/undo.spec.ts',
+        ];
+        const plan = selectValidationPlan([path], inventory);
+        expect(plan.browser).toBe(true);
+        expect(plan.browserAi).toBe(true);
+        expect(allSelected(plan)).toEqual(fullInventory(inventory));
+        expect(allSelected(plan)).toContain('tests/e2e/browserDisplayScale.spec.ts');
+    });
+
+    it.each([
+        PREFERENCES,
+        GENERAL_PREFERENCES,
+        MIDI_PREFERENCES,
+        'src/modules/Preferences/presentations/views/ShortcutsSection.tsx',
+        'src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx',
+        'src/modules/Preferences/presentations/components/CaptureKeyButton.tsx',
+    ])('widens former preference mapping %s to the complete browser inventory', (path) => {
+        const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
+        const plan = selectValidationPlan([path], inventory);
+        expect(allSelected(plan)).toEqual(fullInventory(inventory));
+        expect(plan.browserAi).toBe(true);
+    });
+
+    it('widens preference producers and omitted sections', () => {
+        const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
+        for (const path of [
+            'src/modules/Preferences/stores/preferencesStore.ts',
+            'src/modules/Preferences/presentations/views/preferences/AiSection.tsx',
+        ]) {
+            expect(allSelected(selectValidationPlan([path], inventory))).toEqual(fullInventory(inventory));
+        }
+    });
+
+    it('selects the auto-save interval persistence proof for General preferences', () => {
+        const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
+        expect(allSelected(selectValidationPlan([GENERAL_PREFERENCES], inventory))).toContain(AUTO_SAVE_INTERVAL_SPEC);
+    });
+
+    it('selects the existing UI Scale and MIDI velocity keyboard proofs for their preference sections', () => {
+        const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
+        expect(allSelected(selectValidationPlan([PREFERENCES], inventory))).toContain(UI_SCALE_KEYBOARD_SPEC);
+        expect(allSelected(selectValidationPlan([MIDI_PREFERENCES], inventory))).toContain(MIDI_VELOCITY_KEYBOARD_SPEC);
+    });
+
+    it.each([
+        MIXER,
+        EXPANDED_MIXER,
+        MASTER_MIXER,
+        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MixerPopupMenu.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx',
+        TRANSPORT,
+    ])('widens former mixer or transport mapping %s to every browser proof and hardware', (path) => {
+        const inventory = [...INVENTORY, ...MIXER_SPECS_FOR_CONTROLS, ...TRANSPORT_SPECS_FOR_CONTROLS];
+        const plan = selectValidationPlan([path], inventory);
+        expect(allSelected(plan)).toEqual(fullInventory(inventory));
+        expect(plan.browserAi).toBe(true);
+    });
+
+    it('selects the Solo Safe and master-gain witnesses for the mixer controls that own them', () => {
+        const inventory = [...INVENTORY, ...MIXER_SPECS_FOR_CONTROLS];
+        expect(allSelected(selectValidationPlan([EXPANDED_MIXER], inventory))).toContain(SOLO_SAFE_SPEC);
+        for (const witness of MASTER_GAIN_SPECS) {
+            expect(allSelected(selectValidationPlan([MASTER_MIXER], inventory))).toContain(witness);
+        }
+    });
+
+    it('selects the metronome-volume and simultaneous punch/count-in witnesses for transport controls', () => {
+        const inventory = [...INVENTORY, ...TRANSPORT_SPECS_FOR_CONTROLS];
+        const selected = allSelected(selectValidationPlan([TRANSPORT], inventory));
+        expect(selected).toContain(METRONOME_VOLUME_SPEC);
+        expect(selected).toContain(COUNT_IN_CYCLE_SPEC);
+    });
+
+    it.each([
+        'src/modules/Preferences/presentations/views/PreferencesDialog.tsx',
+        'src/modules/Preferences/presentations/views/preferencesShared.tsx',
+        'src/modules/WorkspaceShell/presentations/views/TransportBar.tsx',
+    ])('widens cross-feature presentation shell %s to every browser proof', (path) => {
+        const inventory = [
+            ...INVENTORY,
+            ...PREFERENCE_SPECS,
+            ...MIXER_SPECS_FOR_CONTROLS,
+            ...TRANSPORT_SPECS_FOR_CONTROLS,
+        ];
+        const plan = selectValidationPlan([path], inventory);
+        expect(allSelected(plan)).toEqual(
+            Array.from(new Set(inventory))
+                .filter((spec) => spec !== SMOKE_SPEC)
+                .sort()
+        );
+        expect(plan.browserAi).toBe(true);
+    });
+
+    it.each([
+        'src/app/bootstrap.ts',
+        'src/modules/Unknown/reader.ts',
+        'src/modules/Tuner/stores/tunerStore.ts',
+        'tests/e2e/e2eUtils.ts',
+        'package.json',
+        'pnpm-lock.yaml',
+        'playwright.config.ts',
+        'scripts/newBuildStep.ts',
+    ])('widens unknown/shared dependency %s to all browser proofs and hardware', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(allSelected(plan)).toEqual(INVENTORY.filter((spec) => spec !== SMOKE_SPEC).sort());
+        expect(plan).toMatchObject({ browser: true, browserAi: true, codeql: true });
+    });
+
+    it('runs a changed spec directly without accidentally matching neighboring names', () => {
+        const plan = selectValidationPlan(['tests/e2e/undo.spec.ts'], INVENTORY);
+        expect(allSelected(plan)).toEqual(['tests/e2e/undo.spec.ts']);
+        expect(plan.browser).toBe(true);
+        const tsx = 'tests/e2e/editor.spec.tsx';
+        expect(allSelected(selectValidationPlan([tsx], [...INVENTORY, tsx]))).toEqual([tsx]);
+    });
+
+    it('widens deleted tests and both sides of a move outside a known mapping', () => {
+        const paths = parseChangedPaths(
+            `R100\0${TUNER}\0src/components/TunerPanel.tsx\0D\0tests/e2e/deleted.spec.ts\0`
+        );
+        expect(paths).toEqual([TUNER, 'src/components/TunerPanel.tsx', 'tests/e2e/deleted.spec.ts'].sort());
+        expect(allSelected(selectValidationPlan(paths, INVENTORY))).toEqual(
+            INVENTORY.filter((spec) => spec !== SMOKE_SPEC).sort()
+        );
+    });
+
+    it('rejects empty full coverage and missing smoke instead of reducing coverage', () => {
+        expect(() => selectValidationPlan([TUNER], [SMOKE_SPEC])).toThrow('Full browser coverage has no specs');
+        expect(() => selectValidationPlan(['src/app/bootstrap.ts'], TUNER_SPECS)).toThrow(
+            'Required smoke spec is missing'
+        );
+    });
+
+    it('rejects malformed diff records instead of treating them as no changes', () => {
+        expect(() => parseChangedPaths('')).toThrow('empty');
+        expect(() => parseChangedPaths('M\0src/app.ts')).toThrow('NUL terminated');
+        expect(() => parseChangedPaths('R100\0old\0')).toThrow('Invalid changed path');
+        expect(() => parseChangedPaths('X\0unknown\0')).toThrow('Unsupported diff status');
+        expect(() => parseChangedPaths('M\0../outside\0')).toThrow('Invalid changed path');
+    });
+
+    it('reserves CodeQL for executable JS/TS and security configuration', () => {
+        expect(selectValidationPlan(['src/assets/texture.png'], INVENTORY).codeql).toBe(false);
+        expect(selectValidationPlan(['src/styles/transport.css'], INVENTORY).codeql).toBe(false);
+        expect(selectValidationPlan(['crates/audio/src/lib.rs'], INVENTORY).codeql).toBe(false);
+        expect(selectValidationPlan(['.github/workflows/health-gates.yml'], INVENTORY).codeql).toBe(true);
+        expect(selectValidationPlan(['src/app/bootstrap.ts'], INVENTORY).codeql).toBe(true);
+    });
+
+    it('partitions a wide selection once per file into at most twelve nonempty groups', () => {
+        const specs = Array.from({ length: 200 }, (_, index) => `tests/e2e/case${index}.spec.ts`);
+        const plan = selectValidationPlan(['src/app/bootstrap.ts'], [SMOKE_SPEC, ...specs]);
+        expect(plan.matrix.include).toHaveLength(12);
+        expect(allSelected(plan)).toEqual(specs.sort());
+        expect(plan.matrix.include.every((group) => group.specs.length > 0)).toBe(true);
+    });
+
+    it('refuses empty, duplicated, missing and escaping spec arguments', () => {
+        for (const value of [
+            null,
+            [],
+            [TUNER],
+            ['tests/e2e/missing.spec.ts'],
+            ['tests/e2e/../outside.spec.ts'],
+            [SMOKE_SPEC, SMOKE_SPEC],
+        ]) {
+            expect(() => selectedSpecArguments(value, process.cwd())).toThrow();
+        }
+    });
+
+    it('anchors literal arguments so regex metacharacters cannot broaden selected files', () => {
+        const root = temporaryRoot();
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        const spec = 'tests/e2e/a[1]+.spec.ts';
+        writeFileSync(join(root, spec), '');
+        const argument = selectedSpecArguments([spec], root).at(0);
+        if (argument === undefined) {
+            throw new Error('Expected a Playwright file argument');
+        }
+        const regex = new RegExp(argument);
+        expect(regex.test(join(root, spec))).toBe(true);
+        expect(regex.test(join(root, 'tests/e2e/a111xspec.ts'))).toBe(false);
+        expect(regex.test(`${join(root, spec)}extra`)).toBe(false);
+    });
+
+    it('propagates a selected browser process failure without shell evaluation', () => {
+        const root = temporaryRoot();
+        const bin = join(root, 'pnpm');
+        const argsFile = join(root, 'args.json');
+        writeFileSync(
+            bin,
+            `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(process.env.ARGUMENTS_FILE, JSON.stringify(process.argv.slice(2)));process.exit(43);\n`,
+            { mode: 0o755 }
+        );
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'run'], {
+            env: {
+                ...process.env,
+                PATH: `${root}:${process.env.PATH}`,
+                E2E_SPECS: JSON.stringify([SMOKE_SPEC]),
+                ARGUMENTS_FILE: argsFile,
+            },
+            encoding: 'utf8',
+        });
+        expect(result.status, result.stderr).toBe(43);
+        expect(JSON.parse(readFileSync(argsFile, 'utf8'))).toEqual([
+            'test:e2e',
+            ...selectedSpecArguments([SMOKE_SPEC], process.cwd()),
+            '--retries=0',
+            '--reporter=blob',
+        ]);
+    });
+
+    it('builds the manifest from immutable Git refs and includes rename source and destination', () => {
+        const root = temporaryRoot();
+        const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+        for (const spec of INVENTORY) {
+            writeFileSync(join(root, spec), '// fixture\n');
+        }
+        git(['init', '--quiet']);
+        git(['config', 'user.email', 'ci@example.invalid']);
+        git(['config', 'user.name', 'Scope test']);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        const base = git(['rev-parse', 'HEAD']);
+        git(['mv', 'tests/e2e/undo.spec.ts', 'tests/e2e/renamed.spec.ts']);
+        git(['commit', '--quiet', '-m', 'rename']);
+        const output = join(root, 'output');
+        const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+            cwd: root,
+            encoding: 'utf8',
+            env: { ...process.env, BASE_SHA: base, HEAD_SHA: git(['rev-parse', 'HEAD']), GITHUB_OUTPUT: output },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8'));
+        expect(plan.reasons.map((entry: { path: string }) => entry.path)).toEqual([
+            'tests/e2e/renamed.spec.ts',
+            'tests/e2e/undo.spec.ts',
+        ]);
+        expect(plan.browserAi).toBe(true);
+        expect(readFileSync(output, 'utf8')).toContain('browser=true\n');
+    });
+});
