@@ -745,7 +745,14 @@ impl ProofChamber {
             size: 0.75,
             mod_rate: 1.0,
             mod_depth: 0.3,
-            diffusion: 0.75,
+            // 1.0, not a mid-range value: the diffusers below are seeded at
+            // gains 0.750/0.750/0.625/0.625, which is exactly the `set_param`
+            // formula's output at diffusion 1.0 (`d1 = 0.750 * diffusion`,
+            // `d2 = 0.625 * diffusion`). The field must say the same thing the
+            // seeded gains do, and the descriptor's default must say what this
+            // engine boots at (#4430 declared the default 1.0 rather than
+            // re-voicing every untouched project).
+            diffusion: 1.0,
             freeze: false,
             shimmer: false,
             gravity: 0.5,
@@ -884,7 +891,7 @@ impl ProofChamber {
         self.size = 0.75;
         self.mod_rate = 1.0;
         self.mod_depth = 0.3;
-        self.diffusion = 0.75;
+        self.diffusion = 1.0;
         self.freeze = false;
         self.shimmer = false;
         self.gravity = 0.5;

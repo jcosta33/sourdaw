@@ -1189,7 +1189,7 @@ impl PluginCore {
     /// reason as [`Self::fermenter_with_patch`]: a bus compressor's patch is
     /// some forty-five of the compressor's own parameters per strip and the
     /// command ring is finite. The ordering law here is
-    /// [`GLUTEN_MACRO_KEYS`]: `topology`, `style` and `amount` each rewrite
+    /// [`GLUTEN_MACRO_KEYS`]: `style`, `topology` and `amount` each rewrite
     /// other names the same patch may carry, so [`GlutenBody::load_patch`]
     /// brings them to the front, in that order, through
     /// [`BuiltinEffectType::patch_precedence`] — the same mechanism
@@ -2229,17 +2229,21 @@ const GLUTEN_RUN_FRAMES: usize = 128;
 /// The Gluten patch keys that rewrite other names when written, in the
 /// order they must land ahead of a patch's remaining entries.
 ///
-/// `style` loads a whole style onto its topology (threshold, ratio, attack,
-/// release, knee, range, auto_release, mix, and the active topology
-/// itself); `amount` writes threshold and ratio on every topology;
-/// `topology` selects the active topology and rewrites no other name, but
-/// still leads the other two because that is the order the descriptor
-/// (`GlutenDescriptor.ts`) lists them in, and the web host applies a
-/// device's record in descriptor order
-/// (`NativeDspDeviceStrategy.ts` walks `Object.entries(device.parameterValues)`).
-/// Matching that order here is what lets the native body build the same
+/// `style` loads a whole style onto the topology it implies (threshold, ratio,
+/// attack, release, knee, range, auto_release, mix, and the active topology
+/// itself); `topology` selects the active topology and rewrites no other name;
+/// `amount` writes threshold and ratio on every topology. `style` leads
+/// `topology` because its write also selects a topology: landing first, it
+/// lets an explicit `topology` entry behind it win, so the engine runs the
+/// topology the patch stores — reversed, every replay would resurrect the
+/// style's own topology and a stored `topology` could never disagree with it
+/// (#4709). `amount` stays last of the three so its threshold and ratio beat
+/// the style's. `devicePatchPrecedence.ts` names the same order for the web
+/// host, which replays a device's record through
+/// `orderDeviceParametersForReplay` (`NativeDspDeviceStrategy.ts`). Matching
+/// that order here is what lets the native body build the same
 /// compressor from the same record the worklet would.
-const GLUTEN_MACRO_KEYS: &[&str] = &["topology", "style", "amount"];
+const GLUTEN_MACRO_KEYS: &[&str] = &["style", "topology", "amount"];
 
 /// The Gluten bus compressor, hosted as a built-in effect body.
 ///
@@ -22596,7 +22600,7 @@ mod timeline_tests {
     /// would be comparing two different compressors.
     const GLUTEN_RATE: f32 = 48_000.0;
 
-    /// The patch the parity spec below carries, in descriptor order — the
+    /// The patch the parity spec below carries, in precedence order — the
     /// order [`GLUTEN_MACRO_KEYS`] names and the web host applies a
     /// device's record in.
     ///
@@ -22612,14 +22616,15 @@ mod timeline_tests {
     /// earned rather than an agreement between two pass-throughs.
     ///
     /// `topology` is 2 (the FET compressor) rather than 0: `style`'s Glue
-    /// preset that follows it sets `active_topology` back to the VCA, so a
-    /// body that applies `style` before `topology` leaves the FET engaged
-    /// and renders a different signal — making the order among the three
+    /// preset ahead of it selects the VCA, so a body that lands `topology`
+    /// before `style` — the order this law replaced (#4709) — leaves the VCA
+    /// engaged while the reference runs the FET, rendering a different
+    /// compressor entirely — making the order among the three
     /// macros audible here, not only in the mapper's own batch spec
     /// (`set_device_parameters_routes_a_gluten_batch_macros_first`).
     const GLUTEN_PATCH: [(&str, f32); 8] = [
-        ("topology", 2.0),
         ("style", 0.0),
+        ("topology", 2.0),
         ("amount", 50.0),
         ("threshold", -30.0),
         ("ratio", 8.0),
@@ -22675,20 +22680,20 @@ mod timeline_tests {
     /// `GlutenInstance` renders for the same material and the same patch —
     /// sample parity against the reference, not merely that both moved.
     ///
-    /// [`GLUTEN_PATCH`] crosses to the reference instance in descriptor
+    /// [`GLUTEN_PATCH`] crosses to the reference instance in precedence
     /// order and to the hosted body in the reverse of that order, so parity
     /// here only holds if the hosted body's [`GlutenBody::load_patch`]
-    /// brings `topology`, `style` and `amount` back to the front through
+    /// brings `style`, `topology` and `amount` back to the front through
     /// [`BuiltinEffectType::patch_precedence`]. Without that law, the
     /// reversed record would apply `style` after `amount` and after the
     /// patch's own `threshold`/`ratio` entries, and `style` rewrites both on
     /// its own topology — the compressor would settle at Glue's -18 dB
     /// threshold and 4:1 ratio rather than the -30 dB / 8:1 the patch
     /// actually names. `topology` selects the FET compressor precisely so
-    /// this failure mode is visible: without the law, `style`'s Glue preset
-    /// — applied after `topology` in the reversed record's own order —
-    /// would also return `active_topology` to the VCA, so a body that gets
-    /// the macro order wrong renders a different compressor entirely, not
+    /// the macro order itself is visible: with the law, `style` lands first
+    /// and the explicit `topology` behind it wins, leaving the FET engaged;
+    /// a body that lands `topology` before `style` lets Glue's VCA stand
+    /// instead and renders a different compressor entirely, not
     /// merely different ballistics on the same one.
     ///
     /// The worklet hands its instance 128 frames at a time — one

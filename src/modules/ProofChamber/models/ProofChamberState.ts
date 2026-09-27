@@ -85,7 +85,11 @@ export const DEFAULT_PARAMS: ProofChamberEngineState = {
     size: 0.75,
     modRate: 1.0,
     modDepth: 0.3,
-    diffusion: 0.75,
+    // Matches the plate's constructor: the diffuser gains are seeded at the
+    // formula's diffusion-1.0 output, so 1.0 is what an untouched engine
+    // renders (#4430). The 0.75 it used to declare named a sound the engine
+    // does not boot into.
+    diffusion: 1.0,
     highCut: 12000,
     lowCut: 80,
     width: 1.0,

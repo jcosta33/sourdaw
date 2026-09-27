@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:f9fbd69c2124328dbb6d2e37e6c93cda82eb59b52ac7881ac64f0321557e82ad
+// @wasm-bindgen-dts crate-source: sha256:71a72d348b3181cfabe99bf1e3184351d3a99b5fc8dc4e90036764d53987a6ed
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -21,7 +21,6 @@ export const crustinstance_new: (a: number) => number;
 export const crustinstance_process: (a: number, b: number) => number;
 export const crustinstance_reset_true_peak: (a: number) => void;
 export const crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const __wbg_gluteninstance_free: (a: number, b: number) => void;
 export const gluteninstance_get_crest: (a: number) => number;
 export const gluteninstance_get_gr_db: (a: number) => number;
@@ -38,6 +37,7 @@ export const gluteninstance_get_sc_right_ptr: (a: number) => number;
 export const gluteninstance_new: (a: number) => number;
 export const gluteninstance_process: (a: number, b: number) => number;
 export const gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const init_panic_hook: () => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
 export const __wbg_proofinstance_free: (a: number, b: number) => void;

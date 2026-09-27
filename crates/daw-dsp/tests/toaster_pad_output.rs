@@ -64,6 +64,200 @@ fn first_hit_uses_pad_decay_before_the_voice_is_triggered() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Decay response — every engine, both sample rates.
+//
+// Each engine's DECAY arm maps the 0-1 control onto its own declared envelope
+// range (0.02-2.0 s for FM Perc, 0.5-8.0 s for the cymbal, 90-600 ms for the
+// 808 hat, ...). The guard renders the hit and compares energy at Decay 0
+// against Decay 1: a strictly longer envelope holds strictly more energy, so
+// an engine that ignores the control — as FM Perc did, until its trigger
+// stopped overwriting the DECAY arm's value with a fixed 200 ms — renders
+// both settings identical and fails here. Both sample rates are rendered
+// because one engine computed its coefficient against a hardcoded 44100.0
+// and ran decays short everywhere else.
+//
+// One observable cannot be honest about the whole fleet, so the fleet is read
+// through its declared contracts:
+// - Modal and CR-78 Drum keep total energy roughly constant while Decay moves
+//   it in time (Modal's higher-Q modes capture less from the short noise
+//   burst; the CR-78's longer tail sits under a loud early body — measured
+//   total ratios 0.98 and 1.10). Their guard reads the late window
+//   (~213-427 ms), where the effect is unambiguous (measured 182x-296x and
+//   18x-24x).
+// - The 808 and 909 hats ring a closed hit for a fixed ~50 ms — their
+//   declared circuit contract — and map Decay onto the open voice only
+//   ("Closed hat: fixed 50ms decay; Open hat: adjustable"), so the sweep
+//   opens the hat before comparing.
+// - The 808 cowbell, clave, and rimshot decay over fixed per-mode constants
+//   (`Perc808Engine::trigger`; only its Maracas mode maps Decay), matching a
+//   circuit with no decay control for those voices. Their pinned contract
+//   lives in `perc808_fixed_voices_keep_their_circuit_fixed_decay` below.
+// ---------------------------------------------------------------------------
+
+const MODAL_ENGINE: usize = DrumEngineType::Modal as usize;
+const CR78_DRUM_ENGINE: usize = DrumEngineType::Cr78Drum as usize;
+const OPEN_HAT_ENGINES: [usize; 2] = [
+    DrumEngineType::HiHat808 as usize,
+    DrumEngineType::HiHat909 as usize,
+];
+const FIXED_DECAY_ENGINES: [usize; 3] = [
+    DrumEngineType::Cowbell808 as usize,
+    DrumEngineType::Clave808 as usize,
+    DrumEngineType::Rimshot808 as usize,
+];
+
+/// Names for the `engine_type` ids `Pad::set_param` accepts, indexed by id.
+/// Typed against `DrumEngineType::COUNT` so adding an engine without naming
+/// it here is a compile error, not a silent gap in the sweep below.
+const ENGINE_NAMES: [&str; DrumEngineType::COUNT] = [
+    "Kick",
+    "Snare",
+    "HiHat",
+    "Clap",
+    "Perc",
+    "Tom",
+    "Cymbal",
+    "Modal",
+    "FM Perc",
+    "Cowbell",
+    "Clave",
+    "Shaker",
+    "Rim",
+    "Kick 808",
+    "Kick 909",
+    "Snare 808",
+    "HiHat 808",
+    "HiHat 909",
+    "Clap 808",
+    "Clap 909",
+    "Tom 808 Low",
+    "Tom 808 Mid",
+    "Tom 808 High",
+    "Cowbell 808",
+    "Clave 808",
+    "Rimshot 808",
+    "Maracas 808",
+    "CR-78 Drum",
+    "CR-78 Metallic",
+];
+
+/// One full hit (~427 ms at 48 kHz) on pad 0, concatenated L,R.
+fn render_hit(engine_type: usize, decay: f32, sample_rate: f32, open: bool) -> Vec<f32> {
+    let mut engine = ToasterEngine::new(sample_rate, PADS);
+    engine.set_pad_param(0, "engine_type", engine_type as f32);
+    if open {
+        engine.set_pad_param(0, "open", 1.0);
+    }
+    engine.set_pad_param(0, "decay", decay);
+    engine.note_on(0, 127.0, 60);
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    let mut out = Vec::with_capacity(160 * FRAMES * 2);
+    for _ in 0..160 {
+        engine.process_block(&mut left, &mut right);
+        out.extend_from_slice(&left);
+        out.extend_from_slice(&right);
+    }
+    out
+}
+
+fn hit_energy(engine_type: usize, decay: f32, sample_rate: f32, open: bool) -> f32 {
+    energy(&render_hit(engine_type, decay, sample_rate, open))
+}
+
+/// The gate is a clear response, not a magnitude: the widest declared ranges
+/// bound how large this fixed window can make the ratio (cymbal 0.5-8.0 s and
+/// snare 808 50-300 ms measure 1.44x-1.49x, matching the integrals of their
+/// decay exponentials), so 1.2x separates an inert control from the fleet's
+/// honest physics with margin on both sides. Magnitude claims for
+/// narrow-range engines live in the audit spec.
+#[test]
+fn every_engine_renders_a_longer_tail_at_maximum_decay_than_at_minimum() {
+    for engine_type in 0..DrumEngineType::COUNT {
+        if engine_type == MODAL_ENGINE || engine_type == CR78_DRUM_ENGINE {
+            continue; // total energy is the wrong observable here; checked below
+        }
+        if FIXED_DECAY_ENGINES.contains(&engine_type) {
+            continue; // circuit-fixed decay, pinned in its own test below
+        }
+        let open = OPEN_HAT_ENGINES.contains(&engine_type);
+        for sample_rate in [44_100.0, 48_000.0] {
+            let short = hit_energy(engine_type, 0.0, sample_rate, open);
+            let long = hit_energy(engine_type, 1.0, sample_rate, open);
+            assert!(
+                long > short * 1.2,
+                "{}{} at {sample_rate} Hz must ring longer at decay 1.0 than at 0.0: \
+                 short={short}, long={long}",
+                ENGINE_NAMES[engine_type],
+                if open { " (open)" } else { "" },
+            );
+        }
+    }
+}
+
+/// The 808 cowbell, clave, and rimshot carry no decay control on the hardware
+/// they model, and `Perc808Engine::trigger` decays them over fixed per-mode
+/// constants whatever the pad's Decay reads — only Maracas maps it. This pins
+/// that declared contract bit for bit: if the product later decides these
+/// pads must honour Decay, this assertion and `perc_808.rs`'s `trigger`
+/// change together in that fix.
+#[test]
+fn perc808_fixed_voices_keep_their_circuit_fixed_decay() {
+    for engine_type in FIXED_DECAY_ENGINES {
+        for sample_rate in [44_100.0, 48_000.0] {
+            let short = render_hit(engine_type, 0.0, sample_rate, false);
+            let long = render_hit(engine_type, 1.0, sample_rate, false);
+            assert_eq!(
+                energy(&long),
+                energy(&short),
+                "{} at {sample_rate} Hz decays over a fixed constant: \
+                 decay 1.0 must not change the render",
+                ENGINE_NAMES[engine_type],
+            );
+            assert_bit_identical(&long, &short);
+        }
+    }
+}
+
+/// Energy of one hit from ~213 ms to ~427 ms after the note.
+fn late_tail_energy(engine_type: usize, decay: f32, sample_rate: f32) -> f32 {
+    let mut engine = ToasterEngine::new(sample_rate, PADS);
+    engine.set_pad_param(0, "engine_type", engine_type as f32);
+    engine.set_pad_param(0, "decay", decay);
+    engine.note_on(0, 127.0, 60);
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    let mut late = 0.0;
+    for block in 0..160 {
+        engine.process_block(&mut left, &mut right);
+        if block >= 64 {
+            late += energy(&left) + energy(&right);
+        }
+    }
+    late
+}
+
+/// Modal and CR-78 Drum shift energy later in time rather than holding more
+/// of it overall, so their Decay is read where that shift lands.
+#[test]
+fn modal_and_cr78_drum_decay_fill_the_late_tail() {
+    for engine_type in [MODAL_ENGINE, CR78_DRUM_ENGINE] {
+        for sample_rate in [44_100.0, 48_000.0] {
+            let short = late_tail_energy(engine_type, 0.0, sample_rate);
+            let long = late_tail_energy(engine_type, 1.0, sample_rate);
+            assert!(
+                long > short * 4.0,
+                "{} at {sample_rate} Hz must still be ringing late at decay 1.0 \
+                 when decay 0.0 has already fallen silent: short={short}, long={long}",
+                ENGINE_NAMES[engine_type],
+            );
+        }
+    }
+}
+
 #[test]
 fn explicit_tom_base_frequency_preserves_midi_note_pitch() {
     let root = tom_first_block(60);

@@ -9323,8 +9323,10 @@ mod tests {
         }
     }
 
-    /// A gluten batch routes `topology`, `style` and `amount` first, in that
-    /// order, whatever order the wire record draws — the same law
+    /// A gluten batch routes `style`, `topology` and `amount` first, in that
+    /// order — `style` leads because the engine's style write also selects
+    /// the style's own topology, so the explicit `topology` behind it wins
+    /// (#4709) — whatever order the wire record draws — the same law
     /// [`set_device_parameters_routes_a_fermenter_batch_through_active_layer_first`]
     /// proves for the fermenter's own routing key, applied to gluten's three
     /// macros instead of one.
@@ -9343,8 +9345,8 @@ mod tests {
             "ratio": 4.0
         });
         let expected = vec![
-            gluten_write("topology", 0.0),
             gluten_write("style", 0.0),
+            gluten_write("topology", 0.0),
             gluten_write("amount", 50.0),
             gluten_write("ratio", 4.0),
             gluten_write("threshold", -18.0),
@@ -9362,7 +9364,7 @@ mod tests {
             assert_eq!(
                 immediate_writes(&mapped.ops),
                 expected,
-                "draw {draw}: the macros must lead in descriptor order, and the rest must \
+                "draw {draw}: the macros must lead in precedence order, and the rest must \
                  follow in name order"
             );
         }

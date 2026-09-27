@@ -372,13 +372,14 @@ fn out_of_range_diffusion_renders_as_the_clamped_endpoint() {
 
 #[test]
 fn diffusion_seeds_at_the_constructor_gains() {
-    // The constructor seeds the diffusers at gains 0.750/0.625 — exactly the
-    // formula's output at diffusion 1.0 — while the descriptor declares the
-    // default as 0.75, so an untouched engine does not render as its
-    // documented default (#4430, filed; changing either side is an audible
-    // product decision). This pins today's truth: the untouched render is
-    // bit-exactly the diffusion=1.0 render, so any drift in the seeded gains
-    // fails here instead of silently re-voicing every untouched project.
+    // #4430's resolution declared the default 1.0: the constructor seeds the
+    // diffusers at gains 0.750/0.625 — exactly the formula's output at
+    // diffusion 1.0 — so the stored field, the descriptor default and the
+    // panel reset all say 1.0, and the seeded gains were left untouched. This
+    // test is the parity that decided it and now guards it: the untouched
+    // render is bit-exactly the diffusion=1.0 render, so any drift in the
+    // seeded gains fails here instead of silently re-voicing every untouched
+    // project.
     let untouched = render(&[]);
     let seeded = render(&[("diffusion", 1.0)]);
     assert!(

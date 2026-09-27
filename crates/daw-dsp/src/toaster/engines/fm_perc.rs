@@ -31,6 +31,9 @@ pub struct FmPercEngine {
     base_freq: f32,
     tune_ratio: f32,
     drive: f32,
+    // Amp decay in seconds, stored by the DECAY arm and turned into a
+    // per-sample coefficient in `trigger` with the trigger's sample rate.
+    decay_s: f32,
     active: bool,
 }
 
@@ -51,6 +54,7 @@ impl FmPercEngine {
             base_freq: DEFAULT_BASE_FREQ,
             tune_ratio: 1.0,
             drive: 0.0,
+            decay_s: 0.2,
             active: false,
         }
     }
@@ -62,8 +66,8 @@ impl FmPercEngine {
         self.amp_env = velocity;
         self.mod_env = 1.0;
         self.carrier_freq = self.base_freq * self.tune_ratio;
-        // Amp decays over ~200ms (clamp to avoid division by zero)
-        let safe_amp_decay = 0.2_f32.max(0.001);
+        // Amp decays over the pad's Decay (clamp to avoid division by zero)
+        let safe_amp_decay = self.decay_s.max(0.001);
         self.amp_decay_coeff = (-1.0 / (safe_amp_decay * sample_rate)).exp();
         // Mod index decays much faster (~20ms) for metallic attack
         let safe_mod_decay = 0.02_f32.max(0.001);
@@ -135,10 +139,10 @@ impl FmPercEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             DECAY => {
-                // Normalize 0-1 to amp decay range 0.02-2.0s
+                // Normalize 0-1 to amp decay range 0.02-2.0s; the per-sample
+                // coefficient is derived in `trigger` from the sample rate.
                 let v = value.clamp(0.0, 1.0);
-                let decay_s = 0.02 + v * 1.98;
-                self.amp_decay_coeff = (-1.0 / (decay_s * 44100.0)).exp();
+                self.decay_s = 0.02 + v * 1.98;
             }
             TUNE => {
                 self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);

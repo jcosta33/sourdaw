@@ -349,6 +349,10 @@ describe('createNativeDspStrategy factory dispatch', () => {
     });
 
     it('seeds a gluten record with its macros leading ahead of the specific entries', async () => {
+        // `style` leads `topology` because the engine's style write is a macro
+        // that also selects the style's own topology: replayed first, an
+        // explicit `topology` wins and the engine runs the topology the patch
+        // stores (#4709).
         const setParam = vi.fn();
         const seededGluten = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
         creators.createGlutenNode.mockResolvedValueOnce(seededGluten);
@@ -357,8 +361,8 @@ describe('createNativeDspStrategy factory dispatch', () => {
             parameterValues: { threshold: -12, style: 2, ratio: 6, topology: 1, amount: 40 },
         } as never);
         expect(setParam.mock.calls).toEqual([
-            ['topology', 1],
             ['style', 2],
+            ['topology', 1],
             ['amount', 40],
             ['threshold', -12],
             ['ratio', 6],

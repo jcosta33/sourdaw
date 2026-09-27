@@ -5,14 +5,16 @@ import { resolveNativeDspDeviceType } from './nativeDspDeviceTypes';
  *
  * Mirrors the native body laws in `crates/daw-engine/src/scheduler.rs`:
  * - Crust: `CRUST_PATCH_PRECEDENCE` (`style` first, so exact `algorithm` pick lands last).
- * - Gluten: `GLUTEN_MACRO_KEYS` (`topology`, `style`, `amount`).
+ * - Gluten: `GLUTEN_MACRO_KEYS` (`style`, `topology`, `amount` — `style` leads
+ *   because the engine's style write also selects the style's own topology, so
+ *   an explicit `topology` entry must land after it to win).
  * - Grinder: `GRINDER_PATCH_PRECEDENCE` (`neuralEnabled`).
  * - Fermenter: `LAYER_ROUTING_KEY` (`activeLayer` / `active_layer`).
  * - Toaster: `TOASTER_PATCH_PRECEDENCE` (`pad0_engine_type` ... `pad15_engine_type`).
  */
 export const DEVICE_PATCH_PRECEDENCE: Readonly<Record<string, readonly string[]>> = {
     crust: ['style'],
-    gluten: ['topology', 'style', 'amount'],
+    gluten: ['style', 'topology', 'amount'],
     grinder: ['neuralEnabled'],
     fermenter: ['activeLayer', 'active_layer'],
     toaster: [

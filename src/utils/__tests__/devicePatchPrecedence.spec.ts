@@ -34,8 +34,8 @@ describe('orderDeviceParametersForReplay', () => {
             topology: 2,
         });
         expect(result).toEqual([
-            ['topology', 2],
             ['style', 1],
+            ['topology', 2],
             ['amount', 0.5],
             ['cutoff', 500],
         ]);
