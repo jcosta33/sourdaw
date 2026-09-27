@@ -36,6 +36,9 @@ function releaseYeastVoices(noteData: ActiveNoteData): void {
     for (const release of noteData.yeastVoiceReleases?.values() ?? []) {
         release();
     }
+    for (const voice of noteData.yeastGeneratedVoices?.values() ?? []) {
+        voice.release();
+    }
 }
 
 function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput): void {

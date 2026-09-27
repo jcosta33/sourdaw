@@ -1,72 +1,108 @@
-type PendingRelease = {
-    readonly routeId: string;
+import type { GeneratedYeastVoice } from '../../models/WebMidiTypes';
+
+type Release = (sampleFrame?: number, releaseVelocity?: number) => void;
+
+type PendingVoice = {
+    readonly owner: PendingRelease;
     readonly noteInstanceId: string | undefined;
-    readonly trackId: string;
+    readonly pitch: number;
     readonly channel: number;
-    readonly releases: ReadonlyMap<number, (sampleFrame?: number, releaseVelocity?: number) => void>;
-    readonly retiredPitches: Set<number>;
+    readonly release: Release;
 };
 
-const pendingByVoice = new Map<string, Set<PendingRelease>>();
-const pendingByInstance = new Map<string, PendingRelease>();
+type PendingRelease = {
+    readonly routeId: string;
+    readonly trackId: string;
+    readonly voices: Set<PendingVoice>;
+};
+
+const pendingByVoice = new Map<string, Set<PendingVoice>>();
+const pendingByInstance = new Map<string, PendingVoice>();
 const pendingReleases = new Set<PendingRelease>();
 
 function voiceKey(routeId: string, channel: number, pitch: number): string {
     return `${routeId}:${channel}:${pitch}`;
 }
 
-/** Keep a transformed old voice visible while its Note Off waits for Yeast. */
+function instanceKey(routeId: string, channel: number, noteInstanceId: string): string {
+    return `${routeId}:${channel}:${noteInstanceId}`;
+}
+
+function addVoice(
+    owner: PendingRelease,
+    noteInstanceId: string | undefined,
+    pitch: number,
+    channel: number,
+    release: Release
+): void {
+    const voice: PendingVoice = { owner, noteInstanceId, pitch, channel, release };
+    owner.voices.add(voice);
+    const key = voiceKey(owner.routeId, channel, pitch);
+    const peers = pendingByVoice.get(key) ?? new Set<PendingVoice>();
+    peers.add(voice);
+    pendingByVoice.set(key, peers);
+    if (noteInstanceId !== undefined) {
+        pendingByInstance.set(instanceKey(owner.routeId, channel, noteInstanceId), voice);
+    }
+}
+
+/** Keep transformed voices visible while their Note Off waits for Yeast. */
 function beginPendingYeastRelease(
     routeId: string,
-    releases: ReadonlyMap<number, (sampleFrame?: number, releaseVelocity?: number) => void>,
-    noteInstanceId: string | undefined,
+    releases: ReadonlyMap<number, Release>,
+    generatedVoices: ReadonlyMap<string, GeneratedYeastVoice>,
     trackId: string,
     channel: number
 ): PendingRelease {
-    const pending: PendingRelease = {
-        routeId,
-        noteInstanceId,
-        trackId,
-        channel,
-        releases: new Map(releases),
-        retiredPitches: new Set(),
-    };
-    pendingReleases.add(pending);
-    if (noteInstanceId !== undefined) {
-        pendingByInstance.set(noteInstanceId, pending);
+    const pending: PendingRelease = { routeId, trackId, voices: new Set() };
+    for (const [pitch, release] of releases) {
+        addVoice(pending, undefined, pitch, channel, release);
     }
-    for (const pitch of pending.releases.keys()) {
-        const key = voiceKey(routeId, channel, pitch);
-        const releases = pendingByVoice.get(key) ?? new Set<PendingRelease>();
-        releases.add(pending);
-        pendingByVoice.set(key, releases);
+    for (const [noteInstanceId, voice] of generatedVoices) {
+        addVoice(pending, noteInstanceId, voice.pitch, voice.channel, voice.release);
+    }
+    if (pending.voices.size > 0) {
+        pendingReleases.add(pending);
     }
     return pending;
 }
 
-/** A successor must retire the older pitch voice before starting its own. */
-function retirePendingYeastVoice(routeId: string, channel: number, pitch: number, sampleFrame?: number): void {
-    const key = voiceKey(routeId, channel, pitch);
-    const releases = pendingByVoice.get(key);
-    if (!releases) {
+function releaseVoice(voice: PendingVoice, sampleFrame?: number, releaseVelocity?: number): void {
+    const { owner, channel, pitch, noteInstanceId } = voice;
+    if (!owner.voices.delete(voice)) {
         return;
     }
-    for (const pending of releases) {
-        if (pending.retiredPitches.has(pitch)) {
-            continue;
-        }
-        pending.releases.get(pitch)?.(sampleFrame, 0);
-        pending.retiredPitches.add(pitch);
-        releases.delete(pending);
-        finishPendingYeastRelease(pending);
-    }
-    if (releases.size === 0) {
+    const key = voiceKey(owner.routeId, channel, pitch);
+    const peers = pendingByVoice.get(key);
+    peers?.delete(voice);
+    if (peers?.size === 0) {
         pendingByVoice.delete(key);
+    }
+    if (noteInstanceId !== undefined) {
+        const key = instanceKey(owner.routeId, channel, noteInstanceId);
+        if (pendingByInstance.get(key) === voice) {
+            pendingByInstance.delete(key);
+        }
+    }
+    if (owner.voices.size === 0) {
+        pendingReleases.delete(owner);
+    }
+    voice.release(sampleFrame, releaseVelocity);
+}
+
+/** A successor must retire the older pitch voice before starting its own. */
+function retirePendingYeastVoice(routeId: string, channel: number, pitch: number, sampleFrame?: number): void {
+    const peers = pendingByVoice.get(voiceKey(routeId, channel, pitch));
+    if (!peers) {
+        return;
+    }
+    for (const voice of [...peers]) {
+        releaseVoice(voice, sampleFrame, 0);
     }
 }
 
 function wasPendingYeastVoiceRetired(pending: PendingRelease, pitch: number): boolean {
-    return pending.retiredPitches.has(pitch);
+    return ![...pending.voices].some((voice) => voice.pitch === pitch);
 }
 
 function releasePendingYeastVoice(
@@ -75,20 +111,10 @@ function releasePendingYeastVoice(
     sampleFrame?: number,
     releaseVelocity?: number
 ): void {
-    if (pending.retiredPitches.has(pitch)) {
-        return;
-    }
-    const release = pending.releases.get(pitch);
-    release?.(sampleFrame, releaseVelocity);
-    if (release) {
-        pending.retiredPitches.add(pitch);
-        const key = voiceKey(pending.routeId, pending.channel, pitch);
-        const peers = pendingByVoice.get(key);
-        peers?.delete(pending);
-        if (peers?.size === 0) {
-            pendingByVoice.delete(key);
+    for (const voice of [...pending.voices]) {
+        if (voice.noteInstanceId === undefined && voice.pitch === pitch) {
+            releaseVoice(voice, sampleFrame, releaseVelocity);
         }
-        finishPendingYeastRelease(pending);
     }
 }
 
@@ -106,48 +132,33 @@ function releasePendingYeastEvent(event: PendingYeastEvent): boolean {
     if (event.noteInstanceId === undefined) {
         return false;
     }
-    const pending = pendingByInstance.get(event.noteInstanceId);
+    const voice = pendingByInstance.get(instanceKey(event.routeId, event.channel, event.noteInstanceId));
     if (
-        !pending ||
-        pending.routeId !== event.routeId ||
-        pending.channel !== event.channel ||
-        (event.trackId !== undefined && pending.trackId !== event.trackId) ||
-        !pending.releases.has(event.pitch)
+        !voice ||
+        (event.trackId !== undefined && voice.owner.trackId !== event.trackId) ||
+        voice.pitch !== event.pitch
     ) {
         return false;
     }
-    releasePendingYeastVoice(pending, event.pitch, event.sampleFrame, event.releaseVelocity);
+    releaseVoice(voice, event.sampleFrame, event.releaseVelocity);
     return true;
 }
 
 function releaseAllPendingYeastVoices(pending: PendingRelease): void {
-    for (const pitch of pending.releases.keys()) {
-        releasePendingYeastVoice(pending, pitch);
+    for (const voice of [...pending.voices]) {
+        releaseVoice(voice);
     }
 }
 
 function finishPendingYeastRelease(pending: PendingRelease): void {
-    if (pending.retiredPitches.size !== pending.releases.size) {
-        return;
-    }
-    if (pending.noteInstanceId !== undefined && pendingByInstance.get(pending.noteInstanceId) === pending) {
-        pendingByInstance.delete(pending.noteInstanceId);
-    }
-    pendingReleases.delete(pending);
-    for (const pitch of pending.releases.keys()) {
-        const key = voiceKey(pending.routeId, pending.channel, pitch);
-        const releases = pendingByVoice.get(key);
-        releases?.delete(pending);
-        if (releases?.size === 0) {
-            pendingByVoice.delete(key);
-        }
+    if (pending.voices.size === 0) {
+        pendingReleases.delete(pending);
     }
 }
 
 function releaseAllPendingYeastReleases(): void {
     for (const pending of [...pendingReleases]) {
         releaseAllPendingYeastVoices(pending);
-        finishPendingYeastRelease(pending);
     }
 }
 

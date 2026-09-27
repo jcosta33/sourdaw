@@ -98,7 +98,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const pendingRelease = pendingYeastRelease.begin(
                 `${instrumentTrackId}:${yeastDevice.id}`,
                 noteData.yeastVoiceReleases ?? new Map(),
-                noteData.noteInstanceId,
+                noteData.yeastGeneratedVoices ?? new Map(),
                 instrumentTrackId,
                 noteData.channel
             );
@@ -136,7 +136,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                         continue;
                     }
                     if (
-                        (event.noteInstanceId !== undefined && event.noteInstanceId !== noteData.noteInstanceId) ||
+                        event.noteInstanceId !== undefined ||
                         (event.trackId !== undefined && event.trackId !== instrumentTrackId) ||
                         event.kind.channel !== noteData.channel ||
                         pendingYeastRelease.wasRetired(pendingRelease, event.kind.note)

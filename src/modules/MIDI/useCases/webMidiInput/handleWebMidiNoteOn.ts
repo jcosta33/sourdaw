@@ -167,13 +167,31 @@ export const handleWebMidiNoteOn = inject({
                 const earliestDispatchFrame = Math.round(engine.context.currentTime * engine.context.sampleRate);
                 const startCapturedVoice = (
                     pitch: number,
+                    voiceChannel: number,
+                    generatedId: string | undefined,
                     sampleFrame: number,
                     start: () => void,
                     release: (sampleFrame?: number, releaseVelocity?: number) => void
                 ): void => {
-                    pendingYeastRelease.retire(`${instrumentTrackId}:${yeastDevice.id}`, channel, pitch, sampleFrame);
-                    start();
-                    (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
+                    pendingYeastRelease.retire(
+                        `${instrumentTrackId}:${yeastDevice.id}`,
+                        voiceChannel,
+                        pitch,
+                        sampleFrame
+                    );
+                    if (generatedId === undefined) {
+                        noteData.yeastVoiceReleases?.get(pitch)?.(sampleFrame, 0);
+                        start();
+                        (noteData.yeastVoiceReleases ??= new Map()).set(pitch, release);
+                    } else {
+                        noteData.yeastGeneratedVoices?.get(generatedId)?.release(sampleFrame, 0);
+                        start();
+                        (noteData.yeastGeneratedVoices ??= new Map()).set(generatedId, {
+                            pitch,
+                            channel: voiceChannel,
+                            release,
+                        });
+                    }
                 };
                 for (const event of processedEvents) {
                     const eventSampleFrame = Math.max(earliestDispatchFrame, Math.round(event.timeSamples));
@@ -187,9 +205,12 @@ export const handleWebMidiNoteOn = inject({
                                 const control = deviceNode.fermenterControls;
                                 startCapturedVoice(
                                     eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
                                     eventSampleFrame,
-                                    () => control.noteOn(eventNote, eventVelocity, eventSampleFrame, channel),
-                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, channel)
+                                    () =>
+                                        control.noteOn(eventNote, eventVelocity, eventSampleFrame, event.kind.channel),
+                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, event.kind.channel)
                                 );
                             }
                             continue;
@@ -203,10 +224,18 @@ export const handleWebMidiNoteOn = inject({
                                 const control = deviceNode.grandBouleControls;
                                 startCapturedVoice(
                                     eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
                                     eventSampleFrame,
-                                    () => control.noteOn(eventNote, eventVelocity / 127, eventSampleFrame, channel),
+                                    () =>
+                                        control.noteOn(
+                                            eventNote,
+                                            eventVelocity / 127,
+                                            eventSampleFrame,
+                                            event.kind.channel
+                                        ),
                                     (sampleFrame, releaseVelocity) => {
-                                        control.noteOff(eventNote, sampleFrame, releaseVelocity, channel);
+                                        control.noteOff(eventNote, sampleFrame, releaseVelocity, event.kind.channel);
                                         void deps.eventBus.emit('midi.noteOff', {
                                             deviceId: grandBouleDevice.id,
                                             midiNote: eventNote,
@@ -229,9 +258,12 @@ export const handleWebMidiNoteOn = inject({
                                 const control = deviceNode.levainControls;
                                 startCapturedVoice(
                                     eventNote,
+                                    event.kind.channel,
+                                    event.noteInstanceId,
                                     eventSampleFrame,
-                                    () => control.noteOn(eventNote, eventVelocity, eventSampleFrame, channel),
-                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, channel)
+                                    () =>
+                                        control.noteOn(eventNote, eventVelocity, eventSampleFrame, event.kind.channel),
+                                    (sampleFrame) => control.noteOff(eventNote, sampleFrame, event.kind.channel)
                                 );
                             }
                             continue;
@@ -260,11 +292,18 @@ export const handleWebMidiNoteOn = inject({
                         ) {
                             continue;
                         }
-                        if (
-                            (event.noteInstanceId !== undefined && event.noteInstanceId !== noteInstanceId) ||
-                            (event.trackId !== undefined && event.trackId !== instrumentTrackId) ||
-                            event.kind.channel !== channel
-                        ) {
+                        if (event.trackId !== undefined && event.trackId !== instrumentTrackId) {
+                            continue;
+                        }
+                        if (event.noteInstanceId !== undefined) {
+                            const voice = noteData.yeastGeneratedVoices?.get(event.noteInstanceId);
+                            if (voice?.pitch === eventNote && voice.channel === event.kind.channel) {
+                                voice.release(eventSampleFrame);
+                                noteData.yeastGeneratedVoices?.delete(event.noteInstanceId);
+                            }
+                            continue;
+                        }
+                        if (event.kind.channel !== channel) {
                             continue;
                         }
                         noteData.yeastVoiceReleases?.get(eventNote)?.(eventSampleFrame);

@@ -132,7 +132,7 @@ describe('live Yeast release ownership across input reset', () => {
                             {
                                 timeSamples: 48_000,
                                 trackId: 'track-1',
-                                noteInstanceId: request.noteInstanceId,
+                                noteInstanceId: 'arp-1:generated:42',
                                 kind: { type: 'noteOn' as const, channel: 1, note: 67, velocity: 100 },
                             },
                         ];
@@ -143,7 +143,7 @@ describe('live Yeast release ownership across input reset', () => {
                     const oldOff = {
                         timeSamples: 170_000,
                         trackId: 'track-1',
-                        noteInstanceId: sourceIds[0],
+                        noteInstanceId: 'arp-1:generated:42',
                         kind: { type: 'noteOff' as const, channel: 1, note: 67 },
                     };
                     const wrongRouteOff = { ...oldOff, timeSamples: 160_000, trackId: 'track-2' };
@@ -157,7 +157,7 @@ describe('live Yeast release ownership across input reset', () => {
                             {
                                 timeSamples: 150_000,
                                 trackId: 'track-1',
-                                noteInstanceId: request.noteInstanceId,
+                                noteInstanceId: 'arp-1:generated:43',
                                 kind: { type: 'noteOn' as const, channel: 1, note: successorPitch, velocity: 100 },
                             },
                         ];
@@ -173,7 +173,7 @@ describe('live Yeast release ownership across input reset', () => {
                         {
                             timeSamples: 180_000,
                             trackId: 'track-1',
-                            noteInstanceId: request.noteInstanceId,
+                            noteInstanceId: 'arp-1:generated:43',
                             kind: { type: 'noteOff' as const, channel: 1, note: successorPitch },
                         },
                     ];
@@ -194,6 +194,7 @@ describe('live Yeast release ownership across input reset', () => {
             const strike = handleWebMidiNoteOn._factory({ ...deps, handleWebMidiNoteOff: release });
 
             await strike(1, 60, 100);
+            expect(sourceIds[0]).not.toBe('arp-1:generated:42');
             await release(1, 60);
             expect(firstOff).not.toHaveBeenCalled();
             strip.deviceNodes.unshift(nextNode);
