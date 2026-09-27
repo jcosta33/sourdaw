@@ -4443,15 +4443,14 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
     });
 
-    it('withholds a secret value under the delimiter and terminator forms it reads, and admits the escaped-newline form', () => {
+    it('withholds a secret value under the delimiter and terminator forms the scanner reads', () => {
         // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter,
         // and it treats each delimiter as an independent boundary, so a mismatched pair such as `'…"` is
-        // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, a newline, or
-        // end of input, and its opening run is up to four delimiters, so those closings and a four-quote
-        // run are withheld too. A nested delimiter ends the run, so `'''…"…'''` stops at the inner `"`
-        // and is admitted; an escaped delimiter also stops the run and is admitted. The escaped-newline
-        // terminator is deliberately not modelled (see #4579), so that form is admitted, not withheld;
-        // this case therefore does not claim to cover every form the scanner reads.
+        // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, an escaped
+        // newline, or end of input, and its opening run is up to five of a delimiter, whitespace, or
+        // `=`, so those closings and a four-quote run are withheld too. A nested delimiter ends the
+        // run, so `'''…"…'''` stops at the inner `"` and is admitted; an escaped delimiter also stops
+        // the run and is admitted. Every expectation here matches the pinned binary's verdict.
         const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();
@@ -4465,12 +4464,18 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, ';'))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "''''"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "''''", value))).toBeDefined();
+        // The opening-run ceiling is five characters shared with the whitespace after the operator, so
+        // five quotes after a space exceed it and are admitted (the pinned binary agrees), while five
+        // quotes with no space fit the ceiling and are withheld; six quotes always exceed it.
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''''", value))).toBeUndefined();
-        // The escaped-newline terminator is deliberately not modelled (the scanner pairs it with an
-        // entropy gate and a value allowlist the screen cannot apply), so these stay admitted and the
-        // leak is deferred to #4579.
-        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\n'))).toBeUndefined();
-        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\r'))).toBeUndefined();
+        expect(sensitiveContentReason(secretFixture('client_secret =', "'''''", value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret =', "''''''", value))).toBeUndefined();
+        // An escaped newline (`\n` or `\r` as two characters) is in the scanner's terminator set: the
+        // run stops at the backslash, so the captured value carries no escape and these are withheld
+        // (#4579 — previously the backslash rode into the value and the heuristic read it as an
+        // escaped fragment, so the pinned binary flagged the line while the screen admitted it).
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\n'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\r'))).toBeDefined();
         // A nested or escaped delimiter ends the run and is admitted.
         expect(
             sensitiveContentReason(
@@ -4480,6 +4485,49 @@ describe('the egress screen tells code from credentials', () => {
         expect(
             sensitiveContentReason(secretFixture('client_secret = ', '"Ab3dEf7hI\\"j2lMn4pQr5tUv6"'))
         ).toBeUndefined();
+    });
+
+    it('withholds a secret value under each operator the scanner reads, and admits ordinary code near them', () => {
+        // The scanner's operator alternation is `=|>|:{1,3}=|\|\||:|=>|\?=|,`, and its opening run also
+        // absorbs `=` and whitespace, so `==` and a spaced `= =` flag too. The screen read only `=` and
+        // `:`, so every other form carried an assigned secret to the provider (#4579). The 32-character
+        // value is composed at runtime for the same reason as the fixtures above. Every expectation in
+        // both lists was checked against the pinned binary: Gitleaks v8.30.1 with the repository's
+        // `.gitleaks.toml` reports each withheld line as generic-api-key and stays silent on each
+        // admitted one.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('apiKey := ', value),
+            secretFixture('token => ', value),
+            secretFixture('token, ', value),
+            secretFixture('token || ', value),
+            secretFixture('apiKey ?= ', value),
+            secretFixture('token == ', value),
+            secretFixture('token > ', value),
+            secretFixture('secret ::= ', value),
+            secretFixture('token == "', value, '"'),
+            secretFixture("token || '", value, "'"),
+            secretFixture("secret = = '", value, "'"),
+            secretFixture('apiKey = ', value),
+            secretFixture('apiKey : ', value),
+            secretFixture('secret = "', value, '"'),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // The same operators next to ordinary code stay admitted: a comparison with no secret-named
+        // key never reaches the rule, a short operand fails the value length gate, a bare mixed-case
+        // operand reads as a reference rather than key material, and a member access is code.
+        for (const line of [
+            'a == b',
+            'token == shortVal',
+            secretFixture('token == ', 'bLongerIdentifierValue'),
+            secretFixture('token > ', 'thresholdValueOnly'),
+            secretFixture('password || ', 'defaultPasswordValue'),
+            secretFixture('apiKey ?= ', 'config.apiKey'),
+            secretFixture('secret := ', '"short"'),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
     });
 
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
