@@ -1,0 +1,27 @@
+scripts/__tests__/prContract.spec.ts
+  s_ed5aa36a3ba357::t_506fa0f70e9d2a 60-61,907-914,916-946,950-959,967-968,979
+  s_ed5aa36a3ba357::t_1b8f721c67d9bc 915
+  s_ed5aa36a3ba357::t_c9de08bf4d5277 960-966,969-978,980-985
+scripts/testInstructions.ts
+  s_ed5aa36a3ba357::t_21ed54d39bec25 33-34,521,525,805,813,820-827,829-832,841-842,844-848
+scripts/testInstructionVocabulary.ts
+  s_ed5aa36a3ba357::t_1b8f721c67d9bc 402
+  s_ed5aa36a3ba357::t_eaf3c540cb2199 391-401,403-406
+  s_ed5aa36a3ba357::t_aba071addffbe7 407-433
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c5bc1da90c4a43009ae54fa592d2e1ba6d9fb0a5",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
