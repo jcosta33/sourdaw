@@ -1,0 +1,122 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  h_beb54bf43b47b7 1429,1433,1591,1650,1653,1655,1657-1659,1666,1680
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipPlacementIncompatibleDestination.integration.spec.ts
+  h_beb54bf43b47b7 1-184
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  h_beb54bf43b47b7 4,111-120,217-274
+src/modules/AiRuntime/transformers/llmActionStrategies/clipPlacementStrategies.ts
+  h_beb54bf43b47b7 1-2,25-44,100-102,129-131,215-221
+src/modules/AiRuntime/useCases/getPlanningProviderToolSchemas.ts
+  h_beb54bf43b47b7 12-15
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  h_beb54bf43b47b7 1280-1301
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  h_beb54bf43b47b7 132,178
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  h_beb54bf43b47b7 77
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 1416
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  h_beb54bf43b47b7 296,343
+src/modules/Arrangement/models/WarpMarker.ts
+  h_beb54bf43b47b7 19-21,44-70
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  h_beb54bf43b47b7 114,135,154
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  h_beb54bf43b47b7 25,103,133,137-178
+src/modules/Arrangement/stores/warpStates.ts
+  h_beb54bf43b47b7 15,146-153,199,209,224-230,240,262-279,282-284,296-298,300,353,356-357,360
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  h_beb54bf43b47b7 310
+src/modules/Arrangement/useCases/__tests__/restoreStripSilenceStateRollback.spec.ts
+  h_beb54bf43b47b7 97,125
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  h_beb54bf43b47b7 300
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  h_beb54bf43b47b7 66,108,163,168,183,205,237,275,354,379,401,446-447,481-482
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  h_beb54bf43b47b7 6-13,48,78,89,100,115,133,159,172-176,188-194
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  h_beb54bf43b47b7 12,67-75,80
+src/modules/Arrangement/useCases/clip/isClipDropCompatible.ts
+  h_beb54bf43b47b7 1-24
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  h_beb54bf43b47b7 8-9,51-56
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  h_beb54bf43b47b7 336,520,546,580
+src/modules/Arrangement/useCases/clipEditing/__tests__/restoreClipGlueStateRollback.spec.ts
+  h_beb54bf43b47b7 67-72,104
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  h_beb54bf43b47b7 226,380
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  h_beb54bf43b47b7 313,338,412
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  h_beb54bf43b47b7 144
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClip.spec.ts
+  h_beb54bf43b47b7 18,122,207-211,306,318-321,354-358,404,419,439-442,448,494,510,528,566,588
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  h_beb54bf43b47b7 9,93-98
+src/modules/Arrangement/useCases/createTrack.ts
+  h_beb54bf43b47b7 10
+src/modules/Arrangement/useCases/timeOperations/prepareClipSatelliteStateRestore.ts
+  h_beb54bf43b47b7 1,175-181,203
+src/modules/Arrangement/useCases/timelineInteractions/isClipDropCompatible.ts
+  h_beb54bf43b47b7 2-4,6
+src/modules/Arrangement/useCases/warp/__tests__/commitWarpMarkerBeatDrag.spec.ts
+  h_beb54bf43b47b7 28,59,89,107
+src/modules/Arrangement/useCases/warp/__tests__/getStretchModeInfo.spec.ts
+  h_beb54bf43b47b7 7-10
+src/modules/Arrangement/useCases/warp/__tests__/hydrateClipWarpStates.spec.ts
+  h_beb54bf43b47b7 16-18,32
+src/modules/Arrangement/useCases/warp/__tests__/moveWarpMarker.spec.ts
+  h_beb54bf43b47b7 18
+src/modules/Arrangement/useCases/warp/__tests__/setStretchMode.spec.ts
+  h_beb54bf43b47b7 22,39,45
+src/modules/Arrangement/useCases/warp/__tests__/updateWarpMarkerBeat.spec.ts
+  h_beb54bf43b47b7 15,33,57,71
+src/modules/Arrangement/useCases/warp/getStretchModeInfo.ts
+  h_beb54bf43b47b7 3-7,13-17,20-23,43-44,46,48-49
+src/modules/Command/useCases/__tests__/groupedUndoHeterogeneousReplay.integration.spec.ts
+  h_beb54bf43b47b7 109-111,119
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 401,405,408,418-419,425,432,439,447,464,479,494,517,522-523,537,542,547,559-560,568,577-579,586,592,599,615-618,620-622,659,674,685,705-706,713,726,729,737,745,748-751,780,785-788,794,797,815,829,837-838,847,855,862-867,885,1046,1063,1069,1083,1092-1093,1194-1195,1212,1239,1249,1261,1265,1285,1292,1300,1309-1310,1371,1379,1384,1400,1412,1416,1424-1425,1444,1467,1473,1492,1498,1516,1522,1530-1532,1541-1542,1544-1547,1557-1559,1586,1600,1618,1623,1629,1636-1637,1650-1652,1670,1675,1684-1685,1731,1735,1738,1742,1748,1760,1764,1781,1787,1790,1808,1815,1826,1857,1869,1877,1889,1905,1913,1919,1928-1929,1945,1956,1993,1998,2041,2046,2132,2155-2156,2179,2198,2206,2215,2226-2228,2242-2244,2275,2281,2290,2301,2309,2320-2321,2335-2336,2361-2362,2420,2428,2431-2432,2463,2489,2507,2513,2535,2561,2569-2571,2578,2587-2588,2593-2598,2633,2640,2656,2664-2666,2689,2719-2720,2724-2725,2798,2809,2849,2855,2878,2905,2920,2925,2943-2944,2951,2957,2964,2978-2979,2988,2990-2992,3002-3003,3011-3012,3025-3026,3038-3039,3081-3082,3158-3159,3239-3240,3348-3349,3374,3380-3381,3383-3385,3400,3407,3410,3419,3421,3502-3503,3530-3531,3553,3567,3576,3598,3612,3619,3626-3628,3669-3672,3694,3699,3711,3718,3723,3725,3731,3736,3738-3739,3758,3765,3773-3774,3780,3783,3799,3817,3827-3828,3837-3838,3901,3907-3908,3921-3922,3939,3944-3945,3971,3979,3986,3991-3992,4008,4013-4014,4021,4026,4036,4043,4049,4052,4054,4063-4070,4086,4091-4092,4118,4120,4129-4130,4138-4141,4150,4152-4153,4164-4165,4173-4174,4192-4193,4215,4263,4270,4276-4277,4284,4298,4305-4306,4313,4327,4332-4335,4364,4370,4384,4390,4435,4437-4439,4452-4453,4461-4462,4464-4465,4477-4478,4481-4482,4488,4493,4520,4525,4620,4627,4655,4663,4669,4677-4678,4718,4729,4737,4743,4750,4755,4763-4764,4975,4991,5008,5015-5016,5019,5050,5063-5066,5076-5077,5122,5128,5136,5141,5143,5191,5196,5214,5219,5251,5256,5323,5332,5344,5356,5365,5377,5389,5395,5401-5402,5427,5433-5434,5498,5504,5507,5514,5519,5521,5530,5532,5541,5560,5568-5572,5585-5929
+src/modules/ElasticAudio/AGENTS.md
+  h_beb54bf43b47b7 7
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 41,45-46
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 72,84,125,280-283
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/addManualMarker.spec.ts
+  h_beb54bf43b47b7 10,26,46,54
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 32,50,166
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/quantizeTransients.spec.ts
+  h_beb54bf43b47b7 15,34,41,83,102,135
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/removeMarker.spec.ts
+  h_beb54bf43b47b7 10,27,36,69,84
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/toggleMarkerLock.spec.ts
+  h_beb54bf43b47b7 10,27,36,69,83
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 459-462,467
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  h_beb54bf43b47b7 204
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  h_beb54bf43b47b7 59,63-65,485,488
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  h_beb54bf43b47b7 160,322,337,360,491-495,553,591,609,651,675,1009,1025,1050,1065
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 219-221
+src/utils/isClipCompatibleWithTrackKind.ts
+  h_beb54bf43b47b7 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dcec0723aa824dae4e909645d0bd81c713ba2be8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
