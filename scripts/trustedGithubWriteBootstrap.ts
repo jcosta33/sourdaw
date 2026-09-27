@@ -1691,9 +1691,11 @@ function readLoaderDefaultBindingAt(
 
 /**
  * Whether the name at `index` stands at a class body's member position rather than inside a parameter
- * list, a binding pattern, or a field initializer. Only the innermost unclosed opener before the name
- * answers it: the class body's own `{` at `bodyOpen` admits a member, and a `(`, `[`, or nested `{`
- * between the two encloses the name instead.
+ * list, a binding pattern, a field initializer, or a literal. Only the innermost unclosed opener before
+ * the name answers it: the class body's own `{` at `bodyOpen` admits a member, and a `(`, `[`, or
+ * nested `{` between the two encloses the name instead. Every literal is crossed whole, so a `}`, `)`,
+ * or `]` inside a regex, a string, or a template is the literal's character rather than a delimiter —
+ * the owner the walk starts from is found by the same judgement, so the two must agree on the region.
  */
 function isClassMemberPosition(source: string, index: number, bodyOpen: number): boolean {
     // A completed member body is a balanced region the walk crosses whole, so a real field declared
@@ -1701,8 +1703,32 @@ function isClassMemberPosition(source: string, index: number, bodyOpen: number):
     let cursor = index - 1;
     while (cursor > bodyOpen) {
         const character = source[cursor];
-        if (character === '(' || character === '[' || character === '{') {
-            return false;
+        if (character === '/') {
+            const commentOpen = cursor >= 1 && source[cursor - 1] === '*' ? source.lastIndexOf('/*', cursor - 1) : -1;
+            if (commentOpen !== -1) {
+                cursor = commentOpen - 1;
+                continue;
+            }
+            const lineComment = lineCommentOpenBefore(source, cursor);
+            if (lineComment !== undefined) {
+                cursor = lineComment - 1;
+                continue;
+            }
+            const regexOpen = regexLiteralOpenBackward(source, cursor);
+            if (regexOpen !== undefined) {
+                cursor = regexOpen - 1;
+                continue;
+            }
+        }
+        if (character === '"' || character === "'") {
+            const quoteOpen = skipQuotedBackward(source, cursor, character);
+            cursor = quoteOpen === undefined ? cursor - 1 : quoteOpen - 1;
+            continue;
+        }
+        if (character === '`') {
+            const templateOpen = skipTemplateBackward(source, cursor);
+            cursor = templateOpen === undefined ? cursor - 1 : templateOpen - 1;
+            continue;
         }
         if (character === ')' || character === ']' || character === '}') {
             const open = matchingOpenDelimiterBackward(source, cursor, openerOfDelimiter(character), character);
@@ -1711,6 +1737,9 @@ function isClassMemberPosition(source: string, index: number, bodyOpen: number):
             }
             cursor = open - 1;
             continue;
+        }
+        if (character === '(' || character === '[' || character === '{') {
+            return false;
         }
         cursor -= 1;
     }
@@ -3389,9 +3418,10 @@ function memberBodyOpensAt(source: string, openIndex: number): boolean {
 
 /**
  * The index of the `{` that opens the innermost brace-delimited region containing `keywordIndex`,
- * skipping braces that belong to string, template, or comment content on the way, or `undefined`
- * when no such brace precedes the name. Regex literals are not skipped here: a brace inside a regex
- * body is an expression token this walk does not read.
+ * skipping braces that belong to regex, string, template, or comment content on the way, or
+ * `undefined` when no such brace precedes the name. A `}` a regex body holds — `/}/` — is the
+ * literal's character rather than a delimiter, so the walk crosses the literal whole; the
+ * member-position walk makes the same judgement, so the two agree on the region a name sits in.
  */
 function enclosingBraceOpen(source: string, keywordIndex: number): number | undefined {
     let cursor = keywordIndex - 1;
@@ -3417,6 +3447,13 @@ function enclosingBraceOpen(source: string, keywordIndex: number): number | unde
         if (lineComment !== undefined) {
             cursor = lineComment - 1;
             continue;
+        }
+        if (character === '/') {
+            const regexOpen = regexLiteralOpenBackward(source, cursor);
+            if (regexOpen !== undefined) {
+                cursor = regexOpen - 1;
+                continue;
+            }
         }
         if (character === '"' || character === "'") {
             const open = skipQuotedBackward(source, cursor, character);

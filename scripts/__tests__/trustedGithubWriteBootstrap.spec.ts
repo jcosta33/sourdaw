@@ -637,6 +637,14 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = other; x = (function (loader = require) { return 1; })(); }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
+        // A `}` a regex body holds does not carry the walk past the method body's `{` to the class
+        // body's, so the assignment in the parameter is no member position and the method still
+        // shadows the base's field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class X {\n  m(loader: unknown) { const r = /}/; loader = require; }\n  loader() { return other; }\n}\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual([]);
         // A member body is a balanced region the member-position walk crosses whole, so a real field
         // declared after a method or an accessor is still a member and still carries its loader.
         expect(
@@ -652,6 +660,35 @@ describe('snapshotImportSpecifiers', () => {
         expect(
             snapshotComputedDynamicSpecifiers(
                 'const X = class { m() {} loader = require; };\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `}` a regex body holds is the literal's character rather than a delimiter, so the walk
+        // crosses the literal whole and a real field after a method that holds one is still a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  m() { const r = /}/; }\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const X = class { m() { const r = /}/; } loader = require; };\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // An unbalanced delimiter in a regex initializer is the literal's character too, so the walk
+        // still reaches the class body's own `{` and the next field is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  x = /(/;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  x = /)/;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  x = /(/;\n  y = 1;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
         // A parameter property is read, and its own modifier run is what decides it: the loader default
