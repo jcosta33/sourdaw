@@ -82,7 +82,11 @@ function subscribeToYeastNotesOff(): void {
 export function initWebMidi(): ReturnType<typeof initializeWebMidi> {
     subscribeToTrackSelection();
     subscribeToYeastNotesOff();
-    return initializeWebMidi({ onMidiMessage: handleWebMidiMessage });
+    return initializeWebMidi({
+        onMidiMessage: (event) => {
+            void handleWebMidiMessage(event);
+        },
+    });
 }
 
 import.meta.hot?.dispose(() => {

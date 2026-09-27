@@ -3,5 +3,10 @@ import { selectMidiInput as chooseMidiInput } from '../../repositories/webMidi/l
 import { handleWebMidiMessage } from './handleWebMidiMessage';
 
 export function selectMidiInput(deviceId: string): ReturnType<typeof chooseMidiInput> {
-    return chooseMidiInput({ deviceId, onMidiMessage: handleWebMidiMessage });
+    return chooseMidiInput({
+        deviceId,
+        onMidiMessage: (event) => {
+            void handleWebMidiMessage(event);
+        },
+    });
 }

@@ -1259,8 +1259,9 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         vi.doMock('../handleWebMidiPitchBend', () => ({ handleWebMidiPitchBend: pitchBend }));
         const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
         const clock = vi.spyOn(performance, 'now');
-        const send = (bytes: number[], timeStamp: number): void =>
-            handleWebMidiMessage({ data: new Uint8Array(bytes), timeStamp });
+        const send = (bytes: number[], timeStamp: number): void => {
+            void handleWebMidiMessage({ data: new Uint8Array(bytes), timeStamp });
+        };
 
         try {
             at(1);
