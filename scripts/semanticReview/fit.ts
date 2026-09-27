@@ -13,7 +13,9 @@
  *
  * The fitter owns both halves of that decision: what a region costs, and the order the regions it was
  * given are attempted in. Both read the region, never the position the collector's admission left it
- * at, so the same admitted set fits the same regions whatever order admission attempted it in.
+ * at, so the same admitted set fits the same regions whatever order admission attempted it in. The
+ * order it reads keeps the precedence admission chose inside one unit: a unit's context is attempted
+ * contract-first, and its own regions put the side admission attempted first ahead of the other.
  */
 
 import { EVIDENCE_SIDES, type EvidenceReference, type EvidenceSide } from './contracts.ts';
@@ -45,11 +47,14 @@ export function serializedRegion(reference: EvidenceReference, content: string):
  * of regions. A region's cost is a property of the region and its content, so every region is charged
  * this one key width whatever ordinal it holds.
  *
- * Two digits keeps the charge at or above the bytes the payload spends on the key for every identifier
- * the collector's own total budget makes ordinary. A third-digit ordinal — reached once a change admits
- * a hundred regions — costs the payload one byte more than this key per region, and the structural
- * bytes the charge counts around a lone region (the braces the evidence map itself pays once) are worth
- * that byte and more. The region's serialized form, its escaping and its field bytes stay exact.
+ * The bound that width keeps: the charge stays at or above the payload's own bytes while every
+ * identifier stays below a fourth digit — fewer than a thousand admitted regions — because the braces
+ * the charge counts around each region cover the one byte an identifier of that length spends beyond
+ * the charge key. The thousandth admitted region's identifier takes a fifth byte the charge does not
+ * count, so from there the charge under-counts the request by one byte per region (two from ten
+ * thousand), and a unit whose request sits on the cap can exceed it. The region's serialized form, its
+ * escaping and its field bytes stay exact, so a longer identifier is the only way the charge and the
+ * payload disagree.
  */
 function chargedRegionKey(reference: EvidenceReference): string {
     return `${evidenceSidePrefix(reference.side)}00`;
@@ -71,26 +76,32 @@ export function regionCost(reference: EvidenceReference, content: string): numbe
 }
 
 /**
- * The order one unit's regions are attempted in, read from the regions themselves: content bytes, then
- * path, bounds, and side — the order admission uses *inside one tier*, read from the region rather than
- * from where the collector's tiers left it.
- *
- * The collector's order ranks units, so a promotion moves a region's position in the change-wide array
- * while nothing about the region changes; attempting a unit's regions in that array's order carried
- * different evidence for the same admitted set, because whichever region admission attempted first took
- * the room the next one needed. The ascending-byte key is what keeps a unit's carriage where admission
- * already put it whenever admission ordered the unit's own sides by their own size.
+ * One region set measured once: each region's content bytes, and, for a unit's own set, the bytes each
+ * side's regions add up to.
  */
-function compareFitOrder(
-    bytes: ReadonlyMap<string, number>,
-    left: EvidenceReference,
-    right: EvidenceReference
-): number {
-    const leftBytes = bytes.get(left.evidenceId) ?? 0;
-    const rightBytes = bytes.get(right.evidenceId) ?? 0;
-    if (leftBytes !== rightBytes) {
-        return leftBytes - rightBytes;
+type FitBytes = {
+    readonly region: ReadonlyMap<string, number>;
+    readonly side: ReadonlyMap<EvidenceSide, number>;
+};
+
+function measureFitBytes(set: SemanticEvidenceSet, references: readonly EvidenceReference[]): FitBytes {
+    const region = new Map<string, number>();
+    const side = new Map<EvidenceSide, number>();
+    for (const reference of references) {
+        const bytes = Buffer.byteLength(set.contents.get(reference.evidenceId) ?? '', 'utf8');
+        region.set(reference.evidenceId, bytes);
+        side.set(reference.side, (side.get(reference.side) ?? 0) + bytes);
     }
+    return { region, side };
+}
+
+/**
+ * The bounds every region is identified by, in the order admission attempts regions of one side: path,
+ * bounds, side. Two regions of one side differ in path or bounds — admission mints one region per
+ * revision, path, side, and range — so this is the hunk order the collector admitted that side in,
+ * read from the region rather than from the array's positions.
+ */
+function compareRegionBounds(left: EvidenceReference, right: EvidenceReference): number {
     const byPath = compareLexicographic(left.path, right.path);
     if (byPath !== 0) {
         return byPath;
@@ -108,15 +119,77 @@ function compareFitOrder(
     return compareLexicographic(left.revisionSha, right.revisionSha);
 }
 
+/**
+ * The region's own key: content bytes, then the bounds order. Admission's order inside one tier is a
+ * byte-ascending tie-break over exactly this key, so reading it here keeps a region's rank where the
+ * collector put it whenever the collector ordered the regions by their own size.
+ */
+function compareRegionKey(bytes: FitBytes, left: EvidenceReference, right: EvidenceReference): number {
+    const leftBytes = bytes.region.get(left.evidenceId) ?? 0;
+    const rightBytes = bytes.region.get(right.evidenceId) ?? 0;
+    if (leftBytes !== rightBytes) {
+        return leftBytes - rightBytes;
+    }
+    return compareRegionBounds(left, right);
+}
+
+/**
+ * Whether one context region is a contract document the unit's rules charged, or an implementation
+ * region the planner supplied as context because a rule declared it needed the implementation. The
+ * charged contract is the provenance admission ranks ahead of the implementation, and it is read from
+ * the region's own side.
+ */
+function contextProvenanceRank(reference: EvidenceReference): number {
+    return reference.side === 'context' ? 0 : 1;
+}
+
+/**
+ * The order one unit's context regions are attempted in: the charged contract-context regions first,
+ * then the implementation regions supplied as context, and inside each provenance the region key.
+ *
+ * The collector admits the contract-context tier ahead of bulk, so a flat key over per-region bytes let
+ * a smaller implementation region take the room the contract document the unit's rules charged needed,
+ * and the request then reported a contract-witnessing token missing that admission had supplied.
+ * Sorting by provenance first keeps the precedence admission chose; the key inside a provenance keeps
+ * the property the flat order was added for, so the same admitted set fits the same context regions
+ * whatever order the collector assembled them in.
+ */
+function compareContextOrder(bytes: FitBytes, left: EvidenceReference, right: EvidenceReference): number {
+    const byProvenance = contextProvenanceRank(left) - contextProvenanceRank(right);
+    if (byProvenance !== 0) {
+        return byProvenance;
+    }
+    return compareRegionKey(bytes, left, right);
+}
+
+/**
+ * The order one unit's own regions are attempted in: the side whose regions add up to fewer bytes
+ * first, then the other, and inside a side the bounds order.
+ *
+ * Admission attempts a file's two sides as two units, ranked by each side's aggregate chargeable bytes,
+ * with the before side first on a tie. A flat key over per-region bytes instead let three small after
+ * hunks take the room a fatter after hunk had under admission, so the unit carried different hunks of
+ * its own change. The aggregate is read from the regions the unit holds rather than from admission's
+ * array position, so the same admitted set fits the same own regions whatever order the collector
+ * assembled them in; the tie falls to the before side, exactly as admission's own side order does.
+ */
+function compareOwnOrder(bytes: FitBytes, left: EvidenceReference, right: EvidenceReference): number {
+    const leftSide = bytes.side.get(left.side) ?? 0;
+    const rightSide = bytes.side.get(right.side) ?? 0;
+    if (leftSide !== rightSide) {
+        return leftSide - rightSide;
+    }
+    return compareRegionBounds(left, right);
+}
+
 /** One region set in its own stable order, with each region's content measured once. */
-function inFitOrder(set: SemanticEvidenceSet, references: readonly EvidenceReference[]): EvidenceReference[] {
-    const bytes = new Map(
-        references.map((reference) => [
-            reference.evidenceId,
-            Buffer.byteLength(set.contents.get(reference.evidenceId) ?? '', 'utf8'),
-        ])
-    );
-    return [...references].sort((left, right) => compareFitOrder(bytes, left, right));
+function inFitOrder(
+    set: SemanticEvidenceSet,
+    references: readonly EvidenceReference[],
+    compare: (bytes: FitBytes, left: EvidenceReference, right: EvidenceReference) => number
+): EvidenceReference[] {
+    const bytes = measureFitBytes(set, references);
+    return [...references].sort((left, right) => compare(bytes, left, right));
 }
 
 /**
@@ -194,13 +267,15 @@ export type FittedUnitEvidence = {
  *
  * Each set is attempted in its own stable order rather than in the order the collector admitted it:
  * admission's order ranks units, so it is no property of the regions a request was given, and reading
- * it here made an identical admitted set carry different evidence. A region that does not fit is
- * dropped, counted, and its side recorded, so the questions that needed it report the evidence as not
- * supplied rather than answering over a fragment; later regions are dropped once the budget is gone.
- * Context regions are offered last, so an oversized implementation costs a contract rather than the
- * unit, and the bounded share they reserve ahead of the unit's own regions is the one exception to that
- * order. Whatever is lost is reported, because an omitted region is not evidence that the region is
- * safe.
+ * it here made an identical admitted set carry different evidence. That order keeps the precedence
+ * admission chose inside one unit: its own regions put the side with the smaller aggregate first, and
+ * its context regions put the charged contract documents ahead of the implementation supplied as
+ * context. A region that does not fit is dropped, counted, and its side recorded, so the questions that
+ * needed it report the evidence as not supplied rather than answering over a fragment; later regions
+ * are dropped once the budget is gone. Context regions are offered last, so an oversized implementation
+ * costs a contract rather than the unit, and the bounded share they reserve ahead of the unit's own
+ * regions is the one exception to that order. Whatever is lost is reported, because an omitted region
+ * is not evidence that the region is safe.
  *
  * The own and context fits are returned separately rather than as one union, because a dropped side
  * means different things in each: an own-side drop unsupplies that side of the unit, while a context
@@ -212,8 +287,8 @@ export function fitUnitEvidence(
     context: readonly EvidenceReference[],
     maxBytes: number
 ): FittedUnitEvidence {
-    const ownOrder = inFitOrder(set, own);
-    const contextOrder = inFitOrder(set, context);
+    const ownOrder = inFitOrder(set, own, compareOwnOrder);
+    const contextOrder = inFitOrder(set, context, compareContextOrder);
     const contextBudget = contextOrder.length === 0 ? 0 : Math.floor(maxBytes * CONTEXT_BUDGET_SHARE);
     const ownFitted = fitRegions(set, ownOrder, maxBytes - contextBudget);
     const contextFitted = fitRegions(set, contextOrder, maxBytes - ownFitted.used);

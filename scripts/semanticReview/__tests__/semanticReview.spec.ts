@@ -3113,6 +3113,173 @@ describe('request carriage follows the unit, not the admission order', () => {
         const reversed: SemanticEvidenceSet = { ...movedSet, references: [...movedSet.references].reverse() };
         expect(carriesBefore(movedFiles, reversed, ordered)).toBe(true);
     });
+
+    it('attempts a charged contract document before an implementation region supplied as context', () => {
+        // Witness C: a flat key over per-region bytes reached the smaller implementation region the
+        // planner supplied as context before the contract-context document the unit's rules charged, so
+        // the document was dropped and the request reported `migration or version contract` missing —
+        // a token admission had supplied — while nothing about the unit's own evidence had changed. The
+        // context order is provenance first, so the charged document is attempted ahead of the
+        // implementation exactly as admission's contract tier was; the key inside a provenance keeps the
+        // carriage stable when the collector assembles the same admitted set in another order.
+        const specPath = 'src/modules/Project/__tests__/undo.spec.ts';
+        const implPath = 'src/modules/Project/undo.ts';
+        const document = '- Decision: a recorded contract line that names the undo path.\n'.repeat(24);
+        const implementation = Array.from(
+            { length: 30 },
+            (_unused, index) =>
+                `    const restored${String(index + 1)} = await restoreCheckpoint(${String(index + 1)}, { strict: true });\n`
+        ).join('');
+        const files = [changedFile(specPath), changedFile(implPath, { added: 8, deleted: 2 })];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                hunks: new Map<string, PathHunks>([
+                    [
+                        specPath,
+                        {
+                            path: specPath,
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [{ startLine: 1, endLine: 2 }],
+                        },
+                    ],
+                    [
+                        implPath,
+                        {
+                            path: implPath,
+                            before: [{ startLine: 1, endLine: 1 }],
+                            after: [
+                                { startLine: 1, endLine: 4 },
+                                { startLine: 20, endLine: 23 },
+                            ],
+                        },
+                    ],
+                ]),
+                blobs: {
+                    [`${MERGE_BASE}:${specPath}`]: 'it("before", () => {});\n'.repeat(4),
+                    [`${HEAD}:${specPath}`]: 'it("after", () => {});\n'.repeat(4),
+                    [`${MERGE_BASE}:${implPath}`]: implementation,
+                    [`${HEAD}:${implPath}`]: implementation,
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: document,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        const own = set.references.filter((reference) => reference.side !== 'context' && reference.path === specPath);
+        const charged = set.references.filter((reference) => reference.side === 'context');
+        const supplied = set.references.filter(
+            (reference) => reference.side === 'after' && reference.path === implPath
+        );
+        const context = [...charged, ...supplied];
+        const contract = charged[0];
+        const [first, second] = supplied;
+        if (contract === undefined || first === undefined || second === undefined) {
+            throw new Error('the fixture did not admit the contract document and both implementation regions');
+        }
+        expect(own).toHaveLength(2);
+        expect(charged).toHaveLength(1);
+        expect(supplied).toHaveLength(2);
+        // The shape the boundary needs: the charged document is larger than one implementation region,
+        // two implementation regions fit the room the document leaves, and the document does not fit the
+        // room they leave. The own fit must leave that whole room, so the budget pays the own regions
+        // first and the context competition is what the order decides.
+        expect(charge(set, contract)).toBeGreaterThan(charge(set, first));
+        const ownCharge = own.reduce((total, reference) => total + charge(set, reference), 0);
+        const budget = ownCharge + charge(set, contract) + 2 * charge(set, first) - 1;
+        expect(ownCharge + Math.floor(budget * 0.4)).toBeLessThanOrEqual(budget);
+        const fitted = fitUnitEvidence(set, own, context, budget);
+        expect(regionKeys(fitted.context.references)).toEqual(regionKeys([contract, first]));
+        // The token the document witnesses is supplied, so the question it was charged for is answered
+        // rather than reported as insufficient context.
+        expect(
+            missingRequiredEvidence(
+                semanticRule('persisted_shape_changed_without_migration'),
+                fitted.own.references,
+                fitted.context.references,
+                'modified',
+                fitted.own.droppedSides,
+                fitted.context.droppedSides
+            )
+        ).toEqual([]);
+        // The same admitted set assembled in the other order carries the same document.
+        const reversed = fitUnitEvidence(set, own, [...context].reverse(), budget);
+        expect(regionKeys(reversed.context.references)).toEqual(regionKeys([contract, first]));
+    });
+
+    it('keeps the own hunk the side admission reached first, not the three smaller ones', () => {
+        // Witness D: the merge base attempted a file's two sides as two units, ranked by each side's
+        // aggregate chargeable bytes and keeping hunk order inside a side, so the fat after hunk was
+        // attempted before the three smaller ones. A flat key over per-region bytes reached the smaller
+        // hunks first, and at a budget boundary the unit carried three smaller hunks instead of the fat
+        // one admission had already fitted — a different carriage of the same change for the same
+        // admitted set.
+        const path = 'src/modules/Project/undo.ts';
+        const content = Array.from(
+            { length: 200 },
+            (_unused, index) =>
+                `    const restored${String(index + 1)} = await restoreCheckpoint(${String(index + 1)}, { strict: true, verify: true });\n`
+        ).join('');
+        const hunks: PathHunks = {
+            path,
+            before: [{ startLine: 1, endLine: 6 }],
+            after: [
+                { startLine: 40, endLine: 59 },
+                { startLine: 100, endLine: 103 },
+                { startLine: 120, endLine: 123 },
+                { startLine: 140, endLine: 143 },
+            ],
+        };
+        const files = [changedFile(path, { added: 20, deleted: 6 })];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                hunks: new Map<string, PathHunks>([[path, hunks]]),
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: content,
+                    [`${HEAD}:${path}`]: content,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const own = set.references.filter((reference) => reference.side !== 'context');
+        const regionFor = (side: EvidenceSide, startLine: number, endLine: number): EvidenceReference => {
+            const found = set.references.find(
+                (reference) =>
+                    reference.side === side && reference.startLine === startLine && reference.endLine === endLine
+            );
+            if (found === undefined) {
+                throw new Error(`the fixture did not mint the ${side} region ${String(startLine)}-${String(endLine)}`);
+            }
+            return found;
+        };
+        const before = regionFor('before', 1, 6);
+        const fat = regionFor('after', 40, 59);
+        const smaller = [regionFor('after', 100, 103), regionFor('after', 120, 123), regionFor('after', 140, 143)];
+        expect(own).toHaveLength(5);
+        // The boundary: the before side and the fat after hunk together fill it, the three smaller after
+        // hunks and the before side fit inside it, and all four after hunks together do not.
+        const budget = charge(set, before) + charge(set, fat) + 1;
+        const smallerCharge = smaller.reduce((total, reference) => total + charge(set, reference), 0);
+        const fatCharge = charge(set, fat);
+        expect(smallerCharge / 3).toBeLessThan(fatCharge);
+        expect(smallerCharge + charge(set, before)).toBeLessThanOrEqual(budget);
+        expect(smallerCharge + fatCharge).toBeGreaterThan(budget);
+        // The side admission attempted first is the unit's before side, so the before region is attempted
+        // ahead of the fat after hunk; a flat byte key would attempt the three smaller after hunks first
+        // and drop the fat one.
+        const fitted = fitUnitEvidence(set, own, [], budget);
+        expect(regionKeys(fitted.own.references)).toEqual(regionKeys([before, fat]));
+        // The same admitted set assembled in the other order fits the same two regions.
+        const reversed = fitUnitEvidence(set, [...own].reverse(), [], budget);
+        expect(regionKeys(reversed.own.references)).toEqual(regionKeys([before, fat]));
+    });
 });
 
 describe('change-kind applicability', () => {

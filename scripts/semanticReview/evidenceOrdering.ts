@@ -98,8 +98,9 @@ export function classifyContractCarryingSides(
  * are attempted ahead of the context documents its rules charge, so the order keeps the charge from
  * taking the reader's place — and that is what it keeps: the order decides which side the collector's
  * total withholds and which regions a unit is given, never what a request carries among them. Each
- * unit's own and context regions are attempted in that unit's own stable order, so the same admitted
- * set fits the same regions whatever order admission attempted them in. When the total binds before the
+ * unit's own and context regions are attempted in that unit's own order — own regions by their side's
+ * aggregate bytes, context regions with the charged contract documents first — so the same admitted set
+ * fits the same regions whatever order admission attempted them in. When the total binds before the
  * context tier the contract document is withheld at admission, no contract-context region reaches the
  * request fitter at all, and the fitter's context reserve has nothing to hold.
  *
@@ -122,8 +123,17 @@ export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): R
 /**
  * The slices admission mints for one side: each hunk slice, or the whole side when the hunks were
  * unavailable. The content screen and the planned-unit predicate both read a side through this walk,
- * and admission itself slices a side the same way, so one definition keeps them from disagreeing about
- * which parts of a side admission sees.
+ * so one definition keeps them from disagreeing about which parts of a side admission sees.
+ *
+ * One disagreement survives, in one direction. A hunk range that names lines the revision does not
+ * hold slices to nothing here, so this walk reads only the remaining hunks, while `admitSide` screens
+ * the side's whole content for that same hunk (`withholdCredentialShapedSide`) and withholds the side.
+ * A side credentialed only in the missing range is therefore recorded as withheld for the whole side,
+ * without a scope exclusion — the slices this walk does see may still leave — while
+ * `credentialShapedPaths`, which reads this walk, counts it clean. The planned-unit gate therefore keeps
+ * that unit and still charges the contract documents. No credential-shaped text leaves either way:
+ * admission withholds the side whatever this walk saw, and the two agree on every side whose hunks all
+ * slice.
  */
 function sideSlices(raw: string, ranges: readonly LineRange[] | undefined): string[] {
     if (ranges === undefined || ranges.length === 0) {
