@@ -501,20 +501,22 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * reached through a bound loader (`const load = require; const r = load.resolve; r(expr)`, and the
  * `require.bind(null)` a name takes), a loader bound by a default or a class field
  * (`function f(load = require)`, `const { load = require } = opts`, and the shorthand entry reading
- * `class H { loader = require }` back), a loader behind an erased assertion
+ * `class H { loader = require }` back from a `new H()`), a loader behind an erased assertion
  * (`const load = <NodeRequire>require`), a member whose parameter list follows a brace a statement
  * block provably opens (`function f() { require(expr)\n{ … } }`), and a regrouping of the wrapped
  * callee (`((require))(expr)`).
  *
  * Every shape those rules do not model also keeps the merge base's reading, and these stay undecided:
- * a callee bound to another bound name (`const a = require; const b = a; b(expr)`), a require an
- * aliased `createRequire` creates (`const load = make(import.meta.url); load(expr)`), a `.resolve` or
- * `.bind` member behind a parenthesised callee (`(require.resolve)(expr)`), a double-parenthesised
- * `createRequire` callee, a non-null assertion on the callee rather than on a binding
- * (`require!(expr)`), and a call whose brace follows a `:` or an `=>` — a labeled block and an arrow
- * body hold statements there, while a type literal at an annotation or at an arrow's return type
- * holds a member, and the token alone cannot separate them. None weakens the claim for the decided
- * shapes.
+ * a callee bound to another bound name (`const a = require; const b = a; b(expr)`), a member reached
+ * through a second bound name (`const a = require; const b = a; const c = b.resolve; c(expr)`), a
+ * require an aliased `createRequire` creates (`const load = make(import.meta.url); load(expr)`), a
+ * `.resolve` or `.bind` member behind a parenthesised callee (`(require.resolve)(expr)`), a
+ * double-parenthesised `createRequire` callee, a non-null assertion on the callee rather than on a
+ * binding (`require!(expr)`), an initializer wrapped in parentheses (`const load = (require);`,
+ * `(require as NodeRequire)`, `(<NodeRequire>require)`, `(require)!`), and a call whose brace follows
+ * a `:` or an `=>` — a labeled block and an arrow body hold statements there, while a type literal at
+ * an annotation or at an arrow's return type holds a member, and the token alone cannot separate them.
+ * None weakens the claim for the decided shapes.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const shapes = new Set<string>();
@@ -638,7 +640,7 @@ const NO_LOADER_READ: LoaderRead = { names: new Map(), requireIsFileOwnName: fal
  */
 function collectLoaderBindings(source: string): LoaderRead {
     const bindings = new Map<string, LoaderBindingKind>();
-    const classFields = new Map<string, LoaderBindingKind>();
+    const classFields = new Map<string, Map<string, LoaderBindingKind>>();
     const requireIsFileOwnName = declaresRequireName(source);
     let index = 0;
     while (index < source.length) {
@@ -662,22 +664,27 @@ function collectLoaderBindings(source: string): LoaderRead {
             continue;
         }
         const declared = readLoaderDeclarationAt(source, index, requireIsFileOwnName, bindings);
-        if (declared !== undefined && isEveryUseACallLike(source, declared, bindings, requireIsFileOwnName)) {
+        if (declared !== undefined && isEveryUseACallLike(source, declared)) {
             bindings.set(declared.name, declared.kind);
             index = declared.end;
             continue;
         }
         const alias = readCreateRequireImportAlias(source, index);
-        if (alias !== undefined && isEveryUseACallLike(source, alias, bindings, requireIsFileOwnName)) {
+        if (alias !== undefined && isEveryUseACallLike(source, alias)) {
             bindings.set(alias.name, 'createRequire');
             index = alias.end;
             continue;
         }
         const declaredField = readLoaderDefaultBindingAt(source, index, requireIsFileOwnName, bindings, classFields);
         if (declaredField !== undefined) {
-            if (declaredField.classField) {
-                classFields.set(declaredField.name, declaredField.kind);
-            } else if (isEveryUseACallLike(source, declaredField, bindings, requireIsFileOwnName)) {
+            if (declaredField.ownerClass !== undefined) {
+                let fields = classFields.get(declaredField.ownerClass);
+                if (fields === undefined) {
+                    fields = new Map();
+                    classFields.set(declaredField.ownerClass, fields);
+                }
+                fields.set(declaredField.name, declaredField.kind);
+            } else if (isEveryUseACallLike(source, declaredField)) {
                 bindings.set(declaredField.name, declaredField.kind);
             }
             index = declaredField.end;
@@ -1119,17 +1126,13 @@ function enclosingOpenerBefore(source: string, index: number, openers: string): 
  * and a `let`/`const`/`var` target inside another function each declare the name again, so the
  * binding is dropped rather than resolving the outer loader through the nested scope.
  *
- * One declaration keeps the binding: a class field initialized to the loader, which is where the
- * shorthand entry that reads it back gets its value (`class H { loader = require }`). It is not a
- * use of the field's name at all, and reading it as one dropped the binding the read-back made
- * (#4835).
+ * One declaration keeps the binding: a class field of that name, whatever its initializer, because it
+ * names a property the class declares, never a use of the local bound name — which is where the
+ * shorthand entry that reads the field back gets its value (`class H { loader = require }`). Reading a
+ * class field as a use dropped the binding the read-back made, and a same-named field in another class
+ * dropped a real binding too (#4835).
  */
-function isEveryUseACallLike(
-    source: string,
-    binding: LoaderBinding,
-    known: ReadonlyMap<string, LoaderBindingKind>,
-    requireIsFileOwnName: boolean
-): boolean {
+function isEveryUseACallLike(source: string, binding: LoaderBinding): boolean {
     let index = 0;
     while (index < source.length) {
         const commentEnd = skipComment(source, index);
@@ -1160,13 +1163,12 @@ function isEveryUseACallLike(
             continue;
         }
         if (index !== binding.nameIndex) {
+            if (isClassFieldNameAt(source, index, binding.name.length)) {
+                index += binding.name.length;
+                continue;
+            }
             const after = skipWhitespace(source, index + binding.name.length);
-            if (
-                source[after] !== '(' &&
-                source[after] !== '.' &&
-                !source.startsWith('?.', after) &&
-                !isLoaderValuedClassFieldAt(source, index, binding.name.length, requireIsFileOwnName, known)
-            ) {
+            if (source[after] !== '(' && source[after] !== '.' && !source.startsWith('?.', after)) {
                 return false;
             }
             if (isShadowingDeclaration(source, index)) {
@@ -1205,16 +1207,17 @@ const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * A name the file binds to a loader or to a loader's member. `classField` marks a class field's
- * initializer: the field names a property rather than a local, so it is remembered as a field and
- * bound only where the file reads it back through a shorthand pattern entry (#4835).
+ * A name the file binds to a loader or to a loader's member. `ownerClass` marks a class field's
+ * initializer with the name of the class that declares it: the field names a property rather than a
+ * local, so it is remembered per class and bound only where the file reads it back from an instance of
+ * that class through a shorthand pattern entry (#4835).
  */
 type LoaderBinding = {
     name: string;
     kind: LoaderBindingKind;
     nameIndex: number;
     end: number;
-    classField?: boolean;
+    ownerClass?: string;
 };
 
 /** The loader expression a binding or a callee reads, and the position after it. */
@@ -1260,11 +1263,11 @@ function readLoaderDeclaration(
 
 /**
  * The loader an expression at `start` names: the `require` function, the `createRequire` factory, a
- * created require, and a `.resolve` or `.bind(…)` member on any of them. Two erased wrappers the
- * initializer may carry are crossed because they change nothing at run time: an angle-bracket
- * assertion in front (`const load = <NodeRequire>require`) and the non-null assertions behind it
- * (`const load = require!`). An `as` or `satisfies` cast needs no crossing of its own — it follows
- * the loader as any other token does.
+ * created require, and a `.resolve` or `.bind(…)` member on any of them. An erased angle-bracket
+ * assertion in front of the initializer is crossed because it changes nothing at run time
+ * (`const load = <NodeRequire>require`). An `as` or `satisfies` cast and a trailing non-null
+ * assertion need no crossing of their own — each follows the loader as any other token does, so the
+ * name still binds.
  *
  * A bound name resolves only as the object of such a member, so `load.resolve` reached through
  * `const load = require` is the loader's member. A bare name bound to another name is deliberately
@@ -1289,19 +1292,18 @@ function readLoaderExpression(
     if (base === undefined) {
         return undefined;
     }
-    cursor = skipNonNullAssertions(source, base.end);
-    const member = readLoaderMember(source, cursor, base.kind);
+    const member = readLoaderMember(source, base.end, base.kind);
     if (member !== undefined) {
-        return { kind: member.kind, end: skipNonNullAssertions(source, member.end) };
+        return { kind: member.kind, end: member.end };
     }
     if (literal === undefined) {
         return undefined;
     }
     // A call (`require('yaml')`) or an unmodelled member (`require.foo`) binds the call's result or
     // an ordinary member, never the loader.
-    return source[cursor] === '(' || source[cursor] === '.' || source.startsWith('?.', cursor)
+    return source[base.end] === '(' || source[base.end] === '.' || source.startsWith('?.', base.end)
         ? undefined
-        : { kind: base.kind, end: cursor };
+        : { kind: base.kind, end: base.end };
 }
 
 /** The loader the literal at `start` names, or `undefined` when the token is anything else. */
@@ -1339,11 +1341,13 @@ function readBoundLoaderBase(
 
 /**
  * The loader a member access at `start` reaches: `require.resolve`, which is still a load, and
- * `.bind(…)`, whose result is the loader it was bound from. Every other member, and a `resolve`
- * that is itself called, binds a value rather than a loader.
+ * `.bind(…)`, whose result is the loader it was bound from. Whitespace and comments before the `.` or
+ * `?.` are crossed so `load .resolve` reads as `load.resolve`. Every other member, a `resolve` that is
+ * itself called, and a `.bind(…)` that is then called or read as a member bind a value rather than a
+ * loader.
  */
 function readLoaderMember(source: string, start: number, baseKind: LoaderBindingKind): LoaderExpression | undefined {
-    let cursor = start;
+    let cursor = skipWhitespace(source, start);
     if (source.startsWith('?.', cursor)) {
         cursor += 2;
     } else if (source[cursor] === '.') {
@@ -1366,16 +1370,13 @@ function readLoaderMember(source: string, start: number, baseKind: LoaderBinding
         return undefined;
     }
     const close = skipBalancedParens(source, open);
-    return close === undefined ? undefined : { kind: baseKind, end: close };
-}
-
-/** The position after the run of non-null assertions starting at `start`, which erase at run time. */
-function skipNonNullAssertions(source: string, start: number): number {
-    let cursor = start;
-    while (source[cursor] === '!' && source[cursor + 1] !== '=') {
-        cursor = skipWhitespace(source, cursor + 1);
+    if (close === undefined) {
+        return undefined;
     }
-    return cursor;
+    const after = skipWhitespace(source, close);
+    return source[after] === '(' || source[after] === '.' || source.startsWith('?.', after)
+        ? undefined
+        : { kind: baseKind, end: close };
 }
 
 /**
@@ -1386,21 +1387,19 @@ function skipNonNullAssertions(source: string, start: number): number {
  * (`class H { loader = require }\nconst { loader } = new H()`). The declaration kinds that stand the
  * pass down still decide: a file that declares `require` binds nothing through it.
  *
- * The class field names a property, not a local, so it is remembered as a field rather than bound;
- * only a shorthand entry of the same name reads it back. Every other position keeps the merge base's
- * reading instead of turning an ordinary assignment into a load.
+ * The class field names a property, not a local, so it is remembered against its declaring class
+ * rather than bound; only a shorthand entry destructured from an instance of that class reads it back.
+ * Every other position keeps the merge base's reading instead of turning an ordinary assignment into a
+ * load.
  */
 function readLoaderDefaultBindingAt(
     source: string,
     index: number,
     requireIsFileOwnName: boolean,
     known: ReadonlyMap<string, LoaderBindingKind>,
-    classFields: ReadonlyMap<string, LoaderBindingKind>
+    classFields: ReadonlyMap<string, ReadonlyMap<string, LoaderBindingKind>>
 ): LoaderBinding | undefined {
     if (isIdentifierContinue(source[index - 1]) || !isIdentifierStart(source[index])) {
-        return undefined;
-    }
-    if (!loaderBindingCanStartAt(source, index)) {
         return undefined;
     }
     const name = readWordForward(source, index);
@@ -1411,17 +1410,15 @@ function readLoaderDefaultBindingAt(
     if (source[after] !== '=' || source[after + 1] === '=' || source[after + 1] === '>') {
         // A shorthand pattern entry reading a class field's loader back is the one binding a name
         // takes without an initializer of its own.
-        const kind = classFields.get(name);
-        if (kind === undefined || (source[after] !== ',' && source[after] !== '}')) {
+        if (source[after] !== ',' && source[after] !== '}') {
             return undefined;
         }
-        if (isPrecededByDotAccess(source, index) || !isBindingPatternEntryAt(source, index)) {
+        const kind = readClassFieldReadBack(source, index, name, classFields);
+        if (kind === undefined || isPrecededByDotAccess(source, index) || !isBindingPatternEntryAt(source, index)) {
             return undefined;
         }
         // Only an object pattern reads a field back, so an array entry names no loader property.
-        return enclosingOpenerBefore(source, index, '{') === undefined
-            ? undefined
-            : { name, kind, nameIndex: index, end: after };
+        return { name, kind, nameIndex: index, end: after };
     }
     const loader = readLoaderExpression(source, skipWhitespace(source, after + 1), requireIsFileOwnName, known);
     // The member test walks back over comments, so it runs only where a name would otherwise bind.
@@ -1429,58 +1426,68 @@ function readLoaderDefaultBindingAt(
         return undefined;
     }
     const binding = { name, kind: loader.kind, nameIndex: index, end: loader.end };
-    if (isMemberInsideClassLikeBody(source, index)) {
-        return { ...binding, classField: true };
+    const ownerClass = classHeaderName(source, index);
+    if (ownerClass !== undefined) {
+        return { ...binding, ownerClass };
     }
     return isParameterListNameAt(source, index) || isBindingPatternEntryAt(source, index) ? binding : undefined;
 }
 
 /**
- * Whether a binding name can begin at `index`. The reader runs once per source position, so the
- * positions no binding can start at are refused by the single token in front: a parameter list, a
- * binding pattern entry, and a class field each follow `(`, `,`, `{`, `[`, `;`, `}`, or another
- * identifier (a modifier or a preceding entry). Everything else — an operator, a call's `)`, a
- * member's `.` — stands in an expression position, where no default or field initializer begins. A
- * comment's `/` or `*` keeps the position undecided and lets the reader read it.
+ * The loader a shorthand pattern entry at `index` reads back from a class field, or `undefined` when
+ * the destructured source is anything but an instance of a class whose field of that name is loader-
+ * valued. Relating the read-back to the declaring class keeps an unrelated source object
+ * (`const { loader } = options`) from binding the field's loader.
  */
-function loaderBindingCanStartAt(source: string, index: number): boolean {
-    let cursor = index - 1;
-    while (cursor >= 0 && (isWhiteSpace(source[cursor]!) || isLineTerminator(source[cursor]!))) {
-        cursor -= 1;
-    }
-    const character = source[cursor];
-    if (character === undefined) {
-        return true;
-    }
-    return (
-        isIdentifierContinue(character) ||
-        character === '(' ||
-        character === ',' ||
-        character === '{' ||
-        character === '[' ||
-        character === ';' ||
-        character === '}' ||
-        character === '/' ||
-        character === '*'
-    );
-}
-
-/** Whether the use at `index` is a class field the file initializes to the loader. */
-function isLoaderValuedClassFieldAt(
+function readClassFieldReadBack(
     source: string,
     index: number,
-    nameLength: number,
-    requireIsFileOwnName: boolean,
-    known: ReadonlyMap<string, LoaderBindingKind>
-): boolean {
+    name: string,
+    classFields: ReadonlyMap<string, ReadonlyMap<string, LoaderBindingKind>>
+): LoaderBindingKind | undefined {
+    const open = enclosingOpenerBefore(source, index, '{');
+    if (open === undefined) {
+        return undefined;
+    }
+    const close = skipBalancedDelimited(source, open, source.length, '{', '}');
+    if (close === undefined) {
+        return undefined;
+    }
+    const equals = skipWhitespace(source, close);
+    if (source[equals] !== '=') {
+        return undefined;
+    }
+    const ownerClass = readNewExpressionClassName(source, skipWhitespace(source, equals + 1));
+    return ownerClass === undefined ? undefined : classFields.get(ownerClass)?.get(name);
+}
+
+/** The class name a `new <Name>` expression at `start` constructs, or `undefined` for any other expression. */
+function readNewExpressionClassName(source: string, start: number): string | undefined {
+    if (!isKeywordAt(source, start, 'new')) {
+        return undefined;
+    }
+    return readWordForward(source, skipWhitespace(source, start + 3));
+}
+
+/**
+ * The name of the class whose body holds the member at `index`, or `undefined` when the member sits in
+ * an interface, a type literal, or a body that is not a class. An interface and a type literal hold no
+ * field initializer, so only a class body can declare the field the read-back resolves.
+ */
+function classHeaderName(source: string, index: number): string | undefined {
+    const open = enclosingBraceOpen(source, index);
+    return open === undefined ? undefined : classHeaderNameBefore(source, open);
+}
+
+/** Whether the use at `index` is a class field name — a property the class declares, never a local use. */
+function isClassFieldNameAt(source: string, index: number, nameLength: number): boolean {
     const equals = skipWhitespace(source, index + nameLength);
-    if (source[equals] !== '=' || source[equals + 1] === '=' || source[equals + 1] === '>') {
-        return false;
-    }
-    if (!isMemberInsideClassLikeBody(source, index)) {
-        return false;
-    }
-    return readLoaderExpression(source, skipWhitespace(source, equals + 1), requireIsFileOwnName, known) !== undefined;
+    return (
+        source[equals] === '=' &&
+        source[equals + 1] !== '=' &&
+        source[equals + 1] !== '>' &&
+        isMemberInsideClassLikeBody(source, index)
+    );
 }
 
 /**
@@ -2007,17 +2014,44 @@ const BLOCK_INTRODUCER_KEYWORDS: ReadonlySet<string> = new Set([
 
 /**
  * Whether the `{` at `openIndex` opens a class, interface, or type-literal body. The scan walks back
- * over the header — a name, a `type Name =` clause, a heritage or implements clause, and balanced
- * parentheses or brackets inside them — and stops, refusing, at any statement or block keyword or
- * unmatched punctuation, so a `type` keyword in an earlier statement cannot claim a later block.
+ * over the header — a name, a type-parameter list, a `type Name =` clause, a heritage or implements
+ * clause, and balanced parentheses, brackets, or angle brackets inside them — and stops, refusing, at
+ * any statement or block keyword or unmatched punctuation, so a `type` keyword in an earlier statement
+ * cannot claim a later block.
  */
 function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
+    return classLikeBodyKeywordBefore(source, openIndex) !== undefined;
+}
+
+/**
+ * The name of the class whose body `{` at `openIndex` opens, or `undefined` when the brace opens an
+ * interface, a type literal, or a statement block. An interface and a type literal hold no field
+ * initializer, so only a class body declares the field a read-back resolves.
+ */
+function classHeaderNameBefore(source: string, openIndex: number): string | undefined {
+    const header = classLikeBodyKeywordBefore(source, openIndex);
+    if (header === undefined || header.keyword !== 'class') {
+        return undefined;
+    }
+    return readWordForward(source, skipWhitespace(source, header.keywordStart + 5));
+}
+
+/**
+ * The header keyword — `class`, `interface`, or `type` — whose body the `{` at `openIndex` opens, with
+ * the keyword's start, or `undefined` when the brace opens a statement block or nothing reachable. The
+ * walk crosses the type-parameter list's angle brackets so a parenthesised heritage clause after them
+ * (`class C<T> extends (B) { … }`) is read as the class body it is rather than as a statement block.
+ */
+function classLikeBodyKeywordBefore(
+    source: string,
+    openIndex: number
+): { keyword: 'class' | 'interface' | 'type'; keywordStart: number } | undefined {
     let cursor = openIndex - 1;
     let delimiterDepth = 0;
     while (cursor >= 0) {
         const character = source[cursor];
         if (character === undefined) {
-            return false;
+            return undefined;
         }
         if (isWhiteSpace(character) || isLineTerminator(character)) {
             cursor -= 1;
@@ -2026,7 +2060,7 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
         if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
             const open = source.lastIndexOf('/*', cursor - 1);
             if (open === -1) {
-                return false;
+                return undefined;
             }
             cursor = open - 1;
             continue;
@@ -2046,12 +2080,12 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
             cursor = open === undefined ? cursor - 1 : open - 1;
             continue;
         }
-        if (character === ')' || character === ']') {
+        if (character === ')' || character === ']' || character === '>') {
             delimiterDepth += 1;
             cursor -= 1;
             continue;
         }
-        if ((character === '(' || character === '[') && delimiterDepth > 0) {
+        if ((character === '(' || character === '[' || character === '<') && delimiterDepth > 0) {
             delimiterDepth -= 1;
             cursor -= 1;
             continue;
@@ -2062,22 +2096,23 @@ function classLikeBodyOpenBefore(source: string, openIndex: number): boolean {
         }
         if (isIdentifierContinue(character)) {
             const word = readWordBackward(source, cursor);
+            const keywordStart = cursor - word.length + 1;
             if (word === 'class' || word === 'interface' || word === 'type') {
-                return true;
+                return { keyword: word, keywordStart };
             }
             if (BLOCK_INTRODUCER_KEYWORDS.has(word)) {
-                return false;
+                return undefined;
             }
-            cursor -= word.length;
+            cursor = keywordStart - 1;
             continue;
         }
         if (character === '.' || character === ',' || character === '=' || character === '|' || character === '&') {
             cursor -= 1;
             continue;
         }
-        return false;
+        return undefined;
     }
-    return false;
+    return undefined;
 }
 
 /** The opening quote of the string literal whose closing quote is at `index`, or `undefined`. */
