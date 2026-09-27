@@ -1,0 +1,18 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClipsRipple.integration.spec.ts
+  h_beb54bf43b47b7 151-195
+src/modules/Arrangement/handlers/clip/handleMoveClips.ts
+  h_beb54bf43b47b7 131-139
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  h_beb54bf43b47b7 940-941,1037-1038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "894643a0c08cbf70a0ecf6bcae46ef57cea5f0df",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
