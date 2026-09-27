@@ -1,0 +1,26 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  h_beb54bf43b47b7 121-138,293-365
+src/modules/AiRuntime/transformers/llmActionStrategies/clipPlacementStrategies.ts
+  h_beb54bf43b47b7 100-107,136-140,227-232
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStatesLegacySatellite.spec.ts
+  h_beb54bf43b47b7 111-127,167-188
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  h_beb54bf43b47b7 209-225
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  h_beb54bf43b47b7 163-166,169,173
+src/modules/Arrangement/useCases/clip/isClipDropCompatible.ts
+  h_beb54bf43b47b7 17-21
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  h_beb54bf43b47b7 73-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5c8e730155a437e99929de294d2bf77d48f26e99",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
