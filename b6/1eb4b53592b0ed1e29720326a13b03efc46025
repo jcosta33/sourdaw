@@ -1,0 +1,16 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 1752-1755,1768-1783
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 2007,2009,2062-2064,2066-2068,2070,2087-2093,2414-2431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b61eb4b53592b0ed1e29720326a13b03efc46025",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
