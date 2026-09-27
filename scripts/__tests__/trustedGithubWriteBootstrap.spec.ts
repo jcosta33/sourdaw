@@ -771,6 +771,20 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotComputedDynamicSpecifiers('const r = obj.\nelse / require(spec) / y;')).toEqual([
             'require(...)',
         ]);
+        // Only a `.`, an optional chain's `.`, or a `#` immediately before a keyword names a member: a
+        // bare identifier ending the previous token is not member access, so `in` after `e` is the
+        // operator and the `/` opens a regex instead of dividing.
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\ne in/}/*\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        // A dot following a digit run is a numeric literal's point only when that run holds no other
+        // dot, so the second dot of `1.1.` is member access and the `/` after `else` divides, on one
+        // line and across a break alike, while `1.` above `typeof` stays a point and the regex keeps
+        // the load.
+        expect(snapshotComputedDynamicSpecifiers('const r = 1.1.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 1.1.\nelse / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
         // A block comment's close is a `/` the `*` before it opens, so a division slash after a comment
         // is no comment close: the regex after it keeps its region and the field below is a member.
         expect(
@@ -778,6 +792,14 @@ describe('snapshotImportSpecifiers', () => {
                 'class D {\n  m() { const ratio = total/* bytes *//typeof /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A regex whose body ends in `*` closes with a slash the walk cannot place as a comment close,
+        // so the class is unmodelled and the read-back keeps the merge base's reading rather than the
+        // region being mis-scanned as a comment it cannot verify.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { const re = /ab*/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
         // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.
         expect(
             snapshotComputedDynamicSpecifiers(

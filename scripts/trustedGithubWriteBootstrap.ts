@@ -707,10 +707,15 @@ function collectLoaderBindings(source: string): LoaderRead {
         if (declaredField !== undefined) {
             if (declaredField.ownerOpen !== undefined) {
                 if (declaredField.static !== true) {
-                    classEntryFromOpen(source, classFields, declaredField.ownerOpen).fields.set(
-                        declaredField.name,
-                        declaredField.kind
-                    );
+                    const entry = classEntryFromOpen(source, classFields, declaredField.ownerOpen);
+                    // A field whose read back crosses a regex body ending in `*` cannot be placed: the
+                    // backward walk reads that closing slash as a block comment's, so the class is
+                    // unmodelled and a read-back through it keeps the merge base's reading.
+                    if (fieldRegionHasRegexEndingInStar(source, declaredField.ownerOpen + 1, declaredField.nameIndex)) {
+                        entry.unmodelled = true;
+                    } else {
+                        entry.fields.set(declaredField.name, declaredField.kind);
+                    }
                 }
             } else if (declaredField.pendingSource !== undefined) {
                 pendingReadBacks.push({
@@ -1750,6 +1755,47 @@ function isClassMemberPosition(source: string, index: number, bodyOpen: number):
         cursor -= 1;
     }
     return true;
+}
+
+/**
+ * Whether the region [start, end) holds a regex literal whose body ends in a star — a star-then-slash
+ * that is the literal's closing slash rather than a block comment's. A backward walk reads such a slash
+ * as a comment close it cannot place, so a class field whose read back crosses the region is unmodelled.
+ */
+function fieldRegionHasRegexEndingInStar(source: string, start: number, end: number): boolean {
+    let cursor = start;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const quote = source[cursor];
+        if (quote === "'" || quote === '"') {
+            cursor = skipQuoted(source, cursor, quote);
+            continue;
+        }
+        if (quote === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        if (source[cursor] === '/') {
+            const regexEnd = skipRegexLiteral(source, cursor);
+            if (regexEnd !== undefined && regexEnd <= end) {
+                let closeSlash = regexEnd - 1;
+                while (closeSlash > cursor && /[a-z]/i.test(source[closeSlash] ?? '')) {
+                    closeSlash -= 1;
+                }
+                if (source[closeSlash - 1] === '*') {
+                    return true;
+                }
+                cursor = regexEnd;
+                continue;
+            }
+        }
+        cursor += 1;
+    }
+    return false;
 }
 
 /**
@@ -3442,17 +3488,20 @@ function enclosingBraceOpen(source: string, keywordIndex: number): number | unde
             continue;
         }
         if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            // A `*`-preceded slash is a comment close only where its `/*` opener stands; without one it
+            // is a regex body ending in `*`, and the regex handling below crosses it rather than the
+            // walk failing over a comment it cannot place.
             const open = source.lastIndexOf('/*', cursor - 1);
-            if (open === -1) {
-                return undefined;
+            if (open !== -1) {
+                cursor = open - 1;
+                continue;
             }
-            cursor = open - 1;
-            continue;
-        }
-        const lineComment = lineCommentOpenBefore(source, cursor);
-        if (lineComment !== undefined) {
-            cursor = lineComment - 1;
-            continue;
+        } else {
+            const lineComment = lineCommentOpenBefore(source, cursor);
+            if (lineComment !== undefined) {
+                cursor = lineComment - 1;
+                continue;
+            }
         }
         if (character === '/') {
             const regexOpen = regexLiteralOpenBackward(source, cursor);
@@ -4889,17 +4938,20 @@ function matchingOpenDelimiterBackward(
             continue;
         }
         if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            // A `*`-preceded slash is a comment close only where its `/*` opener stands; without one it
+            // is a regex body ending in `*`, and the regex handling below crosses it rather than the
+            // walk failing over a comment it cannot place.
             const commentOpen = source.lastIndexOf('/*', cursor - 1);
-            if (commentOpen === -1) {
-                return undefined;
+            if (commentOpen !== -1) {
+                cursor = commentOpen - 1;
+                continue;
             }
-            cursor = commentOpen - 1;
-            continue;
-        }
-        const lineComment = lineCommentOpenBefore(source, cursor);
-        if (lineComment !== undefined) {
-            cursor = lineComment - 1;
-            continue;
+        } else {
+            const lineComment = lineCommentOpenBefore(source, cursor);
+            if (lineComment !== undefined) {
+                cursor = lineComment - 1;
+                continue;
+            }
         }
         if (character === '"' || character === "'") {
             const quoteOpen = skipQuotedBackward(source, cursor, character);
@@ -5179,16 +5231,16 @@ function isPrecededByDotAccess(source: string, index: number): boolean {
 }
 
 /**
- * Whether the name beginning at `index` is a member name rather than a keyword: a `.` (`obj.else`),
- * a `#` (`this.#else`), or an identifier character immediately before it means the name is read as a
- * member. A `/` after a member ends an expression and divides; only the bare keyword is followed by a
- * statement, so only the bare keyword can turn the `/` into a regex.
+ * Whether the name beginning at `index` is a member name rather than a keyword: a `.` (`obj.else`,
+ * `obj?.else`) or a `#` (`this.#else`) immediately before it means the name is read as a member. Only
+ * those spellings name a member — a plain identifier character ending the previous token is not member
+ * access (`e in /re/` reads `in` as the operator, not a member of `e`). A `/` after a member ends an
+ * expression and divides; only the bare keyword is followed by a statement, so only the bare keyword
+ * can turn the `/` into a regex.
  *
- * The spellings differ on what a line terminator does. A `.` or a `#` keeps its member reading across
- * the break — `obj.` newline `else / x` is still a member — while a plain identifier on an earlier
- * line belongs to that line's expression (`const a = b` above `return /re/`), so only the identifier
- * is checked against the line it stands on. Same-line comments and whitespace are crossed in both
- * cases, and a block comment that itself spans lines ends the walk.
+ * A `.` or a `#` keeps its member reading across a line break — `obj.` newline `else / x` is still a
+ * member. Same-line comments and whitespace are crossed in both cases, and a block comment that itself
+ * spans lines ends the walk.
  */
 function isMemberNameAt(source: string, index: number): boolean {
     let cursor = index - 1;
@@ -5210,9 +5262,10 @@ function isMemberNameAt(source: string, index: number): boolean {
             cursor = lineComment - 1;
             continue;
         }
-        // A block comment's close is a `/` the `*` before it opens, exactly as the sibling member-dot
-        // judgement reads it: a bare `/` here is division, and jumping back from it would land on an
-        // identifier that does not name this keyword.
+        // A `/` the `*` before it opens is read as a block comment's close, exactly as the sibling
+        // member-dot judgement reads it; a `*/` whose `/*` opener is absent — a regex body ending in
+        // `*` — and a bare `/` here are both no comment close, so the walk stops rather than jumping
+        // back to an identifier that does not name this keyword.
         if (character === '/' && source.charAt(cursor - 1) === '*') {
             const open = source.lastIndexOf('/*', cursor - 1);
             if (open === -1) {
@@ -5226,32 +5279,39 @@ function isMemberNameAt(source: string, index: number): boolean {
             continue;
         }
         if (character === '.') {
-            // A digit before the dot makes it a numeric literal's point (`1.`), not member access, and
-            // a spread's three dots are no member either; both skip the token so the word before it
+            // A dot following a run of digits is a numeric literal's point only when that run holds no
+            // other dot — `1.` is a point, while the second dot of `1.1.` is member access. A spread's
+            // three dots are no member either; a point or a spread skips the token so the word before it
             // decides, exactly as `isPrecededByDotAccess` reads a dotted name.
             const isSpread = source.charAt(cursor - 1) === '.' && source.charAt(cursor - 2) === '.';
-            const isNumericPoint = isDecimalDigit(source.charAt(cursor - 1));
+            const isNumericPoint = isNumericLiteralPoint(source, cursor);
             if (!isSpread && !isNumericPoint) {
                 return true;
             }
             cursor = isSpread ? cursor - 3 : cursor - 2;
             continue;
         }
-        // A line terminator parts a plain identifier from this name — `const a = b` above
-        // `return /re/` is that line's expression — while the `.` and `#` spellings keep their member
-        // reading across the break, so only the identifier needs the line check.
-        if (isIdentifierContinue(character)) {
-            return !hasLineTerminatorBetween(source, cursor + 1, index);
-        }
         return character === '#';
     }
     return false;
 }
 
-/** Whether a line terminator stands between `start` and `end`. */
-function hasLineTerminatorBetween(source: string, start: number, end: number): boolean {
-    const between = source.slice(start, end);
-    return between.includes('\n') || between.includes('\r');
+/**
+ * Whether the `.` at `cursor` is a numeric literal's point: the run of digits and dots ending at
+ * `cursor - 1` holds digits only, so `1.` is a point while the second dot of `1.1.` is member access.
+ */
+function isNumericLiteralPoint(source: string, cursor: number): boolean {
+    if (!isDecimalDigit(source.charAt(cursor - 1))) {
+        return false;
+    }
+    let run = cursor - 1;
+    while (run >= 0 && (isDecimalDigit(source[run]) || source[run] === '.')) {
+        if (source[run] === '.') {
+            return false;
+        }
+        run -= 1;
+    }
+    return true;
 }
 
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
