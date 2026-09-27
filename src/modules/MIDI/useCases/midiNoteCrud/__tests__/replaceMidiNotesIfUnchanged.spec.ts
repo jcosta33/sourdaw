@@ -121,9 +121,13 @@ describe('targeted MIDI note history through Command and Automerge', () => {
         if (!created?.expression?.pressure) {
             throw new Error('Expected admitted pressure curve');
         }
+        const createdPressurePoint = created.expression.pressure[0];
+        if (!createdPressurePoint) {
+            throw new Error('Expected admitted pressure point');
+        }
         source.expression.pressure[0]!.value = 12;
         source.expression.pressure.push({ offsetBeats: 1, value: 20 });
-        created.expression.pressure[0].value = 13;
+        createdPressurePoint.value = 13;
         created.expression.pressure.push({ offsetBeats: 1.5, value: 30 });
         created.expression.pressure = [{ offsetBeats: 0.25, value: 40 }];
         flushAutomergeStorageWrites();

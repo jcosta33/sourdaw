@@ -157,7 +157,7 @@ describe('live Yeast release ownership across input reset', () => {
         vi.doMock('../handleWebMidiNoteOn', () => ({ handleWebMidiNoteOn: strike }));
         vi.doMock('../handleWebMidiNoteOff', () => ({ handleWebMidiNoteOff: release }));
         const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
-        const send = (bytes: number[]) => handleWebMidiMessage({ data: new Uint8Array(bytes) });
+        const send = (bytes: number[]) => handleWebMidiMessage({ data: new Uint8Array(bytes), timeStamp: undefined });
 
         await send([0x91, 60, 100]);
         const oldId = activeNotes.get(createWebMidiNoteKey(1, 60))?.noteInstanceId;
