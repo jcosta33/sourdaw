@@ -1,0 +1,62 @@
+src/modules/Arrangement/models/PluginDescriptors/YeastDescriptor.ts
+  h_beb54bf43b47b7 8-9,18-26,40-44
+src/modules/Arrangement/models/PluginDescriptors/__tests__/YeastDescriptor.spec.ts
+  h_beb54bf43b47b7 1-31
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  h_beb54bf43b47b7 2154-2157,2637-2640,2690-2692
+src/modules/Arrangement/presentations/views/index.ts
+  h_beb54bf43b47b7 7
+src/modules/Arrangement/repositories/presets/__tests__/faustInstrumentPresets.spec.ts
+  h_beb54bf43b47b7 90-94
+src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts
+  h_beb54bf43b47b7 1085-1088
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts
+  h_beb54bf43b47b7 1,5-6,224-296
+src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts
+  h_beb54bf43b47b7 8,60-63,100
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 240-256,261,266
+src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts
+  h_beb54bf43b47b7 81-84
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/loadGrinderPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 1,5-6,253-329
+src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts
+  h_beb54bf43b47b7 24,85-89
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 217-219,223,227
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/edm.spec.ts
+  h_beb54bf43b47b7 10,37-39,99-114
+src/modules/Project/useCases/projectTemplates/templateFiles/edm.ts
+  h_beb54bf43b47b7 6,389-400
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/configureYeastArpeggiator.spec.ts
+  h_beb54bf43b47b7 1-106
+src/modules/Project/useCases/projectTemplates/templateHelpers/configureYeastArpeggiator.ts
+  h_beb54bf43b47b7 1-48
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  h_beb54bf43b47b7 45,82-92,249-258,408-411,453
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  h_beb54bf43b47b7 144-145,168,194
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.quantizeGridLabels.spec.tsx
+  h_beb54bf43b47b7 1-226
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  h_beb54bf43b47b7 242,416-418,483-484,509,516-517
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollExpressionLaneReach.spec.tsx
+  h_beb54bf43b47b7 46-48,211
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollMpeExpressionLanes.spec.tsx
+  h_beb54bf43b47b7 1-320
+src/modules/Yeast/AGENTS.md
+  h_beb54bf43b47b7 7
+src/modules/Yeast/useCases/index.ts
+  h_beb54bf43b47b7 16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "84e21245da50dcd194461b604559ce6b3813d6c2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
