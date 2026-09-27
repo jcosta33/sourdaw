@@ -4593,10 +4593,14 @@ function skipComment(source: string, index: number): number | undefined {
 
 /**
  * The keywords after which a `/` opens a regex literal rather than dividing: each introduces a
- * statement, or continues one with an operand, so the next token starts an expression. Every control
- * keyword whose body is a statement belongs here — `do /re/.test(x); while (a)` is the spelling that
- * otherwise reads the regex's braces as code — while a word that can precede an expression end
- * (`this`, `super`, a variable name) does not.
+ * statement, or continues one with an operand, so the next token starts an expression. A word that can
+ * precede an expression end (`this`, `super`, a variable name) does not belong, and neither does a
+ * control keyword whose `(` or `{` another judgement reaches first — `if`, `for`, `while`, `with`,
+ * `switch`, and `catch` all stand before a header, so their `/` never reaches this test. The entries
+ * below are the ones a shape can reach: `do /re/; while (a)`, `try /re/;`, and `finally /re/` stand
+ * directly before the token, and `else` is judged separately in `canStartRegexLiteral` because it
+ * needs the member guard. `default` is deliberately absent — a `default:` label ends in `:` and an
+ * `export default` is followed by a declaration, so neither reaches this test.
  */
 const REGEX_PREFIX_KEYWORDS = new Set([
     'return',
@@ -4613,15 +4617,8 @@ const REGEX_PREFIX_KEYWORDS = new Set([
     'new',
     'extends',
     'do',
-    'if',
-    'for',
-    'while',
-    'with',
-    'switch',
-    'catch',
-    'finally',
     'try',
-    'default',
+    'finally',
 ]);
 
 function skipRegexLiteral(source: string, index: number): number | undefined {
@@ -5183,20 +5180,58 @@ function isPrecededByDotAccess(source: string, index: number): boolean {
 
 /**
  * Whether the name beginning at `index` is a member name rather than a keyword: a `.` (`obj.else`),
- * a `#` (`this.#else`), or an identifier character before it means the name is read as a member. A
- * `/` after a member ends an expression and divides; only the bare keyword is followed by a
+ * a `#` (`this.#else`), or an identifier character immediately before it means the name is read as a
+ * member. A `/` after a member ends an expression and divides; only the bare keyword is followed by a
  * statement, so only the bare keyword can turn the `/` into a regex.
+ *
+ * The `.` and `#` spellings are adjacent by construction, so a line terminator ends the walk: a dot or
+ * an identifier on an earlier line belongs to that line's expression (`const q = 1.` above
+ * `typeof /['"]/`), not to this name. Comments and whitespace between the two spellings and the name
+ * are crossed, provided the line does not end in between.
  */
 function isMemberNameAt(source: string, index: number): boolean {
-    if (isPrecededByDotAccess(source, index)) {
-        return true;
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source.charAt(cursor);
+        if (isLineTerminator(character)) {
+            return false;
+        }
+        if (isWhiteSpace(character)) {
+            cursor -= 1;
+            continue;
+        }
+        const lineComment = lineCommentOpenBefore(source, cursor);
+        if (lineComment !== undefined) {
+            if (lineComment === 0) {
+                return false;
+            }
+            cursor = lineComment - 1;
+            continue;
+        }
+        if (character === '/') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return false;
+            }
+            const comment = source.slice(open, cursor + 1);
+            if (comment.includes('\n') || comment.includes('\r')) {
+                return false;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        if (character === '.') {
+            // A spread's three dots are not member access, so the whole token is skipped and the token
+            // before the spread decides, exactly as `isPrecededByDotAccess` reads a dotted name.
+            if (source.charAt(cursor - 1) !== '.' || source.charAt(cursor - 2) !== '.') {
+                return true;
+            }
+            cursor -= 3;
+            continue;
+        }
+        return character === '#' || isIdentifierContinue(character);
     }
-    const before = previousSignificantCharacter(source, index - 1);
-    if (before === undefined) {
-        return false;
-    }
-    const character = source.charAt(before);
-    return character === '#' || isIdentifierContinue(character);
+    return false;
 }
 
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {

@@ -745,6 +745,39 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotComputedDynamicSpecifiers('class K { m() { return this.#if / require(spec) / 2; } }')).toEqual([
             'require(...)',
         ]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class K { m() { return mod.default / require(spec) / 2; } }')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj.if / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        // A regex after a keyword stays a regex when a dot or an identifier on an earlier line precedes
+        // the keyword: the member judgement is adjacency-bound, so `1.` above `typeof` and `b` above
+        // `return` each belong to their own line's expression rather than naming the keyword a member.
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "function g() { const a = b\n return /[']/\n}\nconst load = require\nload(spec);"
+            )
+        ).toEqual(['require(...)']);
+        // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { do /}/; while (a); }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { try /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { try { a(); } finally /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
         // A parameter property is read, and its own modifier run is what decides it: the loader default
         // reaches the read-back, while the same declaration without modifiers binds a local instead.
         expect(
