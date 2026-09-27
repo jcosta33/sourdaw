@@ -38,6 +38,7 @@ import {
     readChangedContents,
     specCoveredSources,
     type AdmissionSideBytes,
+    type ChangedSideUnit,
     type ContractCarryingSides,
 } from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost } from '../fit.ts';
@@ -1514,12 +1515,13 @@ describe('contract-carrying admission', () => {
     it("admits a covered source at its coverer's position before an equal-figure contract-needing unit", () => {
         // The fixture builds a covered bulk source whose own side carries 1,000 bytes under a contract-carrying
         // spec whose side carries 4,000, and an added path whose rules need a contract and whose side carries
-        // the same 4,000 bytes the source's position takes. The assertions read that the competitor's unit
-        // needs contract evidence while the source's unit is covered by a spec that does, that the two units
-        // share one figure, and that the source is admitted first.
+        // the same 4,000 bytes the source's position takes. The competitor's path sorts before the position the
+        // source takes, so the two units differ at nothing else the comparison reaches before the tiers: the
+        // tier the coverage promotion earns is what decides, and the case reads the competitor's unit class
+        // against the source's, their shared figure, and that the source is ordered first.
         const coverPath = 'scripts/semanticReview/__tests__/coverAll.spec.ts';
         const sourcePath = 'scripts/bulkSource.ts';
-        const competitorPath = 'src/modules/Project/aShape.ts';
+        const competitorPath = 'electron/aShape.ts';
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const pad = (bytes: number, ...prefix: readonly string[]): string => {
             const head = prefix.join('');
@@ -1554,8 +1556,9 @@ describe('contract-carrying admission', () => {
             covered,
             new Set(files.map((entry) => entry.path))
         );
-        const sourceUnit = units.find((unit) => unit.kind === 'changed' && unit.file.path === sourcePath);
-        const competitorUnit = units.find((unit) => unit.kind === 'changed' && unit.file.path === competitorPath);
+        const sideUnits = units.filter((unit): unit is ChangedSideUnit => unit.kind === 'changed');
+        const sourceUnit = sideUnits.find((unit) => unit.file.path === sourcePath);
+        const competitorUnit = sideUnits.find((unit) => unit.file.path === competitorPath);
         if (sourceUnit === undefined || competitorUnit === undefined) {
             throw new Error('both the covered source and the competitor must produce a unit');
         }
@@ -1574,7 +1577,7 @@ describe('contract-carrying admission', () => {
         expect(sourceUnit.order.path).toBe(coverPath);
         expect(sidesByPath.get(sourcePath)?.after).toBe(false);
         expect(compareAdmissionUnits(sourceUnit, competitorUnit)).toBeLessThan(0);
-        expect(units.indexOf(sourceUnit)).toBeLessThan(units.indexOf(competitorUnit));
+        expect(sideUnits.indexOf(sourceUnit)).toBeLessThan(sideUnits.indexOf(competitorUnit));
         const set = collectEvidence({
             port,
             mergeBaseSha: MERGE_BASE,
@@ -1628,7 +1631,7 @@ describe('contract-carrying admission', () => {
             [aPath, { before: 0, after: 20_000 }],
             [bPath, { before: 0, after: 20_000 }],
         ]);
-        const firstListed = (paths: readonly string[]): string => {
+        const orderedSources = (paths: readonly string[]): readonly ChangedSideUnit[] => {
             const files = changed(paths);
             const units = admissionUnits(
                 files,
@@ -1638,16 +1641,30 @@ describe('contract-carrying admission', () => {
                 specCoveredSources(files, contents, bytesBySide),
                 new Set(files.map((file) => file.path))
             );
-            const sourceUnits = units.filter((unit) => unit.kind === 'changed' && unit.file.path !== coverPath);
+            const sourceUnits = units.filter(
+                (unit): unit is ChangedSideUnit => unit.kind === 'changed' && unit.file.path !== coverPath
+            );
             const [first, second] = sourceUnits;
             if (first === undefined || second === undefined) {
                 throw new Error('both covered sources must produce a unit');
             }
             expect(compareAdmissionUnits(first, second)).toBeLessThan(0);
-            return first.kind === 'changed' ? first.file.path : '';
+            return sourceUnits;
         };
-        expect(firstListed([bPath, aPath])).toBe(aPath);
-        expect(firstListed([aPath, bPath])).toBe(aPath);
+        for (const listed of [
+            [bPath, aPath],
+            [aPath, bPath],
+        ]) {
+            const ordered = orderedSources(listed);
+            // Each source is covered by the one spec, takes its position, and carries no figure of its own, so
+            // nothing but their own paths orders them.
+            for (const unit of ordered) {
+                expect(unit.specCovered).toBe(true);
+                expect(unit.order.path).toBe(coverPath);
+                expect(unit.contractCarrying).toBe(false);
+            }
+            expect(ordered.map((unit) => unit.file.path)).toEqual([aPath, bPath]);
+        }
     });
 
     it('lets an unrelated spec take the order from a covered source whose pair key ties its byte figure', () => {
