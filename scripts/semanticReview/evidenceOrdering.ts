@@ -11,14 +11,18 @@
  *    planned — so the budget stays on the change the contract lives in and every planned source a spec covers
  *    is attempted before that spec. A bulk covered source is ranked with the specs that cover it at the
  *    larger of its own side figure and each coverer's, so the pair sits at the larger member's size rather
- *    than at the front of the tier, the pair rank keeps the source ahead of every coverer, and it never
- *    outranks contract material unrelated to those specs. A source that is itself contract-carrying keeps its
+ *    than at the front of the tier, the pair rank keeps the source ahead of every coverer, and the source
+ *    competes with unrelated specs at its anchor's position rather than being guaranteed ahead of them. A
+ *    source that is itself contract-carrying keeps its
  *    own position and class, so a contract-carrying non-spec path never outranks it on size alone. The
  *    attempt order is not a survival promise at either profile: admission charges regions against a binding
  *    total, so the covered source can be withheld while its coverer is planned (the plan then holds the spec
  *    without the source it covers), or the contract-carrying coverer can be withheld while the source is
- *    planned, and the head can plan as many units as the merge base while still withholding the source the
- *    merge base admitted;
+ *    planned. The head can plan as many units as the merge base while still withholding a different one: in
+ *    a sweep of generated ci-binding families (a covered source, its coverer, and unrelated spec and bulk
+ *    paths sized to bind the ci total), the head withheld a unit the merge base admitted in 19 of 400 and 51
+ *    of 1000 families — the covered source (10, 20), the contract-carrying coverer (11, 47), or an unrelated
+ *    bulk path (5, 8), never an unrelated spec, which the head admitted instead;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at
@@ -380,7 +384,7 @@ function coveringSpecRankBytes(kind: SemanticChangedFile['kind'], bytes: Admissi
 export type AdmissionOrderPosition = {
     /** The path the in-tier collected-spec tie-break and the path tie-break read. */
     readonly path: string;
-    /** Whether the position ranks as a contract-carrying path, so a covered source never outranks genuine contract material. */
+    /** Whether the position ranks as a contract-carrying path, so a covered source keeps the contract sub-bucket of its tier. */
     readonly pathContractCarrying: boolean;
     /** The position's byte figure — the larger of the source's own side figure and the paired coverer's figure for a bulk covered source. */
     readonly admissionBytes: number;
@@ -439,7 +443,7 @@ function unitSideOrder(unit: AdmissionUnit): number {
  *
  * 0. the change's own contract-carrying sides, and the sources a contract-carrying spec covers when
  *    their own unit will be planned — a covered source inside that rank takes the covering spec's own
- *    position, so it precedes its own spec without outranking unrelated contract material;
+ *    position, so it precedes every spec that covers it and competes with unrelated specs at that position;
  * 1. a changed file whose unit the planner will plan and whose rules declare a contract, decision or
  *    registration token — its own before/after sides are attempted ahead of the context documents
  *    those rules charge, while the side stays behind genuine contract material. A file that plans no
@@ -528,7 +532,8 @@ export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit)
  * its after side second; each side is ordered by its own class, so a rename or copy out of a contract
  * surface admits its contract before side before a bulk side of another change while its bulk after
  * side stays ranked with bulk. A source a contract-carrying spec covers is ordered at a covering spec's
- * position, so it precedes every spec that covers it and no other collected spec. Contract-context
+ * position, so it precedes every spec that covers it and competes with unrelated specs at that position.
+ * Contract-context
  * regions sit in their own tier — behind the change's own contract-carrying sides, ahead of bulk — so a
  * document read at the contract source revision cannot outrank the change's contract material even when
  * it is larger. Both promotions into a contract rank — the tier-0 rank of a covered source and the

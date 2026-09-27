@@ -1210,8 +1210,8 @@ describe('contract-carrying admission', () => {
         const subjectPath = 'scripts/semanticReview/asymSource.ts';
 
         // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side; their
-        // minima cross. The pair shares one position keyed by the larger of the source and the paired coverer,
-        // and the pair rank keeps both source sides ahead of every coverer side.
+        // minima cross. The source is paired with the coverer whose largest side is smallest, so both source
+        // sides share that coverer's position and the pair rank keeps them ahead of every coverer side.
         const aaaBefore = `${workflowLine}${importLine}${pad(10)}`;
         const aaaAfter = `${workflowLine}${importLine}${pad(2_000)}`;
         const zzzBefore = `${workflowLine}${importLine}${pad(1_500)}`;
@@ -1375,8 +1375,8 @@ describe('contract-carrying admission', () => {
 
     it('keeps an added covered source ahead of every side of the spec that covers it', () => {
         // An added source has only an after side, and its coverer's before side is cheaper. The pair shares
-        // one position keyed by the larger of the source and the coverer, and the pair rank keeps the source
-        // ahead of both of the coverer's sides whatever the coverer's own per-side figures are.
+        // one position, and the pair rank keeps the source ahead of both of the coverer's sides whatever the
+        // coverer's own per-side figures are.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/offside.spec.ts';
         const sourcePath = 'scripts/semanticReview/offsideSource.ts';
@@ -1413,9 +1413,8 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps covered sources larger than their spec in their own size order', () => {
-        // A source larger than its spec keeps its own figure as the pair key, so several such sources never
-        // collapse onto the spec's figure; each keeps its own ascending size order, so the smallest source is
-        // attempted first and the plan keeps as much as the merge base did.
+        // The own-figure tie-break keeps several sources sharing one pair figure in their own ascending size
+        // order, so the smallest source is attempted first and the plan keeps as much as the merge base did.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/smallCover.spec.ts';
         const sourcePaths = ['a', 'b', 'c'].map((name) => `scripts/semanticReview/${name}.ts`);
@@ -1461,6 +1460,50 @@ describe('contract-carrying admission', () => {
             .filter((unit) => unit.kind === 'changed' && !unit.file.path.endsWith('.spec.ts'))
             .map((unit) => (unit.kind === 'changed' ? unit.file.path.split('/').pop() : ''));
         expect(sourceOrder).toEqual(['c.ts', 'b.ts', 'a.ts']);
+    });
+
+    it('keys a source larger than its coverer at its own figure, behind an unrelated spec between them', () => {
+        // The pair key is the larger of the source's own figure and the coverer's, never the coverer's alone.
+        // A source larger than its coverer is therefore attempted behind an unrelated spec whose figure sits
+        // between them, while the coverer is inflated to the source's figure and stays after the source.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/cover.spec.ts';
+        const unrelatedPath = 'scripts/semanticReview/__tests__/unrelated.spec.ts';
+        const sourcePath = 'scripts/semanticReview/src.ts';
+        const specSide = `${workflowLine}import { s } from '../src.ts';\n`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: unrelatedPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [unrelatedPath, { before: workflowLine, after: workflowLine }],
+            [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 100, after: 100 }],
+            [unrelatedPath, { before: 500, after: 500 }],
+            [sourcePath, { before: 1_000, after: 1_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: true, after: true }],
+            [unrelatedPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(unrelatedPath, 'before')).toBeLessThan(index(sourcePath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
     });
 
     it('keeps a contract-carrying covered source in its own bucket, not demoted behind a larger contract path', () => {
@@ -1624,8 +1667,8 @@ describe('contract-carrying admission', () => {
 
     it('keeps a deleted covered source ahead of a modified coverer whose cheaper side is its after side', () => {
         // The source is deleted, so its only side is before, while the coverer's cheaper side is its after.
-        // The pair shares one position keyed by the larger of the source and the coverer, and the pair rank
-        // keeps the source's before unit ahead of both of the coverer's sides, cheaper side included.
+        // The pair shares one position, and the pair rank keeps the source's before unit ahead of both of the
+        // coverer's sides, cheaper side included.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/afterFloor.spec.ts';
         const sourcePath = 'scripts/semanticReview/afterFloorSource.ts';
