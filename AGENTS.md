@@ -226,23 +226,19 @@ A pull request that has taken the reviewer change-request escalation threshold �
 `REVIEW_ROUND_ESCALATION_THRESHOLD` in `scripts/reviewRoundEscalation.ts` — of reviewer
 `REQUEST_CHANGES` rounds refuses the next fresh reviewer publication until the orchestrator records an
 explicit reassessment for that head in the bundle's `reassessment.json` beside the other caller
-documents, while the count stays below the freeze threshold. The observed count is reconstructed from
+documents, at every count from that threshold onward. The observed count is reconstructed from
 the pull request's public review history and
-flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; between the escalation
-threshold and the freeze the same log names the reassessment duty, and from the freeze it names the
-freeze instead. The consumed reassessment enters the durable record as one
+flagged as `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`; the same log names the
+reassessment duty at every escalated count. The consumed reassessment enters the durable record as one
 addition-only `review-reassessed` dossier event. `review:repair` is never blocked by this: unresolved
 threads must stay resolvable, so it logs the flag and never refuses on it.
 
-A pull request that reaches the freeze threshold — `REVIEW_ROUND_FREEZE_THRESHOLD` in the same module
-— is frozen: a fresh reviewer publication is refused whatever the bundle carries, no reassessment or
-any other caller document lifts it, and `review:repair` and `review:confirm` stay open so unresolved
-threads remain resolvable. `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` flags it and
-`review-round-freeze-warning` flags the round before, so the churn is visible while a round remains to
-spend on consolidating the work. A frozen pull request is a session failure, not a delivery problem:
-the count measures an agent that repaired states one at a time instead of enumerating the change's
-claims and states up front. The agent stops there — it closes the pull request, strands the lane, or
-re-raises the change in a new lane as one consolidated diff — rather than spending further rounds
+A pull request that reaches `REVIEW_ROUND_WARNING_THRESHOLD` — five reviewer `REQUEST_CHANGES`
+rounds — logs `review-round-warning:<pr>:request-changes=<n>:threshold=<t>` at preparation,
+publication, and repair. The warning asks the agent to make sure it knows what it is doing and
+to review the churn and remaining findings. It does not block another review when a valid
+reassessment and all other publication requirements are met. `review:repair` and `review:confirm`
+remain open so unresolved threads can be resolved
 ([ADR 0050](./.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md)).
 
 Evidence values — dossier evidence, limitations, and approval claims — are single-line, trimmed and

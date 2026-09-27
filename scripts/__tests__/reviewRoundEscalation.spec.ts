@@ -9,7 +9,7 @@ import {
 } from '../reconstructReviewRounds.ts';
 import {
     REVIEW_ROUND_ESCALATION_THRESHOLD,
-    REVIEW_ROUND_FREEZE_THRESHOLD,
+    REVIEW_ROUND_WARNING_THRESHOLD,
     countReviewerRequestChangesRounds,
     gateReviewRoundEscalation,
     logReviewRoundEscalationAtThreshold,
@@ -180,19 +180,18 @@ describe('gateReviewRoundEscalation', () => {
         ).toThrow(/reason value at index 0 contains a GitHub token/);
     });
 
-    it('freezes at the freeze threshold even with a valid reassessment present', () => {
-        expect(() => gate(REVIEW_ROUND_FREEZE_THRESHOLD, reassessment())).toThrow(
-            new RegExp(
-                `review round freeze: observed ${REVIEW_ROUND_FREEZE_THRESHOLD} reviewer request-changes rounds.*freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}.*no reassessment lifts it`
-            )
-        );
-    });
-
-    it('still takes the reassessment one round below the freeze', () => {
-        expect(
-            gate(REVIEW_ROUND_FREEZE_THRESHOLD - 1, reassessment({ roundsObserved: REVIEW_ROUND_FREEZE_THRESHOLD - 1 }))
-        ).toBeDefined();
-    });
+    it.each([REVIEW_ROUND_WARNING_THRESHOLD - 1, REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
+        'requires a matching reassessment after %s request-changes rounds',
+        (rounds) => {
+            expect(gate(rounds, reassessment({ roundsObserved: rounds }))).toEqual(
+                parseReviewReassessment(reassessment({ roundsObserved: rounds }))
+            );
+            expect(() => gate(rounds, undefined)).toThrow(/review round escalation/);
+            expect(() => gate(rounds, reassessment({ roundsObserved: rounds - 1 }))).toThrow(
+                /does not match the observed/
+            );
+        }
+    );
 });
 
 describe('logReviewRoundEscalationAtThreshold', () => {
@@ -212,23 +211,24 @@ describe('logReviewRoundEscalationAtThreshold', () => {
         return messages;
     }
 
-    it('warns one round before the freeze', () => {
-        expect(messagesFor(REVIEW_ROUND_FREEZE_THRESHOLD - 1)).toEqual([
-            expect.stringContaining(
-                `review-round-freeze-warning:${PR}:request-changes=${REVIEW_ROUND_FREEZE_THRESHOLD - 1}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
-            ),
+    it('logs only escalation below the warning threshold', () => {
+        expect(messagesFor(REVIEW_ROUND_WARNING_THRESHOLD - 1)).toEqual([
             expect.stringContaining('review-round-escalation:'),
         ]);
     });
 
-    it('flags the freeze at the freeze threshold', () => {
-        expect(messagesFor(REVIEW_ROUND_FREEZE_THRESHOLD)).toEqual([
-            expect.stringContaining(
-                `review-round-freeze:${PR}:request-changes=${REVIEW_ROUND_FREEZE_THRESHOLD}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
-            ),
-            expect.stringContaining('review-round-escalation:'),
-        ]);
-    });
+    it.each([REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
+        'warns at %s rounds without suggesting a freeze',
+        (rounds) => {
+            expect(messagesFor(rounds)).toEqual([
+                expect.stringContaining(
+                    `review-round-warning:${PR}:request-changes=${rounds}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}`
+                ),
+                expect.stringContaining('review-round-escalation:'),
+            ]);
+            expect(messagesFor(rounds)[0]).toContain('make sure you know what you are doing');
+        }
+    );
 
     it('logs nothing below the escalation threshold', () => {
         expect(messagesFor(REVIEW_ROUND_ESCALATION_THRESHOLD - 1)).toEqual([]);
