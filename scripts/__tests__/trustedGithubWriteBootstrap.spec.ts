@@ -987,6 +987,17 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @dec require(spec) {} }')).toEqual([]);
         expect(snapshotComputedDynamicSpecifiers('class C { @dec(arg) require(spec) {} }')).toEqual([]);
         expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @ns.dec require(spec) {} }')).toEqual([]);
+        // The decorator walk closes over the chain rather than one more spelling: a group after a name
+        // and a name after a group are each another segment, so a decorator that ends in a call of a
+        // parenthesised expression does not leave its `)` read as the member's own parameter list.
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @(dec)(arg) require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @dec(1)(2) require(spec) {} }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { x = 1; @(dec) require(spec) {} }')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(dec)(arg) class H { loader = console.log; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
         // A `using` loader declaration stays undecided, so the name binds no loader.
         expect(snapshotComputedDynamicSpecifiers('using load = require;\nload(spec);')).toEqual([]);
         expect(snapshotComputedDynamicSpecifiers('await using load = require;\nload(spec);')).toEqual([]);

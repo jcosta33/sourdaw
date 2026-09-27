@@ -514,11 +514,11 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * a nested redeclaration or reassignment to anything else does not reach the loader.
  *
  * A class the member walk cannot model whole keeps the merge base's reading on either side of the
- * read-back: a decorator on the class — written `@dec`, `@ns.dec(1)`, `@dec.x`, or parenthesised
- * `@(expr)` — a computed member name that is not a static string literal (`[key]`, `['lo' + 'ader']`,
- * ``[`${expr}`]``), and a member name written with a unicode escape (`\u006coader`, `['\u006coader']`)
- * each mark the class unmodelled, because such a member may carry the field's name without the reader
- * being able to spell it out.
+ * read-back: a decorator on the class — written `@dec`, `@ns.dec(1)`, `@dec.x`, parenthesised `@(expr)`,
+ * or any chain of those segments such as `@(dec)(arg)` — a computed member name that is not a static
+ * string literal (`[key]`, `['lo' + 'ader']`, ``[`${expr}`]``), and a member name written with a
+ * unicode escape (`\u006coader`, `['\u006coader']`) each mark the class unmodelled, because such a
+ * member may carry the field's name without the reader being able to spell it out.
  *
  * Every shape those rules do not model also keeps the merge base's reading, and these stay undecided:
  * a callee bound to another bound name (`const a = require; const b = a; b(expr)`), a member reached
@@ -2168,51 +2168,80 @@ function declaresClassName(classFields: ReadonlyMap<number, ClassFieldsEntry>, n
  * or any namespaced or call spelling of those — or `undefined` when no decorator precedes the keyword. A
  * decorator sits where a declaration modifier does, so it neither turns a declaration into an expression
  * nor hides the member it decorates.
+ *
+ * The walk closes over the shape rather than the spellings: a chain is a dotted name with a call group
+ * after any of its segments, and `@(expr)` wraps the whole chain in a group of its own. Nothing else in
+ * a declaration or member prefix ends in `)`, and a name that a `@` does not open is not a decorator.
  */
 function decoratorOpenBefore(source: string, index: number): number | undefined {
     let cursor = previousSignificantCharacter(source, index - 1);
-    if (cursor === undefined) {
-        return undefined;
-    }
-    if (source.charAt(cursor) === ')') {
-        const open = matchingOpenDelimiterBackward(source, cursor, '(', ')');
-        if (open === undefined) {
+    while (cursor !== undefined) {
+        if (source.charAt(cursor) === '@') {
+            return cursor;
+        }
+        if (source.charAt(cursor) === ')') {
+            const open = matchingOpenDelimiterBackward(source, cursor, '(', ')');
+            if (open === undefined) {
+                return undefined;
+            }
+            cursor = previousSignificantCharacter(source, open - 1);
+            continue;
+        }
+        if (!isIdentifierContinue(source.charAt(cursor))) {
             return undefined;
         }
-        const beforeOpen = previousSignificantCharacter(source, open - 1);
-        // `@(expr)` decorates with the whole parenthesised expression, so the `@` opens the decorator
-        // rather than the dotted name the other spellings read.
-        if (beforeOpen !== undefined && source.charAt(beforeOpen) === '@') {
-            return beforeOpen;
-        }
-        // Any other group is a call's argument list, and the decorated name stands before its `(`.
-        if (beforeOpen === undefined) {
-            return undefined;
-        }
-        cursor = beforeOpen;
-    }
-    if (!isIdentifierContinue(source.charAt(cursor))) {
-        return undefined;
-    }
-    while (true) {
         const word = readWordBackward(source, cursor);
-        const wordStart = cursor - word.length + 1;
-        const before = previousSignificantCharacter(source, wordStart - 1);
+        const before = previousSignificantCharacter(source, cursor - word.length);
         if (before === undefined) {
             return undefined;
         }
         if (source.charAt(before) === '@') {
             return before;
         }
-        if (source.charAt(before) === '.') {
-            const previous = previousSignificantCharacter(source, before - 1);
-            if (previous === undefined || !isIdentifierContinue(source.charAt(previous))) {
+        // A `.` parts a segment off the name and the name before it continues the chain; any other
+        // token before the name leaves the walk with no `@` to return, so no decorator opens here.
+        if (source.charAt(before) !== '.') {
+            return undefined;
+        }
+        cursor = previousSignificantCharacter(source, before - 1);
+    }
+    return undefined;
+}
+
+/**
+ * The position after the decorator opening at the `@` at `start` — the same segment chain
+ * `decoratorOpenBefore` walks, read forward — or `undefined` when no decorator opens there. A caller
+ * then skips the member the decorator decorates from the position this returns.
+ */
+function skipDecoratorAt(source: string, start: number): number | undefined {
+    const nameStart = skipWhitespace(source, start + 1);
+    const name = readWordForward(source, nameStart);
+    if (name === undefined) {
+        // `@(expr)` decorates with the whole group, which is the chain's first and only segment when no
+        // name follows the `@`.
+        const group = skipBalancedParens(source, nameStart);
+        return group === undefined ? undefined : skipWhitespace(source, group);
+    }
+    let cursor = skipWhitespace(source, nameStart + name.length);
+    // The rest of the chain is a call group after any of its segments and any segment a `.` parts off.
+    while (true) {
+        if (source[cursor] === '(') {
+            const afterGroup = skipBalancedParens(source, cursor);
+            if (afterGroup === undefined) {
                 return undefined;
             }
-            cursor = previous;
+            cursor = skipWhitespace(source, afterGroup);
             continue;
         }
-        return undefined;
+        if (source[cursor] !== '.') {
+            return cursor;
+        }
+        const segmentStart = skipWhitespace(source, cursor + 1);
+        const segment = readWordForward(source, segmentStart);
+        if (segment === undefined) {
+            return undefined;
+        }
+        cursor = skipWhitespace(source, segmentStart + segment.length);
     }
 }
 
@@ -2344,10 +2373,15 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
             return;
         }
         // A decorator is outside the model, so the class's members are unreliable: mark it unmodelled
-        // and skip the decorator whole.
+        // and skip the member it decorates whole, from the name the decorator's chain ends at.
         if (source[cursor] === '@') {
             entry.unmodelled = true;
-            cursor = skipClassBodyRegion(source, cursor, close - 1);
+            const memberStart = skipDecoratorAt(source, cursor);
+            if (memberStart === undefined) {
+                cursor += 1;
+                continue;
+            }
+            cursor = readClassMemberHead(source, memberStart, close - 1)?.next ?? memberStart;
             continue;
         }
         if (source[cursor] === '[') {
@@ -2690,36 +2724,13 @@ function skipClassFieldMember(source: string, cursor: number, end: number): numb
     return end;
 }
 
-/** Skips one balanced region, a decorator, or a private name at `cursor`, so a computed member, an index signature, or a private field is crossed. */
+/** Skips one balanced region or a private name at `cursor`, so a computed member, an index signature, or a private field is crossed. */
 function skipClassBodyRegion(source: string, cursor: number, end: number): number {
     const character = source[cursor];
     if (character === '(' || character === '[' || character === '{' || character === '<') {
         const closer = matchingTypeDelimiter(character);
         const after = skipBalancedDelimited(source, cursor, end, character, closer);
         return after === undefined ? end : after;
-    }
-    if (character === '@') {
-        // A decorator is a member expression `@ns.dec` (or a call of one), so skip every dotted segment
-        // rather than stopping at the first dot and reading the tail's property as the member name.
-        let after = skipWhitespace(source, cursor + 1);
-        const name = readWordForward(source, after);
-        if (name === undefined) {
-            return cursor + 1;
-        }
-        after = skipWhitespace(source, after + name.length);
-        while (source[after] === '.') {
-            after = skipWhitespace(source, after + 1);
-            const segment = readWordForward(source, after);
-            if (segment === undefined) {
-                return after;
-            }
-            after = skipWhitespace(source, after + segment.length);
-        }
-        if (source[after] === '(') {
-            const skipped = skipBalancedParens(source, after);
-            return skipped === undefined ? end : skipped;
-        }
-        return after;
     }
     if (character === '#') {
         const name = readWordForward(source, cursor + 1);
