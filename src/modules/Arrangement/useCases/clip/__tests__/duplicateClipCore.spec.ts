@@ -457,6 +457,41 @@ describe('duplicateClipCore', () => {
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't2', startBeat: 8 }));
     });
 
+    it('rejects a duplicate onto a folder destination before any effect', () => {
+        const computeStartBeat = vi.fn(() => 8);
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+        };
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 'folder-1') {
+                return { status: 'eligible', trackId: 'folder-1' };
+            }
+            return { status: 'missing' };
+        });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'audio', clips: [source] },
+                { id: 'folder-1', kind: 'folder', clips: [] },
+            ],
+        });
+
+        // A folder passes the write-eligibility flags but never renders clip
+        // content, so the copy must be refused before it is computed or added.
+        expect(duplicateClipCore({ clipId: 'c1', destinationTrackId: 'folder-1', computeStartBeat })).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
+    });
+
     it('aborts when an explicit destination track is not eligible', () => {
         const computeStartBeat = vi.fn(() => 8);
         const source = {

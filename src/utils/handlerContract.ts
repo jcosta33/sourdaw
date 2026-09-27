@@ -216,9 +216,15 @@ export type ClipSatelliteWarpMarkerSnapshot = {
 export type ClipSatelliteWarpStateSnapshot = {
     readonly enabled: boolean;
     readonly markers: readonly ClipSatelliteWarpMarkerSnapshot[];
-    /** Snapshots carry in-memory state only, so always the canonical ADR 0024
-     *  ids — legacy persisted ids map at the warp store's sanitize boundary. */
-    readonly stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
+    /**
+     * Wire union: the canonical ADR 0024 ids this build writes, plus the
+     * pre-ADR legacy ids (`complex`, `texture`, `beats`) that versioned
+     * command envelopes recorded by earlier builds still carry. Validation
+     * admits the union; the satellite store decodes legacy ids back onto the
+     * canonical set at the write boundary (`normalizeWarpState`), so
+     * in-memory state always stays canonical.
+     */
+    readonly stretchMode: 'repitch' | 'phase-vocoder' | 'wsola' | 'complex' | 'texture' | 'beats';
     readonly originalTempo: number | null;
 };
 export type ClipSatelliteGainEnvelopePointSnapshot = {

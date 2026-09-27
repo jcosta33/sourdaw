@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => {
         type: 'audio' | 'midi';
         locked?: boolean;
     };
-    type MockTrack = { id: string; kind: 'audio' | 'vca'; clips: MockClip[] };
+    type MockTrack = { id: string; kind: 'audio' | 'bus' | 'vca'; clips: MockClip[] };
     type MockTrackState = { tracks: MockTrack[] };
     return {
         getTrackState: vi.fn<() => MockTrackState>(),
@@ -181,6 +181,23 @@ describe('moveClip', () => {
         expect(moveClip('c1', 't1', 4)).toBe(false);
         expect(moveClip('c1', 'vca-1', 4)).toBe(false);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a move onto a bus and leaves the clip on its track', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] },
+                { id: 'bus-1', kind: 'bus', clips: [] },
+            ],
+        });
+
+        // A bus passes `acceptsClipUpdate` but never renders clip content, so
+        // the strip-then-readd write would remove c1 from t1 and park it on a
+        // track that never plays it.
+        expect(moveClip('c1', 'bus-1', 10)).toBe(false);
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
     });
 
     it('reports an exact same-track, same-position request as a no-op', () => {

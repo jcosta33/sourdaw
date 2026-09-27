@@ -21,6 +21,21 @@ function warpState() {
     return { ...defaultWarpState, enabled: true, markers: [createWarpMarker(0, 0.5, { origin: 'user' as const })] };
 }
 
+/** A warp satellite as a pre-ADR 0024 build recorded it — the legacy id, not
+ *  the canonical one the current build's stores hold. */
+function legacyRecordedEntry(): ClipSatelliteEntrySnapshot {
+    return {
+        clipId: 'clip-1',
+        gainEnvelope: null,
+        warpState: {
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0.5, origin: 'user' }],
+            stretchMode: 'complex',
+            originalTempo: 120,
+        },
+    };
+}
+
 describe('clipSatelliteState', () => {
     beforeEach(() => {
         warpStates.clear();
@@ -160,5 +175,36 @@ describe('clipSatelliteState', () => {
         writeClipSatelliteEntry(readClipSatelliteEntry('clip-1'));
 
         expect(serializeClipSatelliteEntries(['clip-1'])).toBe(first);
+    });
+
+    describe('legacy recorded stretch modes (ADR 0024 wire union)', () => {
+        it.each([
+            ['beats', 'wsola'],
+            ['complex', 'phase-vocoder'],
+            ['texture', 'repitch'],
+        ] as const)('writes a recorded %s warp state decoded onto the canonical %s', (legacy, canonical) => {
+            writeClipSatelliteEntry({
+                clipId: 'clip-1',
+                gainEnvelope: null,
+                warpState: { ...warpState(), stretchMode: legacy },
+            });
+
+            expect(warpStates.get('clip-1')?.stretchMode).toBe(canonical);
+        });
+
+        it('matches a legacy recorded snapshot against a live canonical store entry', () => {
+            writeClipSatelliteEntry({
+                clipId: 'clip-1',
+                gainEnvelope: null,
+                warpState: {
+                    enabled: true,
+                    markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0.5, origin: 'user' }],
+                    stretchMode: 'complex',
+                    originalTempo: 120,
+                },
+            });
+
+            expect(clipSatelliteEntriesMatchSnapshot([legacyRecordedEntry()])).toBe(true);
+        });
     });
 });

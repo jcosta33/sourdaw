@@ -5,10 +5,10 @@ import {
     type ClipSatelliteWarpStateSnapshot,
 } from '#/utils/handlerContract';
 
+import { decodePersistedStretchMode, type WarpMarker, type WarpState } from '../models/WarpMarker';
+
 import { type ClipGainEnvelope, getEnvelope, removeEnvelope, setEnvelope } from './gainEnvelopeStore';
 import { getStoredWarpState, isDefaultWarpState, removeWarpState, setWarpState } from './warpStates';
-
-import type { WarpMarker, WarpState } from '../models/WarpMarker';
 
 /**
  * Read/write surface for the per-clip satellite records a clip carries besides
@@ -82,7 +82,11 @@ function normalizeWarpState(state: ClipSatelliteWarpStateSnapshot): WarpState {
     return {
         enabled: state.enabled,
         markers: state.markers.map(normalizeWarpMarker),
-        stretchMode: state.stretchMode,
+        // The wire union carries the pre-ADR legacy ids recorded envelopes
+        // still hold; decode onto the canonical set at the write boundary —
+        // the same mapping the warp store's sanitize boundary applies — so
+        // in-memory state never carries a legacy id.
+        stretchMode: decodePersistedStretchMode(state.stretchMode),
         originalTempo: state.originalTempo,
     };
 }

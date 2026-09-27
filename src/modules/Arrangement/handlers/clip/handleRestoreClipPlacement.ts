@@ -83,12 +83,19 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
         if (!expectedPlacementMatches(action)) {
             return { status: 'conflict' };
         }
+        // `historicalPlacement`: `replacement` names where the clip sat before
+        // the move being undone — a placement the document itself held, which
+        // the placement rule may not have allowed (a project saved before the
+        // rule can hold an audio clip on a MIDI track). Replay must return the
+        // clip there, or the undo head is retained and every later Cmd+Z
+        // re-fails on it.
         const moved = moveClip(
             action.payload.clipId,
             action.payload.replacement.trackId,
             action.payload.replacement.startBeat,
             undefined,
-            false
+            false,
+            { historicalPlacement: true }
         );
         if (
             !moved ||

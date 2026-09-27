@@ -574,6 +574,26 @@ describe('pasteClip', () => {
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
+    it('rejects the paste when the selected target is a bus', () => {
+        // A bus passes the write-eligibility flags but never renders clip
+        // content, so nothing may land on it — the guard refuses before any
+        // clip is allocated.
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'bus-1',
+            tracks: [
+                { id: 'bus-1', kind: 'bus' },
+                { id: 'source-track', kind: 'midi' },
+            ],
+        });
+        setClipClipboard([createClipboardEntry()]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.removeClip).not.toHaveBeenCalled();
+    });
+
     it('rolls back Arrangement and MIDI state when the second add fails', () => {
         const arrangementClipIds = new Set(['existing-clip']);
         const midiState = new Map<string, MidiNote[]>([

@@ -4,7 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppActionBatch,
@@ -215,5 +215,126 @@ describe('handleMoveClip atomic integration', () => {
                 level: 'warning',
             },
         ]);
+    });
+
+    it('returns a legacy misplaced clip to its incompatible host when the rescue move is undone', async () => {
+        // A project saved before the placement rule can hold an audio clip on a
+        // MIDI track. The rescue move forward is legal (the audio target is
+        // compatible), but its undo replays the move back onto the MIDI host —
+        // a placement the forward guard refuses. The replay must return the
+        // document to the state it actually held; refusing it would retain the
+        // undo head in conflict and break every later Cmd+Z.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    name: 'Vocals',
+                    kind: 'midi',
+                    clips: [
+                        ClipDummy.create({
+                            id: 'clip-1',
+                            type: 'audio',
+                            trackId: 'track-1',
+                            startBeat: 2,
+                            endBeat: 10,
+                        }),
+                    ],
+                }),
+                TrackDummy.create({ id: 'track-2', name: 'Comp', kind: 'audio', clips: [] }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        const action = {
+            type: 'moveClip' as const,
+            payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 },
+        };
+        expect(await executeAppActionBatch([action], { source: 'prompt', requireCompensation: true })).toMatchObject({
+            status: 'committed',
+        });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-1')?.clips).toEqual([]);
+
+        await undo();
+
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-2')?.clips).toEqual([]);
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-1')?.clips[0]).toMatchObject({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 2,
+            endBeat: 10,
+        });
+        // The head was consumed, not retained in conflict: no refusal notice,
+        // and the entry moved to the redo stack.
+        expect(notifications).toEqual([]);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
+    });
+
+    it('restores a legacy misplaced clip through the multi-clip move inverse without stranding it', async () => {
+        // The multi-clip inverse replays every moved clip through moveClip.
+        // One legacy clip (audio on a MIDI track) rides along with an ordinary
+        // one: the replay must return both to where the document actually
+        // held them, not strand the legacy clip on the rescue target while
+        // reporting the restore as written.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 'track-1',
+                    name: 'Vocals',
+                    kind: 'midi',
+                    clips: [
+                        ClipDummy.create({
+                            id: 'clip-1',
+                            type: 'audio',
+                            trackId: 'track-1',
+                            startBeat: 2,
+                            endBeat: 10,
+                        }),
+                    ],
+                }),
+                TrackDummy.create({
+                    id: 'track-2',
+                    name: 'Comp',
+                    kind: 'audio',
+                    clips: [ClipDummy.create({ id: 'clip-2', trackId: 'track-2', startBeat: 2, endBeat: 10 })],
+                }),
+                TrackDummy.create({ id: 'track-3', name: 'Stack', kind: 'audio', clips: [] }),
+            ],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        const action = {
+            type: 'moveClips' as const,
+            payload: {
+                moves: [
+                    { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 },
+                    { clipId: 'clip-2', trackId: 'track-3', startBeat: 16 },
+                ],
+                ripple: false,
+            },
+        };
+        // `moveClips` is not abort-compensated, so the batch is not atomic.
+        expect(await executeAppActionBatch([action], { source: 'prompt' })).toMatchObject({
+            status: 'committed',
+        });
+
+        await undo();
+
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-1')?.clips[0]).toMatchObject({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 2,
+            endBeat: 10,
+        });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-2')?.clips[0]).toMatchObject({
+            id: 'clip-2',
+            trackId: 'track-2',
+            startBeat: 2,
+            endBeat: 10,
+        });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'track-3')?.clips).toEqual([]);
+        expect(notifications).toEqual([]);
     });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    type ClipSatelliteEntrySnapshot,
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
     type MidiClipDataActionSnapshot,
@@ -83,5 +84,28 @@ describe('versionedCommandArgumentKeys — restoreClipSplitState (#4521)', () =>
             replacement: makeSnapshot({ rightClip: null }),
         };
         expect(validateVersionedCommandArguments('restoreClipSplitState', legacy)).toBe(true);
+    });
+
+    it('validates a warp satellite carrying a pre-ADR stretch mode a previous build recorded', () => {
+        // Envelopes recorded before the ADR 0024 retirement hold the legacy ids
+        // their build's snapshots carried; the wire union must keep admitting
+        // them or recovery refuses the whole continuation. The satellite store
+        // decodes the id onto the canonical set at the write boundary — see the
+        // clipSatelliteState spec.
+        const legacyWarpSatellites: ClipSatelliteEntrySnapshot[] = [
+            {
+                clipId: 'c1',
+                gainEnvelope: null,
+                warpState: { enabled: true, markers: [], stretchMode: 'complex', originalTempo: 120 },
+            },
+            { clipId: 'c2', gainEnvelope: null, warpState: null },
+        ];
+        const legacyPayload = {
+            clipId: 'c1',
+            rightClipId: 'c2',
+            expected: makeSnapshot({ clipSatellites: legacyWarpSatellites }),
+            replacement: makeSnapshot({ rightClip: null, clipSatellites: legacyWarpSatellites }),
+        };
+        expect(validateVersionedCommandArguments('restoreClipSplitState', legacyPayload)).toBe(true);
     });
 });

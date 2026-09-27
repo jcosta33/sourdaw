@@ -336,8 +336,11 @@ function isExactWarpStateStoreState(value: unknown): value is WarpStateStoreStat
  * document holds the same states already keyed by clip id. Returns the
  * argument itself when it already decodes exactly, so `createStore` does not
  * write a sanitized copy back over a shared document.
+ * Exported so the raw-projection-loss spec can register the slot exactly as
+ * the store module does: same doc id, slot, inbound sanitizer and declared
+ * discards.
  */
-function sanitizeWarpStateStoreState(value: unknown): WarpStateStoreState {
+export function sanitizeWarpStateStoreState(value: unknown): WarpStateStoreState {
     if (isExactWarpStateStoreState(value)) {
         return value;
     }
@@ -362,13 +365,71 @@ function sanitizeWarpStateStoreState(value: unknown): WarpStateStoreState {
     return { states };
 }
 
+/** A plain object as a key-value record, or `undefined` for anything else — the
+ *  guard shape every document read in this file goes through. */
+function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return undefined;
+    }
+    return value as Record<string, unknown>;
+}
+
+/**
+ * The raw slot with the content the sanitizer maps away named: each row's
+ * legacy pre-ADR 0024 stretch-mode id is rewritten onto the canonical value
+ * `decodeStretchMode` returns — the raw-side mirror of
+ * {@link copySanitizedWarpState} — and nothing else is touched.
+ *
+ * Why this needs declaring: `sanitizeWarpStateStoreState` decodes persisted
+ * stretch modes onto the canonical set, so a document written before the
+ * retirement carries ids the projection can never return. Undeclared, the raw
+ * projection-loss detector reports every such row as unrecoverable content
+ * loss and holds the project in repair-required — every action and every save
+ * refused, including the save that would rewrite the document with canonical
+ * ids, while the repair re-projects into the same mapped-away id forever. That
+ * is the permanent-false-loss class ADR 0040's `discardsRaw` amendment exists
+ * for.
+ *
+ * The rewrite runs through the same `decodeStretchMode` the sanitizer reads,
+ * so the declaration cannot drift from the mapping, and it never drops a row:
+ * content the sanitizer drops outright — an id that does not decode, a row
+ * that is default after mapping — stays in the pre-image and still reports,
+ * which is the detector doing its job.
+ */
+export function discard_warp_states_raw_keys(raw: unknown): unknown {
+    const slot = asPlainRecord(raw);
+    const states = slot === undefined ? undefined : asPlainRecord(slot.states);
+    if (slot === undefined || states === undefined) {
+        return raw;
+    }
+    let changed = false;
+    const decodedStates: Record<string, unknown> = {};
+    for (const [clipId, state] of Object.entries(states)) {
+        const record = asPlainRecord(state);
+        const canonical = record === undefined ? undefined : decodeStretchMode(record.stretchMode);
+        if (record === undefined || canonical === undefined || canonical === record.stretchMode) {
+            decodedStates[clipId] = state;
+            continue;
+        }
+        decodedStates[clipId] = { ...record, stretchMode: canonical };
+        changed = true;
+    }
+    return changed ? { ...slot, states: decodedStates } : raw;
+}
+
 export const warpStateStore = createStore<WarpStateStoreState>({
     storage: createAutomergeStorage<WarpStateStoreState>(DOC_PREFIX_ROOT, 'warpStates', {
-        // A document without the `warpStates` slot resets the store to empty
-        // rather than back-writing this replica's cache (audit CC-2). Warp
-        // states are keyed by clip id, which is not unique across projects, so
-        // a stale entry would attach to an unrelated clip in the incoming
-        // project.
+        // Legacy documents carry pre-ADR 0024 stretch-mode ids the sanitizer
+        // maps onto the canonical set; the declaration keeps that mapping from
+        // reading as unrecoverable content loss (see
+        // `discard_warp_states_raw_keys`).
+        //
+        // A document without the `warpStates` slot still resets the store to
+        // empty rather than back-writing this replica's cache (audit CC-2).
+        // Warp states are keyed by clip id, which is not unique across
+        // projects, so a stale entry would attach to an unrelated clip in the
+        // incoming project.
+        discardsRaw: discard_warp_states_raw_keys,
         hydrateMissing: () => ({ states: {} }),
     }),
     initialData: defaultWarpStateStoreState,
