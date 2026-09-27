@@ -27,6 +27,10 @@ const REVIEWED_HEAD = 'e'.repeat(40);
 const OLD_COMMIT = 'd'.repeat(40);
 const PREDECESSOR = '9'.repeat(40);
 const STALE_HEAD = 'c'.repeat(40);
+const LATER_HEAD = '0'.repeat(40);
+const LATEST_HEAD = '4'.repeat(40);
+const FORCED_HEAD = '2'.repeat(40);
+const LATER_COMMIT = '3'.repeat(40);
 const THREAD = 'PRRT_kwDOrepair';
 const OTHER_THREAD = 'PRRT_kwDOother';
 const ROOT_COMMENT_ID = 5_001;
@@ -91,6 +95,9 @@ function threadState(overrides: Partial<ReviewRepairThreadState> = {}): ReviewRe
 /**
  * The spec's ancestry oracle: `COMMIT` is inside the reviewed range, `BASE` is the pull request base
  * itself, so a commit that reaches the head through the base is exactly the case the range refuses.
+ * `LATER_HEAD` and `LATEST_HEAD` model pushes that follow a recording — the recorded head, the repair
+ * commit and the reviewed head all stay inside them — while `FORCED_HEAD` shares no history with the
+ * record, the force-push that dropped the repair.
  */
 function inReviewedRange(commit: string, target: string): boolean {
     return (
@@ -98,7 +105,10 @@ function inReviewedRange(commit: string, target: string): boolean {
         commit === BASE ||
         commit === MERGE_BASE ||
         (target === HEAD && [COMMIT, REVIEWED_HEAD, OLD_COMMIT, PREDECESSOR].includes(commit)) ||
-        (commit === REVIEWED_HEAD && target === COMMIT) ||
+        (target === LATER_HEAD &&
+            [HEAD, COMMIT, LATER_COMMIT, REVIEWED_HEAD, OLD_COMMIT, PREDECESSOR].includes(commit)) ||
+        (target === LATEST_HEAD && [LATER_HEAD, HEAD, COMMIT, LATER_COMMIT, REVIEWED_HEAD].includes(commit)) ||
+        (commit === REVIEWED_HEAD && [COMMIT, LATER_COMMIT].includes(target)) ||
         (commit === PREDECESSOR && target === REVIEWED_HEAD)
     );
 }
@@ -106,12 +116,13 @@ function inReviewedRange(commit: string, target: string): boolean {
 function selectRepairs(
     threads: readonly ReviewRepairThreadState[],
     isAncestor: (commit: string, head: string) => boolean = inReviewedRange,
-    base: string = BASE
+    base: string = BASE,
+    head: string = HEAD
 ): ReviewRepairSelection {
     return selectEligibleRepairs({
         threads,
         pr: PR,
-        head: HEAD,
+        head,
         base,
         authorNodeId: AUTHOR_NODE_ID,
         reviewerNodeId: FOREIGN_NODE_ID,
@@ -608,6 +619,179 @@ describe('selectEligibleRepairs', () => {
             eligible: [{ thread: THREAD, record: first, replyId: 11 }],
             refused: [],
             ignored: [],
+        });
+    });
+
+    describe('across later pushes (#4589)', () => {
+        it('should keep a record confirmable when a later push still contains the repair commit', () => {
+            const record = repairRecord();
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, record)] })],
+                inReviewedRange,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [{ thread: THREAD, record, replyId: 11 }],
+                refused: [],
+                ignored: [],
+            });
+        });
+
+        it('should still check the repair commit against the live head when the recorded head is accepted', () => {
+            const record = repairRecord();
+            // Ancestry is transitive in a real repository, so this oracle state cannot occur there;
+            // the pin keeps commit containment an independent condition of the recorded-head
+            // acceptance rather than a consequence of it.
+            const headOnlyDescent = (commit: string, target: string) => commit === HEAD && target === LATER_HEAD;
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, record)] })],
+                headOnlyDescent,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [{ thread: THREAD, reason: `commit ${COMMIT} is not an ancestor of head ${LATER_HEAD}` }],
+                ignored: [],
+            });
+        });
+
+        it('should refuse a record whose head a force-push left outside the live history', () => {
+            const record = repairRecord();
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, record)] })],
+                inReviewedRange,
+                BASE,
+                FORCED_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [{ thread: THREAD, reason: `head ${HEAD} does not match the confirmed head ${FORCED_HEAD}` }],
+                ignored: [],
+            });
+        });
+
+        it('should let a re-record on a descending head supersede the earlier record', () => {
+            const first = repairRecord();
+            const second = repairRecord({ head: LATER_HEAD });
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, first), repairReply(12, second)] })],
+                inReviewedRange,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [{ thread: THREAD, record: second, replyId: 12 }],
+                refused: [],
+                ignored: [],
+            });
+        });
+
+        it('should let the superseding re-record name a new repair commit on the new head', () => {
+            const first = repairRecord();
+            const second = repairRecord({ head: LATER_HEAD, commit: LATER_COMMIT });
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, first), repairReply(12, second)] })],
+                inReviewedRange,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [{ thread: THREAD, record: second, replyId: 12 }],
+                refused: [],
+                ignored: [],
+            });
+        });
+
+        it('should fold a chain of descending re-records down to the newest', () => {
+            const first = repairRecord();
+            const second = repairRecord({ head: LATER_HEAD });
+            const third = repairRecord({ head: LATEST_HEAD });
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, first), repairReply(12, second), repairReply(13, third)] })],
+                inReviewedRange,
+                BASE,
+                LATEST_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [{ thread: THREAD, record: third, replyId: 13 }],
+                refused: [],
+                ignored: [],
+            });
+        });
+
+        it('should still refuse two records when the newer one does not descend the earlier head', () => {
+            const first = repairRecord();
+            const second = repairRecord({ head: STALE_HEAD });
+            const selection = selectRepairs(
+                [threadState({ replies: [repairReply(11, first), repairReply(12, second)] })],
+                inReviewedRange,
+                BASE,
+                STALE_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [{ thread: THREAD, reason: 'author recorded 2 distinct repair records' }],
+                ignored: [],
+            });
+        });
+
+        it('should keep refusing when a conflicting record is followed by a superseding one', () => {
+            // The conflict is sticky: the second record does not descend the first's head, so the
+            // thread is unsafe; a third record that validly supersedes the running candidate cannot
+            // launder the earlier conflict away.
+            const first = repairRecord();
+            const conflicting = repairRecord({ commit: LATER_COMMIT });
+            const superseding = repairRecord({ head: LATER_HEAD, commit: LATER_COMMIT });
+            const selection = selectRepairs(
+                [
+                    threadState({
+                        replies: [repairReply(11, first), repairReply(12, conflicting), repairReply(13, superseding)],
+                    }),
+                ],
+                inReviewedRange,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [{ thread: THREAD, reason: 'author recorded 3 distinct repair records' }],
+                ignored: [],
+            });
+        });
+
+        it('should refuse a superseding re-record when the reviewer already confirmed the earlier record', () => {
+            const first = repairRecord();
+            const second = repairRecord({ head: LATER_HEAD });
+            const selection = selectRepairs(
+                [
+                    threadState({
+                        replies: [
+                            repairReply(11, first),
+                            { id: 12, body: renderConfirmationReply(first), authorNodeId: FOREIGN_NODE_ID },
+                            repairReply(13, second),
+                        ],
+                    }),
+                ],
+                inReviewedRange,
+                BASE,
+                LATER_HEAD
+            );
+
+            expect(selection).toEqual({
+                eligible: [],
+                refused: [{ thread: THREAD, reason: 'thread already carries a confirmation for a different record' }],
+                ignored: [],
+            });
         });
     });
 

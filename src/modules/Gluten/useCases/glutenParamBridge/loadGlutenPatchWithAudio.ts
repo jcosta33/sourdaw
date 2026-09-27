@@ -27,8 +27,12 @@ export function loadGlutenPatchWithAudio(deviceId: string, rawPatch: GlutenPatch
     loadGlutenPatch(deviceId, patch);
 
     const params: Array<[GlutenParamId, unknown]> = [
-        [GLUTEN_PARAM_IDS.topology, patch.topology],
+        // The engine's `style` write is a macro that also selects the style's
+        // own topology, so it must land before `topology` — an explicit
+        // topology entry then wins and the engine runs the topology the patch
+        // stores (#4709).
         [GLUTEN_PARAM_IDS.style, patch.style],
+        [GLUTEN_PARAM_IDS.topology, patch.topology],
         [GLUTEN_PARAM_IDS.amount, patch.amount],
         [GLUTEN_PARAM_IDS.threshold, patch.threshold],
         [GLUTEN_PARAM_IDS.ratio, patch.ratio],

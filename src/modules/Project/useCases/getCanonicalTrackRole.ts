@@ -38,16 +38,124 @@ const NAME_ROLES: ReadonlyArray<[CanonicalTrackRole, RegExp]> = [
     ['fx', /\b(?:fx|sfx|effects)\b/],
 ];
 
-function namedRoles(name: string): CanonicalTrackRole[] {
+const SPECIFIC_DRUM_ROLES: ReadonlySet<CanonicalTrackRole> = new Set([
+    'kick',
+    'snare',
+    'hi-hat',
+    'tom',
+    'cymbal',
+    'percussion',
+]);
+
+// An unqualified "vocal"/"vocals"/"vox" carries no dedicated pattern above: the canonical set has
+// no generic vocal role, so it must be resolved to lead or backing rather than matched directly.
+const BARE_VOCAL_WORD = /\b(?:vocals?|vox)\b/;
+const BACKING_VOCAL_QUALIFIER = /\b(?:backing|background|bgv)\b/;
+
+function normalizedTokens(name: string): string {
     // A truncated imported name could hide contradictory evidence after the cut.
     if (name.length > 256) {
-        return [];
+        return '';
     }
-    const tokens = name
+    return name
         .normalize('NFKD')
         .toLowerCase()
         .replaceAll(/[^a-z0-9]+/g, ' ');
+}
+
+function namedRolesFromTokens(tokens: string): CanonicalTrackRole[] {
     return NAME_ROLES.filter(([, pattern]) => pattern.test(tokens)).map(([role]) => role);
+}
+
+function namedRoles(name: string): CanonicalTrackRole[] {
+    return namedRolesFromTokens(normalizedTokens(name));
+}
+
+function compoundAdjacencyTokens(name: string): string {
+    // A truncated imported name could hide contradictory evidence after the cut.
+    if (name.length > 256) {
+        return '';
+    }
+    // Only the two legal joiners collapse to whitespace here; every connector ("and", "&", "+",
+    // "/", ",") stays literal, so it still separates the two role words in the checks below.
+    return name.normalize('NFKD').toLowerCase().replaceAll(/[-_]+/g, ' ');
+}
+
+function roleSpans(tokens: string, role: CanonicalTrackRole): Array<{ start: number; end: number }> {
+    const entry = NAME_ROLES.find(([candidate]) => candidate === role);
+    if (!entry) {
+        return [];
+    }
+    const pattern = new RegExp(entry[1].source, `${entry[1].flags.replace('g', '')}g`);
+    return Array.from(tokens.matchAll(pattern), (match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+    }));
+}
+
+function hasIndependentBareVocal(tokens: string, role: CanonicalTrackRole): boolean {
+    const qualifiedSpans = roleSpans(tokens, role);
+    const pattern = new RegExp(BARE_VOCAL_WORD.source, 'g');
+    return Array.from(tokens.matchAll(pattern)).some((match) => {
+        const start = match.index;
+        const end = start + match[0].length;
+        return !qualifiedSpans.some((span) => span.start <= start && span.end >= end);
+    });
+}
+
+/**
+ * Interprets a name matching exactly two patterns as one convention-backed role instead of a
+ * genuine conflict. Only these paired combinations carry an unambiguous studio meaning, and only
+ * when written as one compound: the two words must be directly adjacent, joined by nothing but
+ * whitespace, a hyphen, or an underscore. Any connector between them, or the wrong order for the
+ * drum rules, names two separate things and keeps the conflict.
+ */
+function resolveNamedRoleConflict(roles: readonly CanonicalTrackRole[], name: string): CanonicalTrackRole | null {
+    if (roles.length !== 2) {
+        return null;
+    }
+    const tokens = compoundAdjacencyTokens(name);
+    const [roleA, roleB] = roles as [CanonicalTrackRole, CanonicalTrackRole];
+    const spansA = roleSpans(tokens, roleA);
+    const spansB = roleSpans(tokens, roleB);
+    if (spansA.length !== 1 || spansB.length !== 1) {
+        return null;
+    }
+    const spanA = spansA[0]!;
+    const spanB = spansB[0]!;
+    // Order the pair by where each role actually appears in the name, not by pattern order.
+    const aIsFirst = spanA.start <= spanB.start;
+    const firstRole = aIsFirst ? roleA : roleB;
+    const secondRole = aIsFirst ? roleB : roleA;
+    const firstSpan = aIsFirst ? spanA : spanB;
+    const secondSpan = aIsFirst ? spanB : spanA;
+    if (!/^\s+$/.test(tokens.slice(firstSpan.end, secondSpan.start))) {
+        return null;
+    }
+    // A specific drum role named directly before the generic "drums" is the specific role.
+    if (secondRole === 'drums' && SPECIFIC_DRUM_ROLES.has(firstRole)) {
+        return firstRole;
+    }
+    // "Bass drum"/"bass drums" names the kick, by General MIDI and studio convention.
+    if (firstRole === 'bass' && secondRole === 'drums') {
+        return 'kick';
+    }
+    // "Synth" directly adjacent to exactly one other role yields that other role, in either order.
+    if (firstRole === 'synth') {
+        return secondRole;
+    }
+    if (secondRole === 'synth') {
+        return firstRole;
+    }
+    return null;
+}
+
+/** An unqualified vocal word is the lead by convention; a backing qualifier keeps it backing. */
+function resolveBareVocalRole(tokens: string): CanonicalTrackRole | null {
+    if (!BARE_VOCAL_WORD.test(tokens)) {
+        return null;
+    }
+    return BACKING_VOCAL_QUALIFIER.test(tokens) ? 'backing vocal' : 'lead vocal';
 }
 
 function authoredRole(input: RoleInput): CanonicalTrackRoleProjection | null {
@@ -159,12 +267,28 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
     if (input.track.kind === 'bus' || input.track.kind === 'master') {
         return { role: input.track.kind, source: 'name-tags', evidence: 'structural-kind' };
     }
-    const roles = namedRoles(input.track.name);
+    const tokens = normalizedTokens(input.track.name);
+    const roles = namedRolesFromTokens(tokens);
+    const bareVocalRole = resolveBareVocalRole(tokens);
+    if (
+        bareVocalRole &&
+        hasIndependentBareVocal(tokens, bareVocalRole) &&
+        roles.some((role) => role !== bareVocalRole)
+    ) {
+        return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
+    }
     if (roles.length > 1) {
+        const resolved = resolveNamedRoleConflict(roles, input.track.name);
+        if (resolved) {
+            return { role: resolved, source: 'name-tags', evidence: 'resolved-name-tags' };
+        }
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length === 1) {
         return { role: roles[0]!, source: 'name-tags', evidence: 'name-tokens' };
+    }
+    if (bareVocalRole) {
+        return { role: bareVocalRole, source: 'name-tags', evidence: 'resolved-name-tags' };
     }
     return contentRole(input);
 }

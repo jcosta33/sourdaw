@@ -30,6 +30,17 @@ import {
     type SemanticEvidenceSet,
     type SemanticSourcePort,
 } from '../evidence.ts';
+import {
+    admissionBytesBySide,
+    admissionUnits,
+    classifyContractCarryingSides,
+    compareAdmissionUnits,
+    readChangedContents,
+    specCoveredSources,
+    type AdmissionSideBytes,
+    type ChangedSideUnit,
+    type ContractCarryingSides,
+} from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
@@ -44,6 +55,7 @@ import {
 import { renderSummary, validateReport, type SemanticVerifyReport } from '../report.ts';
 import { missingRequiredEvidence, RESOLVED_EVIDENCE_TOKENS } from '../requiredEvidence.ts';
 import {
+    applicableRules,
     assertBudgetProfile,
     computePolicyDigest,
     computeRulesDigest,
@@ -56,6 +68,7 @@ import {
     SEMANTIC_RULES,
     type SemanticBudgetProfile,
     type SemanticVerifyBudget,
+    unitNeedsContractContext,
     VERIFICATION_ATTRIBUTION_THRESHOLD,
     VERIFICATION_KIND_THRESHOLD,
     VERIFICATION_SUPPORT_THRESHOLD,
@@ -393,7 +406,8 @@ describe('contract-carrying admission', () => {
         // D1: contract-context regions were admitted after every changed-file unit, so a bulk side
         // bought the total budget first and the contract document was withheld as
         // total-evidence-budget-exhausted (context, contract) — a contract term for an ordering the
-        // collector never used. Contract-context regions now sort with the contract class, before bulk.
+        // collector never used. The case puts a charged contract document and a bulk side under a total that
+        // fits only one of them, and reads that the document is the one admitted.
         const bulk = 'const bulk = 1;\n'.repeat(30);
         const contract = '# AGENTS.md contract\n'.repeat(5);
         const set = collectEvidence({
@@ -415,16 +429,17 @@ describe('contract-carrying admission', () => {
     });
 
     it("admits the change's contract-carrying side before a larger contract-context document", () => {
-        // D2: a contract-context document and the change's contract-carrying side shared the contract
-        // tier, where the non-spec document outranked the change's own spec side whatever its size, so a
-        // binding total charged the document and withheld the change's contract material. Contract-context
-        // now sits in its own tier behind the change's contract-carrying sides.
+        // D2: a contract-context document and the change's contract-carrying side were admitted in one rank,
+        // where the non-spec document outranked the change's own spec side whatever its size, so a binding
+        // total charged the document and withheld the change's contract material. The case puts a document
+        // larger than the side under a total that only one of them fits, and reads that the side is the one
+        // admitted.
         const specSide = `import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n${'const filler = 1;\n'.repeat(8)}`;
         const context = '# AGENTS.md contract\n'.repeat(30);
         const specBytes = Buffer.byteLength(specSide, 'utf8');
         const contextBytes = Buffer.byteLength(context, 'utf8');
-        // The premise the ordering must defeat: the document is larger than the side, yet the non-spec
-        // tie-break admits the document first on the shared contract tier.
+        // The premise the ordering must defeat: the document is larger than the side, yet the side is the one
+        // admitted under a total that fits only one of them.
         expect(contextBytes).toBeGreaterThan(specBytes);
         const set = collectEvidence({
             port: fakeSource({
@@ -721,9 +736,9 @@ describe('contract-carrying admission', () => {
 
     it('admits a pinned workflow file before a large bulk file under a one-path budget', () => {
         // R2: the closure is trusted-graph scripts only, so `.github/workflows/semantic-review.yml` ranked
-        // bulk and a tight budget could drop the file that holds the advisory check's provider key. The
-        // bulk fixture is cheaper under every non-contract leg, so only the contract class admits the
-        // workflow file and its after side.
+        // bulk and a tight budget could drop the file that holds the advisory check's provider key. The case
+        // puts both files under a total that fits only one of them, and reads that the workflow file and its
+        // after side are the ones admitted.
         const workflowBefore = 'name: semantic-review\n';
         const workflowAfter = 'name: semantic-review\non: pull_request_target\n';
         const bulk = 'const bulk = 1;\n';
@@ -825,10 +840,9 @@ describe('contract-carrying admission', () => {
     it('admits a closure source before a cheaper spec and withholds the spec when the budget binds', () => {
         // R7: with a budget that admitted only the source's two sides, the spec's before side alone
         // exceeded it, so the spec was withheld under either order and the case observed the qualifier
-        // vocabulary rather than the non-spec-before-spec ordering. A budget the spec's before side
-        // fits, but which still displaces a source side when the spec sorts first, makes the ordering
-        // leg decisive: the spec is cheaper than the source, so only non-spec-before-spec admits both
-        // source sides ahead of it.
+        // vocabulary rather than the ordering it was built for. This budget fits the spec's before side
+        // while still displacing a source side when the spec is attempted first, so the case reads that both
+        // source sides are admitted ahead of the cheaper spec and the spec is the one withheld.
         const sourceBefore = 'export const policy = 1;\n';
         const sourceAfter = `export const policy = 2;\n${'const grown = 1;\n'.repeat(6)}`;
         const specBefore = "import { planReviewRisk } from '../reviewRiskPolicy.ts';\n";
@@ -873,8 +887,8 @@ describe('contract-carrying admission', () => {
     it('orders a source a contract-carrying spec covers ahead of its own spec when the budget binds', () => {
         // The inversion the content rule once papered over: a contract-carrying spec ranked above the
         // bulk source it covers, so the spec spent the budget and the source was withheld. A source the
-        // spec imports is the source it covers, and it is ordered in the spec's tier so the existing
-        // non-spec-before-spec tie-break keeps the source ahead of its own spec.
+        // spec imports is the source it covers, and the case reads that the source is admitted ahead of its
+        // own spec under the binding total.
         const sourceBefore = 'export const evidence = 1;\n';
         const sourceAfter = 'export const evidence = 2;\n';
         const specBefore =
@@ -996,6 +1010,923 @@ describe('contract-carrying admission', () => {
                     entry.reason === 'total-evidence-budget-exhausted (after, contract)'
             )
         ).toBe(true);
+    });
+
+    it('ranks a covered source with the spec that covers it, so it cannot spend a binding total ahead of unrelated units', () => {
+        // The promotion's own collateral (#4846): a covered source ranked at the front of the contract
+        // tier, ahead of every collected spec, so on the production `local` profile it took the room that
+        // unrelated planned units needed. Measured on this 13-path fixture — the covering spec, four
+        // unrelated collected specs, the source the spec imports, the source that source imports, a
+        // deleted path, an over-ceiling path, a credentialed path, a rename, a copy and an added file —
+        // the covered sources' hunks filled the 98,304-byte total down to 11 bytes, and the deleted path's
+        // own before side, the over-ceiling path's own before side and the covering spec's own unit were
+        // all excluded as `no-admissible-evidence`. Ranking a covered source with the spec that covers it
+        // restores them: the source's large side keys the pair behind the four unrelated specs rather than at
+        // the front of the tier, and the case reads that the source still precedes its own spec and that the
+        // deleted, over-ceiling and covering-spec units the front-of-tier promotion starved are planned again.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const specPath = 'scripts/semanticReview/__tests__/order.spec.ts';
+        const unrelatedSpecPaths = ['alpha', 'beta', 'gamma', 'delta'].map(
+            (name) => `scripts/semanticReview/__tests__/${name}.spec.ts`
+        );
+        const subjectPath = 'scripts/semanticReview/orderSubject.ts';
+        const dependencyPath = 'scripts/semanticReview/orderDependency.ts';
+        const deletedPath = 'src/modules/Project/legacy.ts';
+        const overCeilingPath = 'src/modules/Project/huge.ts';
+        const credentialedPath = 'src/modules/Project/keys.ts';
+        const movedFromPath = 'src/modules/Project/original.ts';
+        const movedPath = 'src/modules/Project/moved.ts';
+        const copiedFromPath = 'src/modules/Project/shared.ts';
+        const copiedPath = 'src/modules/Project/copied.ts';
+        const addedPath = 'src/modules/Project/added.ts';
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+
+        // Forty-two hunks a side: a figure above the four unrelated specs' 13, so the pair sits behind them,
+        // and small enough regions that the spec's own unit still fits one request.
+        const specSide = `import { subject } from '../orderSubject.ts';\n${workflowLine}${sizedLines(42, 251, 'spec')}`;
+        const unrelatedSide = `${workflowLine}${sizedLines(13, 800, 'unrelated')}`;
+        // The covered sources: 98 kB of hunks between them, which is what took the local total.
+        const subjectBefore = `import { dependency } from './orderDependency.ts';\n${sizedLine(4_000, 'subjectA')}`;
+        const subjectAfter = `${subjectBefore}${sizedLines(22, 4_000, 'subjectB')}${sizedLine(1_520, 'subjectC')}`;
+        const dependencySide = sizedLine(1_600, 'dependency');
+        const dependencyAfter = sizedLines(2, 1_600, 'dependency');
+        const workflowShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const files = [
+            changedFile(specPath, { added: 44, deleted: 0 }),
+            ...unrelatedSpecPaths.map((path) => changedFile(path, { added: 14, deleted: 0 })),
+            changedFile(subjectPath, { added: 24, deleted: 0 }),
+            changedFile(dependencyPath, { added: 3, deleted: 0 }),
+            changedFile(deletedPath, { kind: 'deleted', added: 0, deleted: 1 }),
+            changedFile(overCeilingPath, { added: 1, deleted: 0 }),
+            changedFile(credentialedPath, { added: 1, deleted: 0 }),
+            changedFile(movedPath, { kind: 'renamed', previousPath: movedFromPath, added: 1, deleted: 0 }),
+            changedFile(copiedPath, { kind: 'copied', previousPath: copiedFromPath, added: 1, deleted: 0 }),
+            changedFile(addedPath, { kind: 'added', added: 1, deleted: 0 }),
+        ];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${specPath}`]: specSide,
+            [`${HEAD}:${specPath}`]: specSide,
+            ...Object.fromEntries(
+                unrelatedSpecPaths.flatMap((path) => [
+                    [`${MERGE_BASE}:${path}`, unrelatedSide],
+                    [`${HEAD}:${path}`, unrelatedSide],
+                ])
+            ),
+            [`${MERGE_BASE}:${subjectPath}`]: subjectBefore,
+            [`${HEAD}:${subjectPath}`]: subjectAfter,
+            [`${MERGE_BASE}:${dependencyPath}`]: dependencySide,
+            [`${HEAD}:${dependencyPath}`]: dependencyAfter,
+            [`${MERGE_BASE}:${deletedPath}`]: sizedLine(60, 'legacy'),
+            [`${MERGE_BASE}:${overCeilingPath}`]: sizedLine(60, 'hugeBefore'),
+            [`${HEAD}:${overCeilingPath}`]: sizedLine(20_000, 'hugeAfter'),
+            [`${MERGE_BASE}:${credentialedPath}`]: sizedLine(1_000, 'keys'),
+            [`${HEAD}:${credentialedPath}`]: `export const key = '${workflowShaped}';\n`,
+            [`${MERGE_BASE}:${movedFromPath}`]: sizedLine(5_000, 'moved'),
+            [`${HEAD}:${movedPath}`]: sizedLine(5_000, 'moved'),
+            [`${MERGE_BASE}:${copiedFromPath}`]: sizedLine(5_000, 'copied'),
+            [`${HEAD}:${copiedPath}`]: sizedLine(5_000, 'copied'),
+            [`${HEAD}:${addedPath}`]: sizedLine(5_000, 'added'),
+            [`${MERGE_BASE}:AGENTS.md`]: sizedLine(3_000, 'agents'),
+            [`${MERGE_BASE}:.agents/decisions/README.md`]: sizedLine(3_000, 'decisions'),
+        };
+        const hunks = new Map<string, PathHunks>([
+            [specPath, { path: specPath, before: oneLineHunks(3, 42), after: oneLineHunks(3, 42) }],
+            ...unrelatedSpecPaths.map((path): [string, PathHunks] => [
+                path,
+                { path, before: oneLineHunks(2, 13), after: oneLineHunks(2, 13) },
+            ]),
+            [subjectPath, { path: subjectPath, before: oneLineHunks(2, 1), after: oneLineHunks(2, 24) }],
+            [dependencyPath, { path: dependencyPath, before: oneLineHunks(1, 1), after: oneLineHunks(1, 2) }],
+            [deletedPath, { path: deletedPath, before: oneLineHunks(1, 1), after: [] }],
+            [overCeilingPath, { path: overCeilingPath, before: oneLineHunks(1, 1), after: oneLineHunks(1, 1) }],
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs, hunks }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        const ownSides = (path: string): readonly string[] =>
+            planned.units.find((unit) => unit.path === path)?.evidence.own.map((reference) => reference.side) ?? [];
+        // The three units the promotion starved are planned, each from its own side.
+        expect(ownSides(deletedPath)).toEqual(['before']);
+        expect(ownSides(overCeilingPath)).toEqual(['before']);
+        expect(ownSides(specPath)).toEqual(['before', 'before', 'before']);
+        // The four unrelated collected specs keep the room the covered sources used to take.
+        expect(unrelatedSpecPaths.every((path) => ownSides(path).length > 0)).toBe(true);
+        // The source is paired with its coverer at the pair's largest side figure, so both of its sides sit at
+        // one position behind the unrelated specs, and the source stays ahead of the spec that covers it.
+        const admittedPaths = set.references.map((reference) => reference.path);
+        const refIndex = (path: string, side: 'before' | 'after'): number =>
+            set.references.findIndex((reference) => reference.path === path && reference.side === side);
+        expect(refIndex(unrelatedSpecPaths[0] ?? '', 'before')).toBeLessThan(refIndex(subjectPath, 'before'));
+        expect(refIndex(unrelatedSpecPaths[0] ?? '', 'after')).toBeLessThan(refIndex(subjectPath, 'after'));
+        expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(specPath));
+    });
+
+    it('keeps a source ahead of every spec that covers it when two contract-carrying specs share it', () => {
+        // Two contract-carrying specs cover one source, and one of them carries the larger figure. The source
+        // must be admitted ahead of both — the spec it shares a position with and the other one — so this case
+        // reads the shape where the larger spec is not the one that decides its order.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { shared } from '../shared.ts';\n";
+        const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaShared.spec.ts';
+        const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzShared.spec.ts';
+        const subjectPath = 'scripts/semanticReview/shared.ts';
+
+        // `zzzShared` carries the smaller figure: 60,000 bytes against `aaaShared`'s 72,000. The source
+        // carries 48,000 bytes of its own hunks, so the binding total leaves it no room to spare: it survives
+        // only by being admitted ahead of the spec that carries the larger figure.
+        const zzzAfter = `${workflowLine}${importLine}${sizedLines(5, 12_000, 'zzz')}`;
+        const aaaAfter = `${workflowLine}${importLine}${sizedLines(6, 12_000, 'aaa')}`;
+        const subjectAfter = sizedLines(4, 12_000, 'shared');
+        const files = [
+            changedFile(aaaSpecPath, { kind: 'added', added: 8, deleted: 0 }),
+            changedFile(zzzSpecPath, { kind: 'added', added: 7, deleted: 0 }),
+            changedFile(subjectPath, { kind: 'added', added: 4, deleted: 0 }),
+        ];
+        const hunks = new Map<string, PathHunks>([
+            [aaaSpecPath, { path: aaaSpecPath, before: [], after: oneLineHunks(3, 6) }],
+            [zzzSpecPath, { path: zzzSpecPath, before: [], after: oneLineHunks(3, 5) }],
+            [subjectPath, { path: subjectPath, before: [], after: oneLineHunks(1, 4) }],
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                hunks,
+                blobs: {
+                    [`${HEAD}:${aaaSpecPath}`]: aaaAfter,
+                    [`${HEAD}:${zzzSpecPath}`]: zzzAfter,
+                    [`${HEAD}:${subjectPath}`]: subjectAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        // The source precedes the smaller spec in the reference order, and the larger spec's unit is withheld
+        // once the source is admitted.
+        const admittedPaths = set.references.map((reference) => reference.path);
+        expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(zzzSpecPath));
+        expect(set.withheldSides.own.get(aaaSpecPath)).toContain('after');
+        // And it survives the binding total whole: its after side is not withheld once the source is admitted
+        // ahead of the spec that carries the larger figure.
+        expect(set.withheldSides.own.get(subjectPath)).toBeUndefined();
+    });
+
+    it('keeps each side of a covered source ahead of every coverer when the coverers cross per side', () => {
+        // The fixture builds three modified files: two contract-carrying specs that both import the source,
+        // and the source they cover. `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the
+        // smallest after side, so the two coverers' minimal sides cross. The assertions read the shape the
+        // case's name states on both sides: each source side precedes every coverer side.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { asym } from '../asymSource.ts';\n";
+        const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaBeforeMin.spec.ts';
+        const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzAfterMin.spec.ts';
+        const subjectPath = 'scripts/semanticReview/asymSource.ts';
+
+        // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side, so their
+        // minima cross; every side is charged whole. The case name is the assertion below.
+        const aaaBefore = `${workflowLine}${importLine}`;
+        const aaaAfter = `${workflowLine}${importLine}${'y'.repeat(2_000)}`;
+        const zzzBefore = `${workflowLine}${importLine}${'y'.repeat(1_500)}`;
+        const zzzAfter = `${workflowLine}${importLine}${'y'.repeat(100)}`;
+        const subjectSide = 'y'.repeat(20);
+        const set = collectEvidence({
+            port: fakeSource({
+                files: [changedFile(aaaSpecPath), changedFile(zzzSpecPath), changedFile(subjectPath)],
+                blobs: {
+                    [`${MERGE_BASE}:${aaaSpecPath}`]: aaaBefore,
+                    [`${HEAD}:${aaaSpecPath}`]: aaaAfter,
+                    [`${MERGE_BASE}:${zzzSpecPath}`]: zzzBefore,
+                    [`${HEAD}:${zzzSpecPath}`]: zzzAfter,
+                    [`${MERGE_BASE}:${subjectPath}`]: subjectSide,
+                    [`${HEAD}:${subjectPath}`]: subjectSide,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        const refIndex = (path: string, side: 'before' | 'after'): number =>
+            set.references.findIndex((reference) => reference.path === path && reference.side === side);
+        // The source's before side precedes both coverers' before sides, and its after side precedes both
+        // coverers' after sides.
+        expect(refIndex(subjectPath, 'before')).toBeLessThan(refIndex(aaaSpecPath, 'before'));
+        expect(refIndex(subjectPath, 'before')).toBeLessThan(refIndex(zzzSpecPath, 'before'));
+        expect(refIndex(subjectPath, 'after')).toBeLessThan(refIndex(aaaSpecPath, 'after'));
+        expect(refIndex(subjectPath, 'after')).toBeLessThan(refIndex(zzzSpecPath, 'after'));
+    });
+
+    it('keeps a source larger than every coverer ahead of every coverer when the paired coverer is not the first path', () => {
+        // A source larger than all of its coverers is the largest member of every pair it forms, so its own
+        // figure is the key every coverer ties. It takes the position of the lexicographically first coverer,
+        // which is not the coverer it is paired with for its figure, and a coverer whose path sorts before the
+        // paired coverer's still orders after the source — so the anchor choice is what keeps the source ahead
+        // of a coverer the pair's own path would not.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { shared } from '../shared.ts';\n";
+        const anchorSpecPath = 'scripts/semanticReview/__tests__/aaaAnchor.spec.ts';
+        const bigSpecPath = 'scripts/semanticReview/__tests__/bbbBig.spec.ts';
+        const smallSpecPath = 'scripts/semanticReview/__tests__/cccSmall.spec.ts';
+        const sourcePath = 'scripts/semanticReview/shared.ts';
+        const changed: SemanticChangedFile[] = [
+            { path: anchorSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: bigSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: smallSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const specSide = `${workflowLine}${importLine}`;
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [anchorSpecPath, { before: specSide, after: specSide }],
+            [bigSpecPath, { before: specSide, after: specSide }],
+            [smallSpecPath, { before: specSide, after: specSide }],
+            [sourcePath, { before: 'export const shared = 1;\n', after: 'export const shared = 1;\n' }],
+        ]);
+        // `cccSmall` is the coverer the source is paired with (its largest side, 100, is the smallest);
+        // `bbbBig` carries the largest figure; `aaaAnchor` is neither, and is the lexicographically first
+        // coverer. The source's own 1,000-byte figure is the largest, so all four key at 1,000, and the
+        // source's position is the anchor's path.
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [anchorSpecPath, { before: 300, after: 300 }],
+            [bigSpecPath, { before: 500, after: 500 }],
+            [smallSpecPath, { before: 100, after: 100 }],
+            [sourcePath, { before: 1_000, after: 1_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [anchorSpecPath, { before: true, after: true }],
+            [bigSpecPath, { before: true, after: true }],
+            [smallSpecPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(sourcePath, 'before')).toBeLessThan(index(anchorSpecPath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(bigSpecPath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(smallSpecPath, 'before'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(anchorSpecPath, 'after'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(bigSpecPath, 'after'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(smallSpecPath, 'after'));
+    });
+
+    it("keys a covered source smaller than its spec at the spec's larger figure and still plans it", () => {
+        // A covered source smaller than its spec ranks at the pair's larger figure — the spec's — never its
+        // own smaller one, so it competes where the spec ranks rather than ahead of unrelated material the
+        // spec itself does not outrank. The three probes land behind the two unrelated specs, and the binding
+        // local total still admits the 9,000-byte source's unit because the pair's position leaves it room.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverImports =
+            "import { a } from '../probeA.ts';\nimport { b } from '../probeB.ts';\nimport { c } from '../probeC.ts';\n";
+        const padded = (bytes: number, ...parts: readonly string[]): string => {
+            const prefix = parts.join('');
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - Buffer.byteLength(prefix, 'utf8')))}`;
+        };
+        const coverSpecPath = 'scripts/semanticReview/__tests__/aaCover.spec.ts';
+        const otherSpecPaths = [
+            'scripts/semanticReview/__tests__/bbOther.spec.ts',
+            'scripts/semanticReview/__tests__/ccOther.spec.ts',
+        ];
+        const probeAPath = 'scripts/semanticReview/probeA.ts';
+        const probeBPath = 'scripts/semanticReview/probeB.ts';
+        const probeCPath = 'scripts/semanticReview/probeC.ts';
+
+        const coverSide = padded(16_160, workflowLine, coverImports);
+        const otherSide = padded(16_058, workflowLine);
+        const files = [
+            changedFile(coverSpecPath),
+            ...otherSpecPaths.map((path) => changedFile(path)),
+            changedFile(probeAPath),
+            changedFile(probeBPath),
+            changedFile(probeCPath),
+        ];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${coverSpecPath}`]: coverSide,
+            [`${HEAD}:${coverSpecPath}`]: coverSide,
+            [`${MERGE_BASE}:${probeAPath}`]: padded(13_000),
+            [`${HEAD}:${probeAPath}`]: padded(13_000),
+            [`${MERGE_BASE}:${probeBPath}`]: padded(9_000),
+            [`${HEAD}:${probeBPath}`]: padded(9_000),
+            [`${MERGE_BASE}:${probeCPath}`]: padded(500),
+            [`${HEAD}:${probeCPath}`]: padded(500),
+            ...Object.fromEntries(
+                otherSpecPaths.flatMap((path) => [
+                    [`${MERGE_BASE}:${path}`, otherSide],
+                    [`${HEAD}:${path}`, otherSide],
+                ])
+            ),
+        };
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        const refIndex = (path: string): number => set.references.findIndex((reference) => reference.path === path);
+        // The pair's 16,160-byte figure sits above the unrelated specs' 16,058, so the unrelated specs are
+        // admitted ahead of the 9,000-byte source rather than behind it.
+        expect(refIndex(otherSpecPaths[0] ?? '')).toBeLessThan(refIndex(probeBPath));
+        // And the source still plans: the total admits its unit after the unrelated specs instead of starving it.
+        expect(planned.units.some((unit) => unit.path === probeBPath)).toBe(true);
+        expect(
+            planned.excluded.some((entry) => entry.path === probeBPath && entry.reason === 'no-admissible-evidence')
+        ).toBe(false);
+    });
+
+    it('keeps an added covered source ahead of every side of the spec that covers it', () => {
+        // An added source has only an after side, and its coverer's before side is cheaper. The case reads
+        // that the source's after side is admitted ahead of both of the coverer's sides whatever the
+        // coverer's own per-side figures are.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/offside.spec.ts';
+        const sourcePath = 'scripts/semanticReview/offsideSource.ts';
+        const specSide = `${workflowLine}import { s } from '../offsideSource.ts';\n`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [sourcePath, { after: 'export const s = 1;\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 1_000, after: 10_000 }],
+            [sourcePath, { before: 0, after: 5_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'before'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'after'));
+    });
+
+    it('keeps covered sources that key at one pair figure in their own size order', () => {
+        // Every source here is smaller than the one spec that covers all three, so all three key at the
+        // coverer's own figure and share one position. The case reads that they keep their own ascending size
+        // order there: the smallest source is attempted first, so the plan keeps as much as the merge base
+        // did.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/smallCover.spec.ts';
+        const sourcePaths = ['a', 'b', 'c'].map((name) => `scripts/semanticReview/${name}.ts`);
+        const coverAfter = `${workflowLine}${sourcePaths.map((path) => `import { x } from '../${path.split('/').pop()}';\n`).join('')}`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            ...sourcePaths.map((path): SemanticChangedFile => ({
+                path,
+                kind: 'added',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 0,
+            })),
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { after: coverAfter }],
+            ...sourcePaths.map((path): [string, { before?: string; after?: string }] => [
+                path,
+                { after: 'export const x = 1;\n' },
+            ]),
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 0, after: 80_000 }],
+            [sourcePaths[0] ?? '', { before: 0, after: 40_000 }],
+            [sourcePaths[1] ?? '', { before: 0, after: 20_000 }],
+            [sourcePaths[2] ?? '', { before: 0, after: 10_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: false, after: true }],
+            ...sourcePaths.map((path): [string, ContractCarryingSides] => [path, { before: false, after: false }]),
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const sourceOrder = units
+            .filter((unit) => unit.kind === 'changed' && !unit.file.path.endsWith('.spec.ts'))
+            .map((unit) => (unit.kind === 'changed' ? unit.file.path.split('/').pop() : ''));
+        expect(sourceOrder).toEqual(['c.ts', 'b.ts', 'a.ts']);
+    });
+
+    it('keys a source larger than its coverer at its own figure, behind an unrelated spec between them', () => {
+        // The pair key is the larger of the source's own figure and the coverer's, never the coverer's alone.
+        // The case reads a source larger than its coverer: it is attempted behind an unrelated spec whose
+        // figure sits between them, while the coverer stays after the source.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/cover.spec.ts';
+        const unrelatedPath = 'scripts/semanticReview/__tests__/unrelated.spec.ts';
+        const sourcePath = 'scripts/semanticReview/src.ts';
+        const specSide = `${workflowLine}import { s } from '../src.ts';\n`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: unrelatedPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [unrelatedPath, { before: workflowLine, after: workflowLine }],
+            [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 100, after: 100 }],
+            [unrelatedPath, { before: 500, after: 500 }],
+            [sourcePath, { before: 1_000, after: 1_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: true, after: true }],
+            [unrelatedPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(unrelatedPath, 'before')).toBeLessThan(index(sourcePath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
+    });
+
+    it("admits a covered source at its coverer's position before an equal-figure contract-needing unit", () => {
+        // The fixture builds a covered bulk source whose own side carries 1,000 bytes under a contract-carrying
+        // spec whose side carries 4,000, and an added path whose rules need a contract and whose side carries
+        // the same 4,000 bytes the source's position takes. The competitor's path sorts before the position the
+        // source takes, so the two units differ at nothing else the comparison reaches before the tiers: the
+        // tier the coverage promotion earns is what decides, and the case reads the competitor's unit class
+        // against the source's, their shared figure, and that the source is ordered first.
+        const coverPath = 'scripts/semanticReview/__tests__/coverAll.spec.ts';
+        const sourcePath = 'scripts/bulkSource.ts';
+        const competitorPath = 'electron/aShape.ts';
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const pad = (bytes: number, ...prefix: readonly string[]): string => {
+            const head = prefix.join('');
+            return `${head}${'y'.repeat(bytes - Buffer.byteLength(head))}`;
+        };
+        const coverSide = pad(4_000, workflowLine, "import { b } from '../../bulkSource.ts';\n");
+        const sourceSide = pad(1_000, 'export const b = 1;\n');
+        const competitorSide = pad(4_000, 'const value = 1;\n');
+        const files: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            { path: competitorPath, kind: 'added', binary: false, generated: false, added: 250, deleted: 0 },
+        ];
+        const port = fakeSource({
+            files,
+            blobs: {
+                [`${HEAD}:${coverPath}`]: coverSide,
+                [`${HEAD}:${sourcePath}`]: sourceSide,
+                [`${HEAD}:${competitorPath}`]: competitorSide,
+            },
+        });
+        const contents = readChangedContents(port, MERGE_BASE, HEAD, files);
+        const hunks = new Map<string, PathHunks>();
+        const bytesBySide = admissionBytesBySide(files, contents, hunks, 100_000, MERGE_BASE, HEAD);
+        const sidesByPath = classifyContractCarryingSides(files, contents);
+        const covered = specCoveredSources(files, contents, bytesBySide);
+        const units = admissionUnits(
+            files,
+            sidesByPath,
+            bytesBySide,
+            [],
+            covered,
+            new Set(files.map((entry) => entry.path))
+        );
+        const sideUnits = units.filter((unit): unit is ChangedSideUnit => unit.kind === 'changed');
+        const sourceUnit = sideUnits.find((unit) => unit.file.path === sourcePath);
+        const competitorUnit = sideUnits.find((unit) => unit.file.path === competitorPath);
+        if (sourceUnit === undefined || competitorUnit === undefined) {
+            throw new Error('both the covered source and the competitor must produce a unit');
+        }
+        // The competitor's unit needs a contract and carries none, the source's unit carries none and is
+        // covered by a spec that does, and the two units share one figure.
+        expect(unitNeedsContractContext(applicableRules([competitorPath]))).toBe(true);
+        expect(unitNeedsContractContext(applicableRules([coverPath]))).toBe(true);
+        expect(covered.get(sourcePath)).toEqual([coverPath]);
+        expect(sourceUnit.specCovered).toBe(true);
+        expect(sourceUnit.contractNeeding).toBe(true);
+        expect(sourceUnit.contractCarrying).toBe(false);
+        expect(competitorUnit.specCovered).toBe(false);
+        expect(competitorUnit.contractNeeding).toBe(true);
+        expect(competitorUnit.contractCarrying).toBe(false);
+        expect(sourceUnit.order.admissionBytes).toBe(competitorUnit.order.admissionBytes);
+        expect(sourceUnit.order.path).toBe(coverPath);
+        expect(sidesByPath.get(sourcePath)?.after).toBe(false);
+        expect(compareAdmissionUnits(sourceUnit, competitorUnit)).toBeLessThan(0);
+        expect(sideUnits.indexOf(sourceUnit)).toBeLessThan(sideUnits.indexOf(competitorUnit));
+        const set = collectEvidence({
+            port,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 100_000, maxTotalBytes: 8_500 },
+        });
+        expect(set.references.map((reference) => reference.path)).toContain(sourcePath);
+        expect(set.references.map((reference) => reference.path)).not.toContain(competitorPath);
+        expect(
+            set.truncated.some(
+                (entry) => entry.path === competitorPath && entry.reason === 'total-evidence-budget-exhausted (after)'
+            )
+        ).toBe(true);
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        expect(planned.units.some((unit) => unit.path === sourcePath)).toBe(true);
+    });
+
+    it('orders two equal-figure covered sources by their own paths whatever order the caller lists them', () => {
+        // Two sources keyed at their shared coverer's figure, with equal figures of their own, so they reach
+        // one position with nothing between them but their own paths. The case lists them in both orders and
+        // reads that the lexicographically first is ordered first each way: the order the caller lists the
+        // change's files in does not decide it.
+        const coverPath = 'scripts/semanticReview/__tests__/equalCover.spec.ts';
+        const aPath = 'scripts/semanticReview/equalA.ts';
+        const bPath = 'scripts/semanticReview/equalB.ts';
+        const coverAfter = `const workflow = '.github/workflows/semantic-review.yml';\nimport { a } from '../equalA.ts';\nimport { b } from '../equalB.ts';\n`;
+        const changed = (paths: readonly string[]): SemanticChangedFile[] => [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            ...paths.map((path): SemanticChangedFile => ({
+                path,
+                kind: 'added',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 0,
+            })),
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { after: coverAfter }],
+            [aPath, { after: 'export const a = 1;\n' }],
+            [bPath, { after: 'export const b = 1;\n' }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: false, after: true }],
+            [aPath, { before: false, after: false }],
+            [bPath, { before: false, after: false }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 0, after: 40_000 }],
+            [aPath, { before: 0, after: 20_000 }],
+            [bPath, { before: 0, after: 20_000 }],
+        ]);
+        const orderedSources = (paths: readonly string[]): readonly ChangedSideUnit[] => {
+            const files = changed(paths);
+            const units = admissionUnits(
+                files,
+                sidesByPath,
+                bytesBySide,
+                [],
+                specCoveredSources(files, contents, bytesBySide),
+                new Set(files.map((file) => file.path))
+            );
+            const sourceUnits = units.filter(
+                (unit): unit is ChangedSideUnit => unit.kind === 'changed' && unit.file.path !== coverPath
+            );
+            const [first, second] = sourceUnits;
+            if (first === undefined || second === undefined) {
+                throw new Error('both covered sources must produce a unit');
+            }
+            expect(compareAdmissionUnits(first, second)).toBeLessThan(0);
+            return sourceUnits;
+        };
+        for (const listed of [
+            [bPath, aPath],
+            [aPath, bPath],
+        ]) {
+            const ordered = orderedSources(listed);
+            // Each source is covered by the one spec, takes its position, and carries no figure of its own, so
+            // nothing but their own paths orders them.
+            for (const unit of ordered) {
+                expect(unit.specCovered).toBe(true);
+                expect(unit.order.path).toBe(coverPath);
+                expect(unit.contractCarrying).toBe(false);
+            }
+            expect(ordered.map((unit) => unit.file.path)).toEqual([aPath, bPath]);
+        }
+    });
+
+    it('lets an unrelated spec take the order from a covered source whose pair key ties its byte figure', () => {
+        // The pair's key ties an unrelated collected spec's figure, and the unrelated spec's path sorts before
+        // the pair's anchor path. The case reads the disclosed consequence of a covered source competing at
+        // its anchor's position rather than at the front of the tier: the unrelated spec takes the earlier
+        // position and is attempted ahead of the covered source.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { v } from '../bulkVal.ts';\n";
+        const unrelatedSpecPath = 'scripts/semanticReview/__tests__/aUnrelated.spec.ts';
+        const anchorSpecPath = 'scripts/semanticReview/__tests__/zzAnchor.spec.ts';
+        const sourcePath = 'scripts/semanticReview/bulkVal.ts';
+        // Each spec side carries the same 2,000-byte figure, so the pair's key ties the unrelated spec's own
+        // figure; the source's own 20-byte figure is the smaller member of the pair.
+        const anchorSide = `${workflowLine}${importLine}${'y'.repeat(2_000 - Buffer.byteLength(workflowLine) - Buffer.byteLength(importLine))}`;
+        const unrelatedSide = `${workflowLine}${'y'.repeat(2_000 - Buffer.byteLength(workflowLine))}`;
+        const files = [changedFile(anchorSpecPath), changedFile(unrelatedSpecPath), changedFile(sourcePath)];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${anchorSpecPath}`]: anchorSide,
+            [`${HEAD}:${anchorSpecPath}`]: anchorSide,
+            [`${MERGE_BASE}:${unrelatedSpecPath}`]: unrelatedSide,
+            [`${HEAD}:${unrelatedSpecPath}`]: unrelatedSide,
+            [`${MERGE_BASE}:${sourcePath}`]: 'y'.repeat(20),
+            [`${HEAD}:${sourcePath}`]: 'y'.repeat(20),
+        };
+        const port = fakeSource({ files, blobs });
+        const contents = readChangedContents(port, MERGE_BASE, HEAD, files);
+        const hunks = new Map<string, PathHunks>();
+        const bytesBySide = admissionBytesBySide(files, contents, hunks, 1_000_000, MERGE_BASE, HEAD);
+        const sidesByPath = classifyContractCarryingSides(files, contents);
+        // Both keys are 2,000 bytes, so the tie is real and the two paths are what separate them.
+        expect(bytesBySide.get(unrelatedSpecPath)?.before).toBe(2_000);
+        expect(bytesBySide.get(anchorSpecPath)?.before).toBe(2_000);
+        expect(bytesBySide.get(sourcePath)?.before).toBe(20);
+        const covered = specCoveredSources(files, contents, bytesBySide);
+        expect(covered.get(sourcePath)).toEqual([anchorSpecPath]);
+        const units = admissionUnits(
+            files,
+            sidesByPath,
+            bytesBySide,
+            [],
+            covered,
+            new Set(files.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(unrelatedSpecPath, 'before')).toBeLessThan(index(sourcePath, 'before'));
+        expect(index(unrelatedSpecPath, 'before')).toBeLessThan(index(anchorSpecPath, 'before'));
+        const set = collectEvidence({
+            port,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        // The planner lists its units in path order, so the pair's place in the plan reads the same either
+        // way; what the plan carries is that the unrelated spec precedes the covered source there too, with
+        // the source and its coverer both planned.
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        const plannedIndex = (path: string): number => planned.units.findIndex((unit) => unit.path === path);
+        expect(plannedIndex(unrelatedSpecPath)).toBeLessThan(plannedIndex(sourcePath));
+        expect(plannedIndex(unrelatedSpecPath)).toBeLessThan(plannedIndex(anchorSpecPath));
+        expect(planned.units.some((unit) => unit.path === sourcePath)).toBe(true);
+        expect(planned.units.some((unit) => unit.path === anchorSpecPath)).toBe(true);
+    });
+
+    it('keeps a contract-carrying covered source in its own bucket, not demoted behind a larger contract path', () => {
+        // F1: a closure member is contract-carrying by its own content, and the covering spec's path bounded it
+        // above a much larger workflow file. The case reads that the source is attempted ahead of that
+        // workflow file despite the file's size.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const sourcePath = 'scripts/deliverPullRequest.ts';
+        const coverPath = 'scripts/__tests__/deliverPullRequest.spec.ts';
+        const workflowPath = '.github/workflows/validation.yml';
+        const changed: SemanticChangedFile[] = [
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: workflowPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const specSide = `${workflowLine}import { deliver } from '../deliverPullRequest.ts';\n`;
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [sourcePath, { before: 'export const deliver = 1;\n', after: 'export const deliver = 1;\n' }],
+            [workflowPath, { before: 'name: validation\n', after: 'name: validation\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [sourcePath, { before: 5_000, after: 5_000 }],
+            [coverPath, { before: 2_000, after: 2_000 }],
+            [workflowPath, { before: 97_000, after: 97_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [sourcePath, { before: true, after: true }],
+            [coverPath, { before: true, after: true }],
+            [workflowPath, { before: true, after: true }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path);
+        expect(index(sourcePath)).toBeLessThan(index(workflowPath));
+    });
+
+    it('does not cover a source from a spec renamed or copied out of collection', () => {
+        // The destination path gates coverage, so a spec renamed or copied out of the test tree covers
+        // nothing even when either of its sides still imports the source; the source keeps its bulk rank.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const sourcePath = 'scripts/semanticReview/coveredSource.ts';
+        const beforeContent = `${workflowLine}import { s } from '../semanticReview/coveredSource.ts';\n`;
+        const afterContent = `${workflowLine}import { s } from '../scripts/semanticReview/coveredSource.ts';\n`;
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            ['tools/renamed.ts', { before: 100, after: 100 }],
+            ['tools/copied.ts', { before: 100, after: 100 }],
+            [sourcePath, { before: 100, after: 100 }],
+        ]);
+        const renamed: SemanticChangedFile[] = [
+            {
+                path: 'tools/renamed.ts',
+                previousPath: 'scripts/__tests__/renamed.spec.ts',
+                kind: 'renamed',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 1,
+            },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const renamedContents = new Map<string, { before?: string; after?: string }>([
+            ['tools/renamed.ts', { before: beforeContent, after: afterContent }],
+            [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
+        ]);
+        expect(specCoveredSources(renamed, renamedContents, bytesBySide).get(sourcePath)).toBeUndefined();
+
+        const copied: SemanticChangedFile[] = [
+            {
+                path: 'tools/copied.ts',
+                previousPath: 'scripts/__tests__/copied.spec.ts',
+                kind: 'copied',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 1,
+            },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const copiedContents = new Map<string, { before?: string; after?: string }>([
+            ['tools/copied.ts', { before: beforeContent, after: afterContent }],
+            [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
+        ]);
+        expect(specCoveredSources(copied, copiedContents, bytesBySide).get(sourcePath)).toBeUndefined();
+    });
+
+    it('names the plan-level starvation a coverer can inflict on a source it covers', () => {
+        // The attempt order is per unit but the total is charged per region, so a carried source attempted
+        // ahead of its coverer can still be withheld when its larger regions do not fit the leftover while the
+        // coverer's smaller regions do. The plan then holds the spec without the source it covers — a limit the
+        // attempted-order guarantee discloses rather than promises away.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/starve.spec.ts';
+        const sourcePath = 'scripts/semanticReview/starvedSource.ts';
+        const specPaths = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'].map(
+            (name) => `scripts/semanticReview/__tests__/${name}.spec.ts`
+        );
+
+        const specSide = `${workflowLine}${sizedLine(10_047, 'spec')}`;
+        const coverAfter = `${workflowLine}import { s } from '../starvedSource.ts';\n${sizedLines(20, 1_003, 'cover')}`;
+        const sourceAfter = sizedLines(2, 9_990, 'source');
+        const files: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 21, deleted: 0 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 2, deleted: 0 },
+            ...specPaths.map((path) => changedFile(path)),
+        ];
+        const blobs: Record<string, string> = {
+            [`${HEAD}:${coverPath}`]: coverAfter,
+            [`${HEAD}:${sourcePath}`]: sourceAfter,
+            ...Object.fromEntries(
+                specPaths.flatMap((path) => [
+                    [`${MERGE_BASE}:${path}`, specSide],
+                    [`${HEAD}:${path}`, specSide],
+                ])
+            ),
+        };
+        const hunks = new Map<string, PathHunks>([
+            [coverPath, { path: coverPath, before: [], after: oneLineHunks(3, 20) }],
+            [sourcePath, { path: sourcePath, before: [], after: oneLineHunks(1, 2) }],
+            ...specPaths.map((path): [string, PathHunks] => [
+                path,
+                { path, before: oneLineHunks(2, 1), after: oneLineHunks(2, 1) },
+            ]),
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs, hunks }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        // The source is attempted ahead of its coverer but its 9,990-byte hunks do not fit the leftover left
+        // by the six specs, while the coverer's 1,003-byte hunks do.
+        expect(
+            planned.excluded.some((entry) => entry.path === sourcePath && entry.reason === 'no-admissible-evidence')
+        ).toBe(true);
+        expect(planned.units.some((unit) => unit.path === coverPath)).toBe(true);
+    });
+
+    it('keeps a deleted covered source ahead of a modified coverer whose cheaper side is its after side', () => {
+        // The source is deleted, so its only side is before, while the coverer's cheaper side is its after.
+        // The case reads that the source's before unit is admitted ahead of both of the coverer's sides, its
+        // cheaper side included.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/afterFloor.spec.ts';
+        const sourcePath = 'scripts/semanticReview/afterFloorSource.ts';
+        const specSide = `${workflowLine}import { s } from '../afterFloorSource.ts';\n`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'deleted', binary: false, generated: false, added: 0, deleted: 1 },
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [sourcePath, { before: 'export const s = 1;\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 10_000, after: 1_000 }],
+            [sourcePath, { before: 5_000, after: 0 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'after'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
     });
 
     it('names a withheld region by its own content class rather than its admission tier', () => {
@@ -2544,9 +3475,9 @@ describe('admission ordering follows the side that carries the contract', () => 
     it('admits a contract side before a bulk side of another change regardless of file order', () => {
         // A rename out of `AGENTS.md` is contract on its before side and bulk on its 1700-byte after
         // side. Ordering the whole path by the union of the two classes admitted the bulk after side
-        // first; ordering by one representative side ranked the whole path bulk. Ordering each admitted
-        // side by its own class admits the contract before side first (non-spec before spec), admits the
-        // closure-importing spec's sides, and withholds the bulk after side without the contract term.
+        // first; ordering by one representative side ranked the whole path bulk. Each admitted side now
+        // carries its own class, so the case reads that the contract before side and the closure-importing
+        // spec's sides are admitted and the bulk after side is withheld.
         const docBefore = '# AGENTS.md\n';
         const bulkAfter = 'const bulk = 1;\n'.repeat(106);
         const specSide = closureImport;
@@ -4443,15 +5374,14 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('linear_client_secret=', "'", 'a'.repeat(32), "'"))).toBeDefined();
     });
 
-    it('withholds a secret value under the delimiter and terminator forms it reads, and admits the escaped-newline form', () => {
+    it('withholds a secret value under the delimiter and terminator forms the scanner reads', () => {
         // The scanner's generic key rule flags a secret under a single, triple, or backtick delimiter,
         // and it treats each delimiter as an independent boundary, so a mismatched pair such as `'…"` is
-        // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, a newline, or
-        // end of input, and its opening run is up to four delimiters, so those closings and a four-quote
-        // run are withheld too. A nested delimiter ends the run, so `'''…"…'''` stops at the inner `"`
-        // and is admitted; an escaped delimiter also stops the run and is admitted. The escaped-newline
-        // terminator is deliberately not modelled (see #4579), so that form is admitted, not withheld;
-        // this case therefore does not claim to cover every form the scanner reads.
+        // also flagged. Its terminator is any single delimiter, whitespace, a semicolon, an escaped
+        // newline, or end of input, and its opening run is up to five of a delimiter, whitespace, or
+        // `=`, so those closings and a four-quote run are withheld too. A nested delimiter ends the
+        // run, so `'''…"…'''` stops at the inner `"` and is admitted; an escaped delimiter also stops
+        // the run and is admitted. Every expectation here matches the pinned binary's verdict.
         const value = 'Ab3dEf7hIj2lMn4pQr5tUv6xYz0Lm9Nq1Rs8Tp';
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "'"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''", value, "'''"))).toBeDefined();
@@ -4465,12 +5395,18 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, ';'))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, "''''"))).toBeDefined();
         expect(sensitiveContentReason(secretFixture('client_secret = ', "''''", value))).toBeDefined();
+        // The opening-run ceiling is five characters shared with the whitespace after the operator, so
+        // five quotes after a space exceed it and are admitted (the pinned binary agrees), while five
+        // quotes with no space fit the ceiling and are withheld; six quotes always exceed it.
         expect(sensitiveContentReason(secretFixture('client_secret = ', "'''''", value))).toBeUndefined();
-        // The escaped-newline terminator is deliberately not modelled (the scanner pairs it with an
-        // entropy gate and a value allowlist the screen cannot apply), so these stay admitted and the
-        // leak is deferred to #4579.
-        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\n'))).toBeUndefined();
-        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\r'))).toBeUndefined();
+        expect(sensitiveContentReason(secretFixture('client_secret =', "'''''", value))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret =', "''''''", value))).toBeUndefined();
+        // An escaped newline (`\n` or `\r` as two characters) is in the scanner's terminator set: the
+        // run stops at the backslash, so the captured value carries no escape and these are withheld
+        // (#4579 — previously the backslash rode into the value and the heuristic read it as an
+        // escaped fragment, so the pinned binary flagged the line while the screen admitted it).
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\n'))).toBeDefined();
+        expect(sensitiveContentReason(secretFixture('client_secret = ', "'", value, '\\r'))).toBeDefined();
         // A nested or escaped delimiter ends the run and is admitted.
         expect(
             sensitiveContentReason(
@@ -4480,6 +5416,131 @@ describe('the egress screen tells code from credentials', () => {
         expect(
             sensitiveContentReason(secretFixture('client_secret = ', '"Ab3dEf7hI\\"j2lMn4pQr5tUv6"'))
         ).toBeUndefined();
+    });
+
+    it('withholds a secret value under each operator the scanner reads, and admits ordinary code near them', () => {
+        // The scanner's operator alternation is `=|>|:{1,3}=|\|\||:|=>|\?=|,`, and its opening run also
+        // absorbs `=` and whitespace, so `==` and a spaced `= =` flag too. The screen read only `=` and
+        // `:`, so every other form carried an assigned secret to the provider (#4579). The 32-character
+        // value is composed at runtime for the same reason as the fixtures above. Every expectation in
+        // both lists was checked against the pinned binary: Gitleaks v8.30.1 with the repository's
+        // `.gitleaks.toml` reports each withheld line as generic-api-key and stays silent on each
+        // admitted one.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('apiKey := ', value),
+            secretFixture('token => ', value),
+            secretFixture('token, ', value),
+            secretFixture('token || ', value),
+            secretFixture('apiKey ?= ', value),
+            secretFixture('token == ', value),
+            secretFixture('token > ', value),
+            secretFixture('secret ::= ', value),
+            secretFixture('token == "', value, '"'),
+            secretFixture("token || '", value, "'"),
+            secretFixture("secret = = '", value, "'"),
+            secretFixture('apiKey = ', value),
+            secretFixture('apiKey : ', value),
+            secretFixture('secret = "', value, '"'),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // The same operators next to ordinary code stay admitted: a comparison with no secret-named
+        // key never reaches the rule, a short operand fails the value length gate, a bare mixed-case
+        // operand reads as a reference rather than key material, and a member access is code.
+        for (const line of [
+            'a == b',
+            'token == shortVal',
+            secretFixture('token == ', 'bLongerIdentifierValue'),
+            secretFixture('token > ', 'thresholdValueOnly'),
+            secretFixture('password || ', 'defaultPasswordValue'),
+            secretFixture('apiKey ?= ', 'config.apiKey'),
+            secretFixture('secret := ', '"short"'),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+    });
+
+    it('withholds a secret value across the key-to-operator gap the scanner reads, and admits ordinary code past it', () => {
+        // The scanner's gap between the keyword and the operator is `(?:[ \t\w.-]{0,20})[\s'"]{0,3}`:
+        // a bounded run that freely mixes word characters, dashes, dots, and spaces, then up to three
+        // mixed spaces or quotes. The screen read only word characters, at most one quote directly
+        // after the name, and whitespace, so a dash or dot riding the name (`token-helper`,
+        // `token.js`), a second quote (`token''`), a compound operator whose first half rides the
+        // gap while the scanner reads the second (`->`, `-=`, `.=`), and a quote-space mix before
+        // the operator each carried an assigned secret to the provider while the pinned binary
+        // flagged the line as generic-api-key (#4859). The 32-character value is composed at runtime
+        // for the same reason as the fixtures above, and every expectation in both lists was checked
+        // against the pinned binary: Gitleaks v8.30.1 with the repository's `.gitleaks.toml` flags
+        // each withheld line as generic-api-key and stays silent on each admitted one.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('token-helper = ', "'", value, "'"),
+            secretFixture('token.js = ', "'", value, "'"),
+            secretFixture("token'' = ", "'", value, "'"),
+            secretFixture('token -> ', "'", value, "'"),
+            secretFixture('token -= ', "'", value, "'"),
+            secretFixture('token .= ', "'", value, "'"),
+            secretFixture("token '= ", value),
+            secretFixture("token ' = ", value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // The widened gap next to ordinary code stays admitted: a dotted or dashed continuation
+        // assigned a call, an awaited call, a short operand, or a member access is code, not key
+        // material.
+        for (const line of [
+            'token.refresh = () => refresh()',
+            'auth-token = await getToken()',
+            'token.js = cfg.token',
+            'token-count = count()',
+            'token.refresh = this.refresh.bind(this)',
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+        // The quote run before the operator stays bounded at the scanner's three: four quotes, or a
+        // quote-space mix of four, exceed the scanner's own budget, and the pinned binary stays
+        // silent on both — so the screen admits them too rather than widening past the scanner.
+        expect(sensitiveContentReason(secretFixture("token'''' = ", "'", value, "'"))).toBeUndefined();
+        expect(sensitiveContentReason(secretFixture("token ' ' = ", value))).toBeUndefined();
+    });
+
+    it('withholds a secret assigned to a bare auth, creds, or access name, and still admits references', () => {
+        // The scanner's keyword alternation carries the bare words `access`, `auth`, `credential`,
+        // `creds`, and `key` alongside the compounded names; the screen kept only `credential` and
+        // the compounds, so `auth = '<secret>'` — among the commonest secret-variable names — and
+        // `my_aws_access = '<secret>'` reached the provider while the pinned binary flagged them as
+        // generic-api-key (#4859). Bare `auth`, `creds`, and `access` are secret names now; bare
+        // `key` and `api` stay excluded for the reasons recorded above. The value heuristic, not
+        // the name, separates the secrets from the references below, and every expectation was
+        // checked against the pinned binary.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('creds = ', "'", value, "'"),
+            secretFixture('auth = ', "'", value, "'"),
+            secretFixture('my_aws_access = ', "'", value, "'"),
+            secretFixture('auth_header = ', "'", value, "'"),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // A call, a reference, a short string, or a member access assigned to the same names is
+        // ordinary code and stays admitted; the pinned binary is silent on each.
+        for (const line of [
+            'auth = getAuth()',
+            'creds = credentials',
+            'creds = loadCredentials()',
+            secretFixture('auth_header = ', "'Authorization'"),
+            'my_aws_access = awsAccessReference',
+            'access.token = readAccessToken',
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+        // The accepted cost, the same shape as the `key` incident above: a long quoted single-word
+        // value on an identifier that merely contains one of these names is withheld even where the
+        // scanner's entropy gate stays silent, because the screen reads a quoted run as a value by
+        // construction and has no entropy test. Withholding a benign region costs one file's
+        // assessment; admitting a credential sends it to the provider.
+        expect(sensitiveContentReason("author = 'externalContributorName'")).toBeDefined();
     });
 
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {

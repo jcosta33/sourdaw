@@ -30,6 +30,7 @@ export type CanonicalTrackRoleProjection = {
         | 'conflicting-authored-roles'
         | 'structural-kind'
         | 'name-tokens'
+        | 'resolved-name-tags'
         | 'conflicting-name-tags'
         | 'stored-drum-voices'
         | 'missing-instrument-metadata'

@@ -88,6 +88,39 @@ describe('canonical track roles', () => {
         source.trackRoles = roles.map((role) => ({ trackId: 't', role }));
         expect(getCanonicalTrackRole(source)).toEqual({ role: 'unknown', source: 'authored', evidence });
     });
+    it.each(['Vocal', 'Vocals', 'Vox'])(
+        'keeps authored and structural authority above bare vocal names: %s',
+        (name) => {
+            const explicit = input(name);
+            explicit.trackRoles = [{ trackId: 't', role: 'pad' }];
+            expect(getCanonicalTrackRole(explicit)).toEqual({
+                role: 'pad',
+                source: 'authored',
+                evidence: 'authored-role',
+            });
+
+            const conflicting = input(name);
+            conflicting.trackRoles = [
+                { trackId: 't', role: 'kick' },
+                { trackId: 't', role: 'snare' },
+            ];
+            expect(getCanonicalTrackRole(conflicting)).toEqual({
+                role: 'unknown',
+                source: 'authored',
+                evidence: 'conflicting-authored-roles',
+            });
+
+            for (const kind of ['bus', 'master'] as const) {
+                const structural = input(name);
+                structural.track = { ...structural.track, kind };
+                expect(getCanonicalTrackRole(structural)).toEqual({
+                    role: kind,
+                    source: 'name-tags',
+                    evidence: 'structural-kind',
+                });
+            }
+        }
+    );
     it.each([
         ['Kick 01', 'kick'],
         ['SNARE top', 'snare'],
@@ -114,6 +147,99 @@ describe('canonical track roles', () => {
                 role: 'unknown',
                 source: 'name-tags',
                 evidence: 'conflicting-name-tags',
+            });
+        }
+    );
+    it.each([
+        { name: 'Kick Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Snare Drum', role: 'snare', evidence: 'resolved-name-tags' },
+        { name: 'Tom Drums', role: 'tom', evidence: 'resolved-name-tags' },
+        { name: 'Bass Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Bass Drums', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Synth Pad', role: 'pad', evidence: 'resolved-name-tags' },
+        { name: 'Synth Bass', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Vocals', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Vocal', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Vox', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Lead Vox', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Backing Vox', role: 'backing vocal', evidence: 'resolved-name-tags' },
+        { name: 'BGV', role: 'backing vocal', evidence: 'name-tokens' },
+        { name: 'Backing Vocals', role: 'backing vocal', evidence: 'name-tokens' },
+        { name: 'Bass Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drums', role: 'drums', evidence: 'name-tokens' },
+        { name: 'Synth', role: 'synth', evidence: 'name-tokens' },
+        { name: 'Kick', role: 'kick', evidence: 'name-tokens' },
+    ] as const)(
+        'resolves compound and bare vocal track names to a canonical role: $name',
+        ({ name, role, evidence }) => {
+            expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+        }
+    );
+    it.each([
+        { name: 'Kick-Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Bass_Drum', role: 'kick', evidence: 'resolved-name-tags' },
+        { name: 'Bass Synth', role: 'bass', evidence: 'resolved-name-tags' },
+        { name: 'Pad Synth', role: 'pad', evidence: 'resolved-name-tags' },
+        { name: 'Bass & Drums', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drums and Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass + Drums', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass Drum & Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass-Drum + Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass_Drum / Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass / Bass Drum', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Bass Drum and Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drums & Perc', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Synth & Guitar', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Synth Pad, Synth', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Pad Synth + Synth', role: 'unknown', evidence: 'conflicting-name-tags' },
+        { name: 'Drum Bass', role: 'unknown', evidence: 'conflicting-name-tags' },
+    ] as const)(
+        'resolves a compound only when the two roles are directly adjacent: $name',
+        ({ name, role, evidence }) => {
+            expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
+        }
+    );
+    it.each([
+        'Kick Drum & Vox',
+        'Bass Drum / Vocal',
+        'Synth Pad + Vocals',
+        'Vocals and Kick Drum',
+        'Kick Drum/Vocal',
+        'Vox, Bass Drum',
+        'Synth Pad & Vocal',
+        'Vocal + Pad Synth',
+        'Synth Lead Vocal + Vox',
+    ])('keeps independent bare vocal labels as conflicting name evidence: %s', (name) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({
+            role: 'unknown',
+            source: 'name-tags',
+            evidence: 'conflicting-name-tags',
+        });
+    });
+    it.each([
+        { name: 'Synth Lead Vocal', role: 'lead vocal' },
+        { name: 'Backing Vocals Synth', role: 'backing vocal' },
+    ] as const)('preserves qualified vocal synth compounds: $name', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({
+            role,
+            source: 'name-tags',
+            evidence: 'resolved-name-tags',
+        });
+    });
+    it.each([
+        { name: 'Vocal Vocal', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Vocals + Vox', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Lead Vocal Vox', role: 'lead vocal', evidence: 'name-tokens' },
+        { name: 'Lead Vox Vocal', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Backing Vocal Vox', role: 'backing vocal', evidence: 'name-tokens' },
+        { name: 'Background Vox Vocal', role: 'backing vocal', evidence: 'resolved-name-tags' },
+    ] as const)(
+        'does not treat repeated or consistently qualified vocal labels as conflicts: $name',
+        ({ name, role, evidence }) => {
+            expect(getCanonicalTrackRole(input(name))).toEqual({
+                role,
+                source: 'name-tags',
+                evidence,
             });
         }
     );

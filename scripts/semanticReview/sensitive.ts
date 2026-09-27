@@ -37,14 +37,24 @@
 import { EGRESS_VENDOR_SHAPES, VENDOR_KEY_NAMES } from './egressVendorShapes.ts';
 
 /**
- * A secret-named key: `account_key`, `apiKey`, `CLIENT_SECRET`, `auth-token`, `password`, plus the
- * vendor family names the scanner's keyword-proximity rules carry (`adafruit`, `datadog`, …).
+ * A secret-named key: `account_key`, `apiKey`, `CLIENT_SECRET`, `auth-token`, `password`, the bare
+ * `auth`, `creds`, and `access` the scanner's keyword alternation carries, plus the vendor family
+ * names the scanner's keyword-proximity rules carry (`adafruit`, `datadog`, …).
  *
  * A bare `key` is deliberately absent. Including it made the identifier `KEY` a secret name, so
  * `KEY = 'workflowFileInventory'` and `KEYS: Record<...>` read as credentials — and because a
  * withheld region is not sent at all, ordinary constant declarations took whole files out of the
- * assessment. The same exclusion is applied to the generic words (`key`, `api`, `access`, …) the
- * scanner's own keyword lists contain; only the vendor family names are derived.
+ * assessment. `key` sits inside too many ordinary identifiers (`keyboard`, `hotkey`) for the value
+ * heuristic to carry alone, and `api` stays out beside it: the scanner itself restricts that
+ * keyword's casing (`(?-i:[Aa]pi|API)`), and the word rides ordinary names like `rapid`.
+ *
+ * The other bare scanner keywords were restored after #4859: the pinned scanner flags
+ * `auth = '<secret>'`, `creds = …`, and `my_aws_access = …` as generic-api-key while the screen
+ * admitted them, so a secret under one of the commonest secret-variable names reached the provider.
+ * The value heuristic separates their references (`auth = getAuth()`, `creds = credentials`) from
+ * key material. The accepted cost is a long quoted single-word value on an identifier that merely
+ * contains one of these names (`author = 'externalContributorName'`): it is withheld where the
+ * scanner's entropy gate stays silent, because a quoted run reads as a value by construction.
  */
 const SECRET_KEY_NAME_SOURCE = [
     'secret',
@@ -59,6 +69,9 @@ const SECRET_KEY_NAME_SOURCE = [
     'client[_-]?secret',
     'auth[_-]?(?:token|key)',
     'credential',
+    'creds',
+    'auth',
+    'access',
     'sas',
     'signature',
     ...VENDOR_KEY_NAMES,
@@ -74,20 +87,39 @@ const SECRET_KEY_NAME = new RegExp(`(?:${SECRET_KEY_NAME_SOURCE})`, 'iu');
  * would stop matching. The value heuristic separates those names from ordinary identifiers; a bare
  * mixed-case alphabetic value is a reference, not key material.
  *
- * The quoted alternative reads an opening delimiter run — one to four of `'`, `"` or a backtick, the
- * scanner's `[\x60'"\s=]{0,5}` ceiling — and a terminator that is any single delimiter, whitespace, a
- * semicolon, or end of input. The captured run stops at the first delimiter, whitespace, or
- * semicolon, so a mismatched pair (`'…"`), a value closed by end of input, a space, a semicolon, or a
- * four-quote run are all withheld, and a nested delimiter (`'''…"…'''`) or an escaped delimiter
- * (`\"`) still ends the run and is admitted. The scanner's escaped-newline terminator (`\\[nr]`) is
- * deliberately not modelled: the scanner pairs it with an entropy gate and a value allowlist this
- * screen cannot apply, so reading it in isolation over-withholds ordinary camel-case values; it is
- * filed as #4579 to be modelled with those gates.
+ * The segment between the name and the operator mirrors the scanner's gap (`[\w.-]{0,50}?` before
+ * the keyword, `[ \t\w.-]{0,20}` and then `[\s'"]{0,3}` after it — the prefix is moot here because
+ * this rule has no left boundary). Dashes and dots join the word-character run, so `token-helper`
+ * and `token.js` reach the operator, and so does the first half of a compound operator the scanner
+ * rides the gap across (`->`, `-=`, `.=`); up to three mixed spaces or quotes follow, so `token''`
+ * and `token ' =` reach it too. The previous gap — word characters, at most one quote directly
+ * after the name, then whitespace — admitted every one of those while the pinned scanner flagged
+ * them as generic-api-key (#4859). The first alternative keeps that revision's unbounded
+ * whitespace: a run longer than the scanner's twenty-three-character budget is withheld where the
+ * scanner stays silent, the same safe-direction over-withhold #4859 records as context for the
+ * bare branch and does not ask this change to narrow.
+ *
+ * The separator is the scanner's operator alternation (`=|>|:{1,3}=|\|\||:|=>|\?=|,`), so a
+ * walrus `:=`, an arrow `=>`, a doubled `==` (the opening run below absorbs the second `=`), a `||`
+ * fallback, a Makefile-style `?=`, and a comma-separated `key, value` all reach the value test; the
+ * screen used to read only `=` and `:`, so each of those forms was admitted (#4579). The quoted
+ * alternative then reads the scanner's opening run — one to five of `'`, `"`, a backtick,
+ * whitespace, or `=` (the scanner's `[\x60'"\s=]{0,5}`, the whitespace sharing the five-character
+ * budget), requiring at least one true delimiter so a bare value keeps its own branch — and a
+ * terminator that is any single delimiter, whitespace, a semicolon, an escaped newline (`\\[nr]`),
+ * or end of input. The bare alternative absorbs the same run's whitespace and `=` before its value,
+ * so `key == value` reaches the value test whether or not the value is quoted. The captured run
+ * stops at the first delimiter, whitespace, semicolon, or backslash, so a mismatched pair (`'…"`), a
+ * value closed by end of input, a space, a semicolon, an escaped newline, or a five-quote run are
+ * all withheld, and a nested delimiter (`'''…"…'''`) or an escaped delimiter (`\"`) still ends the
+ * run and is admitted. What stays deliberately unmodelled is
+ * the scanner's entropy gate and value allowlist: the floor here is sixteen characters with no
+ * entropy test, a policy #4579 records as context rather than a defect.
  */
 const SECRET_ASSIGNMENT = new RegExp(
-    `(?:${SECRET_KEY_NAME_SOURCE})\\w*['"]?\\s*[=:]\\s*(?:` +
-        `['"\\x60]{1,4}(?<quoted>[^'"\\x60\\s;]{16,})(?=['"\\x60\\s;]|$)` +
-        `|(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
+    `(?:${SECRET_KEY_NAME_SOURCE})[\\w.-]*(?:['"]?\\s*|[ \\t\\w.-]{0,20}[\\s'"]{0,3})(?:=|>|:{1,3}=|\\|\\||:|=>|\\?=|,)(?:` +
+        `(?=['"\\x60\\s=]{0,4}['"\\x60])['"\\x60\\s=]{1,5}(?<quoted>[^'"\\x60\\s;\\\\]{16,})(?=['"\\x60\\s;]|\\\\[nr]|$)` +
+        `|[\\s=]*(?<bare>[A-Za-z0-9+/_=.-]{16,})(?<after>[^\\s]?))`,
     'giu'
 );
 

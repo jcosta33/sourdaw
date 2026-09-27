@@ -9,6 +9,12 @@
  * a mutation id derived from the pr, thread and head, so a replay after a partial failure repeats the
  * identical request rather than inventing a new one.
  *
+ * A record survives later pushes (#4589): it stays confirmable against a live head that descends the
+ * recorded head while the recorded repair commit stays contained in that head, and a re-record on a
+ * descending head supersedes the earlier record for its thread. Conflicting records no descending
+ * re-record supersedes — two distinct claims on one head, or one on a head that does not descend the
+ * earlier record's — keep the thread refused.
+ *
  * Parsing never launders a corrupt record into an absent one: no marker line is `undefined`, while a
  * present but malformed marker throws. Validation delegates summary and evidence text to the dossier
  * publication-safety contract instead of restating its rules.
@@ -350,10 +356,35 @@ export function confirmClientMutationId(pr: number, thread: string, head: string
     return `review-repair-confirm:${pr}:${thread}:${head}`;
 }
 
-function authorRepairRecords(thread: ReviewRepairThreadState, authorNodeId: string): AuthorRepairRecords {
+/**
+ * Whether a re-recorded repair supersedes the running candidate: only when it was recorded on a head
+ * that strictly descends the candidate's recorded head — the author pushed again and re-recorded on
+ * the new head (#4589). Two distinct records on one head, or a later record on a head that does not
+ * descend the earlier record's, are conflicting claims the reply order cannot settle.
+ */
+function supersedesRepairRecord(
+    earlier: ReviewRepairRecord,
+    later: ReviewRepairRecord,
+    isAncestor: (commit: string, head: string) => boolean
+): boolean {
+    return earlier.head !== later.head && isAncestor(earlier.head, later.head);
+}
+
+/**
+ * The author's distinct records fold in reply order, the thread's chronological comment order — no
+ * timestamp is read, so the newest record is the last distinct one. Each newer record either
+ * supersedes the running candidate or conflicts with it, and a single conflict refuses the thread no
+ * matter what later records supersede.
+ */
+function authorRepairRecords(
+    thread: ReviewRepairThreadState,
+    authorNodeId: string,
+    isAncestor: (commit: string, head: string) => boolean
+): AuthorRepairRecords {
     const seen = new Set<string>();
     let candidate: RepairCandidate | undefined;
     let count = 0;
+    let conflicting = false;
     for (const reply of thread.replies) {
         if (reply.authorNodeId !== authorNodeId) {
             continue;
@@ -368,14 +399,16 @@ function authorRepairRecords(thread: ReviewRepairThreadState, authorNodeId: stri
         }
         seen.add(key);
         count += 1;
-        if (candidate === undefined) {
+        if (candidate === undefined || supersedesRepairRecord(candidate.record, record, isAncestor)) {
             candidate = { record, replyId: reply.id };
+        } else {
+            conflicting = true;
         }
     }
     if (candidate === undefined) {
         return { kind: 'none' };
     }
-    if (count > 1) {
+    if (conflicting) {
         return { kind: 'many', count };
     }
     return { kind: 'one', candidate };
@@ -408,7 +441,12 @@ function confirmationRefusal(
     if (record.thread !== thread.thread) {
         return `thread ${record.thread} does not match the confirmed thread ${thread.thread}`;
     }
-    if (record.head !== confirmation.head) {
+    // The live head moves when the author pushes again after recording (#4589). A recorded head that
+    // is an ancestor of the live head keeps the record confirmable: the commit-range checks below
+    // still require the recorded commit inside that live head, and a force-push that dropped the
+    // commit would have left the recorded head outside the live history too. Any other mismatch —
+    // a rewritten, diverged, or regressed head — keeps the exact-match refusal.
+    if (record.head !== confirmation.head && !confirmation.isAncestor(record.head, confirmation.head)) {
         return `head ${record.head} does not match the confirmed head ${confirmation.head}`;
     }
     const finding = findingRefusal(thread, record.finding);
@@ -475,7 +513,7 @@ export function selectEligibleRepairs(input: {
             ignored.push({ thread: thread.thread, reason: 'already resolved' });
             continue;
         }
-        const found = authorRepairRecords(thread, input.authorNodeId);
+        const found = authorRepairRecords(thread, input.authorNodeId, input.isAncestor);
         if (found.kind === 'none') {
             ignored.push({ thread: thread.thread, reason: 'no repair recorded' });
             continue;
