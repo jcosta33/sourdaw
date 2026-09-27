@@ -270,6 +270,14 @@ export const clipPlacementStrategyDefinitions = [
             if (!hasExactKeys(args, ['clipId']) || !source) {
                 return rejection(index, call.name, 'Expected only an available clipId');
             }
+            // A destinationless duplicate places a NEW clip on the source's
+            // own host, and the duplicate core refuses an own-host target the
+            // kind rule excludes — silently, for a call that names no
+            // destination. Rejecting here gives the model the same actionable
+            // reason `duplicateClipAt` gives for an explicit one.
+            if (!isClipCompatibleWithTrackKind(source.clip.type, source.track.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, source.track.kind));
+            }
             return { type: 'duplicateClip', payload: { clipId: source.clip.id } };
         },
     },
@@ -280,6 +288,11 @@ export const clipPlacementStrategyDefinitions = [
             const source = findClip(context, args.clipId);
             if (!hasExactKeys(args, ['clipId']) || !source) {
                 return rejection(index, call.name, 'Expected only an available clipId');
+            }
+            // Same own-host placement as `duplicateClip`: without this check
+            // the core's refusal reaches the model as a silent no-write.
+            if (!isClipCompatibleWithTrackKind(source.clip.type, source.track.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, source.track.kind));
             }
             return { type: 'duplicateClipToNextBar', payload: { clipId: source.clip.id } };
         },

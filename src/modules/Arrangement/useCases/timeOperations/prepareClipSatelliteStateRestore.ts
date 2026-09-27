@@ -6,6 +6,7 @@ import {
     readClipSatelliteEntry,
     writeClipSatelliteEntry,
 } from '../../stores/clipSatelliteState';
+import { isDefaultWarpState } from '../../stores/warpStates';
 
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 
@@ -197,12 +198,19 @@ function validateWarpState(value: unknown): WarpState | null | false {
         }
         markers.push(marker);
     }
-    return {
+    const state: WarpState = {
         enabled: properties.enabled,
         markers,
         stretchMode,
         originalTempo,
     };
+    // The guarded write (`setWarpState`) and the live read
+    // (`readClipSatelliteEntry`) both collapse a state equal to
+    // `defaultWarpState` to absent — a legacy entry whose content decodes
+    // onto the default (the retired `texture` mode, for one) must collapse
+    // the same way here, or the expected side can never equal the live null
+    // read and every replay of the plan refuses forever.
+    return isDefaultWarpState(state) ? null : state;
 }
 
 function validateSnapshot(value: unknown): ClipSatelliteSnapshot | null {

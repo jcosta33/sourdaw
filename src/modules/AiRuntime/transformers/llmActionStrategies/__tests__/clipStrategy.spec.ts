@@ -393,6 +393,36 @@ describe('clipStrategy', () => {
         ).toEqual({ type: 'duplicateClipToNextBar', payload: { clipId: 'clip-midi-a' } });
     });
 
+    it('duplicateClip refuses a legacy misplaced clip whose own host cannot play it', () => {
+        // The duplicate's implicit destination is the clip's own host, and
+        // the duplicate core refuses such a target at execution — so the
+        // bridge must reject pre-dispatch with the reason, or the model sees
+        // only a silent no-write.
+        expect(
+            bridgeClipToolCall({
+                call: { name: 'duplicateClip', arguments: { clipId: 'clip-legacy-audio' } },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 6,
+            })
+        ).toMatchObject({
+            name: 'duplicateClip',
+            reason: expect.stringContaining('cannot play an audio clip'),
+        });
+    });
+
+    it('duplicateClipToNextBar refuses a legacy misplaced clip whose own host cannot play it', () => {
+        expect(
+            bridgeClipToolCall({
+                call: { name: 'duplicateClipToNextBar', arguments: { clipId: 'clip-legacy-audio' } },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 6,
+            })
+        ).toMatchObject({
+            name: 'duplicateClipToNextBar',
+            reason: expect.stringContaining('cannot play an audio clip'),
+        });
+    });
+
     it('normalizeClip normalizes an unlocked audio clip to the default peak mode', () => {
         expect(
             bridgeClipToolCall({
