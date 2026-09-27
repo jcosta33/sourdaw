@@ -616,6 +616,91 @@ fn synthetic_glide_preserves_elapsed_time_across_mic_sample_rates() {
 }
 
 #[test]
+fn humanized_mics_start_at_the_same_recorded_time_across_sample_rates() {
+    for (lead_rate, other_rate) in [
+        (48_000.0, 24_000.0),
+        (24_000.0, 48_000.0),
+        (48_000.0, 48_000.0),
+    ] {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.set_param("humanize", 1.0);
+        instance.set_param("humanize_timing_max_ms", 0.0);
+        instance.set_param("humanize_tuning_max_cents", 0.0);
+        instance.set_param("humanize_vibrato_var_max", 0.0);
+        instance.set_param("mic_0_pan", -1.0);
+        instance.set_param("mic_1_pan", 1.0);
+        instance.begin_sample_bank(NEUTRAL_INSTRUMENT);
+        stage_rate_take(
+            &mut instance,
+            0,
+            0,
+            451.0,
+            lead_rate,
+            (lead_rate / 2.0) as u32,
+        );
+        stage_rate_take(
+            &mut instance,
+            1,
+            1,
+            451.0,
+            other_rate,
+            (other_rate / 2.0) as u32,
+        );
+        commit(&mut instance, 2);
+
+        instance.note_on(NOTE, VELOCITY);
+        let out = render(&mut instance, BLOCK);
+        assert!(peak(&out.left) > 0.01 && peak(&out.right) > 0.01);
+        let drift = max_abs_diff(&out.left, &out.right);
+        assert!(
+            drift < 0.01,
+            "humanized {lead_rate}/{other_rate} Hz mics drifted by {drift}"
+        );
+    }
+}
+
+#[test]
+fn a_humanized_true_transition_keeps_mics_at_the_same_recorded_time() {
+    let play = |with_transition: bool| {
+        let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+        instance.set_param("humanize", 1.0);
+        instance.set_param("humanize_timing_max_ms", 0.0);
+        instance.set_param("humanize_tuning_max_cents", 0.0);
+        instance.set_param("humanize_vibrato_var_max", 0.0);
+        instance.set_param("mic_0_pan", -1.0);
+        instance.set_param("mic_1_pan", 1.0);
+        instance.begin_sample_bank(NEUTRAL_INSTRUMENT);
+        stage_rate_take(&mut instance, 0, 0, 451.0, 48_000.0, 24_000);
+        stage_rate_take(&mut instance, 1, 1, 451.0, 24_000.0, 12_000);
+        if with_transition {
+            let transition_id = add_sine(&mut instance, 1_000.0);
+            instance.add_legato_transition(2, 0, 3, transition_id, 20.0);
+        }
+        commit(&mut instance, 2);
+
+        instance.note_on(NOTE, VELOCITY);
+        // The legato lookup only treats a recent note as slurred.
+        render(&mut instance, 512);
+        instance.note_on(NOTE + 2, VELOCITY);
+        let transition = render(&mut instance, 2_048);
+        render(&mut instance, 3 * SETTLE_FRAMES - 2_048);
+        (transition, render(&mut instance, BLOCK))
+    };
+
+    let (transition, out) = play(true);
+    let (without_transition, _) = play(false);
+    let transition_amplitude = amplitude_at(&transition.left, 1_000.0);
+    let absent_amplitude = amplitude_at(&without_transition.left, 1_000.0);
+    assert!(
+        transition_amplitude > absent_amplitude * 4.0 + 0.02,
+        "the recorded transition route carried {transition_amplitude} of 1 kHz against {absent_amplitude} without the transition"
+    );
+    assert!(peak(&out.left) > 0.01 && peak(&out.right) > 0.01);
+    let drift = max_abs_diff(&out.left, &out.right);
+    assert!(drift < 0.01, "humanized true transition drifted by {drift}");
+}
+
+#[test]
 fn synthetic_glide_uses_the_outgoing_lead_when_the_incoming_mic_was_missing() {
     let perform = |mic_0_had_outgoing_zone: bool| {
         let mut instance = LevainInstance::new(SAMPLE_RATE, 8);

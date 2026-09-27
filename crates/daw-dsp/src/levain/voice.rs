@@ -945,9 +945,15 @@ impl LevainVoice {
     /// the engine's gain/vibrato-phase sites: the timing offset holds the
     /// voice silent, the tuning offset rides the pitch-modulation slot, the
     /// vibrato depth scale narrows or widens this player's vibrato, and the
-    /// start offset skips a few frames into the recording so round-robin
-    /// repeats don't re-attack on the identical waveform frame.
-    pub fn apply_note_humanization(&mut self, humanize: &NoteHumanization, sample_rate: f32) {
+    /// start offset skips a few frames into the lead recording so round-robin
+    /// repeats don't re-attack on the identical waveform frame. Other mic
+    /// positions skip the same recorded time at their own decoded rates.
+    pub fn apply_note_humanization(
+        &mut self,
+        humanize: &NoteHumanization,
+        sample_rate: f32,
+        pool: &SamplePool,
+    ) {
         self.pending_samples = if humanize.timing_offset > 0.0 && sample_rate > 0.0 {
             (humanize.timing_offset * sample_rate).round() as u32
         } else {
@@ -955,11 +961,21 @@ impl LevainVoice {
         };
         self.humanize_tune_semitones = humanize.tuning_cents / 100.0;
         self.vibrato_depth_scale = humanize.vibrato_depth_scale;
-        // Bounded by construction (`generate` caps it at 64 frames); read past
-        // the recording's end simply ends the stream, same as any overrun.
-        // Every position skips the same frames, keeping them phase-locked.
+        // The generated offset is in lead-source frames, preserving the
+        // single-mic law. Convert that one elapsed time for each decoded mic
+        // rate; pitch modulation must not affect a recording-time offset.
+        let lead_rate = pool
+            .get(self.playback[self.lead_mic].sample_id)
+            .map_or(sample_rate, |sample| sample.sample_rate);
         for playback in self.playback.iter_mut() {
-            playback.position += humanize.start_offset as f64;
+            if !playback.active {
+                continue;
+            }
+            let source_rate = pool
+                .get(playback.sample_id)
+                .map_or(sample_rate, |sample| sample.sample_rate);
+            playback.position +=
+                f64::from(humanize.start_offset) * f64::from(source_rate) / f64::from(lead_rate);
         }
     }
 
@@ -1571,6 +1587,29 @@ mod tests {
             gain_db: 0.0,
         };
         (pool, zone)
+    }
+
+    #[test]
+    fn a_single_mic_keeps_its_humanized_source_frame_offset_at_each_output_rate() {
+        let (pool, mut zone) = silent_headed_sample(64, 256);
+        zone.sample.start = 17;
+        let humanize = NoteHumanization {
+            start_offset: 37,
+            timing_offset: 0.002,
+            ..NoteHumanization::default()
+        };
+        for output_rate in [44_100.0, 48_000.0, 96_000.0] {
+            let mut voice = LevainVoice::new(output_rate);
+            voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+            voice.apply_note_humanization(&humanize, output_rate, &pool);
+            assert_eq!(
+                voice.playback[0].position,
+                f64::from(zone.sample.start + 37)
+            );
+            assert_eq!(voice.pending_samples, (0.002 * output_rate).round() as u32);
+            assert_eq!(voice.humanize_tune_semitones, 0.0);
+            assert_eq!(voice.vibrato_depth_scale, 1.0);
+        }
     }
 
     /// A release tail still at full envelope must be more protected than a spent one.

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:6a6173bf807fd7bd5c09daa6014d2b9cf89beff395cf81bc06af2e5d3d0801e3
+// @wasm-bindgen-dts crate-source: sha256:27ba71a2ee8c27e15fc0e00a90fa0535749de162d430ec3eaeff3af70ae830ba
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -21,7 +21,6 @@ export const crustinstance_new: (a: number) => number;
 export const crustinstance_process: (a: number, b: number) => number;
 export const crustinstance_reset_true_peak: (a: number) => void;
 export const crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const init_panic_hook: () => void;
 export const __wbg_crumbsinstance_free: (a: number, b: number) => void;
 export const __wbg_gluteninstance_free: (a: number, b: number) => void;
 export const __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -119,6 +118,7 @@ export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d:
 export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
 export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
 export const toasterinstance_get_nan_flush_count: (a: number) => number;
+export const init_panic_hook: () => void;
 export const __wbg_fermenterinstance_free: (a: number, b: number) => void;
 export const __wbg_grinderinstance_free: (a: number, b: number) => void;
 export const fermenterinstance_active_voices: (a: number) => number;

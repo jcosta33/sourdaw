@@ -543,7 +543,7 @@ impl LevainEngine {
                 );
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
-                voice.apply_note_humanization(&humanize, self.sample_rate);
+                voice.apply_note_humanization(&humanize, self.sample_rate, &self.sample_pool);
                 self.attach_dynamic_layer(voice_idx, art, note, &zones, velocity);
             }
             LegatoResult::TrueTransition {
@@ -586,7 +586,7 @@ impl LevainEngine {
                 );
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
-                voice.apply_note_humanization(&humanize, self.sample_rate);
+                voice.apply_note_humanization(&humanize, self.sample_rate, &self.sample_pool);
                 // Audit F7: play the looked-up transition sample and
                 // crossfade into the sustain zone `trigger()` just set up,
                 // instead of crossfading that zone against itself.

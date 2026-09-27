@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:6a6173bf807fd7bd5c09daa6014d2b9cf89beff395cf81bc06af2e5d3d0801e3
+// @wasm-bindgen-dts crate-source: sha256:27ba71a2ee8c27e15fc0e00a90fa0535749de162d430ec3eaeff3af70ae830ba
 /* tslint:disable */
 /* eslint-disable */
 
@@ -957,7 +957,6 @@ export interface InitOutput {
     readonly crustinstance_process: (a: number, b: number) => number;
     readonly crustinstance_reset_true_peak: (a: number) => void;
     readonly crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
     readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -1055,6 +1054,7 @@ export interface InitOutput {
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
+    readonly init_panic_hook: () => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly fermenterinstance_active_voices: (a: number) => number;
