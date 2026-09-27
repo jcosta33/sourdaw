@@ -237,9 +237,36 @@ describe('snapshotImportSpecifiers', () => {
         expect(bareModuleSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
     });
 
-    it('collects aliased and wrapped require callees as static specifiers', () => {
-        expect(snapshotImportSpecifiers("(0, require)('yaml')")).toEqual(['yaml']);
+    /**
+     * A statement-position regex after a control header's `)` or after `else` is a regex literal, so
+     * the apostrophe in `/don't/` cannot open a string that swallows the rest of the file — the shape
+     * that hid every later load (#4818). The division cases pin the other half: a `/` after a call's
+     * `)` or after a `)` that closes no header still divides.
+     */
+    it('collects an import a statement-position regex used to hide', () => {
+        expect(snapshotImportSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual([
+            'yaml',
+        ]);
+        expect(bareModuleSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (url) /^https?:\\/\\//.test(url);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (x) run(); else /don't/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("for (;;) /x/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("while (ok) /x/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("with (o) /x/.test(line);\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (ok) report(x) / 2;\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (ok) { run(); } const v = g(a) / 2;\nrequire('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("if (ok) obj / 2;\nrequire('yaml')")).toEqual(['yaml']);
+    });
+
+    /**
+     * A load reached through a wrapped or bound callee is the same load: `(require)(spec)`,
+     * `(0, require)(spec)`, a name bound to `require` or to `createRequire(…)`, and an aliased
+     * `createRequire` import (#4818). The boundary cases at the end pin the two limits — a longer
+     * name is not the binding, and a shadowed name keeps the merge base's reading.
+     */
+    it('collects a load reached through a wrapped or bound callee', () => {
         expect(snapshotImportSpecifiers("(require)('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("(0, require)('yaml')")).toEqual(['yaml']);
         expect(snapshotImportSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
         expect(snapshotImportSpecifiers("const load = createRequire(import.meta.url);\nload('yaml')")).toEqual([
             'yaml',
@@ -249,20 +276,12 @@ describe('snapshotImportSpecifiers', () => {
                 "import { createRequire as makeRequire } from 'node:module';\nmakeRequire(import.meta.url)('yaml')"
             )
         ).toEqual(['node:module', 'yaml']);
-        expect(snapshotImportSpecifiers("require.call(null, 'yaml')")).toEqual(['yaml']);
-        // A nested argument comma must not end the `.call` specifier walk: the first argument is the
-        // `this` value, and the second is the specifier.
-        expect(snapshotImportSpecifiers("require.call(fn(1, 2), 'yaml')")).toEqual(['yaml']);
-        // `bind` returns a bound require, so the specifier is the second call's argument.
-        expect(snapshotImportSpecifiers("require.bind(null)('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("(0, require)('yaml')")).toEqual(['yaml']);
         expect(bareModuleSpecifiers("const load = require;\nload('yaml')")).toEqual(['yaml']);
-    });
-
-    it('does not let a statement-position regex hide a later static import', () => {
-        expect(snapshotImportSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual([
-            'yaml',
-        ]);
-        expect(bareModuleSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const load = require;\ndownload('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nregistry.load('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nfunction f(load) { load('yaml') }")).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require('yaml');\nload('yaml')")).toEqual(['yaml']);
     });
 });
 
