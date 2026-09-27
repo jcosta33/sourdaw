@@ -1084,6 +1084,11 @@ function isBindingPatternEntryAt(source: string, index: number): boolean {
         return false;
     }
     const character = source.charAt(beforeOpen);
+    // A `[` right after a `{` is a computed property key, not an array binding pattern: `{ [H]: y }`
+    // reads the property whose name `H` evaluates to, so `H` there is a reference, never a binding.
+    if (source.charAt(open) === '[' && character === '{') {
+        return false;
+    }
     if (',([{:'.includes(character)) {
         return true;
     }
@@ -1731,6 +1736,39 @@ function resolveNameToClass(
 }
 
 /**
+ * The scope chain a `const`/`let`/`var` loop-header binding belongs to — the loop's own body — or
+ * `undefined` when `keywordIndex` does not declare the variable of a `for`/`for await` header. A loop
+ * variable binds only inside the loop, so it must not shadow the class in the enclosing block.
+ */
+function loopBindingScopeChain(source: string, keywordIndex: number): number[] | undefined {
+    const before = previousSignificantCharacter(source, keywordIndex - 1);
+    if (before === undefined || source.charAt(before) !== '(') {
+        return undefined;
+    }
+    let wordEnd = previousSignificantCharacter(source, before - 1);
+    if (wordEnd === undefined || !isIdentifierContinue(source.charAt(wordEnd))) {
+        return undefined;
+    }
+    let word = readWordBackward(source, wordEnd);
+    if (word === 'await') {
+        wordEnd = previousSignificantCharacter(source, wordEnd - word.length);
+        word =
+            wordEnd === undefined || !isIdentifierContinue(source.charAt(wordEnd))
+                ? ''
+                : readWordBackward(source, wordEnd);
+    }
+    if (word !== 'for') {
+        return undefined;
+    }
+    const close = skipBalancedParens(source, before);
+    if (close === undefined) {
+        return undefined;
+    }
+    const body = skipWhitespace(source, close);
+    return source[body] !== '{' ? undefined : enclosingScopeChain(source, body + 1);
+}
+
+/**
  * The class a `const`/`let`/`var <name> = …` declaration at `index` binds, resolved to a class body brace
  * for a `new <Class>()` or a `class { … }` initializer, or `undefined` for any other initializer that
  * shadows a declared class name. The binding is remembered under the name so a later read-back reaches
@@ -1791,7 +1829,8 @@ function readLocalBindingAt(
     if (!declaresClassName(classFields, name)) {
         return undefined;
     }
-    return { name, classRef: undefined, scopeChain: scopeChain(), end: nameStart + name.length };
+    const chain = loopBindingScopeChain(source, index) ?? scopeChain();
+    return { name, classRef: undefined, scopeChain: chain, end: nameStart + name.length };
 }
 
 /**
@@ -1820,10 +1859,23 @@ function readParameterShadowAt(
     if (name === undefined || !classNames.names.has(name)) {
         return undefined;
     }
-    if (!isParameterOwnNameAt(source, index) && !isDestructuredBindingNameAt(source, index, name.length)) {
-        return undefined;
+    if (isParameterOwnNameAt(source, index)) {
+        return {
+            name,
+            classRef: undefined,
+            scopeChain: functionBodyScopeChain(source, index),
+            end: index + name.length,
+        };
     }
-    return { name, classRef: undefined, scopeChain: functionBodyScopeChain(source, index), end: index + name.length };
+    if (isDestructuredBindingNameAt(source, index, name.length)) {
+        return {
+            name,
+            classRef: undefined,
+            scopeChain: destructuredBindingScopeChain(source, index),
+            end: index + name.length,
+        };
+    }
+    return undefined;
 }
 
 /**
@@ -1852,6 +1904,56 @@ function isDestructuredBindingNameAt(source: string, index: number, nameLength: 
         return source.charAt(skipWhitespace(source, index + nameLength)) !== ':';
     }
     return false;
+}
+
+/**
+ * The outermost `{`/`[` opener of the binding pattern that holds `index`, walking up nested patterns, or
+ * `undefined` when `index` sits in none. The outermost opener is the one whose preceding token is the
+ * pattern's own introducer — `(`, `,`, or a `const`/`let`/`var` keyword — rather than a nested
+ * `:`/`{`/`[` inside an enclosing pattern.
+ */
+function outermostBindingPatternOpen(source: string, index: number): number | undefined {
+    let open = enclosingOpenerBefore(source, index, '{[');
+    if (open === undefined) {
+        return undefined;
+    }
+    while (true) {
+        const beforeOpen = previousSignificantCharacter(source, open - 1);
+        if (beforeOpen === undefined) {
+            return open;
+        }
+        const character = source.charAt(beforeOpen);
+        if (character !== ':' && character !== '{' && character !== '[') {
+            return open;
+        }
+        const outer = enclosingOpenerBefore(source, open, '{[');
+        if (outer === undefined) {
+            return open;
+        }
+        open = outer;
+    }
+}
+
+/**
+ * The scope chain a destructured binding at `index` lives in. A destructured parameter binds in its own
+ * function body, so the chain is taken there; a destructured variable (`const`/`let`/`var { … } = …`)
+ * binds in the declaration's enclosing scope, with the pattern's own braces excluded so the binding
+ * matches a read-back written in that same scope.
+ */
+function destructuredBindingScopeChain(source: string, index: number): number[] {
+    const open = outermostBindingPatternOpen(source, index);
+    if (open === undefined) {
+        return enclosingScopeChain(source, index);
+    }
+    const beforeOpen = previousSignificantCharacter(source, open - 1);
+    if (beforeOpen === undefined) {
+        return enclosingScopeChain(source, index);
+    }
+    const character = source.charAt(beforeOpen);
+    if (character === '(' || character === ',') {
+        return functionBodyScopeChain(source, index);
+    }
+    return enclosingScopeChain(source, open - 1);
 }
 
 /**
@@ -1891,7 +1993,7 @@ function readFunctionShadowAt(
 function functionBodyScopeChain(source: string, index: number): number[] {
     let open: number | undefined;
     if (isBindingPatternEntryAt(source, index)) {
-        const patternOpen = enclosingOpenerBefore(source, index, '{[');
+        const patternOpen = outermostBindingPatternOpen(source, index);
         open = patternOpen === undefined ? undefined : enclosingOpenerBefore(source, patternOpen, '(');
     }
     if (open === undefined) {
@@ -1908,7 +2010,11 @@ function functionBodyScopeChain(source: string, index: number): number[] {
     if (source.startsWith('=>', cursor)) {
         cursor = skipWhitespace(source, cursor + 2);
     }
-    return source[cursor] !== '{' ? enclosingScopeChain(source, index) : enclosingScopeChain(source, cursor + 1);
+    // A block body opens a real scope; an expression body has none, so the arrow's own parameter-list
+    // position stands in as a synthetic scope the enclosing chain never contains.
+    return source[cursor] !== '{'
+        ? [...enclosingScopeChain(source, index), open]
+        : enclosingScopeChain(source, cursor + 1);
 }
 
 /**
@@ -1933,11 +2039,9 @@ function varHoistScopeChain(source: string, index: number): number[] {
     const chain = enclosingScopeChain(source, index);
     const result: number[] = [];
     for (const open of chain) {
-        if (!isFunctionBodyOpen(source, open)) {
-            continue;
+        if (isFunctionBodyOpen(source, open)) {
+            result.push(open);
         }
-        result.push(open);
-        break;
     }
     return result;
 }

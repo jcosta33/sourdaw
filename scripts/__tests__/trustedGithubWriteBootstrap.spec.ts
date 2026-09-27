@@ -667,6 +667,35 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nfunction f() { { var H = other; } const { loader } = new H(); loader(spec); }'
             )
         ).toEqual([]);
+        // A loop binding lives only inside the loop, so a read-back written before or after it, or after
+        // a loop inside a function, still reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst { loader } = new H();\nloader(spec);\nfor (const H of xs) {}'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (const H of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A `var` inside a nested function hoists to the nearest function body, so it neither shadows
+        // the outer function nor leaks its own class expression there.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { function g() { var H = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; }\nfunction f() { function g() { var H = class { loader = require; }; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
         // A nested function declaration and a destructured parameter bind the class name, shadowing it.
         expect(
             snapshotComputedDynamicSpecifiers(
@@ -695,12 +724,90 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nfunction f({ H: y }) { const { loader } = new H(); loader(spec); }'
             )
         ).toEqual(['require(...)']);
-        // A class name bound only by a deeper nesting or by a destructured variable stays undecided:
-        // `function f({ x: { H } }) { … }` and `const { H } = obj` read the name as the class, so a
-        // construction through it still reports the load rather than resolving the pattern.
+        // A destructured variable binds the class name in the declaration's scope, however the entry is
+        // spelled — renamed, shorthand, rest, or a nested pattern — so none reaches the class.
         expect(
             snapshotComputedDynamicSpecifiers(
-                'class H { loader = require; }\nfunction f({ x: { H } }) { const { loader } = new H(); loader(spec); }'
+                'class H { loader = require; }\nfunction f() { const { x: H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { let { H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { ...H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { a: { H } } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A computed property key reads the class name as an expression, not a binding, so the class is
+        // still reached.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { [H]: y } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A name bound only by a comma-separated declarator or by an assignment pattern stays undecided:
+        // `const a = 1, { H } = opts` and `({ H } = opts)` read the name as the class, so a construction
+        // through it still reports the load rather than resolving the pattern.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const a = 1, { H } = opts; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A nested parameter pattern binds the class name in the function body, and a renamed, rest, or
+        // modifier parameter binds it too.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ a: { H } }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ x: H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ ...H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(public H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(private H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(protected H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass C { constructor(readonly H) { const { loader } = new H(); loader(spec); } }'
+            )
+        ).toEqual([]);
+        // An expression-bodied arrow scopes its parameter to the arrow, so it does not shadow the class
+        // outside it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => H;\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
     });
