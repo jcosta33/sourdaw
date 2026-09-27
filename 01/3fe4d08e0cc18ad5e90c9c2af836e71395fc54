@@ -1,0 +1,19 @@
+scripts/trustedGithubWriteBootstrap.ts
+  s_ed5aa36a3ba357::t_1c0e03e52d84d5 658-661,743,747,799-856,1600-1601,1619,1809,1815-1831,1958,1985,2062-2065,2071,2074,2090-2092,2104-2112,2216-2233,2338-2347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "013fe4d08e0cc18ad5e90c9c2af836e71395fc54",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
