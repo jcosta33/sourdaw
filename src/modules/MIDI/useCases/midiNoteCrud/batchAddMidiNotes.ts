@@ -1,6 +1,7 @@
 import { createMidiError } from '../../errors/MidiError';
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 
 type NoteInput = Omit<MidiNote, 'id' | 'velocity'> & { id?: string; velocity?: number };
@@ -39,5 +40,5 @@ export function batchAddMidiNotes(clipId: string, notes: NoteInput[]): MidiNote[
         },
     });
 
-    return createdNotes;
+    return createdNotes.map(cloneMidiNoteForAdmission);
 }

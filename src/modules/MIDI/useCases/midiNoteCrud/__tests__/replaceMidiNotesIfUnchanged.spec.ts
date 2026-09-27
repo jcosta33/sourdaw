@@ -17,11 +17,13 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { appendRecordedMidiNote } from '../../appendRecordedMidiNote';
 import { legatoNotes } from '../../midiNoteTransforms/legatoNotes';
 import { appendMidiNotes } from '../appendMidiNotes';
 import { batchAddMidiNotes } from '../batchAddMidiNotes';
 import { replaceMidiNotesIfUnchanged } from '../replaceMidiNotesIfUnchanged';
 import { resizeMidiNote } from '../resizeMidiNote';
+import { setNotesForClip } from '../setNotesForClip';
 
 const clipId = 'clip-1';
 
@@ -163,6 +165,31 @@ describe('targeted MIDI note history through Command and Automerge', () => {
         });
         expect(documentNotes().find((candidate) => candidate.id === 'edited')?.expression).toEqual({
             pressure: [{ offsetBeats: 2.5, value: 80 }],
+        });
+    });
+
+    it('keeps recorded and supplied clip notes independent of their callers through the document flush', () => {
+        const recorded = {
+            ...note('recorded', 0, 2),
+            expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+        };
+        appendRecordedMidiNote({ clipId, note: recorded });
+
+        const supplied = {
+            ...note('supplied', 0, 2),
+            expression: { slide: [{ offsetBeats: 0.5, value: 80 }] },
+        };
+        setNotesForClip(clipId, [...projectedNotes(), supplied]);
+        recorded.expression.pressure[0]!.value = 12;
+        supplied.expression.slide.push({ offsetBeats: 1, value: 20 });
+        supplied.expression.slide = [{ offsetBeats: 0.25, value: 40 }];
+        flushAutomergeStorageWrites();
+
+        expect(documentNotes().find((candidate) => candidate.id === 'recorded')?.expression).toEqual({
+            pressure: [{ offsetBeats: 0.5, value: 90 }],
+        });
+        expect(documentNotes().find((candidate) => candidate.id === 'supplied')?.expression).toEqual({
+            slide: [{ offsetBeats: 0.5, value: 80 }],
         });
     });
     it.each([

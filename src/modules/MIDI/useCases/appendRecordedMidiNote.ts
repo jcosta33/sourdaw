@@ -1,5 +1,6 @@
 import { type MidiNote } from '../models/MidiNote';
 import { midiStore } from '../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../transformers/cloneMidiNoteForAdmission';
 
 type AppendRecordedMidiNoteInput = {
     clipId: string;
@@ -17,7 +18,7 @@ export function appendRecordedMidiNote({ clipId, note }: AppendRecordedMidiNoteI
         ...midiState,
         notesByClipId: {
             ...midiState.notesByClipId,
-            [clipId]: [...existing, note],
+            [clipId]: [...existing, cloneMidiNoteForAdmission(note)],
         },
     });
 }

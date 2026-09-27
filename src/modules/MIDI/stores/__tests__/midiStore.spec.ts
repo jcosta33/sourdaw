@@ -375,7 +375,7 @@ describe('sanitizeMidiStoreState', () => {
             };
         }
 
-        it('admits every valid curve without retaining the input references', () => {
+        it('admits a note with valid curves in every dimension unchanged', () => {
             const exact = stateWithNote({
                 ...baseNote,
                 pitchBend: 0,
@@ -393,11 +393,7 @@ describe('sanitizeMidiStoreState', () => {
                 },
             });
 
-            const admitted = sanitizeMidiStoreState(exact);
-            expect(admitted).toEqual(exact);
-            expect(admitted.notesByClipId['clip-1']?.[0]?.expression).not.toBe(
-                exact.notesByClipId['clip-1']?.[0]?.expression
-            );
+            expect(sanitizeMidiStoreState(exact)).toBe(exact);
         });
 
         // A malformed optional scalar is stripped while its note stays; a

@@ -28,6 +28,7 @@ const otherStrip = vi.hoisted(() => ({
         },
     ],
 }));
+const applyNoteExpression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
@@ -43,6 +44,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
     startFaustNote: () => () => {},
+    applyNoteExpression,
 }));
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({ getTargetTrackId: () => target.value }));
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({ getMpeEnabled: () => true }));

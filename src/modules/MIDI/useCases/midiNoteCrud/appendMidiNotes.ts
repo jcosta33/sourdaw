@@ -1,5 +1,6 @@
 import { isValidMidiArticulation, isValidMidiNoteExpression, type MidiNoteExpression } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 
 type AppendMidiNoteInput = {
     pitch: number;
@@ -101,7 +102,7 @@ export function appendMidiNotes({ clipId, notes }: AppendMidiNotesInput): void {
     }
 
     const appendedNotes = validatedNotes.map((note) => ({
-        ...note,
+        ...cloneMidiNoteForAdmission(note),
         // Full UUID, like every other note-id mint in this module. Truncating
         // to 32 bits made repeated pastes into one clip birthday-bound: two
         // notes sharing an id merge under selection, removeNotesByIds and undo.

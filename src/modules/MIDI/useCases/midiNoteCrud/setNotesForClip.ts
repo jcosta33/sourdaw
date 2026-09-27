@@ -1,5 +1,6 @@
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 
 export function setNotesForClip(clipId: string, notes: MidiNote[]): void {
     const state = midiStore.value;
@@ -11,7 +12,7 @@ export function setNotesForClip(clipId: string, notes: MidiNote[]): void {
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: notes,
+            [clipId]: notes.map(cloneMidiNoteForAdmission),
         },
     });
 }

@@ -1,5 +1,6 @@
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
 import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 
@@ -27,7 +28,9 @@ export function replaceMidiNotesIfUnchanged(clipId: string, replacements: readon
         throw new Error('Cannot restore MIDI notes: captured notes are invalid or missing');
     }
 
-    const replacementById = new Map(replacements.map((entry) => [entry.expected.id, entry]));
+    const replacementById = new Map(
+        replacements.map((entry) => [entry.expected.id, cloneMidiNoteForAdmission(entry.replacement)])
+    );
     for (const entry of replacements) {
         const live = current.find((note) => note.id === entry.expected.id);
         if (!live || !midiNotesEqual([live], [entry.expected])) {
@@ -39,7 +42,7 @@ export function replaceMidiNotesIfUnchanged(clipId: string, replacements: readon
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: current.map((note) => replacementById.get(note.id)?.replacement ?? note),
+            [clipId]: current.map((note) => replacementById.get(note.id) ?? note),
         },
     });
 }
