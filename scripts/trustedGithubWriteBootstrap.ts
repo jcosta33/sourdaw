@@ -485,15 +485,20 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * is refused, naming the file and the shape.
  *
  * The decided shapes above are the ones a syntax walk can resolve, including the four #4818 names
- * this file gained rules for: a `/` after a control header's `)` or after `else` opens a regex, a
- * `}` provably closing an operand-position object literal divides, a wrapped or bound callee
+ * this file gained rules for: a `/` after a control header's `)` or after a bare `else` opens a regex,
+ * a `}` provably closing an operand-position object literal divides, a wrapped or bound callee
  * (`(0, require)(expr)`, `(require)(expr)`, `const load = createRequire(import.meta.url); load(expr)`,
  * and an aliased `createRequire` import) resolves, and a regex inside a binding pattern is skipped.
- * Every shape those rules do not model keeps the merge base's reading: a callee bound to another
- * bound name, a `.resolve`/`.bind` member, a `:`-preceded object literal, and a call the
- * declaration-context rule cannot separate from a declaration (a block whose first statement is a
- * call followed by another block) stay undecided, as #4835 tracks them. None weakens the claim for
- * the decided shapes.
+ * Each of those rules is narrowed to the position it can prove, so a shape that only resembles one
+ * keeps the merge base's reading instead of being decided wrongly: a `)` after a member named for a
+ * control keyword (`this.#while(1)`, `obj.if(1)`, …) ends a call, a brace after a type's `=` or `&` or
+ * `|` closes a type literal rather than an object literal, a parenthesis that continues the enclosing
+ * call is that call's argument list rather than a wrapped callee, and a name redeclared in a nested
+ * function, class, or parameter list names that declaration. Every shape those rules do not model
+ * also keeps the merge base's reading: a callee bound to another bound name, a `.resolve`/`.bind`
+ * member, a `:`-preceded object literal, and a call the declaration-context rule cannot separate from
+ * a declaration (a block whose first statement is a call followed by another block) stay undecided, as
+ * #4835 tracks them. None weakens the claim for the decided shapes.
  */
 export function snapshotComputedDynamicSpecifiers(source: string): string[] {
     const shapes = new Set<string>();
@@ -642,7 +647,10 @@ function collectLoaderBindings(source: string): ReadonlyMap<string, LoaderBindin
  * Whether every use of a bound name besides its own declaration is a call or a member access. A name
  * that is also a parameter or a local declaration (`function f(load) { load(spec) }`, `let load =
  * other`, `{ load: 1 }`) does not name the loader there, so the binding is dropped and the shape
- * keeps the merge base's reading instead of turning a shadowed name into a load.
+ * keeps the merge base's reading instead of turning a shadowed name into a load. A nested declaration
+ * of the same name is the same shadowing wherever it sits: `function load(s) {…}`, `class load {…}`,
+ * and a `let`/`const`/`var` target inside another function each declare the name again, so the
+ * binding is dropped rather than resolving the outer loader through the nested scope.
  */
 function isEveryUseACallLike(source: string, binding: LoaderBinding): boolean {
     let index = 0;
@@ -679,11 +687,33 @@ function isEveryUseACallLike(source: string, binding: LoaderBinding): boolean {
             if (source[after] !== '(' && source[after] !== '.' && !source.startsWith('?.', after)) {
                 return false;
             }
+            if (isShadowingDeclaration(source, index)) {
+                return false;
+            }
         }
         index += binding.name.length;
     }
     return true;
 }
+
+/**
+ * Whether the use at `index` declares the bound name again rather than calling the loader: a
+ * `function` or `class` declaration name, or a `let`/`const`/`var` declaration target. The parameter
+ * list case (`function f(load) {…}`) never reaches here, because its name is followed by `)` rather
+ * than `(`, `.`, or `?.` and is refused by the call-like check above.
+ */
+function isShadowingDeclaration(source: string, index: number): boolean {
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined || !isIdentifierContinue(source[before])) {
+        return false;
+    }
+    const word = readWordBackward(source, before);
+    const wordStart = before - word.length + 1;
+    return !isMemberNameAt(source, wordStart) && DECLARATION_KEYWORDS.has(word);
+}
+
+/** The declaration keywords that bind a name again, which drops a loader binding of that name. */
+const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(['function', 'class', 'let', 'const', 'var']);
 
 type LoaderBinding = { name: string; kind: LoaderBindingKind; nameIndex: number; end: number };
 
@@ -758,9 +788,11 @@ type BoundCallee = {
 /**
  * The loader a call at `index` reaches through a wrapped or bound callee: a parenthesised or
  * comma-sequence `require` — `(require)(spec)`, `(0, require)(spec)` — or a name the binding pass
- * resolved. `callOpen` is the parenthesis that holds the specifier, the second call for a bound
- * `createRequire` factory. The left identifier boundary keeps a name merely ending in a bound name
- * (`download(spec)`) out of the rule, and a member call (`registry.load(spec)`) is not the binding.
+ * resolved. A parenthesis that does not start the callee expression is the enclosing call's argument
+ * list, so `pass(require)(spec)` is not this shape. `callOpen` is the parenthesis that holds the
+ * specifier, the second call for a bound `createRequire` factory. The left identifier boundary keeps
+ * a name merely ending in a bound name (`download(spec)`) out of the rule, and a member call
+ * (`registry.load(spec)`) is not the binding.
  */
 function readBoundCallee(
     source: string,
@@ -768,6 +800,9 @@ function readBoundCallee(
     bindings: ReadonlyMap<string, LoaderBindingKind>
 ): BoundCallee | undefined {
     if (source[index] === '(') {
+        if (!startsCalleeExpression(source, index)) {
+            return undefined;
+        }
         const close = skipBalancedParens(source, index);
         if (close === undefined || !isBareRequireOperand(source, index + 1, close - 1)) {
             return undefined;
@@ -814,6 +849,22 @@ function isBareRequireOperand(source: string, start: number, end: number): boole
         cursor = skipWhitespace(source, cursor + 1);
     }
     return isKeywordAt(source, cursor, 'require') && skipWhitespace(source, cursor + 7) === end;
+}
+
+/**
+ * Whether the `(` at `open` begins a callee expression rather than continuing one. After an
+ * identifier, a `)`, a `]`, or a `#` the parenthesis is an argument list or a member call — so
+ * `pass(require)('./hidden')` wraps the *argument*, not the callee, and reading it as a wrapped
+ * `require` refuses an ordinary call. Only a `(` at the start of a callee expression, or after an
+ * operator, keeps the merge base's wrapped-callee reading.
+ */
+function startsCalleeExpression(source: string, open: number): boolean {
+    const before = previousSignificantCharacter(source, open - 1);
+    if (before === undefined) {
+        return true;
+    }
+    const character = source.charAt(before);
+    return !isIdentifierContinue(character) && character !== ')' && character !== ']' && character !== '#';
 }
 
 /** The index of the `(` a call opens at or after `from`, through an optional `?.`, if any. */
@@ -2027,8 +2078,8 @@ const CONTROL_HEADER_KEYWORDS: ReadonlySet<string> = new Set(['if', 'for', 'whil
 /**
  * Whether the `)` at `closeParen` closes a control-flow header. The header's own `(` is matched
  * backward first, so `f(x) / 2` — a call, whose `/` divides — and a member named after a keyword
- * (`obj.if (x) / 2`) are not headers. Only a header proved here turns the `/` into a regex; every
- * shape this walk cannot decide keeps the merge base's expression-end reading.
+ * (`obj.if (x) / 2`, `this.#while(1) / 2`) are not headers. Only a header proved here turns the `/`
+ * into a regex; every shape this walk cannot decide keeps the merge base's expression-end reading.
  */
 function closesControlHeader(source: string, closeParen: number): boolean {
     const open = matchingOpenDelimiterBackward(source, closeParen, '(', ')');
@@ -2041,7 +2092,10 @@ function closesControlHeader(source: string, closeParen: number): boolean {
     }
     const word = readWordBackward(source, before);
     const wordStart = before - word.length + 1;
-    if (isPrecededByDotAccess(source, wordStart)) {
+    // A `#` names a private member exactly as `.` names a public one, so the member guard is the
+    // shared one: `this.#while(1) / require(spec) / 2` divides rather than opening a regex that
+    // swallows the load.
+    if (isMemberNameAt(source, wordStart)) {
         return false;
     }
     if (CONTROL_HEADER_KEYWORDS.has(word)) {
@@ -2057,22 +2111,28 @@ function closesControlHeader(source: string, closeParen: number): boolean {
 }
 
 /**
- * Characters before a `{` that prove it opens an object literal in operand position: an assignment,
- * an argument or grouping parenthesis, an array element, a sequence or argument comma, a ternary
- * branch, or a logical, unary, arithmetic, or `<` comparison operator. `:` is deliberately absent —
- * a `:`-preceded `{` is an object property or a ternary branch, but it is also a labelled or `case`
- * block, and only the operand reading would divide — so that shape keeps the merge base's
- * statement-end reading. A `)` is absent for the same reason: `if (x) {}` opens a block, not an
- * object literal. A `>` is absent as well: it ends the two-character arrow token `=>`, whose `{`
- * opens the arrow's block body, and it ends a generic list (`class Registry<T> {}`), whose `{` opens
- * the type's body — neither proves an object literal, and reading either as one divides its `}`.
+ * Characters before a `{` that prove it opens an object literal rather than a type literal or a
+ * block: an argument or grouping parenthesis, an array element, or a sequence or argument comma.
+ * Every other character keeps the merge base's statement-end reading, because a brace that could
+ * start a type literal must not divide its `}`: `=` is absent — `type T = { … }`, `A & { … }`,
+ * `A | { … }`, and a plain reassignment all open types or statements, not the object literal a
+ * divided `}` needs — and so are `:`, the unary, arithmetic, comparison, `?`, `&`, `|`, `!`, and `~`
+ * operators, and the generic or arrow `>`. `=` is admitted separately, and only for a
+ * `const`/`let`/`var` declaration target, by `objectLiteralCloseBefore`.
  */
-const OPERAND_POSITION_CHARACTERS = '=([,?&|!~+-*/%^';
+const OPERAND_POSITION_CHARACTERS = '([,';
+
+/**
+ * The declaration keywords a `=`-preceded `{` must trace back to before it proves an object literal,
+ * so a type alias's `=` keeps the merge base's reading.
+ */
+const ASSIGNMENT_DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(['const', 'let', 'var']);
 
 /**
  * Whether the `}` at `closeBrace` provably closes an object literal in operand position, so a `/`
  * after it divides. Only a brace whose own `{` is matched backward and stands in an operand position
- * is proved; every other `}` keeps the merge base's reading.
+ * is proved; every other `}` keeps the merge base's reading, which is what keeps a type literal's `}`
+ * (`type T = { a: number }`) from turning a statement-position regex into a division.
  */
 function objectLiteralCloseBefore(source: string, closeBrace: number): boolean {
     const open = matchingOpenDelimiterBackward(source, closeBrace, '{', '}');
@@ -2084,15 +2144,16 @@ function objectLiteralCloseBefore(source: string, closeBrace: number): boolean {
         return false;
     }
     const character = source.charAt(before);
-    // `>` alone proves no operand position: it ends the two-character arrow token `=>`, whose `{`
-    // opens the arrow's block body, and a generic list's `>`, whose `{` opens the type's body. The
-    // expression those braces end is a statement, so its `}` keeps the merge base's statement-end
-    // reading and a statement-position regex after it stays a regex (#4828).
-    if (character === '>') {
-        return false;
-    }
     if (OPERAND_POSITION_CHARACTERS.includes(character)) {
         return true;
+    }
+    // `=>` is the arrow token: `() => {}` is an object literal body, so its `}` divides. A lone `=`
+    // is an assignment, which proves an object literal only when its target is a `const`/`let`/`var`
+    // declaration — `const r = {} / import(name) / 2` divides, while `type T = { … }` is a type.
+    if (character === '=') {
+        return source.charAt(before - 1) === '>'
+            ? true
+            : isAssignmentDeclarationTarget(source, previousSignificantCharacter(source, before - 1));
     }
     if (!isIdentifierContinue(character)) {
         return false;
@@ -2101,6 +2162,24 @@ function objectLiteralCloseBefore(source: string, closeBrace: number): boolean {
     // `return {}` returns an object literal, but a line terminator after `return` ends the statement,
     // and the `{` then opens a block whose close keeps the statement-end reading.
     return word === 'return' && !/[\n\r\u2028\u2029]/.test(source.slice(before + 1, open));
+}
+
+/**
+ * Whether the name whose last character is at `nameIndex` — the assignment target of the `=` that
+ * precedes the `{` just read — traces back to a `const`/`let`/`var` declaration. The walk passes over
+ * the name itself, so a declaration target proves the object literal while a reassignment's `r = {}`
+ * does not.
+ */
+function isAssignmentDeclarationTarget(source: string, nameIndex: number | undefined): boolean {
+    if (nameIndex === undefined || !isIdentifierContinue(source[nameIndex])) {
+        return false;
+    }
+    const name = readWordBackward(source, nameIndex);
+    const keyword = previousSignificantCharacter(source, nameIndex - name.length);
+    if (keyword === undefined || !isIdentifierContinue(source[keyword])) {
+        return false;
+    }
+    return ASSIGNMENT_DECLARATION_KEYWORDS.has(readWordBackward(source, keyword));
 }
 
 /**
@@ -2534,7 +2613,8 @@ function localModuleDependencies(path: string, source: string): string[] {
  * than silently truncates: a reached module with no source, or a computed `import(expr)` /
  * `require(expr)` / `createRequire(...)(expr)` specifier, throws — those shapes cannot be resolved from
  * a snapshot and must not be skipped. The computed shapes the #4818 rules do not model — a callee
- * bound to another bound name, a `.resolve`/`.bind` member, and a call the declaration-context rule
+ * bound to another bound name, a `.resolve`/`.bind` member, a call whose callee is reached through
+ * the enclosing call's argument list (`pass(require)(spec)`), and a call the declaration-context rule
  * cannot separate from a declaration — keep the merge base's reading and stay with #4835. The loader
  * itself is deliberately absent from a command's
  * executed graph — no executed source may import it, which `assertTrustedSourceGraph` refuses — so a

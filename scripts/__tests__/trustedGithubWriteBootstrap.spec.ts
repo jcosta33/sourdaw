@@ -4,6 +4,7 @@ import {
     bareModuleSpecifiers,
     executeTrustedSnapshot,
     forwardTrustedSnapshotSignal,
+    snapshotComputedDynamicSpecifiers,
     snapshotImportSpecifiers,
     trustedSnapshotRunsDetached,
 } from '../trustedGithubWriteBootstrap.ts';
@@ -241,7 +242,8 @@ describe('snapshotImportSpecifiers', () => {
      * A statement-position regex after a control header's `)` or after `else` is a regex literal, so
      * the apostrophe in `/don't/` cannot open a string that swallows the rest of the file — the shape
      * that hid every later load (#4818). The division cases pin the other half: a `/` after a call's
-     * `)` or after a `)` that closes no header still divides.
+     * `)` or after a `)` that closes no header still divides, including a private member named after
+     * a control keyword, whose `#` makes it a member exactly as `.` does (#4828).
      */
     it('collects an import a statement-position regex used to hide', () => {
         expect(snapshotImportSpecifiers("if (ok) /don't/.test(line);\nimport { parse } from 'yaml';")).toEqual([
@@ -256,13 +258,23 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotImportSpecifiers("if (ok) report(x) / 2;\nrequire('yaml')")).toEqual(['yaml']);
         expect(snapshotImportSpecifiers("if (ok) { run(); } const v = g(a) / 2;\nrequire('yaml')")).toEqual(['yaml']);
         expect(snapshotImportSpecifiers("if (ok) obj / 2;\nrequire('yaml')")).toEqual(['yaml']);
+        expect(
+            snapshotImportSpecifiers(
+                "class C { #while(n){return n} r(){ return this.#while(1) / require('yaml') / 2 } }"
+            )
+        ).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("obj.while(1) / require('yaml') / 2;")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("obj?.while(1) / require('yaml') / 2;")).toEqual(['yaml']);
     });
 
     /**
      * A load reached through a wrapped or bound callee is the same load: `(require)(spec)`,
      * `(0, require)(spec)`, a name bound to `require` or to `createRequire(…)`, and an aliased
-     * `createRequire` import (#4818). The boundary cases at the end pin the two limits — a longer
-     * name is not the binding, and a shadowed name keeps the merge base's reading.
+     * `createRequire` import (#4818). The boundary cases pin the limits: a parenthesis that continues
+     * the enclosing call is an argument list rather than a wrapped callee — `pass(require)('./hidden')`
+     * is an ordinary call, and reading it as a wrapped `require` refused it (#4828) — a longer name is
+     * not the binding, and a name redeclared in a nested function, class, or parameter list keeps the
+     * merge base's reading.
      */
     it('collects a load reached through a wrapped or bound callee', () => {
         expect(snapshotImportSpecifiers("(require)('yaml')")).toEqual(['yaml']);
@@ -282,6 +294,76 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotImportSpecifiers("const load = require;\nregistry.load('yaml')")).toEqual([]);
         expect(snapshotImportSpecifiers("const load = require;\nfunction f(load) { load('yaml') }")).toEqual([]);
         expect(snapshotImportSpecifiers("const load = require('yaml');\nload('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("pass(require)('./hidden');")).toEqual([]);
+        expect(snapshotImportSpecifiers('pass(require)(specifier);')).toEqual([]);
+        expect(snapshotImportSpecifiers("this.#m(require)('./hidden');")).toEqual([]);
+        expect(
+            snapshotImportSpecifiers(
+                'function outer() { function load(s) { return s; } return load(1); }\nconst load = require;'
+            )
+        ).toEqual([]);
+        expect(snapshotImportSpecifiers("const load = require;\nclass load {}\nload('yaml');")).toEqual([]);
+        expect(
+            snapshotImportSpecifiers(
+                'const load = require;\nfunction outer(load) { return load(1); }\nload(specifier);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotImportSpecifiers(
+                'const load = require;\nfunction outer() { function load(s) { return s; } return load(1); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotImportSpecifiers("const load = require;\nfunction outer(s) { return s; }\nload('yaml');")
+        ).toEqual(['yaml']);
+    });
+
+    /**
+     * A name declared again in a nested function, class, or parameter list is that declaration, not the
+     * loader bound outside it, so the binding is dropped and the nested call keeps the merge base's
+     * reading (#4828). The bare bound name still resolves, which is what separates the two.
+     */
+    it('drops a loader binding redeclared in a nested scope', () => {
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nload(specifier);')).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function outer() { function load(s) { return s; } return load(1); }\nconst load = require;'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const load = require;\nfunction outer() { class load {}\nreturn new load(); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('const load = require;\nfunction outer(load) { return load(1); }')
+        ).toEqual([]);
+    });
+
+    /**
+     * A type literal's `}` is not an operand-position object literal's `}`: treating it as one
+     * mislexed the statement-position regex after it and let its apostrophe swallow the file (#4828).
+     * Only the argument, array, sequence, `return`, arrow, and declaration-assignment positions keep
+     * the division reading, so a `const` initializer's braces still divide while every type shape —
+     * a type alias, an intersection or union branch, an annotation — keeps the merge base's reading.
+     */
+    it('keeps the merge base reading at a type literal close', () => {
+        expect(snapshotImportSpecifiers("type T = { a: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        expect(snapshotImportSpecifiers("type T = A & { b: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        expect(snapshotImportSpecifiers("type T = A | { b: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        expect(snapshotImportSpecifiers("let x: { a: number }\n/don't/.test(line);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+        // The division reading is what the `const` initializer proves: the literal specifier after the
+        // divided `/` is a real load and is collected, while the computed form is refused above.
+        expect(snapshotImportSpecifiers("const r = {} / import('yaml') / 2;")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const r = {} / require('yaml') / 2;")).toEqual(['yaml']);
     });
 });
 

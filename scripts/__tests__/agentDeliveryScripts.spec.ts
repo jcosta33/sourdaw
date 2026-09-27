@@ -1813,6 +1813,32 @@ describe('package scripts and gitignore', () => {
             shape: 'import(...)',
         },
         {
+            label: 'a load after a declaration object literal divided by it',
+            poisoned: 'const r = {} / require(specifier) / 2;',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after a type alias type literal at statement position',
+            poisoned: "type T = { a: number }\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load after an intersection type literal at statement position',
+            poisoned: "type T = A & { b: number }\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a division through a private member named after a control keyword',
+            poisoned:
+                'class Gauge {\n    #while(n) { return n; }\n    ratio() {\n        return this.#while(1) / require(specifier) / 2;\n    }\n}',
+            shape: 'require(...)',
+        },
+        {
+            label: 'a load reached through a bound name beside a nested declaration of it',
+            poisoned: 'const load = require;\nfunction outer(s) { return s; }\nload(specifier);',
+            shape: 'require(...)',
+        },
+        {
             label: 'a load after an object literal divided in a return',
             poisoned: 'function f() { return {} / require(specifier) / 2; }',
             shape: 'require(...)',
