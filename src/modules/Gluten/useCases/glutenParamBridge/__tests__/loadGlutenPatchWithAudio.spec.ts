@@ -63,6 +63,24 @@ describe('loadGlutenPatchWithAudio', () => {
         expect(pushedValueFor('threshold')).toBe(DEFAULT_PATCH.threshold);
     });
 
+    // #4709: the engine's `style` write is a macro that also selects the
+    // style's own topology, so it must land before `topology` — an explicit
+    // topology entry then wins and the engine runs the topology the patch
+    // stores. Presence of both pushes is not enough; only their call ORDER
+    // observes the load-bearing sequencing.
+    it('should push style before topology for a patch carrying both', () => {
+        const patch: GlutenPatch = { ...DEFAULT_PATCH, style: 'punch', topology: 'opto' };
+
+        loadGlutenPatchWithAudio('dev', patch);
+
+        const pushedKeys = pushParamImmediately.mock.calls.map(([, key]) => key);
+        const styleIndex = pushedKeys.indexOf('style');
+        const topologyIndex = pushedKeys.indexOf('topology');
+        expect(styleIndex).toBeGreaterThanOrEqual(0);
+        expect(topologyIndex).toBeGreaterThanOrEqual(0);
+        expect(styleIndex).toBeLessThan(topologyIndex);
+    });
+
     describe('fix 2 — observable desync on unencodable value', () => {
         it('should warn and skip the push when a param fails to encode', () => {
             const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});

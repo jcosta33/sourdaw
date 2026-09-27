@@ -224,10 +224,6 @@ const DEFAULT_EXCLUDING_WINDOWS: ReadonlyMap<string, string> = new Map([
         'The 12000 Hz default leaves the tail nearly unfiltered; deliberately darkening a bright tail needs the lower, more audible cut the window covers.',
     ],
     [
-        'dutch-oven/diffusion',
-        'The plate boots at full diffusion — its constructor seeds the diffuser gains at the formula’s 1.0 output (#4430) — while ordinary tail-shaping work sits inside 0.5–0.9.',
-    ],
-    [
         'crust/release',
         'The 0 ms default selects the program-dependent auto branch — apply_envelope forces auto whenever release is zero regardless of releaseAuto — so 50–400 ms describes the manual release window dialed in once a real value is set.',
     ],

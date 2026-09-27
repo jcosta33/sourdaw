@@ -1037,7 +1037,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     min={0}
                                     max={1}
                                     step={0.01}
-                                    defaultValue={1.0}
+                                    defaultValue={0.75}
                                     size="md"
                                     readout={formatValue(params.diffusion, '%')}
                                 />

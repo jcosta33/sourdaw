@@ -178,21 +178,12 @@ const NATIVE_DSP_DESCRIPTOR_DATA: PluginDescriptor[] = [
                 hasAutomation: false,
             },
             {
-                // 1.0, not a mid-range value: the engine's constructor seeds its
-                // four input-diffuser allpass gains at 0.750/0.750/0.625/0.625,
-                // which is exactly what `set_param("diffusion")` derives at 1.0
-                // (`d1 = 0.750 * diffusion`, `d2 = 0.625 * diffusion`). An
-                // untouched engine therefore renders as diffusion 1.0, and a
-                // default of 0.75 claimed a sound the engine does not boot into
-                // — writing it moved the gains to 0.5625/0.46875 (#4430).
-                // `value` seeds `parameterValues` in `addDevice`, so both fields
-                // must say what the engine boots at.
                 id: 'diffusion',
                 deviceId: 'dutch-oven',
                 name: 'Diffusion',
                 type: 'float',
-                value: 1.0,
-                defaultValue: 1.0,
+                value: 0.75,
+                defaultValue: 0.75,
                 minValue: 0,
                 maxValue: 1,
                 unit: '',

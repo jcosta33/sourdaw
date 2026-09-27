@@ -530,9 +530,15 @@ fn the_replay_preserves_most_recent_write_order() {
 /// early reflection tap arrivals to match the documented plate room size, moving
 /// the measured peak from 8.290293e-1 to 9.8297787e-1 and RMS from 1.515884e-1
 /// to 1.7570771e-1 on this stimulus.
+///
+/// Updated again for #4430's render-preserving arm: the input diffusers are
+/// seeded at the `set_param` diffusion formula's output at the declared
+/// default 0.75, so the untouched render is the sound every app-created unit
+/// has always rendered. Measured on this stimulus, the peak moved from
+/// 9.8297787e-1 to 9.9530500e-1 and RMS from 1.7570771e-1 to 1.7399131e-1.
 const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
-    peak: 9.8297787e-1,
-    rms: 1.7570771e-1,
+    peak: 9.9530500e-1,
+    rms: 1.7399131e-1,
     onset: 1,
 };
 

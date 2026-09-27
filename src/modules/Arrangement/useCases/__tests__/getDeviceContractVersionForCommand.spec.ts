@@ -43,9 +43,7 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-lufs-meter': 'descriptor-v1:76e76f72',
     'builtin-synth': 'descriptor-v1:614f201f',
     'builtin-drum-kit': 'descriptor-v1:15e97237',
-    // Dutch Oven declares its diffusion default as 1.0 (#4430): the engine seeds
-    // its input-diffuser gains so an untouched unit renders at diffusion 1.0.
-    'dutch-oven': 'descriptor-v1:6270aef9',
+    'dutch-oven': 'descriptor-v1:697d31a3',
     'native-scoring': 'descriptor-v1:6236c1eb',
     'faust-zita-rev1-reverb': 'descriptor-v1:8fe5016c',
     'faust-1176-compressor': 'descriptor-v1:5b2d5282',
