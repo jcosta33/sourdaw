@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-## ws 8.21.1
+## ws 8.22.0
 
 Declared license: MIT
 
