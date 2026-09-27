@@ -2,8 +2,9 @@
 /**
  * Author-side record of a repair for one blocking review finding (#3000).
  *
- * The reviewer's `selectEligibleRepairs` refuses a thread that carries two distinct records, and only
- * a head that addresses a finding may resolve its thread. So the author records the repair without
+ * The reviewer's `selectEligibleRepairs` refuses a thread that carries conflicting distinct records —
+ * a re-record on a descending head supersedes the earlier record instead (#4589) — and only a head
+ * that addresses a finding may resolve its thread. So the author records the repair without
  * resolving: where `review:resolve` writes the fixed word `Done`, this command writes the rendered
  * repair reply — prose plus the machine-readable marker — and leaves the thread open. Recording twice
  * is a no-op: a reply whose canonical rendering is byte-identical to the one about to be posted is
@@ -328,8 +329,9 @@ function authorRepairRecords(state: RepairReviewFindingThread): ReviewRepairReco
 /**
  * Whether the rendered reply this command would post already sits on the thread. Compared as bytes,
  * because that is what a later reader of the thread sees: a record that differs anywhere — another
- * commit, another head, one more evidence entry — is a different record, and the reviewer's
- * selection treats two distinct records as a refusal, so it is recorded rather than replaced.
+ * commit, another head, one more evidence entry — is a different record. The reviewer's selection
+ * lets a re-record on a descending head supersede the earlier record and refuses conflicting records,
+ * so a correction rides a new push and a fresh recording rather than an in-place rewrite.
  */
 function isRepairAlreadyRecorded(state: RepairReviewFindingThread, incoming: ReviewRepairRecord): boolean {
     const rendered = renderReviewRepairReply(incoming);

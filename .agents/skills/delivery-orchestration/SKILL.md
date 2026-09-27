@@ -500,14 +500,18 @@ strictly descends `R`, so neither can be recorded or confirmed as its repair.
 
 The reviewer confirms with `review:confirm`, a distinct identity from the
 author's. It resolves, in one pass with deterministic mutation ids, the threads
-whose author-recorded repair validates: same pull request, same thread, same
-head, finding equal to the thread's root comment, repairing commit inside
+whose author-recorded repair validates: same pull request, same thread, a
+recorded head equal to or an ancestor of the live head with the repairing
+commit still contained in it, finding equal to the thread's root comment,
+repairing commit inside
 `base..head` and strictly descending the thread root's live associated review
 commit (`pullRequestReview.commit.oid`), record well formed, evidence safe.
-The repairing commit may equal the live head. Missing or malformed root review
-provenance or an unavailable ancestry comparison fails closed for the whole
-batch before any confirmation or resolution. It also fails closed — a refused
-record, a duplicate distinct record, a thread already carrying a
+A re-record on a descending head supersedes the thread's earlier record
+(#4589). The repairing commit may equal the live head. Missing or malformed
+root review provenance or an unavailable ancestry comparison fails closed for
+the whole batch before any confirmation or resolution. It also fails closed —
+a refused record, conflicting duplicate records no descending re-record
+supersedes, a thread already carrying a
 confirmation for a different record or a duplicated identical confirmation, a
 rebound identity, a mismatched finding, or a commit outside the reviewed range
 resolves nothing and reports the refusal, leaving the operator to fix the
