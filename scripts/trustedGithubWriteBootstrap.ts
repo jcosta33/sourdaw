@@ -707,18 +707,19 @@ function collectLoaderBindings(source: string): LoaderRead {
         if (declaredField !== undefined) {
             if (declaredField.ownerOpen !== undefined) {
                 if (declaredField.static !== true) {
-                    const entry = classEntryFromOpen(source, classFields, declaredField.ownerOpen);
                     // A field whose read back crosses a regex ending in `*` after a block comment is
                     // mis-placed: the backward walk reads the regex's closing slash as that comment's
                     // close and jumps over an unclosed method body's `{`, taking a method-local
-                    // assignment for a class field. Mark the class unmodelled so the read-back keeps
-                    // the merge base's reading rather than resolving that assignment to the field.
+                    // assignment for a class field. Skip registering that one field so the read-back
+                    // resolves the name to its other member rather than reporting the mis-placed
+                    // value, without discarding the other genuinely declared fields.
                     if (
-                        fieldRegionHasMisplacedRegexClose(source, declaredField.ownerOpen + 1, declaredField.nameIndex)
+                        !fieldRegionHasMisplacedRegexClose(source, declaredField.ownerOpen + 1, declaredField.nameIndex)
                     ) {
-                        entry.unmodelled = true;
-                    } else {
-                        entry.fields.set(declaredField.name, declaredField.kind);
+                        classEntryFromOpen(source, classFields, declaredField.ownerOpen).fields.set(
+                            declaredField.name,
+                            declaredField.kind
+                        );
                     }
                 }
             } else if (declaredField.pendingSource !== undefined) {
@@ -5346,6 +5347,26 @@ function isMemberNameAt(source: string, index: number): boolean {
 }
 
 /**
+ * Whether a radix prefix (`0x`, `0o`, `0b`, or uppercase) stands immediately before the digit or
+ * separator run that ends at `separatorIndex`, so the separator there belongs to a radix literal's
+ * digits rather than a bare decimal's integer part.
+ */
+function radixPrefixBefore(source: string, separatorIndex: number): boolean {
+    let back = separatorIndex - 1;
+    while (back >= 0 && (isDecimalDigit(source[back]) || source[back] === '_')) {
+        back -= 1;
+    }
+    if (back < 0) {
+        return false;
+    }
+    const marker = source[back];
+    return (
+        (marker === 'x' || marker === 'X' || marker === 'o' || marker === 'O' || marker === 'b' || marker === 'B') &&
+        source[back - 1] === '0'
+    );
+}
+
+/**
  * Whether the `.` at `cursor` is a numeric literal's point: the run of digits and dots ending at
  * `cursor - 1` holds digits only, so `1.` and `1_000.` are points while the second dot of `1.1.` is
  * member access. The run must be a bare decimal's integer part: a run that continues an identifier
@@ -5365,8 +5386,9 @@ function isNumericLiteralPoint(source: string, cursor: number): boolean {
     }
     const before = source[run];
     // A `_` directly after a digit is a numeric separator (`1_000.`), not an identifier tail, so it
-    // keeps the run a plain decimal's integer part.
-    const separator = before === '_' && isDecimalDigit(source[run - 1]);
+    // keeps the run a plain decimal's integer part — unless the run is a radix literal's digits
+    // (`0x1_1.`), whose dot is member access.
+    const separator = before === '_' && isDecimalDigit(source[run - 1]) && !radixPrefixBefore(source, run);
     // A letter, digit, underscore, or `$` before the run continues an identifier, so the run is its
     // tail. The same check catches an unsigned exponent and a radix prefix, whose marker (`e`/`E`,
     // `x`/`X`/`o`/`O`/`b`/`B`) is a letter.

@@ -440,9 +440,9 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { load = require; }\nfunction f() { let load = other; return load(spec); }'
             )
         ).toEqual([]);
-        // A static field is not on the instance, so `new H()` carries no loader to read back. The
-        // instance's own field is what the read-back reaches, and the static field of the same name
-        // must not be written over it — this row's reading can only come from that exclusion.
+        // A static field is not on the instance, so `new H()` carries no loader to read back; the
+        // sibling row is the one that witnesses the same-name static field not overwriting the
+        // instance's own field.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { static loader = require; }\nconst { loader } = new H();\nloader(spec);'
@@ -821,6 +821,17 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotComputedDynamicSpecifiers('const r = 0X11.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = 0O17.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = 0B11.else / require(spec) / y;')).toEqual(['require(...)']);
+        // A separator inside a radix literal's digits is still that literal's digits, not a bare
+        // decimal's, so the dot is member access and the load behind the division is reported.
+        expect(snapshotComputedDynamicSpecifiers('const r = 0x1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0b1_1.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0o1_7.else / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
         // A block comment's close is a `/` the `*` before it opens, so a division slash after a comment
         // is no comment close: the regex after it keeps its region and the field below is a member.
         expect(
@@ -853,13 +864,32 @@ describe('snapshotImportSpecifiers', () => {
             )
         ).toEqual(['require(...)']);
         // A `/ab*/` after a block comment whose span to the slash crosses a method body's unclosed `{`
-        // is the one the walk cannot place: the class is unmodelled and the read-back refuses, so a
-        // method-local `loader = require` never passes for the class's own `loader` method.
+        // is the one the walk cannot place: the mis-placed field is not registered, so a method-local
+        // `loader = require` never passes for the class's own `loader` method.
         expect(
             snapshotComputedDynamicSpecifiers(
                 "const spec = './x';\nclass D {\n  /* note */\n  loader(_spec?: unknown): void {}\n  m(): void {\n    const re = /ab*/;\n    void re;\n    let loader: (s: string) => void;\n    loader = require;\n    loader(spec);\n  }\n}\nconst { loader } = new D();\nloader(spec);"
             )
         ).toEqual([]);
+        // The bail skips only the binding its mis-placement condemns: an unrelated method-local `other`
+        // does not discard the genuinely declared `loader`, and neither does the same method without it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { loader = require; /* c */ m() { const re = /ab*/; other = require; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { loader = require; /* c */ m() { const re = /ab*/; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // The bail's scan stops at the field's own name, so a field declared before a method whose body
+        // holds the same regex is still registered rather than condemned by the later member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D { loader = require; m() { /* c */ if (x) { const re = /ab*/; } } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
         // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.
         expect(
             snapshotComputedDynamicSpecifiers(
