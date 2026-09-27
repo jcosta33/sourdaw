@@ -29,9 +29,12 @@
  * pre-admission proxy, not a promise of what a request carries: it cannot know a unit's serialized
  * request budget, so a file it admits that the request fitter then leaves no region for is still
  * excluded by `planUnits`, and the document that file charged is read by nothing. The order decides
- * what the collector's total withholds, not what a request carries: when that total binds before the
- * context tier the document is withheld at admission, no contract-context region reaches the request
- * fitter, and the reserve that fitter takes whenever a unit carries context has nothing to hold.
+ * what the collector's total withholds and which regions a unit is given; it never decides what a
+ * request carries among them, because each unit's own and context regions are attempted in the unit's
+ * own stable order — path, bounds, then side — and its budget decides among those. When that total
+ * binds before the context tier the document is withheld at admission, no contract-context region
+ * reaches the request fitter, and the reserve that fitter takes whenever a unit carries context has
+ * nothing to hold.
  * A region over the per-region ceiling
  * is never supplied: it is withheld and recorded, so a contract document larger than that ceiling is
  * never sent whatever its tier. Every withheld region is named, and that name carries the

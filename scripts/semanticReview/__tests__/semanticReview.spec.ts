@@ -30,7 +30,7 @@ import {
     type SemanticEvidenceSet,
     type SemanticSourcePort,
 } from '../evidence.ts';
-import { fitUnitEvidence, regionCost, serializedRegion } from '../fit.ts';
+import { fitUnitEvidence, regionCost } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
@@ -2939,6 +2939,182 @@ describe('unit planning', () => {
     });
 });
 
+describe('request carriage follows the unit, not the admission order', () => {
+    /**
+     * The request budget at which the planner stops refusing a path for the request's own overhead: the
+     * reserve it subtracts from `maxStatePlusQuestionBytes` before it offers any region. `planUnits`
+     * reports `unit-overhead-exceeds-request-budget` while `maxStatePlusQuestionBytes - reserve <= 0`,
+     * and that refusal reads neither the fit order nor a region's charge, so a case can sit exactly on a
+     * fit boundary without restating the reserve arithmetic the planner owns.
+     */
+    function requestReserve(files: readonly SemanticChangedFile[], set: SemanticEvidenceSet, path: string): number {
+        const refusesForOverhead = (budget: number): boolean =>
+            planUnits(files, set, budget).excluded.some(
+                (entry) => entry.path === path && entry.reason === 'unit-overhead-exceeds-request-budget'
+            );
+        let refused = 0;
+        let planned = SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes;
+        while (refused < planned) {
+            const middle = Math.ceil((refused + planned) / 2);
+            if (refusesForOverhead(middle)) {
+                refused = middle;
+            } else {
+                planned = middle - 1;
+            }
+        }
+        return refused;
+    }
+
+    /** What the fitter charges one region: the planner's own measure, read from the production function. */
+    function charge(set: SemanticEvidenceSet, reference: EvidenceReference): number {
+        return regionCost(reference, set.contents.get(reference.evidenceId) ?? '');
+    }
+
+    function regionKeys(references: readonly EvidenceReference[]): string[] {
+        return references.map(
+            (reference) => `${reference.path}:${reference.side}:${reference.startLine}-${reference.endLine}`
+        );
+    }
+
+    it('carries the same context region when the same admitted set is assembled in another order', () => {
+        // Witness B: the context candidates reached the fitter in the order the collector admitted them,
+        // so two runs whose admitted sets are identical carried different documents purely because the
+        // array was permuted — and a permuted array is what a changed admission tier produces, because
+        // the tiers decide where a document sits while nothing about the document decides that. The fit
+        // order reads the regions themselves, so the boundary carries the same document either way.
+        const path = 'src/modules/Project/undo.ts';
+        const files = [changedFile(path)];
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                blobs: {
+                    [`${MERGE_BASE}:${path}`]: 'export const before = 1;\n',
+                    [`${HEAD}:${path}`]: 'export const after = 2;\n',
+                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n'.repeat(190),
+                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n'.repeat(150),
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            includeDefaultContractContext: true,
+        });
+        const documents = set.references.filter((reference) => reference.side === 'context');
+        const cheapest = documents.reduce((left, right) => (charge(set, right) < charge(set, left) ? right : left));
+        const fattest = documents.reduce((left, right) => (charge(set, right) > charge(set, left) ? right : left));
+        const reader = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes).units.find(
+            (candidate) => candidate.path === path
+        );
+        const own = reader?.evidence.own ?? [];
+        expect(documents).toHaveLength(2);
+        expect(own).toHaveLength(2);
+        // The budget at which the fattest document alone fits the share the reserve protects: the cheaper
+        // document fits it too, and the two together do not, so the order alone decides which is carried.
+        const budget =
+            requestReserve(files, set, path) +
+            own.reduce((sum, reference) => sum + charge(set, reference), 0) +
+            charge(set, fattest);
+        const carried = (candidate: SemanticEvidenceSet): string[] => {
+            const unit = planUnits(files, candidate, budget).units.find((entry) => entry.path === path);
+            return regionKeys(unit?.evidence.context ?? []);
+        };
+        expect(carried(set)).toEqual(regionKeys([cheapest]));
+        // The same admitted set — same references, same identifiers, same contents — assembled in the
+        // other order, at the same request budget.
+        const reversed: SemanticEvidenceSet = { ...set, references: [...set.references].reverse() };
+        expect(carried(reversed)).toEqual(regionKeys([cheapest]));
+    });
+
+    it("keeps a unit's before side when an unrelated earlier path moves its evidence ids", () => {
+        // Witness A: an unrelated path admitted first moved the unit's identifiers one ordinal past the
+        // digit boundary, and the fitter charged each region through the identifier it held, so at a
+        // budget boundary the same admitted unit cost a byte more per region and lost a side. The charge
+        // now reads the region, so the same budget carries the same sides whatever ordinals the
+        // collector assigned.
+        //
+        // The second arm holds the assembly order: the reverse of the collector's array offers an after
+        // hunk first, and at this boundary that hunk takes the room the before side needs. Reading the
+        // collector's array order reddens that arm; the byte-first order keeps the before side.
+        const unitPath = 'crates/daw-dsp/src/engine.rs';
+        const unrelatedPath = 'crates/daw-dsp/src/unrelated.rs';
+        const unitBefore = 'const beforeValue = 1;\n';
+        const unitAfter = 'const header = 0;\nconst afterValueOne = 2;\nconst afterValueTwo = 3;\n';
+        const unrelatedLines = ['a=1\n', 'b=2\n', 'c=3\n', 'd=4\n', 'e=5\n'];
+        const unitHunks: PathHunks = {
+            path: unitPath,
+            before: [{ startLine: 1, endLine: 1 }],
+            after: [
+                { startLine: 2, endLine: 2 },
+                { startLine: 3, endLine: 3 },
+            ],
+        };
+        const unrelatedHunks: PathHunks = {
+            path: unrelatedPath,
+            before: unrelatedLines.map((_line, index) => ({ startLine: index + 1, endLine: index + 1 })),
+            after: unrelatedLines.map((_line, index) => ({ startLine: index + 1, endLine: index + 1 })),
+        };
+        const collect = (files: readonly SemanticChangedFile[], hunks: ReadonlyMap<string, PathHunks>) =>
+            collectEvidence({
+                port: fakeSource({
+                    files,
+                    hunks,
+                    blobs: {
+                        [`${MERGE_BASE}:${unitPath}`]: unitBefore,
+                        [`${HEAD}:${unitPath}`]: unitAfter,
+                        [`${MERGE_BASE}:${unrelatedPath}`]: unrelatedLines.join(''),
+                        [`${HEAD}:${unrelatedPath}`]: unrelatedLines.join('').replaceAll('=', '+='),
+                    },
+                }),
+                mergeBaseSha: MERGE_BASE,
+                headSha: HEAD,
+                contractSourceSha: MERGE_BASE,
+                limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+            });
+        const aloneFiles = [changedFile(unitPath, { added: 2, deleted: 1 })];
+        const movedFiles = [changedFile(unrelatedPath, { added: 5, deleted: 5 }), ...aloneFiles];
+        const set = collect(aloneFiles, new Map([[unitPath, unitHunks]]));
+        const movedSet = collect(
+            movedFiles,
+            new Map([
+                [unitPath, unitHunks],
+                [unrelatedPath, unrelatedHunks],
+            ])
+        );
+        const referenceFor = (candidate: SemanticEvidenceSet, side: EvidenceSide): EvidenceReference => {
+            const found = candidate.references.find(
+                (reference) => reference.path === unitPath && reference.side === side
+            );
+            if (found === undefined) {
+                throw new Error(`the fixture minted no ${side}-side region for the unit`);
+            }
+            return found;
+        };
+        // The unrelated path's ten regions are admitted ahead of the unit's and move its ids a digit on.
+        expect(referenceFor(movedSet, 'before').evidenceId.length).toBeGreaterThan(
+            referenceFor(set, 'before').evidenceId.length
+        );
+        const carriesBefore = (
+            files: readonly SemanticChangedFile[],
+            candidate: SemanticEvidenceSet,
+            budget: number
+        ): boolean => {
+            const unit = planUnits(files, candidate, budget).units.find((entry) => entry.path === unitPath);
+            return (unit?.evidence.own ?? []).some((reference) => reference.side === 'before');
+        };
+        // The budget the before side alone fills carries it in the run whose ids moved.
+        const boundary = requestReserve(aloneFiles, set, unitPath) + charge(set, referenceFor(set, 'before'));
+        expect(carriesBefore(aloneFiles, set, boundary)).toBe(true);
+        expect(carriesBefore(movedFiles, movedSet, boundary)).toBe(true);
+        // One byte under a request holding a before and an after region: the assembly order alone decides
+        // which of the two survives, and the before side survives under either.
+        const ordered = boundary + charge(set, referenceFor(set, 'after')) - 1;
+        expect(carriesBefore(movedFiles, movedSet, ordered)).toBe(true);
+        const reversed: SemanticEvidenceSet = { ...movedSet, references: [...movedSet.references].reverse() };
+        expect(carriesBefore(movedFiles, reversed, ordered)).toBe(true);
+    });
+});
+
 describe('change-kind applicability', () => {
     it('does not mark an added file incomplete for evidence that cannot exist', () => {
         // An added test file has no before side, so a rule about removing prior verification is
@@ -3237,12 +3413,7 @@ describe('a hunked copy whose source is also modified', () => {
     }
 
     function serializedCost(set: SemanticEvidenceSet, reference: EvidenceReference): number {
-        return Buffer.byteLength(
-            JSON.stringify({
-                [reference.evidenceId]: serializedRegion(reference, set.contents.get(reference.evidenceId) ?? ''),
-            }),
-            'utf8'
-        );
+        return regionCost(reference, set.contents.get(reference.evidenceId) ?? '');
     }
 
     function hunkedCopy(): { set: SemanticEvidenceSet; files: SemanticChangedFile[] } {

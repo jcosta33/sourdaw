@@ -10,10 +10,14 @@
  * had been sent, and a prefix cannot answer a question about a side of a change. A region that does
  * not fit is dropped, counted, and named — so the questions that needed it report the evidence as not
  * supplied instead of answering from a third of it.
+ *
+ * The fitter owns both halves of that decision: what a region costs, and the order the regions it was
+ * given are attempted in. Both read the region, never the position the collector's admission left it
+ * at, so the same admitted set fits the same regions whatever order admission attempted it in.
  */
 
 import { EVIDENCE_SIDES, type EvidenceReference, type EvidenceSide } from './contracts.ts';
-import { type SemanticEvidenceSet } from './evidence.ts';
+import { compareLexicographic, evidenceSidePrefix, type SemanticEvidenceSet } from './evidence.ts';
 
 /**
  * One region exactly as it is sent. `fitUnitEvidence` costs regions through this same shape, so the
@@ -32,14 +36,87 @@ export function serializedRegion(reference: EvidenceReference, content: string):
 }
 
 /**
- * The exact bytes one region costs inside a request's evidence map.
+ * The key every region is charged under: its side prefix and a fixed two-digit ordinal.
  *
- * This must be the serialized size, not the raw byte count: JSON escapes every newline in a source
- * file to two bytes, so a raw-byte estimate under-counts by roughly one byte per line and a unit
- * sized by it overruns the request limit.
+ * The identifier's ordinal is the position admission attempted the region at, so charging the
+ * identifier a region happens to hold made an identical admitted set cost a different number of bytes
+ * as soon as an unrelated earlier path moved that position — one more byte per region each time an
+ * ordinal gained a digit — and a request sitting on the budget boundary then carried a different set
+ * of regions. A region's cost is a property of the region and its content, so every region is charged
+ * this one key width whatever ordinal it holds.
+ *
+ * Two digits keeps the charge at or above the bytes the payload spends on the key for every identifier
+ * the collector's own total budget makes ordinary. A third-digit ordinal — reached once a change admits
+ * a hundred regions — costs the payload one byte more than this key per region, and the structural
+ * bytes the charge counts around a lone region (the braces the evidence map itself pays once) are worth
+ * that byte and more. The region's serialized form, its escaping and its field bytes stay exact.
+ */
+function chargedRegionKey(reference: EvidenceReference): string {
+    return `${evidenceSidePrefix(reference.side)}00`;
+}
+
+/**
+ * The bytes one region costs inside a request's evidence map.
+ *
+ * The serialized size is what matters, not the raw byte count: JSON escapes every newline in a source
+ * file to two bytes, so a raw-byte estimate under-counts by roughly one byte per line and a unit sized
+ * by it overruns the request limit. Only the key is charged at the fixed width above, so the charge
+ * tracks the payload's escaping and field bytes and never the identifier's ordinal.
  */
 export function regionCost(reference: EvidenceReference, content: string): number {
-    return Buffer.byteLength(JSON.stringify({ [reference.evidenceId]: serializedRegion(reference, content) }), 'utf8');
+    return Buffer.byteLength(
+        JSON.stringify({ [chargedRegionKey(reference)]: serializedRegion(reference, content) }),
+        'utf8'
+    );
+}
+
+/**
+ * The order one unit's regions are attempted in, read from the regions themselves: content bytes, then
+ * path, bounds, and side — the order admission uses *inside one tier*, read from the region rather than
+ * from where the collector's tiers left it.
+ *
+ * The collector's order ranks units, so a promotion moves a region's position in the change-wide array
+ * while nothing about the region changes; attempting a unit's regions in that array's order carried
+ * different evidence for the same admitted set, because whichever region admission attempted first took
+ * the room the next one needed. The ascending-byte key is what keeps a unit's carriage where admission
+ * already put it whenever admission ordered the unit's own sides by their own size.
+ */
+function compareFitOrder(
+    bytes: ReadonlyMap<string, number>,
+    left: EvidenceReference,
+    right: EvidenceReference
+): number {
+    const leftBytes = bytes.get(left.evidenceId) ?? 0;
+    const rightBytes = bytes.get(right.evidenceId) ?? 0;
+    if (leftBytes !== rightBytes) {
+        return leftBytes - rightBytes;
+    }
+    const byPath = compareLexicographic(left.path, right.path);
+    if (byPath !== 0) {
+        return byPath;
+    }
+    if (left.startLine !== right.startLine) {
+        return left.startLine - right.startLine;
+    }
+    if (left.endLine !== right.endLine) {
+        return left.endLine - right.endLine;
+    }
+    const bySide = EVIDENCE_SIDES.indexOf(left.side) - EVIDENCE_SIDES.indexOf(right.side);
+    if (bySide !== 0) {
+        return bySide;
+    }
+    return compareLexicographic(left.revisionSha, right.revisionSha);
+}
+
+/** One region set in its own stable order, with each region's content measured once. */
+function inFitOrder(set: SemanticEvidenceSet, references: readonly EvidenceReference[]): EvidenceReference[] {
+    const bytes = new Map(
+        references.map((reference) => [
+            reference.evidenceId,
+            Buffer.byteLength(set.contents.get(reference.evidenceId) ?? '', 'utf8'),
+        ])
+    );
+    return [...references].sort((left, right) => compareFitOrder(bytes, left, right));
 }
 
 /**
@@ -115,12 +192,15 @@ export type FittedUnitEvidence = {
 /**
  * Fits one unit's regions inside the per-request state budget.
  *
- * A region that does not fit is dropped, counted, and its side recorded, so the questions that
- * needed it report the evidence as not supplied rather than answering over a fragment; later regions
- * are dropped once the budget is gone. Context regions are offered last, so an oversized
- * implementation costs a contract rather than the unit, and the bounded share they reserve ahead of the
- * unit's own regions is the one exception to that order. Whatever is lost is reported, because an
- * omitted region is not evidence that the region is safe.
+ * Each set is attempted in its own stable order rather than in the order the collector admitted it:
+ * admission's order ranks units, so it is no property of the regions a request was given, and reading
+ * it here made an identical admitted set carry different evidence. A region that does not fit is
+ * dropped, counted, and its side recorded, so the questions that needed it report the evidence as not
+ * supplied rather than answering over a fragment; later regions are dropped once the budget is gone.
+ * Context regions are offered last, so an oversized implementation costs a contract rather than the
+ * unit, and the bounded share they reserve ahead of the unit's own regions is the one exception to that
+ * order. Whatever is lost is reported, because an omitted region is not evidence that the region is
+ * safe.
  *
  * The own and context fits are returned separately rather than as one union, because a dropped side
  * means different things in each: an own-side drop unsupplies that side of the unit, while a context
@@ -132,9 +212,11 @@ export function fitUnitEvidence(
     context: readonly EvidenceReference[],
     maxBytes: number
 ): FittedUnitEvidence {
-    const contextBudget = context.length === 0 ? 0 : Math.floor(maxBytes * CONTEXT_BUDGET_SHARE);
-    const ownFitted = fitRegions(set, own, maxBytes - contextBudget);
-    const contextFitted = fitRegions(set, context, maxBytes - ownFitted.used);
+    const ownOrder = inFitOrder(set, own);
+    const contextOrder = inFitOrder(set, context);
+    const contextBudget = contextOrder.length === 0 ? 0 : Math.floor(maxBytes * CONTEXT_BUDGET_SHARE);
+    const ownFitted = fitRegions(set, ownOrder, maxBytes - contextBudget);
+    const contextFitted = fitRegions(set, contextOrder, maxBytes - ownFitted.used);
     return {
         own: {
             references: ownFitted.references,
