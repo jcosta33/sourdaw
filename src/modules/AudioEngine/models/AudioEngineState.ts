@@ -188,7 +188,6 @@ type ToasterScheduledHit = {
     midiNote?: number;
     sampleFrame: number;
     padParams: ToasterScheduledPadParam[];
-    restoreEngineType?: number;
     fillCondition?: 'fill' | 'not-fill';
 };
 

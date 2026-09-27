@@ -73,7 +73,6 @@ function schedulePatternStep({
             return false;
         }
         const gridStartBeat = stepIdx * stepDurationBeats;
-        const pad = state.kit.pads[track.padIndex];
         const padParams = Object.entries(step.paramLocks)
             .filter(([key]) => !key.startsWith('_'))
             .map(([name, value]) => ({ name, value }));
@@ -81,22 +80,19 @@ function schedulePatternStep({
         if (step.soundLock) {
             lockedEngineIdx = TOASTER_ENGINE_MAP[step.soundLock];
         }
-        let defaultEngineIdx: number | null = null;
-        if (pad) {
-            defaultEngineIdx = TOASTER_ENGINE_MAP[pad.engineType];
-        }
         const padIndex = track.padIndex;
 
         for (const hit of projection.hits) {
             const projectedStartBeat = hit.startBeat + hit.loopOffsetBeats;
             const totalDelayMs = Math.max(0, gridDelayMs + (projectedStartBeat - gridStartBeat) * (60_000 / bpm));
             let scheduledPadParams: Array<{ name: string; value: number }> = [];
-            let restoreEngineType: number | undefined;
             if (hit.retriggerIndex === 0) {
+                // The sound lock rides the same per-hit overlay as the param
+                // locks: the engine picks the locked engine for this hit only,
+                // so no restore write follows the hit (#4636).
                 scheduledPadParams = padParams;
-                if (lockedEngineIdx !== null && defaultEngineIdx !== null) {
+                if (lockedEngineIdx !== null) {
                     scheduledPadParams = [...padParams, { name: 'engineType', value: lockedEngineIdx }];
-                    restoreEngineType = defaultEngineIdx;
                 }
             }
             scheduleToasterHit({
@@ -105,7 +101,6 @@ function schedulePatternStep({
                 velocity: hit.velocity,
                 targetTimeSeconds: audioTimeSeconds + totalDelayMs / 1000,
                 padParams: scheduledPadParams,
-                restoreEngineType,
                 fillCondition: step.condition === 'fill' || step.condition === 'not-fill' ? step.condition : undefined,
             });
         }

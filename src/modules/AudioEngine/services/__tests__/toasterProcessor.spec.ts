@@ -44,6 +44,7 @@ const noteOffCalls: number[] = [];
 const noteOnCalls: number[] = [];
 const padParamCalls: Array<[number, string, number]> = [];
 const padParamByIdCalls: Array<[number, number, number]> = [];
+const padParamLockByIdCalls: Array<[number, number, number]> = [];
 const padDryRoutedCalls: Array<[number, boolean]> = [];
 const paramByIdCalls: Array<[number, number]> = [];
 const kitParamCalls: Array<[string, number]> = [];
@@ -81,6 +82,9 @@ class ToasterInstanceMock {
     }
     set_pad_param_by_id(pad: number, paramId: number, value: number): void {
         padParamByIdCalls.push([pad, paramId, value]);
+    }
+    set_pad_param_lock_by_id(pad: number, paramId: number, value: number): void {
+        padParamLockByIdCalls.push([pad, paramId, value]);
     }
     set_pad_dry_routed(pad: number, routed: boolean): void {
         padDryRoutedCalls.push([pad, routed]);
@@ -146,6 +150,7 @@ describe('ToasterProcessor allNotesOff', () => {
         noteOnCalls.length = 0;
         padParamCalls.length = 0;
         padParamByIdCalls.length = 0;
+        padParamLockByIdCalls.length = 0;
         padDryRoutedCalls.length = 0;
         paramByIdCalls.length = 0;
         padZeroDryRouted = false;
@@ -242,7 +247,8 @@ describe('ToasterProcessor allNotesOff', () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // Locks arrive as numeric TOASTER_PAD_PARAM_IDS entries — the producer
-        // translated the names on the main thread (#4633).
+        // translated the names on the main thread (#4633) — and stage into the
+        // engine's per-hit overlay rather than persistent pad state (#4636).
         send(proc, {
             type: 'scheduledHit',
             pad: 3,
@@ -252,22 +258,23 @@ describe('ToasterProcessor allNotesOff', () => {
                 { id: padParamId('tone'), value: 0.7 },
                 { id: padParamId('engineType'), value: 2 },
             ],
-            restoreEngineType: 0,
         });
 
         expect(noteOnCalls).toEqual([]);
-        expect(padParamByIdCalls).toEqual([]);
+        expect(padParamLockByIdCalls).toEqual([]);
 
         vi.stubGlobal('currentFrame', 9_900);
         const output = [new Float32Array(128), new Float32Array(128)];
         proc.process([[]], [output]);
 
         expect(noteOnCalls).toEqual([3]);
-        expect(padParamByIdCalls).toEqual([
+        expect(padParamLockByIdCalls).toEqual([
             [3, padParamId('tone'), 0.7],
             [3, padParamId('engineType'), 2],
-            [3, padParamId('engineType'), 0],
         ]);
+        // No persistent write, and no restore: the overlay cleared at note_on.
+        expect(padParamCalls).toEqual([]);
+        expect(padParamByIdCalls).toEqual([]);
         vi.stubGlobal('currentFrame', 0);
     });
 
@@ -462,6 +469,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         noteOffCalls.length = 0;
         padParamCalls.length = 0;
         padParamByIdCalls.length = 0;
+        padParamLockByIdCalls.length = 0;
         padDryRoutedCalls.length = 0;
         padZeroDryRouted = false;
         toasterInitShouldThrow = null;
@@ -553,7 +561,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(noteOffCalls).toContain(4);
     });
 
-    it('scheduledHit with restoreEngineType omitted does not write the pad engine a second time', async () => {
+    it('scheduledHit applies its locks through the per-hit overlay and never writes the pad persistently', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
@@ -563,10 +571,10 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
             velocity: 0.9,
             sampleFrame: 1000,
             padParams: [{ id: padParamId('volume'), value: 0.5 }],
-            // restoreEngineType deliberately omitted → undefined branch.
         });
         expect(noteOnCalls).toContain(1);
-        expect(padParamByIdCalls).toEqual([[1, padParamId('volume'), 0.5]]);
+        expect(padParamLockByIdCalls).toEqual([[1, padParamId('volume'), 0.5]]);
+        expect(padParamByIdCalls).toEqual([]);
     });
 
     it('resetPadDryRouting clears all per-pad dry routing', async () => {
@@ -805,7 +813,8 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         vi.stubGlobal('currentFrame', 1000);
         // Name-to-id translation — including dropping unknown names — is the
         // main thread's job (#4633); the worklet passes ids through untouched
-        // and Rust's `set_pad_param_by_id` fall-through ignores undeclared ones.
+        // and Rust's `set_pad_param_lock_by_id` fall-through ignores undeclared
+        // ones.
         send(proc, {
             type: 'scheduledHit',
             pad: 3,
@@ -813,7 +822,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
             sampleFrame: 1000,
             padParams: [{ id: 999, value: 0.42 }],
         });
-        expect(padParamByIdCalls).toContainEqual([3, 999, 0.42]);
+        expect(padParamLockByIdCalls).toContainEqual([3, 999, 0.42]);
         vi.stubGlobal('currentFrame', 0);
     });
 

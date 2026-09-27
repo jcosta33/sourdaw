@@ -4,8 +4,58 @@ use super::engines::DrumEngineType;
 use crate::params::{DECAY, DRIVE, TONE, TUNE};
 use crate::primitives::{normalized_cutoff_from_hz, normalized_resonance_from_q};
 
+/// Number of per-pad parameters the scheduled-hit path can lock — the
+/// `TOASTER_PAD_PARAM_IDS` table (`src/modules/AudioEngine/models/
+/// ToasterPadParamIds.ts`, ids 0..=16). Neither side compiles against the
+/// other; both pin the mapping in tests.
+pub const PAD_LOCK_PARAM_COUNT: usize = 17;
+
+/// The stable name a numeric pad-parameter id dispatches to, or `None` for an
+/// id the table does not declare. Single source for the id→name mapping:
+/// `ToasterEngine::set_pad_param_by_id` writes through it, and the per-hit
+/// lock overlay (`set_pad_param_lock_by_id` → `note_on`) consumes through it,
+/// so a staged lock is the same write as its id and its name (#4633, #4636).
+pub fn pad_param_name_for_id(param_id: u32) -> Option<&'static str> {
+    let name = match param_id {
+        0 => "volume",
+        1 => "pan",
+        2 => "muted",
+        3 => "soloed",
+        4 => "choke_group",
+        5 => "tune",
+        6 => "decay",
+        7 => "tone",
+        8 => "drive",
+        9 => "filter_cutoff",
+        10 => "filter_resonance",
+        11 => "send_reverb",
+        12 => "send_delay",
+        13 => "transient_attack",
+        14 => "transient_sustain",
+        15 => "bus_route",
+        16 => "engine_type",
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// A pad's staged parameter locks for its next hit. Fixed-size and `Copy`:
+/// staging a lock is a numeric write, and consuming the overlay at `note_on`
+/// is a value take — neither allocates on the render thread (#4636).
+pub type PadLockOverlay = [Option<f32>; PAD_LOCK_PARAM_COUNT];
+
+/// An untouched overlay.
+pub const EMPTY_PAD_LOCK_OVERLAY: PadLockOverlay = [None; PAD_LOCK_PARAM_COUNT];
+
 /// One drum pad's configuration. Does not contain DSP state —
 /// that lives in the voice. This is purely parameter storage.
+///
+/// `Clone` serves the per-hit lock overlay: `note_on` clones the pad, applies
+/// the staged locks to the clone, and voices the hit from it, so the locked
+/// hit renders exactly as the persistent write rendered it while the stored
+/// pad keeps its own settings (#4636). All fields are plain data — cloning
+/// never touches the heap.
+#[derive(Clone)]
 pub struct Pad {
     pub engine_type: DrumEngineType,
     pub choke_group: u8, // 0 = none, 1-16 = group

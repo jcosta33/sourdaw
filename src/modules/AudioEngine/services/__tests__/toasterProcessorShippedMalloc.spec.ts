@@ -71,48 +71,45 @@ afterEach(() => {
 describe('shipped ToasterProcessor parameter-locked hits', () => {
     // The message contract carries numeric TOASTER_PAD_PARAM_IDS entries: the
     // producer translates names on the main thread so the worklet never
-    // marshals a string inside process() (#4633). The sound-lock case adds the
-    // engineType lock plus its post-hit restore write — two string writes per
-    // hit before the fix.
+    // marshals a string inside process() (#4633). Locks stage into the
+    // engine's per-hit overlay through `set_pad_param_lock_by_id` — sound
+    // locks included, with no post-hit restore write (#4636) — so draining any
+    // of these hits must stay free of allocator calls.
     it.each([
-        ['an unlocked hit', [], undefined],
-        ['a parameter-locked hit', [{ id: padParamId('tune'), value: 7 }], undefined],
-        ['a sound-locked hit', [{ id: padParamId('engineType'), value: 2 }], 0],
-    ] as const)(
-        'plays %s without allocator calls on the render thread',
-        async (_name, padParams, restoreEngineType) => {
-            const malloc = installMallocCounter();
-            const { registry } = installWorkletGlobals<ToasterProcessorLike>();
-            await import('../toasterProcessor');
-            const Processor = registry.get('toaster-processor');
-            if (!Processor) {
-                throw new TypeError('Expected toaster-processor registration');
-            }
-            const processor = new Processor({ processorOptions: { wasmModule } });
-            send(processor, { type: 'init' });
-
-            const output = makeChannels(2, FRAMES);
-            vi.stubGlobal('currentFrame', 0);
-            for (let quantum = 0; quantum < WARMUP_QUANTA; quantum++) {
-                processor.process([], [output]);
-            }
-
-            const hitFrame = WARMUP_QUANTA * FRAMES + 64;
-            send(processor, {
-                type: 'scheduledHit',
-                pad: 0,
-                velocity: 100,
-                note: 60,
-                sampleFrame: hitFrame,
-                padParams,
-                restoreEngineType,
-            });
-            malloc.reset();
-            vi.stubGlobal('currentFrame', WARMUP_QUANTA * FRAMES);
-            processor.process([], [output]);
-
-            expect(processor.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
-            expect(malloc.count()).toBe(0);
+        ['an unlocked hit', []],
+        ['a parameter-locked hit', [{ id: padParamId('tune'), value: 7 }]],
+        ['a sound-locked hit', [{ id: padParamId('engineType'), value: 2 }]],
+    ] as const)('plays %s without allocator calls on the render thread', async (_name, padParams) => {
+        const malloc = installMallocCounter();
+        const { registry } = installWorkletGlobals<ToasterProcessorLike>();
+        await import('../toasterProcessor');
+        const Processor = registry.get('toaster-processor');
+        if (!Processor) {
+            throw new TypeError('Expected toaster-processor registration');
         }
-    );
+        const processor = new Processor({ processorOptions: { wasmModule } });
+        send(processor, { type: 'init' });
+
+        const output = makeChannels(2, FRAMES);
+        vi.stubGlobal('currentFrame', 0);
+        for (let quantum = 0; quantum < WARMUP_QUANTA; quantum++) {
+            processor.process([], [output]);
+        }
+
+        const hitFrame = WARMUP_QUANTA * FRAMES + 64;
+        send(processor, {
+            type: 'scheduledHit',
+            pad: 0,
+            velocity: 100,
+            note: 60,
+            sampleFrame: hitFrame,
+            padParams,
+        });
+        malloc.reset();
+        vi.stubGlobal('currentFrame', WARMUP_QUANTA * FRAMES);
+        processor.process([], [output]);
+
+        expect(processor.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+        expect(malloc.count()).toBe(0);
+    });
 });
