@@ -9,9 +9,9 @@
  * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
  *    contract-carrying, or a source a contract-carrying spec covers when that source's unit will be
  *    planned — so the budget stays on the change the contract lives in and no spec outranks the source
- *    it covers. A covered source is ordered at the covering spec's own position rather than at the front
- *    of the tier, so the pair sits together, the source precedes its own spec, and neither outranks
- *    contract material unrelated to that spec;
+ *    it covers. A covered source is ordered at the smaller of its own side figure and the covering spec's
+ *    figure rather than at the front of the tier, so the source keeps the room its own size earned, still
+ *    precedes its own spec, and never outranks contract material unrelated to that spec;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at
@@ -321,20 +321,21 @@ export function specCoveredSources(
  * The ordering position one admission unit takes inside its tier: the keys the tier's tie-breaks read.
  *
  * A source a contract-carrying spec covers takes the covering spec's position rather than its own, so the
- * pair sits together — the same collected-spec rank, the same contract-carrying classification, and the
- * same side figure the spec's own unit carries — and the pair competes with the rest of the tier by the
- * keys the spec already had. `pairRank` is the one key the pair does not share: inside a position nothing
- * else separates a covered source from the spec that covers it, so the covered source (0) orders
- * immediately ahead of its spec (1), which is the one ordering the promotion exists to give. Ordering a
- * covered source at its spec's position is what keeps it from outranking unrelated material: it holds the
- * spec's bytes and path, never a byte figure of its own that would rank it at the front of the tier.
+ * pair sits together — the same collected-spec rank and the same contract-carrying classification — and the
+ * pair competes with the rest of the tier by the keys the spec already had. The position's byte figure is
+ * the smaller of the source's own side figure and the covering spec's side figure: a source smaller than its
+ * spec keeps the room its own size earned, while a larger source falls back to the spec's figure, so the
+ * source never outranks unrelated material the spec itself does not outrank. `pairRank` is the one key the
+ * pair does not share: inside a position nothing else separates a covered source from the spec that covers
+ * it, so the covered source (0) orders immediately ahead of its spec (1), which is the one ordering the
+ * promotion exists to give.
  */
 export type AdmissionOrderPosition = {
     /** The path the in-tier collected-spec tie-break and the path tie-break read. */
     readonly path: string;
     /** Whether the position ranks as a contract-carrying path, so a covered source never outranks genuine contract material. */
     readonly pathContractCarrying: boolean;
-    /** The position's byte figure — the covering spec's own side figure for a covered source. */
+    /** The position's byte figure — the smaller of the source's own side figure and the covering spec's side figure for a covered source. */
     readonly admissionBytes: number;
     /** The member of a covering pair: 0 for the source a spec covers, 1 for the spec and for every unit outside a pair. */
     readonly pairRank: number;
@@ -385,11 +386,11 @@ function unitSideOrder(unit: AdmissionUnit): number {
 }
 
 /**
- * The byte figure a covered source's side inherits from the spec that covers it: the figure the spec's
- * own unit of that side carries, so the two tie on every key before `pairRank` and the pair rank alone
- * orders them. A spec that offers no such side — an added or deleted spec — hands over the figure its one
- * side carries, so the source still holds the spec's position rather than a zero figure that would rank
- * it ahead of the other material in the tier.
+ * The byte figure the covering spec's own unit of one side carries — the figure a covered source's side is
+ * capped against, so the source never outranks unrelated material the spec itself does not outrank. A spec
+ * that offers no such side — an added or deleted spec — hands over the figure its one side carries, so the
+ * source still holds the spec's position rather than a zero figure that would rank it ahead of the other
+ * material in the tier.
  */
 function coveringSideBytes(
     specFile: SemanticChangedFile,
@@ -446,10 +447,10 @@ function admissionTier(unit: AdmissionUnit): number {
  * side, then ascending admission bytes — the order-independent lower bound a side's sole regions cost,
  * a tie-break rather than a promise of what the side pays — then path, then the pair rank, then the unit's
  * own path, then a path's before side before its own after side. A source a contract-carrying spec covers
- * is ordered at the covering spec's own position once its unit will be planned, so the pair sits with the
- * specs the spec itself would sit with and the pair rank alone keeps the source ahead of its own spec; a
- * file no spec covers keeps its own position, and a covered source the planner will not plan keeps the
- * rank its own classification gives it. The ascending-byte order is a lower-bound tie-break, not a
+ * is ordered at the smaller of its own side figure and the covering spec's figure once its unit will be
+ * planned, so the source keeps the room its own size earned and the pair rank alone keeps it ahead of its
+ * own spec; a file no spec covers keeps its own position, and a covered source the planner will not plan
+ * keeps the rank its own classification gives it. The ascending-byte order is a lower-bound tie-break, not a
  * promise that a smaller side survives — a region shared with another change is charged to whichever side
  * admits it first, and a whole-file fallback can still starve a smaller edit when the total budget binds.
  */
@@ -535,7 +536,13 @@ export function admissionUnits(
                 pathContractCarrying:
                     (sidesByPath.get(coveringSpec.path)?.before ?? false) ||
                     (sidesByPath.get(coveringSpec.path)?.after ?? false),
-                admissionBytes: coveringSideBytes(coveringSpec, admissionBytesBySide.get(coveringSpec.path), side),
+                // The smaller of the source's own side figure and the covering spec's: a source smaller than
+                // its spec keeps the room its own size earned, while a larger source falls back to the spec's
+                // figure and `pairRank` keeps it immediately ahead of the spec.
+                admissionBytes: Math.min(
+                    admissionBytesBySide.get(file.path)?.[side] ?? 0,
+                    coveringSideBytes(coveringSpec, admissionBytesBySide.get(coveringSpec.path), side)
+                ),
                 pairRank: 0,
             };
         };

@@ -1006,9 +1006,10 @@ describe('contract-carrying admission', () => {
         // deleted path, an over-ceiling path, a credentialed path, a rename, a copy and an added file —
         // the covered sources' hunks filled the 98,304-byte total down to 11 bytes, and the deleted path's
         // own before side, the over-ceiling path's own before side and the covering spec's own unit were
-        // all excluded as `no-admissible-evidence`. Ordering a covered source at the covering spec's own
-        // position is what restores them: the pair now competes at the position the spec itself held, the
-        // four unrelated specs are admitted ahead of it, and the source still precedes its own spec.
+        // all excluded as `no-admissible-evidence`. Ordering a covered source at the smaller of its own
+        // figure and the covering spec's figure is what restores them: the source's large side competes at
+        // the position the spec itself held, the four unrelated specs are admitted ahead of that side, and
+        // the source still precedes its own spec.
         const sizedLine = (bytes: number, tag: string): string => {
             const prefix = `export const ${tag} = '`;
             return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
@@ -1114,10 +1115,14 @@ describe('contract-carrying admission', () => {
         expect(ownSides(specPath)).toEqual(['before', 'before', 'before']);
         // The four unrelated collected specs keep the room the covered sources used to take.
         expect(unrelatedSpecPaths.every((path) => ownSides(path).length > 0)).toBe(true);
-        // And the pair is ordered at the covering spec's position: the unrelated specs admit ahead of the
-        // covered sources, and the sources still admit ahead of the spec that covers them.
+        // And the source keeps the covering spec's position on its large side while its own small side earns
+        // its place: the before side admits ahead of the unrelated specs, the after side falls back to the
+        // spec's figure and admits behind them, and the source precedes the spec that covers it either way.
         const admittedPaths = set.references.map((reference) => reference.path);
-        expect(admittedPaths.indexOf(unrelatedSpecPaths[0] ?? '')).toBeLessThan(admittedPaths.indexOf(subjectPath));
+        const refIndex = (path: string, side: 'before' | 'after'): number =>
+            set.references.findIndex((reference) => reference.path === path && reference.side === side);
+        expect(refIndex(subjectPath, 'before')).toBeLessThan(refIndex(unrelatedSpecPaths[0] ?? '', 'before'));
+        expect(refIndex(unrelatedSpecPaths[0] ?? '', 'after')).toBeLessThan(refIndex(subjectPath, 'after'));
         expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(specPath));
     });
 
@@ -1230,6 +1235,72 @@ describe('contract-carrying admission', () => {
         expect(refIndex(subjectPath, 'before')).toBeLessThan(refIndex(zzzSpecPath, 'before'));
         expect(refIndex(subjectPath, 'after')).toBeLessThan(refIndex(aaaSpecPath, 'after'));
         expect(refIndex(subjectPath, 'after')).toBeLessThan(refIndex(zzzSpecPath, 'after'));
+    });
+
+    it('keeps a covered source smaller than its spec from losing its unit under a binding total', () => {
+        // A covered source keyed only by its covering spec's figure is spent where the spec ranks rather
+        // than where its own size earned it: three sources far smaller than their spec land behind two
+        // unrelated specs, and the binding local total then starves the 9,000-byte source's unit entirely.
+        // Each side must keep the smaller of its own figure and the covering spec's figure.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverImports =
+            "import { a } from '../probeA.ts';\nimport { b } from '../probeB.ts';\nimport { c } from '../probeC.ts';\n";
+        const padded = (bytes: number, ...parts: readonly string[]): string => {
+            const prefix = parts.join('');
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - Buffer.byteLength(prefix, 'utf8')))}`;
+        };
+        const coverSpecPath = 'scripts/semanticReview/__tests__/aaCover.spec.ts';
+        const otherSpecPaths = [
+            'scripts/semanticReview/__tests__/bbOther.spec.ts',
+            'scripts/semanticReview/__tests__/ccOther.spec.ts',
+        ];
+        const probeAPath = 'scripts/semanticReview/probeA.ts';
+        const probeBPath = 'scripts/semanticReview/probeB.ts';
+        const probeCPath = 'scripts/semanticReview/probeC.ts';
+
+        const coverSide = padded(16_160, workflowLine, coverImports);
+        const otherSide = padded(16_058, workflowLine);
+        const files = [
+            changedFile(coverSpecPath),
+            ...otherSpecPaths.map((path) => changedFile(path)),
+            changedFile(probeAPath),
+            changedFile(probeBPath),
+            changedFile(probeCPath),
+        ];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${coverSpecPath}`]: coverSide,
+            [`${HEAD}:${coverSpecPath}`]: coverSide,
+            [`${MERGE_BASE}:${probeAPath}`]: padded(13_000),
+            [`${HEAD}:${probeAPath}`]: padded(13_000),
+            [`${MERGE_BASE}:${probeBPath}`]: padded(9_000),
+            [`${HEAD}:${probeBPath}`]: padded(9_000),
+            [`${MERGE_BASE}:${probeCPath}`]: padded(500),
+            [`${HEAD}:${probeCPath}`]: padded(500),
+            ...Object.fromEntries(
+                otherSpecPaths.flatMap((path) => [
+                    [`${MERGE_BASE}:${path}`, otherSide],
+                    [`${HEAD}:${path}`, otherSide],
+                ])
+            ),
+        };
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        // The 9,000-byte source keeps its unit: its own figure — smaller than the covering spec's — earns it
+        // a place ahead of the unrelated specs, so the binding total admits it instead of starving it.
+        expect(planned.units.some((unit) => unit.path === probeBPath)).toBe(true);
+        expect(
+            planned.excluded.some((entry) => entry.path === probeBPath && entry.reason === 'no-admissible-evidence')
+        ).toBe(false);
     });
 
     it('names a withheld region by its own content class rather than its admission tier', () => {
