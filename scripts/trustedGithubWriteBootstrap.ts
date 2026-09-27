@@ -1736,11 +1736,11 @@ function resolveNameToClass(
 }
 
 /**
- * The scope chain a `const`/`let` loop-header binding belongs to — the loop's own body — or `undefined`
- * when `keywordIndex` does not declare the variable of a `for`/`for await` header. A loop variable binds
- * only inside the loop, so it must not shadow the class in the enclosing block. A braced body scopes to
- * its `{`; an unbraced body has none, so the header's own opening parenthesis stands in as a synthetic
- * scope the enclosing chain never contains.
+ * The scope chain a `const`/`let`/`using` loop-header binding belongs to — the loop's own body — or
+ * `undefined` when `keywordIndex` does not declare the variable of a `for`/`for await` header. A loop
+ * variable binds only inside the loop, so it must not shadow the class in the enclosing block. Only a
+ * braced body is modelled; an unbraced body is left at the declaration's own scope, which keeps the
+ * read-back at the merge base's reading rather than deciding it either way.
  */
 function loopBindingScopeChain(source: string, keywordIndex: number): number[] | undefined {
     const before = previousSignificantCharacter(source, keywordIndex - 1);
@@ -1767,10 +1767,7 @@ function loopBindingScopeChain(source: string, keywordIndex: number): number[] |
         return undefined;
     }
     const body = skipWhitespace(source, close);
-    if (source[body] === '{') {
-        return enclosingScopeChain(source, body + 1);
-    }
-    return [...enclosingScopeChain(source, keywordIndex), before];
+    return source[body] !== '{' ? undefined : enclosingScopeChain(source, body + 1);
 }
 
 /**
@@ -1834,10 +1831,10 @@ function readLocalBindingAt(
     if (!declaresClassName(classFields, name)) {
         return undefined;
     }
-    // `const`/`let` loop-header bindings take the loop's scope; `var` hoists to its function and `using`
-    // binds in the block, so neither adopts the loop scope.
+    // `const`/`let`/`using` loop-header bindings take the loop's scope; `var` hoists to its function, so
+    // it does not adopt the loop scope.
     const chain =
-        keyword === 'const' || keyword === 'let'
+        keyword === 'const' || keyword === 'let' || keyword === 'using'
             ? (loopBindingScopeChain(source, index) ?? scopeChain())
             : scopeChain();
     return { name, classRef: undefined, scopeChain: chain, end: nameStart + name.length };
@@ -1964,10 +1961,14 @@ function destructuredBindingScopeChain(source: string, index: number): number[] 
         return functionBodyScopeChain(source, index);
     }
     // A declaration keyword (`const`/`let`/`var`/`using`) before the pattern may sit in a `for` header,
-    // where the pattern's entries bind to the loop's scope like a plain loop variable.
+    // where the pattern's entries bind to the loop's scope like a plain loop variable. A `var` hoists to
+    // its function instead, exactly as the plain-name path does.
     if (isIdentifierContinue(character)) {
         const keyword = readWordBackward(source, beforeOpen);
         const keywordStart = beforeOpen - keyword.length + 1;
+        if (keyword === 'var') {
+            return varHoistScopeChain(source, index);
+        }
         const loop = loopBindingScopeChain(source, keywordStart);
         if (loop !== undefined) {
             return loop;
@@ -2557,16 +2558,27 @@ function skipClassBodyRegion(source: string, cursor: number, end: number): numbe
         return after === undefined ? end : after;
     }
     if (character === '@') {
-        const name = readWordForward(source, cursor + 1);
-        if (name !== undefined) {
-            const afterName = skipWhitespace(source, cursor + 1 + name.length);
-            if (source[afterName] === '(') {
-                const after = skipBalancedParens(source, afterName);
-                return after === undefined ? end : after;
-            }
-            return afterName;
+        // A decorator is a member expression `@ns.dec` (or a call of one), so skip every dotted segment
+        // rather than stopping at the first dot and reading the tail's property as the member name.
+        let after = skipWhitespace(source, cursor + 1);
+        const name = readWordForward(source, after);
+        if (name === undefined) {
+            return cursor + 1;
         }
-        return cursor + 1;
+        after = skipWhitespace(source, after + name.length);
+        while (source[after] === '.') {
+            after = skipWhitespace(source, after + 1);
+            const segment = readWordForward(source, after);
+            if (segment === undefined) {
+                return after;
+            }
+            after = skipWhitespace(source, after + segment.length);
+        }
+        if (source[after] === '(') {
+            const skipped = skipBalancedParens(source, after);
+            return skipped === undefined ? end : skipped;
+        }
+        return after;
     }
     if (character === '#') {
         const name = readWordForward(source, cursor + 1);
@@ -3283,7 +3295,7 @@ function enclosingExpressionBodiedArrowOpen(source: string, index: number): numb
             cursor -= 1;
             continue;
         }
-        if (depth === 0 && (character === ';' || character === ',')) {
+        if (depth === 0 && (character === ';' || character === ',' || character === ':')) {
             return undefined;
         }
         if (character === '>' && source[cursor - 1] === '=') {

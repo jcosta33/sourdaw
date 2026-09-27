@@ -854,10 +854,50 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nfor await (const { H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
-        // An unbraced loop body still owns its binding, so a read-back after it reaches the class.
+        // An unbraced loop body is not modelled, so its binding keeps the declaration's own scope and a
+        // read-back written after or inside it keeps the merge base's reading.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { loader = require; }\nfor (const H of xs) log(H);\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) (() => { const { loader } = new H(); loader(spec); })();'
+            )
+        ).toEqual([]);
+        // A `var` pattern in a loop header hoists to its function, so a read-back after or before it
+        // reaches the loop variable rather than the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (var { H } of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (var [H] of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { loader } = new H(); loader(spec); for (var { H } of xs) {} }'
+            )
+        ).toEqual([]);
+        // A `using` declarator in a loop header takes the loop's scope, so a read-back after it reaches
+        // the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (using H of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor await (using H of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (using H in xs) {}\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
         // A `using` declaration binds the class name to something other than the class.
@@ -866,16 +906,48 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nfunction f() { using H = other; const { loader } = new H(); loader(spec); }'
             )
         ).toEqual([]);
-        // A decorated class declaration and a namespaced member decorator stay undecided: the decorator
-        // hides the class or field from the scan, so neither read-back reaches a loader.
+        // An arrow whose body the walk can bound does not leak its parameter: a conditional's `:` ends
+        // the body, so the read-back in the other branch reaches the class; an arrow ended by automatic
+        // semicolon insertion cannot be bounded and keeps the merge base's reading.
         expect(
             snapshotComputedDynamicSpecifiers(
-                '@dec class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+                'class H { loader = require; }\nconst v = cond ? (H) => H : ({ loader } = new H());\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => H\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A namespaced member decorator is skipped whole, so the real member is read: a subclass field
+        // shadows the parent's loader, and a field that loads is a load.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { @ns.dec loader = console.log; }\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual([]);
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { @ns.dec loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A decorated class declaration stays undecided: the decorator hides the class from the scan, so
+        // the read-back keeps the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                '@dec class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A statically computed member name is recorded but its loader value is not, so the read-back
+        // keeps the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "class H { ['loader'] = require; }\nconst { loader } = new H();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { [`loader`] = require; }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
     });
