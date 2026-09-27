@@ -496,10 +496,11 @@ describe('snapshotImportSpecifiers', () => {
             )
         ).toEqual([]);
         // A local bound to an instance in one scope does not bind a read-back of the same name in a
-        // sibling scope.
+        // sibling scope. The second function only references `h`, so the scope-chain filter alone is
+        // what keeps the outer instance from resolving here.
         expect(
             snapshotComputedDynamicSpecifiers(
-                'class H { loader = require; }\nfunction a() { const h = new H(); return h; }\nfunction b() { const h = options; const { loader } = h; loader(spec); }'
+                'class H { loader = require; }\nfunction a() { const h = new H(); return h; }\nfunction b() { const { loader } = h; loader(spec); }'
             )
         ).toEqual([]);
         // A nested redeclaration or a reassignment of a local to a non-instance shadows the instance
@@ -526,6 +527,34 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nclass D extends H { ["loader"]() { return other; } }\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual([]);
+        // A template-literal computed member also declares the member, so it shadows the parent's field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { [`loader`]() { return 1; } }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A field literally named a modifier is the member itself, not a modifier, so it is a load.
+        expect(
+            snapshotComputedDynamicSpecifiers('class H { get = require; }\nconst { get } = new H();\nget(spec);')
+        ).toEqual(['require(...)']);
+        // A local binding of the class name shadows the class, in both directions: a plain value binds
+        // nothing, and a class expression binds its own loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const H = Object; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; }\nfunction f() { const H = class { loader = require; }; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A class declared after the read-back is registered first, so the read-back reaches it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function make() { const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
+            )
+        ).toEqual(['require(...)']);
     });
 
     /**
@@ -612,6 +641,23 @@ describe('snapshotImportSpecifiers', () => {
                 'class H<T extends { a: string }> { loader = require; }\nclass D extends H<string> {}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // Every balanced `<…>` region the walk meets is crossed, so an object, conditional, or nested
+        // argument in a heritage or implements clause does not reach the fallthrough.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C extends Base<{ a: string }> { v = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C implements I<V extends W ? X : Y> { v = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C extends Base<Map<string, { a: string }>> { v = 1; require(spec: string): void { run(); } }'
+            )
+        ).toEqual([]);
     });
 
     /**
