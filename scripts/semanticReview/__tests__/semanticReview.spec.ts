@@ -402,7 +402,8 @@ describe('contract-carrying admission', () => {
         // D1: contract-context regions were admitted after every changed-file unit, so a bulk side
         // bought the total budget first and the contract document was withheld as
         // total-evidence-budget-exhausted (context, contract) — a contract term for an ordering the
-        // collector never used. Contract-context regions now sort with the contract class, before bulk.
+        // collector never used. The case puts a charged contract document and a bulk side under a total that
+        // fits only one of them, and reads that the document is the one admitted.
         const bulk = 'const bulk = 1;\n'.repeat(30);
         const contract = '# AGENTS.md contract\n'.repeat(5);
         const set = collectEvidence({
@@ -424,16 +425,17 @@ describe('contract-carrying admission', () => {
     });
 
     it("admits the change's contract-carrying side before a larger contract-context document", () => {
-        // D2: a contract-context document and the change's contract-carrying side shared the contract
-        // tier, where the non-spec document outranked the change's own spec side whatever its size, so a
-        // binding total charged the document and withheld the change's contract material. Contract-context
-        // now sits in its own tier behind the change's contract-carrying sides.
+        // D2: a contract-context document and the change's contract-carrying side were admitted in one rank,
+        // where the non-spec document outranked the change's own spec side whatever its size, so a binding
+        // total charged the document and withheld the change's contract material. The case puts a document
+        // larger than the side under a total that only one of them fits, and reads that the side is the one
+        // admitted.
         const specSide = `import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';\n${'const filler = 1;\n'.repeat(8)}`;
         const context = '# AGENTS.md contract\n'.repeat(30);
         const specBytes = Buffer.byteLength(specSide, 'utf8');
         const contextBytes = Buffer.byteLength(context, 'utf8');
-        // The premise the ordering must defeat: the document is larger than the side, yet the non-spec
-        // tie-break admits the document first on the shared contract tier.
+        // The premise the ordering must defeat: the document is larger than the side, yet the side is the one
+        // admitted under a total that fits only one of them.
         expect(contextBytes).toBeGreaterThan(specBytes);
         const set = collectEvidence({
             port: fakeSource({
@@ -730,9 +732,9 @@ describe('contract-carrying admission', () => {
 
     it('admits a pinned workflow file before a large bulk file under a one-path budget', () => {
         // R2: the closure is trusted-graph scripts only, so `.github/workflows/semantic-review.yml` ranked
-        // bulk and a tight budget could drop the file that holds the advisory check's provider key. The
-        // bulk fixture is cheaper under every non-contract leg, so only the contract class admits the
-        // workflow file and its after side.
+        // bulk and a tight budget could drop the file that holds the advisory check's provider key. The case
+        // puts both files under a total that fits only one of them, and reads that the workflow file and its
+        // after side are the ones admitted.
         const workflowBefore = 'name: semantic-review\n';
         const workflowAfter = 'name: semantic-review\non: pull_request_target\n';
         const bulk = 'const bulk = 1;\n';
@@ -834,10 +836,9 @@ describe('contract-carrying admission', () => {
     it('admits a closure source before a cheaper spec and withholds the spec when the budget binds', () => {
         // R7: with a budget that admitted only the source's two sides, the spec's before side alone
         // exceeded it, so the spec was withheld under either order and the case observed the qualifier
-        // vocabulary rather than the non-spec-before-spec ordering. A budget the spec's before side
-        // fits, but which still displaces a source side when the spec sorts first, makes the ordering
-        // leg decisive: the spec is cheaper than the source, so only non-spec-before-spec admits both
-        // source sides ahead of it.
+        // vocabulary rather than the ordering it was built for. This budget fits the spec's before side
+        // while still displacing a source side when the spec is attempted first, so the case reads that both
+        // source sides are admitted ahead of the cheaper spec and the spec is the one withheld.
         const sourceBefore = 'export const policy = 1;\n';
         const sourceAfter = `export const policy = 2;\n${'const grown = 1;\n'.repeat(6)}`;
         const specBefore = "import { planReviewRisk } from '../reviewRiskPolicy.ts';\n";
@@ -882,8 +883,8 @@ describe('contract-carrying admission', () => {
     it('orders a source a contract-carrying spec covers ahead of its own spec when the budget binds', () => {
         // The inversion the content rule once papered over: a contract-carrying spec ranked above the
         // bulk source it covers, so the spec spent the budget and the source was withheld. A source the
-        // spec imports is the source it covers, and it is ordered in the spec's tier so the existing
-        // non-spec-before-spec tie-break keeps the source ahead of its own spec.
+        // spec imports is the source it covers, and the case reads that the source is admitted ahead of its
+        // own spec under the binding total.
         const sourceBefore = 'export const evidence = 1;\n';
         const sourceAfter = 'export const evidence = 2;\n';
         const specBefore =
@@ -1045,8 +1046,8 @@ describe('contract-carrying admission', () => {
         const addedPath = 'src/modules/Project/added.ts';
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
 
-        // Forty-two hunks a side: a figure above the four unrelated specs' 13, so the pair ranks after
-        // them, and small enough regions that the spec's own unit still fits one request.
+        // Forty-two hunks a side: a figure above the four unrelated specs' 13, so the pair sits behind them,
+        // and small enough regions that the spec's own unit still fits one request.
         const specSide = `import { subject } from '../orderSubject.ts';\n${workflowLine}${sizedLines(42, 251, 'spec')}`;
         const unrelatedSide = `${workflowLine}${sizedLines(13, 800, 'unrelated')}`;
         // The covered sources: 98 kB of hunks between them, which is what took the local total.
@@ -1126,8 +1127,7 @@ describe('contract-carrying admission', () => {
         // The four unrelated collected specs keep the room the covered sources used to take.
         expect(unrelatedSpecPaths.every((path) => ownSides(path).length > 0)).toBe(true);
         // The source is paired with its coverer at the pair's largest side figure, so both of its sides sit at
-        // one position behind the unrelated specs, and the pair rank keeps the source ahead of the spec that
-        // covers it.
+        // one position behind the unrelated specs, and the source stays ahead of the spec that covers it.
         const admittedPaths = set.references.map((reference) => reference.path);
         const refIndex = (path: string, side: 'before' | 'after'): number =>
             set.references.findIndex((reference) => reference.path === path && reference.side === side);
@@ -1137,10 +1137,9 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps a source ahead of every spec that covers it when two contract-carrying specs share it', () => {
-        // The lexicographically-first coverer is a rank, not a position: when two contract-carrying specs
-        // cover one source and the lexicographically-first coverer carries the larger figure, the other
-        // coverer — smaller, so admitted earlier — outranked the source it also covers. The source must
-        // instead tie the covering spec whose own position ranks first, so it is admitted ahead of both.
+        // Two contract-carrying specs cover one source, and one of them carries the larger figure. The source
+        // must be admitted ahead of both — the spec it shares a position with and the other one — so this case
+        // reads the shape where the larger spec is not the one that decides its order.
         const sizedLine = (bytes: number, tag: string): string => {
             const prefix = `export const ${tag} = '`;
             return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
@@ -1156,9 +1155,9 @@ describe('contract-carrying admission', () => {
         const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzShared.spec.ts';
         const subjectPath = 'scripts/semanticReview/shared.ts';
 
-        // `zzzShared` is the coverer the lexicographic rule would not choose, and it carries the smaller
-        // figure: 60,000 bytes against `aaaShared`'s 72,000. The source carries 48,000 bytes of its own
-        // hunks, so its survival under the binding total depends on which coverer it ties.
+        // `zzzShared` carries the smaller figure: 60,000 bytes against `aaaShared`'s 72,000. The source
+        // carries 48,000 bytes of its own hunks, so the binding total leaves it no room to spare: it survives
+        // only by being admitted ahead of the spec that carries the larger figure.
         const zzzAfter = `${workflowLine}${importLine}${sizedLines(5, 12_000, 'zzz')}`;
         const aaaAfter = `${workflowLine}${importLine}${sizedLines(6, 12_000, 'aaa')}`;
         const subjectAfter = sizedLines(4, 12_000, 'shared');
@@ -1191,26 +1190,21 @@ describe('contract-carrying admission', () => {
                 maxTotalBytes: profile.maxTotalSubmittedBytes,
             },
         });
-        // The source ties the earlier coverer, so it precedes the smaller spec in the reference order and
-        // the larger spec is withheld once the source is admitted.
+        // The source precedes the smaller spec in the reference order, and the larger spec's unit is withheld
+        // once the source is admitted.
         const admittedPaths = set.references.map((reference) => reference.path);
         expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(zzzSpecPath));
         expect(set.withheldSides.own.get(aaaSpecPath)).toContain('after');
-        // And it survives the binding total whole — the merge base's non-spec-before-spec rank admitted it,
-        // and tying the earlier coverer keeps its after side from being withheld.
+        // And it survives the binding total whole: its after side is not withheld once the source is admitted
+        // ahead of the spec that carries the larger figure.
         expect(set.withheldSides.own.get(subjectPath)).toBeUndefined();
     });
 
     it('keeps each side of a covered source ahead of every coverer when the coverers cross per side', () => {
-        // One coverer is minimal on the before side and the other on the after side, so their minima cross
-        // while the lexicographically first coverer carries the largest side of all. What puts each source
-        // side ahead of every coverer side is the pair's byte key, not the pair rank: the source's own
-        // 20-byte figure is the smaller member of the pair on each side, so the pair keys at the paired
-        // coverer's 2,099-byte largest side while the other coverer keys at its own 1,599-byte largest side,
-        // and the ascending-byte order places the pair before both. The pair rank is the two-valued tie-break
-        // a source needs only where the coverer's figure caps it and its own figure is the pair's key — this
-        // fixture is not that shape — so the cross-over cannot let a coverer side slip ahead of the source:
-        // neither coverer's key reaches the pair's.
+        // One coverer is minimal on the before side and the other on the after side, so their minima cross,
+        // and the pair's coverer carries the largest side of all. The case reads that shape on both sides: the
+        // source's before side precedes both coverers' before sides, and its after side precedes both of
+        // theirs, so neither coverer's cheaper side can take the order from the source.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { asym } from '../asymSource.ts';\n";
         const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaBeforeMin.spec.ts';
@@ -1218,8 +1212,8 @@ describe('contract-carrying admission', () => {
         const subjectPath = 'scripts/semanticReview/asymSource.ts';
 
         // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side; their
-        // minima cross. The source is paired with the lexicographically first coverer and keys at that
-        // coverer's largest side, so it is attempted ahead of both coverers.
+        // minima cross, and the source's own small sides are what keep it from taking either coverer's largest
+        // side. The case name is the assertion below: each source side precedes every coverer side.
         const aaaBefore = `${workflowLine}${importLine}`;
         const aaaAfter = `${workflowLine}${importLine}${'y'.repeat(2_000)}`;
         const zzzBefore = `${workflowLine}${importLine}${'y'.repeat(1_500)}`;
@@ -1253,10 +1247,10 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps a source larger than every coverer ahead of every coverer when the paired coverer is not the first path', () => {
-        // A source larger than all of its coverers ties every coverer's key at its own figure, so the path
-        // tie-break orders that tie. The source's position is named after the lexicographically first coverer
-        // rather than the coverer it is paired with for its byte figure, so a coverer whose path sorts before
-        // the paired coverer's still orders after the source.
+        // A source larger than all of its coverers is the largest member of every pair it forms, so its own
+        // figure is the key every coverer ties, and it must stay ahead of each of them whatever a coverer's
+        // path or its own figure is. The fixture puts the paired coverer's path between the source's and the
+        // other coverers' paths.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { shared } from '../shared.ts';\n";
         const anchorSpecPath = 'scripts/semanticReview/__tests__/aaaAnchor.spec.ts';
@@ -1278,9 +1272,8 @@ describe('contract-carrying admission', () => {
         ]);
         // `cccSmall` is the coverer the source is paired with (its largest side, 100, is the smallest);
         // `bbbBig` carries the largest figure; `aaaAnchor` is neither, and is the lexicographically first
-        // coverer. The source's own 1,000-byte figure is the largest, so all four tie at 1,000, and only the
-        // anchor path — not the paired coverer or the largest-figure one — keeps the source ahead of every
-        // coverer.
+        // coverer. The source's own 1,000-byte figure is the largest, so all four key at 1,000, and the
+        // source stays ahead of each of them.
         const bytesBySide = new Map<string, AdmissionSideBytes>([
             [anchorSpecPath, { before: 300, after: 300 }],
             [bigSpecPath, { before: 500, after: 500 }],
@@ -1371,8 +1364,8 @@ describe('contract-carrying admission', () => {
         });
         const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
         const refIndex = (path: string): number => set.references.findIndex((reference) => reference.path === path);
-        // The pair ranks at the spec's 16,160-byte figure, so the unrelated 16,058-byte specs are admitted
-        // ahead of the 9,000-byte source rather than behind it.
+        // The pair's 16,160-byte figure sits above the unrelated specs' 16,058, so the unrelated specs are
+        // admitted ahead of the 9,000-byte source rather than behind it.
         expect(refIndex(otherSpecPaths[0] ?? '')).toBeLessThan(refIndex(probeBPath));
         // And the source still plans: the total admits its unit after the unrelated specs instead of starving it.
         expect(planned.units.some((unit) => unit.path === probeBPath)).toBe(true);
@@ -1382,8 +1375,8 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps an added covered source ahead of every side of the spec that covers it', () => {
-        // An added source has only an after side, and its coverer's before side is cheaper. The pair shares
-        // one position, and the pair rank keeps the source ahead of both of the coverer's sides whatever the
+        // An added source has only an after side, and its coverer's before side is cheaper. The case reads
+        // that the source's after side is admitted ahead of both of the coverer's sides whatever the
         // coverer's own per-side figures are.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/offside.spec.ts';
@@ -1421,10 +1414,10 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps covered sources that key at one pair figure in their own size order', () => {
-        // Every source here is smaller than the one spec that covers all three, so each pair key is the
-        // coverer's own figure and all three sources collapse onto that one position: the pair rank cannot
-        // separate them from each other, and only the own figure orders them. The smallest source is
-        // therefore attempted first, so the plan keeps as much as the merge base did.
+        // Every source here is smaller than the one spec that covers all three, so all three key at the
+        // coverer's own figure and share one position. The case reads that they keep their own ascending size
+        // order there: the smallest source is attempted first, so the plan keeps as much as the merge base
+        // did.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/smallCover.spec.ts';
         const sourcePaths = ['a', 'b', 'c'].map((name) => `scripts/semanticReview/${name}.ts`);
@@ -1474,8 +1467,8 @@ describe('contract-carrying admission', () => {
 
     it('keys a source larger than its coverer at its own figure, behind an unrelated spec between them', () => {
         // The pair key is the larger of the source's own figure and the coverer's, never the coverer's alone.
-        // A source larger than its coverer is therefore attempted behind an unrelated spec whose figure sits
-        // between them, while the coverer is inflated to the source's figure and stays after the source.
+        // The case reads a source larger than its coverer: it is attempted behind an unrelated spec whose
+        // figure sits between them, while the coverer stays after the source.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/cover.spec.ts';
         const unrelatedPath = 'scripts/semanticReview/__tests__/unrelated.spec.ts';
@@ -1517,14 +1510,10 @@ describe('contract-carrying admission', () => {
     });
 
     it('lets an unrelated spec take the order from a covered source whose pair key ties its byte figure', () => {
-        // A pair whose key ties an unrelated collected spec's figure has nothing but the anchor path to
-        // separate them: the ascending-byte order cannot, the own figure is reached later, and the pair rank
-        // is equal for units outside it. The unrelated spec's path sorts before the anchor's, so it takes the
-        // earlier position and is attempted first — the disclosed consequence of competing at the anchor's
-        // position rather than at the front of the tier, where the source cannot outrank an unrelated spec the
-        // covering spec does not outrank. The collector's own order reads the same keys, so this is the
-        // admission order the plan attempts; deleting the anchor-path comparison flips the pair ahead of the
-        // unrelated spec on the own figure the pair keeps beside its key, which is what this case witnesses.
+        // The pair's key ties an unrelated collected spec's figure, and the unrelated spec's path sorts before
+        // the pair's anchor path. The case reads the disclosed consequence of a covered source competing at
+        // its anchor's position rather than at the front of the tier: the unrelated spec takes the earlier
+        // position and is attempted ahead of the covered source.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { v } from '../bulkVal.ts';\n";
         const unrelatedSpecPath = 'scripts/semanticReview/__tests__/aUnrelated.spec.ts';
@@ -1548,7 +1537,7 @@ describe('contract-carrying admission', () => {
         const hunks = new Map<string, PathHunks>();
         const bytesBySide = admissionBytesBySide(files, contents, hunks, 1_000_000, MERGE_BASE, HEAD);
         const sidesByPath = classifyContractCarryingSides(files, contents);
-        // Both keys are 2,000 bytes, so the tie is real and the anchor path is what decides it.
+        // Both keys are 2,000 bytes, so the tie is real and the two paths are what separate them.
         expect(bytesBySide.get(unrelatedSpecPath)?.before).toBe(2_000);
         expect(bytesBySide.get(anchorSpecPath)?.before).toBe(2_000);
         expect(bytesBySide.get(sourcePath)?.before).toBe(20);
@@ -1585,9 +1574,9 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps a contract-carrying covered source in its own bucket, not demoted behind a larger contract path', () => {
-        // F1: a closure member is contract-carrying by its own content, so it already earns tier 0. Taking
-        // the covering spec's path would demote it into the spec bucket and let a larger workflow file
-        // outrank it on the bucket alone; it must keep its own non-spec position and class.
+        // F1: a closure member is contract-carrying by its own content, and the covering spec's path bounded it
+        // above a much larger workflow file. The case reads that the source is attempted ahead of that
+        // workflow file despite the file's size.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const sourcePath = 'scripts/deliverPullRequest.ts';
         const coverPath = 'scripts/__tests__/deliverPullRequest.spec.ts';
@@ -1745,8 +1734,8 @@ describe('contract-carrying admission', () => {
 
     it('keeps a deleted covered source ahead of a modified coverer whose cheaper side is its after side', () => {
         // The source is deleted, so its only side is before, while the coverer's cheaper side is its after.
-        // The pair shares one position, and the pair rank keeps the source's before unit ahead of both of the
-        // coverer's sides, cheaper side included.
+        // The case reads that the source's before unit is admitted ahead of both of the coverer's sides, its
+        // cheaper side included.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/afterFloor.spec.ts';
         const sourcePath = 'scripts/semanticReview/afterFloorSource.ts';
@@ -3328,9 +3317,9 @@ describe('admission ordering follows the side that carries the contract', () => 
     it('admits a contract side before a bulk side of another change regardless of file order', () => {
         // A rename out of `AGENTS.md` is contract on its before side and bulk on its 1700-byte after
         // side. Ordering the whole path by the union of the two classes admitted the bulk after side
-        // first; ordering by one representative side ranked the whole path bulk. Ordering each admitted
-        // side by its own class admits the contract before side first (non-spec before spec), admits the
-        // closure-importing spec's sides, and withholds the bulk after side without the contract term.
+        // first; ordering by one representative side ranked the whole path bulk. Each admitted side now
+        // carries its own class, so the case reads that the contract before side and the closure-importing
+        // spec's sides are admitted and the bulk after side is withheld.
         const docBefore = '# AGENTS.md\n';
         const bulkAfter = 'const bulk = 1;\n'.repeat(106);
         const specSide = closureImport;
