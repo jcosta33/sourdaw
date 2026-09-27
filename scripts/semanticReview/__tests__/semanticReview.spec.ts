@@ -31,7 +31,10 @@ import {
     type SemanticSourcePort,
 } from '../evidence.ts';
 import {
+    admissionBytesBySide,
     admissionUnits,
+    classifyContractCarryingSides,
+    readChangedContents,
     specCoveredSources,
     type AdmissionSideBytes,
     type ContractCarryingSides,
@@ -1511,6 +1514,74 @@ describe('contract-carrying admission', () => {
             units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
         expect(index(unrelatedPath, 'before')).toBeLessThan(index(sourcePath, 'before'));
         expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
+    });
+
+    it('lets an unrelated spec take the order from a covered source whose pair key ties its byte figure', () => {
+        // A pair whose key ties an unrelated collected spec's figure has nothing but the anchor path to
+        // separate them: the ascending-byte order cannot, the own figure is reached later, and the pair rank
+        // is equal for units outside it. The unrelated spec's path sorts before the anchor's, so it takes the
+        // earlier position and is attempted first — the disclosed consequence of competing at the anchor's
+        // position rather than at the front of the tier, where the source cannot outrank an unrelated spec the
+        // covering spec does not outrank. The collector's own order reads the same keys, so this is the
+        // admission order the plan attempts; deleting the anchor-path comparison flips the pair ahead of the
+        // unrelated spec on the own figure the pair keeps beside its key, which is what this case witnesses.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { v } from '../bulkVal.ts';\n";
+        const unrelatedSpecPath = 'scripts/semanticReview/__tests__/aUnrelated.spec.ts';
+        const anchorSpecPath = 'scripts/semanticReview/__tests__/zzAnchor.spec.ts';
+        const sourcePath = 'scripts/semanticReview/bulkVal.ts';
+        // Each spec side carries the same 2,000-byte figure, so the pair's key ties the unrelated spec's own
+        // figure; the source's own 20-byte figure is the smaller member of the pair.
+        const anchorSide = `${workflowLine}${importLine}${'y'.repeat(2_000 - Buffer.byteLength(workflowLine) - Buffer.byteLength(importLine))}`;
+        const unrelatedSide = `${workflowLine}${'y'.repeat(2_000 - Buffer.byteLength(workflowLine))}`;
+        const files = [changedFile(anchorSpecPath), changedFile(unrelatedSpecPath), changedFile(sourcePath)];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${anchorSpecPath}`]: anchorSide,
+            [`${HEAD}:${anchorSpecPath}`]: anchorSide,
+            [`${MERGE_BASE}:${unrelatedSpecPath}`]: unrelatedSide,
+            [`${HEAD}:${unrelatedSpecPath}`]: unrelatedSide,
+            [`${MERGE_BASE}:${sourcePath}`]: 'y'.repeat(20),
+            [`${HEAD}:${sourcePath}`]: 'y'.repeat(20),
+        };
+        const port = fakeSource({ files, blobs });
+        const contents = readChangedContents(port, MERGE_BASE, HEAD, files);
+        const hunks = new Map<string, PathHunks>();
+        const bytesBySide = admissionBytesBySide(files, contents, hunks, 1_000_000, MERGE_BASE, HEAD);
+        const sidesByPath = classifyContractCarryingSides(files, contents);
+        // Both keys are 2,000 bytes, so the tie is real and the anchor path is what decides it.
+        expect(bytesBySide.get(unrelatedSpecPath)?.before).toBe(2_000);
+        expect(bytesBySide.get(anchorSpecPath)?.before).toBe(2_000);
+        expect(bytesBySide.get(sourcePath)?.before).toBe(20);
+        const covered = specCoveredSources(files, contents, bytesBySide);
+        expect(covered.get(sourcePath)).toEqual([anchorSpecPath]);
+        const units = admissionUnits(
+            files,
+            sidesByPath,
+            bytesBySide,
+            [],
+            covered,
+            new Set(files.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(unrelatedSpecPath, 'before')).toBeLessThan(index(sourcePath, 'before'));
+        expect(index(unrelatedSpecPath, 'before')).toBeLessThan(index(anchorSpecPath, 'before'));
+        const set = collectEvidence({
+            port,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
+        });
+        // The planner lists its units in path order, so the pair's place in the plan reads the same either
+        // way; what the plan carries is that the unrelated spec precedes the covered source there too, with
+        // the source and its coverer both planned.
+        const planned = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes);
+        const plannedIndex = (path: string): number => planned.units.findIndex((unit) => unit.path === path);
+        expect(plannedIndex(unrelatedSpecPath)).toBeLessThan(plannedIndex(sourcePath));
+        expect(plannedIndex(unrelatedSpecPath)).toBeLessThan(plannedIndex(anchorSpecPath));
+        expect(planned.units.some((unit) => unit.path === sourcePath)).toBe(true);
+        expect(planned.units.some((unit) => unit.path === anchorSpecPath)).toBe(true);
     });
 
     it('keeps a contract-carrying covered source in its own bucket, not demoted behind a larger contract path', () => {
