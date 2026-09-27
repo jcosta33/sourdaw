@@ -12,8 +12,10 @@ const GENERATED_DEVICE_ID_PATTERN = new RegExp(`^device-ai-${GENERATED_ID_SUFFIX
 const GENERATED_INITIAL_DEVICE_ID_PATTERN = new RegExp(`^device-command-${GENERATED_ID_SUFFIX}`, 'u');
 const GENERATED_TRACK_ID_PATTERN = new RegExp(`^track-ai-${GENERATED_ID_SUFFIX}`, 'u');
 const GENERATED_CLIP_ID_PATTERN = new RegExp(`^clip-ai-${GENERATED_ID_SUFFIX}`, 'u');
+const GENERATED_AUTOMATION_LANE_ID_PATTERN = new RegExp(`^automation-ai-${GENERATED_ID_SUFFIX}`, 'u');
 
 const GENERATED_ID_PATTERNS: Readonly<Record<BatchLocalActionIdentity['actionType'], RegExp>> = {
+    addAutomationLane: GENERATED_AUTOMATION_LANE_ID_PATTERN,
     addClip: GENERATED_CLIP_ID_PATTERN,
     addDevice: GENERATED_DEVICE_ID_PATTERN,
     addTrack: GENERATED_TRACK_ID_PATTERN,
@@ -26,6 +28,9 @@ function getIdentityId(identity: BatchLocalActionIdentity): string {
     }
     if (identity.actionType === 'addDevice') {
         return identity.deviceId;
+    }
+    if (identity.actionType === 'addAutomationLane') {
+        return identity.laneId;
     }
     return identity.actionType === 'addTrack' ? identity.trackId : identity.clipId;
 }
@@ -122,6 +127,9 @@ function applyBatchLocalActionIdentity(
     }
     if (action.type === 'addClip' && identity.actionType === 'addClip') {
         return { type: 'addClip', payload: { ...action.payload, id: identity.clipId } };
+    }
+    if (action.type === 'addAutomationLane' && identity.actionType === 'addAutomationLane') {
+        return { type: 'addAutomationLane', payload: { ...action.payload, laneId: identity.laneId } };
     }
     return null;
 }

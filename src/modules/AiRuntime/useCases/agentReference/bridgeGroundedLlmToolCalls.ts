@@ -38,6 +38,7 @@ import {
     BATCH_LOCAL_BINDING_PATTERN,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
     PLAN_CREATED_OBJECT_COMMANDS,
+    BATCH_LOCAL_AUTOMATION_LANE_CAPABILITIES,
     BATCH_LOCAL_BUS_CAPABILITIES,
     BATCH_LOCAL_CLIP_CAPABILITIES,
     BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND,
@@ -364,7 +365,9 @@ function collectBatchLocalCreationBindings(
                 rejection: rejection(callIndex, call.name, 'A bound creation must declare one typed created object'),
             };
         }
-        const name = normalizeSafeProjectName(producer.createdDeviceName ?? call.arguments.name);
+        const name = normalizeSafeProjectName(
+            producer.createdDeviceName ?? producer.createdAutomationLane?.parameterName ?? call.arguments.name
+        );
         if (!name) {
             return {
                 status: 'rejected',
@@ -430,6 +433,7 @@ function resolveBatchLocalCreationReference(
 }
 
 const CREATION_ANAPHORA_PATTERNS: Readonly<Record<BatchLocalBindingProducerName, RegExp>> = {
+    addAutomationLane: /\b(?:that|this|the new|new|newly created|created) (?:automation )?lane\b/u,
     addClip: /\b(?:that clip|this clip|the new clip|new clip|newly created clip|created clip)\b/u,
     addDevice: /\b(?:that device|this device|the new device|new device|newly created device|created device)\b/u,
     addTrack: /\b(?:that track|this track|the new track|new track|newly created track|created track)\b/u,
@@ -513,6 +517,9 @@ function isCompatibleTargetId(
 const BUS_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set(BATCH_LOCAL_BUS_CAPABILITIES);
 const CREATED_CLIP_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set(BATCH_LOCAL_CLIP_CAPABILITIES);
 const CREATED_DEVICE_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set(['device']);
+const CREATED_AUTOMATION_LANE_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set(
+    BATCH_LOCAL_AUTOMATION_LANE_CAPABILITIES
+);
 
 function countCompatiblePlannedCreations(
     calls: readonly ToolCallResult[],
@@ -527,6 +534,9 @@ function countCompatiblePlannedCreations(
         }
         if (call.name === 'addDevice') {
             return CREATED_DEVICE_CANDIDATE_CAPABILITIES.has(capability);
+        }
+        if (call.name === 'addAutomationLane') {
+            return CREATED_AUTOMATION_LANE_CANDIDATE_CAPABILITIES.has(capability);
         }
         if (call.name !== 'addTrack' || typeof call.arguments.kind !== 'string') {
             return false;
@@ -550,6 +560,9 @@ function toBatchLocalActionIdentity(binding: BatchLocalCreationBinding): BatchLo
     }
     if (binding.actionType === 'addDevice') {
         return { actionOrdinal, actionType: 'addDevice', deviceId: createdId };
+    }
+    if (binding.actionType === 'addAutomationLane') {
+        return { actionOrdinal, actionType: 'addAutomationLane', laneId: createdId };
     }
     return { actionOrdinal, actionType: 'createBus', busId: createdId };
 }
@@ -2951,10 +2964,58 @@ function validateTimeSignatureValue(
     return null;
 }
 
+/** The references that name this device and none of the other devices carrying the same parameter. */
+function getDistinctDeviceTokens(
+    device: DeviceParameterDirectionDevice,
+    carriers: readonly DeviceParameterDirectionDevice[]
+): string[] {
+    const sharedTokens = new Set(
+        carriers
+            .filter((carrier) => carrier.id !== device.id)
+            .flatMap((carrier) => getNormalizedTokens([carrier.id, carrier.type, carrier.name ?? '']))
+    );
+    return getNormalizedTokens([device.id, device.type, device.name ?? '']).filter((token) => !sharedTokens.has(token));
+}
+
+/**
+ * A device parameter is grounded as an automation target only when the request names the parameter
+ * and identifies exactly one device on the grounded track that carries it, because a parameter name
+ * alone ("Drive", "Mix") recurs across the devices of one chain. A device is identified only by a
+ * reference no other carrier shares: two Distortions on one track are told apart by their own names
+ * or ids, never by the type they share. Both are project references the masked scope hides, so they
+ * are read from the scope's own text.
+ */
+function namesDeviceAutomationTarget(
+    assertedValue: string,
+    trackId: unknown,
+    actionScope: ActionPromptScope,
+    context: ProjectContext
+): boolean {
+    const separatorIndex = assertedValue.indexOf(':');
+    if (separatorIndex <= 0) {
+        return false;
+    }
+    const parameterId = assertedValue.slice(separatorIndex + 1);
+    const carriers =
+        context.tracks
+            .find((track) => track.id === trackId)
+            ?.devices.filter((device) => device.parameters?.some((parameter) => parameter.id === parameterId)) ?? [];
+    const device = carriers.find((carrier) => carrier.id === assertedValue.slice(0, separatorIndex));
+    const parameter = device?.parameters?.find((candidate) => candidate.id === parameterId);
+    if (!device || !parameter || !clauseNamesToken(actionScope, getNormalizedTokens([parameter.id, parameter.name]))) {
+        return false;
+    }
+    const identified = carriers.filter((carrier) =>
+        clauseNamesToken(actionScope, getDistinctDeviceTokens(carrier, carriers))
+    );
+    return identified.length === 1 && identified[0] === device;
+}
+
 function validateStringLiteralValue(
     valueRule: Extract<GroundingValueRule, { kind: 'string-literal' }>,
     assertedValue: unknown,
     actionScope: ActionPromptScope,
+    groundedArguments: Readonly<Record<string, unknown>>,
     context: ProjectContext
 ): string | null {
     if (typeof assertedValue !== 'string') {
@@ -2985,6 +3046,9 @@ function validateStringLiteralValue(
             aliases = ['pan', 'panning'];
         }
         if (aliases.some((alias) => getIntentPhraseIndex(actionScope.masked, alias) >= 0)) {
+            return null;
+        }
+        if (namesDeviceAutomationTarget(assertedValue, groundedArguments.trackId, actionScope, context)) {
             return null;
         }
         return getValueMismatchReason(valueRule.argument);
@@ -3183,7 +3247,7 @@ function validateGroundedValue(
         case 'time-signature':
             return validateTimeSignatureValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         case 'string-literal':
-            return validateStringLiteralValue(valueRule, assertedValue, actionScope, context);
+            return validateStringLiteralValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         case 'enum-if-present':
             return validateEnumValue(valueRule, assertedValue, actionScope);
         case 'text-after-keyword-if-present':
@@ -5086,6 +5150,17 @@ export function bridgeGroundedLlmToolCalls({
                     kind: 'device',
                     name: binding.name,
                     parameters: binding.createdDeviceParameters,
+                    parentTrackId: grounded.arguments.trackId,
+                });
+            } else if (
+                binding.actionType === 'addAutomationLane' &&
+                typeof grounded.arguments.trackId === 'string' &&
+                binding.createdAutomationLane !== undefined
+            ) {
+                prospectiveContext = projectBatchLocalCreation(prospectiveContext, {
+                    ...binding.createdAutomationLane,
+                    createdId: binding.createdId,
+                    kind: 'automation-lane',
                     parentTrackId: grounded.arguments.trackId,
                 });
             }

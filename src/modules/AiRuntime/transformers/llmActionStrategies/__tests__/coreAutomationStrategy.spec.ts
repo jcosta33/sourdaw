@@ -11,7 +11,8 @@ import {
 
 const laneId = 'lane-vocal-gain';
 const rejectionReasons = {
-    addAutomationLane: 'Expected an available track and one new gain or pan automation lane',
+    addAutomationLane:
+        'Expected an available track and one new automation lane for its gain, its pan, or a parameter of one of its devices',
     addAutomationPoint:
         'Expected an existing automation lane, an unused non-negative beat, and a value within lane bounds',
     setAutomationLaneEnabled: 'Expected an existing automation lane and a changed boolean enabled value',
@@ -194,6 +195,81 @@ describe('coreAutomationStrategy', () => {
         ]) {
             expectRejected('addAutomationLane', argumentsPayload);
         }
+    });
+
+    it('admits a parameter of a device on the track by its device-qualified target, named as the lane picker names it', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                {
+                    ...createTrack('track-drums'),
+                    deviceCount: 1,
+                    devices: [
+                        {
+                            id: 'device-drive',
+                            name: 'Distortion',
+                            type: 'builtin-distortion',
+                            bypassed: false,
+                            parameters: [
+                                {
+                                    id: 'dist-drive',
+                                    name: 'Drive',
+                                    type: 'float',
+                                    value: 20,
+                                    minValue: 0,
+                                    maxValue: 100,
+                                    unit: '%',
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+        expect(
+            bridge(
+                {
+                    name: 'addAutomationLane',
+                    arguments: { trackId: 'track-drums', parameterId: 'device-drive:dist-drive' },
+                },
+                context
+            )
+        ).toEqual({
+            type: 'addAutomationLane',
+            payload: {
+                trackId: 'track-drums',
+                parameterId: 'device-drive:dist-drive',
+                parameterName: 'Distortion → Drive',
+            },
+        });
+        for (const parameterId of ['device-drive:missing', 'device-missing:dist-drive', ':dist-drive', 'dist-drive']) {
+            expectRejected('addAutomationLane', { trackId: 'track-drums', parameterId }, undefined, context);
+        }
+    });
+
+    it('does not read a lane the plan itself creates as a duplicate of the member creating it', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    id: 'automation-ai-drums-gain',
+                    trackId: 'track-drums',
+                    parameterId: 'gain',
+                    name: 'Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 2,
+                    points: [],
+                    createdByPlan: true,
+                },
+            ],
+        };
+        expect(
+            bridge({ name: 'addAutomationLane', arguments: { trackId: 'track-drums', parameterId: 'gain' } }, context)
+        ).toEqual({
+            type: 'addAutomationLane',
+            payload: { trackId: 'track-drums', parameterId: 'gain', parameterName: 'Gain' },
+        });
     });
 
     it('requires a unique finite point inside finite lane bounds and an admitted curve', () => {
