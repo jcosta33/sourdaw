@@ -1199,24 +1199,29 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps each side of a covered source ahead of every coverer when the coverers cross per side', () => {
-        // One coverer is minimal on the before side and the other on the after side. The source is paired
-        // with the coverer whose largest side is smallest, and the pair rank keeps each source side ahead of
-        // every coverer side, so the cross-over cannot let a coverer side slip ahead of the source.
+        // One coverer is minimal on the before side and the other on the after side, so their minima cross
+        // while the lexicographically first coverer carries the largest side of all. What puts each source
+        // side ahead of every coverer side is the pair's byte key, not the pair rank: the source's own
+        // 20-byte figure is the smaller member of the pair on each side, so the pair keys at the paired
+        // coverer's 2,099-byte largest side while the other coverer keys at its own 1,599-byte largest side,
+        // and the ascending-byte order places the pair before both. The pair rank is the two-valued tie-break
+        // a source needs only where the coverer's figure caps it and its own figure is the pair's key — this
+        // fixture is not that shape — so the cross-over cannot let a coverer side slip ahead of the source:
+        // neither coverer's key reaches the pair's.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { asym } from '../asymSource.ts';\n";
-        const pad = (bytes: number): string => 'y'.repeat(bytes);
         const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaBeforeMin.spec.ts';
         const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzAfterMin.spec.ts';
         const subjectPath = 'scripts/semanticReview/asymSource.ts';
 
         // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side; their
-        // minima cross. The source is paired with the coverer whose largest side is smallest, so both source
-        // sides share that coverer's position and the pair rank keeps them ahead of every coverer side.
-        const aaaBefore = `${workflowLine}${importLine}${pad(10)}`;
-        const aaaAfter = `${workflowLine}${importLine}${pad(2_000)}`;
-        const zzzBefore = `${workflowLine}${importLine}${pad(1_500)}`;
-        const zzzAfter = `${workflowLine}${importLine}${pad(100)}`;
-        const subjectSide = 'export const asym = 1;\n';
+        // minima cross. The source is paired with the lexicographically first coverer and keys at that
+        // coverer's largest side, so it is attempted ahead of both coverers.
+        const aaaBefore = `${workflowLine}${importLine}`;
+        const aaaAfter = `${workflowLine}${importLine}${'y'.repeat(2_000)}`;
+        const zzzBefore = `${workflowLine}${importLine}${'y'.repeat(1_500)}`;
+        const zzzAfter = `${workflowLine}${importLine}${'y'.repeat(100)}`;
+        const subjectSide = 'y'.repeat(20);
         const set = collectEvidence({
             port: fakeSource({
                 files: [changedFile(aaaSpecPath), changedFile(zzzSpecPath), changedFile(subjectPath)],
@@ -1412,9 +1417,11 @@ describe('contract-carrying admission', () => {
         expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'after'));
     });
 
-    it('keeps covered sources larger than their spec in their own size order', () => {
-        // The own-figure tie-break keeps several sources sharing one pair figure in their own ascending size
-        // order, so the smallest source is attempted first and the plan keeps as much as the merge base did.
+    it('keeps covered sources that key at one pair figure in their own size order', () => {
+        // Every source here is smaller than the one spec that covers all three, so each pair key is the
+        // coverer's own figure and all three sources collapse onto that one position: the pair rank cannot
+        // separate them from each other, and only the own figure orders them. The smallest source is
+        // therefore attempted first, so the plan keeps as much as the merge base did.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const coverPath = 'scripts/semanticReview/__tests__/smallCover.spec.ts';
         const sourcePaths = ['a', 'b', 'c'].map((name) => `scripts/semanticReview/${name}.ts`);
@@ -1438,9 +1445,9 @@ describe('contract-carrying admission', () => {
             ]),
         ]);
         const bytesBySide = new Map<string, AdmissionSideBytes>([
-            [coverPath, { before: 0, after: 10_000 }],
-            [sourcePaths[0] ?? '', { before: 0, after: 90_000 }],
-            [sourcePaths[1] ?? '', { before: 0, after: 60_000 }],
+            [coverPath, { before: 0, after: 80_000 }],
+            [sourcePaths[0] ?? '', { before: 0, after: 40_000 }],
+            [sourcePaths[1] ?? '', { before: 0, after: 20_000 }],
             [sourcePaths[2] ?? '', { before: 0, after: 10_000 }],
         ]);
         const sidesByPath = new Map<string, ContractCarryingSides>([

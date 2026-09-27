@@ -18,11 +18,11 @@
  *    attempt order is not a survival promise at either profile: admission charges regions against a binding
  *    total, so the covered source can be withheld while its coverer is planned (the plan then holds the spec
  *    without the source it covers), or the contract-carrying coverer can be withheld while the source is
- *    planned. The head can plan as many units as the merge base while still withholding a different one: in
- *    a sweep of generated ci-binding families (a covered source, its coverer, and unrelated spec and bulk
- *    paths sized to bind the ci total), the head withheld a unit the merge base admitted in 19 of 400 and 51
- *    of 1000 families — the covered source (10, 20), the contract-carrying coverer (11, 47), or an unrelated
- *    bulk path (5, 8), never an unrelated spec, which the head admitted instead;
+ *    planned. Any planned unit can be withheld, and the head can plan as many units as the merge base while
+ *    still withholding a different one: in a sweep of generated ci-binding families (a covered source, its
+ *    coverer, and unrelated spec and bulk paths sized to bind the ci total), the head withheld a unit the
+ *    merge base admitted in 19 of 400 and 51 of 1000 families, and the unit it withheld was a covered
+ *    source, its contract-carrying coverer, an unrelated bulk path, or an unrelated collected spec;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at
