@@ -170,7 +170,6 @@ describe('createToasterNode', () => {
                 // not cross into the worklet (#4633).
                 { name: 'unknownPad', value: 1 },
             ],
-            restoreEngineType: 2,
             fillCondition: 'fill',
         });
 
@@ -181,7 +180,6 @@ describe('createToasterNode', () => {
             note: 60,
             sampleFrame: 64,
             padParams: [{ id: TOASTER_PAD_PARAM_IDS.tune, value: 0.5 }],
-            restoreEngineType: 2,
             fillCondition: 'fill',
         });
     });

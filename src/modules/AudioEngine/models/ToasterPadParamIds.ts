@@ -5,20 +5,21 @@
  * `process()`, on the audio render thread. The string-keyed `set_pad_param`
  * wasm-bindgen glue marshals the name into WASM linear memory via
  * `__wbindgen_malloc` — one heap allocation per locked parameter per hit — so
- * the wire message carries numeric ids instead and Rust's
- * `set_pad_param_by_id` (`crates/daw-dsp/src/toaster/engine.rs`) dispatches on
- * them. Ordinal agreement is the whole contract and no compiler checks it;
- * both sides pin it in tests (`wasm/__tests__/dawDspToasterPadParamIds.spec.ts`
- * against the shipped binary, `numeric_pad_setter_*` in the crate).
+ * the wire message carries numeric ids instead and Rust stages them through
+ * `set_pad_param_lock_by_id` (`crates/daw-dsp/src/toaster/engine.rs`), a
+ * per-hit overlay `note_on` consumes and clears (#4636). Ordinal agreement is
+ * the whole contract and no compiler checks it; both sides pin it in tests
+ * (`wasm/__tests__/dawDspToasterPadParamIds.spec.ts` against the shipped
+ * binary, `numeric_pad_setter_*` in the crate).
  *
  * Keys are the camelCase `PadState` names the producer
  * (`Toaster/useCases/sequencerPlayback.ts`) emits; `engineType` covers the
- * sound lock, including the worklet's post-hit restore write.
+ * sound lock, which rides the same overlay and needs no restore write.
  *
  * Lives in `models/` for the same reason as `ToasterAutomationParams`:
  * `engine/ToasterNode` translates names to ids on the main thread and
  * `services/toasterProcessor.ts` — AudioWorklet code that may not import
- * `engine/` — reads the `engineType` id for the restore write.
+ * `engine/` — dispatches them to the engine's lock overlay.
  *
  * The table is a `Record`; consumers must not assume the ids stay dense
  * `0..n-1`. Membership (`Object.hasOwn`), not a key count, is the guard.

@@ -8,9 +8,65 @@ use std::f32::consts::TAU;
 
 use super::{
     engines::{DrumEngineResources, DrumEngineType, DrumSynthEngine},
-    pad::Pad,
+    pad::{Pad, PadLockOverlay},
 };
 use crate::primitives::{flush_denormal, hz_from_normalized_cutoff, q_from_normalized_resonance};
+
+/// The render-time reads a parameter-locked hit must carry on its own voice
+/// (#4636).
+///
+/// Most pad parameters are baked into the voice at `trigger` from the
+/// overlaid pad clone, but the block renderer reads a handful live from the
+/// stored pad — pan gains, bus routing, the reverb/delay sends — and the
+/// transient shaper is one stateful processor per pad. A hit that locked any
+/// of those snapshots the overlaid value here; the render loop prefers the
+/// snapshot over the pad's live value, so the lock sounds on its own hit and
+/// nowhere else. `None` fields fall through to the pad, which keeps panel
+/// edits live for a ringing unlocked voice exactly as before.
+///
+/// Plain numeric options: assigning them at `note_on` allocates nothing.
+#[derive(Clone, Copy, Default)]
+pub struct PadLockOverrides {
+    /// Constant-power pan gains computed from the overlaid pan at `note_on`,
+    /// matching the per-block pad precompute's formula.
+    pub pan_gains: Option<(f32, f32)>,
+    pub bus_route: Option<u8>,
+    pub send_reverb: Option<f32>,
+    pub send_delay: Option<f32>,
+    pub transient_attack: Option<f32>,
+    pub transient_sustain: Option<f32>,
+}
+
+impl PadLockOverrides {
+    /// Snapshot the render-time parameters the staged overlay touched, read
+    /// from the overlaid pad so the voice carries the same clamped values the
+    /// persistent write would have installed before the hit (#4636).
+    pub fn from_staged(staged: &PadLockOverlay, overlaid: &Pad) -> Self {
+        // Id positions in TOASTER_PAD_PARAM_IDS order; the trigger-time
+        // parameters have no entry because the voice already baked them from
+        // the overlaid pad.
+        const PAN: usize = 1;
+        const SEND_REVERB: usize = 11;
+        const SEND_DELAY: usize = 12;
+        const TRANSIENT_ATTACK: usize = 13;
+        const TRANSIENT_SUSTAIN: usize = 14;
+        const BUS_ROUTE: usize = 15;
+        Self {
+            pan_gains: staged[PAN].map(|_| {
+                let pan = overlaid.pan;
+                (
+                    ((1.0_f32 - pan) * 0.5).sqrt(),
+                    ((1.0_f32 + pan) * 0.5).sqrt(),
+                )
+            }),
+            bus_route: staged[BUS_ROUTE].map(|_| overlaid.bus_route),
+            send_reverb: staged[SEND_REVERB].map(|_| overlaid.send_reverb),
+            send_delay: staged[SEND_DELAY].map(|_| overlaid.send_delay),
+            transient_attack: staged[TRANSIENT_ATTACK].map(|_| overlaid.transient_attack),
+            transient_sustain: staged[TRANSIENT_SUSTAIN].map(|_| overlaid.transient_sustain),
+        }
+    }
+}
 
 /// Simple state-variable filter for per-voice filtering.
 pub struct SvfFilter {
@@ -113,6 +169,10 @@ pub struct DrumVoice {
     pub pad_index: u8,
     pub velocity: f32,
     pub age: u32,
+    /// Render-time values this hit locked, or empty for an unlocked hit.
+    /// Reassigned at every `note_on`, so a recycled voice never carries the
+    /// previous hit's locks (#4636).
+    pub lock_overrides: PadLockOverrides,
     engines: [DrumSynthEngine; DrumEngineType::COUNT],
     active_engine_index: usize,
     filter: SvfFilter,
@@ -129,6 +189,7 @@ impl DrumVoice {
             pad_index: 0,
             velocity: 0.0,
             age: 0,
+            lock_overrides: PadLockOverrides::default(),
             engines: DrumEngineType::ALL.map(|engine_type| {
                 DrumSynthEngine::new_with_resources(engine_type, sample_rate, resources)
             }),
