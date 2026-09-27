@@ -93,6 +93,16 @@ function roleSpans(tokens: string, role: CanonicalTrackRole): Array<{ start: num
     }));
 }
 
+function hasIndependentBareVocal(tokens: string, role: CanonicalTrackRole): boolean {
+    const qualifiedSpans = roleSpans(tokens, role);
+    const pattern = new RegExp(BARE_VOCAL_WORD.source, 'g');
+    return Array.from(tokens.matchAll(pattern)).some((match) => {
+        const start = match.index;
+        const end = start + match[0].length;
+        return !qualifiedSpans.some((span) => span.start <= start && span.end >= end);
+    });
+}
+
 /**
  * Interprets a name matching exactly two patterns as one convention-backed role instead of a
  * genuine conflict. Only these paired combinations carry an unambiguous studio meaning, and only
@@ -260,7 +270,11 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
     const tokens = normalizedTokens(input.track.name);
     const roles = namedRolesFromTokens(tokens);
     const bareVocalRole = resolveBareVocalRole(tokens);
-    if (bareVocalRole && roles.some((role) => role !== bareVocalRole)) {
+    if (
+        bareVocalRole &&
+        hasIndependentBareVocal(tokens, bareVocalRole) &&
+        roles.some((role) => role !== bareVocalRole)
+    ) {
         return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
     }
     if (roles.length > 1) {

@@ -200,18 +200,30 @@ describe('canonical track roles', () => {
         }
     );
     it.each([
-        'Kick Drum & Vox / Bass Drum / Vocal',
+        'Kick Drum & Vox',
+        'Bass Drum / Vocal',
         'Synth Pad + Vocals',
         'Vocals and Kick Drum',
         'Kick Drum/Vocal',
         'Vox, Bass Drum',
         'Synth Pad & Vocal',
         'Vocal + Pad Synth',
+        'Synth Lead Vocal + Vox',
     ])('keeps independent bare vocal labels as conflicting name evidence: %s', (name) => {
         expect(getCanonicalTrackRole(input(name))).toEqual({
             role: 'unknown',
             source: 'name-tags',
             evidence: 'conflicting-name-tags',
+        });
+    });
+    it.each([
+        { name: 'Synth Lead Vocal', role: 'lead vocal' },
+        { name: 'Backing Vocals Synth', role: 'backing vocal' },
+    ] as const)('preserves qualified vocal synth compounds: $name', ({ name, role }) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({
+            role,
+            source: 'name-tags',
+            evidence: 'resolved-name-tags',
         });
     });
     it.each([
