@@ -1,0 +1,16 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_beb54bf43b47b7 748-780
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 4596-4603,4621,5183-5184,5186-5190,5193-5232,5234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "93fed313dfb98f202b6b500b66b4559cdd9f714a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
