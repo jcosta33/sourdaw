@@ -1,33 +1,15 @@
 name: Validation
 
-# The shared validation lane, and the only definition of it. Two workflows call
-# it: `health-gates.yml` on every pull-request push, and `heavy-gates.yml` on an
-# approving review. The nightly schedule and a dispatch run `nightly.yml`'s own
-# train instead. This file exists as one
-# reusable workflow rather than two copies because a second copy is a second
-# thing to keep correct, and the copy nobody is looking at is the one that rots.
-#
-# It runs the legs that fit a pull request's budget: types and contracts, lint,
-# module boundaries, the unit matrix, the production build, the Rust workspace
-# and collaboration server, both native platform legs, the offline browser smoke
-# set, the pull-request diff secret scan, and dependency review. Measured, that
-# settles in about ten minutes, bounded by the unit shards.
-#
-# A head that carries nothing but prose skips the legs that read only code. What
-# counts as prose is decided by exclusion: `docs/` and top-level Markdown, and
-# nothing else. Repository metadata is machine-read, so an issue template or a
-# workflow definition is a code-bearing change here, and so is any path nobody
-# has classified yet — the classifier fails towards running too much.
-#
-# `decide` resolves that scope once and publishes it as this workflow's outputs,
-# so a caller's own jobs read the same answer these legs did rather than
-# recomputing it and drifting from it.
-#
-# Runners are standard GitHub-hosted labels only. Public repositories bill
-# nothing for those; larger and GPU runners bill even here.
+# Required validation called only by health-gates.yml. Browser smoke uses the
+# same deterministic affected plan as the browser matrix. Nightly owns full-load validation.
 
 on:
   workflow_call:
+    inputs:
+      browser:
+        description: Whether the affected plan requires browser smoke.
+        required: true
+        type: boolean
     outputs:
       heavy:
         description: Whether the caller's event admits the heavy lane.
@@ -60,8 +42,6 @@ jobs:
     name: Decide scope
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # A review that requests changes or only comments starts nothing.
-    if: github.event_name != 'pull_request_review' || github.event.review.state == 'approved'
     outputs:
       heavy: ${{ steps.scope.outputs.heavy }}
       rust: ${{ steps.scope.outputs.rust }}
@@ -224,6 +204,7 @@ jobs:
         id: scope
         env:
           EVENT: ${{ github.event_name }}
+          BROWSER: ${{ inputs.browser }}
           # The retry attempt's verdict wins; its empty outputs (it never ran,
           # or it failed too) fall through to the first attempt's, and both
           # being empty leaves the value empty for the guard below to refuse.
@@ -236,7 +217,7 @@ jobs:
           set -euo pipefail
           # An empty verdict means both filter attempts failed or never ran;
           # letting it read as `false` would skip every lane under a green job.
-          for verdict in "$RUST" "$SERVER" "$E2E" "$WEB" "$UNCLASSIFIED"; do
+          for verdict in "$RUST" "$SERVER" "$E2E" "$WEB" "$UNCLASSIFIED" "$BROWSER"; do
             if [ "$verdict" != "true" ] && [ "$verdict" != "false" ]; then
               printf 'No scope verdict: both "Filter changed paths" and "Retry changed-paths filter after a transient API failure" failed or produced no output.\n' >&2
               exit 1
@@ -254,6 +235,7 @@ jobs:
             e2e=true
             web=true
           fi
+          e2e=$BROWSER
           # `code` is the one question the scope-independent jobs ask: does this
           # head carry anything but prose? Only a change that claims no scope at
           # all — documentation — answers no.
@@ -502,15 +484,8 @@ jobs:
   smoke:
     name: Offline browser smoke
     needs: decide
-    # The one browser check a pull request can afford. `tests/e2e/smoke.spec.ts`
-    # blocks every non-loopback request and asserts nothing reached one, so it
-    # cannot fail on a third-party host being unreachable the way the full
-    # end-to-end suite does. That suite owns breadth, in `heavy-gates.yml`.
-    # This workflow is called from both a pull-request run and a heavy run, so
-    # the condition keys off the pull-request payload rather than the triggering
-    # event: an approving review carries one too and must validate the same head.
-    # What keeps it off comment-only reviews is `decide` skipping and the
-    # implicit `success()` on `needs`.
+    # Every product PR runs the offline startup, save/reopen, playback and undo
+    # proof. The affected browser matrix runs separately in heavy-gates.yml.
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -798,21 +773,7 @@ jobs:
   dependency-review:
     name: Dependency review
     needs: decide
-    # Whichever run ultimately reports has to be the one that scans. The push
-    # lane runs in the health-gates concurrency group with cancel-in-progress,
-    # so a newer push cancels an in-flight push run outright; the approved-review
-    # lane runs in its own group beside it — neither lane waits on or cancels
-    # the other, and both mint the same check names on one head. `deliver`
-    # reconciles the duplicates by reading the newest started verdict per check
-    # name, so a later scan retires an earlier failure instead of the two runs
-    # racing. Running on both events, with explicit refs, keeps one successful
-    # scan on the current head instead of letting event-gated skips or
-    # cancellations erase it. Skipped on schedule and dispatch runs, which carry
-    # no pull request to diff. A `commented` or `changes_requested` review
-    # carries one too, so this condition alone is true there; what keeps the
-    # scan off those runs is two layers — the heavy lane's validation caller
-    # refuses non-approved reviews, and `decide`'s own review-state condition
-    # skips the lane's legs should that caller predicate ever be dropped.
+    # Every PR scans immutable base/head refs before the required Gate succeeds.
     if: github.event.pull_request != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -831,25 +792,7 @@ jobs:
   pr-secrets:
     name: PR diff secret scan
     needs: decide
-    # A leak is cheapest to catch before it is pushed to a public repository, and
-    # scanning only this pull request's own commits costs seconds rather than the
-    # minutes the whole history costs. That full scan below is unchanged and
-    # still owns the history and the approval lane; this one is the early half.
-    # Both read their config from the trusted base revision, never from the head.
-    #
-    # Whichever run ultimately reports has to be the one that scans, exactly as
-    # for `dependency-review` above: a newer push cancels an in-flight push run
-    # in the health-gates group, the approved-review lane runs beside it in its
-    # own group without waiting, and `deliver` reads the newest started verdict
-    # per check name so a later scan retires an earlier failure. Running on both
-    # events, off the already env-pinned base and head SHAs, keeps one successful
-    # scan on the current head instead of letting event-gated skips or
-    # cancellations erase it. Skipped on schedule and dispatch runs, which carry
-    # no pull request to diff. A `commented` or `changes_requested` review
-    # carries one too, so this condition alone is true there; what keeps the
-    # scan off those runs is two layers — the heavy lane's validation caller
-    # refuses non-approved reviews, and `decide`'s own review-state condition
-    # skips the lane's legs should that caller predicate ever be dropped.
+    # Scan the PR delta with trusted base configuration; nightly scans full history.
     if: github.event.pull_request != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
