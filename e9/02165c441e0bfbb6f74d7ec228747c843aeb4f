@@ -1,0 +1,75 @@
+src/modules/MIDI/transformers/normalizeMidiNoteInput.ts
+  s_ed5aa36a3ba357::t_f8c31f5da4fff6 5,9,15
+src/modules/MIDI/useCases/webMidiInput/withRecordedNoteExpression.ts
+  s_ed5aa36a3ba357::t_6e478dbb817ac2 10-41,70
+  s_ed5aa36a3ba357::t_cb7faad04ca099 81
+src/modules/MIDI/useCases/midiNoteCrud/replaceMidiNotesIfUnchanged.ts
+  s_ed5aa36a3ba357::t_60b23dca2c8417 1-43
+  s_ed5aa36a3ba357::t_2a36ca2fa69fe8 44-45
+src/modules/MIDI/handlers/noteTransform/__tests__/handleRestoreMidiClipNotes.spec.ts
+  s_ed5aa36a3ba357::t_9400de94c655f4 1,15-17,23,208-237,239-241
+  s_ed5aa36a3ba357::t_fa19a2dce1e34f 171-195,199-207,238,242-243
+  s_ed5aa36a3ba357::t_3ceae6fb535951 18-22,196-198
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_ed5aa36a3ba357::t_2fbf1f4d636ec1 48-50
+  s_ed5aa36a3ba357::t_2cda9f585541d3 51-53
+src/modules/MIDI/transformers/isRestoreMidiClipNotesReplayArguments.ts
+  s_ed5aa36a3ba357::t_ecbd284dbee28a 20-21
+  s_ed5aa36a3ba357::t_ae4707680935f1 1-2
+  s_ed5aa36a3ba357::t_2ff7094a48ba46 22-24
+src/modules/TimelineEditor/models/MidiNoteViewTypes.ts
+  s_ed5aa36a3ba357::t_b5a4fe0ef37055 16-23
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_ed5aa36a3ba357::t_1b2fa9c5aabd49 4-9,45-46,57,59-60,65-66,68
+  s_ed5aa36a3ba357::t_afea2a8e4cb0ef 47-55,61-64
+  s_ed5aa36a3ba357::t_3ceae6fb535951 18
+  s_ed5aa36a3ba357::t_2fbf1f4d636ec1 44,58,67
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_ed5aa36a3ba357::t_1f7f5da94682bb 21,87,462-467,822,826-827,833,857-858,871
+  s_ed5aa36a3ba357::t_41db84d76ee921 476,523-530,534-536,545-553,872-874
+  s_ed5aa36a3ba357::t_0d7676371107bf 468,488-490,513-514,554-556,821,823-825,875-878
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/replaceMidiNotesIfUnchanged.spec.ts
+  s_ed5aa36a3ba357::t_bd9ad72897c1c0 1-9,17-34,36-52,72-89,91-94,97-125,127-130,132-138,140-145,147-150,161-171,185-186
+  s_ed5aa36a3ba357::t_bab668da1086fc 10-16,35,62-65,90,95-96,151-160
+  s_ed5aa36a3ba357::t_41db84d76ee921 178,184
+  s_ed5aa36a3ba357::t_887191a3d29255 53-61,66-71,126,131,139,146,172-177,179-183
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/batchAddMidiNotes.spec.ts
+  s_ed5aa36a3ba357::t_1010dfc8b30710 42-63
+src/modules/MIDI/useCases/index.ts
+  s_ed5aa36a3ba357::t_60b23dca2c8417 112
+src/modules/MIDI/useCases/webMidiInput/recordHeldNoteExpression.ts
+  s_ed5aa36a3ba357::t_2fbf1f4d636ec1 19,22-24,50,59-61,86-87,93-95
+  s_ed5aa36a3ba357::t_ae4707680935f1 2-6,67-70,73-81,98-102
+src/modules/MIDI/transformers/__tests__/normalizeMidiNoteInput.spec.ts
+  s_ed5aa36a3ba357::t_1010dfc8b30710 24-38,44,49,55
+  s_ed5aa36a3ba357::t_d8b48d703f7daf 39-43,45-48,50-54,56
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_ed5aa36a3ba357::t_3ceae6fb535951 50,205-220
+  s_ed5aa36a3ba357::t_f8c31f5da4fff6 1048-1049,1403-1404
+  s_ed5aa36a3ba357::t_b5a4fe0ef37055 30,180-204,221,1123,1134,1468
+src/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes.ts
+  s_ed5aa36a3ba357::t_f8c31f5da4fff6 6
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_ed5aa36a3ba357::t_5b5330efb964cf 907-912,971-1007
+  s_ed5aa36a3ba357::t_a12bf858004656 1008
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_ed5aa36a3ba357::t_ecbd284dbee28a 85-89
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_ed5aa36a3ba357::t_2fbf1f4d636ec1 55-56,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e902165c441e0bfbb6f74d7ec228747c843aeb4f",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
