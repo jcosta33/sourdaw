@@ -1251,31 +1251,38 @@ describe('contract-carrying admission', () => {
         // the paired coverer's still orders after the source.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { shared } from '../shared.ts';\n";
-        const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaBig.spec.ts';
-        const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzSmall.spec.ts';
+        const anchorSpecPath = 'scripts/semanticReview/__tests__/aaaAnchor.spec.ts';
+        const bigSpecPath = 'scripts/semanticReview/__tests__/bbbBig.spec.ts';
+        const smallSpecPath = 'scripts/semanticReview/__tests__/cccSmall.spec.ts';
         const sourcePath = 'scripts/semanticReview/shared.ts';
         const changed: SemanticChangedFile[] = [
-            { path: aaaSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
-            { path: zzzSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: anchorSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: bigSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: smallSpecPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
             { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
         ];
         const specSide = `${workflowLine}${importLine}`;
         const contents = new Map<string, { before?: string; after?: string }>([
-            [aaaSpecPath, { before: specSide, after: specSide }],
-            [zzzSpecPath, { before: specSide, after: specSide }],
+            [anchorSpecPath, { before: specSide, after: specSide }],
+            [bigSpecPath, { before: specSide, after: specSide }],
+            [smallSpecPath, { before: specSide, after: specSide }],
             [sourcePath, { before: 'export const shared = 1;\n', after: 'export const shared = 1;\n' }],
         ]);
-        // `zzzSmall` is the coverer the source is paired with (its largest side, 100, is the smaller), while
-        // `aaaBig` is the lexicographically first coverer. The source's own 1,000-byte figure is the largest,
-        // so all three tie at 1,000 and the anchor path is what keeps the source ahead of `aaaBig`.
+        // `cccSmall` is the coverer the source is paired with (its largest side, 100, is the smallest);
+        // `bbbBig` carries the largest figure; `aaaAnchor` is neither, and is the lexicographically first
+        // coverer. The source's own 1,000-byte figure is the largest, so all four tie at 1,000, and only the
+        // anchor path — not the paired coverer or the largest-figure one — keeps the source ahead of every
+        // coverer.
         const bytesBySide = new Map<string, AdmissionSideBytes>([
-            [aaaSpecPath, { before: 500, after: 500 }],
-            [zzzSpecPath, { before: 100, after: 100 }],
+            [anchorSpecPath, { before: 300, after: 300 }],
+            [bigSpecPath, { before: 500, after: 500 }],
+            [smallSpecPath, { before: 100, after: 100 }],
             [sourcePath, { before: 1_000, after: 1_000 }],
         ]);
         const sidesByPath = new Map<string, ContractCarryingSides>([
-            [aaaSpecPath, { before: true, after: true }],
-            [zzzSpecPath, { before: true, after: true }],
+            [anchorSpecPath, { before: true, after: true }],
+            [bigSpecPath, { before: true, after: true }],
+            [smallSpecPath, { before: true, after: true }],
             [sourcePath, { before: false, after: false }],
         ]);
         const specCovered = specCoveredSources(changed, contents, bytesBySide);
@@ -1289,10 +1296,12 @@ describe('contract-carrying admission', () => {
         );
         const index = (path: string, side: 'before' | 'after'): number =>
             units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
-        expect(index(sourcePath, 'before')).toBeLessThan(index(aaaSpecPath, 'before'));
-        expect(index(sourcePath, 'before')).toBeLessThan(index(zzzSpecPath, 'before'));
-        expect(index(sourcePath, 'after')).toBeLessThan(index(aaaSpecPath, 'after'));
-        expect(index(sourcePath, 'after')).toBeLessThan(index(zzzSpecPath, 'after'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(anchorSpecPath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(bigSpecPath, 'before'));
+        expect(index(sourcePath, 'before')).toBeLessThan(index(smallSpecPath, 'before'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(anchorSpecPath, 'after'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(bigSpecPath, 'after'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(smallSpecPath, 'after'));
     });
 
     it("keys a covered source smaller than its spec at the spec's larger figure and still plans it", () => {

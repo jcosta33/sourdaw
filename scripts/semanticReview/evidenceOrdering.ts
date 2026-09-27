@@ -14,9 +14,11 @@
  *    than at the front of the tier, the pair rank keeps the source ahead of every coverer, and it never
  *    outranks contract material unrelated to those specs. A source that is itself contract-carrying keeps its
  *    own position and class, so a contract-carrying non-spec path never outranks it on size alone. The
- *    attempt order is not a survival promise: admission charges regions against a binding total, so a source
- *    whose regions exceed the leftover can be withheld while its coverer's smaller regions still fit, and the
- *    plan then holds the spec without the source it covers;
+ *    attempt order is not a survival promise at either profile: admission charges regions against a binding
+ *    total, so the covered source can be withheld while its coverer is planned (the plan then holds the spec
+ *    without the source it covers), or the contract-carrying coverer can be withheld while the source is
+ *    planned, and the head can plan as many units as the merge base while still withholding the source the
+ *    merge base admitted;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at
@@ -235,10 +237,12 @@ export function plannedUnitPaths(
  * One level is the observed shape; the closure is not chased further so the walk stays deterministic
  * and cheap over already-read contents.
  *
- * Coverage is gated on the destination path: a spec renamed or copied out of collection covers nothing, even
- * when its before content still imports a changed source, because only a currently collected spec is a
- * carrier. That is a disclosed limit — the source such a spec imports keeps its own bulk rank rather than
- * being promoted.
+ * Coverage is gated on the destination path: a spec renamed or copied out of collection covers nothing
+ * itself, even when its before content still imports a changed source, because only a currently collected
+ * spec is a carrier. That is a disclosed limit — the source such a spec imports is still covered by any other
+ * collected spec that imports it, and the renamed spec's own before side still carries its contract class and
+ * is attempted in tier 0, so the source can still be promoted by that other spec, and can still be withheld
+ * behind the renamed spec's before side when the total binds.
  */
 export function specCoveredSources(
     changed: readonly SemanticChangedFile[],
