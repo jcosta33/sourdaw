@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -10,6 +10,7 @@ import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_S
 
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'];
+const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
 const PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx';
 const GENERAL_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx';
 const MIDI_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/MidiSection.tsx';
@@ -33,6 +34,7 @@ const SOLO_SAFE_SPEC = 'tests/e2e/soloSafeToggleTestId.spec.ts';
 const MASTER_GAIN_SPECS = ['tests/e2e/masterChannelTestId.spec.ts', 'tests/e2e/masterGainKeyboardTestId.spec.ts'];
 const TRANSPORT = 'src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx';
 const METRONOME_VOLUME_SPEC = 'tests/e2e/metronomeVolumeSliderTestId.spec.ts';
+const COUNT_IN_CYCLE_SPEC = 'tests/e2e/countInCycleTestId.spec.ts';
 const MIXER_SPECS_FOR_CONTROLS = [
     'mixer',
     'mixerAdvanced',
@@ -64,6 +66,7 @@ const TRANSPORT_SPECS_FOR_CONTROLS = [
     'transportTestId',
     'mixerUndoRedo',
     'metronomeVolumeSliderTestId',
+    'countInCycleTestId',
 ].map((name) => `tests/e2e/${name}.spec.ts`);
 const INVENTORY = [SMOKE_SPEC, ...TUNER_SPECS, 'tests/e2e/undo.spec.ts'];
 const folders: string[] = [];
@@ -76,6 +79,12 @@ function temporaryRoot(): string {
 
 function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
     return plan.matrix.include.flatMap((group) => group.specs).sort();
+}
+
+function fullInventory(inventory: readonly string[]): string[] {
+    return Array.from(new Set(inventory))
+        .filter((spec) => spec !== SMOKE_SPEC)
+        .sort();
 }
 
 afterEach(() => {
@@ -115,16 +124,42 @@ describe('required affected verification', () => {
         expect(plan.reasons.at(0)?.reason).toContain('mapped presentation');
     });
 
-    it('uses the bounded preferences workflows and widens producers and omitted sections', () => {
+    it('keeps the two narrow maps complete for their existing dedicated browser families', () => {
+        const familySpecs = readdirSync('tests/e2e')
+            .filter((name) => /^(?:tuner|export).*\.spec\.tsx?$/.test(name))
+            .map((name) => `tests/e2e/${name}`);
+        const inventory = [SMOKE_SPEC, ...familySpecs, 'tests/e2e/undo.spec.ts'];
+        for (const [path, prefix] of [
+            [TUNER, 'tuner'],
+            [EXPORT, 'export'],
+        ]) {
+            const expected = familySpecs.filter((spec) => spec.startsWith(`tests/e2e/${prefix}`)).sort();
+            expect(expected.length).toBeGreaterThan(0);
+            expect(allSelected(selectValidationPlan([path], inventory))).toEqual(expected);
+        }
+    });
+
+    it.each([
+        PREFERENCES,
+        GENERAL_PREFERENCES,
+        MIDI_PREFERENCES,
+        'src/modules/Preferences/presentations/views/ShortcutsSection.tsx',
+        'src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx',
+        'src/modules/Preferences/presentations/components/CaptureKeyButton.tsx',
+    ])('widens former preference mapping %s to the complete browser inventory', (path) => {
         const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
-        expect(allSelected(selectValidationPlan([PREFERENCES], inventory))).toEqual([...PREFERENCE_SPECS].sort());
+        const plan = selectValidationPlan([path], inventory);
+        expect(allSelected(plan)).toEqual(fullInventory(inventory));
+        expect(plan.browserAi).toBe(true);
+    });
+
+    it('widens preference producers and omitted sections', () => {
+        const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
         for (const path of [
             'src/modules/Preferences/stores/preferencesStore.ts',
             'src/modules/Preferences/presentations/views/preferences/AiSection.tsx',
         ]) {
-            expect(allSelected(selectValidationPlan([path], inventory))).toEqual(
-                inventory.filter((spec) => spec !== SMOKE_SPEC).sort()
-            );
+            expect(allSelected(selectValidationPlan([path], inventory))).toEqual(fullInventory(inventory));
         }
     });
 
@@ -139,13 +174,23 @@ describe('required affected verification', () => {
         expect(allSelected(selectValidationPlan([MIDI_PREFERENCES], inventory))).toContain(MIDI_VELOCITY_KEYBOARD_SPEC);
     });
 
-    it('selects existing mixer and transport workflows without hardware for known views', () => {
-        const inventory = [SMOKE_SPEC, ...MIXER_SPECS_FOR_CONTROLS, ...TRANSPORT_SPECS_FOR_CONTROLS];
-        expect(allSelected(selectValidationPlan([MIXER], inventory))).toEqual([...MIXER_SPECS_FOR_CONTROLS].sort());
-        expect(allSelected(selectValidationPlan([TRANSPORT], inventory))).toEqual(
-            [...TRANSPORT_SPECS_FOR_CONTROLS].sort()
-        );
-        expect(selectValidationPlan([MIXER, TRANSPORT], inventory).browserAi).toBe(false);
+    it.each([
+        MIXER,
+        EXPANDED_MIXER,
+        MASTER_MIXER,
+        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MixerPopupMenu.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx',
+        'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx',
+        TRANSPORT,
+    ])('widens former mixer or transport mapping %s to every browser proof and hardware', (path) => {
+        const inventory = [...INVENTORY, ...MIXER_SPECS_FOR_CONTROLS, ...TRANSPORT_SPECS_FOR_CONTROLS];
+        const plan = selectValidationPlan([path], inventory);
+        expect(allSelected(plan)).toEqual(fullInventory(inventory));
+        expect(plan.browserAi).toBe(true);
     });
 
     it('selects the Solo Safe and master-gain witnesses for the mixer controls that own them', () => {
@@ -156,9 +201,11 @@ describe('required affected verification', () => {
         }
     });
 
-    it('selects the metronome-volume state-change witness for transport controls', () => {
-        const inventory = [...INVENTORY, ...TRANSPORT_SPECS_FOR_CONTROLS, METRONOME_VOLUME_SPEC];
-        expect(allSelected(selectValidationPlan([TRANSPORT], inventory))).toContain(METRONOME_VOLUME_SPEC);
+    it('selects the metronome-volume and simultaneous punch/count-in witnesses for transport controls', () => {
+        const inventory = [...INVENTORY, ...TRANSPORT_SPECS_FOR_CONTROLS];
+        const selected = allSelected(selectValidationPlan([TRANSPORT], inventory));
+        expect(selected).toContain(METRONOME_VOLUME_SPEC);
+        expect(selected).toContain(COUNT_IN_CYCLE_SPEC);
     });
 
     it.each([

@@ -5,54 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
-// Only known presentation files have narrow maps. State/audio producers, shared
-// shells, hooks and new files fall through to the complete browser suite.
-// Keep these file lists explicit: a new UI or browser workflow needs a coverage decision.
-const PREFERENCES_SPECS = [
-    'tests/e2e/autoSaveInterval.spec.ts',
-    'tests/e2e/preferencesDialogDeepTestId.spec.ts',
-    'tests/e2e/shortcutBehavioralE2E.spec.ts',
-    'tests/e2e/browserDisplayScale.spec.ts',
-    'tests/e2e/transportResponsive.spec.ts',
-    'tests/e2e/pianoRollDockAcceptance.spec.ts',
-    'tests/e2e/uiScaleKeyboardTestId.spec.ts',
-    'tests/e2e/midiVelocityKeyboardTestId.spec.ts',
-];
-const MIXER_SPECS = [
-    'tests/e2e/mixer.spec.ts',
-    'tests/e2e/mixerAdvanced.spec.ts',
-    'tests/e2e/mixerAiHealthTestId.spec.ts',
-    'tests/e2e/mixerBusMasterChain.spec.ts',
-    'tests/e2e/mixerChannelGainTestId.spec.ts',
-    'tests/e2e/mixerChannelWidthKeyboardTestId.spec.ts',
-    'tests/e2e/mixerDeepTemplateTestId.spec.ts',
-    'tests/e2e/mixerFullWorkflowTestId.spec.ts',
-    'tests/e2e/mixerSnapshotRecallTestId.spec.ts',
-    'tests/e2e/mixerSnapshotTestId.spec.ts',
-    'tests/e2e/mixerSendsRoutingTestId.spec.ts',
-    'tests/e2e/mixerStripDeviceChain.spec.ts',
-    'tests/e2e/mixerTestId.spec.ts',
-    'tests/e2e/mixerUndoRedo.spec.ts',
-    'tests/e2e/mixerWidthSendsTestId.spec.ts',
-    'tests/e2e/soloSafeToggleTestId.spec.ts',
-    'tests/e2e/masterChannelTestId.spec.ts',
-    'tests/e2e/masterGainKeyboardTestId.spec.ts',
-];
-const TRANSPORT_SPECS = [
-    'tests/e2e/transport.spec.ts',
-    'tests/e2e/transportAdvanced.spec.ts',
-    'tests/e2e/transportAndWorkspaceDeep.spec.ts',
-    'tests/e2e/transportCompleteLifecycle.spec.ts',
-    'tests/e2e/transportDeep.spec.ts',
-    'tests/e2e/transportResponsive.spec.ts',
-    'tests/e2e/transportTemplateTestId.spec.ts',
-    'tests/e2e/transportTestId.spec.ts',
-    'tests/e2e/mixerUndoRedo.spec.ts',
-    'tests/e2e/metronomeVolumeSliderTestId.spec.ts',
-];
-// PreferencesDialog and preferencesShared compose AI, audio, and performance sections;
-// TransportBar composes project, voice, and other controls beyond TransportControls.
-// Omit these cross-feature shells so they receive complete browser coverage.
+// Only complete dedicated presentation families have narrow maps. Other
+// presentation files and new browser workflows use the complete browser suite.
 const PRESENTATION_SPECS: Readonly<Record<string, readonly string[]>> = {
     'src/modules/Tuner/presentations/views/TunerPanel.tsx': [
         'tests/e2e/tuner.spec.ts',
@@ -69,23 +23,6 @@ const PRESENTATION_SPECS: Readonly<Record<string, readonly string[]>> = {
         'tests/e2e/exportFormatsTestId.spec.ts',
         'tests/e2e/exportRangeTailTestId.spec.ts',
     ],
-    'src/modules/Preferences/presentations/views/ShortcutsSection.tsx': PREFERENCES_SPECS,
-    'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx': PREFERENCES_SPECS,
-    'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx': PREFERENCES_SPECS,
-    'src/modules/Preferences/presentations/views/preferences/MidiSection.tsx': PREFERENCES_SPECS,
-    'src/modules/Preferences/presentations/views/preferences/LayoutSection.tsx': PREFERENCES_SPECS,
-    'src/modules/Preferences/presentations/components/CaptureKeyButton.tsx': PREFERENCES_SPECS,
-    'src/modules/MixerConsole/presentations/views/MixerPanel.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/MixerPopupMenu.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/MidiFxSection.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx': MIXER_SPECS,
-    'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': MIXER_SPECS,
-    'src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx': TRANSPORT_SPECS,
 };
 
 // Explicit operational entry points: adding a new script never silently opts out.
