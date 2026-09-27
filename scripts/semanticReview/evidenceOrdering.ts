@@ -210,18 +210,18 @@ export function plannedUnitPaths(
 }
 
 /**
- * The changed non-spec sources a changed collected spec covers, each mapped to the covering specs for its
- * two sides. A spec covers the files it imports and therefore tests, plus one transitive level: the changed
- * files those sources themselves re-export or import. A contract-carrying spec must not outrank the source
- * it covers, so each side of the source takes the covering spec's own ordering position for that side when
- * its unit will be planned; a source no spec covers stays bulk whatever its own content imports.
+ * The changed non-spec sources a changed collected spec covers, each mapped to the covering spec whose own
+ * unit ranks first. A spec covers the files it imports and therefore tests, plus one transitive level: the
+ * changed files those sources themselves re-export or import. A contract-carrying spec must not outrank the
+ * source it covers, so the source is ordered at the covering spec's position when its unit will be planned;
+ * a source no spec covers stays bulk whatever its own content imports.
  *
  * The covering spec is a carrier, not a rank: it is what lets a covered source be ordered *with* the spec
- * rather than at the front of the contract tier, so the pair competes with unrelated material at the
- * position the spec already held. A source several specs cover keeps a covering spec per side — the one
- * whose position ranks first for that side, the smallest side figure then the lexicographically first path
- * — so each side ties the earliest coverer for that side and the source stays ahead of every spec that
- * covers it on both sides. The answer does not depend on the order the change lists its files in.
+ * rather than at the front of the contract tier, so the source competes with unrelated material at the
+ * position the spec already held. A source several specs cover is recorded against the covering spec whose
+ * own unit ranks first — the smallest side figure the spec carries, then the lexicographically first path —
+ * so the source is capped at the earliest side any coverer carries and stays ahead of every spec that covers
+ * it, and the answer does not depend on the order the change lists its files in.
  *
  * The transitive level exists because a spec reaches a module it actually tests through a re-export: a
  * spec that imports `evidence.ts` also covers `contractCarrying.ts` and `evidenceOrdering.ts` through
@@ -229,28 +229,26 @@ export function plannedUnitPaths(
  * One level is the observed shape; the closure is not chased further so the walk stays deterministic
  * and cheap over already-read contents.
  */
-export type CoveringSpecPaths = { readonly before: string; readonly after: string };
-
 export function specCoveredSources(
     changed: readonly SemanticChangedFile[],
     contents: ReadonlyMap<string, ChangedFileContents>,
     admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>
-): ReadonlyMap<string, CoveringSpecPaths> {
+): ReadonlyMap<string, string> {
     const changedPaths = new Set(changed.map((file) => file.path));
     const filesByPath = new Map(changed.map((file) => [file.path, file]));
-    const covered = new Map<string, CoveringSpecPaths>();
-    // The covering spec whose position ranks first for a side: the smallest figure the spec's own unit of
-    // that side carries, then the lexicographically first path. The comparator ranks a pair by the
+    const covered = new Map<string, string>();
+    // The covering spec whose own position ranks first under the comparator's keys: the smallest side figure
+    // the spec's own unit carries, then the lexicographically first path. The comparator ranks a pair by the
     // collected-spec rank, the contract-carrying class, the byte figure, then the path, and every coverer
-    // ties on the first two, so the byte figure and path are what order the coverers on each side.
-    const ranksBeforeOn = (side: AdmissionSide, candidate: string, incumbent: string): boolean => {
+    // ties on the first two, so the byte figure and path are what order the coverers.
+    const ranksBefore = (candidate: string, incumbent: string): boolean => {
         const candidateFile = filesByPath.get(candidate);
         const incumbentFile = filesByPath.get(incumbent);
         if (candidateFile === undefined || incumbentFile === undefined) {
             return false;
         }
-        const candidateBytes = coveringSideBytes(candidateFile, admissionBytesBySide.get(candidate), side);
-        const incumbentBytes = coveringSideBytes(incumbentFile, admissionBytesBySide.get(incumbent), side);
+        const candidateBytes = coveringSpecRankBytes(candidateFile.kind, admissionBytesBySide.get(candidate));
+        const incumbentBytes = coveringSpecRankBytes(incumbentFile.kind, admissionBytesBySide.get(incumbent));
         if (candidateBytes !== incumbentBytes) {
             return candidateBytes < incumbentBytes;
         }
@@ -258,14 +256,9 @@ export function specCoveredSources(
     };
     const record = (specPath: string, sourcePath: string): void => {
         const existing = covered.get(sourcePath);
-        if (existing === undefined) {
-            covered.set(sourcePath, { before: specPath, after: specPath });
-            return;
+        if (existing === undefined || ranksBefore(specPath, existing)) {
+            covered.set(sourcePath, specPath);
         }
-        covered.set(sourcePath, {
-            before: ranksBeforeOn('before', specPath, existing.before) ? specPath : existing.before,
-            after: ranksBeforeOn('after', specPath, existing.after) ? specPath : existing.after,
-        });
     };
     const collect = (sourcePath: string, content: string, specPath: string): void => {
         for (const candidate of resolvedRelativeImportCandidates(content, sourcePath)) {
@@ -295,26 +288,36 @@ export function specCoveredSources(
             collect(file.path, after, file.path);
         }
     }
-    // One transitive level: each covered source's own re-exports and imports are the material every spec
-    // that covers it reaches through it. The snapshot keeps the walk to exactly one level rather than a
-    // full closure.
-    for (const [coveredPath, coverers] of [...covered]) {
+    // One transitive level: each covered source's own re-exports and imports are the material the spec that
+    // covers it reaches through it. The snapshot keeps the walk to exactly one level rather than a full
+    // closure.
+    for (const [coveredPath, specPath] of [...covered]) {
         const file = filesByPath.get(coveredPath);
         if (file === undefined) {
             continue;
         }
         const entry = contents.get(coveredPath);
         const beforePath = file.previousPath ?? file.path;
-        for (const specPath of new Set([coverers.before, coverers.after])) {
-            if (entry?.before !== undefined) {
-                collect(beforePath, entry.before, specPath);
-            }
-            if (entry?.after !== undefined) {
-                collect(file.path, entry.after, specPath);
-            }
+        if (entry?.before !== undefined) {
+            collect(beforePath, entry.before, specPath);
+        }
+        if (entry?.after !== undefined) {
+            collect(file.path, entry.after, specPath);
         }
     }
     return covered;
+}
+
+/**
+ * The byte figure a covering spec ranks by when several specs cover one source: the smallest of the side
+ * figures the spec's own unit carries, so the covered source is capped at the earliest side any coverer
+ * carries. Every change kind offers at least one side, so at least one figure is finite.
+ */
+function coveringSpecRankBytes(kind: SemanticChangedFile['kind'], bytes: AdmissionSideBytes | undefined): number {
+    const figures = bytes ?? { before: 0, after: 0 };
+    const before = kindHasBeforeSide(kind) ? figures.before : Number.POSITIVE_INFINITY;
+    const after = kindHasAfterSide(kind) ? figures.after : Number.POSITIVE_INFINITY;
+    return Math.min(before, after);
 }
 
 /**
@@ -323,20 +326,23 @@ export function specCoveredSources(
  * A source a contract-carrying spec covers takes the covering spec's position rather than its own, so the
  * pair sits together — the same collected-spec rank and the same contract-carrying classification — and the
  * pair competes with the rest of the tier by the keys the spec already had. The position's byte figure is
- * the smaller of the source's own side figure and the covering spec's side figure: a source smaller than its
- * spec keeps the room its own size earned, while a larger source falls back to the spec's figure, so the
+ * the smaller of the source's own side figure and the covering spec's own figure: a source smaller than its
+ * spec keeps the room its own size earned, while a larger source is capped at the spec's figure, so the
  * source never outranks unrelated material the spec itself does not outrank. `pairRank` is the one key the
  * pair does not share: inside a position nothing else separates a covered source from the spec that covers
  * it, so the covered source (0) orders immediately ahead of its spec (1), which is the one ordering the
- * promotion exists to give.
+ * promotion exists to give. The own figure is also kept beside the capped figure, so several sources capped
+ * to one spec's figure keep their own size order rather than collapsing onto a single key.
  */
 export type AdmissionOrderPosition = {
     /** The path the in-tier collected-spec tie-break and the path tie-break read. */
     readonly path: string;
     /** Whether the position ranks as a contract-carrying path, so a covered source never outranks genuine contract material. */
     readonly pathContractCarrying: boolean;
-    /** The position's byte figure — the smaller of the source's own side figure and the covering spec's side figure for a covered source. */
+    /** The position's byte figure — the smaller of the source's own side figure and the covering spec's figure for a covered source. */
     readonly admissionBytes: number;
+    /** The source's own side figure, uncapped — the tie-break that keeps collapsed covered sources in their own size order. */
+    readonly ownBytes: number;
     /** The member of a covering pair: 0 for the source a spec covers, 1 for the spec and for every unit outside a pair. */
     readonly pairRank: number;
 };
@@ -383,26 +389,6 @@ function unitSideOrder(unit: AdmissionUnit): number {
         return 1;
     }
     return 2;
-}
-
-/**
- * The byte figure the covering spec's own unit of one side carries — the figure a covered source's side is
- * capped against, so the source never outranks unrelated material the spec itself does not outrank. A spec
- * that offers no such side — an added or deleted spec — hands over the figure its one side carries, so the
- * source still holds the spec's position rather than a zero figure that would rank it ahead of the other
- * material in the tier.
- */
-function coveringSideBytes(
-    specFile: SemanticChangedFile,
-    specBytes: AdmissionSideBytes | undefined,
-    side: AdmissionSide
-): number {
-    const bytes = specBytes ?? { before: 0, after: 0 };
-    const offersSide = side === 'before' ? kindHasBeforeSide(specFile.kind) : kindHasAfterSide(specFile.kind);
-    if (offersSide) {
-        return side === 'before' ? bytes.before : bytes.after;
-    }
-    return side === 'before' ? bytes.after : bytes.before;
 }
 
 /**
@@ -478,10 +464,13 @@ export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit)
         return byOrderPath;
     }
     // One position, so the units sharing it are a covered source and the spec that covers it, or the two
-    // sides of one path: the pair rank keeps the source ahead of its spec, and the own path separates the
-    // sources one spec covers from each other.
+    // sides of one path: the pair rank keeps the source ahead of its spec, and the own figure keeps several
+    // sources capped to one spec's figure in their own size order rather than collapsing onto one key.
     if (left.order.pairRank !== right.order.pairRank) {
         return left.order.pairRank - right.order.pairRank;
+    }
+    if (left.order.ownBytes !== right.order.ownBytes) {
+        return left.order.ownBytes - right.order.ownBytes;
     }
     const byOwnPath = compareLexicographic(unitOwnPath(left), unitOwnPath(right));
     if (byOwnPath !== 0) {
@@ -508,7 +497,7 @@ export function admissionUnits(
     sidesByPath: ReadonlyMap<string, ContractCarryingSides>,
     admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>,
     contractContexts: readonly { path: string; admissionBytes: number }[],
-    specCovered: ReadonlyMap<string, CoveringSpecPaths>,
+    specCovered: ReadonlyMap<string, string>,
     plannedPaths: ReadonlySet<string>
 ): readonly AdmissionUnit[] {
     const contractNeeding = contractNeedingPaths(changed);
@@ -517,17 +506,18 @@ export function admissionUnits(
     for (const file of changed) {
         const sides = sidesByPath.get(file.path);
         const pathContractCarrying = (sides?.before ?? false) || (sides?.after ?? false);
-        const coverers = specCovered.get(file.path);
-        const covered = coverers !== undefined && plannedPaths.has(file.path);
+        const coveringSpecPath = specCovered.get(file.path);
+        const coveringSpec = coveringSpecPath === undefined ? undefined : filesByPath.get(coveringSpecPath);
+        const covered = coveringSpec !== undefined && plannedPaths.has(file.path);
         const needsContract = contractNeeding.has(file.path) && plannedPaths.has(file.path);
         const orderFor = (side: AdmissionSide): AdmissionOrderPosition => {
-            const coveringSpecPath = coverers === undefined ? undefined : coverers[side];
-            const coveringSpec = coveringSpecPath === undefined ? undefined : filesByPath.get(coveringSpecPath);
+            const ownBytes = admissionBytesBySide.get(file.path)?.[side] ?? 0;
             if (!covered || coveringSpec === undefined) {
                 return {
                     path: file.path,
                     pathContractCarrying,
-                    admissionBytes: admissionBytesBySide.get(file.path)?.[side] ?? 0,
+                    admissionBytes: ownBytes,
+                    ownBytes,
                     pairRank: 1,
                 };
             }
@@ -536,13 +526,14 @@ export function admissionUnits(
                 pathContractCarrying:
                     (sidesByPath.get(coveringSpec.path)?.before ?? false) ||
                     (sidesByPath.get(coveringSpec.path)?.after ?? false),
-                // The smaller of the source's own side figure and the covering spec's: a source smaller than
-                // its spec keeps the room its own size earned, while a larger source falls back to the spec's
-                // figure and `pairRank` keeps it immediately ahead of the spec.
+                // The smaller of the source's own side figure and the covering spec's own figure: a source
+                // smaller than its spec keeps the room its own size earned, while a larger source is capped at
+                // the spec's figure and `pairRank` keeps it immediately ahead of the spec.
                 admissionBytes: Math.min(
-                    admissionBytesBySide.get(file.path)?.[side] ?? 0,
-                    coveringSideBytes(coveringSpec, admissionBytesBySide.get(coveringSpec.path), side)
+                    ownBytes,
+                    coveringSpecRankBytes(coveringSpec.kind, admissionBytesBySide.get(coveringSpec.path))
                 ),
+                ownBytes,
                 pairRank: 0,
             };
         };
@@ -579,6 +570,7 @@ export function admissionUnits(
                 path: context.path,
                 pathContractCarrying: true,
                 admissionBytes: context.admissionBytes,
+                ownBytes: context.admissionBytes,
                 pairRank: 1,
             },
         });

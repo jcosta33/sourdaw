@@ -30,6 +30,12 @@ import {
     type SemanticEvidenceSet,
     type SemanticSourcePort,
 } from '../evidence.ts';
+import {
+    admissionUnits,
+    specCoveredSources,
+    type AdmissionSideBytes,
+    type ContractCarryingSides,
+} from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost } from '../fit.ts';
 import { parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
@@ -1191,10 +1197,9 @@ describe('contract-carrying admission', () => {
         expect(set.withheldSides.own.get(subjectPath)).toBeUndefined();
     });
 
-    it('keeps each side of a covered source ahead of every coverer when the coverers differ per side', () => {
-        // One coverer is minimal on the before side and the other on the after side, so a single coverer
-        // chosen for both sides would still let one of them outrank the source one side away. Each side must
-        // tie the coverer that is earliest for that side.
+    it('keeps each side of a covered source ahead of every coverer when the coverers cross per side', () => {
+        // One coverer is minimal on the before side and the other on the after side. The source is capped at
+        // the smallest side any coverer carries, so both of its sides stay ahead of every coverer side.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { asym } from '../asymSource.ts';\n";
         const pad = (bytes: number): string => 'y'.repeat(bytes);
@@ -1202,9 +1207,9 @@ describe('contract-carrying admission', () => {
         const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzAfterMin.spec.ts';
         const subjectPath = 'scripts/semanticReview/asymSource.ts';
 
-        // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side. Their
-        // minima cross — `aaaBeforeMin`'s before is smaller than `zzzAfterMin`'s after — so a single coverer
-        // chosen by its smallest side picks `aaaBeforeMin` and hands the source its large after figure.
+        // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side; their
+        // minima cross. The floor is the smaller of the two, so both source sides cap there and stay ahead of
+        // every coverer side.
         const aaaBefore = `${workflowLine}${importLine}${pad(10)}`;
         const aaaAfter = `${workflowLine}${importLine}${pad(2_000)}`;
         const zzzBefore = `${workflowLine}${importLine}${pad(1_500)}`;
@@ -1301,6 +1306,96 @@ describe('contract-carrying admission', () => {
         expect(
             planned.excluded.some((entry) => entry.path === probeBPath && entry.reason === 'no-admissible-evidence')
         ).toBe(false);
+    });
+
+    it('keeps an added covered source ahead of every side of the spec that covers it', () => {
+        // An added source has only an after side, and its coverer's before side is cheaper. Capping the
+        // source at the coverer's same-side figure would leave the coverer's before side ahead of the source;
+        // capping at the coverer's own smallest side (the floor) keeps the source ahead of both sides.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/offside.spec.ts';
+        const sourcePath = 'scripts/semanticReview/offsideSource.ts';
+        const specSide = `${workflowLine}import { s } from '../offsideSource.ts';\n`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [sourcePath, { after: 'export const s = 1;\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 1_000, after: 10_000 }],
+            [sourcePath, { before: 0, after: 5_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'before'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'after'));
+    });
+
+    it('keeps covered sources larger than their spec in their own size order', () => {
+        // Every source is capped at the coverer's small figure, so without an own-figure tie-break they all
+        // collapse onto one key and the comparator orders them by path. The own figure keeps them ascending,
+        // so the smallest source is attempted first and the plan keeps as much as the merge base did.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/smallCover.spec.ts';
+        const sourcePaths = ['a', 'b', 'c'].map((name) => `scripts/semanticReview/${name}.ts`);
+        const coverAfter = `${workflowLine}${sourcePaths.map((path) => `import { x } from '../${path.split('/').pop()}';\n`).join('')}`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+            ...sourcePaths.map((path): SemanticChangedFile => ({
+                path,
+                kind: 'added',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 0,
+            })),
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { after: coverAfter }],
+            ...sourcePaths.map((path): [string, { before?: string; after?: string }] => [
+                path,
+                { after: 'export const x = 1;\n' },
+            ]),
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 0, after: 10_000 }],
+            [sourcePaths[0] ?? '', { before: 0, after: 90_000 }],
+            [sourcePaths[1] ?? '', { before: 0, after: 60_000 }],
+            [sourcePaths[2] ?? '', { before: 0, after: 10_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: false, after: true }],
+            ...sourcePaths.map((path): [string, ContractCarryingSides] => [path, { before: false, after: false }]),
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const sourceOrder = units
+            .filter((unit) => unit.kind === 'changed' && !unit.file.path.endsWith('.spec.ts'))
+            .map((unit) => (unit.kind === 'changed' ? unit.file.path.split('/').pop() : ''));
+        expect(sourceOrder).toEqual(['c.ts', 'b.ts', 'a.ts']);
     });
 
     it('names a withheld region by its own content class rather than its admission tier', () => {
