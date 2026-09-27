@@ -67,7 +67,7 @@ describe('required affected verification', () => {
         expect(plan.browser).toBe(true);
         expect(plan.browserAi).toBe(false);
         expect(allSelected(plan)).toEqual(TUNER_SPECS);
-        expect(plan.reasons[0].reason).toContain('mapped presentation');
+        expect(plan.reasons.at(0)?.reason).toContain('mapped presentation');
     });
 
     it('uses the bounded preferences workflows and widens producers and omitted sections', () => {
@@ -200,7 +200,10 @@ describe('required affected verification', () => {
         mkdirSync(join(root, 'tests/e2e'), { recursive: true });
         const spec = 'tests/e2e/a[1]+.spec.ts';
         writeFileSync(join(root, spec), '');
-        const [argument] = selectedSpecArguments([spec], root);
+        const argument = selectedSpecArguments([spec], root).at(0);
+        if (argument === undefined) {
+            throw new Error('Expected a Playwright file argument');
+        }
         const regex = new RegExp(argument);
         expect(regex.test(join(root, spec))).toBe(true);
         expect(regex.test(join(root, 'tests/e2e/a111xspec.ts'))).toBe(false);

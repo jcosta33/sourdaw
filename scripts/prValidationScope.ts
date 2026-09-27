@@ -148,7 +148,8 @@ function isReviewTooling(path: string): boolean {
         return true;
     }
     const match = /^scripts\/(?:__tests__\/)?([A-Za-z]+)(?:\.spec)?\.ts$/.exec(path);
-    return match !== null && REVIEW_TOOLING.has(match[1]);
+    const scriptName = match?.[1];
+    return scriptName !== undefined && REVIEW_TOOLING.has(scriptName);
 }
 
 function isSpec(path: string): boolean {
@@ -166,7 +167,7 @@ export function parseChangedPaths(diff: string): string[] {
     const paths = new Set<string>();
     for (let index = 0; index < fields.length;) {
         const status = fields[index++];
-        if (!/^(?:[AMDUT]|[RC]\d+)$/.test(status)) {
+        if (status === undefined || !/^(?:[AMDUT]|[RC]\d+)$/.test(status)) {
             throw new Error(`Unsupported diff status: ${status}`);
         }
         const count = /^[RC]/.test(status) ? 2 : 1;
@@ -241,7 +242,11 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
         include: Array.from({ length: count }, (_, index) => ({ id: index + 1, specs: [] })),
     };
     for (const [index, spec] of specs.entries()) {
-        matrix.include[index % count].specs.push(spec);
+        const group = matrix.include[index % count];
+        if (group === undefined) {
+            throw new Error('Invalid E2E partition');
+        }
+        group.specs.push(spec);
     }
     return { version: 1, browser, browserAi, codeql, matrix, reasons };
 }
