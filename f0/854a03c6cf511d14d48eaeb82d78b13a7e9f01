@@ -1,0 +1,16 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_beb54bf43b47b7 609-705
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 739-744,1755-1759,1761-1786,1789-1790,1794,1799-1802,1820-1880,1886-1944,1947-1949,1957,1960-1970
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f0854a03c6cf511d14d48eaeb82d78b13a7e9f01",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
