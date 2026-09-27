@@ -75,8 +75,9 @@ describe('live Yeast release ownership across input reset', () => {
         clock.currentTime = 1;
     });
 
-    it('releases the original control and completes recording when the note-off worker fails', async () => {
+    it('releases on worker failure but preserves a successful deferred voice while completing recording', async () => {
         const recorded: Array<{ pitch: number; duration: number }> = [];
+        let failRelease = true;
         const deps = {
             getCompensationDelay: () => 0,
             getTrackStoreState: () => ({
@@ -107,8 +108,11 @@ describe('live Yeast release ownership across input reset', () => {
             },
             getSynthParamsForTrack: () => ({ release: 0.3 }),
             processRealtimeMidiInput: async (request: { isNoteOn: boolean }) => {
-                if (!request.isNoteOn) {
+                if (!request.isNoteOn && failRelease) {
                     throw new Error('worker offline');
+                }
+                if (!request.isNoteOn) {
+                    return [];
                 }
                 return [
                     { timeSamples: 48_000, kind: { type: 'noteOn' as const, channel: 1, note: 67, velocity: 100 } },
@@ -137,6 +141,14 @@ describe('live Yeast release ownership across input reset', () => {
         expect(recorded).toEqual([expect.objectContaining({ pitch: 60, duration: 2 })]);
         await strike(1, 60, 100);
         expect(noteOffControl).toHaveBeenCalledTimes(1);
+        failRelease = false;
+        clock.currentTime = 3;
+        await release(1, 60);
+        expect(noteOffControl).toHaveBeenCalledTimes(1);
+        expect(recorded).toEqual([
+            expect.objectContaining({ pitch: 60, duration: 2 }),
+            expect.objectContaining({ pitch: 60, duration: 2 }),
+        ]);
     });
 
     it('preserves a fresh transformed voice when the old worker release finishes late, and completes old recording', async () => {

@@ -1,3 +1,4 @@
+import { clone, merge } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -13,6 +14,7 @@ import {
     projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
@@ -26,6 +28,7 @@ import { replaceMidiNotesIfUnchanged } from '../replaceMidiNotesIfUnchanged';
 import { resizeMidiNote } from '../resizeMidiNote';
 import { restoreMidiNoteMembershipIfUnchanged } from '../restoreMidiNoteMembershipIfUnchanged';
 import { setNotesForClip } from '../setNotesForClip';
+import { splitMidiNotesAtBeat } from '../splitMidiNotesAtBeat';
 
 const clipId = 'clip-1';
 
@@ -113,6 +116,77 @@ afterEach(() => {
 });
 
 describe('targeted MIDI note history through Command and Automerge', () => {
+    it('refuses undo when a peer moved the deleted note into an unplanned clip', async () => {
+        const baseline = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        splitMidiNotesAtBeat({ sourceClipId: clipId, newClipId: 'split-right', splitBeat: 4 });
+        flushAutomergeStorageWrites();
+        const peerSplit = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        expect(
+            peerSplit.midi?.notesByClipId['split-right']?.find((candidate) => candidate.id === 'peer')
+        ).toMatchObject({ startBeat: 2, duration: 1 });
+        replaceCrdtDocInLineage({ id: 'root', doc: baseline });
+        projectCrdtToStores({ resetProjections: true });
+
+        const before = structuredClone(projectedNotes());
+        const deleted = before.find((candidate) => candidate.id === 'peer')!;
+        setNotesForClip(
+            clipId,
+            before.filter((candidate) => candidate.id !== deleted.id)
+        );
+        const after = structuredClone(projectedNotes());
+        pushUndoEntry(
+            'Delete MIDI note',
+            () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: after, replacement: before }]),
+            () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: before, replacement: after }])
+        );
+        flushAutomergeStorageWrites();
+        const local = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        replaceCrdtDocInLineage({ id: 'root', doc: merge(local, peerSplit) });
+        projectCrdtToStores({ resetProjections: true });
+        const documentBefore = structuredClone(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi);
+        const projectionBefore = structuredClone(midiStore.value);
+        const historyBefore = structuredClone(undoStore.value);
+
+        await expect(undo()).rejects.toThrow('note ownership');
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi).toEqual(documentBefore);
+        expect(midiStore.value).toEqual(projectionBefore);
+        expect(undoStore.value).toEqual(historyBefore);
+    });
+    it('refuses redo when a peer split places the owned note in an unplanned clip', async () => {
+        const baseline = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        splitMidiNotesAtBeat({ sourceClipId: clipId, newClipId: 'split-right', splitBeat: 4 });
+        flushAutomergeStorageWrites();
+        const peerSplit = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        replaceCrdtDocInLineage({ id: 'root', doc: baseline });
+        projectCrdtToStores({ resetProjections: true });
+
+        const before = structuredClone(projectedNotes());
+        setNotesForClip(
+            clipId,
+            before.filter((candidate) => candidate.id !== 'peer')
+        );
+        const after = structuredClone(projectedNotes());
+        pushUndoEntry(
+            'Delete MIDI note',
+            () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: after, replacement: before }]),
+            () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: before, replacement: after }])
+        );
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        const local = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        replaceCrdtDocInLineage({ id: 'root', doc: merge(local, peerSplit) });
+        projectCrdtToStores({ resetProjections: true });
+        const documentBefore = structuredClone(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi);
+        const projectionBefore = structuredClone(midiStore.value);
+        const historyBefore = structuredClone(undoStore.value);
+
+        await expect(redo()).rejects.toThrow('note ownership');
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi).toEqual(documentBefore);
+        expect(midiStore.value).toEqual(projectionBefore);
+        expect(undoStore.value).toEqual(historyBefore);
+    });
     it('retains membership history when an owned note’s peer expression changes', async () => {
         const before = structuredClone(projectedNotes());
         const edited = before.find((candidate) => candidate.id === 'edited')!;

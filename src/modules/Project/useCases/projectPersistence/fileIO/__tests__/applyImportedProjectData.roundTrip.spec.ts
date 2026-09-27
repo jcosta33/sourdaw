@@ -812,6 +812,10 @@ describe('applyImportedProjectData round-trip hydration', () => {
     it('rejects malformed hydration data without resetting the live project', async () => {
         const malformedMidi = makeProject();
         Reflect.set(malformedMidi.midi.notesByClipId, 'clip-midi', null);
+        const malformedExpression = makeProject();
+        Reflect.set(malformedExpression.midi.notesByClipId['clip-midi']![0]!, 'expression', {
+            pressure: { offsetBeats: 0.5, value: 90 },
+        });
         const malformedMeta = makeProject();
         Reflect.deleteProperty(malformedMeta.meta, 'name');
         const malformedDevice = makeProject();
@@ -819,7 +823,13 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const malformedAutomation = makeProject();
         Reflect.set(malformedAutomation.automation.lanes, 0, { points: [] });
 
-        for (const malformed of [malformedMidi, malformedMeta, malformedDevice, malformedAutomation]) {
+        for (const malformed of [
+            malformedMidi,
+            malformedExpression,
+            malformedMeta,
+            malformedDevice,
+            malformedAutomation,
+        ]) {
             trackStore.set({ tracks: [], selectedTrackId: null });
             vi.mocked(resetModuleStoresToDefault).mockClear();
             prepareCachedAudioBuffersFromIdb.mockClear();

@@ -22,6 +22,10 @@ function scaleJoinedValue(
     return value;
 }
 
+function neutralValue(dimension: MidiExpressionDimension): number {
+    return dimension === 'slide' ? 64 : 0;
+}
+
 function joinedOnsetEvent(
     note: MidiNote,
     first: MidiNote,
@@ -34,9 +38,10 @@ function joinedOnsetEvent(
     if (offsetBeats <= 0 || offsetBeats >= duration) {
         return undefined;
     }
-    const value = scaleJoinedValue(note, dimension, note[dimension] ?? 0, bendRange);
+    const value = scaleJoinedValue(note, dimension, note[dimension] ?? neutralValue(dimension), bendRange);
     const previousValue =
-        priorEvents.at(-1)?.value ?? scaleJoinedValue(first, dimension, first[dimension] ?? 0, bendRange);
+        priorEvents.at(-1)?.value ??
+        scaleJoinedValue(first, dimension, first[dimension] ?? neutralValue(dimension), bendRange);
     if (note[dimension] === undefined && previousValue === value) {
         return undefined;
     }

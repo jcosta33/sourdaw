@@ -149,6 +149,38 @@ describe('buildProjectData', () => {
         };
     });
 
+    it('saves an inactive arrangement after its malformed imported expression is excluded', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [
+                {
+                    id: 'inactive',
+                    name: 'Inactive',
+                    tracks: { tracks: [], selectedTrackId: null },
+                    automation: { lanes: [] },
+                    midi: {
+                        notesByClipId: {
+                            clip: [
+                                {
+                                    id: 'note',
+                                    pitch: 60,
+                                    startBeat: 0,
+                                    duration: 2,
+                                    velocity: 100,
+                                    expression: { pressure: { offsetBeats: 1, value: 90 } },
+                                },
+                            ],
+                        },
+                        ccByClipId: {},
+                        pitchBendByClipId: {},
+                    },
+                },
+            ],
+            activeArrangementId: 'elsewhere',
+        });
+        const built = await buildProjectData({ includeAudioBuffers: false });
+        expect(built?.data.arrangements?.[0]?.midi?.notesByClipId.clip?.[0]).not.toHaveProperty('expression');
+    });
+
     it('refuses to serialize while raw CRDT project repair is required', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],

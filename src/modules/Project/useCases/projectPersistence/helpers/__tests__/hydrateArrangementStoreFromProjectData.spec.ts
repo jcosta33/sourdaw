@@ -117,7 +117,7 @@ describe('hydrateArrangementStoreFromProjectData', () => {
         track.clips[0] = { ...track.clips[0]!, type: 'midi', notes: [sourceNote] };
         inlineData.arrangement.tracks = [track];
         hydrateArrangementStoreFromProjectData({ data: inlineData });
-        sourceNote.expression.pressure[0].value = 10;
+        sourceNote.expression.pressure[0]!.value = 10;
         sourceNote.expression.pressure.push({ offsetBeats: 1, value: 20 });
         expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]?.expression?.pressure).toEqual([
             { offsetBeats: 0.5, value: 90 },
@@ -142,7 +142,7 @@ describe('hydrateArrangementStoreFromProjectData', () => {
         ];
         savedData.activeArrangementId = 'saved';
         hydrateArrangementStoreFromProjectData({ data: savedData, preserveSavedArrangements: true });
-        savedNote.expression.slide[0].value = 10;
+        savedNote.expression.slide[0]!.value = 10;
         savedNote.expression.slide.push({ offsetBeats: 1, value: 20 });
         expect(
             arrangementStore.value?.arrangements[0]?.midi.notesByClipId[track.clips[0].id]?.[0]?.expression?.slide

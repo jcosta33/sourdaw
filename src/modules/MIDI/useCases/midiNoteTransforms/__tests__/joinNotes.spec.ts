@@ -163,7 +163,7 @@ describe('joinNotes', () => {
                 { offsetBeats: 1.5, value: 20 },
             ],
             slide: [
-                { offsetBeats: 1, value: 0 },
+                { offsetBeats: 1, value: 64 },
                 { offsetBeats: 1.5, value: 30 },
             ],
             pitchBend: [
@@ -171,6 +171,20 @@ describe('joinNotes', () => {
                 { offsetBeats: 1.5, value: 1024 },
             ],
         });
+    });
+
+    it('keeps explicit minimum slide distinct from a following absent neutral slide', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [{ ...note('a', 60, 0, 1), slide: 0 }, note('b', 60, 1, 1)],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b']);
+        const joined = midiStore.value?.notesByClipId.clip1?.[0];
+        expect(joined?.slide).toBe(0);
+        expect(joined?.expression?.slide).toEqual([{ offsetBeats: 1, value: 64 }]);
     });
 
     it('normalizes zero-range bend scalars and curves to finite zero', () => {

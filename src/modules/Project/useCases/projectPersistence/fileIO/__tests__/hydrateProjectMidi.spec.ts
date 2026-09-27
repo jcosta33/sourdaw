@@ -34,7 +34,7 @@ describe('hydrateProjectMidi', () => {
             pitchBendByClipId: {},
         };
         const loaded = hydrateProjectMidi(source);
-        source.notesByClipId['clip-1'][0].expression.pressure[0].value = 10;
+        source.notesByClipId['clip-1'][0].expression.pressure[0]!.value = 10;
         source.notesByClipId['clip-1'][0].expression.pressure.push({ offsetBeats: 0.75, value: 20 });
         expect(loaded.notesByClipId['clip-1']?.[0]?.expression?.pressure).toEqual([{ offsetBeats: 0.5, value: 90 }]);
     });

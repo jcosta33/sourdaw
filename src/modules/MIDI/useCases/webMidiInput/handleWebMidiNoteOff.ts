@@ -130,8 +130,8 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 }
             } catch (error: unknown) {
                 logger.warn('[MIDI] Yeast note release failed:', error);
-            } finally {
                 pendingYeastRelease.releaseAll(pendingRelease);
+            } finally {
                 pendingYeastRelease.finish(pendingRelease);
             }
         }

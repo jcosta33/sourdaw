@@ -173,6 +173,56 @@ function buildValidProjectData(): HydratableProjectData {
 }
 
 describe('isHydratableProjectData', () => {
+    it.each(['active MIDI', 'saved arrangement', 'inline clip'])(
+        'rejects malformed %s expression before import',
+        (route) => {
+            const base = buildValidProjectData();
+            const note = {
+                id: 'expressive',
+                pitch: 60,
+                startBeat: 0,
+                duration: 1,
+                velocity: 100,
+                expression: { pressure: { offsetBeats: 0.5, value: 90 } },
+            };
+            const midi = { notesByClipId: { 'clip-1': [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+            const clip = { ...validClip, type: 'midi', notes: [note] };
+            let project: unknown;
+            if (route === 'active MIDI') {
+                project = { ...base, midi };
+            } else if (route === 'saved arrangement') {
+                project = { ...base, arrangements: [{ id: 'saved', name: 'Saved', midi }] };
+            } else {
+                project = { ...base, arrangement: { tracks: [{ ...validTrack, clips: [clip] }] } };
+            }
+            expect(isHydratableProjectData(project)).toBe(false);
+        }
+    );
+
+    it('rejects an exclusive-end expression point while accepting legacy notes without expression', () => {
+        const base = buildValidProjectData();
+        const note = { id: 'expressive', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+        const midi = { notesByClipId: { 'clip-1': [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+        expect(isHydratableProjectData({ ...base, midi })).toBe(true);
+        expect(
+            isHydratableProjectData({
+                ...base,
+                midi: {
+                    ...midi,
+                    notesByClipId: {
+                        'clip-1': [
+                            {
+                                ...note,
+                                expression: {
+                                    slide: [{ offsetBeats: 1, value: 64 }],
+                                },
+                            },
+                        ],
+                    },
+                },
+            })
+        ).toBe(false);
+    });
     it('accepts the minimal required shape', () => {
         expect(isHydratableProjectData(buildValidProjectData())).toBe(true);
     });

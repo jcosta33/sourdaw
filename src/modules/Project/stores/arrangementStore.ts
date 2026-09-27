@@ -1,6 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
-import { isValidMidiProbabilitySeed } from '#/modules/MIDI/stores';
+import { isValidMidiNoteExpression, isValidMidiProbabilitySeed, sanitizeMidiStoreState } from '#/modules/MIDI/stores';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -672,6 +672,23 @@ function is_exact_midi_clip_map(value: unknown): boolean {
     return is_plain_object(value) && Object.values(value).every((rows) => is_row_array(rows));
 }
 
+function has_canonical_note_expressions(value: unknown): boolean {
+    return (
+        is_plain_object(value) &&
+        Object.values(value).every(
+            (rows) =>
+                Array.isArray(rows) &&
+                rows.every(
+                    (note) =>
+                        is_plain_object(note) &&
+                        (note.expression === undefined ||
+                            (typeof note.duration === 'number' &&
+                                isValidMidiNoteExpression(note.expression, note.duration)))
+                )
+        )
+    );
+}
+
 function normalize_midi_clip_map<TRow extends { id: string }>(value: unknown): Record<string, TRow[]> {
     if (!is_plain_object(value)) {
         return {};
@@ -690,6 +707,7 @@ function is_exact_midi_section(value: unknown): value is ProjectMidiState {
         is_plain_object(value) &&
         has_exact_keys({ value, required_keys: MIDI_SECTION_KEYS, optional_keys: MIDI_SECTION_OPTIONAL_KEYS }) &&
         is_exact_midi_clip_map(value.notesByClipId) &&
+        has_canonical_note_expressions(value.notesByClipId) &&
         is_exact_midi_clip_map(value.ccByClipId) &&
         is_exact_midi_clip_map(value.pitchBendByClipId) &&
         // The live MIDI store guarantees a valid seed on every write path, so
@@ -708,7 +726,11 @@ function normalize_midi_section(value: unknown): ProjectMidiState | null {
         return null;
     }
     return {
-        notesByClipId: normalize_midi_clip_map<ProjectMidiNote>(value.notesByClipId),
+        notesByClipId: sanitizeMidiStoreState({
+            notesByClipId: value.notesByClipId,
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        }).notesByClipId,
         ccByClipId: normalize_midi_clip_map<ProjectMidiCC>(value.ccByClipId),
         pitchBendByClipId: normalize_midi_clip_map<ProjectMidiPitchBend>(value.pitchBendByClipId),
         ...(isValidMidiProbabilitySeed(value.probabilitySeed) ? { probabilitySeed: value.probabilitySeed } : {}),

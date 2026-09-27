@@ -15,6 +15,8 @@ import {
     type MidiPitchBend,
 } from '../models/MidiNote';
 
+export { isValidMidiNoteExpression } from '../models/MidiNote';
+
 export type { MidiNote } from '../models/MidiNote';
 
 const DOC_PREFIX_ROOT = 'root';
