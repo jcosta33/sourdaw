@@ -35,6 +35,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         getTrackStrip: get_track_strip,
     },
     getCompensationDelay: () => 0,
+    getDefaultBendRangeSemitones: () => 48,
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiControl: async () => true,

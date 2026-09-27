@@ -31,6 +31,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiControl: async () => true,
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
+    startFaustNote: vi.fn(() => () => {}),
 }));
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
