@@ -1482,6 +1482,56 @@ fn knead_process_does_not_allocate_with_formant_tracking_and_a_glide_in_flight()
     );
 }
 
+const LEVAIN_RT_FRAMES: u32 = 4_800;
+const LEVAIN_RT_MICS: u32 = 2;
+
+/// Stage one forward-looping sustain zone per mic position of a two-mic bank,
+/// both on the same recording, so every guarded note plays both mic layers
+/// through both per-mic signal chains.
+fn stage_two_mic_levain_zones(instance: &mut daw_dsp::levain::LevainInstance, sample_id: u32) {
+    let frame_count = LEVAIN_RT_FRAMES;
+    for mic_id in 0..LEVAIN_RT_MICS as u8 {
+        instance.add_zone(
+            u32::from(mic_id), // zone_id
+            sample_id,         // sample_id
+            0,                 // articulation_id
+            69,                // root_note
+            0.0,               // tune_cents
+            0,                 // lo_key
+            127,               // hi_key
+            0,                 // lo_vel
+            127,               // hi_vel
+            0,                 // rr_pos
+            1,                 // rr_len
+            mic_id,            // mic_id
+            false,             // is_release
+            1,                 // loop_mode: forward, so a held note never runs out of sample
+            0,                 // loop_start
+            frame_count,       // loop_end
+            0,                 // loop_crossfade
+            0.0,               // gain_db
+            0.005,             // attack
+            0.1,               // decay
+            1.0,               // sustain
+            0.3,               // release
+        );
+    }
+}
+
+fn levain_rt_sample() -> Vec<f32> {
+    (0..LEVAIN_RT_FRAMES)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect()
+}
+
+/// Place the two mic positions apart, before the bank loads as hosts do: mic 0
+/// hard left, so the right channel carries mic 1's channel alone.
+fn spread_levain_mics(instance: &mut daw_dsp::levain::LevainInstance) {
+    instance.set_param("mic_0_pan", -1.0);
+    instance.set_param("mic_1_pan", 0.6);
+    instance.set_param("mic_1_volume", 0.7);
+}
+
 #[test]
 fn levain_process_does_not_allocate_with_notes_held() {
     use daw_dsp::levain::LevainInstance;
@@ -1492,69 +1542,20 @@ fn levain_process_does_not_allocate_with_notes_held() {
     // Publish one real looping bank, attach it to a second instance, then drop
     // the publisher. The guarded render therefore exercises the shared-bank
     // follower path and proves its Arc owns the PCM independently.
-    let frame_count = 4_800_u32;
-    let sample: Vec<f32> = (0..frame_count)
-        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
-        .collect();
     let sample_id = owner
-        .add_sample(sample, frame_count, 1, SAMPLE_RATE)
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
         .expect("test sample should fit the bank");
-    owner.add_zone(
-        0,           // zone_id
-        sample_id,   // sample_id
-        0,           // articulation_id
-        69,          // root_note
-        0.0,         // tune_cents
-        0,           // lo_key
-        127,         // hi_key
-        0,           // lo_vel
-        127,         // hi_vel
-        0,           // rr_pos
-        1,           // rr_len
-        0,           // mic_id
-        false,       // is_release
-        1,           // loop_mode: forward, so the voice never runs out of sample
-        0,           // loop_start
-        frame_count, // loop_end
-        0,           // loop_crossfade
-        0.0,         // gain_db
-        0.005,       // attack
-        0.1,         // decay
-        1.0,         // sustain
-        0.3,         // release
-    );
-    assert!(owner.build_zone_map(1, 1));
+    stage_two_mic_levain_zones(&mut owner, sample_id);
+    assert!(owner.build_zone_map(1, LEVAIN_RT_MICS));
     assert!(owner.publish_sample_bank("levain-rt-shared-bank"));
     assert!(owner.commit_sample_bank());
 
     let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    spread_levain_mics(&mut instance);
     instance.begin_sample_bank("violin-1");
     assert!(instance.attach_sample_bank("levain-rt-shared-bank"));
-    instance.add_zone(
-        0,
-        sample_id,
-        0,
-        69,
-        0.0,
-        0,
-        127,
-        0,
-        127,
-        0,
-        1,
-        0,
-        false,
-        1,
-        0,
-        frame_count,
-        0,
-        0.0,
-        0.005,
-        0.1,
-        1.0,
-        0.3,
-    );
-    assert!(instance.build_zone_map(1, 1));
+    stage_two_mic_levain_zones(&mut instance, sample_id);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
     assert!(instance.commit_sample_bank());
     drop(owner);
 
@@ -1585,54 +1586,37 @@ fn levain_process_does_not_allocate_with_notes_held() {
         "levain produced silence with two notes held, so the guarded region \
          did not exercise the sampler voice path"
     );
+    let right = unsafe { read_output(instance.get_right_ptr(), BLOCK) };
+    assert!(
+        peak(&right) > 1e-6,
+        "levain's right channel is silent, so the guarded region did not \
+         exercise the right-panned mic channel"
+    );
 }
 
 /// The guard above holds two notes for its whole run, so it never executes a
-/// note-off or a slur — `LevainVoice::release` (and the `exit_loop` on each of
-/// its three streams) and `start_crossfade` (and its `SamplePlayback` clone and
-/// `seek_to`) both sit outside it. In the worklet those run on the audio thread
-/// like everything else, from the message drain inside `process`, so they are
-/// under the same contract and need the same proof.
+/// note-off or a slur — `LevainVoice::release` (and the `exit_loop` on every
+/// stream of every mic layer) and `start_crossfade` (and its `SamplePlayback`
+/// clones and `seek_to`) both sit outside it. In the worklet those run on the
+/// audio thread like everything else, from the message drain inside `process`,
+/// so they are under the same contract and need the same proof. Switching a
+/// mic position off and back on mid-note resets that position's realism and
+/// tone sections on the same thread, so it runs inside the guard too.
 #[test]
 fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
     use daw_dsp::levain::LevainInstance;
 
     let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    spread_levain_mics(&mut instance);
     instance.begin_sample_bank("violin-1");
 
-    let frame_count = 4_800_u32;
-    let sample: Vec<f32> = (0..frame_count)
-        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
-        .collect();
     let sample_id = instance
-        .add_sample(sample, frame_count, 1, SAMPLE_RATE)
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
         .expect("test sample should fit the bank");
-    instance.add_zone(
-        0,           // zone_id
-        sample_id,   // sample_id
-        0,           // articulation_id
-        69,          // root_note
-        0.0,         // tune_cents
-        0,           // lo_key
-        127,         // hi_key
-        0,           // lo_vel
-        127,         // hi_vel
-        0,           // rr_pos
-        1,           // rr_len
-        0,           // mic_id
-        false,       // is_release
-        1,           // loop_mode: forward, so a held note never runs out of sample
-        0,           // loop_start
-        frame_count, // loop_end
-        0,           // loop_crossfade
-        0.0,         // gain_db
-        0.005,       // attack
-        0.1,         // decay
-        1.0,         // sustain
-        0.3,         // release
-    );
-    assert!(instance.build_zone_map(1, 1));
+    stage_two_mic_levain_zones(&mut instance, sample_id);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
     assert!(instance.commit_sample_bank());
+    instance.set_param("tone", 0.85);
 
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "levain note lifecycle");
@@ -1645,10 +1629,12 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
             // `start_crossfade` -> `seek_to`.
             instance.note_on(60, 100);
             instance.process(BLOCK as u32);
+            instance.set_param("mic_1_enabled", 0.0);
             instance.note_on(62, 100);
             instance.process(BLOCK as u32);
-            // Both note-offs run `release()` -> `exit_loop` on all three
-            // streams while the crossfade is still in flight.
+            instance.set_param("mic_1_enabled", 1.0);
+            // Both note-offs run `release()` -> `exit_loop` on every stream
+            // while the crossfade is still in flight.
             instance.note_off(62);
             instance.note_off(60);
             instance.process(BLOCK as u32);
@@ -1661,6 +1647,12 @@ fn levain_note_lifecycle_does_not_allocate_on_slurs_and_note_offs() {
         peak(&out) > 1e-6,
         "levain fell silent across the guarded lifecycle, so the guard did not \
          exercise the slur and release paths it exists to cover"
+    );
+    let right = unsafe { read_output(instance.get_right_ptr(), BLOCK) };
+    assert!(
+        peak(&right) > 1e-6,
+        "levain's right channel is silent across the guarded lifecycle, so the \
+         guard did not exercise the switched mic channel"
     );
 }
 

@@ -1,11 +1,21 @@
 import { type ProjectContext, type ProjectContextDeviceParameter } from '../../models/ProjectContext';
+import {
+    resolveAutomationLaneTarget,
+    type ResolvedAutomationLaneTarget,
+} from '../../transformers/resolveAutomationLaneTarget';
 
 export const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 /** Devices and their parameters are only identifiable inside an already-immutable owner. */
 export const CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY: ReadonlySet<string> = new Set(['device', 'device-parameter']);
 
-const BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST = ['createBus', 'addTrack', 'addClip', 'addDevice'] as const;
+const BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST = [
+    'createBus',
+    'addTrack',
+    'addClip',
+    'addDevice',
+    'addAutomationLane',
+] as const;
 
 export type BatchLocalBindingProducerName = (typeof BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST)[number];
 
@@ -55,6 +65,7 @@ export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
  * bridge and the creative admission read the same table instead of two that could drift apart.
  */
 export const GENERATED_BATCH_LOCAL_ID_PREFIXES: Readonly<Record<BatchLocalBindingProducerName, string>> = {
+    addAutomationLane: 'automation-ai-',
     addClip: 'clip-ai-',
     addDevice: 'device-ai-',
     addTrack: 'track-ai-',
@@ -64,6 +75,8 @@ export const GENERATED_BATCH_LOCAL_ID_PREFIXES: Readonly<Record<BatchLocalBindin
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
 
 export type BatchLocalBindingProducer = {
+    /** The parameter, name and range of the lane an `addAutomationLane` producer creates. */
+    createdAutomationLane?: ResolvedAutomationLaneTarget;
     /** The canonical descriptor identity for an `addDevice` producer. */
     createdDeviceType?: string;
     /** The canonical display name for an `addDevice` producer. */
@@ -115,6 +128,8 @@ const CREATED_TRACK_CAPABILITIES: readonly string[] = [
 ];
 
 const BATCH_LOCAL_DEVICE_CAPABILITIES: readonly string[] = ['device'];
+
+export const BATCH_LOCAL_AUTOMATION_LANE_CAPABILITIES: readonly string[] = ['automation-lane'];
 
 /**
  * Keyed by the `kind` an `addTrack` plan item may declare; any other kind creates no bindable track.
@@ -291,6 +306,33 @@ function resolveCreatedDeviceProducer(input: {
 }
 
 /**
+ * A lane is created on a track the snapshot already holds, for a control that track already has:
+ * its own gain or pan, or a parameter of a device already in its chain. The lane the plan names
+ * is therefore fully described before it exists, which is what lets a later point be judged
+ * against its range and unit.
+ */
+function resolveCreatedAutomationLaneProducer(input: {
+    arguments: Readonly<Record<string, unknown>>;
+    context: ProjectContext;
+}): BatchLocalBindingProducer | null {
+    const trackReference = input.arguments.trackId;
+    const createdAutomationLane = resolveAutomationLaneTarget(
+        input.context,
+        trackReference,
+        input.arguments.parameterId
+    );
+    if (createdAutomationLane === null || typeof trackReference !== 'string') {
+        return null;
+    }
+    return {
+        capabilities: BATCH_LOCAL_AUTOMATION_LANE_CAPABILITIES,
+        createdAutomationLane,
+        parentTrackReference: trackReference,
+        producerArgument: 'laneId',
+    };
+}
+
+/**
  * The one place that decides which catalog commands may mint a batch-local `$binding`, which
  * application-owned argument carries the minted identity, and which target capabilities the
  * created object may satisfy. The grants are static and mirror the canonical capability
@@ -314,6 +356,9 @@ export function resolveBatchLocalBindingProducer(input: {
     }
     if (input.name === 'addDevice') {
         return resolveCreatedDeviceProducer(input);
+    }
+    if (input.name === 'addAutomationLane') {
+        return resolveCreatedAutomationLaneProducer(input);
     }
     return null;
 }
