@@ -57,7 +57,8 @@ jobs:
 
   affected:
     name: Affected workflows
-    needs: scope
+    # Run browser and hardware checks only after the faster required validation succeeds.
+    needs: [scope, validation]
     uses: ./.github/workflows/heavy-gates.yml
     with:
       matrix: ${{ needs.scope.outputs.matrix }}
