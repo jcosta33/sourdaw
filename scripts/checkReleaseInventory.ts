@@ -801,6 +801,7 @@ const AUDIO_ENGINE_WASM_MIRROR_TEST_SOURCES = new Set([
     `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspGrinderAutomationLayout.spec.ts`,
     `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspKneadPitchControls.spec.ts`,
     `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspToasterAutomation.spec.ts`,
+    `${AUDIO_ENGINE_WASM_MIRROR_ROOT}/__tests__/dawDspToasterPadParamIds.spec.ts`,
 ]);
 
 export type DistributedWasmArtifactCensus = {

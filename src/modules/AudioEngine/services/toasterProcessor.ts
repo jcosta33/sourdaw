@@ -8,7 +8,7 @@
  *   { type: 'init' }
  *   { type: 'noteOn', pad, velocity, note, sampleFrame? }
  *   { type: 'noteOff', pad, sampleFrame? }
- *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams, restoreEngineType? }
+ *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams: [{ id, value }], restoreEngineType? }
  *   { type: 'cancelScheduled' }
  *   { type: 'fillState', active }
  *   { type: 'param', name, value }
@@ -19,6 +19,7 @@
 
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import { mapToasterKitParamToDspParam } from '../models/ToasterKitParamNames';
+import { TOASTER_PAD_PARAM_IDS } from '../models/ToasterPadParamIds';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
@@ -129,6 +130,16 @@ const PAD_PARAM_MAP: Record<string, string> = {
     engineType: 'engine_type',
 };
 
+/**
+ * Numeric id of the pad `engine_type` write, for the sound-lock restore that
+ * follows a locked hit. The scheduled-hit path must not marshal strings from
+ * inside `process()` (#4633), so the restore crosses as an id like every
+ * other lock. `Record` access is typed `number | undefined`; the entry is a
+ * static literal and the shipped-wasm pin spec asserts it, so the dispatch
+ * guard below is a type witness, not a runtime expectation.
+ */
+const PAD_PARAM_ID_ENGINE_TYPE = TOASTER_PAD_PARAM_IDS.engineType;
+
 function toEngineKitParamValue(name: string, value: number): number {
     // ToasterKit persists delayTime in milliseconds; StereoDelay::set_param
     // consumes seconds and multiplies by sample rate. Both the live camelCase
@@ -151,7 +162,10 @@ type ToasterMsg =
           velocity: number;
           note?: number;
           sampleFrame: number;
-          padParams: Array<{ name: string; value: number }>;
+          // Numeric TOASTER_PAD_PARAM_IDS entries, translated on the main
+          // thread: applying a string-keyed lock here would heap-allocate in
+          // the wasm glue inside process() (#4633).
+          padParams: Array<{ id: number; value: number }>;
           restoreEngineType?: number;
           fillCondition?: 'fill' | 'not-fill';
       }
@@ -173,7 +187,7 @@ type ToasterQueued =
           velocity: number;
           note?: number;
           sampleFrame: number;
-          padParams: Array<{ name: string; value: number }>;
+          padParams: Array<{ id: number; value: number }>;
           restoreEngineType?: number;
           fillCondition?: 'fill' | 'not-fill';
       };
@@ -327,11 +341,11 @@ class ToasterProcessor extends AudioWorkletProcessor {
                     break;
                 }
                 for (const param of msg.padParams) {
-                    inst.set_pad_param(msg.pad, PAD_PARAM_MAP[param.name] ?? param.name, param.value);
+                    inst.set_pad_param_by_id(msg.pad, param.id, param.value);
                 }
                 inst.note_on(msg.pad, msg.velocity, msg.note ?? 60);
-                if (msg.restoreEngineType !== undefined) {
-                    inst.set_pad_param(msg.pad, 'engine_type', msg.restoreEngineType);
+                if (msg.restoreEngineType !== undefined && PAD_PARAM_ID_ENGINE_TYPE !== undefined) {
+                    inst.set_pad_param_by_id(msg.pad, PAD_PARAM_ID_ENGINE_TYPE, msg.restoreEngineType);
                 }
                 break;
             case 'cancelScheduled': {

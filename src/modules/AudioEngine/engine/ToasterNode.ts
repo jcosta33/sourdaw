@@ -12,6 +12,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
+import { TOASTER_PAD_PARAM_IDS } from '../models/ToasterPadParamIds';
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 import {
@@ -85,6 +86,31 @@ type ScheduleToasterHitInput = {
     restoreEngineType?: number;
     fillCondition?: 'fill' | 'not-fill';
 };
+
+/**
+ * Translate a scheduled hit's named pad locks to their numeric
+ * `TOASTER_PAD_PARAM_IDS` entries — here, on the main thread, never in the
+ * worklet: `scheduledHit` is dispatched inside `process()`, where the
+ * string-keyed `set_pad_param` glue heap-allocates once per locked parameter
+ * per hit (#4633). A name without an id is dropped. The old path forwarded it
+ * verbatim to Rust, where the snake_case spellings of these same 17 names and
+ * a handful of synth params (`snappy`, `base_freq`, …) would have applied —
+ * but no producer, current or historical, ever writes those keys into a
+ * step's `paramLocks` (only persisted, hand-edited pattern JSON could carry
+ * them), so dropping them narrows no reachable behavior (#4842 review).
+ */
+function toScheduledPadParamIds(
+    padParams: Array<{ name: string; value: number }>
+): Array<{ id: number; value: number }> {
+    const mapped: Array<{ id: number; value: number }> = [];
+    for (const param of padParams) {
+        const id = Object.hasOwn(TOASTER_PAD_PARAM_IDS, param.name) ? TOASTER_PAD_PARAM_IDS[param.name] : undefined;
+        if (id !== undefined) {
+            mapped.push({ id, value: param.value });
+        }
+    }
+    return mapped;
+}
 
 export type ToasterNodeResult = {
     workletNode: AudioWorkletNode;
@@ -263,7 +289,7 @@ export async function createToasterNode(
                 velocity: Math.min(127, Math.max(0, velocity)),
                 note: midiNote,
                 sampleFrame,
-                padParams,
+                padParams: toScheduledPadParamIds(padParams),
                 restoreEngineType,
                 fillCondition,
             });
