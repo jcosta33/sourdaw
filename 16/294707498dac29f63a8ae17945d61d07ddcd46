@@ -1,0 +1,23 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_fe7d9519d0226e::t_feba6ee6a88685 620-633,635-636,638,641-644
+  s_fe7d9519d0226e::t_12fdbaf24e98b2 603-606,613,634
+  s_fe7d9519d0226e::t_fcb878dfa432a7 7626,7680,9356-9358,9360-9361,9363,9369-9376,9383
+  s_fe7d9519d0226e::t_5438bf198c97b4 6733-6762
+  s_fe7d9519d0226e::t_72e76d07847f31 609-610,614-615
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "16294707498dac29f63a8ae17945d61d07ddcd46",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
