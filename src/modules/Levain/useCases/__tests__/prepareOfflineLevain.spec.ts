@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { toLevainDeviceState } from '../../models/LevainDeviceState';
+import { type MicPositionType } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { captureOfflineLevain } from '../captureOfflineLevain';
 import { prepareOfflineLevain } from '../prepareOfflineLevain';
 
 const mocks = vi.hoisted(() => ({
-    autoLoadLevainSamples: vi.fn(() => Promise.resolve()),
+    autoLoadLevainSamples: vi.fn(
+        (
+            _deviceId: string,
+            _port: MessagePort,
+            _instrumentId: string,
+            _signal?: AbortSignal
+        ): Promise<readonly MicPositionType[] | null> => Promise.resolve(null)
+    ),
 }));
 
 vi.mock('../autoLoadSamples', () => ({
@@ -28,7 +36,7 @@ function fakePort(): { port: MessagePort; posted: PostedMessage[] } {
 describe('prepareOfflineLevain', () => {
     beforeEach(() => {
         mocks.autoLoadLevainSamples.mockClear();
-        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve());
+        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
         levainStore.set({});
     });
 
@@ -123,7 +131,7 @@ describe('prepareOfflineLevain', () => {
         levainStore.set({ 'device-a': { ...defaultLevainState, patch } });
         mocks.autoLoadLevainSamples.mockImplementation(() => {
             postedWhenLoadStarted.push(...posted);
-            return Promise.resolve();
+            return Promise.resolve(null);
         });
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
@@ -163,7 +171,7 @@ describe('prepareOfflineLevain', () => {
         const postedWhenLoadStarted: PostedMessage[] = [];
         mocks.autoLoadLevainSamples.mockImplementation(() => {
             postedWhenLoadStarted.push(...posted);
-            return Promise.resolve();
+            return Promise.resolve(null);
         });
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
@@ -201,11 +209,11 @@ describe('prepareOfflineLevain', () => {
         // The reason this matters: an offline context renders faster than real
         // time, so a load that is merely started never lands. Starting it is not
         // enough — the caller must be able to wait for it.
-        function ignoreRelease(): void {}
-        let releaseLoad = ignoreRelease;
+        function ignoreRelease(_value: readonly MicPositionType[] | null): void {}
+        let releaseLoad: (value: readonly MicPositionType[] | null) => void = ignoreRelease;
         mocks.autoLoadLevainSamples.mockImplementation(
             () =>
-                new Promise<void>((resolve) => {
+                new Promise<readonly MicPositionType[] | null>((resolve) => {
                     releaseLoad = resolve;
                 })
         );
@@ -220,7 +228,7 @@ describe('prepareOfflineLevain', () => {
         await Promise.resolve();
         expect(settled).toBe(false);
 
-        releaseLoad();
+        releaseLoad(null);
         await pending;
         expect(settled).toBe(true);
     });
@@ -231,5 +239,43 @@ describe('prepareOfflineLevain', () => {
         await expect(prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port })).rejects.toThrow(
             'bank commit rejected'
         );
+    });
+
+    describe('loadedMicPositions ownership — the offline route never writes it', () => {
+        // The offline render drives the same loader with the live device's id
+        // and an offline render node's port, standing in for the live worklet.
+        // Writing `loadedMicPositions` from here would let an export or freeze
+        // clear or overwrite the rows the live panel is showing.
+        beforeEach(() => {
+            levainStore.set({ 'device-a': { ...defaultLevainState, loadedMicPositions: ['close'] } });
+        });
+
+        it('leaves the live loadedMicPositions in place when the offline load succeeds', async () => {
+            mocks.autoLoadLevainSamples.mockResolvedValueOnce(['decca-tree']);
+
+            await prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port });
+
+            expect(levainStore.value?.['device-a']?.loadedMicPositions).toEqual(['close']);
+        });
+
+        it('leaves the live loadedMicPositions in place when the offline load is aborted', async () => {
+            const controller = new AbortController();
+            controller.abort();
+            mocks.autoLoadLevainSamples.mockResolvedValueOnce(null);
+
+            await prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port, signal: controller.signal });
+
+            expect(levainStore.value?.['device-a']?.loadedMicPositions).toEqual(['close']);
+        });
+
+        it('leaves the live loadedMicPositions in place when the offline load fails', async () => {
+            mocks.autoLoadLevainSamples.mockRejectedValueOnce(new Error('offline bank rejected'));
+
+            await expect(prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port })).rejects.toThrow(
+                'offline bank rejected'
+            );
+
+            expect(levainStore.value?.['device-a']?.loadedMicPositions).toEqual(['close']);
+        });
     });
 });

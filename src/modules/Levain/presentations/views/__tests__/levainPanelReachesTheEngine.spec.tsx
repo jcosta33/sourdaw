@@ -19,7 +19,8 @@ import { prepareOfflineLevain } from '../../../useCases/prepareOfflineLevain';
 import { LevainPanel } from '../LevainPanel';
 
 const mocks = vi.hoisted(() => ({
-    autoLoadLevainSamples: vi.fn(() => Promise.resolve()),
+    autoLoadLevainSamples: vi.fn(() => Promise.resolve(null)),
+    setLoadedMicPositions: vi.fn(),
 }));
 
 vi.mock('../../../useCases/autoLoadSamples', () => ({
@@ -143,7 +144,8 @@ describe('LevainPanel edits reach the live engine', () => {
 
     beforeEach(async () => {
         mocks.autoLoadLevainSamples.mockClear();
-        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve());
+        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
+        mocks.setLoadedMicPositions.mockClear();
         setParam = vi.fn<LevainDevice['setParam']>();
         rafCallbacks = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -157,6 +159,7 @@ describe('LevainPanel edits reach the live engine', () => {
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
+            setLoadedMicPositions: mocks.setLoadedMicPositions,
             writeNativeBuiltinParameters,
             sendNativeLiveMidiControl,
         });
@@ -215,6 +218,7 @@ describe('LevainPanel edits reach the live engine', () => {
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' as const }),
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
+            setLoadedMicPositions: mocks.setLoadedMicPositions,
             writeNativeBuiltinParameters,
             sendNativeLiveMidiControl,
         });

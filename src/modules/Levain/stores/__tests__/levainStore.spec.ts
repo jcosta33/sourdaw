@@ -6,6 +6,7 @@ import {
     levainStore,
     setEngineReady,
     setLevainParam,
+    setLoadedMicPositions,
     setMacro,
     setSampleLoadError,
     setSampleLoadProgress,
@@ -65,6 +66,11 @@ describe('levainStore mutators', () => {
             expect(levainStore.value?.ghost).toBeUndefined();
         });
 
+        it('setLoadedMicPositions does not create an entry for a missing device', () => {
+            setLoadedMicPositions('ghost', ['close']);
+            expect(levainStore.value?.ghost).toBeUndefined();
+        });
+
         it('does not resurrect an entry whose device was unregistered mid-flight', () => {
             seedDevice();
             // Simulate unregisterLevainDevice deleting the entry.
@@ -104,6 +110,25 @@ describe('levainStore mutators', () => {
             seedDevice();
             updateMicPosition(DEVICE, 0, { pan: -0.7 });
             expect(levainStore.value?.[DEVICE]?.patch.micPositions[0]?.pan).toBe(-0.7);
+        });
+    });
+
+    describe('loadedMicPositions — tracks the loaded bank across the load lifecycle', () => {
+        it('goes null → the loaded names → null on a new load → null on failure', () => {
+            seedDevice();
+            expect(levainStore.value?.[DEVICE]?.loadedMicPositions).toBeNull();
+
+            setLoadedMicPositions(DEVICE, ['close']);
+            expect(levainStore.value?.[DEVICE]?.loadedMicPositions).toEqual(['close']);
+
+            // A new load starting clears the previous bank's names so the panel
+            // never renders stale mic rows while a different bank loads.
+            setLoadedMicPositions(DEVICE, null);
+            expect(levainStore.value?.[DEVICE]?.loadedMicPositions).toBeNull();
+
+            // A failed load leaves no committed bank either.
+            setLoadedMicPositions(DEVICE, null);
+            expect(levainStore.value?.[DEVICE]?.loadedMicPositions).toBeNull();
         });
     });
 
