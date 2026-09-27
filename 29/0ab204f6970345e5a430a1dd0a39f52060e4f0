@@ -20,6 +20,14 @@ scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
     }
   },
   "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
     "s_2bfd55a4393d7c": {
       "agent_id": {
         "tool": "claude",
@@ -33,6 +41,14 @@ scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
         "tool": "codex",
         "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
         "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
+        "model": "claude-opus-5-5"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     }

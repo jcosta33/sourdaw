@@ -20,6 +20,8 @@ scripts/reviewPublicationBinding.ts
   h_beb54bf43b47b7 42,154-156,168-186,187-190,191-207,208-210,211-227,242-243,258-266,272-273
 scripts/publishReview.ts
   h_beb54bf43b47b7 62,231-236,237-239,240-241,242-243
+scripts/testInstructions.ts
+  s_ef536aab624565::t_5e8419a6bc2bcb 52,57,59
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -36,6 +38,14 @@ scripts/publishReview.ts
       "agent_id": {
         "tool": "claude",
         "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ef536aab624565": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "690dae19-76dd-4b94-b02e-e2af824d5a9d",
         "model": "claude-opus-5-5"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
