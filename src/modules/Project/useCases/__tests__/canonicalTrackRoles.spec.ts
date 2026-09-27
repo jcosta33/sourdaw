@@ -199,6 +199,38 @@ describe('canonical track roles', () => {
             expect(getCanonicalTrackRole(input(name))).toEqual({ role, source: 'name-tags', evidence });
         }
     );
+    it.each([
+        'Kick Drum & Vox / Bass Drum / Vocal',
+        'Synth Pad + Vocals',
+        'Vocals and Kick Drum',
+        'Kick Drum/Vocal',
+        'Vox, Bass Drum',
+        'Synth Pad & Vocal',
+        'Vocal + Pad Synth',
+    ])('keeps independent bare vocal labels as conflicting name evidence: %s', (name) => {
+        expect(getCanonicalTrackRole(input(name))).toEqual({
+            role: 'unknown',
+            source: 'name-tags',
+            evidence: 'conflicting-name-tags',
+        });
+    });
+    it.each([
+        { name: 'Vocal Vocal', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Vocals + Vox', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Lead Vocal Vox', role: 'lead vocal', evidence: 'name-tokens' },
+        { name: 'Lead Vox Vocal', role: 'lead vocal', evidence: 'resolved-name-tags' },
+        { name: 'Backing Vocal Vox', role: 'backing vocal', evidence: 'name-tokens' },
+        { name: 'Background Vox Vocal', role: 'backing vocal', evidence: 'resolved-name-tags' },
+    ] as const)(
+        'does not treat repeated or consistently qualified vocal labels as conflicts: $name',
+        ({ name, role, evidence }) => {
+            expect(getCanonicalTrackRole(input(name))).toEqual({
+                role,
+                source: 'name-tags',
+                evidence,
+            });
+        }
+    );
     it.each(['Bassoon', 'Kickstarter', 'Track 1', 'MIDI Audio Instrument'])(
         'does not invent timbre from %s',
         (name) => {

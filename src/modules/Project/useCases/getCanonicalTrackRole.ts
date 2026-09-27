@@ -259,6 +259,10 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
     }
     const tokens = normalizedTokens(input.track.name);
     const roles = namedRolesFromTokens(tokens);
+    const bareVocalRole = resolveBareVocalRole(tokens);
+    if (bareVocalRole && roles.some((role) => role !== bareVocalRole)) {
+        return { role: 'unknown', source: 'name-tags', evidence: 'conflicting-name-tags' };
+    }
     if (roles.length > 1) {
         const resolved = resolveNamedRoleConflict(roles, input.track.name);
         if (resolved) {
@@ -269,7 +273,6 @@ export function getCanonicalTrackRole(input: RoleInput): CanonicalTrackRoleProje
     if (roles.length === 1) {
         return { role: roles[0]!, source: 'name-tags', evidence: 'name-tokens' };
     }
-    const bareVocalRole = resolveBareVocalRole(tokens);
     if (bareVocalRole) {
         return { role: bareVocalRole, source: 'name-tags', evidence: 'resolved-name-tags' };
     }
