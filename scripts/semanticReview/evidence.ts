@@ -19,10 +19,13 @@
  * whose unit the planner will plan and whose rules declare a contract, decision or registration token,
  * then each contract-context region the caller supplies, then bulk sides. The ranking admits the
  * change's own contract material ahead of the context documents, and attempts a planned
- * contract-needing file's own sides before the context those rules charge. One predicate decides that
- * whole clause — `plannedUnitPaths`, the files whose own path the screen keeps, whose rules admit them,
- * and which carry a side admission mints a region for — so a file that produces no unit neither
- * charges a document, nor outranks one, nor takes a reserve for one. The predicate is a
+ * contract-needing file's own sides before the context those rules charge. One predicate,
+ * `plannedUnitPaths` — the files whose own path the screen keeps, whose rules admit them, and which
+ * carry a side admission mints a region for — gates the charge of the default contract documents, a
+ * contract-needing file's tier-1 promotion, and the tier-0 promotion of a source a contract-carrying
+ * spec covers. A file that produces no unit is gated out of all three; a side contract-carrying by its
+ * own path and content holds tier 0 by that classification, and the reserve the request fitter takes is
+ * keyed on the context the unit carries, never on this predicate. The predicate is a
  * pre-admission proxy, not a promise of what a request carries: it cannot know a unit's serialized
  * request budget, so a file it admits that the request fitter then leaves no region for is still
  * excluded by `planUnits`, and the document that file charged is read by nothing. The order decides

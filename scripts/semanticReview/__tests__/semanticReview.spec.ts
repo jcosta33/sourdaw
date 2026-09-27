@@ -1005,8 +1005,9 @@ describe('contract-carrying admission', () => {
         //
         // The covered source is planned, which is what the promotion into the spec's tier now asks: it is a
         // copy whose empty source admits one region, so the predicate finds a unit for it, while its
-        // over-ceiling after side is still withheld. A covered source the planner would exclude ranks bulk,
-        // and its withheld sides read the plain form there too.
+        // over-ceiling after side is still withheld. A covered source the planner would exclude loses that
+        // promotion and keeps whatever rank and class its own path and content draw: this one carries no
+        // contract, so its withheld sides read the plain form.
         const specSide =
             "import { describe, expect, it } from 'vitest';\nimport { vocabulary } from '../vocabulary.ts';\nconst workflow = '.github/workflows/semantic-review.yml';\n";
         const coveredSide = 'export const vocabulary = 1;\n'.repeat(4);

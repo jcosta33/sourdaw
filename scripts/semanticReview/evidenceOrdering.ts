@@ -16,9 +16,10 @@
  *    admission: when the collector's total binds before the context tier, the document is withheld
  *    there and no contract-context region reaches the request fitter at all, so the request budget is
  *    spent on the own sides the collector admitted. A file that plans no unit is never promoted here —
- *    it ranks bulk, and it charges nothing. The request fitter reserves `CONTEXT_BUDGET_SHARE` of the
- *    request for the context whenever the unit carries any, so a unit's own sides can still be withheld
- *    below its request;
+ *    it charges nothing, and its sides keep the rank their own class gives them, so a contract-carrying
+ *    side still holds the first tier. The request fitter reserves `CONTEXT_BUDGET_SHARE` of the request
+ *    for the context whenever the unit carries any, so a unit's own sides can still be withheld below
+ *    its request;
  * 3. contract-context units, the documents read at the contract source revision — ahead of bulk,
  *    behind the change's own contract material;
  * 4. bulk sides of the change.
@@ -101,8 +102,9 @@ export function classifyContractCarryingSides(
  * all, and the fitter's context reserve has nothing to hold.
  *
  * This is the rules-level question alone. Whether the file's unit will exist is `plannedUnitPaths`,
- * and every consumer that promotes such a file, charges a document for it, or reserves for one asks
- * both.
+ * and the two consumers that act on a yes — the charge of the default contract documents and this
+ * file's tier-1 promotion in `admissionUnits` — ask both. The request fitter's reserve is not among
+ * them: it is keyed on the context the unit carries, never on this question.
  */
 export function contractNeedingPaths(changed: readonly SemanticChangedFile[]): ReadonlySet<string> {
     const needing = new Set<string>();
@@ -151,11 +153,14 @@ function sideSlices(raw: string, ranges: readonly LineRange[] | undefined): stri
  * document it charged read by nothing. The predicate deliberately does not try to predict the request
  * fitter.
  *
- * One predicate, because a file that produces no unit must neither charge a contract document, nor
- * outrank one, nor take a reserve for one — and each of those three consumers holds only a projection
- * of this answer. The own path decides, exactly as the planner's skip does: a rename credentialed on
- * its previous side alone still plans a destination unit from its clean after side, so it is planned
- * here too, while a rename credentialed on both sides is keyed on its own path by
+ * One predicate, because three consumers share it and each holds only a projection of this answer: it
+ * gates the charge of the default contract documents, the tier-1 promotion of a contract-needing file,
+ * and the tier-0 promotion of a source a contract-carrying spec covers. It gates nothing else. A side
+ * contract-carrying by its own path and content keeps tier 0 by that classification, whatever this
+ * predicate says, and the request fitter's reserve is keyed on whether the unit carries any context
+ * region, never on this answer. The own path decides, exactly as the planner's skip does: a rename
+ * credentialed on its previous side alone still plans a destination unit from its clean after side, so
+ * it is planned here too, while a rename credentialed on both sides is keyed on its own path by
  * `credentialShapedPaths` and plans nothing.
  */
 export function plannedUnitPaths(
@@ -309,18 +314,18 @@ function unitSideOrder(unit: AdmissionUnit): number {
  * 1. a changed file whose unit the planner will plan and whose rules declare a contract, decision or
  *    registration token — its own before/after sides are attempted ahead of the context documents
  *    those rules charge, while the side stays behind genuine contract material. A file that plans no
- *    unit is not promoted: its sides rank bulk, so a file the planner excludes cannot take the
- *    admission order from the documents a planned reader charged. The tier is an attempt order, not a
- *    protection: it orders what the collector's total withholds, and the request fitter reserves the
- *    bounded context share whenever the unit carries context, so a contract document the collector
- *    withheld under a binding total costs the fitter nothing and the request budget is spent on the
- *    own sides the collector admitted;
+ *    unit is not promoted here: it cannot take the admission order from the documents a planned
+ *    reader charged, while a side contract-carrying by its own classification holds tier 0 whatever
+ *    the predicate says. The tier is an attempt order, not a protection: it orders what the
+ *    collector's total withholds, and the request fitter reserves the bounded context share whenever
+ *    the unit carries context, so a contract document the collector withheld under a binding total
+ *    costs the fitter nothing and the request budget is spent on the own sides the collector admitted;
  * 2. contract-context units;
  * 3. bulk sides.
  *
- * A side that is contract-carrying keeps rank 0 even when its file's rules also need contract
- * evidence, so a spec rewritten to drop its closure import still admits its contract before side ahead
- * of its now-contract-needing bulk after side.
+ * A side that is contract-carrying keeps rank 0 by that classification whatever the predicate says,
+ * even when its file's rules also need contract evidence, so a spec rewritten to drop its closure
+ * import still admits its contract before side ahead of its now-contract-needing bulk after side.
  */
 function admissionTier(unit: AdmissionUnit): number {
     if (unit.kind === 'context') {
@@ -381,10 +386,11 @@ export function compareAdmissionUnits(left: AdmissionUnit, right: AdmissionUnit)
  * surface admits its contract before side before a bulk side of another change while its bulk after
  * side stays ranked with bulk. Contract-context regions sit in their own tier — behind the change's own
  * contract-carrying sides, ahead of bulk — so a document read at the contract source revision cannot
- * outrank the change's contract material even when it is larger. Both promotions into the contract tier
- * read `plannedPaths`: a covered source whose unit the planner will not plan ranks bulk, exactly like a
- * credentialed file the planner excludes, so neither can take the admission order from the documents a
- * planned reader charged.
+ * outrank the change's contract material even when it is larger. Both promotions into a contract rank —
+ * the tier-0 rank of a covered source and the tier-1 rank of a contract-needing file — are gated on
+ * `plannedPaths`: one whose unit the planner will not plan keeps only the rank its own classification
+ * gives it, exactly like a credentialed file the planner excludes, so neither can take the admission
+ * order from the documents a planned reader charged.
  */
 export function admissionUnits(
     changed: readonly SemanticChangedFile[],
