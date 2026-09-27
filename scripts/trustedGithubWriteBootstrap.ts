@@ -4737,12 +4737,14 @@ function readCanStartRegexLiteral(source: string, index: number): boolean {
                 start -= 1;
             }
             const identifier = source.slice(start + 1, cursor + 1);
-            // `else` is followed by a statement, so a `/` after it opens a regex; a member named
-            // `else` (`obj.else / 2`, `this.#else / 2`) is an expression end and stays a division.
-            if (identifier === 'else') {
-                return !isMemberNameAt(source, start + 1);
+            // A member named after a keyword or `else` is an expression end, so the `/` after it
+            // divides: `obj.if / 2`, `this.default / 2`, and `this.#else / 2` all keep the division.
+            // Only a keyword in keyword position — `do /re/.test(x)`, `else /re/.test(x)` — is
+            // followed by a statement whose next token may open a regex.
+            if (isMemberNameAt(source, start + 1)) {
+                return false;
             }
-            return REGEX_PREFIX_KEYWORDS.has(identifier);
+            return identifier === 'else' || REGEX_PREFIX_KEYWORDS.has(identifier);
         }
         if (character >= '0' && character <= '9') {
             return false;

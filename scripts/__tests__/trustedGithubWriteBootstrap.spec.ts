@@ -734,6 +734,17 @@ describe('snapshotImportSpecifiers', () => {
                 'class D {\n  m() { if (a) {} else /}/; }\n}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual([]);
+        // A member named after one of those keywords is an expression end, so the `/` after it divides
+        // rather than opening a literal: the computed load behind the division is still reported.
+        expect(
+            snapshotComputedDynamicSpecifiers('class K { m() { return this.default / require(spec) / 2; } }')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj?.if / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return this.#if / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
         // A parameter property is read, and its own modifier run is what decides it: the loader default
         // reaches the read-back, while the same declaration without modifiers binds a local instead.
         expect(
