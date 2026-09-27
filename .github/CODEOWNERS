@@ -1,6 +1,6 @@
 # CODEOWNERS
 #
-# Deliberately carries no ownership rule. The only line this file ever held was
+# Deliberately carries no ownership rule. The only ownership rule this file held at removal was
 # `* @jcosta33`, whose sole effect was auto-requesting review from the owner's
 # personal account on every pull request — noise, since no human reviews here:
 # review is the reviewer App's job.
