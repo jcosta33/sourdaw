@@ -3,7 +3,7 @@ import { midiStore } from '../../stores/midiStore';
 import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 
-export type MidiNoteReplacement = {
+type MidiNoteReplacement = {
     expected: MidiNote;
     replacement: MidiNote;
 };
