@@ -513,6 +513,13 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * field a direct construction would — resolved through the same scope chain, so a sibling rebinding or
  * a nested redeclaration or reassignment to anything else does not reach the loader.
  *
+ * A class the member walk cannot model whole keeps the merge base's reading on either side of the
+ * read-back: a decorator on the class — written `@dec`, `@ns.dec(1)`, `@dec.x`, or parenthesised
+ * `@(expr)` — a computed member name that is not a static string literal (`[key]`, `['lo' + 'ader']`,
+ * ``[`${expr}`]``), and a member name written with a unicode escape (`\u006coader`, `['\u006coader']`)
+ * each mark the class unmodelled, because such a member may carry the field's name without the reader
+ * being able to spell it out.
+ *
  * Every shape those rules do not model also keeps the merge base's reading, and these stay undecided:
  * a callee bound to another bound name (`const a = require; const b = a; b(expr)`), a member reached
  * through a second bound name (`const a = require; const b = a; const c = b.resolve; c(expr)`), a
@@ -1430,8 +1437,9 @@ type ClassFieldsEntry = {
     members: Set<string>;
     /**
      * Whether the class body holds a construct the member walk does not fully consume — a decorator, a
-     * static block, or a computed member value — so the members it records are unreliable. A read-back
-     * through an unmodelled class keeps the merge base's reading instead of resolving to a field.
+     * static block, a computed member name that is not a static string literal, or a member name written
+     * with a unicode escape — so the members it records are unreliable. A read-back through an
+     * unmodelled class keeps the merge base's reading instead of resolving to a field.
      */
     unmodelled: boolean;
 };
@@ -2156,8 +2164,8 @@ function declaresClassName(classFields: ReadonlyMap<number, ClassFieldsEntry>, n
 }
 
 /**
- * The `@` of the decorator immediately before `index` — a `@name`, `@ns.name`, `@name(args)`, or any
- * namespaced or call spelling of those — or `undefined` when no decorator precedes the keyword. A
+ * The `@` of the decorator immediately before `index` — a `@name`, `@ns.name`, `@name(args)`, `@(expr)`,
+ * or any namespaced or call spelling of those — or `undefined` when no decorator precedes the keyword. A
  * decorator sits where a declaration modifier does, so it neither turns a declaration into an expression
  * nor hides the member it decorates.
  */
@@ -2171,10 +2179,17 @@ function decoratorOpenBefore(source: string, index: number): number | undefined 
         if (open === undefined) {
             return undefined;
         }
-        cursor = previousSignificantCharacter(source, open - 1);
-        if (cursor === undefined) {
+        const beforeOpen = previousSignificantCharacter(source, open - 1);
+        // `@(expr)` decorates with the whole parenthesised expression, so the `@` opens the decorator
+        // rather than the dotted name the other spellings read.
+        if (beforeOpen !== undefined && source.charAt(beforeOpen) === '@') {
+            return beforeOpen;
+        }
+        // Any other group is a call's argument list, and the decorated name stands before its `(`.
+        if (beforeOpen === undefined) {
             return undefined;
         }
+        cursor = beforeOpen;
     }
     if (!isIdentifierContinue(source.charAt(cursor))) {
         return undefined;
@@ -2288,12 +2303,33 @@ function classBodyOpenAfterClass(source: string, keywordStart: number): number |
 }
 
 /**
+ * Whether the class body member at `index` is written with a unicode escape — `\u006c` at any position
+ * in the name, in the `\uXXXX` or `\u{XX}` form. The escape is the character it names rather than the
+ * characters it is spelled with, so a name the reader cannot read exactly is not a name it may
+ * conclude from.
+ */
+function memberNameWrittenWithEscape(source: string, index: number, end: number): boolean {
+    let cursor = index;
+    while (cursor < end) {
+        if (source[cursor] === '\\' && source[cursor + 1] === 'u') {
+            return true;
+        }
+        if (!isIdentifierContinue(source[cursor])) {
+            break;
+        }
+        cursor += 1;
+    }
+    return false;
+}
+
+/**
  * Records the name of every own instance member — a field, method, or accessor — the class body `open`
  * opens, into the class's `members` set, so a subclass that declares its own member of a name shadows
  * the parent's field of the same name when a read-back resolves it. Static members live on the
  * constructor and are not recorded, matching a read-back that only reads an instance. The scan walks
  * the body's top level, skipping method bodies and field initializers so their locals cannot read as
- * members.
+ * members, and a member whose name it cannot read exactly is skipped whole rather than read at the
+ * member that follows it.
  */
 function recordClassMembers(source: string, classFields: Map<number, ClassFieldsEntry>, open: number): void {
     const entry = classEntryFromOpen(source, classFields, open);
@@ -2321,6 +2357,17 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
                 cursor = computed.next;
                 continue;
             }
+            // A computed name the reader cannot spell out — a variable, a concatenation, an
+            // interpolated template, or a literal written with an escape — is outside the model, so the
+            // class's members are unreliable: mark it unmodelled and skip the member whole.
+            entry.unmodelled = true;
+            cursor = skipClassBodyRegion(source, cursor, close - 1);
+            continue;
+        }
+        // A member name written with a unicode escape is a name the reader cannot read exactly, so the
+        // class's members are unreliable: mark it unmodelled and skip the member whole.
+        if (memberNameWrittenWithEscape(source, cursor, close - 1)) {
+            entry.unmodelled = true;
             cursor = skipClassBodyRegion(source, cursor, close - 1);
             continue;
         }
@@ -2346,8 +2393,9 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
 /**
  * The name a string- or template-literal computed member `['name']`, `["name"]`, or ``[`name`]``
  * declares, with the position after the member, or `undefined` when the `[` at `open` opens an index
- * signature or a computed expression the scanner does not resolve. Only a literal names a property
- * exactly, so it is the one computed spelling that shadows the parent's field of that name.
+ * signature, a literal the reader does not decode, or a computed expression the scanner does not
+ * resolve. Only a literal names a property exactly, so it is the one computed spelling that shadows the
+ * parent's field of that name.
  */
 function readComputedMemberName(source: string, open: number, end: number): { name: string; next: number } | undefined {
     const contentStart = skipWhitespace(source, open + 1);
@@ -2361,6 +2409,11 @@ function readComputedMemberName(source: string, open: number, end: number): { na
         return undefined;
     }
     if (value === undefined) {
+        return undefined;
+    }
+    // A literal the reader does not decode names a property it cannot spell out, so it declines the
+    // name exactly as it declines a computed expression it does not resolve.
+    if (source.slice(contentStart, value.end).includes('\\')) {
         return undefined;
     }
     const afterBracket = skipWhitespace(source, value.end);

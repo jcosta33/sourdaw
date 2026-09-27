@@ -921,7 +921,8 @@ describe('snapshotImportSpecifiers', () => {
         ).toEqual([]);
         // A decorator makes the class unmodelled, so a read-back through it keeps the merge base's
         // reading — on a member in either direction, and on a declaration whatever the decorator
-        // spelling, its arguments, or a modifier after it.
+        // spelling, its arguments, or a modifier after it. The shadow's own field is a loader, so only
+        // the bail keeps these two declarations at the merge base's reading.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { loader = require; }\nclass D extends H { @ns.dec loader = console.log; }\nconst { loader } = new D();\nloader(spec);'
@@ -934,17 +935,46 @@ describe('snapshotImportSpecifiers', () => {
         ).toEqual([]);
         expect(
             snapshotComputedDynamicSpecifiers(
-                'class H { loader = require; }\nfunction f() { @dec class H { loader = other; } const { loader } = new H(); loader(spec); }'
+                'class H { loader = require; }\nfunction f() { @dec class H { loader = require; } const { loader } = new H(); loader(spec); }'
             )
         ).toEqual([]);
         expect(
             snapshotComputedDynamicSpecifiers(
-                'class H { loader = require; }\nfunction f() { @a.b.c(1) class H { loader = other; } const { loader } = new H(); loader(spec); }'
+                'class H { loader = require; }\nfunction f() { @a.b.c(1) class H { loader = require; } const { loader } = new H(); loader(spec); }'
             )
         ).toEqual([]);
         expect(
             snapshotComputedDynamicSpecifiers(
                 '@dec class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A parenthesised decorator `@(expr)` decorates the class as the other spellings do, so it
+        // marks the class unmodelled too — on a declaration and on an expression alike, whatever
+        // expression it wraps. Each shadow's own field is a loader, so only the bail keeps these at
+        // the merge base's reading.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(dec) class H { loader = require; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const X = @(dec) class H { loader = require; }; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(x => y) class H { loader = require; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { @(dec) class H { loader = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const X = @(dec) class H { loader = other; }; const { loader } = new H(); loader(spec); }'
             )
         ).toEqual([]);
         // A static block makes the class unmodelled, so the members after it keep the base reading.
@@ -970,6 +1000,60 @@ describe('snapshotImportSpecifiers', () => {
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { [`loader`] = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A computed member name that is not a static string literal — a variable, a concatenation, an
+        // interpolated template — names a property the reader cannot spell out, so it makes the class
+        // unmodelled and a read-back through it keeps the merge base's reading, rather than the member
+        // being skipped silently and the parent's loader inherited. The parent carries the
+        // loader-valued `loader` field, so the bail is the only reason the read-back is refused.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "const key = 'loader';\nclass H { loader = require; }\nclass D extends H { [key] = console.log; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "class H { loader = require; }\nclass D extends H { ['lo' + 'ader'] = console.log; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { [`${key}`] = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "const key = 'loader';\nclass H { [key] = require; }\nconst { loader } = new H();\nloader(spec);"
+            )
+        ).toEqual([]);
+        // A member name written with a unicode escape is the character it names rather than the
+        // characters it is spelled with, so the reader cannot read it exactly: the class is unmodelled
+        // and the read-back through it keeps the merge base's reading, on an identifier, a string
+        // literal, and a template literal alike. The escape-less control shadows the same field.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { \\u006coader = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loade\\u0072 = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "class H { loader = require; }\nclass D extends H { ['\\u006coader'] = console.log; }\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { [`\\u006coader`] = console.log; }\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nclass D extends H { loader = console.log; }\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual([]);
     });
