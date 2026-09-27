@@ -1,0 +1,99 @@
+.agents/skills/review-stances/correctness.md
+  s_ed5aa36a3ba357::t_28fe9be3c602cc 68-97
+.agents/skills/delivery-orchestration/SKILL.md
+  s_ed5aa36a3ba357::t_149e5e0f018c26 503-506,509-514
+.github/CODEOWNERS
+  s_ed5aa36a3ba357::t_13f4da16a421ee 3-6,8-15,17-21
+crates/daw-dsp/src/fermenter/effects.rs
+  s_ed5aa36a3ba357::t_83c4deb709f942 393-398,402
+crates/daw-dsp/src/toaster/engines/fm_perc.rs
+  s_ed5aa36a3ba357::t_fa8a256519cf85 34-36,57,69-70,142-143,145
+crates/daw-dsp/tests/audit_fermenter_comp_makeup.rs
+  s_ed5aa36a3ba357::t_8a117940d69820 1-94
+crates/daw-dsp/tests/audit_gluten_style_topology.rs
+  s_ed5aa36a3ba357::t_07a92750afd924 1-144
+crates/daw-dsp/tests/audit_toaster_fm_decay.rs
+  s_ed5aa36a3ba357::t_9481618fdb8110 1-155
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ed5aa36a3ba357::t_c5efd3217b82b2 67-260
+crates/daw-engine/src/scheduler.rs
+  s_ed5aa36a3ba357::t_b882c5e7a3739e 1192,2232-2244,2246,22603,22619-22622,22627,22683,22686,22693-22696
+crates/proof-chamber/src/proof_chamber.rs
+  s_ed5aa36a3ba357::t_ad262a98b999c7 748-756,806-809,811-814,909-914
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  s_ed5aa36a3ba357::t_33fb717a7b4cf6 533-538,540-541
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_ed5aa36a3ba357::t_34f72bff5c42c6 247-254,256-257,383-390,392,395,400-403,405-406
+crates/proof-chamber/tests/support/plate_fine_structure.rs
+  s_ed5aa36a3ba357::t_c9c6e3dc006a95 6-12,29,35,41,47,53,59,65,71
+crates/sourdaw-native/src/commands/graph.rs
+  s_ed5aa36a3ba357::t_ce9f09a9db19fd 9326-9329,9349,9367
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_3b644077efd9e0 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_38740475c83e26 1,1012-1027,1073-1086
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_1d958220f90e6d 1,62-77,123-136
+public/wasm/manifest.json
+  s_ed5aa36a3ba357::t_d0617a9680e66d 12,16-18,21,26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_ed5aa36a3ba357::t_47ec642df3cafc 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_714bbac136cb0b 1
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_8b5a8307eba56e 1343,1345,1349,1540,1768,2618
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_ed5aa36a3ba357::t_ca97397b968ece 668-686
+scripts/__tests__/reviewRepair.spec.ts
+  s_ed5aa36a3ba357::t_29f58924c32403 30-33,98-100,108-111,119-120,125,625-797
+scripts/confirmReviewRepairs.ts
+  s_ed5aa36a3ba357::t_0832625ea4f1c0 10-12
+scripts/repairReviewFinding.ts
+  s_ed5aa36a3ba357::t_be6a59afaa90be 5-7,332-334
+scripts/reviewRepair.ts
+  s_ed5aa36a3ba357::t_c5a52901c78a8b 12-17,359-383,387,402,404-405,411,444-449,516
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_ed5aa36a3ba357::t_bacee581dcfaa5 33-43,58,71,409-410,432-436,441-442,739-741,843-845,890-891,1015-1931,3478-3480,5377,5380-5384,5398-5400,5402-5409,5421-5545
+scripts/semanticReview/evidence.ts
+  s_ed5aa36a3ba357::t_bcc3d587c96bc2 18-20,798
+scripts/semanticReview/evidenceOrdering.ts
+  s_ed5aa36a3ba357::t_f7d49dd9a90d26 10-27,226-238,245-251,255-257,260,269,273,276,279-282,289-295,298-302,306-398,405,409-410,419-420,429,447-448,483-491,499-500,504-520,522-523,525-527,536-544,546-675,681,685,690-691,693-701,710,721,726
+scripts/semanticReview/sensitive.ts
+  s_ed5aa36a3ba357::t_c1c7894523b19d 40-42,47-57,72-74,90-117,120-122
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ed5aa36a3ba357::t_1ce2109772b589 352-355,365
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_7e5ebebd63605e 1,1012-1027,1073-1086
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_ed5aa36a3ba357::t_56afe9c310abe2 1
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/loadGlutenPatchWithAudio.spec.ts
+  s_ed5aa36a3ba357::t_0629beeccd1923 66-83
+src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts
+  s_ed5aa36a3ba357::t_bb7f07a390242d 30-33,35
+src/modules/Project/models/CanonicalTrackRole.ts
+  s_ed5aa36a3ba357::t_2241fbc88daf34 33
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_ed5aa36a3ba357::t_2302d2dba9e6bb 91-123,153-245
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_ed5aa36a3ba357::t_9a56a93124a971 41-55,58,60,64-66,70-160,270-279,281-284,290-292
+src/utils/__tests__/devicePatchPrecedence.spec.ts
+  s_ed5aa36a3ba357::t_de9a947a166d40 38
+src/utils/devicePatchPrecedence.ts
+  s_ed5aa36a3ba357::t_0cdae61269d064 8-10,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ce1a53940af0582a8dffeca95eb542e0b50bd9ea",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
