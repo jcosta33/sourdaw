@@ -35,7 +35,6 @@ import {
     admissionUnits,
     classifyContractCarryingSides,
     compareAdmissionUnits,
-    compareLexicographic,
     readChangedContents,
     specCoveredSources,
     type AdmissionSideBytes,
@@ -55,6 +54,7 @@ import {
 import { renderSummary, validateReport, type SemanticVerifyReport } from '../report.ts';
 import { missingRequiredEvidence, RESOLVED_EVIDENCE_TOKENS } from '../requiredEvidence.ts';
 import {
+    applicableRules,
     assertBudgetProfile,
     computePolicyDigest,
     computeRulesDigest,
@@ -67,6 +67,7 @@ import {
     SEMANTIC_RULES,
     type SemanticBudgetProfile,
     type SemanticVerifyBudget,
+    unitNeedsContractContext,
     VERIFICATION_ATTRIBUTION_THRESHOLD,
     VERIFICATION_KIND_THRESHOLD,
     VERIFICATION_SUPPORT_THRESHOLD,
@@ -1202,19 +1203,18 @@ describe('contract-carrying admission', () => {
     });
 
     it('keeps each side of a covered source ahead of every coverer when the coverers cross per side', () => {
-        // One coverer is minimal on the before side and the other on the after side, so their minima cross,
-        // and the pair's coverer carries the largest side of all. The case reads that shape on both sides: the
-        // source's before side precedes both coverers' before sides, and its after side precedes both of
-        // theirs, so neither coverer's cheaper side can take the order from the source.
+        // The fixture builds three modified files: two contract-carrying specs that both import the source,
+        // and the source they cover. `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the
+        // smallest after side, so the two coverers' minimal sides cross. The assertions read the shape the
+        // case's name states on both sides: each source side precedes every coverer side.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const importLine = "import { asym } from '../asymSource.ts';\n";
         const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaBeforeMin.spec.ts';
         const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzAfterMin.spec.ts';
         const subjectPath = 'scripts/semanticReview/asymSource.ts';
 
-        // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side; their
-        // minima cross, and the source's own small sides are what keep it from taking either coverer's largest
-        // side. The case name is the assertion below: each source side precedes every coverer side.
+        // `aaaBeforeMin` carries the smallest before side and `zzzAfterMin` the smallest after side, so their
+        // minima cross; every side is charged whole. The case name is the assertion below.
         const aaaBefore = `${workflowLine}${importLine}`;
         const aaaAfter = `${workflowLine}${importLine}${'y'.repeat(2_000)}`;
         const zzzBefore = `${workflowLine}${importLine}${'y'.repeat(1_500)}`;
@@ -1511,13 +1511,12 @@ describe('contract-carrying admission', () => {
         expect(index(sourcePath, 'before')).toBeLessThan(index(coverPath, 'before'));
     });
 
-    it("admits a covered source at its coverer's position before an equal-figure bulk path", () => {
-        // A covered bulk source and an added project path carry the same 4,000-byte figure, and the
-        // competitor is a bulk path — a unit that carries no contract — while the source is covered by a spec
-        // that does. The source is still the unit admitted: promoting it with the spec that covers it ranks it
-        // ahead of a bulk unit of the same size, so a competitor of that size cannot take its place. The case
-        // reads that ranking; it does not reach the in-tier position-path leg, which needs two units equal on
-        // every earlier key.
+    it("admits a covered source at its coverer's position before an equal-figure contract-needing unit", () => {
+        // The fixture builds a covered bulk source and an added path whose rules need a contract, both carrying
+        // the same 4,000-byte figure. The source is promoted with the contract-carrying spec that covers it, so
+        // its unit takes the contract tier while the competitor's stays behind it. The assertions read that the
+        // competitor needs contract evidence, that the two share a figure, and that the source is the unit
+        // admitted first — the tier-0-against-tier-1 competition, which is the branch this case names.
         const coverPath = 'scripts/semanticReview/__tests__/coverAll.spec.ts';
         const sourcePath = 'scripts/bulkSource.ts';
         const competitorPath = 'src/modules/Project/zShape.ts';
@@ -1547,7 +1546,6 @@ describe('contract-carrying admission', () => {
         const bytesBySide = admissionBytesBySide(files, contents, hunks, 100_000, MERGE_BASE, HEAD);
         const sidesByPath = classifyContractCarryingSides(files, contents);
         const covered = specCoveredSources(files, contents, bytesBySide);
-        expect(covered.get(sourcePath)).toEqual([coverPath]);
         const units = admissionUnits(
             files,
             sidesByPath,
@@ -1561,12 +1559,14 @@ describe('contract-carrying admission', () => {
         if (sourceUnit === undefined || competitorUnit === undefined) {
             throw new Error('both the covered source and the competitor must produce a unit');
         }
-        // The pair keys at the coverer's figure, the competitor shares that figure, and the source's own side
-        // carries no contract while the position it takes does.
+        // The competitor needs a contract and carries none, the source is covered by a spec that does, and the
+        // two units share one figure.
+        expect(unitNeedsContractContext(applicableRules([competitorPath]))).toBe(true);
+        expect(unitNeedsContractContext(applicableRules([coverPath]))).toBe(true);
+        expect(covered.get(sourcePath)).toEqual([coverPath]);
         expect(sourceUnit.order.admissionBytes).toBe(competitorUnit.order.admissionBytes);
         expect(sourceUnit.order.path).toBe(coverPath);
         expect(sidesByPath.get(sourcePath)?.after).toBe(false);
-        expect(compareLexicographic(competitorPath, coverPath)).toBeGreaterThan(0);
         expect(compareAdmissionUnits(sourceUnit, competitorUnit)).toBeLessThan(0);
         expect(units.indexOf(sourceUnit)).toBeLessThan(units.indexOf(competitorUnit));
         const set = collectEvidence({
