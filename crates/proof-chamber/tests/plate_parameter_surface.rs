@@ -244,9 +244,17 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
 /// early reflection tap arrivals to match the documented plate room size, moving
 /// the measured peak from 8.290293e-1 to 9.8297787e-1 and RMS from 1.0719928e-1
 /// to 1.2425283e-1 on this stimulus.
+///
+/// Updated again for #4430's render-preserving arm: the input diffusers are
+/// seeded at the `set_param` diffusion formula's output at the declared
+/// default 0.75 instead of the formula's raw coefficients, so the untouched
+/// render is the sound every app-created unit always rendered — `addDevice`
+/// has always replayed the descriptor's 0.75 into a new engine. Measured on
+/// this stimulus, the peak moved from 9.8297787e-1 to 9.9530500e-1 and RMS
+/// from 1.2425283e-1 to 1.2303977e-1.
 const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
-    peak: 9.8297787e-1,
-    rms: 1.2425283e-1,
+    peak: 9.9530500e-1,
+    rms: 1.2303977e-1,
     onset: 1,
 };
 
@@ -372,28 +380,30 @@ fn out_of_range_diffusion_renders_as_the_clamped_endpoint() {
 
 #[test]
 fn diffusion_seeds_at_the_constructor_gains() {
-    // The constructor seeds the diffusers at gains 0.750/0.625 — exactly the
-    // formula's output at diffusion 1.0 — while the descriptor declares the
-    // default as 0.75, so an untouched engine does not render as its
-    // documented default (#4430, filed; changing either side is an audible
-    // product decision). This pins today's truth: the untouched render is
-    // bit-exactly the diffusion=1.0 render, so any drift in the seeded gains
-    // fails here instead of silently re-voicing every untouched project.
+    // #4430's render-preserving arm: the constructor and `reset` seed the
+    // diffusers at exactly the `set_param` formula's output at the declared
+    // default 0.75 (`d1 = 0.750 * 0.75`, `d2 = 0.625 * 0.75`), so the stored
+    // field, the descriptor default, the panel reset and the seeded gains all
+    // say the same thing. This test is the parity that makes the claim true
+    // and now guards it: the untouched render is bit-exactly the diffusion=0.75
+    // render, so any drift in the seeded gains fails here instead of silently
+    // re-voicing every untouched project.
     let untouched = render(&[]);
-    let seeded = render(&[("diffusion", 1.0)]);
+    let seeded = render(&[("diffusion", 0.75)]);
     assert!(
         identical(&untouched, &seeded),
-        "the untouched engine should render as its seeded gains; \
+        "the untouched engine should render as its documented diffusion default; \
          peak difference {:e}",
         max_delta(&untouched, &seeded)
     );
 
-    // And the seeding is not mid-range: an interior write must differ, which
-    // also keeps the guard above from passing vacuously.
-    let interior = render(&[("diffusion", 0.75)]);
+    // And the seeding is not the full-open gains the constructor carried
+    // before: an explicit diffusion=1.0 write must differ, which also keeps
+    // the guard above from passing vacuously.
+    let full_open = render(&[("diffusion", 1.0)]);
     assert!(
-        !identical(&untouched, &interior),
-        "the seeded gains render identically to diffusion=0.75"
+        !identical(&untouched, &full_open),
+        "the seeded gains render identically to diffusion=1.0"
     );
 }
 

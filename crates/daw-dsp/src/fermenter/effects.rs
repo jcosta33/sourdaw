@@ -390,13 +390,16 @@ impl Compressor {
         let threshold_lin = 10.0f32.powf(threshold / 20.0);
         let att_coeff = (-1.0 / (attack * 0.001 * sample_rate)).exp();
         let rel_coeff = (-1.0 / (release * 0.001 * sample_rate)).exp();
-        // Auto makeup: compensate for gain reduction at threshold
-        let makeup = if ratio > 1.0 {
-            (1.0 / ratio - 1.0) * threshold / 20.0
+        // Auto makeup: half the gain reduction a 0 dBFS signal would receive
+        // (`-threshold` dB over, scaled by `1 - 1/ratio`), applied as a boost.
+        // Makeup never attenuates: below the threshold the gain is
+        // `makeup_lin` ≥ 1, so untouched material leaves at unity or louder.
+        let makeup_db = if ratio > 1.0 {
+            (1.0 - 1.0 / ratio) * (-threshold) / 2.0
         } else {
             0.0
         };
-        let makeup_lin = 10.0f32.powf(-makeup / 20.0);
+        let makeup_lin = 10.0f32.powf(makeup_db / 20.0);
 
         for i in 0..left.len() {
             let input_level = (left[i].abs()).max(right[i].abs());

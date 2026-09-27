@@ -745,6 +745,15 @@ impl ProofChamber {
             size: 0.75,
             mod_rate: 1.0,
             mod_depth: 0.3,
+            // 0.75, matching the diffusers below: they are seeded at exactly
+            // the `set_param` formula's output at this value (`d1 = 0.750 *
+            // diffusion`, `d2 = 0.625 * diffusion`), so an untouched engine
+            // renders its documented default. That is the #4430 invariant,
+            // restored by the render-preserving arm: the field, the descriptor
+            // default and the seeded gains must all say the same thing, because
+            // `addDevice` replays the descriptor's stored value into a new
+            // engine, so a default that names different gains than the
+            // constructor seeds would be a default the engine never boots into.
             diffusion: 0.75,
             freeze: false,
             shimmer: false,
@@ -794,11 +803,15 @@ impl ProofChamber {
             // range — and reds if it ever acquires enough authority for the
             // reasoning above to stop holding.
             bandwidth_filter: OnePole::new(1.0 - 0.9995), // bandwidth=0.9995
+            // Seeded at the `set_param` diffusion formula's output at the
+            // declared default 0.75 (`0.750 * 0.75` and `0.625 * 0.75`), not
+            // at the formula's raw coefficients, so the constructor's render
+            // is the diffusion=0.75 render.
             input_diffusers: [
-                Allpass::new(s(INPUT_DIFF_DELAYS[0]), 0.750),
-                Allpass::new(s(INPUT_DIFF_DELAYS[1]), 0.750),
-                Allpass::new(s(INPUT_DIFF_DELAYS[2]), 0.625),
-                Allpass::new(s(INPUT_DIFF_DELAYS[3]), 0.625),
+                Allpass::new(s(INPUT_DIFF_DELAYS[0]), 0.5625),
+                Allpass::new(s(INPUT_DIFF_DELAYS[1]), 0.5625),
+                Allpass::new(s(INPUT_DIFF_DELAYS[2]), 0.46875),
+                Allpass::new(s(INPUT_DIFF_DELAYS[3]), 0.46875),
             ],
 
             predelay: DelayLine::new(predelay_max),
@@ -893,10 +906,12 @@ impl ProofChamber {
         self.early_late_balance = 0.4;
 
         self.bandwidth_filter = OnePole::new(1.0 - 0.9995);
-        self.input_diffusers[0].reset(0.750);
-        self.input_diffusers[1].reset(0.750);
-        self.input_diffusers[2].reset(0.625);
-        self.input_diffusers[3].reset(0.625);
+        // The constructor's seeds: the diffusion formula's output at the
+        // declared default 0.75. See the `input_diffusers` note there.
+        self.input_diffusers[0].reset(0.5625);
+        self.input_diffusers[1].reset(0.5625);
+        self.input_diffusers[2].reset(0.46875);
+        self.input_diffusers[3].reset(0.46875);
 
         self.early_reflections.reset(sample_rate, 0.75);
 
