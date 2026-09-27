@@ -79,7 +79,10 @@
       },
       "affected": {
         "name": "Affected workflows",
-        "needs": "scope",
+        "needs": [
+          "scope",
+          "validation"
+        ],
         "uses": "./.github/workflows/heavy-gates.yml",
         "with": {
           "matrix": "${{ needs.scope.outputs.matrix }}",

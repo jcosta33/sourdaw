@@ -526,7 +526,8 @@ expect(workflow.jobs?.validation?.uses === './.github/workflows/validation.yml',
 expect(workflow.jobs?.validation?.needs === 'scope', 'validation must wait for selected scope');
 expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.browser == 'true' }}", 'validation smoke must use selected browser scope');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
-expect(workflow.jobs?.affected?.needs === 'scope', 'selected browser checks must wait for scope');
+expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation']),
+    'selected browser checks must wait for scope and successful validation');
 expect(workflow.jobs?.affected?.with?.matrix === '${{ needs.scope.outputs.matrix }}', 'selected browser checks must use scope matrix');
 expect(workflow.jobs?.affected?.with?.['browser-ai'] === "${{ needs.scope.outputs.browser-ai == 'true' }}", 'hardware proof must use selected scope');
 expect(

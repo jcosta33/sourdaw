@@ -1315,8 +1315,11 @@ function assertJobGraph(set: WorkflowSet): void {
         throw new Error('shared validation must require the affected browser decision');
     }
     const affected = jobAt(health, 'affected');
-    if (affected.uses !== './.github/workflows/heavy-gates.yml' || affected.needs !== 'scope') {
-        throw new Error('required affected E2E must call the reusable browser workflow after scope');
+    if (
+        affected.uses !== './.github/workflows/heavy-gates.yml' ||
+        JSON.stringify(affected.needs) !== JSON.stringify(['scope', 'validation'])
+    ) {
+        throw new Error('required affected E2E must wait for scope and successful validation');
     }
     if (
         recordAt(affected, 'with').matrix !== '${{ needs.scope.outputs.matrix }}' ||
@@ -3003,7 +3006,7 @@ describe('health gates workflow contract', () => {
         const disconnectedAffected = cloneWorkflows('disconnected affected E2E');
         jobAt(disconnectedAffected.health, 'affected').needs = 'validation';
         expect(() => assertJobGraph(disconnectedAffected)).toThrow(
-            'required affected E2E must call the reusable browser workflow after scope'
+            'required affected E2E must wait for scope and successful validation'
         );
 
         const unselectedCodeql = cloneWorkflows('unselected CodeQL');
