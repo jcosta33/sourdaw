@@ -734,32 +734,48 @@ describe('snapshotImportSpecifiers', () => {
                 'class D {\n  m() { if (a) {} else /}/; }\n}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual([]);
-        // A member named after one of those keywords is an expression end, so the `/` after it divides
-        // rather than opening a literal: the computed load behind the division is still reported.
+        // A member named after a keyword the set holds is an expression end, so the `/` after it
+        // divides rather than opening a literal: these readings can only come from the member guard.
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj.return / require(spec) / 2; } }')).toEqual(
+            ['require(...)']
+        );
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return this.#do / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
+        // A member named after `else`, which is judged on its own, and the optional and keyword-named
+        // spellings that reach no set entry: each keeps the division and reports the load.
         expect(
             snapshotComputedDynamicSpecifiers('class K { m() { return this.default / require(spec) / 2; } }')
         ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj.else / require(spec) / 2; } }')).toEqual([
+            'require(...)',
+        ]);
         expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj?.if / require(spec) / 2; } }')).toEqual([
             'require(...)',
         ]);
         expect(snapshotComputedDynamicSpecifiers('class K { m() { return this.#if / require(spec) / 2; } }')).toEqual([
             'require(...)',
         ]);
-        expect(
-            snapshotComputedDynamicSpecifiers('class K { m() { return mod.default / require(spec) / 2; } }')
-        ).toEqual(['require(...)']);
-        expect(snapshotComputedDynamicSpecifiers('class K { m() { return obj.if / require(spec) / 2; } }')).toEqual([
-            'require(...)',
-        ]);
         // A regex after a keyword stays a regex when a dot or an identifier on an earlier line precedes
         // the keyword: the member judgement is adjacency-bound, so `1.` above `typeof` and `b` above
         // `return` each belong to their own line's expression rather than naming the keyword a member.
+        // A dot does NOT part them, so `obj.` newline `else` is still the member it spells.
         expect(
             snapshotComputedDynamicSpecifiers('const q = 1.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
         ).toEqual(['require(...)']);
         expect(
             snapshotComputedDynamicSpecifiers(
                 "function g() { const a = b\n return /[']/\n}\nconst load = require\nload(spec);"
+            )
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = obj.\nelse / require(spec) / y;')).toEqual([
+            'require(...)',
+        ]);
+        // A block comment's close is a `/` the `*` before it opens, so a division slash after a comment
+        // is no comment close: the regex after it keeps its region and the field below is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { const ratio = total/* bytes *//typeof /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
         // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.

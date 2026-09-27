@@ -5184,17 +5184,19 @@ function isPrecededByDotAccess(source: string, index: number): boolean {
  * member. A `/` after a member ends an expression and divides; only the bare keyword is followed by a
  * statement, so only the bare keyword can turn the `/` into a regex.
  *
- * The `.` and `#` spellings are adjacent by construction, so a line terminator ends the walk: a dot or
- * an identifier on an earlier line belongs to that line's expression (`const q = 1.` above
- * `typeof /['"]/`), not to this name. Comments and whitespace between the two spellings and the name
- * are crossed, provided the line does not end in between.
+ * The spellings differ on what a line terminator does. A `.` or a `#` keeps its member reading across
+ * the break — `obj.` newline `else / x` is still a member — while a plain identifier on an earlier
+ * line belongs to that line's expression (`const a = b` above `return /re/`), so only the identifier
+ * is checked against the line it stands on. Same-line comments and whitespace are crossed in both
+ * cases, and a block comment that itself spans lines ends the walk.
  */
 function isMemberNameAt(source: string, index: number): boolean {
     let cursor = index - 1;
     while (cursor >= 0) {
         const character = source.charAt(cursor);
         if (isLineTerminator(character)) {
-            return false;
+            cursor -= 1;
+            continue;
         }
         if (isWhiteSpace(character)) {
             cursor -= 1;
@@ -5208,7 +5210,10 @@ function isMemberNameAt(source: string, index: number): boolean {
             cursor = lineComment - 1;
             continue;
         }
-        if (character === '/') {
+        // A block comment's close is a `/` the `*` before it opens, exactly as the sibling member-dot
+        // judgement reads it: a bare `/` here is division, and jumping back from it would land on an
+        // identifier that does not name this keyword.
+        if (character === '/' && source.charAt(cursor - 1) === '*') {
             const open = source.lastIndexOf('/*', cursor - 1);
             if (open === -1) {
                 return false;
@@ -5221,17 +5226,32 @@ function isMemberNameAt(source: string, index: number): boolean {
             continue;
         }
         if (character === '.') {
-            // A spread's three dots are not member access, so the whole token is skipped and the token
-            // before the spread decides, exactly as `isPrecededByDotAccess` reads a dotted name.
-            if (source.charAt(cursor - 1) !== '.' || source.charAt(cursor - 2) !== '.') {
+            // A digit before the dot makes it a numeric literal's point (`1.`), not member access, and
+            // a spread's three dots are no member either; both skip the token so the word before it
+            // decides, exactly as `isPrecededByDotAccess` reads a dotted name.
+            const isSpread = source.charAt(cursor - 1) === '.' && source.charAt(cursor - 2) === '.';
+            const isNumericPoint = isDecimalDigit(source.charAt(cursor - 1));
+            if (!isSpread && !isNumericPoint) {
                 return true;
             }
-            cursor -= 3;
+            cursor = isSpread ? cursor - 3 : cursor - 2;
             continue;
         }
-        return character === '#' || isIdentifierContinue(character);
+        // A line terminator parts a plain identifier from this name — `const a = b` above
+        // `return /re/` is that line's expression — while the `.` and `#` spellings keep their member
+        // reading across the break, so only the identifier needs the line check.
+        if (isIdentifierContinue(character)) {
+            return !hasLineTerminatorBetween(source, cursor + 1, index);
+        }
+        return character === '#';
     }
     return false;
+}
+
+/** Whether a line terminator stands between `start` and `end`. */
+function hasLineTerminatorBetween(source: string, start: number, end: number): boolean {
+    const between = source.slice(start, end);
+    return between.includes('\n') || between.includes('\r');
 }
 
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
