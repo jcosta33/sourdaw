@@ -182,6 +182,12 @@ src/modules/Arrangement/useCases/getAgentBuiltinDeviceFactoryManifest.ts
 evidence/agent-campaign/manifest.json
   s_1c08b47ac3792f::t_c39b6b3e4f9749 527
   s_1c08b47ac3792f::t_22507e7f80ab3a 374
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_de982a13327c7d 1097-1137
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_76f69bdc600fcf 161-201
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_ee34a645312590 1097-1137
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -202,6 +208,14 @@ evidence/agent-campaign/manifest.json
         "tool": "claude",
         "id": "1107529e-8a47-4d9c-b3c8-cadd24a700a2",
         "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
       },
       "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
     },
