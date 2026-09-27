@@ -1,0 +1,23 @@
+scripts/test-health-gate-scripts.sh
+  s_fe7d9519d0226e::t_5fdcf099602904 529-530
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_fe7d9519d0226e::t_eaa60beb4e400c 1318-1322,3009
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_fe7d9519d0226e::t_3bbb24aa3a99b8 82-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4a4e16ded3d8a6fc9f59afbb5ca2397e6106210e",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
