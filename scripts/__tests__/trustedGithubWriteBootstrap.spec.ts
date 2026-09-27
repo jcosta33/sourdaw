@@ -691,6 +691,18 @@ describe('snapshotImportSpecifiers', () => {
                 'class H {\n  x = /(/;\n  y = 1;\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A division slash starts no literal, so two of them never pair across a real delimiter: the
+        // walk still reaches the class body's own `{` and the field after the division is a member.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const a = 1 / 2; class H { x = 3 / 4; loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { x = f(a / b); y = c / d; loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
         // A parameter property is read, and its own modifier run is what decides it: the loader default
         // reaches the read-back, while the same declaration without modifiers binds a local instead.
         expect(

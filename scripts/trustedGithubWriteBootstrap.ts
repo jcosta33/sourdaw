@@ -1276,7 +1276,10 @@ function enclosingOpenerBefore(source: string, index: number, openers: string): 
                 continue;
             }
             const regexOpen = regexLiteralOpenBackward(source, cursor);
-            if (regexOpen !== undefined) {
+            // Only an opener that stands at a regex position starts a literal. Two division slashes
+            // otherwise pair — `1 / 2 … 3 / 4` reads as a literal from the second `/` back to the
+            // first — and the walk then steps over the `{`, `(`, or `[` between them.
+            if (regexOpen !== undefined && canStartRegexLiteral(source, regexOpen)) {
                 cursor = regexOpen - 1;
                 continue;
             }
@@ -1715,7 +1718,10 @@ function isClassMemberPosition(source: string, index: number, bodyOpen: number):
                 continue;
             }
             const regexOpen = regexLiteralOpenBackward(source, cursor);
-            if (regexOpen !== undefined) {
+            // Only an opener that stands at a regex position starts a literal. Two division slashes
+            // otherwise pair — `1 / 2 … 3 / 4` reads as a literal from the second `/` back to the
+            // first — and the walk then steps over the `{`, `(`, or `[` between them.
+            if (regexOpen !== undefined && canStartRegexLiteral(source, regexOpen)) {
                 cursor = regexOpen - 1;
                 continue;
             }
@@ -3450,7 +3456,10 @@ function enclosingBraceOpen(source: string, keywordIndex: number): number | unde
         }
         if (character === '/') {
             const regexOpen = regexLiteralOpenBackward(source, cursor);
-            if (regexOpen !== undefined) {
+            // Only an opener that stands at a regex position starts a literal. Two division slashes
+            // otherwise pair — `1 / 2 … 3 / 4` reads as a literal from the second `/` back to the
+            // first — and the walk then steps over the `{`, `(`, or `[` between them.
+            if (regexOpen !== undefined && canStartRegexLiteral(source, regexOpen)) {
                 cursor = regexOpen - 1;
                 continue;
             }
@@ -3633,7 +3642,10 @@ function enclosingExpressionBodiedArrowOpen(source: string, index: number): numb
                 continue;
             }
             const regexOpen = regexLiteralOpenBackward(source, cursor);
-            if (regexOpen !== undefined) {
+            // Only an opener that stands at a regex position starts a literal. Two division slashes
+            // otherwise pair — `1 / 2 … 3 / 4` reads as a literal from the second `/` back to the
+            // first — and the walk then steps over the `{`, `(`, or `[` between them.
+            if (regexOpen !== undefined && canStartRegexLiteral(source, regexOpen)) {
                 cursor = regexOpen - 1;
                 continue;
             }
