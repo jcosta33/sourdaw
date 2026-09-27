@@ -1,7 +1,7 @@
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
 
-import type { DecodedBankLease } from './createDecodedBankResource';
+import type { DecodedBank, DecodedBankLease } from './createDecodedBankResource';
 
 export type { ManifestArticulation, ManifestZone, SampleManifest } from './sampleManifest';
 
@@ -16,6 +16,13 @@ type SampleBankHandshake = {
     uploadRequired: Promise<boolean>;
     completed: Promise<void>;
     cancel: () => void;
+    /**
+     * Tell the handshake that `buildZoneMap` has been posted for this load —
+     * the point from which the worklet may commit the bank before it ever
+     * sees a later abort. Must be called right after that `postMessage`, and
+     * only then: see `onAbort`'s use of the flag it sets.
+     */
+    markZoneMapPosted: () => void;
 };
 
 function allocateBankLoadToken(): number {
@@ -41,6 +48,15 @@ function createSampleBankHandshake(
 
     let uploadSettled = false;
     let completedSettled = false;
+    // Set once `buildZoneMap` has been posted for this load (see
+    // `markZoneMapPosted`) — from that point the worklet may already be
+    // committing, so `onAbort` stops settling this handshake locally.
+    let zoneMapPosted = false;
+    // Set once `onAbort` has deferred to the worklet instead of rejecting
+    // locally, so a later `sampleBankError` for this token is known to be the
+    // abort's own answer (reject with the abort's reason) rather than an
+    // unrelated commit failure (reject with the worklet's own message).
+    let awaitingWorkletAfterAbort = false;
     let resolveUpload = ignoreUploadDecision;
     let rejectUpload = ignoreError;
     let resolveCompleted = ignoreCompletion;
@@ -60,6 +76,10 @@ function createSampleBankHandshake(
     function cleanup(): void {
         nodePort.removeEventListener('message', onMessage);
         signal?.removeEventListener('abort', onAbort);
+    }
+    function resolveAbortReason(): Error {
+        const reason: unknown = signal?.reason;
+        return reason instanceof Error ? reason : new DOMException('Levain sample-bank load aborted', 'AbortError');
     }
     function reject(error: Error): void {
         if (!uploadSettled) {
@@ -105,6 +125,15 @@ function createSampleBankHandshake(
             return;
         }
         if (message.type === 'sampleBankError') {
+            if (awaitingWorkletAfterAbort) {
+                // This load's own abort matched a still-pending token on the
+                // worklet (levainProcessor.ts `abortSampleBank` case,
+                // ~:513-517 — `_rejectBankLoad`, ~:365-376) and lost the race
+                // to a commit; report the abort itself rather than the
+                // worklet's generic wording.
+                reject(resolveAbortReason());
+                return;
+            }
             const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
             reject(new Error(`Levain sample-bank load failed${detail}`));
         }
@@ -113,13 +142,31 @@ function createSampleBankHandshake(
         if (uploadSettled && completedSettled) {
             return;
         }
+        let delivered = true;
         try {
             nodePort.postMessage({ type: 'abortSampleBank', loadToken });
         } catch {
-            // The port may already be closed; local cancellation still settles.
+            // The port is already closed: no terminal message can ever
+            // arrive, so local cancellation must settle here regardless of
+            // whether `buildZoneMap` was posted.
+            delivered = false;
         }
-        const reason: unknown = signal?.reason;
-        reject(reason instanceof Error ? reason : new DOMException('Levain sample-bank load aborted', 'AbortError'));
+        if (zoneMapPosted && delivered) {
+            // Once `buildZoneMap` is posted the worklet may already be
+            // committing: `_buildZoneMap`/`_completeSampleBankLoad`
+            // (levainProcessor.ts ~:293-343, ~:285-291) clear
+            // `_bankLoadToken` and reply before this `abortSampleBank` is even
+            // dispatched, and a matched abort that lands after commit is
+            // already a no-op there too (~:513-517). Settling this promise
+            // locally now could report a rejection for a bank the engine goes
+            // on to commit, so only the worklet's own terminal answer —
+            // `sampleBankLoaded` (resolve), or `sampleBankError`/`error`/
+            // `disposed` (reject, all handled above) — may settle it from
+            // here on.
+            awaitingWorkletAfterAbort = true;
+            return;
+        }
+        reject(resolveAbortReason());
     }
 
     nodePort.addEventListener('message', onMessage);
@@ -128,7 +175,14 @@ function createSampleBankHandshake(
         onAbort();
     }
 
-    return { uploadRequired, completed, cancel: onAbort };
+    return {
+        uploadRequired,
+        completed,
+        cancel: onAbort,
+        markZoneMapPosted: () => {
+            zoneMapPosted = true;
+        },
+    };
 }
 
 export type LoadInstrumentFromManifestInput = {
@@ -158,6 +212,15 @@ export type LoadInstrumentFromManifestInput = {
  * @param signal Optional abort signal. When a newer load supersedes this one,
  *   the caller aborts it; per-load tokens fence any messages already queued for
  *   the superseded transaction from the replacement bank.
+ * @returns The decoded bank the worklet committed, or undefined when the
+ *   caller's own pre-flight checks abort this load before it ever asks the
+ *   worklet to negotiate a bank (a superseded load resolves rather than
+ *   throwing; see the `signal` fencing above). Once `buildZoneMap` has been
+ *   posted, an abort no longer settles this promise locally — the worklet may
+ *   already be delivering its commit — so only the worklet's own terminal
+ *   answer settles it from there: `sampleBankLoaded` resolves with the bank
+ *   (even though aborted), and `sampleBankError`, `error`, or `disposed`
+ *   rejects with the abort's reason or the worklet's own failure.
  */
 export async function loadInstrumentFromManifest({
     manifestUrl,
@@ -167,7 +230,7 @@ export async function loadInstrumentFromManifest({
     lod = DEFAULT_LOD,
     onProgress,
     signal,
-}: LoadInstrumentFromManifestInput): Promise<void> {
+}: LoadInstrumentFromManifestInput): Promise<DecodedBank | undefined> {
     let lease: DecodedBankLease;
     try {
         lease = await decodedBankResource.acquire({
@@ -180,13 +243,13 @@ export async function loadInstrumentFromManifest({
         });
     } catch (error) {
         if (signal?.aborted) {
-            return;
+            return undefined;
         }
         throw error;
     }
     if (signal?.aborted) {
         lease.release();
-        return;
+        return undefined;
     }
 
     const bank = lease.bank;
@@ -310,8 +373,14 @@ export async function loadInstrumentFromManifest({
             numArticulations: bank.numArticulations,
             numMics: bank.numMics,
         });
+        // From here the worklet may commit before it ever sees a later abort
+        // (see `onAbort`'s use of this flag) — tell the handshake so a
+        // superseding abort waits for the worklet's own terminal message
+        // instead of rejecting a load the engine goes on to commit.
+        handshake.markZoneMapPosted();
         await handshake.completed;
         completed = true;
+        return bank;
     } finally {
         if (handshake && !completed) {
             handshake.cancel();

@@ -8,7 +8,7 @@ import {
     type LoadDecodedBankInput,
 } from '../createDecodedBankResource';
 
-import type { InstrumentId } from '../../../models/LevainPatch';
+import type { InstrumentId, MicPositionType } from '../../../models/LevainPatch';
 import type { SampleManifest } from '../sampleManifest';
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -78,21 +78,25 @@ function createManifest({
     articulationId = 0,
     files,
     instrumentId = 'violin-1',
+    micId = 0,
+    micPositions = ['close'],
 }: {
     articulationId?: number;
     files: string[];
     instrumentId?: InstrumentId;
+    micId?: number;
+    micPositions?: readonly MicPositionType[];
 }): SampleManifest {
     return {
         version: 1,
         instrumentId,
         sampleRate: 48_000,
-        micPositions: ['close'],
+        micPositions,
         articulations: [
             {
                 type: 'sustain',
                 id: articulationId,
-                zones: files.map(createZone),
+                zones: files.map((file) => ({ ...createZone(file), micId })),
             },
         ],
         legatoTransitions: [],
@@ -157,6 +161,87 @@ describe('createDecodedBankResource', () => {
             sampleLoads: 1,
             resolvedBanks: 1,
         });
+    });
+
+    it("slices the loaded mic position names to the load's maxMics cap", async () => {
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi
+                .fn()
+                .mockResolvedValue(createManifest({ files: ['a.wav'], micPositions: ['close', 'room'] })),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const bank = await loadBank(resource, { ...DEFAULT_INPUT, lod: { maxMics: 1, maxRoundRobins: 0 } });
+
+        expect(bank.micPositions).toEqual(['close']);
+    });
+
+    it('marks declared positions without note-on zones unavailable when the load is uncapped', async () => {
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi
+                .fn()
+                .mockResolvedValue(createManifest({ files: ['a.wav'], micPositions: ['close', 'room'] })),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const bank = await loadBank(resource);
+
+        expect(bank.micPositions).toEqual(['close', null]);
+    });
+
+    it('keeps a playable mic at engine index 1 without exposing absent mic 0', async () => {
+        const manifest = createManifest({ files: ['room.wav'], micId: 1, micPositions: ['close', 'room'] });
+        const resource = createDecodedBankResource({
+            loadManifest: vi.fn().mockResolvedValue(manifest),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const bank = await loadBank(resource);
+
+        expect(bank.numMics).toBe(2);
+        expect(bank.zones.map(({ zone }) => zone.micId)).toEqual([1]);
+        expect(bank.micPositions).toEqual([null, 'room']);
+    });
+
+    it('exposes no mic when the LOD removes its only playable note-on zone', async () => {
+        const manifest = createManifest({ files: ['room.wav'], micId: 1, micPositions: ['close', 'room'] });
+        const resource = createDecodedBankResource({
+            loadManifest: vi.fn().mockResolvedValue(manifest),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        await expect(loadBank(resource, { ...DEFAULT_INPUT, lod: { maxMics: 1, maxRoundRobins: 0 } })).rejects.toThrow(
+            'no playable zones'
+        );
+    });
+
+    it('does not count a retained release-only zone as a playable mic', async () => {
+        const base = createManifest({ files: ['note.wav'], micPositions: ['close', 'room'] });
+        const manifest: SampleManifest = {
+            ...base,
+            articulations: [
+                {
+                    ...base.articulations[0]!,
+                    zones: [
+                        { ...createZone('note.wav'), rrPos: 1 },
+                        { ...createZone('release.wav'), micId: 1, isRelease: true },
+                    ],
+                },
+            ],
+        };
+        const resource = createDecodedBankResource({
+            loadManifest: vi.fn().mockResolvedValue(manifest),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const bank = await loadBank(resource, { ...DEFAULT_INPUT, lod: { maxMics: 2, maxRoundRobins: 1 } });
+
+        expect(bank.zones.map(({ zone }) => zone.file)).toEqual(['release.wav']);
+        expect(bank.micPositions).toEqual([null, null]);
     });
 
     it('publishes a new worklet bank identity after cache invalidation', async () => {

@@ -646,6 +646,7 @@ describe('lane publish', () => {
                 'githubAppIdentity.ts',
                 'prContract.ts',
                 'testInstructions.ts',
+                'testInstructionVocabulary.ts',
                 'stackedLanes.ts',
                 'reviewDiffSummary.ts',
                 'wasm-artifacts.ts',

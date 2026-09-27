@@ -15,11 +15,13 @@ const DEFAULT_DOCK_REQUESTED_HEIGHT = '360px';
 const MIN_DOCK_HEIGHT = 280;
 const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
 const CONTROL_VISIBILITY_TOLERANCE = 0.5;
+// Snap pills are labeled by note value (#4801): grids 1, 0.5, 0.25, 0.125
+// beats render as the 1/4, 1/8, 1/16, 1/32 pills, in this order.
 const TOOLBAR_CONTROLS = [
-    '1',
-    '1/2',
     '1/4',
     '1/8',
+    '1/16',
+    '1/32',
     'Scale root note',
     'Scale type',
     'Toggle fold to scale',
@@ -457,7 +459,11 @@ function isFullyVisible(inner: Rect, outer: Rect): boolean {
 
 function expectedToolbarControls(expressionVisible: boolean): string[] {
     const zoom = requireValue(TOOLBAR_CONTROLS.at(-1), 'Piano roll Zoom control');
-    return [...TOOLBAR_CONTROLS.slice(0, -1), ...(expressionVisible ? ['Active expression lane'] : []), zoom];
+    const controls: string[] = [...TOOLBAR_CONTROLS.slice(0, -1)];
+    if (expressionVisible) {
+        controls.push('Active expression lane');
+    }
+    return [...controls, zoom];
 }
 
 function assertToolbarFocus(state: ToolbarState, expectedName: string): void {
@@ -548,7 +554,8 @@ async function assertToolbarKeyboardTraversal(
     expect(state.rootScrollLeft).toBe(0);
     expect(state.gridScrollLeft).toBe(0);
 
-    const snap = frame.getByRole('button', { name: '1', exact: true });
+    // The 1-beat grid (GRID_SNAP) is the 1/4-note pill.
+    const snap = frame.getByRole('button', { name: '1/4', exact: true });
     await snap.click();
     await expect(snap).toHaveAttribute('aria-pressed', 'true');
 }

@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { DEFAULT_BAND, DEFAULT_PATCH, type BacteriaPatch } from '../../../models/BacteriaPatch';
 import { getBacteriaState, loadBacteriaPatch } from '../../../stores/bacteriaStore';
+import { createFlushParam } from '../createFlushParam';
+import { paramBatcher } from '../helpers';
 import { loadBacteriaPatchWithAudio } from '../loadBacteriaPatchWithAudio';
 
 vi.mock('../../../stores/bacteriaStore', () => ({
@@ -218,5 +220,78 @@ describe('loadBacteriaPatchWithAudio — engine sync', () => {
         loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
 
         expect(loadBacteriaPatch).toHaveBeenCalledWith(DEVICE_ID, patch);
+    });
+
+    describe('pending knob-drag rAF after a patch load', () => {
+        let rafQueue: FrameRequestCallback[];
+
+        beforeEach(() => {
+            paramBatcher.cancelAll();
+            rafQueue = [];
+            vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback): number => {
+                rafQueue.push(cb);
+                return rafQueue.length;
+            });
+            vi.stubGlobal('cancelAnimationFrame', (id: number): void => {
+                rafQueue[id - 1] = () => {};
+            });
+        });
+
+        afterEach(() => {
+            paramBatcher.cancelAll();
+            vi.unstubAllGlobals();
+        });
+
+        function flushAnimationFrames(): void {
+            const queued = rafQueue;
+            rafQueue = [];
+            for (const cb of queued) {
+                cb(0);
+            }
+        }
+
+        // The same flush the drag path uses, so a surviving drag frame lands in
+        // updateDeviceParam exactly as a real knob drag would.
+        function dragFlushParam(deps: ReturnType<typeof makeDeps>) {
+            return createFlushParam(
+                deps.updateDeviceParam,
+                deps.persistDeviceParam,
+                deps.resolveEligibleDeviceWriteTarget
+            );
+        }
+
+        it('cancels the loaded device key so updateDeviceParam receives the loaded value last', () => {
+            const deps = makeDeps();
+            const flushParam = dragFlushParam(deps);
+            const patch: BacteriaPatch = { ...DEFAULT_PATCH, mix: 0.9 };
+
+            // A knob drag scheduled its rAF frame; the load lands before it flushes.
+            paramBatcher.schedule(`${DEVICE_ID}:mix`, { deviceId: DEVICE_ID, key: 'mix', value: 99 }, flushParam);
+
+            loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+            flushAnimationFrames();
+
+            const mixValues = pushedParams(deps)
+                .filter(([key]) => key === 'mix')
+                .map(([, value]) => value);
+            expect(mixValues.at(-1)).toBe(0.9);
+        });
+
+        it('leaves a drag pending on another device flushing', () => {
+            const deps = makeDeps();
+            const otherFlush = vi.fn();
+            const patch: BacteriaPatch = { ...DEFAULT_PATCH, mix: 0.9 };
+
+            paramBatcher.schedule('other-dev:mix', { deviceId: 'other-dev', key: 'mix', value: 99 }, otherFlush);
+
+            loadBacteriaPatchWithAudio(deps as never)(DEVICE_ID, patch);
+            flushAnimationFrames();
+
+            expect(otherFlush).toHaveBeenCalledWith('other-dev:mix', {
+                deviceId: 'other-dev',
+                key: 'mix',
+                value: 99,
+            });
+        });
     });
 });

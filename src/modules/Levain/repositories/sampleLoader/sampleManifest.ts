@@ -2,8 +2,10 @@ import {
     ARTICULATION_ID_BY_TYPE,
     isArticulationType,
     isInstrumentId,
+    isMicPositionType,
     type ArticulationType,
     type InstrumentId,
+    type MicPositionType,
 } from '../../models/LevainPatch';
 
 export type ManifestZone = {
@@ -95,7 +97,7 @@ export type SampleManifest = {
     instrumentId: InstrumentId;
     sampleRate: number;
     articulations: readonly ManifestArticulation[];
-    micPositions: readonly string[];
+    micPositions: readonly MicPositionType[];
     legatoTransitions: readonly ManifestLegatoTransition[];
 };
 
@@ -372,13 +374,17 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (sampleRate === undefined) {
         throw new TypeError('Levain sample manifest sampleRate must be a finite 32-bit float greater than zero');
     }
+    const micPositionCandidates = value.micPositions;
     if (
-        !Array.isArray(value.micPositions) ||
-        value.micPositions.length === 0 ||
-        value.micPositions.length > MAX_MICS ||
-        !value.micPositions.every((position) => typeof position === 'string')
+        !Array.isArray(micPositionCandidates) ||
+        micPositionCandidates.length === 0 ||
+        micPositionCandidates.length > MAX_MICS ||
+        !micPositionCandidates.every((position) => typeof position === 'string')
     ) {
         throw new TypeError(`Levain sample manifest micPositions must contain 1 through ${MAX_MICS} microphone names`);
+    }
+    if (!micPositionCandidates.every(isMicPositionType)) {
+        throw new TypeError('Levain sample manifest micPositions must name known microphone positions');
     }
     if (!Array.isArray(value.articulations) || value.articulations.length === 0) {
         throw new TypeError('Levain sample manifest articulations must contain at least one articulation');
@@ -414,7 +420,7 @@ export function parseSampleManifest(value: unknown): SampleManifest {
         )
     );
 
-    const micPositions = Object.freeze([...value.micPositions]);
+    const micPositions = Object.freeze([...micPositionCandidates]);
     const articulations = Object.freeze(
         value.articulations.map((articulation, index) => parseArticulation(articulation, `articulations[${index}]`))
     );

@@ -18,7 +18,7 @@ import { Row, Stack } from '#/components/layout';
 import { type MicPositionState } from '../../models/LevainPatch';
 
 type MicBlendSliderProps = {
-    micPositions: MicPositionState[];
+    micPositions: (MicPositionState | null)[];
     showFull?: boolean;
     /** Forward mic param changes to the audio engine. Provided by the parent view. */
     onSendMicParam: (micIndex: number, param: string, value: number) => void;
@@ -26,19 +26,18 @@ type MicBlendSliderProps = {
     onUpdateMicPosition: (index: number, updates: Partial<MicPositionState>) => void;
 };
 
-export const MicBlendSlider = ({
+/** Full mic mixer: one Fader/toggle/pan strip per loaded mic position. */
+const FullMicMixer = ({
     micPositions,
-    showFull,
     onSendMicParam,
     onUpdateMicPosition,
-}: MicBlendSliderProps): ReactElement => {
-    if (showFull) {
-        // Full mic mixer with faders
-        return (
-            <Stack gap={3} className="max-w-[400px]">
-                <DawPluginSectionHeader title="Mic Positions" titleClassName="text-muted-foreground" />
-                <Row align="end" gap={3}>
-                    {micPositions.map((mic, i) => (
+}: Omit<MicBlendSliderProps, 'showFull'>): ReactElement => (
+    <Stack gap={3} className="max-w-[400px]">
+        <DawPluginSectionHeader title="Mic Positions" titleClassName="text-muted-foreground" />
+        <Row align="end" gap={3}>
+            {micPositions.map(
+                (mic, i) =>
+                    mic && (
                         <Stack align="center" gap={1} key={i}>
                             <DawPluginToggle
                                 pressed={mic.enabled}
@@ -87,18 +86,42 @@ export const MicBlendSlider = ({
                                 {mic.name}
                             </span>
                         </Stack>
-                    ))}
-                </Row>
-            </Stack>
+                    )
+            )}
+        </Row>
+    </Stack>
+);
+
+export const MicBlendSlider = ({
+    micPositions,
+    showFull,
+    onSendMicParam,
+    onUpdateMicPosition,
+}: MicBlendSliderProps): ReactElement => {
+    if (showFull) {
+        return (
+            <FullMicMixer
+                micPositions={micPositions}
+                onSendMicParam={onSendMicParam}
+                onUpdateMicPosition={onUpdateMicPosition}
+            />
         );
     }
 
-    // Compact: single Close/Room blend knob.
-    // Close is mic index 0; Room is the 'room'-type position (index 2 in the
-    // default patch) — the same mic the Space macro drives, so the two controls
-    // agree instead of fighting over a different room mic.
-    const closeVol = micPositions[0]?.volume ?? 0.8;
-    const roomVol = micPositions.length > 2 ? (micPositions[2]?.volume ?? 0.3) : 0.3;
+    // Compact: single Close/Room blend knob. Resolve both mics by their
+    // `type` field — never by a fixed index — because the loaded bank decides
+    // which array position (if any) carries `room`; the Space macro resolves
+    // the same way, so the two controls agree instead of fighting over a
+    // different room mic.
+    const closeIndex = micPositions.findIndex((mic) => mic?.type === 'close');
+    const roomIndex = micPositions.findIndex((mic) => mic?.type === 'room');
+    if (closeIndex === -1 || roomIndex === -1) {
+        // A blend needs both endpoints; the full mixer still controls the
+        // available position directly.
+        return <></>;
+    }
+    const closeVol = micPositions[closeIndex]?.volume ?? 0.8;
+    const roomVol = micPositions[roomIndex]?.volume ?? 0.3;
     const total = closeVol + roomVol;
     // Guard the zero case explicitly: when both mics are silent there is no
     // meaningful blend, so sit at the neutral midpoint rather than biasing to
@@ -118,13 +141,11 @@ export const MicBlendSlider = ({
                         // Room rose, so reading `blend` back never matched `v`.
                         const newCloseVol = 1.0 - v;
                         const newRoomVol = v;
-                        onUpdateMicPosition(0, { volume: newCloseVol });
-                        onSendMicParam(0, 'volume', newCloseVol);
-                        if (micPositions.length > 2) {
-                            onUpdateMicPosition(2, { volume: newRoomVol, enabled: newRoomVol > 0.05 });
-                            onSendMicParam(2, 'volume', newRoomVol);
-                            onSendMicParam(2, 'enabled', newRoomVol > 0.05 ? 1.0 : 0.0);
-                        }
+                        onUpdateMicPosition(closeIndex, { volume: newCloseVol });
+                        onSendMicParam(closeIndex, 'volume', newCloseVol);
+                        onUpdateMicPosition(roomIndex, { volume: newRoomVol, enabled: newRoomVol > 0.05 });
+                        onSendMicParam(roomIndex, 'volume', newRoomVol);
+                        onSendMicParam(roomIndex, 'enabled', newRoomVol > 0.05 ? 1.0 : 0.0);
                     }}
                     tone="amber"
                     min={0}

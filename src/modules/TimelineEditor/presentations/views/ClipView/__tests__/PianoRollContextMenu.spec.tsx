@@ -239,7 +239,7 @@ describe('PianoRollContextMenu', () => {
 
     it('should quantize notes through the AppAction boundary', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
-        fireEvent.click(screen.getAllByText('1/4')[0]!);
+        fireEvent.click(screen.getAllByText('1/16')[0]!);
 
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNotes',
@@ -413,9 +413,9 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Quantize Length')).toBeInTheDocument();
 
-        const quarterButtons = screen.getAllByText('1/4');
-        expect(quarterButtons).toHaveLength(2);
-        fireEvent.click(quarterButtons[1]!);
+        const sixteenthButtons = screen.getAllByText('1/16');
+        expect(sixteenthButtons).toHaveLength(2);
+        fireEvent.click(sixteenthButtons[1]!);
 
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNoteLengths',
@@ -480,8 +480,8 @@ describe('PianoRollContextMenu', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
 
-        const quarterButtons = screen.getAllByText('1/4');
-        fireEvent.click(quarterButtons[1]!);
+        const sixteenthButtons = screen.getAllByText('1/16');
+        fireEvent.click(sixteenthButtons[1]!);
         expect(defaultProps.onClose).toHaveBeenCalled();
 
         vi.mocked(defaultProps.onClose).mockClear();
@@ -506,15 +506,15 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={selectedNoteIds} />);
 
         // Quantize notes
-        fireEvent.click(screen.getAllByText('1/4')[0]!);
+        fireEvent.click(screen.getAllByText('1/16')[0]!);
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNotes',
             payload: { clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] },
         });
 
         // Quantize note lengths
-        const quarterButtons = screen.getAllByText('1/4');
-        fireEvent.click(quarterButtons[1]!);
+        const sixteenthButtons = screen.getAllByText('1/16');
+        fireEvent.click(sixteenthButtons[1]!);
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNoteLengths',
             payload: { clipId: 'clip-1', gridSize: 0.25, noteIds: ['n1', 'n2'] },

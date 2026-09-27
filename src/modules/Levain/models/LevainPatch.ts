@@ -173,6 +173,32 @@ export type ArticulationEntry = {
 export type MicPositionType =
     'close' | 'decca-tree' | 'room' | 'outrigger' | 'balcony' | 'leader' | 'spot' | 'surround';
 
+const MIC_POSITION_TYPES: readonly MicPositionType[] = [
+    'close',
+    'decca-tree',
+    'room',
+    'outrigger',
+    'balcony',
+    'leader',
+    'spot',
+    'surround',
+];
+
+export function isMicPositionType(value: unknown): value is MicPositionType {
+    return typeof value === 'string' && (MIC_POSITION_TYPES as readonly string[]).includes(value);
+}
+
+export const MIC_POSITION_DISPLAY_NAMES: Record<MicPositionType, string> = {
+    close: 'Close',
+    'decca-tree': 'Decca Tree',
+    room: 'Room',
+    outrigger: 'Outrigger',
+    balcony: 'Balcony',
+    leader: 'Leader',
+    spot: 'Spot',
+    surround: 'Surround',
+};
+
 export type MicPositionState = {
     type: MicPositionType;
     name: string;

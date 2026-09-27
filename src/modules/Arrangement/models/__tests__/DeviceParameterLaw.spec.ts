@@ -293,8 +293,8 @@ describe('quantiseDeviceParameterValue', () => {
         const steppedDevices = BUILTIN_PLUGINS.filter((plugin) =>
             plugin.parameters.some((parameter) => parameter.type !== 'float')
         );
-        // 29 since Grand Boule declared `micPosition` as an `int`; it was 28.
-        expect(steppedDevices.length).toBe(29);
+        // 28 since Yeast undeclared its arpeggiator parameters (#4650); it was 29.
+        expect(steppedDevices.length).toBe(28);
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('crust');
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('builtin-crumbs');
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('grand-boule');

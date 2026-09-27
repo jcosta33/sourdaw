@@ -31,18 +31,21 @@ const ToolbarDivider = (): ReactElement => (
     />
 );
 
-/** Label for one snap-value button ("1", "1/2", "1/4", "1/8"). */
+/**
+ * Note-value label for one snap-value button: gridSize is beats in 4/4, so
+ * the 1-beat grid is the 1/4 note, matching the context menus (#4801).
+ */
 const snapValueLabel = (value: number): string => {
     if (value === 1) {
-        return '1';
-    }
-    if (value === 0.5) {
-        return '1/2';
-    }
-    if (value === 0.25) {
         return '1/4';
     }
-    return '1/8';
+    if (value === 0.5) {
+        return '1/8';
+    }
+    if (value === 0.25) {
+        return '1/16';
+    }
+    return '1/32';
 };
 
 type PianoRollChordType =

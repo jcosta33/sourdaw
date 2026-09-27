@@ -42,6 +42,7 @@ import { DEFAULT_NOTE_VELOCITY, HIGH_RESOLUTION_MAX, MAX_MIDI_DATA_7BIT, PITCH_B
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
+import { getMpeExpressionLanesForDeviceTypes } from '../../helpers/mpeAvailability';
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
 import {
     ROW_HEIGHT,
@@ -76,6 +77,17 @@ function areClipLengthsEqual(a: Record<string, number>, b: Record<string, number
         return false;
     }
     return ids.every((id) => a[id] === b[id]);
+}
+
+/** Structural equality for the edited track's device-type list, so a `trackStore` notification that leaves the instrument unchanged cannot re-render the roll. */
+function areDeviceTypesEqual(a: readonly string[], b: readonly string[]): boolean {
+    if (a === b) {
+        return true;
+    }
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every((type, index) => type === b[index]);
 }
 
 type PianoRollProps = {
@@ -234,6 +246,16 @@ export const PianoRoll = ({
         },
         areClipLengthsEqual
     );
+    // Device types of the track being edited — the per-track truth the
+    // expression-lane selector offers MPE lanes from: a lane appears only
+    // when the track's own instrument sounds it (see `mpeExpressionLanes`
+    // below, and AutomationLane's identical gating on the same registry).
+    const trackDeviceTypes = useStoreSelector(
+        trackStore,
+        (state) =>
+            state?.tracks.find((candidate) => candidate.id === trackId)?.devices.map((device) => device.type) ?? [],
+        areDeviceTypesEqual
+    );
     // Extent is derived from the primary clip and every opened clip together
     // — see `getPianoRollExtentBeats` in pianoRollConstants.ts. Opened clips'
     // notes are drawn in this same coordinate space (`openedClipNotes` below,
@@ -383,6 +405,10 @@ export const PianoRoll = ({
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
+    // MPE lanes the edited track's instrument actually sounds — the toolbar's
+    // documented per-track truth (audit MD-2), derived from the same engine
+    // registry `AutomationLane` gates its lanes on.
+    const mpeExpressionLanes = getMpeExpressionLanesForDeviceTypes(trackDeviceTypes);
 
     return (
         <Stack grow className="min-w-0 overflow-hidden">
@@ -424,6 +450,7 @@ export const PianoRoll = ({
                     onToggleExpressionView={() => setShowExpressionView((param) => !param)}
                     activeExpressionLane={activeExpressionLane}
                     onActiveExpressionLaneChange={setActiveExpressionLane}
+                    mpeExpressionLanes={mpeExpressionLanes}
                 />
             </div>
             <Stack grow className="min-h-0 overflow-hidden">

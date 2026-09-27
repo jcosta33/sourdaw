@@ -930,6 +930,14 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
         reason: 'Release-sample trigger settings inside the instrument. No descriptor parameter id among its keys.',
     },
     {
+        file: 'src/modules/Levain/models/LevainPatch.ts',
+        exportName: 'MIC_POSITION_DISPLAY_NAMES',
+        reason:
+            'A microphone-position type to display-label lookup (`close` → `Close`, …) for the Stage card. Its ' +
+            'keys are `MicPositionType` names, not one of Levain’s six descriptor parameter ids, and its values ' +
+            'are strings, so it declares no numeric default at all.',
+    },
+    {
         file: 'src/modules/Fermenter/models/FermenterDspParam.ts',
         exportName: 'FERMENTER_DSP_PARAM_OVERRIDES',
         reason:

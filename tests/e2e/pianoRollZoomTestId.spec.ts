@@ -42,27 +42,28 @@ test.describe('Piano roll zoom & snap — test-id targeted', () => {
         }
     });
 
-    test('snap buttons are present (1, 1/2, 1/4, 1/8)', async ({ page }) => {
-        // The snap buttons use visible text labels.
-        for (const label of ['1', '1/2', '1/4', '1/8']) {
+    test('snap buttons are present (1/4, 1/8, 1/16, 1/32)', async ({ page }) => {
+        // The snap buttons use visible note-value labels: grids 1, 0.5, 0.25,
+        // 0.125 beats are the 1/4, 1/8, 1/16, 1/32 notes (#4801).
+        for (const label of ['1/4', '1/8', '1/16', '1/32']) {
             const btn = page.getByRole('button', { name: label, exact: true });
             await expect(btn).toBeVisible({ timeout: 5000 });
         }
     });
 
     test('clicking a snap button changes the active variant', async ({ page }) => {
-        // 1/4 should be active by default (gridSnap 0.25).
-        const snap14 = page.getByRole('button', { name: '1/4', exact: true });
-        await expect(snap14).toBeVisible({ timeout: 5000 });
+        // 1/16 should be active by default (gridSnap 0.25 beats = 1/16 note).
+        const snap16 = page.getByRole('button', { name: '1/16', exact: true });
+        await expect(snap16).toBeVisible({ timeout: 5000 });
 
-        // Click 1/8.
-        const snap18 = page.getByRole('button', { name: '1/8', exact: true });
-        await snap18.click();
+        // Click 1/32 (gridSnap 0.125 beats).
+        const snap32 = page.getByRole('button', { name: '1/32', exact: true });
+        await snap32.click();
         await page.waitForTimeout(200);
 
-        // 1/8 should now be active (secondary variant).
-        const variant18 = await snap18.getAttribute('data-variant');
-        const variant14 = await snap14.getAttribute('data-variant');
-        expect(variant18).not.toBe(variant14);
+        // 1/32 should now be active (secondary variant).
+        const variant32 = await snap32.getAttribute('data-variant');
+        const variant16 = await snap16.getAttribute('data-variant');
+        expect(variant32).not.toBe(variant16);
     });
 });

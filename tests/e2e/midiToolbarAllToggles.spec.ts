@@ -83,21 +83,23 @@ test.describe('Piano roll toolbar toggles', () => {
         await expect(chordType).toHaveCount(0);
     });
 
-    test('Ghost starts on and Snap 1/8 becomes the exclusive snap', async ({ page }) => {
+    test('Ghost starts on and Snap 1/32 becomes the exclusive snap', async ({ page }) => {
         const ghost = page.getByRole('button', { name: 'Toggle ghost notes', exact: true });
-        const snap14 = page.getByRole('button', { name: '1/4', exact: true });
-        const snap18 = page.getByRole('button', { name: '1/8', exact: true });
+        // Note-value labels (#4801): the default gridSnap 0.25 beats is the
+        // 1/16 pill; the clicked gridSnap 0.125 beats is the 1/32 pill.
+        const snap16 = page.getByRole('button', { name: '1/16', exact: true });
+        const snap32 = page.getByRole('button', { name: '1/32', exact: true });
 
         await expect(ghost).toHaveAttribute('aria-pressed', 'true');
         await ghost.click();
         await expect(ghost).not.toHaveAttribute('aria-pressed', 'true');
 
-        await expect(snap14).toHaveAttribute('aria-pressed', 'true');
-        await expect(snap18).not.toHaveAttribute('aria-pressed', 'true');
+        await expect(snap16).toHaveAttribute('aria-pressed', 'true');
+        await expect(snap32).not.toHaveAttribute('aria-pressed', 'true');
 
-        await snap18.click();
-        await expect(snap18).toHaveAttribute('aria-pressed', 'true');
-        await expect(snap14).not.toHaveAttribute('aria-pressed', 'true');
+        await snap32.click();
+        await expect(snap32).toHaveAttribute('aria-pressed', 'true');
+        await expect(snap16).not.toHaveAttribute('aria-pressed', 'true');
     });
 
     test('scale type changes from chromatic to major', async ({ page }) => {

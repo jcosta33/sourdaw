@@ -237,16 +237,33 @@ describe('loadCrustPatchWithAudio', () => {
         expect(updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'oversampling', 2);
     });
 
+    it('leaves a drag pending on another device flushing when this device loads', () => {
+        // Per-key cancellation must not leak across devices: a frame queued for
+        // a different Crust device is not this load's to cancel.
+        const otherFlush = vi.fn();
+
+        paramBatcher.schedule('other-dev:gain', { deviceId: 'other-dev', key: 'gain', value: 99 }, otherFlush);
+
+        loadCrustPatchWithAudio(DEVICE_ID, { ...DEFAULT_CRUST_PATCH, gain: 3 });
+        runPendingRaf();
+
+        expect(otherFlush).toHaveBeenCalledWith('other-dev:gain', {
+            deviceId: 'other-dev',
+            key: 'gain',
+            value: 99,
+        });
+    });
+
     it.each(['missing', 'ineligible'] as const)(
         'rejects a %s owner before patch, cancellation, or engine effects',
         (status) => {
             mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({ status });
-            const cancelAll = vi.spyOn(paramBatcher, 'cancelAll');
+            const cancel = vi.spyOn(paramBatcher, 'cancel');
 
             loadCrustPatchWithAudio(DEVICE_ID, DEFAULT_CRUST_PATCH);
 
             expect(mocks.loadCrustPatch).not.toHaveBeenCalled();
-            expect(cancelAll).not.toHaveBeenCalled();
+            expect(cancel).not.toHaveBeenCalled();
             expect(updateDeviceParam).not.toHaveBeenCalled();
             expect(persistDeviceParam).not.toHaveBeenCalled();
         }

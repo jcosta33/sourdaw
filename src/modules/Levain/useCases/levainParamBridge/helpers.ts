@@ -7,12 +7,18 @@ import {
 import { type sendNativeLiveMidiControl, type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
+import {
+    getArticulationId,
+    isArticulationType,
+    type LevainPatch,
+    type MicPositionType,
+} from '../../models/LevainPatch';
 import {
     defaultLevainState,
     levainStore,
     setCurrentArticulation,
     setLevainParam,
+    type setLoadedMicPositions,
     setMacro,
 } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
@@ -35,10 +41,21 @@ type SampleLoadOperation = {
     successor?: SampleLoadOperation;
 };
 
+type CommittedBank = {
+    sequence: number;
+    micPositions: readonly (MicPositionType | null)[];
+};
+
 export type LevainBridgeDeps = {
     getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
+    /**
+     * The panel's loaded-bank readout. `loadSamplesForInstrument` is the only
+     * caller — see its own comment for why the shared `autoLoadLevainSamples`
+     * loader must not write this itself.
+     */
+    setLoadedMicPositions: typeof setLoadedMicPositions;
     resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
     /**
      * The native session's door for values already spelled in the engine's own
@@ -73,6 +90,82 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // the previous one so the last-started load — not the last-finishing one —
     // wins the worklet zone map and the UI progress.
     const loadOperations = new Map<string, SampleLoadOperation>();
+    // Per-device record of the mic names the engine last actually committed.
+    // `publishLoadedMicPositions` is the only reader — it derives the panel's
+    // `loadedMicPositions` from this plus `latestLoadState` rather than from
+    // any single settlement. `sequence` orders commits across overlapping
+    // loads so a late-resolving earlier load can never clobber a later one's
+    // commit — see `recordCommittedBank`. Unregistering the device deletes
+    // its entry: a re-registration starts with no committed bank.
+    const committedBanks = new Map<string, CommittedBank>();
+    // Per-device bookkeeping for whichever load started most recently and
+    // whether it has settled (resolved or rejected) yet. `publishLoadedMicPositions`
+    // reads this to decide between clearing the panel's rows (unsettled) and
+    // showing the committed bank (settled). Unregistering the device deletes
+    // its entry.
+    const latestLoadState = new Map<string, { sequence: number; settled: boolean }>();
+    let nextLoadSequence = 0;
+
+    // A resolved bank from `autoLoadLevainSamples` always means the worklet's
+    // handshake already committed it in the engine (see
+    // `loadInstrumentFromManifest`'s `sampleBankLoaded` message), even when
+    // the caller's own signal aborted afterward because a newer load
+    // superseded it. Record that commitment whenever the registration that
+    // started the load is still the device's current one — see the call
+    // site's `activePorts` check, which stops a load whose device was
+    // unregistered (and possibly re-registered under the same id) before its
+    // reply arrived from resurrecting a dead node's bank. Never let an
+    // earlier-started load's late resolution overwrite a later one's —
+    // `sequence` is assigned once per call to `loadSamplesForInstrument`, in
+    // start order, so the guard below is a last-committed-wins check on
+    // start order rather than resolution order.
+    function recordCommittedBank(
+        deviceId: string,
+        sequence: number,
+        micPositions: readonly (MicPositionType | null)[]
+    ): void {
+        const existing = committedBanks.get(deviceId);
+        if (existing && existing.sequence >= sequence) {
+            return;
+        }
+        committedBanks.set(deviceId, { sequence, micPositions });
+    }
+
+    // Marks `sequence`'s load settled if it is still the device's
+    // most-recently-started one, and reports whether it was. A superseded
+    // load's own settlement never gets to flip this — the successor that
+    // superseded it already owns (or still holds) the flag.
+    function markLoadSettledIfCurrent(deviceId: string, sequence: number): boolean {
+        const latest = latestLoadState.get(deviceId);
+        if (!latest || latest.sequence !== sequence) {
+            return false;
+        }
+        latest.settled = true;
+        return true;
+    }
+
+    // The single writer of the panel's `loadedMicPositions`: every other call
+    // site in this bridge goes through this. No-ops for an unregistered
+    // device (`unregisterLevainDevice` already dropped its records). While
+    // the device's most-recently-started load has not yet settled, the panel
+    // must show no rows — reading the committed bank here instead would
+    // flash the *previous* bank during a new load. Once that load has
+    // settled (resolved or rejected), the committed bank is the truth: the
+    // engine only ever sounds what it last actually committed, regardless of
+    // how the load that got superseded, or the one that follows it, turns
+    // out.
+    function publishLoadedMicPositions(deviceId: string): void {
+        if (!activeDevices.has(deviceId)) {
+            return;
+        }
+        const latest = latestLoadState.get(deviceId);
+        if (!latest || !latest.settled) {
+            deps.setLoadedMicPositions(deviceId, null);
+            return;
+        }
+        const committed = committedBanks.get(deviceId);
+        deps.setLoadedMicPositions(deviceId, committed ? committed.micPositions : null);
+    }
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
@@ -176,11 +269,52 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             return Promise.resolve('failed');
         }
 
+        // This is the only route that writes `loadedMicPositions`: the
+        // offline export route drives the same loader with the live device's
+        // id and must never touch the live panel's rows (see
+        // `autoLoadLevainSamples`'s own comment). A new load starting
+        // immediately invalidates whatever bank the panel last showed — the
+        // Stage card must stop rendering the previous bank's mic rows while
+        // this one is in flight, not carry them over stale.
+        const sequence = ++nextLoadSequence;
+        latestLoadState.set(deviceId, { sequence, settled: false });
+        publishLoadedMicPositions(deviceId);
+
         const controller = new AbortController();
         const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal);
         const observedLoad = sampleLoad.then<LevainSampleLoadOutcome, LevainSampleLoadOutcome>(
-            () => (controller.signal.aborted ? 'cancelled' : 'ready'),
+            (micPositions) => {
+                // A resolved (non-null) bank is already committed in the
+                // engine regardless of whether this load has since been
+                // superseded — record it so a later rejection can restore it,
+                // but only while `port` is still this device's current
+                // registration: a device unregistered (and possibly
+                // re-registered under the same id) before this reply arrived
+                // must not resurrect a dead node's bank.
+                if (micPositions && activePorts.get(deviceId) === port) {
+                    recordCommittedBank(deviceId, sequence, micPositions);
+                }
+                markLoadSettledIfCurrent(deviceId, sequence);
+                // A resolution always republishes — even superseded, it may
+                // have just changed the committed bank a later rejection
+                // reads back.
+                publishLoadedMicPositions(deviceId);
+                // A superseding load already owns the UI; don't claim ready over it.
+                if (controller.signal.aborted) {
+                    return 'cancelled';
+                }
+                return 'ready';
+            },
             (error) => {
+                // A rejection only republishes when this load is still the
+                // device's most-recently-started one: a superseded load's
+                // rejection never commits anything and can't be the
+                // most-recently-started load, so it has nothing new to
+                // report — the successor that superseded it already owns
+                // (or still holds) the publish.
+                if (markLoadSettledIfCurrent(deviceId, sequence)) {
+                    publishLoadedMicPositions(deviceId);
+                }
                 if (controller.signal.aborted) {
                     return 'cancelled';
                 }
@@ -257,6 +391,10 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // missing device, but cancelling avoids the wasted decode work).
         loadOperations.get(deviceId)?.controller.abort();
         loadOperations.delete(deviceId);
+        // The engine's committed bank for this device no longer exists once
+        // the device itself is torn down; a re-registration starts fresh.
+        committedBanks.delete(deviceId);
+        latestLoadState.delete(deviceId);
 
         // Cancel this device's pending rAF batches by their deterministic keys.
         // The `activeDevices` miss already guards `device.setParam`, but
@@ -365,13 +503,25 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             case 'Tightness':
                 setRuntimeParam(target, 'humanize', 1.0 - value);
                 break;
-            case 'Space':
-                // The room mic is the 'room'-type position (index 2 in the default
-                // patch). The compact MicBlendSlider drives the same mic, so both
-                // controls must target the same index or they fight over 'room'.
-                setRuntimeParam(target, 'mic_0_volume', 1.0 - value * 0.5);
-                setRuntimeParam(target, 'mic_2_volume', value);
+            case 'Space': {
+                // The room mic is whichever loaded index carries the 'room'
+                // position type — not a fixed index, since a bank's mic order
+                // is author-defined and most shipped banks carry no room mic
+                // at all. The compact MicBlendSlider resolves the same way, so
+                // both controls always agree on which index is 'room'.
+                const loadedMicPositions = state.loadedMicPositions;
+                const roomIndex = loadedMicPositions ? loadedMicPositions.indexOf('room') : -1;
+                if (roomIndex === -1) {
+                    // No loaded room mic: nothing for Space to blend toward.
+                    break;
+                }
+                const closeIndex = loadedMicPositions ? loadedMicPositions.indexOf('close') : -1;
+                if (closeIndex !== -1) {
+                    setRuntimeParam(target, `mic_${closeIndex}_volume`, 1.0 - value * 0.5);
+                }
+                setRuntimeParam(target, `mic_${roomIndex}_volume`, value);
                 break;
+            }
             case 'Tone':
                 setRuntimeParam(target, 'tone', value);
                 break;

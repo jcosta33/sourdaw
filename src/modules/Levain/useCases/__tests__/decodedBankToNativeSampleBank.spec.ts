@@ -62,6 +62,7 @@ function bank(overrides: Partial<DecodedBank> = {}): DecodedBank {
         legatoTransitions: [legato()],
         numArticulations: 4,
         numMics: 2,
+        micPositions: ['close', 'room'],
         decodedByteLength: 24,
         ...overrides,
     };

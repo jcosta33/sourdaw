@@ -163,22 +163,23 @@ describe('PianoRollToolbar', () => {
 
     it('should render snap buttons', () => {
         render(<PianoRollToolbar {...defaultProps} />);
-        expect(screen.getByText('1')).toBeInTheDocument();
-        expect(screen.getByText('1/2')).toBeInTheDocument();
+        // Note-value labels (#4801): the pills cover grid values 1, 0.5, 0.25, 0.125 beats.
         expect(screen.getByText('1/4')).toBeInTheDocument();
         expect(screen.getByText('1/8')).toBeInTheDocument();
+        expect(screen.getByText('1/16')).toBeInTheDocument();
+        expect(screen.getByText('1/32')).toBeInTheDocument();
     });
 
     it('presses the active snap value and leaves the others unpressed', () => {
         render(<PianoRollToolbar {...defaultProps} gridSnap={0.25} />);
-        expect(screen.getByRole('button', { name: '1/4' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: '1/16' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: '1/32' })).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByRole('button', { name: '1/8' })).toHaveAttribute('aria-pressed', 'false');
-        expect(screen.getByRole('button', { name: '1/2' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('should call onGridSnapChange when snap button is clicked', () => {
         render(<PianoRollToolbar {...defaultProps} />);
-        fireEvent.click(screen.getByText('1/4'));
+        fireEvent.click(screen.getByText('1/16'));
         expect(defaultProps.onGridSnapChange).toHaveBeenCalledWith(0.25);
     });
 

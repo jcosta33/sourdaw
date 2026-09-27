@@ -7,6 +7,7 @@ const { builderMocks } = vi.hoisted(() => ({
         addSections: vi.fn(),
         addSend: vi.fn(),
         attachSidechainCompressor: vi.fn(() => 'sidechain-id'),
+        configureYeastArpeggiator: vi.fn().mockResolvedValue(undefined),
         createAudioTrack: vi.fn(() => ({ id: 'track-audio' })),
         createBus: vi.fn(() => ({ id: 'track-bus' })),
         createFolder: vi.fn(() => ({ id: 'track-folder' })),
@@ -32,6 +33,9 @@ vi.mock('../../templateHelpers/addSections', () => ({ addSections: builderMocks.
 vi.mock('../../templateHelpers/addSend', () => ({ addSend: builderMocks.addSend }));
 vi.mock('../../templateHelpers/attachSidechainCompressor', () => ({
     attachSidechainCompressor: builderMocks.attachSidechainCompressor,
+}));
+vi.mock('../../templateHelpers/configureYeastArpeggiator', () => ({
+    configureYeastArpeggiator: builderMocks.configureYeastArpeggiator,
 }));
 vi.mock('../../templateHelpers/createAudioTrack', () => ({ createAudioTrack: builderMocks.createAudioTrack }));
 vi.mock('../../templateHelpers/createBus', () => ({ createBus: builderMocks.createBus }));
@@ -91,5 +95,21 @@ describe('createEdmTemplate', () => {
         const call = builderMocks.finalizeTemplate.mock.calls[0]?.[0];
         expect(call.sidechainRoutes).toHaveLength(2);
         expect(call.vcaGroups).toHaveLength(4);
+    });
+
+    it('configures the arp track yeast device through the rack route after finalize', async () => {
+        await createEdmTemplate();
+        expect(builderMocks.configureYeastArpeggiator).toHaveBeenCalledExactlyOnceWith({
+            track: { id: 'track-instr' },
+            processorId: 'arpeggiator-edm-arp',
+            mode: 2,
+            rateDenominator: 16,
+            gate: 0.7,
+            swing: 0.1,
+        });
+        // The rack write resolves against committed tracks, so it follows finalize.
+        expect(builderMocks.finalizeTemplate.mock.invocationCallOrder[0]).toBeLessThan(
+            builderMocks.configureYeastArpeggiator.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
     });
 });
