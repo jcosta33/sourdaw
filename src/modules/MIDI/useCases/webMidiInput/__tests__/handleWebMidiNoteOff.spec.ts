@@ -1219,4 +1219,74 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         expect(curve[0]).toEqual({ offsetBeats: beatsAt(1 / (changes + 1)), value: 90 });
         expect(curve.at(-1)).toEqual({ offsetBeats: beatsAt(changes / (changes + 1)), value: 20 });
     });
+
+    it('records queued member gestures through the production MIDI byte dispatcher before release', async () => {
+        let finishWorker!: () => void;
+        const worker = new Promise<void>((resolve) => {
+            finishWorker = resolve;
+        });
+        const deps = recordingDependencies({ isRecording: true }, true);
+        const release = noteOff;
+        const noteOn = handleWebMidiNoteOn._factory({
+            ...deps,
+            handleWebMidiNoteOff: release,
+            getTrackStoreState: () => ({
+                tracks: [
+                    {
+                        id: 'track-1',
+                        armed: true,
+                        devices: [{ id: 'yeast-1', type: 'yeast' }],
+                        clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 }],
+                    },
+                ],
+                selectedTrackId: 'track-1',
+            }),
+            processRealtimeMidiInput: async () => {
+                await worker;
+                return [];
+            },
+            stepRecordNoteOn: () => {},
+            scheduleNote: () => null,
+            scheduleKitNote: () => null,
+            getDrumKitByIndex: () => null,
+            getDrumKitDefByIndex: () => null,
+            scheduleDrumKitNote: () => {},
+        });
+        vi.doMock('../handleWebMidiNoteOn', () => ({ handleWebMidiNoteOn: noteOn }));
+        vi.doMock('../handleWebMidiNoteOff', () => ({ handleWebMidiNoteOff: release }));
+        vi.doMock('../handleWebMidiCC', () => ({ handleWebMidiCC: controlChange }));
+        vi.doMock('../handleWebMidiChannelPressure', () => ({ handleWebMidiChannelPressure }));
+        vi.doMock('../handleWebMidiPitchBend', () => ({ handleWebMidiPitchBend: pitchBend }));
+        const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
+        const clock = vi.spyOn(performance, 'now');
+        const send = (bytes: number[], timeStamp: number): void =>
+            handleWebMidiMessage({ data: new Uint8Array(bytes), timeStamp });
+
+        try {
+            at(1);
+            clock.mockReturnValue(1000);
+            send([0x91, PITCH, 100], 1000);
+            at(1.25);
+            clock.mockReturnValue(1250);
+            send([0xd1, 80], 1250);
+            send([0xb1, 74, 90], 1250);
+            send([0xe1, 0, 96], 1250);
+            at(2);
+            clock.mockReturnValue(2000);
+            send([0x81, PITCH, 0], 2000);
+            expect(recorded).toHaveLength(0);
+            finishWorker();
+            await vi.waitFor(() => expect(recorded).toHaveLength(1));
+            expect(recorded[0]).toMatchObject({
+                expression: {
+                    pressure: [{ offsetBeats: 0.5, value: 80 }],
+                    slide: [{ offsetBeats: 0.5, value: 90 }],
+                    pitchBend: [{ offsetBeats: 0.5, value: 4096 }],
+                },
+            });
+        } finally {
+            finishWorker();
+            clock.mockRestore();
+        }
+    });
 });

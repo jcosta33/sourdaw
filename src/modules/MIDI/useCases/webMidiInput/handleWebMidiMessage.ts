@@ -1,7 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
+import { activeNotes } from '../../repositories/webMidi/state';
 
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
@@ -34,6 +36,19 @@ let midiInputTail: Promise<void> | null = null;
  * ordering the finding actually needs and nothing more.
  */
 const channelTails = new Map<number, Promise<void>>();
+let dispatchGeneration = memberExpressionGeneration.current;
+
+function currentGeneration(): number {
+    const generation = memberExpressionGeneration.current;
+    if (generation !== dispatchGeneration) {
+        // Old, in-flight work may still settle, but a new input/target/MPE
+        // session must not wait behind it or inherit its queued gestures.
+        midiInputTail = null;
+        channelTails.clear();
+        dispatchGeneration = generation;
+    }
+    return generation;
+}
 
 function logHandlerFailure(error: unknown): void {
     logger.warn('[MIDI] Web MIDI event handling failed:', error);
@@ -49,11 +64,39 @@ function trackChannelTail(channel: number, work: Promise<void>): void {
     });
 }
 
-function dispatchNoteHandler(channel: number, handler: () => Promise<void> | void): void {
+function admittedRelease(channel: number, note: number): () => boolean {
+    const key = createWebMidiNoteKey(channel, note);
+    const admittedNote = activeNotes.get(key);
+    return () => admittedNote !== undefined && activeNotes.get(key) === admittedNote;
+}
+
+function dispatchNoteHandler(
+    channel: number,
+    handler: () => Promise<void> | void,
+    shouldReleaseStale: () => boolean = () => false
+): void {
+    const generation = currentGeneration();
     const previous = midiInputTail;
+    const channelPrevious = channelTails.get(channel);
+    const run = (): Promise<void> | void => {
+        if (generation === memberExpressionGeneration.current || shouldReleaseStale()) {
+            return handler();
+        }
+        return undefined;
+    };
     // An idle tail runs the handler synchronously up to its first await, so a
     // note is not deferred a turn just to be queued behind nothing.
-    const started = previous === null ? Promise.resolve(handler()) : previous.then(handler);
+    let started: Promise<void>;
+    try {
+        if (previous === null && channelPrevious === undefined) {
+            started = Promise.resolve(run());
+        } else {
+            started = Promise.all([previous, channelPrevious]).then(run);
+        }
+    } catch (error: unknown) {
+        logHandlerFailure(error);
+        return;
+    }
     const queued = started.catch(logHandlerFailure);
     midiInputTail = queued;
     trackChannelTail(channel, queued);
@@ -66,12 +109,18 @@ function dispatchNoteHandler(channel: number, handler: () => Promise<void> | voi
 }
 
 function dispatchExpressionHandler(channel: number, handler: () => void): void {
+    const generation = currentGeneration();
+    const run = (): void => {
+        if (generation === memberExpressionGeneration.current) {
+            handler();
+        }
+    };
     const pending = channelTails.get(channel);
     if (pending === undefined) {
         // Nothing outstanding on this channel: voice it now, at its own
         // arrival frame. This is the common case and it costs nothing.
         try {
-            handler();
+            run();
         } catch (error: unknown) {
             logHandlerFailure(error);
         }
@@ -81,7 +130,7 @@ function dispatchExpressionHandler(channel: number, handler: () => void): void {
     // Something on this channel is still in flight. Queue behind it, and make
     // this the channel's tail so later expression on the same channel stays in
     // arrival order rather than overtaking it.
-    trackChannelTail(channel, pending.then(handler).catch(logHandlerFailure));
+    trackChannelTail(channel, pending.then(run).catch(logHandlerFailure));
 }
 
 export function handleWebMidiMessage(event: WebMidiInputMessage): void {
@@ -96,11 +145,17 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): void {
 
     switch (message.type) {
         case 'noteOn':
-            dispatchNoteHandler(channel, () => handleWebMidiNoteOn(channel, message.note, message.velocity, timeStamp));
+            dispatchNoteHandler(
+                channel,
+                () => handleWebMidiNoteOn(channel, message.note, message.velocity, timeStamp),
+                message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
+            );
             break;
         case 'noteOff':
-            dispatchNoteHandler(channel, () =>
-                handleWebMidiNoteOff(channel, message.note, message.releaseVelocity, timeStamp)
+            dispatchNoteHandler(
+                channel,
+                () => handleWebMidiNoteOff(channel, message.note, message.releaseVelocity, timeStamp),
+                admittedRelease(channel, message.note)
             );
             break;
         case 'cc':

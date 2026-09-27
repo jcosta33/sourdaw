@@ -1,5 +1,5 @@
 import { channelControllerState } from './channelControllerState';
-import { memberExpressionState } from './memberExpressionState';
+import { resetMemberExpressionState } from './resetMemberExpressionState';
 
 /**
  * Drop every channel's decoded controller state (audit MD-7, MD-8).
@@ -10,5 +10,5 @@ import { memberExpressionState } from './memberExpressionState';
  */
 export function resetChannelControllerState(): void {
     channelControllerState.clear();
-    memberExpressionState.clear();
+    resetMemberExpressionState();
 }

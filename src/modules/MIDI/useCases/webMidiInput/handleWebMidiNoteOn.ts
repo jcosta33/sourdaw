@@ -7,6 +7,7 @@ import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
+import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { memberExpressionState } from '../../repositories/webMidi/memberExpressionState';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
@@ -42,6 +43,8 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
+            const generation = memberExpressionGeneration.current;
+
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
             const channelNoteKey = mpeEnabled && channel >= 1 ? channelToNote.get(channel) : undefined;
@@ -52,6 +55,9 @@ export const handleWebMidiNoteOn = inject({
                 await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
             } else if (channelNoteKey !== undefined) {
                 channelToNote.delete(channel);
+            }
+            if (generation !== memberExpressionGeneration.current) {
+                return;
             }
 
             deps.stepRecordNoteOn(note, velocity);
@@ -129,11 +135,25 @@ export const handleWebMidiNoteOn = inject({
                 } catch (error: unknown) {
                     // The note was registered before this awaited step; un-register it so a
                     // rejected note-on leaves no phantom active note behind.
-                    activeNotes.delete(noteKey);
-                    if (channelToNote.get(channel) === noteKey) {
-                        channelToNote.delete(channel);
+                    // After a reset, the same key can belong to a new note.
+                    if (activeNotes.get(noteKey) === noteData) {
+                        activeNotes.delete(noteKey);
+                        if (channelToNote.get(channel) === noteKey) {
+                            channelToNote.delete(channel);
+                        }
                     }
                     throw error;
+                }
+                // Reset released the registered note while the worker was
+                // processing. Never voice its late result in the new session.
+                if (generation !== memberExpressionGeneration.current || activeNotes.get(noteKey) !== noteData) {
+                    if (activeNotes.get(noteKey) === noteData) {
+                        activeNotes.delete(noteKey);
+                        if (channelToNote.get(channel) === noteKey) {
+                            channelToNote.delete(channel);
+                        }
+                    }
+                    return;
                 }
                 const earliestDispatchFrame = Math.round(engine.context.currentTime * engine.context.sampleRate);
                 for (const event of processedEvents) {

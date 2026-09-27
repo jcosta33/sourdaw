@@ -52,6 +52,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
 type HandleWebMidiNoteOnDependencies = Parameters<typeof handleWebMidiNoteOn._factory>[0];
 
@@ -361,6 +362,80 @@ describe('handleWebMidiNoteOn', () => {
 
         expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(false);
         expect(channelToNote.has(1)).toBe(false);
+    });
+
+    it('does not voice a worker result after the input was reset', async () => {
+        let finishWorker!: (events: TestMidiEvent[]) => void;
+        const worker = new Promise<TestMidiEvent[]>((resolve) => {
+            finishWorker = resolve;
+        });
+        const voiced = vi.fn();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: () => worker,
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [{ type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOn: voiced } }],
+        });
+        const pending = fn(1, 60, 100);
+        expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(true);
+
+        resetChannelControllerState();
+        activeNotes.clear();
+        channelToNote.clear();
+        finishWorker([{ timeSamples: 96_240, kind: { type: 'noteOn', channel: 1, note: 60, velocity: 100 } }]);
+        await pending;
+
+        expect(voiced).not.toHaveBeenCalled();
+        expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(false);
+    });
+
+    it('does not erase a fresh same-key note when the retired worker rejects', async () => {
+        let rejectWorker!: (error: Error) => void;
+        const worker = new Promise<TestMidiEvent[]>((_resolve, reject) => {
+            rejectWorker = reject;
+        });
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'yeast-1', type: 'yeast' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: () => worker,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        const pending = fn(1, 60, 100);
+        const key = createWebMidiNoteKey(1, 60);
+        resetChannelControllerState();
+        const fresh = {
+            startTime: 3,
+            startBeat: 1,
+            channel: 1,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+        };
+        activeNotes.set(key, fresh);
+        channelToNote.set(1, key);
+        rejectWorker(new Error('retired worker'));
+        await expect(pending).rejects.toThrow('retired worker');
+        expect(activeNotes.get(key)).toBe(fresh);
+        expect(channelToNote.get(1)).toBe(key);
     });
 
     it('routes a Fermenter note-on to the device and records its id for later release', async () => {

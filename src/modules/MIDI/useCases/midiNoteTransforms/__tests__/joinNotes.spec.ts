@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { isValidMidiNoteExpression } from '../../../models/MidiNote';
 import { midiStore } from '../../../stores/midiStore';
 import { joinNotes } from '../joinNotes';
 
@@ -37,6 +38,129 @@ describe('joinNotes', () => {
         expect(joined?.duration).toBe(2);
         expect(notes?.find((node) => node.id === 'c')).toBeDefined();
         expect(notes?.find((node) => node.id === 'd')).toBeDefined();
+    });
+
+    it('retains each joined note expression at its performed position and bend depth', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 1),
+                        velocity: 54,
+                        pressure: 10,
+                        slide: 12,
+                        pitchBend: 4096,
+                        pitchBendRangeSemitones: 12,
+                        expression: {
+                            pressure: [{ offsetBeats: 0.5, value: 20 }],
+                            slide: [{ offsetBeats: 0.5, value: 22 }],
+                            pitchBend: [{ offsetBeats: 0.5, value: 2048 }],
+                        },
+                    },
+                    {
+                        ...note('b', 60, 1, 1),
+                        velocity: 99,
+                        pressure: 80,
+                        slide: 82,
+                        pitchBend: 2048,
+                        pitchBendRangeSemitones: 48,
+                        expression: {
+                            pressure: [{ offsetBeats: 0.5, value: 100 }],
+                            slide: [{ offsetBeats: 0.5, value: 102 }],
+                            pitchBend: [{ offsetBeats: 0.5, value: 1024 }],
+                        },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b']);
+        const joined = midiStore.value?.notesByClipId.clip1?.[0];
+        expect(joined).toMatchObject({
+            id: 'a',
+            velocity: 54,
+            duration: 2,
+            pressure: 10,
+            slide: 12,
+            pitchBend: 1024,
+            pitchBendRangeSemitones: 48,
+            expression: {
+                pressure: [
+                    { offsetBeats: 0.5, value: 20 },
+                    { offsetBeats: 1, value: 80 },
+                    { offsetBeats: 1.5, value: 100 },
+                ],
+                slide: [
+                    { offsetBeats: 0.5, value: 22 },
+                    { offsetBeats: 1, value: 82 },
+                    { offsetBeats: 1.5, value: 102 },
+                ],
+                pitchBend: [
+                    { offsetBeats: 0.5, value: 512 },
+                    { offsetBeats: 1, value: 2048 },
+                    { offsetBeats: 1.5, value: 1024 },
+                ],
+            },
+        });
+    });
+
+    it('keeps scalar-only transitions and an earlier curve when the later note has no curve', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 1),
+                        pressure: 10,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 20 }] },
+                    },
+                    { ...note('b', 60, 1, 1), pressure: 80 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b']);
+        const joined = midiStore.value?.notesByClipId.clip1?.[0];
+        expect(joined?.pressure).toBe(10);
+        expect(joined?.expression?.pressure).toEqual([
+            { offsetBeats: 0.5, value: 20 },
+            { offsetBeats: 1, value: 80 },
+        ]);
+        expect(isValidMidiNoteExpression(joined?.expression, joined?.duration ?? 0)).toBe(true);
+    });
+
+    it.each([
+        ['gap', 1.02, 2.02],
+        ['overlap', 0.98, 1.98],
+    ])('keeps sorted interior expression across a tolerated %s', (_case, secondStart, endBeat) => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 1),
+                        pressure: 10,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 20 }] },
+                    },
+                    {
+                        ...note('b', 60, secondStart, 1),
+                        pressure: 80,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 100 }] },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b'], 0.25);
+        const joined = midiStore.value?.notesByClipId.clip1?.[0];
+        expect(joined?.duration).toBe(endBeat);
+        expect(joined?.expression?.pressure).toEqual([
+            { offsetBeats: 0.5, value: 20 },
+            { offsetBeats: secondStart, value: 80 },
+            { offsetBeats: secondStart + 0.5, value: 100 },
+        ]);
+        expect(isValidMidiNoteExpression(joined?.expression, joined?.duration ?? 0)).toBe(true);
     });
 
     it('should not merge non-adjacent notes', () => {

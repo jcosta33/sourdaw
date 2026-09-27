@@ -574,6 +574,12 @@ export const PianoRoll = ({
                                         } // Scale to 0-127
                                         return 0;
                                     }}
+                                    getCurve={(node) => {
+                                        if (activeExpressionLane === 'pressure' || activeExpressionLane === 'slide') {
+                                            return node.expression?.[activeExpressionLane];
+                                        }
+                                        return undefined;
+                                    }}
                                     setValue={(cid, nid, val) => {
                                         if (activeExpressionLane === 'velocity') {
                                             setNoteVelocity(cid, nid, val);

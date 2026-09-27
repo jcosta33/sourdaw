@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { memberExpressionState } from '../../../repositories/webMidi/memberExpressionState';
+import { resetChannelControllerState } from '../../../repositories/webMidi/resetChannelControllerState';
+import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabledInternal';
+import { setTargetTrackId } from '../../../repositories/webMidi/setTargetTrackId';
+import { activeNotes } from '../../../repositories/webMidi/state';
+
 const handle_note_on = vi.hoisted(() => vi.fn());
 const handle_note_off = vi.hoisted(() => vi.fn());
 const handle_cc = vi.hoisted(() => vi.fn());
@@ -46,6 +52,7 @@ describe('handleWebMidiMessage', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         audio_clock.currentTime = 2;
+        activeNotes.clear();
     });
 
     it('should dispatch CC bytes to the CC use case', () => {
@@ -88,9 +95,7 @@ describe('handleWebMidiMessage', () => {
 
         resolveNoteOn();
         await noteOnPending;
-        await Promise.resolve();
-
-        expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, EVENT_TIME_STAMP);
+        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, EVENT_TIME_STAMP));
     });
 
     it('should hold a pitch bend behind a pending note-on so the opening bend is not dropped', async () => {
@@ -155,6 +160,117 @@ describe('handleWebMidiMessage', () => {
         await Promise.resolve();
 
         expect(order).toEqual(['noteOn', 'channelPressure', 'cc']);
+    });
+
+    it('commits release only after admitted member expression, before the next note on that channel', async () => {
+        let releaseFirstOn!: () => void;
+        const firstOn = new Promise<void>((resolve) => {
+            releaseFirstOn = resolve;
+        });
+        const order: string[] = [];
+        let releaseDone!: () => void;
+        const done = new Promise<void>((resolve) => {
+            releaseDone = resolve;
+        });
+        handle_note_on.mockImplementationOnce(() => {
+            order.push('on60');
+            return firstOn;
+        });
+        handle_note_on.mockImplementationOnce(() => {
+            order.push('on62');
+        });
+        handle_channel_pressure.mockImplementation(() => {
+            order.push('pressure');
+        });
+        handle_cc.mockImplementation(() => {
+            order.push('slide');
+        });
+        handle_pitch_bend.mockImplementation(() => {
+            order.push('bend');
+        });
+        handle_note_off.mockImplementation(() => {
+            order.push('off60');
+            releaseDone();
+        });
+
+        handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        handleWebMidiMessage(midi_event([0xd1, 80]));
+        handleWebMidiMessage(midi_event([0xb1, 74, 90]));
+        handleWebMidiMessage(midi_event([0xe1, 0, 96]));
+        handleWebMidiMessage(midi_event([0x81, 60, 0]));
+        handleWebMidiMessage(midi_event([0x91, 62, 100]));
+        expect(order).toEqual(['on60']);
+
+        releaseFirstOn();
+        await done;
+        await vi.waitFor(() => expect(order).toEqual(['on60', 'pressure', 'slide', 'bend', 'off60', 'on62']));
+    });
+
+    it.each([
+        ['input reset', () => resetChannelControllerState()],
+        ['target change', () => setTargetTrackId('new-target')],
+        ['MPE transition', () => setMpeEnabledInternal(false)],
+    ])('fences accepted expression after %s while a note-on is still in flight', async (_boundary, clear) => {
+        let finishOld!: () => void;
+        const oldNote = new Promise<void>((resolve) => {
+            finishOld = resolve;
+        });
+        let finishNew!: () => void;
+        const newNote = new Promise<void>((resolve) => {
+            finishNew = resolve;
+        });
+        let newInitialPressure: number | undefined;
+        handle_note_on.mockReset();
+        handle_note_on.mockImplementationOnce(() => oldNote);
+        handle_note_on.mockImplementationOnce(() => {
+            newInitialPressure = memberExpressionState.get(1)?.pressure;
+            finishNew();
+        });
+        handle_channel_pressure.mockReset();
+        handle_channel_pressure.mockImplementation(() => {
+            memberExpressionState.set(1, { pressure: 90 });
+        });
+        memberExpressionState.clear();
+        setTargetTrackId('old-target');
+        setMpeEnabledInternal(true);
+
+        handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        handleWebMidiMessage(midi_event([0xd1, 90]));
+        clear();
+        handleWebMidiMessage(midi_event([0x91, 62, 100]));
+        try {
+            await vi.waitFor(() => expect(handle_note_on).toHaveBeenCalledTimes(2));
+            await newNote;
+            expect(newInitialPressure).toBeUndefined();
+            expect(memberExpressionState.get(1)).toBeUndefined();
+        } finally {
+            finishOld();
+        }
+        await vi.waitFor(() => expect(memberExpressionState.get(1)).toBeUndefined());
+    });
+
+    it('keeps an admitted release for an active voice after a target change', async () => {
+        let finishNoteOn!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            finishNoteOn = resolve;
+        });
+        handle_note_on.mockReset();
+        handle_note_off.mockReset();
+        handle_note_on.mockImplementationOnce(() => pending);
+        activeNotes.set('1:60', {
+            startTime: 0,
+            startBeat: 0,
+            channel: 1,
+            note: 60,
+            trackId: 'old-target',
+            instrumentTrackId: 'old-target',
+        });
+        setTargetTrackId('old-target');
+        handleWebMidiMessage(midi_event([0x91, 60, 100]));
+        handleWebMidiMessage(midi_event([0x81, 60, 0]));
+        setTargetTrackId('new-target');
+        finishNoteOn();
+        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(1, 60, 0, EVENT_TIME_STAMP));
     });
 
     it('should not delay expression past its arrival frame behind an unrelated note-on', async () => {
