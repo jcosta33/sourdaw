@@ -1201,8 +1201,7 @@ describe('package scripts and gitignore', () => {
         );
     });
 
-    it('pins complete and exact mutation-command source closures', async () => {
-        const repositoryRoot = join(import.meta.dirname, '..', '..');
+    describe('mutation-command source closures', () => {
         const cases = [
             {
                 command: 'deliver' as const,
@@ -1453,32 +1452,36 @@ describe('package scripts and gitignore', () => {
             },
         ];
 
-        for (const { command, entry, required, expected } of cases) {
-            const paths = trustedDependencyPaths(command);
-            expect(paths).toEqual(expected);
-            const sources = new Map(paths.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')]));
-            expect(() => assertTrustedSourceGraph(command, sources)).not.toThrow();
-            await expect(executeTrustedSnapshot(command, ['--help'], { commit: 'pinned-sha', sources })).resolves.toBe(
-                0
-            );
+        it.each(cases)(
+            'pins the complete and exact $command source closure',
+            async ({ command, entry, required, expected }) => {
+                const repositoryRoot = join(import.meta.dirname, '..', '..');
+                const paths = trustedDependencyPaths(command);
+                expect(paths).toEqual(expected);
+                const sources = new Map(paths.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')]));
+                expect(() => assertTrustedSourceGraph(command, sources)).not.toThrow();
+                await expect(
+                    executeTrustedSnapshot(command, ['--help'], { commit: 'pinned-sha', sources })
+                ).resolves.toBe(0);
 
-            const incomplete = new Map(sources);
-            incomplete.delete(required);
-            expect(() => assertTrustedSourceGraph(command, incomplete)).toThrow(
-                `trusted snapshot is missing ${required}`
-            );
+                const incomplete = new Map(sources);
+                incomplete.delete(required);
+                expect(() => assertTrustedSourceGraph(command, incomplete)).toThrow(
+                    `trusted snapshot is missing ${required}`
+                );
 
-            const extra = new Map(sources).set('scripts/unexpected.ts', 'export {};');
-            expect(() => assertTrustedSourceGraph(command, extra)).toThrow(
-                'trusted snapshot contains unexpected source scripts/unexpected.ts'
-            );
+                const extra = new Map(sources).set('scripts/unexpected.ts', 'export {};');
+                expect(() => assertTrustedSourceGraph(command, extra)).toThrow(
+                    'trusted snapshot contains unexpected source scripts/unexpected.ts'
+                );
 
-            const unresolvable = new Map(sources);
-            unresolvable.set(entry, `${sources.get(entry) ?? ''}\nimport './unchecked.ts';\n`);
-            expect(() => assertTrustedSourceGraph(command, unresolvable)).toThrow(
-                `${entry} imports unchecked local dependency scripts/unchecked.ts`
-            );
-        }
+                const unresolvable = new Map(sources);
+                unresolvable.set(entry, `${sources.get(entry) ?? ''}\nimport './unchecked.ts';\n`);
+                expect(() => assertTrustedSourceGraph(command, unresolvable)).toThrow(
+                    `${entry} imports unchecked local dependency scripts/unchecked.ts`
+                );
+            }
+        );
     });
 
     /**
