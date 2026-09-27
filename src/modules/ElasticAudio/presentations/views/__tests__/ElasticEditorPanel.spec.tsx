@@ -69,7 +69,7 @@ const mocks = vi.hoisted(() => {
                     confidence?: number;
                     locked?: boolean;
                 }>;
-                stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+                stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
                 originalTempo: number | null;
             }
         >([
@@ -81,7 +81,7 @@ const mocks = vi.hoisted(() => {
                         { id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'transient-auto', confidence: 0.9 },
                         { id: 'm2', originalBeat: 2, warpedBeat: 2, origin: 'user' },
                     ],
-                    stretchMode: 'complex' as const,
+                    stretchMode: 'phase-vocoder' as const,
                     originalTempo: null,
                 },
             ],
@@ -122,7 +122,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
             mocks.warpStates.get(clipId) ?? {
                 enabled: false,
                 markers: [],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: null,
             },
     };
@@ -277,8 +277,10 @@ describe('ElasticEditorPanel', () => {
         expect(screen.getByRole('button', { name: 'Quantize' })).toBeInTheDocument();
 
         expect(screen.queryByLabelText('Stretch mode')).not.toBeInTheDocument();
-        for (const mode of ['complex', 'texture', 'beats']) {
-            expect(screen.queryByRole('option', { name: mode })).not.toBeInTheDocument();
+        // The selector renders from STRETCH_MODES alone: the canonical executor
+        // labels, and never the pre-ADR 0024 names.
+        for (const label of ['Repitch', 'Phase-vocoder', 'WSOLA', 'Complex', 'Texture', 'Beats']) {
+            expect(screen.queryByRole('option', { name: label })).not.toBeInTheDocument();
         }
     });
 

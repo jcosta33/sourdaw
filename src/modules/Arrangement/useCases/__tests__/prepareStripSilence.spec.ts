@@ -307,7 +307,7 @@ describe('prepareStripSilence', () => {
             setWarpState('clip-1', {
                 enabled: true,
                 markers: markersOnTransients,
-                stretchMode: 'beats',
+                stretchMode: 'wsola',
                 originalTempo: 120,
             });
 

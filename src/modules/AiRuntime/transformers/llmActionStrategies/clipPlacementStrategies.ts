@@ -1,3 +1,5 @@
+import { isClipCompatibleWithTrackKind } from '#/utils/isClipCompatibleWithTrackKind';
+
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { findClip, findTrack, hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
@@ -19,6 +21,26 @@ type ClipPlacementCallName = Extract<
     | 'setClipStretchMode'
     | 'fitClipToBeats'
 >;
+
+/**
+ * Why the destination cannot play the clip, so the model can re-target instead
+ * of retrying the same silent placement.
+ */
+function clipPlacementRejectionReason(clipType: 'audio' | 'midi', kind: string): string {
+    if (kind === 'bus' || kind === 'master') {
+        return `The destination ${kind} track sums signal rather than playing clips; place the ${clipType} clip on an existing ${clipType} track`;
+    }
+    if (kind === 'folder') {
+        return `The destination folder track renders no timeline content; place the ${clipType} clip on an existing ${clipType} track`;
+    }
+    if (kind === 'audio' && clipType === 'midi') {
+        return 'The destination audio track has no instrument, so the midi clip would stay silent; place the clip on an existing midi track';
+    }
+    if (kind === 'midi' && clipType === 'audio') {
+        return 'The destination midi track cannot play an audio clip; place the clip on an existing audio track';
+    }
+    return `The destination ${kind} track cannot host clips; place the ${clipType} clip on an existing ${clipType} track`;
+}
 
 export const clipPlacementStrategyDefinitions = [
     {
@@ -75,6 +97,9 @@ export const clipPlacementStrategyDefinitions = [
                     'Expected one unlocked clip, one existing clip-host track, and a finite non-negative startBeat'
                 );
             }
+            if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, destination.kind));
+            }
             return {
                 type: 'moveClip',
                 payload: { clipId: source.clip.id, trackId: destination.id, startBeat: args.startBeat },
@@ -100,6 +125,9 @@ export const clipPlacementStrategyDefinitions = [
                     call.name,
                     'Expected one unlocked clip, one existing clip-host destination track, and a finite non-negative startBeat'
                 );
+            }
+            if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, destination.kind));
             }
             return {
                 type: 'duplicateClipAt',
@@ -182,6 +210,13 @@ export const clipPlacementStrategyDefinitions = [
                         index,
                         call.name,
                         'Expected every move to name an unlocked clip, an existing clip-host track, and a finite non-negative startBeat'
+                    );
+                }
+                if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                    return rejection(
+                        index,
+                        call.name,
+                        clipPlacementRejectionReason(source.clip.type, destination.kind)
                     );
                 }
                 placements.push({ clipId: source.clip.id, trackId: destination.id, startBeat: candidate.startBeat });

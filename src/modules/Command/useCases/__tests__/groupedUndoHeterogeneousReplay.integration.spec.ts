@@ -106,7 +106,9 @@ function seedProject(options: {
         ...createTrack({ id: SOURCE_TRACK_ID, name: 'Source', kind: options.sourceClipType }),
         ...(options.routeSourceToRemoved ? { outputId: REMOVED_TRACK_ID } : {}),
     };
-    const removedTrack = createTrack({ id: REMOVED_TRACK_ID, name: 'Removed', kind: 'audio' });
+    // The re-homing move must stay a placement the timeline itself allows: a
+    // clip of one kind cannot land on a track of the other kind.
+    const removedTrack = createTrack({ id: REMOVED_TRACK_ID, name: 'Removed', kind: options.sourceClipType });
     setTrackStoreState({
         ...defaultTrackState,
         tracks: [sourceTrack, removedTrack],
@@ -114,7 +116,7 @@ function seedProject(options: {
     if (addClip(clipSeed(SOURCE_TRACK_ID, MOVED_CLIP_ID, 0, 4, options.sourceClipType)) === null) {
         throw new Error('Expected the moved clip fixture to seed');
     }
-    if (addClip(clipSeed(REMOVED_TRACK_ID, SURVIVOR_CLIP_ID, 8, 12, 'audio')) === null) {
+    if (addClip(clipSeed(REMOVED_TRACK_ID, SURVIVOR_CLIP_ID, 8, 12, options.sourceClipType)) === null) {
         throw new Error('Expected the surviving clip fixture to seed');
     }
     if (options.sourceClipType === 'midi') {

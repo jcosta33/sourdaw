@@ -216,7 +216,9 @@ export type ClipSatelliteWarpMarkerSnapshot = {
 export type ClipSatelliteWarpStateSnapshot = {
     readonly enabled: boolean;
     readonly markers: readonly ClipSatelliteWarpMarkerSnapshot[];
-    readonly stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    /** Snapshots carry in-memory state only, so always the canonical ADR 0024
+     *  ids — legacy persisted ids map at the warp store's sanitize boundary. */
+    readonly stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
     readonly originalTempo: number | null;
 };
 export type ClipSatelliteGainEnvelopePointSnapshot = {

@@ -16,8 +16,9 @@ export type WarpMarker = {
 export type WarpState = {
     enabled: boolean;
     markers: WarpMarker[];
-    /** Only `repitch` has an executor; see `useCases/warp/getStretchModeInfo`. */
-    stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    /** The canonical ADR 0024 surface over the three executors. Only `repitch`
+     *  runs today; see `useCases/warp/getStretchModeInfo`. */
+    stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
     originalTempo: number | null;
 };
 
@@ -40,3 +41,30 @@ export const defaultWarpState: WarpState = {
     stretchMode: 'repitch',
     originalTempo: null,
 };
+
+/**
+ * Decode a persisted stretch-mode string onto the canonical ADR 0024 set at
+ * the read boundary (`stores/warpStates` sanitize), so in-memory state is
+ * always canonical: `beats` maps to `wsola` and `complex` to `phase-vocoder`
+ * per the ADR's aliasing, while `texture` — dropped because no executor
+ * implements it — falls back to the canonical default. Anything else never
+ * was a warp mode, and `undefined` tells the caller to reject the row.
+ */
+export function decodeStretchMode(mode: unknown): WarpState['stretchMode'] | undefined {
+    if (typeof mode !== 'string') {
+        return undefined;
+    }
+    if (mode === 'beats') {
+        return 'wsola';
+    }
+    if (mode === 'complex') {
+        return 'phase-vocoder';
+    }
+    if (mode === 'texture') {
+        return defaultWarpState.stretchMode;
+    }
+    if (mode === 'repitch' || mode === 'phase-vocoder' || mode === 'wsola') {
+        return mode;
+    }
+    return undefined;
+}

@@ -12,6 +12,7 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 import {
     createWarpMarker,
+    decodeStretchMode,
     defaultWarpState,
     type WarpMarker,
     type WarpMarkerOrigin,
@@ -140,8 +141,15 @@ export function getAllWarpStates(): Array<WarpState & { clipId: string }> {
     return Object.entries(current.states).map(([clipId, state]) => ({ clipId, ...state }));
 }
 
-const WARP_STRETCH_MODES = new Set(['repitch', 'complex', 'texture', 'beats']);
 const WARP_MARKER_ORIGINS = new Set(['user', 'transient-auto', 'grid-snap']);
+
+/**
+ * A row as it persists — `WarpState` shape with the stretch mode not yet
+ * mapped onto the canonical set. Projects and documents written before
+ * ADR 0024 carry `beats`, `complex` or `texture`; {@link copySanitizedWarpState}
+ * maps them via `decodeStretchMode`, so in-memory state is always canonical.
+ */
+type PersistedWarpState = Omit<WarpState, 'stretchMode'> & { stretchMode: string };
 
 const WARP_MARKER_KEYS = ['id', 'originalBeat', 'warpedBeat', 'origin', 'confidence', 'locked'] as const;
 const WARP_STATE_KEYS = ['enabled', 'markers', 'stretchMode', 'originalTempo'] as const;
@@ -188,7 +196,7 @@ function isWarpMarker(value: unknown): value is WarpState['markers'][number] {
     return Object.keys(value).every((key) => (WARP_MARKER_KEYS as readonly string[]).includes(key));
 }
 
-function isWarpState(value: unknown): value is WarpState {
+function isPersistedWarpState(value: unknown): value is PersistedWarpState {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return false;
     }
@@ -198,11 +206,7 @@ function isWarpState(value: unknown): value is WarpState {
     if (!('markers' in value) || !Array.isArray(value.markers) || !value.markers.every(isWarpMarker)) {
         return false;
     }
-    if (
-        !('stretchMode' in value) ||
-        typeof value.stretchMode !== 'string' ||
-        !WARP_STRETCH_MODES.has(value.stretchMode)
-    ) {
+    if (!('stretchMode' in value) || decodeStretchMode(value.stretchMode) === undefined) {
         return false;
     }
     if (
@@ -217,7 +221,13 @@ function isWarpState(value: unknown): value is WarpState {
     return Object.keys(value).every((key) => (WARP_STATE_KEYS as readonly string[]).includes(key));
 }
 
-type ClipWarpStateRecord = WarpState & { clipId: string };
+/** Persisted shape whose stretch mode is already canonical — the fast path's
+ *  proof that a document needs no mapping. */
+function isWarpState(value: unknown): value is WarpState {
+    return isPersistedWarpState(value) && decodeStretchMode(value.stretchMode) === value.stretchMode;
+}
+
+type ClipWarpStateRecord = PersistedWarpState & { clipId: string };
 
 function isClipWarpStateRecord(value: unknown): value is ClipWarpStateRecord {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -227,7 +237,7 @@ function isClipWarpStateRecord(value: unknown): value is ClipWarpStateRecord {
         return false;
     }
     const { clipId: _clipId, ...rest } = value as { clipId: string } & Record<string, unknown>;
-    return isWarpState(rest);
+    return isPersistedWarpState(rest);
 }
 
 /** Copy a marker field by field, omitting undefined optional keys (same shape as `normalizeWarpMarker`). */
@@ -250,9 +260,28 @@ function copySanitizedWarpMarker(marker: WarpMarker): WarpMarker {
 }
 
 /**
+ * Copy a persisted state field by field, mapping the stretch mode onto the
+ * canonical ADR 0024 set (`decodeStretchMode`). Returns `undefined` for a
+ * mode that does not decode — such a row is dropped, never stored.
+ */
+function copySanitizedWarpState(state: PersistedWarpState): WarpState | undefined {
+    const stretchMode = decodeStretchMode(state.stretchMode);
+    if (stretchMode === undefined) {
+        return undefined;
+    }
+    return {
+        enabled: state.enabled,
+        markers: state.markers.map(copySanitizedWarpMarker),
+        stretchMode,
+        originalTempo: state.originalTempo,
+    };
+}
+
+/**
  * Decode persisted clip warp states from a project file into the store's
- * `clipId`-keyed shape. A row that does not decode, or that is default, is
- * dropped: the clip then plays without warp markers.
+ * `clipId`-keyed shape. A row that does not decode, or that is default after
+ * its legacy stretch mode maps onto the canonical set, is dropped: the clip
+ * then plays without warp markers.
  */
 export function sanitizeClipWarpStates(value: unknown): Record<string, WarpState> {
     if (!Array.isArray(value)) {
@@ -264,15 +293,11 @@ export function sanitizeClipWarpStates(value: unknown): Record<string, WarpState
         if (!isClipWarpStateRecord(candidate)) {
             continue;
         }
-        const state: WarpState = {
-            enabled: candidate.enabled,
-            markers: candidate.markers.map(copySanitizedWarpMarker),
-            stretchMode: candidate.stretchMode,
-            originalTempo: candidate.originalTempo,
-        };
-        if (!isDefaultWarpState(state)) {
-            states[candidate.clipId] = state;
+        const state = copySanitizedWarpState(candidate);
+        if (!state || isDefaultWarpState(state)) {
+            continue;
         }
+        states[candidate.clipId] = state;
     }
     return states;
 }
@@ -325,18 +350,14 @@ function sanitizeWarpStateStoreState(value: unknown): WarpStateStoreState {
     }
     const states: Record<string, WarpState> = {};
     for (const [clipId, candidate] of Object.entries(source)) {
-        if (typeof clipId !== 'string' || clipId.length === 0 || !isWarpState(candidate)) {
+        if (typeof clipId !== 'string' || clipId.length === 0 || !isPersistedWarpState(candidate)) {
             continue;
         }
-        if (isDefaultWarpState(candidate)) {
+        const state = copySanitizedWarpState(candidate);
+        if (!state || isDefaultWarpState(state)) {
             continue;
         }
-        states[clipId] = {
-            enabled: candidate.enabled,
-            markers: candidate.markers.map(copySanitizedWarpMarker),
-            stretchMode: candidate.stretchMode,
-            originalTempo: candidate.originalTempo,
-        };
+        states[clipId] = state;
     }
     return { states };
 }

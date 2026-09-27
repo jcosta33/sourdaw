@@ -333,7 +333,7 @@ describe('glueClips MIDI state integration', () => {
         setWarpState('clip-b', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0 }],
-            stretchMode: 'beats',
+            stretchMode: 'wsola',
             originalTempo: 120,
         });
 
@@ -517,7 +517,7 @@ describe('glueClips MIDI state integration', () => {
         expect(isCurrent()).toBe(false);
         removeWarpState('clip-a');
 
-        setStretchMode('clip-a', 'complex');
+        setStretchMode('clip-a', 'phase-vocoder');
         expect(isCurrent()).toBe(false);
     });
 
@@ -543,7 +543,7 @@ describe('glueClips MIDI state integration', () => {
         // `defaultWarpState.stretchMode` would plan no migration at all and
         // every `warpStates.has` assertion below would pass or fail for reasons
         // unrelated to the round trip this test names.
-        setStretchMode('clip-a', 'complex');
+        setStretchMode('clip-a', 'phase-vocoder');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
@@ -577,7 +577,7 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('rejects rather than clobbers a satellite-tracked id that drifted from the captured plan (regression #2108)', () => {
-        setStretchMode('clip-a', 'complex');
+        setStretchMode('clip-a', 'phase-vocoder');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;

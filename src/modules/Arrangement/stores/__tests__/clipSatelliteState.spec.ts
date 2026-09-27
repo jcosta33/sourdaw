@@ -111,7 +111,7 @@ describe('clipSatelliteState', () => {
         const shuffled: ClipSatelliteEntrySnapshot = {
             warpState: {
                 originalTempo: 120,
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 markers: [{ warpedBeat: 0.5, originalBeat: 0, id: 'm1', origin: 'user' }],
                 enabled: true,
             },
@@ -132,7 +132,7 @@ describe('clipSatelliteState', () => {
             warpState: {
                 enabled: true,
                 markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0.5, origin: 'user' }],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: 120,
             },
         };
@@ -151,7 +151,7 @@ describe('clipSatelliteState', () => {
             warpState: {
                 enabled: true,
                 markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 0.5, origin: 'user' }],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: 120,
             },
         });

@@ -25,7 +25,7 @@ describe('commitWarpMarkerBeatDrag', () => {
                 { id: 'm1', originalBeat: 1.25, warpedBeat: 2.5, origin: 'user' },
                 { id: 'm2', originalBeat: 4, warpedBeat: 4, origin: 'user' },
             ],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -56,7 +56,7 @@ describe('commitWarpMarkerBeatDrag', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 2, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -86,7 +86,7 @@ describe('commitWarpMarkerBeatDrag', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 2, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
@@ -104,7 +104,7 @@ describe('commitWarpMarkerBeatDrag', () => {
         warpStates.set('c1', {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1.25, warpedBeat: 2.5, origin: 'user' }],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 

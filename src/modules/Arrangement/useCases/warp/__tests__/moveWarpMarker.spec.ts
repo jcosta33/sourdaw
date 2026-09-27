@@ -15,7 +15,7 @@ describe('moveWarpMarker', () => {
                 { id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'user' },
                 { id: 'm2', originalBeat: 2, warpedBeat: 2, origin: 'user' },
             ],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 

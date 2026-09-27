@@ -1277,6 +1277,28 @@ describe('generateToolPlanningOutcome', () => {
         expect(advertisedNames).not.toContain('agent.capabilities');
     });
 
+    it('shows the provider the registry-bounded schemas for the automation range tools', () => {
+        const schemas = getPlanningProviderToolSchemas();
+
+        // ADR 0042: the provider-visible schema must state the bounds the application enforces,
+        // carried by the executableAppActionRegistry definitions, not a parallel unbounded copy.
+        const trackGainProperties = schemas.find((tool) => tool.function.name === 'automateTrackGainRange')?.function
+            .parameters.properties;
+        if (!trackGainProperties) {
+            throw new Error('automateTrackGainRange schema is unavailable');
+        }
+        expect(trackGainProperties.gainDb).toMatchObject({ type: 'number', exclusiveMinimum: 0, maximum: 6 });
+        expect(trackGainProperties.trackIds).toMatchObject({ minItems: 1, uniqueItems: true });
+
+        const sendRangeProperties = schemas.find((tool) => tool.function.name === 'automateSendRange')?.function
+            .parameters.properties;
+        if (!sendRangeProperties) {
+            throw new Error('automateSendRange schema is unavailable');
+        }
+        expect(sendRangeProperties.reductionDb).toMatchObject({ type: 'number', exclusiveMinimum: 0, maximum: 60 });
+        expect(sendRangeProperties.trackIds).toMatchObject({ minItems: 1, uniqueItems: true });
+    });
+
     it.each([
         'add an eq device to the vocals',
         'find a warm reverb preset for the vocal and load it',

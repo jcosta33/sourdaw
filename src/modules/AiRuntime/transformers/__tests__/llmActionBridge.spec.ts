@@ -1426,11 +1426,11 @@ describe('bridgeLlmToolCalls', () => {
             {
                 call: {
                     name: 'moveClip',
-                    arguments: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+                    arguments: { clipId: 'clip-verse', trackId: 'track-vocals', startBeat: 16 },
                 },
                 action: {
                     type: 'moveClip',
-                    payload: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+                    payload: { clipId: 'clip-verse', trackId: 'track-vocals', startBeat: 16 },
                 },
             },
             {
@@ -1588,7 +1588,7 @@ describe('bridgeLlmToolCalls', () => {
     it('rejects unsafe clip moves and every overlapping lifecycle or geometry write in either order', () => {
         const move = {
             name: 'moveClip',
-            arguments: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+            arguments: { clipId: 'clip-verse', trackId: 'track-vocals', startBeat: 16 },
         };
         const lockedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({
             ...track,
@@ -1617,7 +1617,6 @@ describe('bridgeLlmToolCalls', () => {
             { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: true } },
             { name: 'removeClip', arguments: { clipId: 'clip-verse' } },
             { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
-            { name: 'removeTrack', arguments: { trackId: 'bus-reverb' } },
         ].flatMap((conflict) => [bridge({ calls: [move, conflict] }), bridge({ calls: [conflict, move] })]);
         const clipAutomationContext: ProjectContext = {
             ...projectContext,
@@ -1648,22 +1647,23 @@ describe('bridgeLlmToolCalls', () => {
         const destinationWithClip: ProjectContext = {
             ...projectContext,
             tracks: projectContext.tracks.map((track) =>
-                track.id === 'bus-reverb'
+                track.id === 'track-vocals'
                     ? {
                           ...track,
-                          clipCount: 1,
+                          clipCount: 2,
                           clips: [
+                              ...track.clips,
                               {
-                                  ...projectContext.tracks[0]!.clips[0]!,
-                                  id: 'clip-bus-return',
-                                  name: 'Bus Return',
+                                  ...track.clips[0]!,
+                                  id: 'clip-neighbor',
+                                  name: 'Neighbor',
                               },
                           ],
                       }
                     : track
             ),
         };
-        const removeDestinationClip = { name: 'removeClip', arguments: { clipId: 'clip-bus-return' } };
+        const removeDestinationClip = { name: 'removeClip', arguments: { clipId: 'clip-neighbor' } };
         conflicts.push(
             bridge({ context: destinationWithClip, calls: [move, removeDestinationClip] }),
             bridge({ context: destinationWithClip, calls: [removeDestinationClip, move] })
@@ -1677,7 +1677,7 @@ describe('bridgeLlmToolCalls', () => {
     it('allows clip movement with automation writes on a lane not bound to that clip', () => {
         const move = {
             name: 'moveClip',
-            arguments: { clipId: 'clip-verse', trackId: 'bus-reverb', startBeat: 16 },
+            arguments: { clipId: 'clip-verse', trackId: 'track-vocals', startBeat: 16 },
         };
         const addPoint = {
             name: 'addAutomationPoint',

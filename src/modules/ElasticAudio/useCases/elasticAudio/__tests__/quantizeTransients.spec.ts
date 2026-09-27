@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
         string,
         {
             enabled: boolean;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
             markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
             originalTempo: number | null;
         }
@@ -31,14 +31,14 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         mocks.warpStates.get(clipId) ?? {
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         },
     setWarpState: (
         clipId: string,
         state: {
             enabled: boolean;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
             markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
             originalTempo: number | null;
         }
@@ -80,7 +80,7 @@ describe('quantizeTransients', () => {
     it('snaps non-locked markers to the nearest grid position', () => {
         mocks.warpStates.set('c1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
             markers: [
                 { id: 'm1', originalBeat: 0.31, warpedBeat: 0.31, origin: 'transient-auto' },
@@ -99,7 +99,7 @@ describe('quantizeTransients', () => {
     it('preserves locked markers', () => {
         mocks.warpStates.set('c1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
             markers: [
                 { id: 'm1', originalBeat: 0.31, warpedBeat: 0.31, origin: 'transient-auto' },
@@ -132,7 +132,7 @@ describe('quantizeTransients', () => {
     it('pushes a single undo entry for the whole quantize op', () => {
         mocks.warpStates.set('c1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
             markers: [
                 { id: 'm1', originalBeat: 0.3, warpedBeat: 0.3, origin: 'transient-auto' },

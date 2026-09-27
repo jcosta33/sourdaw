@@ -1,3 +1,4 @@
+import { decodeStretchMode, type WarpMarker, type WarpMarkerOrigin, type WarpState } from '../../models/WarpMarker';
 import {
     type ClipSatelliteEntry,
     type ClipSatelliteSnapshot,
@@ -8,7 +9,6 @@ import {
 
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 
-import type { WarpMarker, WarpMarkerOrigin, WarpState } from '../../models/WarpMarker';
 import type { ClipGainEnvelope, GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
 
 /**
@@ -35,14 +35,9 @@ const GAIN_ENVELOPE_POINT_KEYS = ['id', 'beatOffset', 'gainDb'] as const;
 const WARP_STATE_KEYS = ['enabled', 'markers', 'stretchMode', 'originalTempo'] as const;
 const WARP_MARKER_KEYS = ['id', 'originalBeat', 'warpedBeat', 'origin', 'confidence', 'locked'];
 const WARP_MARKER_ORIGINS: readonly string[] = ['user', 'transient-auto', 'grid-snap'];
-const STRETCH_MODES: readonly string[] = ['repitch', 'complex', 'texture', 'beats'];
 
 function isWarpMarkerOrigin(value: string): value is WarpMarkerOrigin {
     return WARP_MARKER_ORIGINS.includes(value);
-}
-
-function isStretchMode(value: string): value is WarpState['stretchMode'] {
-    return STRETCH_MODES.includes(value);
 }
 
 function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
@@ -177,7 +172,13 @@ function validateWarpState(value: unknown): WarpState | null | false {
     if (!properties || typeof properties.enabled !== 'boolean') {
         return false;
     }
-    if (typeof properties.stretchMode !== 'string' || !isStretchMode(properties.stretchMode)) {
+    // `decodeStretchMode` is the same boundary the warp store sanitizes
+    // through: canonical ids pass unchanged, a pre-ADR 0024 id an older undo
+    // plan still carries maps onto its canonical mode, anything else refuses
+    // the state. Comparing against the live store only works because both
+    // sides land on the canonical vocabulary.
+    const stretchMode = decodeStretchMode(properties.stretchMode);
+    if (stretchMode === undefined) {
         return false;
     }
     const originalTempo: unknown = properties.originalTempo;
@@ -199,7 +200,7 @@ function validateWarpState(value: unknown): WarpState | null | false {
     return {
         enabled: properties.enabled,
         markers,
-        stretchMode: properties.stretchMode,
+        stretchMode,
         originalTempo,
     };
 }

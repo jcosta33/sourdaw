@@ -15,7 +15,7 @@ type AddClipInput = {
 
 type MockTrackState = {
     selectedTrackId: string | null;
-    tracks: Array<{ id: string }>;
+    tracks: Array<{ id: string; kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca' }>;
 };
 
 const mocks = vi.hoisted(() => {
@@ -119,7 +119,7 @@ describe('pasteClip', () => {
         mocks.addClip.mockReturnValue({ id: 'pasted-clip' });
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
 
         expect(pasteClip()).toBe(true);
@@ -204,7 +204,11 @@ describe('pasteClip', () => {
         mocks.playheadPositionRef.current = 12;
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }, { id: 'source-track-later' }, { id: 'source-track-earlier' }],
+            tracks: [
+                { id: 'selected-track', kind: 'midi' },
+                { id: 'source-track-later', kind: 'midi' },
+                { id: 'source-track-earlier', kind: 'midi' },
+            ],
         });
         mocks.addClip
             .mockReturnValueOnce({ id: 'pasted-later-clip' })
@@ -299,7 +303,7 @@ describe('pasteClip', () => {
         ]);
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'missing-track',
-            tracks: [{ id: 'source-track' }],
+            tracks: [{ id: 'source-track', kind: 'midi' }],
         });
 
         expect(pasteClip()).toBe(false);
@@ -311,7 +315,10 @@ describe('pasteClip', () => {
     it('skips MIDI ownership work when addClip fails or copied notes are absent or empty', () => {
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: null,
-            tracks: [{ id: 'unrelated-track' }, { id: 'source-track' }],
+            tracks: [
+                { id: 'unrelated-track', kind: 'midi' },
+                { id: 'source-track', kind: 'midi' },
+            ],
         });
         mocks.addClip.mockReturnValue(null);
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
@@ -344,7 +351,11 @@ describe('pasteClip', () => {
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'vca-1',
-            tracks: [{ id: 'track-1' }, { id: 'track-2' }, { id: 'vca-1' }],
+            tracks: [
+                { id: 'track-1', kind: 'midi' },
+                { id: 'track-2', kind: 'midi' },
+                { id: 'vca-1', kind: 'vca' },
+            ],
         });
         mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { trackId: string }) => {
             if (input.trackId === 'vca-1') {
@@ -390,7 +401,7 @@ describe('pasteClip', () => {
         corrupt(entry);
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
         setClipClipboard([entry]);
 
@@ -405,7 +416,7 @@ describe('pasteClip', () => {
     it('rejects duplicate source clip ids before destination resolution or allocation', () => {
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
         setClipClipboard([
             createClipboardEntry({ clipId: 'duplicate-source', sourceTrackId: 'source-track-one' }),
@@ -425,13 +436,16 @@ describe('pasteClip', () => {
             name: 'a runtime-VCA source owner',
             sourceStatus: 'ineligible',
             sourceTrackId: 'vca-source',
-            tracks: [{ id: 'selected-track' }, { id: 'vca-source' }],
+            tracks: [
+                { id: 'selected-track', kind: 'midi' as const },
+                { id: 'vca-source', kind: 'vca' as const },
+            ],
         },
         {
             name: 'a missing source owner',
             sourceStatus: 'missing',
             sourceTrackId: 'missing-source',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' as const }],
         },
     ])('rejects $name before selected-target resolution or any effect', ({ sourceStatus, sourceTrackId, tracks }) => {
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
@@ -477,7 +491,7 @@ describe('pasteClip', () => {
     it('rejects the paste when the playhead is not a finite beat', () => {
         setClipClipboard([createClipboardEntry()]);
         mocks.transportState.value = {};
-        mocks.getTrackState.mockReturnValue({ selectedTrackId: null, tracks: [{ id: 'source-track' }] });
+        mocks.getTrackState.mockReturnValue({ selectedTrackId: null, tracks: [{ id: 'source-track', kind: 'midi' }] });
         mocks.playheadPositionRef.current = Number.NaN;
 
         expect(pasteClip()).toBe(false);
@@ -493,7 +507,7 @@ describe('pasteClip', () => {
         entry.sourceTrackId = '';
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
         setClipClipboard([entry]);
 
@@ -511,7 +525,7 @@ describe('pasteClip', () => {
         mocks.transportState.value = {};
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
         // offset = -10 - 4 = -14 -> pasted startBeat = 4 + (-14) = -10 < 0.
         mocks.playheadPositionRef.current = -10;
@@ -549,7 +563,7 @@ describe('pasteClip', () => {
         mocks.transportState.value = {};
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
         setClipClipboard([entry]);
 
@@ -571,7 +585,7 @@ describe('pasteClip', () => {
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track', kind: 'midi' }],
         });
         mocks.addClip
             .mockImplementationOnce(() => {

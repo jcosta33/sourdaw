@@ -3,7 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { moveClip } from '../moveClip';
 
 const mocks = vi.hoisted(() => {
-    type MockClip = { id: string; trackId?: string; startBeat: number; endBeat: number; locked?: boolean };
+    type MockClip = {
+        id: string;
+        trackId?: string;
+        startBeat: number;
+        endBeat: number;
+        type: 'audio' | 'midi';
+        locked?: boolean;
+    };
     type MockTrack = { id: string; kind: 'audio' | 'vca'; clips: MockClip[] };
     type MockTrackState = { tracks: MockTrack[] };
     return {
@@ -38,7 +45,7 @@ describe('moveClip', () => {
     it('moves a clip between tracks and updates its position', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
+                { id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] },
                 { id: 't2', kind: 'audio', clips: [] },
             ],
         });
@@ -68,7 +75,7 @@ describe('moveClip', () => {
 
     it('shifts MIDI notes when moving', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
         });
 
         expect(moveClip('c1', 't1', 5)).toBe(true);
@@ -79,7 +86,7 @@ describe('moveClip', () => {
 
     it('shifts automation when moving', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
         });
 
         expect(moveClip('c1', 't1', 5)).toBe(true);
@@ -90,7 +97,7 @@ describe('moveClip', () => {
 
     it('respects originalStartBeat for automation delta if provided', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] }],
+            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 2, endBeat: 6 }] }],
         });
 
         // Current start is 2. Target is 10. Drag started at 0.
@@ -105,7 +112,7 @@ describe('moveClip', () => {
     it('rehomes clip automation even when a cross-track move has no beat delta', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] },
+                { id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 2, endBeat: 6 }] },
                 { id: 't2', kind: 'audio', clips: [] },
             ],
         });
@@ -123,7 +130,7 @@ describe('moveClip', () => {
 
     it('bails without deleting the clip when the target track does not exist', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
         });
 
         // The clip exists, but the destination track id is bogus. Without the
@@ -149,7 +156,7 @@ describe('moveClip', () => {
         'rejects an invalid start beat %s without writing',
         (startBeat) => {
             mocks.getTrackState.mockReturnValue({
-                tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+                tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
             });
 
             expect(moveClip('c1', 't1', startBeat)).toBe(false);
@@ -162,7 +169,11 @@ describe('moveClip', () => {
     it('rejects moving a locked clip or moving onto an ineligible VCA track', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { id: 't1', kind: 'audio', clips: [{ id: 'c1', startBeat: 0, endBeat: 4, locked: true }] },
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4, locked: true }],
+                },
                 { id: 'vca-1', kind: 'vca', clips: [] },
             ],
         } as never);
@@ -174,7 +185,13 @@ describe('moveClip', () => {
 
     it('reports an exact same-track, same-position request as a no-op', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [{ id: 'c1', trackId: 't1', startBeat: 4, endBeat: 8 }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ id: 'c1', type: 'audio', trackId: 't1', startBeat: 4, endBeat: 8 }],
+                },
+            ],
         });
 
         expect(moveClip('c1', 't1', 4)).toBe(false);

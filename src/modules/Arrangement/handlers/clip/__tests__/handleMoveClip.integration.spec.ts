@@ -74,7 +74,7 @@ describe('handleMoveClip atomic integration', () => {
             endBeat: 10,
         });
         const source = TrackDummy.create({ id: 'track-1', name: 'Vocals', clips: [clip] });
-        const destination = TrackDummy.create({ id: 'track-2', name: 'Comp Bus', kind: 'bus', clips: [] });
+        const destination = TrackDummy.create({ id: 'track-2', name: 'Comp', kind: 'audio', clips: [] });
         trackStore.set({ tracks: [source, destination], selectedTrackId: source.id, ghostClips: [] });
         automationStore.set({
             lanes: [

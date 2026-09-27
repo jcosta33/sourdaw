@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { type ToolCallResult } from '../../../models/ToolCallResult';
 import { bridgeClipToolCall, clipActionNames, clipStrategyRegistry } from '../clipStrategy';
 
 const projectContext: ProjectContext = {
@@ -107,6 +108,16 @@ const projectContext: ProjectContext = {
 
 const foreignCall = { name: 'addMarker', arguments: { beat: 0, name: 'Intro' } };
 
+const projectContextWithNonContentTracks: ProjectContext = {
+    ...projectContext,
+    tracks: [
+        ...projectContext.tracks,
+        { ...projectContext.tracks[0]!, id: 'track-bus', name: 'Drum Bus', kind: 'bus', clips: [], clipCount: 0 },
+        { ...projectContext.tracks[0]!, id: 'track-folder', name: 'Strings', kind: 'folder', clips: [], clipCount: 0 },
+        { ...projectContext.tracks[0]!, id: 'master', name: 'Master', kind: 'master', clips: [], clipCount: 0 },
+    ],
+};
+
 describe('clipStrategy', () => {
     it('registers exactly the exported clip action names', () => {
         expect(new Set(clipStrategyRegistry.keys())).toEqual(new Set(clipActionNames));
@@ -200,6 +211,64 @@ describe('clipStrategy', () => {
         ).toEqual({
             type: 'moveClips',
             payload: { moves: [{ clipId: 'clip-audio-a', trackId: 'track-audio', startBeat: 5 }], ripple: false },
+        });
+    });
+
+    it('moveClip refuses a destination that cannot play the clip and names why', () => {
+        const rejections: { call: ToolCallResult; reason: string }[] = [
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-midi-a', trackId: 'track-bus', startBeat: 2 } },
+                reason: 'sums signal rather than playing clips',
+            },
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-midi-a', trackId: 'track-folder', startBeat: 2 } },
+                reason: 'renders no timeline content',
+            },
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-midi-a', trackId: 'track-audio', startBeat: 2 } },
+                reason: 'has no instrument',
+            },
+            {
+                call: { name: 'moveClip', arguments: { clipId: 'clip-audio-a', trackId: 'track-midi', startBeat: 2 } },
+                reason: 'cannot play an audio clip',
+            },
+        ];
+        for (const { call, reason } of rejections) {
+            expect(bridgeClipToolCall({ call, context: projectContextWithNonContentTracks, index: 3 })).toMatchObject({
+                index: 3,
+                name: call.name,
+                reason: expect.stringContaining(reason),
+            });
+        }
+    });
+
+    it('duplicateClipAt and moveClips refuse destinations that cannot play the clip', () => {
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'duplicateClipAt',
+                    arguments: { clipId: 'clip-audio-a', destinationTrackId: 'track-folder', startBeat: 20 },
+                },
+                context: projectContextWithNonContentTracks,
+                index: 4,
+            })
+        ).toMatchObject({
+            name: 'duplicateClipAt',
+            reason: expect.stringContaining('renders no timeline content'),
+        });
+
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClips',
+                    arguments: { moves: [{ clipId: 'clip-audio-a', trackId: 'master', startBeat: 5 }] },
+                },
+                context: projectContextWithNonContentTracks,
+                index: 5,
+            })
+        ).toMatchObject({
+            name: 'moveClips',
+            reason: expect.stringContaining('sums signal rather than playing clips'),
         });
     });
 

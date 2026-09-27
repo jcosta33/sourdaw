@@ -5,6 +5,8 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 
+import { isClipDropCompatible } from './isClipDropCompatible';
+
 export function moveClip(
     clipId: string,
     targetTrackId: string,
@@ -44,6 +46,12 @@ export function moveClip(
     });
 
     if (!movedClip || oldStartBeat === undefined || sourceTrackId === undefined) {
+        return false;
+    }
+    // `acceptsClipUpdate` is true for bus/master/folder, but none of them
+    // renders clip content: a clip moved there is never scheduled. The same
+    // rule the timeline drop enforces, applied to every route through here.
+    if (!isClipDropCompatible(movedClip.type, targetTrack.kind)) {
         return false;
     }
     if (sourceTrackId === targetTrackId && Object.is(oldStartBeat, startBeat)) {

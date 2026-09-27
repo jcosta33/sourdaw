@@ -1413,7 +1413,7 @@ describe('handleRestoreTrackClipStates', () => {
                 const capturedWarp = {
                     enabled: true,
                     markers: [],
-                    stretchMode: 'complex' as const,
+                    stretchMode: 'phase-vocoder' as const,
                     originalTempo: 120,
                 };
                 mocks.getTrackStoreState.mockReturnValue({ tracks: [liveTrack('t1', ['c1'])] });
