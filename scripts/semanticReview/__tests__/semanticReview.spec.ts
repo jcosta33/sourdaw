@@ -1512,14 +1512,14 @@ describe('contract-carrying admission', () => {
     });
 
     it("admits a covered source at its coverer's position before an equal-figure contract-needing unit", () => {
-        // The fixture builds a covered bulk source and an added path whose rules need a contract, both carrying
-        // the same 4,000-byte figure. The source is promoted with the contract-carrying spec that covers it, so
-        // its unit takes the contract tier while the competitor's stays behind it. The assertions read that the
-        // competitor needs contract evidence, that the two share a figure, and that the source is the unit
-        // admitted first — the tier-0-against-tier-1 competition, which is the branch this case names.
+        // The fixture builds a covered bulk source whose own side carries 1,000 bytes under a contract-carrying
+        // spec whose side carries 4,000, and an added path whose rules need a contract and whose side carries
+        // the same 4,000 bytes the source's position takes. The assertions read that the competitor's unit
+        // needs contract evidence while the source's unit is covered by a spec that does, that the two units
+        // share one figure, and that the source is admitted first.
         const coverPath = 'scripts/semanticReview/__tests__/coverAll.spec.ts';
         const sourcePath = 'scripts/bulkSource.ts';
-        const competitorPath = 'src/modules/Project/zShape.ts';
+        const competitorPath = 'src/modules/Project/aShape.ts';
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const pad = (bytes: number, ...prefix: readonly string[]): string => {
             const head = prefix.join('');
@@ -1559,11 +1559,17 @@ describe('contract-carrying admission', () => {
         if (sourceUnit === undefined || competitorUnit === undefined) {
             throw new Error('both the covered source and the competitor must produce a unit');
         }
-        // The competitor needs a contract and carries none, the source is covered by a spec that does, and the
-        // two units share one figure.
+        // The competitor's unit needs a contract and carries none, the source's unit carries none and is
+        // covered by a spec that does, and the two units share one figure.
         expect(unitNeedsContractContext(applicableRules([competitorPath]))).toBe(true);
         expect(unitNeedsContractContext(applicableRules([coverPath]))).toBe(true);
         expect(covered.get(sourcePath)).toEqual([coverPath]);
+        expect(sourceUnit.specCovered).toBe(true);
+        expect(sourceUnit.contractNeeding).toBe(true);
+        expect(sourceUnit.contractCarrying).toBe(false);
+        expect(competitorUnit.specCovered).toBe(false);
+        expect(competitorUnit.contractNeeding).toBe(true);
+        expect(competitorUnit.contractCarrying).toBe(false);
         expect(sourceUnit.order.admissionBytes).toBe(competitorUnit.order.admissionBytes);
         expect(sourceUnit.order.path).toBe(coverPath);
         expect(sidesByPath.get(sourcePath)?.after).toBe(false);
@@ -1587,11 +1593,11 @@ describe('contract-carrying admission', () => {
         expect(planned.units.some((unit) => unit.path === sourcePath)).toBe(true);
     });
 
-    it('admits the lexicographically first of two equal-figure covered sources under a binding total', () => {
+    it('orders two equal-figure covered sources by their own paths whatever order the caller lists them', () => {
         // Two sources keyed at their shared coverer's figure, with equal figures of their own, so they reach
-        // one position with nothing left between them but their own paths. The case lists them in both orders
-        // and reads that the same source is admitted first each way, so the order does not depend on the order
-        // the caller lists the change's files in.
+        // one position with nothing between them but their own paths. The case lists them in both orders and
+        // reads that the lexicographically first is ordered first each way: the order the caller lists the
+        // change's files in does not decide it.
         const coverPath = 'scripts/semanticReview/__tests__/equalCover.spec.ts';
         const aPath = 'scripts/semanticReview/equalA.ts';
         const bPath = 'scripts/semanticReview/equalB.ts';
