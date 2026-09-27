@@ -795,7 +795,7 @@ export function collectEvidence(input: {
         input.mergeBaseSha,
         input.headSha
     );
-    const specCovered = specCoveredSources(assessed, contents);
+    const specCovered = specCoveredSources(assessed, contents, bytesBySide);
     const credentialExcludedPaths = credentialShapedPaths(assessed, contents, hunksByPath);
     // The one predicate the charge and the order both read: the files whose own path the screen keeps,
     // whose rules admit them, and which carry a side admission mints a region for.

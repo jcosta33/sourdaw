@@ -218,8 +218,10 @@ export function plannedUnitPaths(
  *
  * The covering spec is a carrier, not a rank: it is what lets a covered source be ordered *with* the spec
  * rather than at the front of the contract tier, so the pair competes with unrelated material at the
- * position the spec already held. A source several specs cover is recorded against the lexicographically
- * first covering path, so the answer does not depend on the order the change lists its files in.
+ * position the spec already held. A source several specs cover is recorded against the covering spec whose
+ * own position ranks first under the comparator's keys — the smallest side figure, then the
+ * lexicographically first path — so the source ties the earliest coverer and stays ahead of every spec that
+ * covers it, and the answer does not depend on the order the change lists its files in.
  *
  * The transitive level exists because a spec reaches a module it actually tests through a re-export: a
  * spec that imports `evidence.ts` also covers `contractCarrying.ts` and `evidenceOrdering.ts` through
@@ -229,14 +231,32 @@ export function plannedUnitPaths(
  */
 export function specCoveredSources(
     changed: readonly SemanticChangedFile[],
-    contents: ReadonlyMap<string, ChangedFileContents>
+    contents: ReadonlyMap<string, ChangedFileContents>,
+    admissionBytesBySide: ReadonlyMap<string, AdmissionSideBytes>
 ): ReadonlyMap<string, string> {
     const changedPaths = new Set(changed.map((file) => file.path));
     const filesByPath = new Map(changed.map((file) => [file.path, file]));
     const covered = new Map<string, string>();
+    // The covering spec whose own position ranks first under the comparator's keys: the smallest side
+    // figure the spec's own unit carries, then the lexicographically first path. The comparator ranks a
+    // pair by the collected-spec rank, the contract-carrying class, the byte figure, then the path, and
+    // every coverer ties on the first two, so the byte figure and path are what order the coverers.
+    const ranksBefore = (candidate: string, incumbent: string): boolean => {
+        const candidateFile = filesByPath.get(candidate);
+        const incumbentFile = filesByPath.get(incumbent);
+        if (candidateFile === undefined || incumbentFile === undefined) {
+            return false;
+        }
+        const candidateBytes = coveringSpecRankBytes(candidateFile.kind, admissionBytesBySide.get(candidate));
+        const incumbentBytes = coveringSpecRankBytes(incumbentFile.kind, admissionBytesBySide.get(incumbent));
+        if (candidateBytes !== incumbentBytes) {
+            return candidateBytes < incumbentBytes;
+        }
+        return compareLexicographic(candidate, incumbent) < 0;
+    };
     const record = (specPath: string, sourcePath: string): void => {
         const existing = covered.get(sourcePath);
-        if (existing === undefined || compareLexicographic(specPath, existing) < 0) {
+        if (existing === undefined || ranksBefore(specPath, existing)) {
             covered.set(sourcePath, specPath);
         }
     };
@@ -285,6 +305,18 @@ export function specCoveredSources(
         }
     }
     return covered;
+}
+
+/**
+ * The byte figure a covering spec ranks by when several specs cover one source: the smallest of the side
+ * figures the spec's own unit carries, so the covered source ties the covering spec that is admitted first.
+ * Every change kind offers at least one side, so at least one figure is finite.
+ */
+function coveringSpecRankBytes(kind: SemanticChangedFile['kind'], bytes: AdmissionSideBytes | undefined): number {
+    const figures = bytes ?? { before: 0, after: 0 };
+    const before = kindHasBeforeSide(kind) ? figures.before : Number.POSITIVE_INFINITY;
+    const after = kindHasAfterSide(kind) ? figures.after : Number.POSITIVE_INFINITY;
+    return Math.min(before, after);
 }
 
 /**

@@ -1121,6 +1121,71 @@ describe('contract-carrying admission', () => {
         expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(specPath));
     });
 
+    it('keeps a source ahead of every spec that covers it when two contract-carrying specs share it', () => {
+        // The lexicographically-first coverer is a rank, not a position: when two contract-carrying specs
+        // cover one source and the lexicographically-first coverer carries the larger figure, the other
+        // coverer — smaller, so admitted earlier — outranked the source it also covers. The source must
+        // instead tie the covering spec whose own position ranks first, so it is admitted ahead of both.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const importLine = "import { shared } from '../shared.ts';\n";
+        const aaaSpecPath = 'scripts/semanticReview/__tests__/aaaShared.spec.ts';
+        const zzzSpecPath = 'scripts/semanticReview/__tests__/zzzShared.spec.ts';
+        const subjectPath = 'scripts/semanticReview/shared.ts';
+
+        // `zzzShared` is the coverer the lexicographic rule would not choose, and it carries the smaller
+        // figure: 60,000 bytes against `aaaShared`'s 72,000. The source carries 48,000 bytes of its own
+        // hunks, so its survival under the binding total depends on which coverer it ties.
+        const zzzAfter = `${workflowLine}${importLine}${sizedLines(5, 12_000, 'zzz')}`;
+        const aaaAfter = `${workflowLine}${importLine}${sizedLines(6, 12_000, 'aaa')}`;
+        const subjectAfter = sizedLines(4, 12_000, 'shared');
+        const files = [
+            changedFile(aaaSpecPath, { kind: 'added', added: 8, deleted: 0 }),
+            changedFile(zzzSpecPath, { kind: 'added', added: 7, deleted: 0 }),
+            changedFile(subjectPath, { kind: 'added', added: 4, deleted: 0 }),
+        ];
+        const hunks = new Map<string, PathHunks>([
+            [aaaSpecPath, { path: aaaSpecPath, before: [], after: oneLineHunks(3, 6) }],
+            [zzzSpecPath, { path: zzzSpecPath, before: [], after: oneLineHunks(3, 5) }],
+            [subjectPath, { path: subjectPath, before: [], after: oneLineHunks(1, 4) }],
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({
+                files,
+                hunks,
+                blobs: {
+                    [`${HEAD}:${aaaSpecPath}`]: aaaAfter,
+                    [`${HEAD}:${zzzSpecPath}`]: zzzAfter,
+                    [`${HEAD}:${subjectPath}`]: subjectAfter,
+                },
+            }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        // The source ties the earlier coverer, so it precedes the smaller spec in the reference order and
+        // the larger spec is withheld once the source is admitted.
+        const admittedPaths = set.references.map((reference) => reference.path);
+        expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(zzzSpecPath));
+        expect(set.withheldSides.own.get(aaaSpecPath)).toContain('after');
+        // And it survives the binding total whole — the merge base's non-spec-before-spec rank admitted it,
+        // and tying the earlier coverer keeps its after side from being withheld.
+        expect(set.withheldSides.own.get(subjectPath)).toBeUndefined();
+    });
+
     it('names a withheld region by its own content class rather than its admission tier', () => {
         // The qualifier is the region's own content class, never the admission tier. `vocabulary.ts` is a
         // source its contract-carrying spec covers, so it is ordered in that spec's tier, yet its withheld
