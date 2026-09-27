@@ -1,0 +1,20 @@
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 2942,2955-2960,3044-3051
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 32-39
+scripts/semanticReview/evidenceOrdering.ts
+  h_beb54bf43b47b7 100-106
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 16-17,36,38-40,43,88-90,113,115-117,129-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7a6c197c8c36f96d2da045ee1495cfe91211147a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
