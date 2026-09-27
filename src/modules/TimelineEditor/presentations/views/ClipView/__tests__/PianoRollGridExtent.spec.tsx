@@ -20,7 +20,15 @@ import { PianoRoll } from '../PianoRoll';
 
 type ProbeNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
 type ProbeClip = { id: string; type: 'midi'; startBeat: number; endBeat: number; color?: string };
-type ProbeTrack = { id: string; kind: 'midi'; color: string; clips: ProbeClip[] };
+type ProbeTrack = {
+    id: string;
+    kind: 'midi';
+    color: string;
+    clips: ProbeClip[];
+    // The roll reads this to derive the expression-lane selector's MPE
+    // lanes; the real Track model always carries it (Track.ts `devices`).
+    devices: Array<{ type: string }>;
+};
 
 type ProbeMidiState = {
     notesByClipId: Record<string, ProbeNote[]>;
@@ -164,6 +172,7 @@ describe('PianoRoll grid extent (real pianoRollConstants)', () => {
                 kind: 'midi',
                 color: 'oklch(0.5 0.1 200)',
                 clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 40 }],
+                devices: [],
             },
         ];
 
@@ -201,6 +210,7 @@ describe('PianoRoll grid extent (real pianoRollConstants)', () => {
                     { id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 },
                     { id: 'clip-2', type: 'midi', startBeat: 0, endBeat: 8 },
                 ],
+                devices: [],
             },
         ];
 
@@ -269,6 +279,7 @@ describe('PianoRoll grid extent (real pianoRollConstants)', () => {
                         kind: 'midi',
                         color: 'oklch(0.5 0.1 200)',
                         clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: LONG_CLIP_BEATS }],
+                        devices: [],
                     },
                 ];
 
