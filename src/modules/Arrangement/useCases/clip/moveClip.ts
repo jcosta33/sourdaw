@@ -70,7 +70,10 @@ export function moveClip(
     // whatever the document already holds, so the rule has nothing to govern.
     // Refusing a same-host retime would strand a legacy misplaced clip (an
     // audio clip a pre-rule project parked on a MIDI track) against every
-    // later drag on its own track.
+    // later drag on its own track. The AI placement bridge applies the same
+    // exemption for its `moveClip`/`moveClips` arms, so a provider-driven
+    // retime of such a clip is not rejected pre-dispatch with its own host
+    // named as an invalid destination.
     const sameHost = sourceTrackId === targetTrackId;
     if (!sameHost && options?.historicalPlacement !== true && !isClipDropCompatible(movedClip.type, targetTrack.kind)) {
         return false;

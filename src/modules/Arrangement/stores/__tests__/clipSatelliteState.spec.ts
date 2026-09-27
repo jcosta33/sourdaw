@@ -206,5 +206,22 @@ describe('clipSatelliteState', () => {
 
             expect(clipSatelliteEntriesMatchSnapshot([legacyRecordedEntry()])).toBe(true);
         });
+
+        it('projects a recorded entry that decodes onto the default warp state as no satellite', () => {
+            // `texture` decodes onto the canonical default mode, so this
+            // recorded content is `defaultWarpState` after normalization —
+            // the same collapse the write (`setWarpState`) and the live read
+            // apply. Projecting it as present would conflict every replay
+            // over the absent store its content always produces.
+            expect(
+                clipSatelliteEntriesMatchSnapshot([
+                    {
+                        clipId: 'clip-1',
+                        gainEnvelope: null,
+                        warpState: { enabled: false, markers: [], stretchMode: 'texture', originalTempo: null },
+                    },
+                ])
+            ).toBe(true);
+        });
     });
 });

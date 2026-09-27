@@ -118,6 +118,24 @@ const projectContextWithNonContentTracks: ProjectContext = {
     ],
 };
 
+/** A clip a pre-rule project parked on the wrong kind of track: its own host
+ *  cannot play it, so an unconditional kind rule would refuse even the host —
+ *  the shape the same-host retime exemption exists for. */
+const legacyMisplacedClip = {
+    ...projectContext.tracks[1]!.clips[0]!,
+    id: 'clip-legacy-audio',
+    name: 'Legacy Audio',
+    startBeat: 8,
+    endBeat: 12,
+};
+
+const projectContextWithLegacyMisplacedClip: ProjectContext = {
+    ...projectContextWithNonContentTracks,
+    tracks: projectContextWithNonContentTracks.tracks.map((track) =>
+        track.id === 'track-midi' ? { ...track, clips: [...track.clips, legacyMisplacedClip] } : track
+    ),
+};
+
 describe('clipStrategy', () => {
     it('registers exactly the exported clip action names', () => {
         expect(new Set(clipStrategyRegistry.keys())).toEqual(new Set(clipActionNames));
@@ -269,6 +287,79 @@ describe('clipStrategy', () => {
         ).toMatchObject({
             name: 'moveClips',
             reason: expect.stringContaining('sums signal rather than playing clips'),
+        });
+    });
+
+    it('bridges a same-host retime of a legacy misplaced clip the kind rule cannot govern', () => {
+        // A pre-rule project can hold an audio clip on a MIDI track. A
+        // same-host move changes no placement, so the use case exempts it —
+        // the bridge must not reject the call pre-dispatch with the clip's
+        // own host named as an invalid destination.
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClip',
+                    arguments: { clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 3,
+            })
+        ).toEqual({
+            type: 'moveClip',
+            payload: { clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 },
+        });
+
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClips',
+                    arguments: { moves: [{ clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 }] },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 4,
+            })
+        ).toEqual({
+            type: 'moveClips',
+            payload: { moves: [{ clipId: 'clip-legacy-audio', trackId: 'track-midi', startBeat: 6 }], ripple: false },
+        });
+    });
+
+    it('still refuses a legacy misplaced clip on a destination other than its own host', () => {
+        // The same-host exemption is not a waiver: any other destination
+        // obeys the kind rule, including this one the clip already violates
+        // by existing.
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'moveClip',
+                    arguments: { clipId: 'clip-legacy-audio', trackId: 'master', startBeat: 6 },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 5,
+            })
+        ).toMatchObject({
+            name: 'moveClip',
+            reason: expect.stringContaining('sums signal rather than playing clips'),
+        });
+    });
+
+    it('duplicateClipAt keeps refusing a copy onto a legacy misplaced clip own host', () => {
+        // A duplicate is a NEW placement on the destination — even when that
+        // destination is the clip's current host — so no same-host exemption
+        // applies: the copy would be unplayable exactly like any fresh
+        // placement.
+        expect(
+            bridgeClipToolCall({
+                call: {
+                    name: 'duplicateClipAt',
+                    arguments: { clipId: 'clip-legacy-audio', destinationTrackId: 'track-midi', startBeat: 20 },
+                },
+                context: projectContextWithLegacyMisplacedClip,
+                index: 6,
+            })
+        ).toMatchObject({
+            name: 'duplicateClipAt',
+            reason: expect.stringContaining('cannot play an audio clip'),
         });
     });
 

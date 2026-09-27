@@ -14,7 +14,11 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
  * because the store eligibility flags alone admit bus/master/folder targets
  * that would hold a clip which is never scheduled. The kind-matching core is
  * shared with the AI clip-placement transformers (which cannot import module
- * code), so they refuse exactly the same destinations.
+ * code), so they refuse the same destinations — with the one exemption both
+ * layers apply to moves: a destination that is the clip's own host changes no
+ * placement, so the rule does not govern it, and a legacy misplaced clip stays
+ * retimable in place. Creating a placement (drag between tracks, duplicate,
+ * paste) has no such exemption on either layer.
  */
 export function isClipDropCompatible(clipType: 'audio' | 'midi', trackKind: TrackKind): boolean {
     if (!getTrackEligibility(trackKind).rendersTrackContent) {

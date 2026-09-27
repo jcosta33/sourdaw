@@ -108,6 +108,23 @@ function legacyRecordedSatellite(): ClipSatelliteEntrySnapshot {
     };
 }
 
+/** A warp satellite as a pre-ADR build could record it over untouched content:
+ *  the legacy `texture` id beside otherwise-default content. Its decode maps
+ *  onto exactly `defaultWarpState`, which both the live read and the write
+ *  collapse to absent. */
+function legacyDefaultContentSatellite(): ClipSatelliteEntrySnapshot {
+    return {
+        clipId: 'c1',
+        gainEnvelope: null,
+        warpState: {
+            enabled: false,
+            markers: [],
+            stretchMode: 'texture',
+            originalTempo: null,
+        },
+    };
+}
+
 function canonicalWarpState() {
     return {
         enabled: true,
@@ -145,6 +162,28 @@ describe('handleRestoreTrackClipStates over a legacy recorded satellite', () => 
         expect(result).toEqual({ status: 'written' });
         expect(warpStates.get('c1')?.stretchMode).toBe('repitch');
         expect(warpStates.get('c1')?.markers).toEqual(canonicalWarpState().markers);
+    });
+
+    it('writes a restore whose recorded satellite decodes onto the default warp state', () => {
+        // A pre-ADR build could record a `texture` satellite over otherwise
+        // default content. The decode maps `texture` onto the canonical
+        // default mode, so the decoded value IS `defaultWarpState` — which
+        // both the live read and the write (`setWarpState`) collapse to
+        // absent. The guard compares the same projection the write applies,
+        // so the replay writes over the live null store instead of
+        // conflicting against a shape no write could ever produce.
+        const legacy = legacyDefaultContentSatellite();
+
+        const result = handleRestoreTrackClipStates.execute({
+            type: 'restoreTrackClipStates',
+            payload: {
+                expected: [snapshotFor('t1', ['c1'], { clipSatellites: [legacy] })],
+                replacement: [snapshotFor('t1', ['c1'], { clipSatellites: [legacy] })],
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(warpStates.get('c1')).toBeUndefined();
     });
 
     it('still conflicts when the recorded satellite disagrees with the live decode', () => {

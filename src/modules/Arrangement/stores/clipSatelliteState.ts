@@ -160,12 +160,17 @@ export function serializeProjectedClipSatelliteEntries(
  * `restoreTrackClipStates` guard: comparing the live read against the entry
  * *raw* would conflict on a legacy recorded stretch mode the write itself
  * decodes, so the guard must compare the same projection the write applies.
+ * The write also stores a value that decodes onto `defaultWarpState` as absent
+ * (`setWarpState`), so this projection collapses such an entry to `null` —
+ * without the collapse a legacy default-content entry would conflict on every
+ * replay over the only live state its content can ever meet.
  */
 export function normalizeClipSatelliteEntry(entry: ClipSatelliteEntrySnapshot): ClipSatelliteEntry {
+    const warpState = entry.warpState === null ? null : normalizeWarpState(entry.warpState);
     return {
         clipId: entry.clipId,
         gainEnvelope: entry.gainEnvelope === null ? null : normalizeGainEnvelope(entry.gainEnvelope, entry.clipId),
-        warpState: entry.warpState === null ? null : normalizeWarpState(entry.warpState),
+        warpState: warpState !== null && isDefaultWarpState(warpState) ? null : warpState,
     };
 }
 

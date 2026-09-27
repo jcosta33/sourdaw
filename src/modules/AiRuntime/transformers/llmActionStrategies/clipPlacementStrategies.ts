@@ -97,7 +97,14 @@ export const clipPlacementStrategyDefinitions = [
                     'Expected one unlocked clip, one existing clip-host track, and a finite non-negative startBeat'
                 );
             }
-            if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+            // A same-host move changes no placement — the host is whatever
+            // the document already holds, so the kind rule has nothing to
+            // govern there (the exemption `moveClip` itself applies). Without
+            // it a legacy misplaced clip is rejected pre-dispatch from every
+            // retime on its own track, with its own host named as an invalid
+            // destination. Any other destination still obeys the rule.
+            const sameHost = source.track.id === destination.id;
+            if (!sameHost && !isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
                 return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, destination.kind));
             }
             return {
@@ -126,6 +133,11 @@ export const clipPlacementStrategyDefinitions = [
                     'Expected one unlocked clip, one existing clip-host destination track, and a finite non-negative startBeat'
                 );
             }
+            // No same-host exemption here, unlike `moveClip`: a duplicate is a
+            // NEW placement on the destination — even when that destination is
+            // the clip's current host — so the kind rule governs it exactly as
+            // it governs every fresh placement (the duplicate core refuses the
+            // same target at execution).
             if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
                 return rejection(index, call.name, clipPlacementRejectionReason(source.clip.type, destination.kind));
             }
@@ -212,7 +224,12 @@ export const clipPlacementStrategyDefinitions = [
                         'Expected every move to name an unlocked clip, an existing clip-host track, and a finite non-negative startBeat'
                     );
                 }
-                if (!isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
+                // Mirrors `moveClip`: a same-host move is a retime, not a
+                // placement change, so the kind rule does not govern it — the
+                // handler routes every move through `moveClip`, which applies
+                // the same exemption at execution.
+                const sameHost = source.track.id === destination.id;
+                if (!sameHost && !isClipCompatibleWithTrackKind(source.clip.type, destination.kind)) {
                     return rejection(
                         index,
                         call.name,
