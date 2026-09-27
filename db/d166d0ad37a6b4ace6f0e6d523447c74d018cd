@@ -1,0 +1,38 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 9,48
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 15,55,82,110
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 13,67,72,80
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 952,955-965
+  s_ed5aa36a3ba357::t_e5db222be05738 953-954
+src/modules/AiGeneration/handlers/aiMidi/handleReplayGeneratedMidi.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 66-76,119-122
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleReplayGeneratedMidi.spec.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 154-158
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiChannelPressure.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 5,23
+src/modules/MIDI/repositories/webMidi/resetMemberExpressionState.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 3,8
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 13
+src/modules/MIDI/repositories/webMidi/pendingMemberAdmission.ts
+  s_ed5aa36a3ba357::t_838ac96d05787d 10,17,25,29,35,49,52-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dbd166d0ad37a6b4ace6f0e6d523447c74d018cd",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
