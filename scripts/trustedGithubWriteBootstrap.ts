@@ -707,15 +707,10 @@ function collectLoaderBindings(source: string): LoaderRead {
         if (declaredField !== undefined) {
             if (declaredField.ownerOpen !== undefined) {
                 if (declaredField.static !== true) {
-                    const entry = classEntryFromOpen(source, classFields, declaredField.ownerOpen);
-                    // A field whose read back crosses a regex body ending in `*` cannot be placed: the
-                    // backward walk reads that closing slash as a block comment's, so the class is
-                    // unmodelled and a read-back through it keeps the merge base's reading.
-                    if (fieldRegionHasRegexEndingInStar(source, declaredField.ownerOpen + 1, declaredField.nameIndex)) {
-                        entry.unmodelled = true;
-                    } else {
-                        entry.fields.set(declaredField.name, declaredField.kind);
-                    }
+                    classEntryFromOpen(source, classFields, declaredField.ownerOpen).fields.set(
+                        declaredField.name,
+                        declaredField.kind
+                    );
                 }
             } else if (declaredField.pendingSource !== undefined) {
                 pendingReadBacks.push({
@@ -1755,47 +1750,6 @@ function isClassMemberPosition(source: string, index: number, bodyOpen: number):
         cursor -= 1;
     }
     return true;
-}
-
-/**
- * Whether the region [start, end) holds a regex literal whose body ends in a star — a star-then-slash
- * that is the literal's closing slash rather than a block comment's. A backward walk reads such a slash
- * as a comment close it cannot place, so a class field whose read back crosses the region is unmodelled.
- */
-function fieldRegionHasRegexEndingInStar(source: string, start: number, end: number): boolean {
-    let cursor = start;
-    while (cursor < end) {
-        const commentEnd = skipComment(source, cursor);
-        if (commentEnd !== undefined) {
-            cursor = Math.min(commentEnd, end);
-            continue;
-        }
-        const quote = source[cursor];
-        if (quote === "'" || quote === '"') {
-            cursor = skipQuoted(source, cursor, quote);
-            continue;
-        }
-        if (quote === '`') {
-            cursor = scanTemplate(source, cursor, end, new Set());
-            continue;
-        }
-        if (source[cursor] === '/') {
-            const regexEnd = skipRegexLiteral(source, cursor);
-            if (regexEnd !== undefined && regexEnd <= end) {
-                let closeSlash = regexEnd - 1;
-                while (closeSlash > cursor && /[a-z]/i.test(source[closeSlash] ?? '')) {
-                    closeSlash -= 1;
-                }
-                if (source[closeSlash - 1] === '*') {
-                    return true;
-                }
-                cursor = regexEnd;
-                continue;
-            }
-        }
-        cursor += 1;
-    }
-    return false;
 }
 
 /**
@@ -5299,6 +5253,9 @@ function isMemberNameAt(source: string, index: number): boolean {
 /**
  * Whether the `.` at `cursor` is a numeric literal's point: the run of digits and dots ending at
  * `cursor - 1` holds digits only, so `1.` is a point while the second dot of `1.1.` is member access.
+ * The run must be a bare decimal's integer part: a run that continues an identifier (`x1.`, `item2.`,
+ * `a1.`, `_1.`, `$1.`) or that is a number's exponent (`1e3.`, `1e+3.`) or radix digits (`0x11.`,
+ * `0o17.`, `0b11.`) is not one, so its dot is member access.
  */
 function isNumericLiteralPoint(source: string, cursor: number): boolean {
     if (!isDecimalDigit(source.charAt(cursor - 1))) {
@@ -5310,6 +5267,21 @@ function isNumericLiteralPoint(source: string, cursor: number): boolean {
             return false;
         }
         run -= 1;
+    }
+    const before = source[run];
+    // A letter, digit, underscore, or `$` before the run continues an identifier, so the run is its
+    // tail. The same check catches an unsigned exponent and a radix prefix, whose marker (`e`/`E`,
+    // `x`/`X`/`o`/`O`/`b`/`B`) is a letter.
+    if (isIdentifierContinue(before)) {
+        return false;
+    }
+    // A `+`/`-` after an exponent marker is the exponent's sign (`1e+3.`, `1e-3.`); any other sign
+    // before the run is an operator (`a + 3.`), so the run stays a plain decimal.
+    if (before === '+' || before === '-') {
+        const signBefore = run >= 1 ? source[run - 1] : undefined;
+        if (signBefore === 'e' || signBefore === 'E') {
+            return false;
+        }
     }
     return true;
 }
