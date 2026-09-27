@@ -16,7 +16,7 @@ type AutoLoad = (
     port: MessagePort,
     instrumentId: string,
     signal?: AbortSignal
-) => Promise<readonly MicPositionType[] | null>;
+) => Promise<readonly (MicPositionType | null)[] | null>;
 
 function makeDeps(
     autoLoad: AutoLoad = vi.fn(() => Promise.resolve(null)),
@@ -30,7 +30,8 @@ function makeDeps(
             vi.fn<(trackId: string, deviceId: string, values: Record<string, number>) => void>(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
-        setLoadedMicPositions: vi.fn<(deviceId: string, positions: readonly MicPositionType[] | null) => void>(),
+        setLoadedMicPositions:
+            vi.fn<(deviceId: string, positions: readonly (MicPositionType | null)[] | null) => void>(),
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => {
             if (resolutionStatus !== 'eligible') {
                 return { status: resolutionStatus };
