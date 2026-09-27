@@ -1513,10 +1513,11 @@ describe('contract-carrying admission', () => {
 
     it("admits a covered source at its coverer's position before an equal-figure bulk path", () => {
         // A covered bulk source and an added project path carry the same 4,000-byte figure, and the
-        // competitor's path would sort before the position the source takes. The source is still the unit
-        // admitted: promoting it with the spec that covers it ranks it ahead of a pure bulk unit of the same
-        // size, so a competitor of that size cannot take its place. The case reads that ranking; it does not
-        // reach the in-tier position-path leg, which needs two units equal on every earlier key.
+        // competitor is a bulk path — a unit that carries no contract — while the source is covered by a spec
+        // that does. The source is still the unit admitted: promoting it with the spec that covers it ranks it
+        // ahead of a bulk unit of the same size, so a competitor of that size cannot take its place. The case
+        // reads that ranking; it does not reach the in-tier position-path leg, which needs two units equal on
+        // every earlier key.
         const coverPath = 'scripts/semanticReview/__tests__/coverAll.spec.ts';
         const sourcePath = 'scripts/bulkSource.ts';
         const competitorPath = 'src/modules/Project/zShape.ts';
@@ -1560,8 +1561,8 @@ describe('contract-carrying admission', () => {
         if (sourceUnit === undefined || competitorUnit === undefined) {
             throw new Error('both the covered source and the competitor must produce a unit');
         }
-        // The pair keys at the coverer's figure, the competitor shares that figure, the competitor's path
-        // sorts before the position the source takes, and the source's own side carries no contract.
+        // The pair keys at the coverer's figure, the competitor shares that figure, and the source's own side
+        // carries no contract while the position it takes does.
         expect(sourceUnit.order.admissionBytes).toBe(competitorUnit.order.admissionBytes);
         expect(sourceUnit.order.path).toBe(coverPath);
         expect(sidesByPath.get(sourcePath)?.after).toBe(false);
