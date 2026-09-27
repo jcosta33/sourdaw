@@ -15,6 +15,8 @@ const PREFERENCES_SPECS = [
     'tests/e2e/browserDisplayScale.spec.ts',
     'tests/e2e/transportResponsive.spec.ts',
     'tests/e2e/pianoRollDockAcceptance.spec.ts',
+    'tests/e2e/uiScaleKeyboardTestId.spec.ts',
+    'tests/e2e/midiVelocityKeyboardTestId.spec.ts',
 ];
 const MIXER_SPECS = [
     'tests/e2e/mixer.spec.ts',
@@ -32,6 +34,9 @@ const MIXER_SPECS = [
     'tests/e2e/mixerTestId.spec.ts',
     'tests/e2e/mixerUndoRedo.spec.ts',
     'tests/e2e/mixerWidthSendsTestId.spec.ts',
+    'tests/e2e/soloSafeToggleTestId.spec.ts',
+    'tests/e2e/masterChannelTestId.spec.ts',
+    'tests/e2e/masterGainKeyboardTestId.spec.ts',
 ];
 const TRANSPORT_SPECS = [
     'tests/e2e/transport.spec.ts',
@@ -43,7 +48,11 @@ const TRANSPORT_SPECS = [
     'tests/e2e/transportTemplateTestId.spec.ts',
     'tests/e2e/transportTestId.spec.ts',
     'tests/e2e/mixerUndoRedo.spec.ts',
+    'tests/e2e/metronomeVolumeSliderTestId.spec.ts',
 ];
+// PreferencesDialog and preferencesShared compose AI, audio, and performance sections;
+// TransportBar composes project, voice, and other controls beyond TransportControls.
+// Omit these cross-feature shells so they receive complete browser coverage.
 const PRESENTATION_SPECS: Readonly<Record<string, readonly string[]>> = {
     'src/modules/Tuner/presentations/views/TunerPanel.tsx': [
         'tests/e2e/tuner.spec.ts',
@@ -60,8 +69,6 @@ const PRESENTATION_SPECS: Readonly<Record<string, readonly string[]>> = {
         'tests/e2e/exportFormatsTestId.spec.ts',
         'tests/e2e/exportRangeTailTestId.spec.ts',
     ],
-    'src/modules/Preferences/presentations/views/PreferencesDialog.tsx': PREFERENCES_SPECS,
-    'src/modules/Preferences/presentations/views/preferencesShared.tsx': PREFERENCES_SPECS,
     'src/modules/Preferences/presentations/views/ShortcutsSection.tsx': PREFERENCES_SPECS,
     'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx': PREFERENCES_SPECS,
     'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx': PREFERENCES_SPECS,
@@ -78,7 +85,6 @@ const PRESENTATION_SPECS: Readonly<Record<string, readonly string[]>> = {
     'src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx': MIXER_SPECS,
     'src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx': MIXER_SPECS,
     'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': MIXER_SPECS,
-    'src/modules/WorkspaceShell/presentations/views/TransportBar.tsx': TRANSPORT_SPECS,
     'src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx': TRANSPORT_SPECS,
 };
 
