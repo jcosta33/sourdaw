@@ -1,0 +1,51 @@
+crates/daw-dsp/tests/audit_gluten_style_topology.rs
+  s_ed5aa36a3ba357::t_6f7a71966d2908 1-144
+crates/daw-dsp/tests/audit_toaster_fm_decay.rs
+  s_fe7d9519d0226e::t_3d63d691b3cf4b 1-59
+  s_fe7d9519d0226e::t_ae21b48a74413e 60-155
+crates/daw-engine/src/scheduler.rs
+  s_ed5aa36a3ba357::t_70d7c25165a937 1192,2232-2244,2246,22603,22619-22622,22627,22683,22686,22693-22696
+src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts
+  s_ed5aa36a3ba357::t_bc12334a46511f 30-33,35
+src/utils/devicePatchPrecedence.ts
+  s_ed5aa36a3ba357::t_453a0f5716ddd7 8-10,17
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_ae3c82e99ed84b 623
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_40d1cedd156a7f 1343
+  s_ed5aa36a3ba357::t_0b3029e04a395b 1345,1349,1768
+public/wasm/manifest.json
+  s_ed5aa36a3ba357::t_369bfe38ef14c3 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_ed5aa36a3ba357::t_a8dcf59d92bc92 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_6dc65adb41836c 1
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_ed5aa36a3ba357::t_c0b867814d2e69 185-186
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_ed5aa36a3ba357::t_5c00a14913a032 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "84bc58d2080ff0edd81d9ce4ae4e67b8bd8c346a",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
