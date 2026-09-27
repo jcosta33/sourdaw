@@ -606,6 +606,103 @@ describe('snapshotImportSpecifiers', () => {
                 'function f() { const H = Object; const { loader } = new H(); loader(spec); }\nclass H { loader = require; }'
             )
         ).toEqual([]);
+        // A class name in any annotation tail after the parameter's own name names a type or a value,
+        // never the binding, so the class is still reached.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: string | H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: A & H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: keyof H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: typeof H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: T extends H ? A : B) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f(x: () => H) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter binds in its own function body, so a sibling parameter of the class name does
+        // not shadow the class at the top level where the read-back stands.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction g(H) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'function g(H) {}\nclass H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `for (… of/in …)` binding and a `var` hoisted to its function body bind the class name,
+        // shadowing the class there.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (let H in xs) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { { var H = other; } const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A nested function declaration and a destructured parameter bind the class name, shadowing it.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { loader } = new H(); function H() {} loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f([H]) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A default value and a property key inside a destructured parameter name a value or a key,
+        // never the binding, so the class is still reached.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ x = H }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ H: y }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
+        // A class name bound only by a deeper nesting or by a destructured variable stays undecided:
+        // `function f({ x: { H } }) { … }` and `const { H } = obj` read the name as the class, so a
+        // construction through it still reports the load rather than resolving the pattern.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f({ x: { H } }) { const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual(['require(...)']);
     });
 
     /**

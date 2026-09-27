@@ -736,6 +736,12 @@ function collectLoaderBindings(source: string): LoaderRead {
             index = parameter.end;
             continue;
         }
+        const functionShadow = readFunctionShadowAt(source, index, classNames);
+        if (functionShadow !== undefined) {
+            pushLocalBinding(localBindings, functionShadow);
+            index = functionShadow.end;
+            continue;
+        }
         if (isKeywordAt(source, index, 'class') && !isPrecededByDotAccess(source, index)) {
             const open = classBodyOpenAfterClass(source, index);
             if (open !== undefined) {
@@ -1746,49 +1752,54 @@ function readLocalBindingAt(
     if (name === undefined) {
         return undefined;
     }
+    // `var` hoists its binding to the nearest function body; `const`/`let` bind in the block. The
+    // chain is computed only once a binding is known, because `enclosingScopeChain` walks backward and
+    // most `const`/`let`/`var` declarations bind no tracked name.
+    const scopeChain = () =>
+        keyword === 'var' ? varHoistScopeChain(source, index) : enclosingScopeChain(source, index);
     const cursor = skipWhitespace(source, nameStart + name.length);
-    if (source[cursor] !== '=' || source[cursor + 1] === '=') {
-        return undefined;
-    }
-    const exprStart = skipWhitespace(source, cursor + 1);
-    if (isKeywordAt(source, exprStart, 'new')) {
-        const classNameStart = skipWhitespace(source, exprStart + 3);
-        const className = readWordForward(source, classNameStart);
-        if (className === undefined) {
-            return undefined;
+    if (source[cursor] === '=' && source[cursor + 1] !== '=') {
+        const exprStart = skipWhitespace(source, cursor + 1);
+        if (isKeywordAt(source, exprStart, 'new')) {
+            const classNameStart = skipWhitespace(source, exprStart + 3);
+            const className = readWordForward(source, classNameStart);
+            if (className === undefined) {
+                return undefined;
+            }
+            // Resolving a name no class declares and no local reaches walks the enclosing scopes for
+            // nothing; skip that walk unless a binding of the name exists, keeping `const x = new Map()`
+            // cheap.
+            if (!declaresClassName(classFields, className) && !localBindings.has(className)) {
+                return undefined;
+            }
+            const chain = scopeChain();
+            const classRef = resolveNameToClass(className, chain, classFields, localBindings);
+            return classRef === undefined
+                ? undefined
+                : { name, classRef, scopeChain: chain, end: classNameStart + className.length };
         }
-        // Resolving a name no class declares and no local reaches walks the enclosing scopes for
-        // nothing; skip that walk unless a binding of the name exists, keeping `const x = new Map()`
-        // cheap.
-        if (!declaresClassName(classFields, className) && !localBindings.has(className)) {
-            return undefined;
+        if (isKeywordAt(source, exprStart, 'class')) {
+            const open = classBodyOpenAfterClass(source, exprStart);
+            if (open === undefined) {
+                return undefined;
+            }
+            return { name, classRef: open, scopeChain: scopeChain(), end: exprStart };
         }
-        const scopeChain = enclosingScopeChain(source, index);
-        const classRef = resolveNameToClass(className, scopeChain, classFields, localBindings);
-        return classRef === undefined
-            ? undefined
-            : { name, classRef, scopeChain, end: classNameStart + className.length };
     }
-    if (isKeywordAt(source, exprStart, 'class')) {
-        const open = classBodyOpenAfterClass(source, exprStart);
-        if (open === undefined) {
-            return undefined;
-        }
-        const scopeChain = enclosingScopeChain(source, index);
-        return { name, classRef: open, scopeChain, end: exprStart };
-    }
-    // A plain initializer shadows a declared class of the same name; anything else is not tracked.
+    // A plain initializer, a `for (… of/in …)` binding, or a bare declaration binds the declared
+    // class's name to something other than the class, shadowing it; anything else is not tracked.
     if (!declaresClassName(classFields, name)) {
         return undefined;
     }
-    return { name, classRef: undefined, scopeChain: enclosingScopeChain(source, index), end: nameStart + name.length };
+    return { name, classRef: undefined, scopeChain: scopeChain(), end: nameStart + name.length };
 }
 
 /**
  * A parameter the file binds under a declared class name at `index`, which shadows the class in the
- * parameter's scope, or `undefined` when `index` is not such a parameter. Only a name a class declares
- * is worth recording, so the parameter-list walk runs for those names alone; the precomputed first
- * characters skip every identifier that cannot start one.
+ * parameter's function body, or `undefined` when `index` is not such a binding. A plain parameter and a
+ * destructured parameter entry both bind their own name; an identifier inside a default value or a type
+ * annotation does not. Only a name a class declares is worth recording, so the walks run for those names
+ * alone.
  */
 function readParameterShadowAt(
     source: string,
@@ -1806,19 +1817,24 @@ function readParameterShadowAt(
         return undefined;
     }
     const name = readWordForward(source, index);
-    if (name === undefined || !classNames.names.has(name) || !isParameterOwnNameAt(source, index)) {
+    if (name === undefined || !classNames.names.has(name)) {
         return undefined;
     }
-    return { name, classRef: undefined, scopeChain: enclosingScopeChain(source, index), end: index + name.length };
+    if (!isParameterOwnNameAt(source, index) && !isDestructuredBindingNameAt(source, index, name.length)) {
+        return undefined;
+    }
+    return { name, classRef: undefined, scopeChain: functionBodyScopeChain(source, index), end: index + name.length };
 }
 
 /**
- * Whether the name at `index` is a parameter's own binding name, rather than an identifier inside its
- * default value or its type annotation. A `=`, `:`, `<`, or `?` before the name marks a default, an
- * annotation, a generic argument, or a conditional, none of which bind the name as the parameter.
+ * Whether the name at `index` is a destructured binding's own name — a shorthand property, an array
+ * element, a renamed binding, or a rest target — rather than an identifier inside its default value or
+ * a property key it only names. `isBindingPatternEntryAt` already placed `index` inside a `{`/`[`
+ * binding pattern, so the token before the name decides: a `:` renames into it, a rest `...` binds it,
+ * and a pattern opener or separator binds it unless a following `:` makes the name a key instead.
  */
-function isParameterOwnNameAt(source: string, index: number): boolean {
-    if (!isParameterListNameAt(source, index)) {
+function isDestructuredBindingNameAt(source: string, index: number, nameLength: number): boolean {
+    if (!isBindingPatternEntryAt(source, index)) {
         return false;
     }
     const before = previousSignificantCharacter(source, index - 1);
@@ -1826,7 +1842,132 @@ function isParameterOwnNameAt(source: string, index: number): boolean {
         return false;
     }
     const character = source.charAt(before);
-    return character !== '=' && character !== ':' && character !== '<' && character !== '?';
+    if (character === ':') {
+        return true;
+    }
+    if (character === '.') {
+        return source.charAt(before - 1) === '.' && source.charAt(before - 2) === '.';
+    }
+    if (character === '{' || character === '[' || character === ',') {
+        return source.charAt(skipWhitespace(source, index + nameLength)) !== ':';
+    }
+    return false;
+}
+
+/**
+ * A `function <Name>` declaration at `index` binds its name in the enclosing scope, which shadows a
+ * class of that name there, or `undefined` when `index` is not such a declaration.
+ */
+function readFunctionShadowAt(
+    source: string,
+    index: number,
+    classNames: { names: ReadonlySet<string>; firstChars: ReadonlySet<string> }
+): { name: string; classRef: undefined; scopeChain: number[]; end: number } | undefined {
+    if (classNames.names.size === 0) {
+        return undefined;
+    }
+    const first = source[index];
+    if (first === undefined || !classNames.firstChars.has(first)) {
+        return undefined;
+    }
+    if (isIdentifierContinue(source[index - 1]) || !isIdentifierStart(first)) {
+        return undefined;
+    }
+    const name = readWordForward(source, index);
+    if (name === undefined || !classNames.names.has(name)) {
+        return undefined;
+    }
+    if (declarationKeywordBefore(source, index) !== 'function') {
+        return undefined;
+    }
+    return { name, classRef: undefined, scopeChain: enclosingScopeChain(source, index), end: index + name.length };
+}
+
+/**
+ * The scope chain of the function body a parameter at `index` belongs to, so a parameter binds in its
+ * own function rather than in the enclosing scope its name sits in. A parameter's name stands before the
+ * body's `{`, so the chain is taken at the body, crossing the parameter list's `)` and an optional `=>`.
+ */
+function functionBodyScopeChain(source: string, index: number): number[] {
+    let open: number | undefined;
+    if (isBindingPatternEntryAt(source, index)) {
+        const patternOpen = enclosingOpenerBefore(source, index, '{[');
+        open = patternOpen === undefined ? undefined : enclosingOpenerBefore(source, patternOpen, '(');
+    }
+    if (open === undefined) {
+        open = enclosingOpenerBefore(source, index, '(');
+    }
+    if (open === undefined) {
+        return enclosingScopeChain(source, index);
+    }
+    const close = skipBalancedParens(source, open);
+    if (close === undefined) {
+        return enclosingScopeChain(source, index);
+    }
+    let cursor = skipWhitespace(source, close);
+    if (source.startsWith('=>', cursor)) {
+        cursor = skipWhitespace(source, cursor + 2);
+    }
+    return source[cursor] !== '{' ? enclosingScopeChain(source, index) : enclosingScopeChain(source, cursor + 1);
+}
+
+/**
+ * Whether the `{` at `open` opens a function body rather than a statement block, so a hoisted `var` knows
+ * where to stop. A function body follows a parameter list's `)` or an arrow's `=>`; a control header's
+ * `)` opens a block instead.
+ */
+function isFunctionBodyOpen(source: string, open: number): boolean {
+    const before = previousSignificantCharacter(source, open - 1);
+    if (before === undefined) {
+        return false;
+    }
+    const character = source.charAt(before);
+    if (character === '>') {
+        return true;
+    }
+    return character === ')' && !closesControlHeader(source, before);
+}
+
+/** The scope chain a `var` binding hoists to: its nearest function body, dropping inner block braces. */
+function varHoistScopeChain(source: string, index: number): number[] {
+    const chain = enclosingScopeChain(source, index);
+    const result: number[] = [];
+    for (const open of chain) {
+        if (!isFunctionBodyOpen(source, open)) {
+            continue;
+        }
+        result.push(open);
+        break;
+    }
+    return result;
+}
+
+/**
+ * Whether the name at `index` is a parameter's own binding name, rather than an identifier inside its
+ * default value or its type annotation. A binding name stands where a binding can start — after `(`, a
+ * separator, a destructuring opener, a rest `...`, or a parameter modifier — so any type or expression
+ * token before it (`|`, `&`, `keyof`, `typeof`, `extends`, `>`, `:`, `=`, …) marks a name it is not.
+ */
+function isParameterOwnNameAt(source: string, index: number): boolean {
+    if (!isParameterListNameAt(source, index)) {
+        return false;
+    }
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined) {
+        return true;
+    }
+    const character = source.charAt(before);
+    if (character === '(' || character === ',' || character === '{' || character === '[') {
+        return true;
+    }
+    if (character === '.') {
+        return source.charAt(before - 1) === '.' && source.charAt(before - 2) === '.';
+    }
+    if (isIdentifierContinue(character)) {
+        const word = readWordBackward(source, before);
+        return word === 'public' || word === 'private' || word === 'protected' || word === 'readonly';
+    }
+    return false;
 }
 
 /**
