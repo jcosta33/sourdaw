@@ -349,6 +349,16 @@ impl ProofChamberInstance {
     }
 
     fn process_outputs(&mut self, size: usize) -> *const f32 {
+        // Bounded-input recovery: map non-finite input samples to 0 before any
+        // engine state can see them. The delay-line denormal guard compares
+        // magnitudes, so a NaN passes it and recirculates in the tank forever,
+        // and the dry/wet blend would then poison the dry path too (NaN × 0 is
+        // NaN at any mix). Same mapping as the output scrub, which stays as
+        // defense in depth. RT-safe: no allocation, one branch per sample.
+        // Not counted in `nan_flush_count`, which records output scrubs.
+        sanitize_block(&mut self.out_left[..size]);
+        sanitize_block(&mut self.out_right[..size]);
+
         // One match on the active discriminant per block, exactly as before:
         // the engines moved out of the enum, the dispatch did not change shape
         // and no per-sample branch was added.

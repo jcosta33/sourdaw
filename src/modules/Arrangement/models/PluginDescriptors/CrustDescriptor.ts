@@ -186,27 +186,27 @@ export const CRUST_DESCRIPTOR = applySingleDescriptorGuidance(
             ),
             channelLinkTransient: parameterGuidance(
                 'Stereo link amount for transient catch',
-                'Sets how far a channel that is deepening its own gain reduction follows the other, more-reduced channel while the limiter is catching a peak; a channel that is not itself reducing gain, such as the untouched side of a one-sided peak, ignores this control entirely.',
+                'Sets how far a channel follows the other, deeper-reducing channel while the linked target is pulling it down, which is when the limiter catches a peak — including the untouched side of a one-sided peak, whose duck is carried by this control alone.',
                 90,
                 100,
                 [
-                    'Works alongside channelLinkRelease, which instead governs a channel that is holding or recovering gain: on a one-sided peak the untouched channel follows the catching side through channelLinkRelease at the catch and through the recovery, not through this control.',
+                    'Works alongside channelLinkRelease, which instead governs recovery: once a peak has passed and the linked target sits above a channel’s current gain, the channels come back together through channelLinkRelease, not through this control.',
                 ],
                 [
-                    'Reducing this below full link only lets a still-deepening channel lag behind a deeper-reducing other channel; it has no effect on a channel that is not itself reducing gain. Punchy, Dynamic, and Aggressive also scale this and channelLinkRelease below full (0.8, 0.9, and 0.6), so 100 is not full link under those algorithms.',
+                    'Reducing this below full link lets the quiet side of a one-sided peak stay at unity while the other channel ducks, which shifts the stereo image at every catch. Punchy, Dynamic, and Aggressive also scale this and channelLinkRelease below full (0.8, 0.9, and 0.6), so 100 is not full link under those algorithms.',
                 ],
                 noExternalModulation
             ),
             channelLinkRelease: parameterGuidance(
                 'Stereo link amount for release recovery',
-                "Sets how far a channel that is holding or recovering gain — including the untouched side of a one-sided peak — follows the other channel's deeper reduction, both at the moment the limiter catches and through the recovery that follows.",
+                'Sets how far a recovering channel follows the other channel’s still-deeper reduction — while the linked target sits above its current gain — so the two sides return to level together instead of wandering apart.',
                 85,
                 100,
                 [
-                    'Works alongside channelLinkTransient, which instead governs a channel that is itself deepening a reduction; a one-sided peak is carried entirely by this control, since the catching channel needs no linking and the untouched channel is always holding or recovering.',
+                    'Works alongside channelLinkTransient, which instead governs the catch: while the linked target is pulling a channel down — including the untouched side of a one-sided peak — the duck is carried by channelLinkTransient, not by this control.',
                 ],
                 [
-                    "Reducing this below full link lets the untouched or recovering channel pull away from the other channel's reduction, which can shift the stereo image during a catch or its decay. Punchy, Dynamic, and Aggressive also scale this and channelLinkTransient below full (0.8, 0.9, and 0.6), so 100 is not full link under those algorithms.",
+                    "Reducing this below full link lets a recovering channel pull away from the other channel's still-held reduction, which can shift the stereo image during a peak's decay. Punchy, Dynamic, and Aggressive also scale this and channelLinkTransient below full (0.8, 0.9, and 0.6), so 100 is not full link under those algorithms.",
                 ],
                 noExternalModulation
             ),
