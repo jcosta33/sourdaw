@@ -1696,21 +1696,23 @@ function readLoaderDefaultBindingAt(
  * between the two encloses the name instead.
  */
 function isClassMemberPosition(source: string, index: number, bodyOpen: number): boolean {
+    // A completed member body is a balanced region the walk crosses whole, so a real field declared
+    // after a method or accessor is still a member position.
     let cursor = index - 1;
     while (cursor > bodyOpen) {
         const character = source[cursor];
         if (character === '(' || character === '[' || character === '{') {
             return false;
         }
-        if (character !== ')' && character !== ']' && character !== '}') {
-            cursor -= 1;
+        if (character === ')' || character === ']' || character === '}') {
+            const open = matchingOpenDelimiterBackward(source, cursor, openerOfDelimiter(character), character);
+            if (open === undefined) {
+                return false;
+            }
+            cursor = open - 1;
             continue;
         }
-        const open = matchingOpenDelimiterBackward(source, cursor, matchingTypeDelimiter(character), character);
-        if (open === undefined) {
-            return false;
-        }
-        cursor = open - 1;
+        cursor -= 1;
     }
     return true;
 }
@@ -2522,7 +2524,9 @@ function parameterNameStartAfterModifiers(source: string, cursor: number): numbe
 
 /**
  * Skips one constructor parameter at `cursor` to the `,` that ends it or to `end`, crossing a
- * parenthesised group, an array or object binding pattern, and a nested generic whole.
+ * parenthesised group, an array or object binding pattern, and a string, template, or comment whole. A
+ * `<` and a `>` in a default are value comparisons rather than generic brackets — `a = b < c` opens no
+ * level — so they nest nothing and the `,` after them still ends the parameter.
  */
 function skipBalancedParameter(source: string, cursor: number, end: number): number {
     let depth = 0;
@@ -2541,9 +2545,9 @@ function skipBalancedParameter(source: string, cursor: number, end: number): num
             cursor = scanTemplate(source, cursor, end, new Set());
             continue;
         }
-        if (character === '(' || character === '[' || character === '{' || character === '<') {
+        if (character === '(' || character === '[' || character === '{') {
             depth += 1;
-        } else if (character === ')' || character === ']' || character === '}' || character === '>') {
+        } else if (character === ')' || character === ']' || character === '}') {
             if (depth > 0) {
                 depth -= 1;
             }
@@ -4308,6 +4312,17 @@ function matchingTypeDelimiter(open: '(' | '[' | '{' | '<'): ')' | ']' | '}' | '
         return '}';
     }
     return '>';
+}
+
+/** The opener the closer of a balanced region pairs with, for the walks that read a region backward. */
+function openerOfDelimiter(closer: ')' | ']' | '}'): '(' | '[' | '{' {
+    if (closer === ')') {
+        return '(';
+    }
+    if (closer === ']') {
+        return '[';
+    }
+    return '{';
 }
 
 function endOfBalancedCall(source: string, openParen: number): number {

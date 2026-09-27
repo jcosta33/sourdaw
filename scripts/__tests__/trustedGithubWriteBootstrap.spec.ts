@@ -637,6 +637,23 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = other; x = (function (loader = require) { return 1; })(); }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
+        // A member body is a balanced region the member-position walk crosses whole, so a real field
+        // declared after a method or an accessor is still a member and still carries its loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  m() {}\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H {\n  get x() { return 1; }\n  loader = require;\n}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const X = class { m() {} loader = require; };\nconst { loader } = new X();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
         // A parameter property is read, and its own modifier run is what decides it: the loader default
         // reaches the read-back, while the same declaration without modifiers binds a local instead.
         expect(
@@ -644,6 +661,25 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { constructor(public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A comparison in an earlier parameter's default nests nothing, so the parameter after it is
+        // still read: its own field shadows the parent's, and its loader default is the loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public loader = null) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // The splitter keeps reading parameters past that comparison, so a parameter property declared
+        // after two such defaults is still the own field that shadows the parent's.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public a = b < c, public z = 1, public loader = null) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
         // A class-scoped parameter default binds its local exactly as the top-level form does, so the
         // call through the parameter is the load the scan admits.
         expect(snapshotComputedDynamicSpecifiers('class H { m(loader = require) { loader(spec); } }')).toEqual([
