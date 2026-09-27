@@ -6,14 +6,6 @@ import { FAUST_INSTRUMENT_PRESETS } from '../faustInstrumentPresets';
 import { scanRealFaustDeviceParamIds, scanRealFaustDeviceParams } from './faustRegistrationScan';
 
 /**
- * The envelope keys every shipped additive preset still authors. The additive
- * DSP hardcodes its ADSR, so these never reached the audio; they stay authored
- * until the DSP grows real envelope controls or the presets drop the dead keys
- * (follow-up filed from #3172's widened compile scan).
- */
-const ADDITIVE_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set(['attack', 'decay', 'sustain', 'release']);
-
-/**
  * The ground truth an authored preset key is checked against.
  *
  * A Faust device is checked against the registration scan — the addresses the
@@ -95,6 +87,11 @@ describe('faustInstrumentPresets', () => {
         // Checked against `scanRealFaustDeviceParamIds()` (builtinDSP.ts's
         // registered addresses), not this module's own descriptor catalog —
         // see that function's docstring for why.
+        //
+        // Additive Synth's `attack`/`decay`/`sustain`/`release` preset keys
+        // were retired outright rather than renamed: its compiled DSP
+        // hardcodes the envelope (`en.adsr` literals in additive-synth.dsp),
+        // so no real id exists for them to map to.
         const realIdsByDevice = scanRealFaustDeviceParamIds();
         const unknownKeysByDevice: string[] = [];
         for (const preset of FAUST_INSTRUMENT_PRESETS) {
@@ -104,13 +101,6 @@ describe('faustInstrumentPresets', () => {
                     continue;
                 }
                 for (const paramId of Object.keys(device.parameterValues)) {
-                    if (device.type === 'faust-additive-synth' && ADDITIVE_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
-                        // Additive Synth has no registered ADSR controls: its
-                        // DSP hardcodes the envelope, so only those
-                        // additive-only legacy keys stay excluded until that
-                        // migration lands.
-                        continue;
-                    }
                     if (!realIds.has(paramId)) {
                         unknownKeysByDevice.push(`${preset.id} -> ${device.type} "${device.name}": ${paramId}`);
                     }

@@ -2151,9 +2151,10 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // The Tuner has no knobs: `a4_hz` is a numeric field, `mute` and
             // `tone` are toggles. Nothing to compare, and no defect implied.
             'native-scoring': 0,
-            // Yeast declares four rack-level parameters and its panel renders 48
-            // per-processor controls that name none of them. The largest blind
-            // spot in the file; see `unboundKnobs`.
+            // Yeast declares no device parameters at all (#4650 removed the
+            // four `arp_*` ids no runtime read), so there is nothing to
+            // compare; its panel renders 48 per-processor rack controls — see
+            // `unboundKnobs`.
             yeast: 0,
             // The lid knob binds its literal descriptor id. Grand Boule's older
             // controls still encode ids in function names, so they remain named
@@ -2633,7 +2634,10 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // bind through `onPatchChange({ key: 'limCeiling', … })`, a literal
             // the scanner was mis-reading as the id `"key"`.
             proof: [],
-            yeast: ['arp_gate', 'arp_mode', 'arp_rate', 'arp_swing'],
+            // #4650 removed the four `arp_*` parameters: nothing read them, so
+            // the descriptor now declares nothing and the empty list is the
+            // honest pin rather than a cleared debt.
+            yeast: [],
             crust: [
                 'attackAuto',
                 'ceiling',
@@ -2683,9 +2687,9 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             proof: 10,
             // Yeast's `ProcessorParams.tsx` renders one control per MIDI
             // processor kind from a switch, and none of them names a descriptor
-            // parameter — Yeast's four declared parameters are rack-level. This
-            // is the largest single blind spot in the file and it is 48 controls
-            // wide.
+            // parameter — the rack's per-processor params are not device
+            // parameters and the descriptor declares none (#4650). This is the
+            // largest single blind spot in the file and it is 48 controls wide.
             yeast: 48,
             crust: 2,
             'grand-boule': 9,

@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
 import { loadGrinderPatch } from '../../../stores/grinderStore';
+import { createFlushParam } from '../createFlushParam';
+import { paramBatcher } from '../helpers';
 import { loadGrinderPatchWithAudio } from '../loadGrinderPatchWithAudio';
 
 vi.mock('../../../stores/grinderStore', () => ({
@@ -247,5 +249,82 @@ describe('loadGrinderPatchWithAudio', () => {
         expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'routingMode', 1);
         expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'cabIrSlot', 1);
         expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'cabIrSlot', 1);
+    });
+
+    describe('pending knob-drag rAF after a patch load', () => {
+        let rafQueue: FrameRequestCallback[];
+
+        beforeEach(() => {
+            paramBatcher.cancelAll();
+            rafQueue = [];
+            vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback): number => {
+                rafQueue.push(cb);
+                return rafQueue.length;
+            });
+            vi.stubGlobal('cancelAnimationFrame', (id: number): void => {
+                rafQueue[id - 1] = () => {};
+            });
+        });
+
+        afterEach(() => {
+            paramBatcher.cancelAll();
+            vi.unstubAllGlobals();
+        });
+
+        function flushAnimationFrames(): void {
+            const queued = rafQueue;
+            rafQueue = [];
+            for (const cb of queued) {
+                cb(0);
+            }
+        }
+
+        function withEligibleDevices(): void {
+            deps.getAllTracks.mockReturnValue([{ id: 'track-1', devices: [{ id: 'device-1', type: 'grinder' }] }]);
+        }
+
+        // The same flush the drag path uses, so a surviving drag frame lands in
+        // updateDeviceParam exactly as a real knob drag would.
+        function dragFlushParam() {
+            return createFlushParam({
+                updateDeviceParamFn: deps.updateDeviceParam,
+                persistDeviceParamFn: deps.persistDeviceParam,
+                resolveEligibleDeviceWriteTargetFn: deps.resolveEligibleDeviceWriteTarget,
+            });
+        }
+
+        it('cancels the loaded device key so updateDeviceParam receives the loaded value last', () => {
+            withEligibleDevices();
+            const flushParam = dragFlushParam();
+
+            // A knob drag scheduled its rAF frame; the load lands before it flushes.
+            paramBatcher.schedule('device-1:gain', { deviceId: 'device-1', key: 'gain', value: 99 }, flushParam);
+
+            const action = loadGrinderPatchWithAudio(deps as never);
+            action('device-1', { ...DEFAULT_PATCH, gain: 6.25 });
+            flushAnimationFrames();
+
+            const gainValues = deps.updateDeviceParam.mock.calls
+                .filter(([, , key]) => key === 'gain')
+                .map(([, , , value]) => value);
+            expect(gainValues.at(-1)).toBe(6.25);
+        });
+
+        it('leaves a drag pending on another device flushing', () => {
+            withEligibleDevices();
+            const otherFlush = vi.fn();
+
+            paramBatcher.schedule('other-dev:gain', { deviceId: 'other-dev', key: 'gain', value: 99 }, otherFlush);
+
+            const action = loadGrinderPatchWithAudio(deps as never);
+            action('device-1', { ...DEFAULT_PATCH, gain: 6.25 });
+            flushAnimationFrames();
+
+            expect(otherFlush).toHaveBeenCalledWith('other-dev:gain', {
+                deviceId: 'other-dev',
+                key: 'gain',
+                value: 99,
+            });
+        });
     });
 });

@@ -214,14 +214,17 @@ vi.mock('#/modules/Project/useCases', async () => {
         saveProjectBeforeReplacement: actual.saveProjectBeforeReplacement,
     };
 });
-// Non-spread listing of the Yeast name projectSlotProjections imports —
-// MixerConsole never imports Yeast/useCases.
+// Non-spread listing of the Yeast names this spec's graph imports (the rack
+// hydration path, plus the rack-write use cases the Project template registry
+// graph pulls in) — MixerConsole itself never imports Yeast/useCases.
 vi.mock('#/modules/Yeast/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Yeast/useCases')>('#/modules/Yeast/useCases');
     return {
+        addYeastProcessor: actual.addYeastProcessor,
         hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
         hydrateYeastState: vi.fn(),
         processYeastMidi: vi.fn(),
+        setYeastProcessorParam: actual.setYeastProcessorParam,
         yeastPanic: vi.fn(),
     };
 });
