@@ -14,6 +14,9 @@ function scaleJoinedValue(
     bendRange?: number
 ): number {
     if (dimension === 'pitchBend' && bendRange !== undefined) {
+        if (bendRange === 0) {
+            return 0;
+        }
         return (value * (note.pitchBendRangeSemitones ?? 48)) / bendRange;
     }
     return value;
@@ -151,8 +154,9 @@ export function joinNotes(clipId: string, selectedIds: string[], gridSize: numbe
                     const joined = sorted.slice(index, jIndex + 1);
                     const duration =
                         Math.max(...joined.map((note) => note.startBeat + note.duration)) - first.startBeat;
+                    const { expression: _originalExpression, ...base } = first;
                     toAdd.push({
-                        ...first,
+                        ...base,
                         duration,
                         ...joinedExpression(joined, duration),
                     });

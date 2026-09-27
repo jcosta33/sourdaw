@@ -130,6 +130,61 @@ describe('joinNotes', () => {
         expect(isValidMidiNoteExpression(joined?.expression, joined?.duration ?? 0)).toBe(true);
     });
 
+    it('normalizes zero-range bend scalars and curves to finite zero', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 1),
+                        pitchBend: 4096,
+                        pitchBendRangeSemitones: 0,
+                        expression: { pitchBend: [{ offsetBeats: 0.5, value: 2048 }] },
+                    },
+                    {
+                        ...note('b', 60, 1, 1),
+                        pitchBend: -4096,
+                        pitchBendRangeSemitones: 0,
+                        expression: { pitchBend: [{ offsetBeats: 0.5, value: -2048 }] },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b']);
+        const joined = midiStore.value?.notesByClipId.clip1?.[0];
+        expect(joined?.pitchBendRangeSemitones).toBe(0);
+        expect(joined?.pitchBend).toBe(0);
+        expect(joined?.expression?.pitchBend).toEqual([
+            { offsetBeats: 0.5, value: 0 },
+            { offsetBeats: 1, value: 0 },
+            { offsetBeats: 1.5, value: 0 },
+        ]);
+        expect(isValidMidiNoteExpression(joined?.expression, joined?.duration ?? 0)).toBe(true);
+    });
+
+    it('does not retain a first-note point suppressed by a later overlapping note with no expression', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    {
+                        ...note('a', 60, 0, 1),
+                        pressure: 10,
+                        expression: { pressure: [{ offsetBeats: 0.99, value: 20 }] },
+                    },
+                    note('b', 60, 0.98, 1),
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b'], 0.25);
+        const joined = midiStore.value?.notesByClipId.clip1?.[0];
+        expect(joined?.duration).toBe(1.98);
+        expect(joined?.pressure).toBe(10);
+        expect(joined).not.toHaveProperty('expression');
+    });
+
     it.each([
         ['gap', 1.02, 2.02],
         ['overlap', 0.98, 1.98],

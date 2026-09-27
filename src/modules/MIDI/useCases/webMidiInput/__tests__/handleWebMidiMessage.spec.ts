@@ -235,18 +235,32 @@ describe('handleWebMidiMessage', () => {
         setMpeEnabledInternal(true);
 
         handleWebMidiMessage(midi_event([0x91, 60, 100]));
-        handleWebMidiMessage(midi_event([0xd1, 90]));
+        const retiredExpression = handleWebMidiMessage(midi_event([0xd1, 90]));
         clear();
-        handleWebMidiMessage(midi_event([0x91, 62, 100]));
+        const currentNote = handleWebMidiMessage(midi_event([0x91, 62, 100]));
         try {
             await vi.waitFor(() => expect(handle_note_on).toHaveBeenCalledTimes(2));
+            await currentNote;
             await newNote;
             expect(newInitialPressure).toBeUndefined();
             expect(memberExpressionState.get(1)).toBeUndefined();
         } finally {
             finishOld();
         }
-        await vi.waitFor(() => expect(memberExpressionState.get(1)).toBeUndefined());
+        // This is the retired queue task's completion, not a stale handler
+        // callback: the callback must never run after the boundary.
+        expect(retiredExpression).toBeInstanceOf(Promise);
+        await retiredExpression;
+        expect(handle_channel_pressure).not.toHaveBeenCalled();
+        expect(memberExpressionState.get(1)).toBeUndefined();
+
+        let laterInitialPressure: number | undefined;
+        handle_note_on.mockImplementationOnce(() => {
+            laterInitialPressure = memberExpressionState.get(1)?.pressure;
+        });
+        await handleWebMidiMessage(midi_event([0x91, 64, 100]));
+        expect(handle_note_on).toHaveBeenCalledTimes(3);
+        expect(laterInitialPressure).toBeUndefined();
     });
 
     it('keeps an admitted release for an active voice after a target change', async () => {

@@ -74,7 +74,7 @@ function dispatchNoteHandler(
     channel: number,
     handler: () => Promise<void> | void,
     shouldReleaseStale: () => boolean = () => false
-): void {
+): Promise<void> | void {
     const generation = currentGeneration();
     const previous = midiInputTail;
     const channelPrevious = channelTails.get(channel);
@@ -106,9 +106,10 @@ function dispatchNoteHandler(
         }
         return undefined;
     });
+    return queued;
 }
 
-function dispatchExpressionHandler(channel: number, handler: () => void): void {
+function dispatchExpressionHandler(channel: number, handler: () => void): Promise<void> | void {
     const generation = currentGeneration();
     const run = (): void => {
         if (generation === memberExpressionGeneration.current) {
@@ -130,10 +131,13 @@ function dispatchExpressionHandler(channel: number, handler: () => void): void {
     // Something on this channel is still in flight. Queue behind it, and make
     // this the channel's tail so later expression on the same channel stays in
     // arrival order rather than overtaking it.
-    trackChannelTail(channel, pending.then(run).catch(logHandlerFailure));
+    const queued = pending.then(run).catch(logHandlerFailure);
+    trackChannelTail(channel, queued);
+    return queued;
 }
 
-export function handleWebMidiMessage(event: WebMidiInputMessage): void {
+/** Completion of accepted work, when that message had to wait in a queue. */
+export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> | void {
     const message = parseWebMidiMessage(event);
     if (!message) {
         return;
@@ -145,31 +149,28 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): void {
 
     switch (message.type) {
         case 'noteOn':
-            dispatchNoteHandler(
+            return dispatchNoteHandler(
                 channel,
                 () => handleWebMidiNoteOn(channel, message.note, message.velocity, timeStamp),
                 message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
             );
-            break;
         case 'noteOff':
-            dispatchNoteHandler(
+            return dispatchNoteHandler(
                 channel,
                 () => handleWebMidiNoteOff(channel, message.note, message.releaseVelocity, timeStamp),
                 admittedRelease(channel, message.note)
             );
-            break;
         case 'cc':
-            dispatchExpressionHandler(channel, () => handleWebMidiCC(channel, message.cc, message.value, timeStamp));
-            break;
+            return dispatchExpressionHandler(channel, () =>
+                handleWebMidiCC(channel, message.cc, message.value, timeStamp)
+            );
         case 'channelPressure':
-            dispatchExpressionHandler(channel, () =>
+            return dispatchExpressionHandler(channel, () =>
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
-            break;
         case 'pitchBend':
-            dispatchExpressionHandler(channel, () =>
+            return dispatchExpressionHandler(channel, () =>
                 handleWebMidiPitchBend(channel, message.lsb, message.msb, timeStamp)
             );
-            break;
     }
 }
