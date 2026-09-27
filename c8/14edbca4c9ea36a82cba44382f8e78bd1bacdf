@@ -1,0 +1,93 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.noteIdentityUndo.spec.tsx
+  s_ed5aa36a3ba357::t_ca0f29e98501e3 4,6-7,199-241
+  s_ed5aa36a3ba357::t_0e7d4f9b75992b 85-86,99,244-259,263,266,269,271,283,288-289,339-340,342,344
+  s_ed5aa36a3ba357::t_24a752eb3bbcb6 87-98
+  s_ed5aa36a3ba357::t_5ef1ab9cc6b609 242-243,260-262,264-265,268,270,272-282,284-287,290,335-338,341,343,345-351
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_ed5aa36a3ba357::t_8b9008f682456b 109,146-150
+  s_ed5aa36a3ba357::t_3b4b74fea5d82a 103-108,110-145,151-157,164,174-176,179
+  s_ed5aa36a3ba357::t_19ac220a3dada9 158-163,165-173,177-178,180-182
+src/modules/MIDI/useCases/index.ts
+  s_ed5aa36a3ba357::t_7fdc1ab4976103 113
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/replaceMidiNotesIfUnchanged.spec.ts
+  s_ed5aa36a3ba357::t_0440e4c9ca0550 145-154,159-198,201-209
+  s_ed5aa36a3ba357::t_7f6c4887b9ff24 27,155-158
+  s_ed5aa36a3ba357::t_24a752eb3bbcb6 199-200
+  s_ed5aa36a3ba357::t_4dec658b033e86 116-144
+  s_ed5aa36a3ba357::t_919029eb407267 211-214,216-217,220-221,223-225
+  s_ed5aa36a3ba357::t_46961d4f7ee504 21,210,215,218-219,222,226
+  s_ed5aa36a3ba357::t_d98bc41aca3f07 227-228
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/hydrateProjectMidi.spec.ts
+  s_ed5aa36a3ba357::t_2856f5885914a1 26-31
+  s_ed5aa36a3ba357::t_dd50b3774cda94 23-25,32-36,39-40
+  s_ed5aa36a3ba357::t_bf4392e5041acc 37-38
+src/modules/MIDI/repositories/webMidi/pendingYeastRelease.ts
+  s_ed5aa36a3ba357::t_68c619b776404e 3,14-19,29,39,52-70
+  s_ed5aa36a3ba357::t_080aa855e791cc 71-73,75,89-90
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_ed5aa36a3ba357::t_87c0ce97ee513a 2,100,124-125,127-128,131-132
+  s_ed5aa36a3ba357::t_3159e525533fbe 134
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateArrangementStoreFromProjectData.spec.ts
+  s_ed5aa36a3ba357::t_bf4392e5041acc 120,122,135-142,145,147-150
+  s_ed5aa36a3ba357::t_c57ff3dcbbd36f 106-119,121,123-134,143-144,146,151-153
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_ed5aa36a3ba357::t_473bbe70d13430 31,225-239
+  s_ed5aa36a3ba357::t_65e3963ce34d36 240-245,1303,1341,1343-1346,1500,1502-1505,1524,1526-1529
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_ed5aa36a3ba357::t_3b545dde15d61d 22,89,1008-1016
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  s_ed5aa36a3ba357::t_bf409c6354c0fd 18,25-28
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  s_ed5aa36a3ba357::t_156ff413491bf3 17
+src/modules/MIDI/useCases/midiNoteTransforms/getMidiClipNotesSnapshot.ts
+  s_ed5aa36a3ba357::t_bf409c6354c0fd 9
+src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts
+  s_ed5aa36a3ba357::t_7f6c4887b9ff24 25-45,57-59
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/joinNotes.spec.ts
+  s_ed5aa36a3ba357::t_73c144ed1b1a90 133-166,168-173,228
+  s_ed5aa36a3ba357::t_76a953c3cb7832 167,174-175
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_ed5aa36a3ba357::t_156ff413491bf3 2
+  s_ed5aa36a3ba357::t_32b88615aa2806 153-154,157,160
+  s_ed5aa36a3ba357::t_bf409c6354c0fd 164-166,170-172,178-180
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_ed5aa36a3ba357::t_dd1a9763067a60 166,169-170,173-174,184,200,226,248-249
+  s_ed5aa36a3ba357::t_32b88615aa2806 49-52,95
+  s_ed5aa36a3ba357::t_50661b088f436f 167,171,232
+  s_ed5aa36a3ba357::t_767601a18a8648 165,168,172,185,188-189,201,204-212,227-231
+src/modules/MIDI/useCases/midiNoteCrud/restoreMidiNoteMembershipIfUnchanged.ts
+  s_ed5aa36a3ba357::t_fa7101fc670b17 20-24,27-30
+  s_ed5aa36a3ba357::t_bf409c6354c0fd 49,84,88
+  s_ed5aa36a3ba357::t_7fdc1ab4976103 1-19,25-26,31-48,50-83,85-87,89-94
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_ed5aa36a3ba357::t_68c619b776404e 89-90
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_ed5aa36a3ba357::t_68c619b776404e 34-36,42
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_ed5aa36a3ba357::t_572e678f4fdb75 3,836-837,1230,1236-1247,1249,1254-1259,1279-1289,1291,1304,1307-1309,1320
+  s_ed5aa36a3ba357::t_7f6c4887b9ff24 4
+  s_ed5aa36a3ba357::t_478c4f855f55ba 179,222,266,272
+src/modules/Project/useCases/projectPersistence/helpers/hydrateArrangementStoreFromProjectData.ts
+  s_ed5aa36a3ba357::t_bf409c6354c0fd 24-36
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiReleaseOwnership.spec.ts
+  s_ed5aa36a3ba357::t_0da1ddb9d24a8c 10-11,67-73,252-257,263-264,269,275,282,284
+  s_ed5aa36a3ba357::t_558dc426b4314f 78-82,94-98,104,108-112,116-141
+  s_ed5aa36a3ba357::t_c70d8525940207 83-93,99-103,105-107,113-115,208-212,265-268
+  s_ed5aa36a3ba357::t_478c4f855f55ba 304,313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c814edbca4c9ea36a82cba44382f8e78bd1bacdf",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
