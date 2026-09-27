@@ -661,17 +661,17 @@ function collectLoaderBindings(source: string): LoaderRead {
 
 /**
  * Whether the file declares the name `require` as anything but the module loader — a parameter, a
- * `const`/`let`/`var` name, a `function`/`class` name, a destructuring target, or a catch parameter.
- * The declaration stops the binding pass: no name is bound to the loader through one, so
- * `function f(require) { const load = require; load(spec) }`, `const require = fake; const load =
- * require; load(spec)`, and `const { require } = box; const load = require; load(spec)` form no
- * binding and the file keeps the merge base's reading (#4828). It never reaches the callee detection,
- * where a `require(…)` call is a load whatever the file declares. Three declarations keep the loader:
- * an ambient `declare function require`, a name bound to a created require (`const require =
- * createRequire(import.meta.url)`), because each declares the loader itself, and a parameter list
- * inside a type (`type L = (require: string) => void`), which declares nothing at runtime. The reading
- * is the file's, not the scope's, exactly as `isEveryUseACallLike` reads a redeclaration, and it errs
- * toward the file's own shadowing.
+ * `const`/`let`/`var` name, a `function`/`class`/`enum`/`namespace`/`module` name, a destructuring
+ * target, a catch parameter, or an `import` clause binding it. The declaration stops the binding
+ * pass: no name is bound to the loader through one, so `function f(require) { const load = require;
+ * load(spec) }`, `const require = fake; const load = require; load(spec)`, and `const { require } =
+ * box; const load = require; load(spec)` form no binding and the file keeps the merge base's reading
+ * (#4828). It never reaches the callee detection, where a `require(…)` call is a load whatever the
+ * file declares. Two declarations keep the loader: a name bound to a created require
+ * (`const require = createRequire(import.meta.url)`), because that declares the loader itself, and a
+ * parameter list inside a type (`type L = (require: string) => void`), which declares nothing at
+ * runtime. The reading is the file's, not the scope's, exactly as `isEveryUseACallLike` reads a
+ * redeclaration, and it errs toward the file's own shadowing.
  */
 function declaresRequireName(source: string): boolean {
     let index = 0;
@@ -710,25 +710,21 @@ function declaresRequireName(source: string): boolean {
 /**
  * Whether the `require` at `index` declares the name rather than naming the loader. A declaration
  * keyword before it, an `import` clause binding it, a runtime parameter list or catch parameter
- * around it, a rest element, or a destructuring pattern entry makes it a declaration; an ambient
- * `declare function require` and a name bound to a created require declare the loader itself, so both
- * keep it. The parameter test is the parenthesis the name sits in — a list that closes before a body,
- * a return type, or an arrow, or that opens a `catch` clause, and is no type's list — which is what
- * keeps the comma-sequence and parenthesised callees (`(0, require)(spec)`, `(require)(spec)`) reading
- * as the loader.
+ * around it, a rest element, or a destructuring pattern entry makes it a declaration; a name bound to
+ * a created require declares the loader itself and keeps it. The parameter test is the parenthesis
+ * the name sits in — a list that closes before a body, a return type, or an arrow, or that opens a
+ * `catch` clause, and is no type's list — which is what keeps the comma-sequence and parenthesised
+ * callees (`(0, require)(spec)`, `(require)(spec)`) reading as the loader.
  */
 function isRequireDeclarationAt(source: string, index: number): boolean {
-    const keywordEnd = previousSignificantCharacter(source, index - 1);
     const keyword = declarationKeywordBefore(source, index);
-    if (keyword !== undefined && keywordEnd !== undefined) {
-        const beforeKeyword = previousSignificantCharacter(source, keywordEnd - keyword.length);
-        // An ambient `declare function require` declares the loader itself, and so does a name bound
-        // to a created require — `const require = createRequire(import.meta.url)` — either way the
-        // file keeps reading every `require` identifier as that loader.
-        if (beforeKeyword !== undefined && readWordBackward(source, beforeKeyword) === 'declare') {
-            return false;
-        }
-        return keyword === 'function' || keyword === 'class' || !bindsCreatedRequire(source, index);
+    if (keyword !== undefined) {
+        // A name bound to a created require keeps the loader — `const require = createRequire(
+        // import.meta.url)` makes the loader the file then calls — and every other declaration
+        // keyword names the file's own `require` instead, an ambient one included: `declare function
+        // require` declares no value at runtime, so a call through the name reaches the loader the
+        // merge base read.
+        return !bindsCreatedRequire(source, index);
     }
     const before = previousSignificantCharacter(source, index - 1);
     if (before === undefined) {
@@ -749,8 +745,62 @@ function isRequireDeclarationAt(source: string, index: number): boolean {
     if (character === ',') {
         return isBindingPatternEntryAt(source, index) || isParameterListNameAt(source, index);
     }
-    return character === '(' && isParameterListNameAt(source, index);
+    if (character === '(') {
+        return isParameterListNameAt(source, index);
+    }
+    return isParameterOfSignatureAt(source, index, before);
 }
+
+/**
+ * Whether the `require` name at `index` is a signature's parameter reached over the modifiers a
+ * parameter may carry: a bare arrow parameter (`const f = require => {}`) and a parameter property
+ * (`constructor(private require: string) {}`). The modifier is skipped and the token that then
+ * precedes the name decides — an arrow makes it the parameter, a parameter list or a binding pattern
+ * entry opens it (#4828). Only a parameter modifier is skipped, so `async require => {}` is no
+ * parameter here and the loader keeps its reading.
+ */
+function isParameterOfSignatureAt(source: string, index: number, before: number): boolean {
+    const modifiersStart = parameterModifiersStartBefore(source, before);
+    if (modifiersStart === undefined) {
+        const afterName = skipWhitespace(source, index + 'require'.length);
+        return source.startsWith('=>', afterName);
+    }
+    const modifierBefore = previousSignificantCharacter(source, modifiersStart - 1);
+    if (modifierBefore === undefined) {
+        return false;
+    }
+    const character = source.charAt(modifierBefore);
+    if (character === '(') {
+        return isParameterListNameAt(source, index);
+    }
+    if (character === ',' || character === '{' || character === '[') {
+        return isBindingPatternEntryAt(source, index) || isParameterListNameAt(source, index);
+    }
+    return false;
+}
+
+/**
+ * The start of the run of parameter modifiers standing before the name that ends at `end` —
+ * `public`, `private`, `protected`, `readonly`, `override` — or `undefined` when no modifier stands
+ * there, so the caller knows the name is bare. A run is walked whole, so `private readonly require`
+ * is one name's modifiers; only those words are walked, so `async require => {}` is no parameter.
+ */
+function parameterModifiersStartBefore(source: string, end: number): number | undefined {
+    let cursor = previousSignificantCharacter(source, end);
+    let start: number | undefined;
+    while (cursor !== undefined && isIdentifierContinue(source[cursor])) {
+        const word = readWordBackward(source, cursor);
+        if (!PARAMETER_MODIFIERS.has(word)) {
+            break;
+        }
+        start = cursor - word.length + 1;
+        cursor = previousSignificantCharacter(source, start - 1);
+    }
+    return start;
+}
+
+/** The modifiers a parameter property may carry in front of its name. */
+const PARAMETER_MODIFIERS: ReadonlySet<string> = new Set(['public', 'private', 'protected', 'readonly', 'override']);
 
 /**
  * Whether the `require` name at `index` is bound by an `import` clause, and so declares the name in
@@ -848,7 +898,19 @@ function bindsCreatedRequire(source: string, index: number): boolean {
     return declared !== undefined && declared.name === 'require' && declared.kind === 'require';
 }
 
-/** The declaration keyword immediately before the name at `index`, when it declares that name. */
+/**
+ * The declaration keyword that declares the name at `index`: `export const require = fake`,
+ * `export default class require {}`, `export async function require() {}`, `abstract class require
+ * {}`, and `const enum require {}` all declared the name and were read as no declaration, so the
+ * file's own `require` was taken for the module loader and an ordinary call through it was refused
+ * (#4828).
+ *
+ * Only the word closest to the name is read, and the prefixes and modifiers in front of it are left
+ * alone: a keyword is the same declaration behind one (`async function require() {}`), a prefix
+ * chain (`export default`), or nothing at all, so the word itself decides. Reading the word at its
+ * own start is what does it — the character before that start being an identifier is what a prefix
+ * looks like, and not what a member's looks like.
+ */
 function declarationKeywordBefore(source: string, index: number): string | undefined {
     const before = previousSignificantCharacter(source, index - 1);
     if (before === undefined || !isIdentifierContinue(source[before])) {
@@ -856,7 +918,20 @@ function declarationKeywordBefore(source: string, index: number): string | undef
     }
     const word = readWordBackward(source, before);
     const wordStart = before - word.length + 1;
-    return !isMemberNameAt(source, wordStart) && DECLARATION_KEYWORDS.has(word) ? word : undefined;
+    if (!DECLARATION_KEYWORDS.has(word) || isKeywordMemberNameAt(source, wordStart)) {
+        return undefined;
+    }
+    return word;
+}
+
+/**
+ * Whether the keyword starting at `wordStart` is a member name rather than a declaration. A `.` or
+ * a `#` in front of the keyword proves the member, and nothing else does: the identifier character
+ * of a prefix (`export const require = fake`, `export namespace require {}`) is no member's, and a
+ * keyword is a member only after the dot or hash that names it.
+ */
+function isKeywordMemberNameAt(source: string, wordStart: number): boolean {
+    return isPrecededByDotAccess(source, wordStart) || source.charAt(wordStart - 1) === '#';
 }
 
 /**
@@ -1069,8 +1144,21 @@ function isShadowingDeclaration(source: string, index: number): boolean {
     return declarationKeywordBefore(source, index) !== undefined;
 }
 
-/** The declaration keywords that bind a name again, which drops a loader binding of that name. */
-const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(['function', 'class', 'enum', 'let', 'const', 'var']);
+/**
+ * The declaration keywords that bind a name again, which drops a loader binding of that name. The
+ * TypeScript body keywords `enum`, `namespace`, and `module` are among them: each declares its name
+ * as much as `function` or `class` does in the file that carries it (#4828).
+ */
+const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set([
+    'function',
+    'class',
+    'enum',
+    'namespace',
+    'module',
+    'let',
+    'const',
+    'var',
+]);
 
 type LoaderBinding = { name: string; kind: LoaderBindingKind; nameIndex: number; end: number };
 

@@ -423,6 +423,60 @@ describe('snapshotImportSpecifiers', () => {
     });
 
     /**
+     * A declaration keyword announces the name wherever the language allows a modifier or a prefix or
+     * nothing at all in front of it, and the TypeScript body keywords declare it too. Reading the
+     * keyword at its own start is what separates a prefix from a member: `export const require = fake`
+     * and `export namespace require {}` declare the name, while `obj.require = fake` names a member and
+     * declares nothing, so the file's own `require` is the loader there. Without that reading every
+     * shape below bound the loader to `require` and refused an ordinary call through it, which the
+     * merge base admitted (#4828). Each case pins one family; `export default class` and
+     * `export abstract class` pin a two-word prefix chain, and the ambient declarations pin the
+     * `declare` modifier the merge base admitted with them.
+     */
+    it.each([
+        ['a prefixed const', 'export const require = fake;'],
+        ['a prefixed function', 'export function require() {}'],
+        ['a prefixed class', 'export class require {}'],
+        ['a prefixed enum', 'export enum require { A }'],
+        ['a prefixed default class', 'export default class require {}'],
+        ['a prefixed async function', 'export async function require() {}'],
+        ['a bare async function', 'async function require() {}'],
+        ['an abstract class', 'abstract class require {}'],
+        ['a const enum', 'const enum require { A }'],
+        ['a namespace', 'namespace require {}'],
+        ['a module', 'module require {}'],
+        ['a bare arrow parameter', 'const f = require => {};'],
+        ['a parameter property', 'class C { constructor(private require: string) {} }'],
+        ['a prefixed default function', 'export default function require() {}'],
+        ['a prefixed abstract class', 'export abstract class require {}'],
+        ['an ambient function', 'declare function require(name: string): unknown;'],
+        ['a declared ambient const', 'declare const require: unknown;'],
+        ['a prefixed declared ambient const', 'export declare const require: unknown;'],
+        ['an ambient namespace', 'declare namespace require {}'],
+    ])('drops the loader binding for %s named require', (_label, prelude) => {
+        expect(snapshotComputedDynamicSpecifiers(`${prelude}\nconst load = require;\nload(spec);`)).toEqual([]);
+    });
+
+    /**
+     * The member shapes the prefix rule must not swallow: a `.` or a `#` in front of the keyword names
+     * a member, so no declaration of `require` stands in the file and the binding through the loader
+     * resolves — which is what the merge base's own callee detection refused to see (#4818). Reading
+     * the identifier character before the keyword as the member instead of the dot read every prefixed
+     * declaration as a member.
+     */
+    it('drops no loader binding for a member named require', () => {
+        expect(snapshotComputedDynamicSpecifiers('obj.require = fake;\nconst load = require;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class C { require() {} }\nconst load = require;\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('x.namespace = 1;\nconst load = require;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+    });
+
+    /**
      * The declaration above stops the binding pass alone. A `require(…)` call is the loader whatever
      * else the file declares, as the merge base read it, so an unrelated declaration never hides a real
      * load: a literal specifier is collected, and a computed one is refused by `require(...)`. Only the
