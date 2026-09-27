@@ -1,0 +1,29 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_ed5aa36a3ba357::t_3e8b3120da0e44 474-528,575-578,594-614
+scripts/trustedGithubWriteBootstrap.ts
+  s_fe7d9519d0226e::t_64ca4e9c698ae9 511-514,655,714-721,725-734,737,1277-1281,1288,1291-1297,1477,1527,1543-1544,1554-1594,1607,1635-1662,1685-1689,1694-1715,1777-2094,2679,2805-2807,2822-2823,2839-2844,2898-2906,2925,2935-2953
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "eb8ba0d33988b03a1875e43190e5d984b4ba5ffe",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
