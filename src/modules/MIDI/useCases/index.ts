@@ -109,6 +109,7 @@ export { setNoteProbability } from './midiNoteCrud/setNoteProbability';
 export { setNoteVelocity } from './midiNoteCrud/setNoteVelocity';
 export { setNoteVelocities } from './midiNoteCrud/setNoteVelocities';
 export { setNotesForClip } from './midiNoteCrud/setNotesForClip';
+export { replaceMidiNotesIfUnchanged, type MidiNoteReplacement } from './midiNoteCrud/replaceMidiNotesIfUnchanged';
 export { shiftClipMidiNotes } from './midiNoteCrud/shiftClipMidiNotes';
 export { shiftMidiNotesAfterBeat } from './midiNoteCrud/shiftMidiNotesAfterBeat';
 export { splitMidiNotesAtBeat } from './midiNoteCrud/splitMidiNotesAtBeat';

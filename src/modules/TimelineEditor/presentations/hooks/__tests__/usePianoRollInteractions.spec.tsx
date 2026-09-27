@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
         removeMidiNote: vi.fn(),
         moveMidiNote: vi.fn(),
         removeNotesByIds: vi.fn(),
+        replaceMidiNotesIfUnchanged: vi.fn(),
         resizeMidiNote: vi.fn(),
         setNoteVelocity: vi.fn(),
         setNotesForClip: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     removeMidiNote: mocks.removeMidiNote,
     moveMidiNote: mocks.moveMidiNote,
     removeNotesByIds: mocks.removeNotesByIds,
+    replaceMidiNotesIfUnchanged: mocks.replaceMidiNotesIfUnchanged,
     resizeMidiNote: mocks.resizeMidiNote,
     setNoteVelocity: mocks.setNoteVelocity,
     setNotesForClip: mocks.setNotesForClip,
@@ -457,7 +459,13 @@ describe('usePianoRollInteractions', () => {
         });
 
         it('alt-drag duplicates: original stays, copy lands at the offset position', () => {
-            const { canvas } = renderRoll();
+            const original = {
+                ...makeNote('n1', 60, 2, 2),
+                pressure: 31,
+                channel: 3,
+                expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+            };
+            const { canvas } = renderRoll({ notes: [original] });
 
             fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(60), altKey: true });
             fireEvent.mouseMove(canvas, { clientX: 140, clientY: yForPitch(60), altKey: true });
@@ -465,7 +473,7 @@ describe('usePianoRollInteractions', () => {
 
             expect(mocks.moveMidiNote).not.toHaveBeenCalled();
             expect(mocks.batchAddMidiNotes).toHaveBeenCalledWith('clip-1', [
-                { pitch: 60, startBeat: 3, duration: 2, velocity: 100 },
+                { ...original, id: undefined, startBeat: 3 },
             ]);
             const copyId = mocks.batchAddMidiNotes.mock.results[0]?.value[0].id;
             expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set([copyId]));
@@ -477,6 +485,9 @@ describe('usePianoRollInteractions', () => {
         });
 
         it('right-edge drag resizes duration and commits via resizeMidiNote', () => {
+            mocks.getNotesForClip
+                .mockReturnValueOnce([makeNote('n1', 60, 2, 2)])
+                .mockReturnValueOnce([makeNote('n1', 60, 2, 3)]);
             const { args, canvas } = renderRoll();
 
             fireEvent.mouseDown(canvas, { clientX: 155, clientY: yForPitch(60) });
@@ -499,7 +510,8 @@ describe('usePianoRollInteractions', () => {
                 ...makeNote('n1', 60, 2, 2),
                 expression: { pressure: [{ offsetBeats: 1.5, value: 90 }] },
             };
-            mocks.getNotesForClip.mockReturnValue([before]);
+            const after = { ...before, duration: 1, expression: undefined };
+            mocks.getNotesForClip.mockReturnValueOnce([before]).mockReturnValueOnce([after]);
             const { canvas } = renderRoll();
 
             fireEvent.mouseDown(canvas, { clientX: 155, clientY: yForPitch(60) });
@@ -508,10 +520,20 @@ describe('usePianoRollInteractions', () => {
 
             const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
             undo();
-            expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [before]);
+            expect(mocks.replaceMidiNotesIfUnchanged).toHaveBeenLastCalledWith('clip-1', [
+                { expected: after, replacement: before },
+            ]);
+            const redo = mocks.pushUndoEntry.mock.calls[0]?.[2] as () => void;
+            redo();
+            expect(mocks.replaceMidiNotesIfUnchanged).toHaveBeenLastCalledWith('clip-1', [
+                { expected: before, replacement: after },
+            ]);
         });
 
         it('left-edge drag moves the start and preserves the end beat', () => {
+            mocks.getNotesForClip
+                .mockReturnValueOnce([makeNote('n1', 60, 2, 2)])
+                .mockReturnValueOnce([makeNote('n1', 60, 1, 3)]);
             const { canvas } = renderRoll();
 
             fireEvent.mouseDown(canvas, { clientX: 82, clientY: yForPitch(60) });
@@ -520,6 +542,18 @@ describe('usePianoRollInteractions', () => {
 
             // start 2 → 1, duration 2 → 3 (end beat 4 unchanged)
             expect(mocks.resizeMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 1, 3);
+            const before = makeNote('n1', 60, 2, 2);
+            const after = makeNote('n1', 60, 1, 3);
+            const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+            const redo = mocks.pushUndoEntry.mock.calls[0]?.[2] as () => void;
+            undo();
+            expect(mocks.replaceMidiNotesIfUnchanged).toHaveBeenLastCalledWith('clip-1', [
+                { expected: after, replacement: before },
+            ]);
+            redo();
+            expect(mocks.replaceMidiNotesIfUnchanged).toHaveBeenLastCalledWith('clip-1', [
+                { expected: before, replacement: after },
+            ]);
         });
 
         it('a drag that returns to the origin commits nothing', () => {
@@ -784,13 +818,19 @@ describe('usePianoRollInteractions', () => {
         });
 
         it('cmd+D duplicates the selection forward by its span', () => {
-            const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
+            const original = {
+                ...makeNote('n1', 60, 2, 2),
+                slide: 42,
+                articulation: 'accent',
+                expression: { slide: [{ offsetBeats: 0.5, value: 90 }] },
+            };
+            const { canvas } = renderRoll({ notes: [original], selectedNoteIds: new Set(['n1']) });
 
             fireEvent.keyDown(canvas, { key: 'd', metaKey: true });
 
             // n1 spans beats 2–4 → copy starts at 2 + 2
             expect(mocks.batchAddMidiNotes).toHaveBeenCalledWith('clip-1', [
-                { pitch: 60, startBeat: 4, duration: 2, velocity: 100 },
+                { ...original, id: undefined, startBeat: 4 },
             ]);
             const copyId = mocks.batchAddMidiNotes.mock.results[0]?.value[0].id;
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set([copyId]));
@@ -814,7 +854,8 @@ describe('usePianoRollInteractions', () => {
                 ...makeNote('n1', 60, 2, 4),
                 expression: { pressure: [{ offsetBeats: 3, value: 90 }] },
             };
-            mocks.getNotesForClip.mockReturnValue([before]);
+            const after = { ...before, duration: 2, expression: undefined };
+            mocks.getNotesForClip.mockReturnValueOnce([before]).mockReturnValueOnce([after]);
             const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
 
             fireEvent.keyDown(canvas, { key: 'l' });
@@ -827,7 +868,14 @@ describe('usePianoRollInteractions', () => {
             );
             const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
             undo();
-            expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [before]);
+            expect(mocks.replaceMidiNotesIfUnchanged).toHaveBeenLastCalledWith('clip-1', [
+                { expected: after, replacement: before },
+            ]);
+            const redo = mocks.pushUndoEntry.mock.calls[0]?.[2] as () => void;
+            redo();
+            expect(mocks.replaceMidiNotesIfUnchanged).toHaveBeenLastCalledWith('clip-1', [
+                { expected: before, replacement: after },
+            ]);
         });
 
         it('J does not join when only one note is selected', () => {

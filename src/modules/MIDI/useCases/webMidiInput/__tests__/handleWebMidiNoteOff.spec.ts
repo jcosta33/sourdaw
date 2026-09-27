@@ -904,6 +904,12 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         pitchBend(MEMBER_CHANNEL, raw & 0x7f, raw >> 7);
     }
 
+    function setBendRange(semitones: number): void {
+        controlChange(MEMBER_CHANNEL, 101, 0);
+        controlChange(MEMBER_CHANNEL, 100, 0);
+        controlChange(MEMBER_CHANNEL, 6, semitones);
+    }
+
     beforeEach(() => {
         activeNotes.clear();
         channelToNote.clear();
@@ -960,6 +966,44 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
 
         expect(recorded[0]?.pitchBend).toBe(-2048);
         expect(recorded[0]?.expression?.pitchBend).toEqual([{ offsetBeats: 0.5, value: 4096 }]);
+    });
+
+    it('keeps the performed depth of each bend when RPN 0 grows during a held note', async () => {
+        setBendRange(12);
+        holdNote({ pitchBend: 4096, pitchBendRangeSemitones: 12 });
+        at(0.25);
+        sendBend(4096);
+        at(0.75);
+        setBendRange(48);
+        sendBend(2048);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pitchBendRangeSemitones).toBe(48);
+        expect(recorded[0]?.pitchBend).toBe(1024); // 6 semitones at the stored range
+        expect(recorded[0]?.expression?.pitchBend).toEqual([
+            { offsetBeats: 1.5, value: 2048 }, // 12 semitones
+        ]);
+    });
+
+    it('records a held bend changing depth when RPN 0 shrinks or reaches zero', async () => {
+        setBendRange(48);
+        holdNote();
+        at(0.25);
+        sendBend(2048);
+        at(0.5);
+        setBendRange(12);
+        at(0.75);
+        setBendRange(0);
+        at(1);
+        await noteOff(MEMBER_CHANNEL, PITCH);
+
+        expect(recorded[0]?.pitchBendRangeSemitones).toBe(48);
+        expect(recorded[0]?.expression?.pitchBend).toEqual([
+            { offsetBeats: 0.5, value: 2048 },
+            { offsetBeats: 1, value: 512 },
+            { offsetBeats: 1.5, value: 0 },
+        ]);
     });
 
     it('stores a CC74 slide change as one slide point', async () => {

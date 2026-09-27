@@ -39,6 +39,28 @@ describe('batchAddMidiNotes', () => {
         expect(midiStore.value?.notesByClipId.c1?.[0]?.id).toBe('note-stable');
     });
 
+    it('preserves every supported performance field on a copied note', () => {
+        const source = {
+            pitch: 60,
+            startBeat: 2,
+            duration: 2,
+            velocity: 96,
+            probability: 73,
+            pressure: 31,
+            slide: 42,
+            pitchBend: -2048,
+            pitchBendRangeSemitones: 12,
+            channel: 3,
+            articulation: 'staccato',
+            expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+        };
+
+        const [copy] = batchAddMidiNotes('c1', [source]);
+
+        expect(copy).toEqual({ ...source, id: expect.any(String) });
+        expect(midiStore.value?.notesByClipId.c1?.[0]).toEqual(copy);
+    });
+
     it('should throw when the MIDI store is not initialized', () => {
         midiStore.set(null);
         expect(() => batchAddMidiNotes('c1', [{ pitch: 60, startBeat: 0, duration: 0.25 }])).toThrow();

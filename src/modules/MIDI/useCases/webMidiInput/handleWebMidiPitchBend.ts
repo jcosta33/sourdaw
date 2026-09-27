@@ -45,7 +45,12 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                 if (!noteData) {
                     return;
                 }
-                recordHeldNoteExpression(noteData, { dimension: 'pitchBend', value: bendValue, eventTime });
+                recordHeldNoteExpression(noteData, {
+                    dimension: 'pitchBend',
+                    value: bendValue,
+                    eventTime,
+                    bendRangeSemitones,
+                });
                 noteData.pitchBend = bendValue;
                 // The wire delta alone has no depth. Capture the range it was
                 // performed against so recording can persist it and playback

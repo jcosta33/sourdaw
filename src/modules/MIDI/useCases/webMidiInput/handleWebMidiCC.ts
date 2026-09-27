@@ -1,7 +1,12 @@
 import { inject } from '#/infra/di/inject';
 import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
 
-import { CC_ALL_NOTES_OFF, CC_ALL_SOUND_OFF, MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
+import {
+    CC_ALL_NOTES_OFF,
+    CC_ALL_SOUND_OFF,
+    isDataEntryCc,
+    MPE_FIRST_MEMBER_CHANNEL,
+} from '../../models/MidiControllerState';
 import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
@@ -10,6 +15,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
@@ -35,7 +41,31 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             // a Data Entry write; dispatching it as an ordinary CC as well
             // would let a controller declaring its bend range also move
             // whatever the user mapped to controller 6.
+            const mpeEnabled = getMpeEnabled();
+            const heldNoteKey = channelToNote.get(channel);
+            const heldNote = heldNoteKey === undefined ? undefined : activeNotes.get(heldNoteKey);
+            let earlierBendRange: number | undefined;
+            if (
+                mpeEnabled &&
+                channel >= MPE_FIRST_MEMBER_CHANNEL &&
+                isDataEntryCc(cc) &&
+                heldNote?.pitchBend !== undefined
+            ) {
+                earlierBendRange = resolveBendRangeSemitones({ channel, mpeEnabled });
+            }
             const controlChange = ingestChannelControlChange({ channel, cc, value });
+            if (controlChange.consumed && earlierBendRange !== undefined) {
+                const bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
+                if (bendRangeSemitones !== earlierBendRange && heldNote?.pitchBend !== undefined) {
+                    recordHeldNoteExpression(heldNote, {
+                        dimension: 'pitchBend',
+                        value: heldNote.pitchBend,
+                        eventTime: resolveInputEventTime({ timeStamp }),
+                        bendRangeSemitones,
+                    });
+                    heldNote.pitchBendRangeSemitones = bendRangeSemitones;
+                }
+            }
             if (controlChange.consumed) {
                 return;
             }

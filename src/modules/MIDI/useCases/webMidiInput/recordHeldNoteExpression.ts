@@ -1,5 +1,9 @@
 import { type MidiExpressionDimension } from '../../models/MidiNote';
-import { type ActiveNoteData, type HeldNoteExpressionTrail } from '../../models/WebMidiTypes';
+import {
+    type ActiveNoteData,
+    type HeldNoteExpressionPoint,
+    type HeldNoteExpressionTrail,
+} from '../../models/WebMidiTypes';
 
 /**
  * Most changes one dimension of one held note keeps. A note can be held
@@ -12,10 +16,12 @@ type HeldNoteExpressionChange = {
     dimension: MidiExpressionDimension;
     value: number;
     eventTime: number;
+    bendRangeSemitones?: number;
 };
 
-function lastValue(trail: HeldNoteExpressionTrail): number | undefined {
-    return trail.points.at(-1)?.value ?? trail.initial;
+function lastPoint(trail: HeldNoteExpressionTrail): { value: number | undefined; bendRangeSemitones?: number } {
+    const point = trail.points.at(-1);
+    return point ?? { value: trail.initial, bendRangeSemitones: trail.initialBendRangeSemitones };
 }
 
 /**
@@ -41,7 +47,7 @@ function boundTrail(trail: HeldNoteExpressionTrail): void {
  */
 export function recordHeldNoteExpression(
     noteData: ActiveNoteData,
-    { dimension, value, eventTime }: HeldNoteExpressionChange
+    { dimension, value, eventTime, bendRangeSemitones }: HeldNoteExpressionChange
 ): void {
     const offsetSeconds = eventTime - noteData.startTime;
     const trails = noteData.expressionTrails ?? {};
@@ -50,27 +56,49 @@ export function recordHeldNoteExpression(
     if (!(offsetSeconds > 0)) {
         if (trail !== undefined) {
             trail.initial = value;
+            if (dimension === 'pitchBend') {
+                trail.initialBendRangeSemitones = bendRangeSemitones;
+            }
         }
         return;
     }
 
     if (trail === undefined) {
-        if (value === noteData[dimension]) {
+        if (
+            value === noteData[dimension] &&
+            (dimension !== 'pitchBend' || bendRangeSemitones === (noteData.pitchBendRangeSemitones ?? 48))
+        ) {
             return;
         }
-        trails[dimension] = { initial: noteData[dimension], points: [{ offsetSeconds, value }] };
+        const point: HeldNoteExpressionPoint = { offsetSeconds, value };
+        if (bendRangeSemitones !== undefined) {
+            point.bendRangeSemitones = bendRangeSemitones;
+        }
+        const nextTrail: HeldNoteExpressionTrail = { initial: noteData[dimension], points: [point] };
+        if (dimension === 'pitchBend' && noteData[dimension] !== undefined) {
+            nextTrail.initialBendRangeSemitones = noteData.pitchBendRangeSemitones ?? 48;
+        }
+        trails[dimension] = nextTrail;
         noteData.expressionTrails = trails;
         return;
     }
 
-    if (value === lastValue(trail)) {
+    const previous = lastPoint(trail);
+    if (value === previous.value && bendRangeSemitones === previous.bendRangeSemitones) {
         return;
     }
     const last = trail.points.at(-1);
     if (last !== undefined && offsetSeconds <= last.offsetSeconds) {
         last.value = value;
+        if (bendRangeSemitones !== undefined) {
+            last.bendRangeSemitones = bendRangeSemitones;
+        }
         return;
     }
-    trail.points.push({ offsetSeconds, value });
+    const point: HeldNoteExpressionPoint = { offsetSeconds, value };
+    if (bendRangeSemitones !== undefined) {
+        point.bendRangeSemitones = bendRangeSemitones;
+    }
+    trail.points.push(point);
     boundTrail(trail);
 }

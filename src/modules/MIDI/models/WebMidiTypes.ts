@@ -52,6 +52,8 @@ export type ToasterNoteRoute = {
 export type HeldNoteExpressionPoint = {
     offsetSeconds: number;
     value: number;
+    /** Bend range in force at this point; only present on pitch-bend trails. */
+    bendRangeSemitones?: number;
 };
 
 /**
@@ -61,6 +63,7 @@ export type HeldNoteExpressionPoint = {
  */
 export type HeldNoteExpressionTrail = {
     initial: number | undefined;
+    initialBendRangeSemitones?: number;
     points: HeldNoteExpressionPoint[];
 };
 
