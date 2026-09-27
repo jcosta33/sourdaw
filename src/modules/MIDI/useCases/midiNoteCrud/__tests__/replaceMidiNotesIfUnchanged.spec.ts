@@ -32,7 +32,7 @@ function projectedNotes(): MidiNote[] {
 }
 
 function documentNotes(): MidiNote[] {
-    return getCrdtDoc('root')?.midi?.notesByClipId[clipId] ?? [];
+    return getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi?.notesByClipId[clipId] ?? [];
 }
 
 function publishPeerEdit(id: string, velocity: number): void {
