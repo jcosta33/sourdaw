@@ -4612,6 +4612,40 @@ describe('the egress screen tells code from credentials', () => {
         expect(sensitiveContentReason("author = 'externalContributorName'")).toBeDefined();
     });
 
+    it('rescans a rejected assignment value for a later assignment on the same line', () => {
+        // When the value heuristic rejected a match — here a dotted run read as a member access —
+        // the scan resumed past the whole consumed span, so a second assignment later on the same
+        // line was never evaluated and its secret reached the provider while the pinned binary
+        // flagged the line as generic-api-key (#4872). The dotted run and the 32-character value
+        // are composed at runtime for the same reason as the fixtures above, and every expectation
+        // in this test was checked against the pinned binary: Gitleaks v8.30.1 with the
+        // repository's `.gitleaks.toml` flags each withheld line as generic-api-key and stays
+        // silent on the admitted one.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        const dotted = secretFixture('A1b2C3d4', 'E5f6G7h8', '.secret');
+        for (const line of [
+            secretFixture('token = ', dotted, ' = ', "'", value, "'"),
+            secretFixture('auth = ', dotted, ' = ', "'", value, "'"),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // A benign line of the same shape stays admitted: the dotted first value is a member
+        // access, and the second assignment's value is a reference, not key material.
+        expect(sensitiveContentReason('token = credentials.sessionToken = runtimeSessionToken')).toBeUndefined();
+    });
+
+    it('screens a line of repeated rejected assignments in bounded time', () => {
+        // A rejected match now rescans from its value's start, so a resumption that failed to
+        // advance would loop here, and a pathological one would show as quadratic time. The bound
+        // is loose: the scan takes under ten milliseconds at this length.
+        const line = 'token = credentials.sessionToken = runtimeSessionToken; '.repeat(200);
+        const startedAt = performance.now();
+        const reason = sensitiveContentReason(line);
+        const elapsedMs = performance.now() - startedAt;
+        expect(reason).toBeUndefined();
+        expect(elapsedMs).toBeLessThan(2_000);
+    });
+
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
         // No left boundary: `SOME_TOKEN`, `apiToken`, `dbPassword` and their like are the dominant
         // secret-naming vocabulary and must reach the value heuristic. The value heuristic, not a

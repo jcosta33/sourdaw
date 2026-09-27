@@ -241,18 +241,34 @@ function looksLikeCredentialValue(value: string, after: string, quoted: boolean)
     return !PLACEHOLDER_VALUE.test(value);
 }
 
-/** The first secret-named assignment whose value is shaped like a credential, if any. */
+/**
+ * The first secret-named assignment whose value is shaped like a credential, if any.
+ *
+ * A rejected match still consumed its whole span: in `token = A1b2….secret = '…'` the dotted run is
+ * read as a member access, and resuming past it never evaluated the assignment that follows on the
+ * same line, so the pinned scanner flagged the line while the screen admitted it (#4872). A
+ * rejection therefore resumes the scan at the rejected value's start — the end of the matched key,
+ * gap, operator, and opening run — which is where the value group begins by construction (the
+ * quoted branch's terminator is a lookahead, and the bare branch's `after` carries at most one
+ * character). The resumption point always sits past the rejected match's start, because the key
+ * name and the operator are at least four characters between them, so rejected match starts
+ * strictly increase and the scan terminates; each accepted match returns, and an exhausted scan
+ * ends the loop.
+ */
 function secretAssignmentReason(text: string): string | undefined {
-    for (const match of text.matchAll(SECRET_ASSIGNMENT)) {
+    SECRET_ASSIGNMENT.lastIndex = 0;
+    let match = SECRET_ASSIGNMENT.exec(text);
+    while (match !== null) {
         const quoted = match.groups?.quoted !== undefined;
         const value = match.groups?.quoted ?? match.groups?.bare;
-        if (value === undefined) {
-            continue;
+        if (value !== undefined) {
+            const after = quoted ? '' : (match.groups?.after ?? '');
+            if (looksLikeCredentialValue(value, after, quoted)) {
+                return 'a secret-named key assigned a credential-shaped value';
+            }
+            SECRET_ASSIGNMENT.lastIndex = match.index + match[0].length - value.length - after.length;
         }
-        const after = quoted ? '' : (match.groups?.after ?? '');
-        if (looksLikeCredentialValue(value, after, quoted)) {
-            return 'a secret-named key assigned a credential-shaped value';
-        }
+        match = SECRET_ASSIGNMENT.exec(text);
     }
     return undefined;
 }
