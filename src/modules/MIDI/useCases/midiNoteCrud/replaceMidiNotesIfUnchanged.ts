@@ -31,7 +31,22 @@ export function replaceMidiNotesIfUnchanged(clipId: string, replacements: readon
     const replacementById = new Map(
         replacements.map((entry) => [entry.expected.id, cloneMidiNoteForAdmission(entry.replacement)])
     );
+    const liveOwners = new Map<string, string[]>();
+    for (const [liveClipId, notes] of Object.entries(state.notesByClipId)) {
+        for (const note of notes) {
+            if (!replacementById.has(note.id)) {
+                continue;
+            }
+            const owners = liveOwners.get(note.id) ?? [];
+            owners.push(liveClipId);
+            liveOwners.set(note.id, owners);
+        }
+    }
     for (const entry of replacements) {
+        const owners = liveOwners.get(entry.expected.id);
+        if (!owners || owners.length !== 1 || owners[0] !== clipId) {
+            throw new Error('Cannot restore MIDI notes: note ownership changed');
+        }
         const live = current.find((note) => note.id === entry.expected.id);
         if (!live || !midiNotesEqual([live], [entry.expected])) {
             throw new Error('Cannot restore MIDI notes: an edited note changed');

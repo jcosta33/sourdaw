@@ -10,11 +10,16 @@ import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { memberExpressionState } from '../../repositories/webMidi/memberExpressionState';
+import {
+    beginPendingMemberAdmission,
+    takePendingMemberAdmission,
+} from '../../repositories/webMidi/pendingMemberAdmission';
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -47,6 +52,7 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const generation = memberExpressionGeneration.current;
+            const eventTime = resolveInputEventTime({ timeStamp });
             let admittedBeat: number;
             if (typeof timeStamp === 'object' && timeStamp !== null && Number.isFinite(timeStamp.recordingBeat)) {
                 admittedBeat = timeStamp.recordingBeat!;
@@ -56,14 +62,25 @@ export const handleWebMidiNoteOn = inject({
 
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
+            const memberExpression = mpeEnabled && channel >= 1 ? memberExpressionState.get(channel) : undefined;
+            let initialBendRangeSemitones: number | undefined;
+            if (memberExpression?.pitchBend !== undefined) {
+                initialBendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
+            }
+            const memberAdmission = mpeEnabled && channel >= 1 ? beginPendingMemberAdmission(channel) : undefined;
             const channelNoteKey = mpeEnabled && channel >= 1 ? channelToNote.get(channel) : undefined;
             const noteToRelease =
                 activeNotes.get(noteKey) ??
                 (channelNoteKey === undefined ? undefined : activeNotes.get(channelNoteKey));
-            if (noteToRelease) {
-                await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
-            } else if (channelNoteKey !== undefined) {
-                channelToNote.delete(channel);
+            let admittedChanges: ReturnType<typeof takePendingMemberAdmission>;
+            try {
+                if (noteToRelease) {
+                    await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
+                } else if (channelNoteKey !== undefined) {
+                    channelToNote.delete(channel);
+                }
+            } finally {
+                admittedChanges = takePendingMemberAdmission(memberAdmission);
             }
             if (generation !== memberExpressionGeneration.current) {
                 return;
@@ -83,15 +100,10 @@ export const handleWebMidiNoteOn = inject({
             // the main thread (audit MD-1). Everything downstream — the voice
             // dispatch frame and the recorded note length — is measured from
             // this instant instead of the clock reading at handler-run time.
-            const eventTime = resolveInputEventTime({ timeStamp });
             const dispatchFrame = resolveInputDispatchFrame({ eventTime });
             const dispatchTime = dispatchFrame / engine.context.sampleRate;
             const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(eventTime * engine.context.sampleRate)}:${++nextNoteInstanceSerial}`;
-            const memberExpression = mpeEnabled && channel >= 1 ? memberExpressionState.get(channel) : undefined;
-            let pitchBendRangeSemitones: number | undefined;
-            if (memberExpression?.pitchBend !== undefined) {
-                pitchBendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
-            }
+            const pitchBendRangeSemitones = initialBendRangeSemitones;
 
             const noteData: ActiveNoteData = {
                 startTime: eventTime,
@@ -107,6 +119,13 @@ export const handleWebMidiNoteOn = inject({
                 pitchBend: memberExpression?.pitchBend,
                 pitchBendRangeSemitones,
             };
+            for (const change of admittedChanges) {
+                recordHeldNoteExpression(noteData, change);
+                noteData[change.dimension] = change.value;
+                if (change.dimension === 'pitchBend') {
+                    noteData.pitchBendRangeSemitones = change.bendRangeSemitones;
+                }
+            }
             activeNotes.set(noteKey, noteData);
 
             if (mpeEnabled && channel >= 1) {

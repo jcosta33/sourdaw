@@ -20,6 +20,29 @@ const midi: MidiStoreState = {
 };
 
 describe('hydrateProjectMidi', () => {
+    it('preserves absent slide and explicit minimum as distinct saved note states', () => {
+        const saved = serializeProjectMidi({
+            notesByClipId: {
+                'clip-1': [
+                    {
+                        id: 'absent',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 1,
+                        velocity: 100,
+                        expression: { slide: [{ offsetBeats: 0.5, value: 100 }] },
+                    },
+                    { id: 'minimum', pitch: 60, startBeat: 1, duration: 1, velocity: 100, slide: 0 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const hydrated = hydrateProjectMidi(saved).notesByClipId['clip-1'];
+        expect(hydrated?.[0]).not.toHaveProperty('slide');
+        expect(hydrated?.[0]?.expression?.slide).toEqual([{ offsetBeats: 0.5, value: 100 }]);
+        expect(hydrated?.[1]?.slide).toBe(0);
+    });
     it('owns expression points from the imported MIDI block', () => {
         const source = {
             notesByClipId: {

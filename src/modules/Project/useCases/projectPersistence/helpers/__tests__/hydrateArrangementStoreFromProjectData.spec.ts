@@ -122,6 +122,7 @@ describe('hydrateArrangementStoreFromProjectData', () => {
         expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]?.expression?.pressure).toEqual([
             { offsetBeats: 0.5, value: 90 },
         ]);
+        expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]).not.toHaveProperty('slide');
 
         const savedData = projectData();
         const savedNote = {
@@ -150,6 +151,10 @@ describe('hydrateArrangementStoreFromProjectData', () => {
         expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]?.expression?.slide).toEqual([
             { offsetBeats: 0.5, value: 80 },
         ]);
+        expect(arrangementStore.value?.arrangements[0]?.midi.notesByClipId[track.clips[0].id]?.[0]).not.toHaveProperty(
+            'slide'
+        );
+        expect(midiStore.value?.notesByClipId[track.clips[0].id]?.[0]).not.toHaveProperty('slide');
     });
     afterEach(() => {
         arrangementStore.set(structuredClone(defaultArrangementStoreState));

@@ -11,7 +11,11 @@ import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { ingestChannelControlChange } from '../../repositories/webMidi/ingestChannelControlChange';
-import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
+import { memberExpressionState, setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
+import {
+    hasPendingMemberAdmission,
+    recordPendingMemberExpression,
+} from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -50,26 +54,41 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             const mpeEnabled = getMpeEnabled();
             const heldNoteKey = channelToNote.get(channel);
             const heldNote = heldNoteKey === undefined ? undefined : activeNotes.get(heldNoteKey);
+            let pendingBend: number | undefined;
+            if (hasPendingMemberAdmission(channel)) {
+                pendingBend = memberExpressionState.get(channel)?.pitchBend;
+            }
             let earlierBendRange: number | undefined;
             if (
                 mpeEnabled &&
                 channel >= MPE_FIRST_MEMBER_CHANNEL &&
                 isDataEntryCc(cc) &&
-                heldNote?.pitchBend !== undefined
+                (heldNote?.pitchBend !== undefined || pendingBend !== undefined)
             ) {
                 earlierBendRange = resolveBendRangeSemitones({ channel, mpeEnabled });
             }
             const controlChange = ingestChannelControlChange({ channel, cc, value });
             if (controlChange.consumed && earlierBendRange !== undefined) {
                 const bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
-                if (bendRangeSemitones !== earlierBendRange && heldNote?.pitchBend !== undefined) {
-                    recordHeldNoteExpression(heldNote, {
-                        dimension: 'pitchBend',
-                        value: heldNote.pitchBend,
-                        eventTime: resolveInputEventTime({ timeStamp }),
-                        bendRangeSemitones,
-                    });
-                    heldNote.pitchBendRangeSemitones = bendRangeSemitones;
+                if (bendRangeSemitones !== earlierBendRange) {
+                    const eventTime = resolveInputEventTime({ timeStamp });
+                    if (heldNote?.pitchBend !== undefined) {
+                        recordHeldNoteExpression(heldNote, {
+                            dimension: 'pitchBend',
+                            value: heldNote.pitchBend,
+                            eventTime,
+                            bendRangeSemitones,
+                        });
+                        heldNote.pitchBendRangeSemitones = bendRangeSemitones;
+                    }
+                    if (pendingBend !== undefined) {
+                        recordPendingMemberExpression(channel, {
+                            dimension: 'pitchBend',
+                            value: pendingBend,
+                            eventTime,
+                            bendRangeSemitones,
+                        });
+                    }
                 }
             }
             if (controlChange.consumed) {
@@ -90,11 +109,12 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
 
             if (getMpeEnabled() && cc === MPE_SLIDE_CC && channel >= MPE_FIRST_MEMBER_CHANNEL) {
                 setMemberExpression(channel, { slide: value });
+                const eventTime = resolveInputEventTime({ timeStamp });
+                recordPendingMemberExpression(channel, { dimension: 'slide', value, eventTime });
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel !== undefined) {
                     const noteData = activeNotes.get(noteForChannel);
                     if (noteData) {
-                        const eventTime = resolveInputEventTime({ timeStamp });
                         recordHeldNoteExpression(noteData, { dimension: 'slide', value, eventTime });
                         noteData.slide = value;
                         // Reach the instrument voice through the one expression

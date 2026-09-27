@@ -6,6 +6,7 @@ import { MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
+import { recordPendingMemberExpression } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -44,6 +45,12 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
 
             if (mpeEnabled && channel >= MPE_FIRST_MEMBER_CHANNEL) {
                 setMemberExpression(channel, { pitchBend: bendValue });
+                recordPendingMemberExpression(channel, {
+                    dimension: 'pitchBend',
+                    value: bendValue,
+                    eventTime,
+                    bendRangeSemitones,
+                });
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel === undefined) {
                     return;

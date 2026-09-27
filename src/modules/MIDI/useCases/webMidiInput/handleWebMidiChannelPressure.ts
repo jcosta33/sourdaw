@@ -2,6 +2,7 @@ import { applyNoteExpression } from '#/modules/AudioEngine/useCases';
 
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
+import { recordPendingMemberExpression } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
@@ -18,6 +19,8 @@ export function handleWebMidiChannelPressure(
     }
 
     setMemberExpression(channel, { pressure });
+    const eventTime = resolveInputEventTime({ timeStamp });
+    recordPendingMemberExpression(channel, { dimension: 'pressure', value: pressure, eventTime });
 
     const noteForChannel = channelToNote.get(channel);
     if (noteForChannel === undefined) {
@@ -26,7 +29,6 @@ export function handleWebMidiChannelPressure(
 
     const noteData = activeNotes.get(noteForChannel);
     if (noteData) {
-        const eventTime = resolveInputEventTime({ timeStamp });
         recordHeldNoteExpression(noteData, { dimension: 'pressure', value: pressure, eventTime });
         noteData.pressure = pressure;
         // Reach the instrument voice through the one expression surface the

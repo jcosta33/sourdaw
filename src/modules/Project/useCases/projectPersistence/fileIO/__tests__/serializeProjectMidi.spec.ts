@@ -1,11 +1,53 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { midiStore } from '#/modules/MIDI/stores';
+import { joinNotes } from '#/modules/MIDI/useCases';
 
 import { hydrateProjectMidi } from '../hydrateProjectMidi';
 import { serializeProjectMidi } from '../serializeProjectMidi';
 
 describe('serializeProjectMidi', () => {
+    it('keeps an absent recorded slide onset distinct from explicit minimum through save and join', () => {
+        const recorded: MidiStoreState = {
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'preceding', pitch: 60, startBeat: 0, duration: 1, velocity: 100, slide: 100 },
+                    {
+                        id: 'recorded',
+                        pitch: 60,
+                        startBeat: 1,
+                        duration: 1,
+                        velocity: 100,
+                        expression: { slide: [{ offsetBeats: 0.5, value: 100 }] },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        midiStore.set(structuredClone(recorded));
+        joinNotes('clip-1', ['preceding', 'recorded']);
+        const beforeSave = midiStore.value?.notesByClipId['clip-1']?.[0]?.expression?.slide;
+        expect(beforeSave).toEqual([
+            { offsetBeats: 1, value: 64 },
+            { offsetBeats: 1.5, value: 100 },
+        ]);
+
+        const saved = serializeProjectMidi(recorded);
+        expect(saved.notesByClipId['clip-1']?.[1]).not.toHaveProperty('slide');
+        const reopened = hydrateProjectMidi(saved);
+        expect(reopened.notesByClipId['clip-1']?.[1]).not.toHaveProperty('slide');
+        midiStore.set(reopened);
+        joinNotes('clip-1', ['preceding', 'recorded']);
+        expect(midiStore.value?.notesByClipId['clip-1']?.[0]?.expression?.slide).toEqual(beforeSave);
+
+        const minimum = { ...recorded.notesByClipId['clip-1']![1]!, slide: 0 };
+        expect(
+            hydrateProjectMidi(serializeProjectMidi({ ...recorded, notesByClipId: { 'clip-1': [minimum] } }))
+                .notesByClipId['clip-1']?.[0]?.slide
+        ).toBe(0);
+    });
     it('serializes notes, CC, and pitch-bend into the Project MIDI contract', () => {
         const midi: MidiStoreState = {
             probabilitySeed: 4_294_967_295,
@@ -48,7 +90,6 @@ describe('serializeProjectMidi', () => {
                         velocity: 100,
                         probability: 100,
                         pressure: 0,
-                        slide: 0,
                         pitchBend: 0,
                     },
                     {

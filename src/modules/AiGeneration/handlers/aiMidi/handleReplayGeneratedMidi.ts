@@ -1,5 +1,5 @@
 import { addClip, getTrackStoreState, restoreTrackAtIndexWithDeferredAddedEvent } from '#/modules/Arrangement/useCases';
-import { setNotesForClip } from '#/modules/MIDI/useCases';
+import { isValidMidiNoteSnapshot, setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
@@ -106,6 +106,12 @@ export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
     execute: (action) => {
         const operation = action.payload.operation;
         if (operation.kind === 'replace-notes') {
+            if (
+                !isValidMidiNoteSnapshot(operation.expectedNotes) ||
+                !isValidMidiNoteSnapshot(operation.replacementNotes)
+            ) {
+                return { status: 'conflict' };
+            }
             if (operation.clip.trackId !== operation.trackId) {
                 return { status: 'conflict' };
             }
@@ -132,6 +138,10 @@ export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
                 operation.replacementNotes.map((note) => ({ ...note }))
             );
             return { status: 'written' };
+        }
+
+        if (!isValidMidiNoteSnapshot(operation.source.notes) || !isValidMidiNoteSnapshot(operation.notes)) {
+            return { status: 'conflict' };
         }
 
         if (!isReplaySourceCurrent(operation) || hasClipIdCollision(operation.clip.id)) {

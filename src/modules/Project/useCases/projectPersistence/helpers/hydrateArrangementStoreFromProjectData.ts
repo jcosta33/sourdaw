@@ -26,7 +26,6 @@ function hydrateInlineMidiNotes(notes: ProjectMidi['notesByClipId'][string]): Pr
             ...note,
             probability: note.probability ?? 100,
             pressure: note.pressure ?? 0,
-            slide: note.slide ?? 0,
             pitchBend: note.pitchBend ?? 0,
         };
         if (note.expression) {

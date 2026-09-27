@@ -852,9 +852,9 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
     const PITCH = 60;
 
     let recorded: RecordedNote[];
-    let noteOff: (channel: number, note: number, velocity?: number) => Promise<void>;
-    let pitchBend: (channel: number, lsb: number, msb: number) => void;
-    let controlChange: (channel: number, cc: number, value: number) => void;
+    let noteOff: (channel: number, note: number, velocity?: number, timeStamp?: { audioTime: number }) => Promise<void>;
+    let pitchBend: (channel: number, lsb: number, msb: number, timeStamp?: { audioTime: number }) => void;
+    let controlChange: (channel: number, cc: number, value: number, timeStamp?: { audioTime: number }) => void;
 
     function recordingDependencies(transport: { isRecording: boolean }, armed: boolean) {
         return make_dependencies({
@@ -916,10 +916,10 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         controlChange = handleWebMidiCC._factory(dependencies);
     }
 
-    function makeNoteOn() {
+    function makeNoteOn(priorRelease: typeof noteOff = noteOff) {
         return handleWebMidiNoteOn._factory({
             ...recordingDependencies({ isRecording: true }, true),
-            handleWebMidiNoteOff: noteOff,
+            handleWebMidiNoteOff: priorRelease,
             stepRecordNoteOn: () => {},
             scheduleNote: () => null,
             scheduleKitNote: () => null,
@@ -951,6 +951,106 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         audio_clock.outputLatency = 0;
         recorded = [];
         setUp();
+    });
+
+    it('keeps direct member gestures at their admitted onset and offsets while predecessor release waits', async () => {
+        at(0.9);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 10, { audioTime: 0.9 });
+        controlChange(MEMBER_CHANNEL, 74, 20, { audioTime: 0.9 });
+        pitchBend(MEMBER_CHANNEL, 0, 72, { audioTime: 0.9 });
+        holdNote();
+        let finishPredecessor!: () => void;
+        const predecessor = new Promise<void>((resolve) => {
+            finishPredecessor = resolve;
+        });
+        const noteOn = makeNoteOn(async (channel, pitch) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, pitch));
+            channelToNote.delete(channel);
+            await predecessor;
+        });
+
+        at(1);
+        const pending = noteOn(MEMBER_CHANNEL, 62, 100, { audioTime: 1, recordingBeat: 2 });
+        at(1.25);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 80, { audioTime: 1.25 });
+        controlChange(MEMBER_CHANNEL, 74, 90, { audioTime: 1.25 });
+        pitchBend(MEMBER_CHANNEL, 0, 96, { audioTime: 1.25 });
+        at(3.1);
+        finishPredecessor();
+        await pending;
+        at(4);
+        await noteOff(MEMBER_CHANNEL, 62, 0, { audioTime: 4 });
+
+        expect(recorded[0]).toMatchObject({
+            startBeat: 2,
+            pressure: 10,
+            slide: 20,
+            pitchBend: 1024,
+            expression: {
+                pressure: [{ offsetBeats: 0.5, value: 80 }],
+                slide: [{ offsetBeats: 0.5, value: 90 }],
+                pitchBend: [{ offsetBeats: 0.5, value: 4096 }],
+            },
+        });
+    });
+
+    it('keeps a direct member bend-range change at its admitted offset while predecessor release waits', async () => {
+        setBendRange(12);
+        at(0.9);
+        pitchBend(MEMBER_CHANNEL, 0, 96, { audioTime: 0.9 });
+        holdNote();
+        let finishPredecessor!: () => void;
+        const predecessor = new Promise<void>((resolve) => {
+            finishPredecessor = resolve;
+        });
+        const noteOn = makeNoteOn(async (channel, pitch) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, pitch));
+            channelToNote.delete(channel);
+            await predecessor;
+        });
+
+        at(1);
+        const pending = noteOn(MEMBER_CHANNEL, 62, 100, { audioTime: 1, recordingBeat: 2 });
+        at(1.25);
+        setBendRange(48);
+        at(3.1);
+        finishPredecessor();
+        await pending;
+        at(4);
+        await noteOff(MEMBER_CHANNEL, 62, 0, { audioTime: 4 });
+
+        expect(recorded[0]).toMatchObject({
+            pitchBend: 1024,
+            pitchBendRangeSemitones: 48,
+            expression: { pitchBend: [{ offsetBeats: 0.5, value: 4096 }] },
+        });
+    });
+
+    it('cancels a direct member admission when input resets during predecessor release', async () => {
+        at(0.9);
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 10, { audioTime: 0.9 });
+        holdNote();
+        let finishPredecessor!: () => void;
+        const predecessor = new Promise<void>((resolve) => {
+            finishPredecessor = resolve;
+        });
+        const noteOn = makeNoteOn(async (channel, pitch) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, pitch));
+            channelToNote.delete(channel);
+            await predecessor;
+        });
+        at(1);
+        const pending = noteOn(MEMBER_CHANNEL, 62, 100, { audioTime: 1, recordingBeat: 2 });
+        handleWebMidiChannelPressure(MEMBER_CHANNEL, 80, { audioTime: 1.25 });
+        resetChannelControllerState();
+        finishPredecessor();
+        await pending;
+
+        expect(activeNotes.has(createWebMidiNoteKey(MEMBER_CHANNEL, 62))).toBe(false);
+        expect(recorded).toEqual([]);
+        const fresh = makeNoteOn();
+        await fresh(MEMBER_CHANNEL, 64, 100, { audioTime: 4, recordingBeat: 8 });
+        expect(activeNotes.get(createWebMidiNoteKey(MEMBER_CHANNEL, 64))?.pressure).toBeUndefined();
     });
 
     it.each([0, 0.01])('records expression already on the member channel %s seconds before note-on', async (lead) => {

@@ -58,7 +58,11 @@ const { resetMidiState } = await import('../../../repositories/webMidi/lifecycle
 
 describe('live Yeast release ownership across input reset', () => {
     beforeEach(() => {
-        resetMidiState({ getTrackStrip: () => strip, releaseNativeNote: () => {} });
+        resetMidiState({
+            getCurrentTime: () => clock.currentTime,
+            getTrackStrip: () => strip,
+            releaseNativeNote: () => {},
+        });
         activeNotes.clear();
         channelToNote.clear();
         noteOnControl.mockReset();
@@ -209,7 +213,11 @@ describe('live Yeast release ownership across input reset', () => {
             expect(nextOff).toHaveBeenCalledTimes(1);
             expect(nextOff.mock.calls[0]?.[0]).toBe(69);
 
-            resetMidiState({ getTrackStrip: () => strip, releaseNativeNote: () => {} });
+            resetMidiState({
+                getCurrentTime: () => clock.currentTime,
+                getTrackStrip: () => strip,
+                releaseNativeNote: () => {},
+            });
             strip.deviceNodes.splice(0, strip.deviceNodes.length, firstNode);
             firstOff.mockClear();
             nextOff.mockClear();
@@ -230,7 +238,11 @@ describe('live Yeast release ownership across input reset', () => {
             expect(nextOff).toHaveBeenCalledTimes(1);
             expect(nextOff.mock.calls[0]?.[0]).toBe(67);
 
-            resetMidiState({ getTrackStrip: () => strip, releaseNativeNote: () => {} });
+            resetMidiState({
+                getCurrentTime: () => clock.currentTime,
+                getTrackStrip: () => strip,
+                releaseNativeNote: () => {},
+            });
             strip.deviceNodes.splice(0, strip.deviceNodes.length, firstNode);
             firstOff.mockClear();
             nextOff.mockClear();

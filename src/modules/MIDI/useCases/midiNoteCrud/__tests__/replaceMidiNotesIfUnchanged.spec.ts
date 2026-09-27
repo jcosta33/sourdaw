@@ -116,6 +116,78 @@ afterEach(() => {
 });
 
 describe('targeted MIDI note history through Command and Automerge', () => {
+    it('refuses edited-note undo after peer Command reinsertions duplicate its live identity', async () => {
+        const before = findNote('edited');
+        resizeMidiNote(clipId, 'edited', undefined, 1);
+        const after = findNote('edited');
+        pushUndoEntry(
+            'Resize MIDI note',
+            () => replaceMidiNotesIfUnchanged(clipId, [{ expected: after, replacement: before }]),
+            () => replaceMidiNotesIfUnchanged(clipId, [{ expected: before, replacement: after }])
+        );
+        flushAutomergeStorageWrites();
+        const editedDoc = clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        const editHistory = undoHistoryStore.value!;
+
+        async function deleteAndUndoOnPeer() {
+            replaceCrdtDocInLineage({ id: 'root', doc: clone(editedDoc) });
+            projectCrdtToStores({ resetProjections: true });
+            const captured = structuredClone(projectedNotes());
+            setNotesForClip(
+                clipId,
+                captured.filter((candidate) => candidate.id !== 'edited')
+            );
+            const deleted = structuredClone(projectedNotes());
+            flushAutomergeStorageWrites();
+            pushUndoEntry(
+                'Peer delete MIDI note',
+                () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: deleted, replacement: captured }]),
+                () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: captured, replacement: deleted }])
+            );
+            expect(await undo()).toEqual({ headConsumed: true });
+            flushAutomergeStorageWrites();
+            return clone(getCrdtDoc<{ midi?: MidiStoreState }>('root')!);
+        }
+
+        const firstPeer = await deleteAndUndoOnPeer();
+        undoHistoryStore.set(editHistory);
+        const secondPeer = await deleteAndUndoOnPeer();
+        replaceCrdtDocInLineage({ id: 'root', doc: merge(firstPeer, secondPeer) });
+        projectCrdtToStores({ resetProjections: true });
+        undoHistoryStore.set(editHistory);
+        expect(projectedNotes().filter((candidate) => candidate.id === 'edited')).toHaveLength(2);
+        const documentBefore = structuredClone(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi);
+        const projectionBefore = structuredClone(midiStore.value);
+        const historyBefore = undoStore.value;
+
+        await expect(undo()).rejects.toThrow('note ownership');
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi).toEqual(documentBefore);
+        expect(midiStore.value).toEqual(projectionBefore);
+        expect(undoStore.value).toEqual(historyBefore);
+    });
+
+    it('refuses edited-note undo when a later owner write also places its identity in another clip', async () => {
+        const before = findNote('edited');
+        resizeMidiNote(clipId, 'edited', undefined, 1);
+        const after = findNote('edited');
+        pushUndoEntry(
+            'Resize MIDI note',
+            () => replaceMidiNotesIfUnchanged(clipId, [{ expected: after, replacement: before }]),
+            () => replaceMidiNotesIfUnchanged(clipId, [{ expected: before, replacement: after }])
+        );
+        setNotesForClip('other-clip', [structuredClone(after)]);
+        flushAutomergeStorageWrites();
+        const documentBefore = structuredClone(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi);
+        const projectionBefore = structuredClone(midiStore.value);
+        const historyBefore = undoStore.value;
+
+        await expect(undo()).rejects.toThrow('note ownership');
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi).toEqual(documentBefore);
+        expect(midiStore.value).toEqual(projectionBefore);
+        expect(undoStore.value).toEqual(historyBefore);
+    });
     it('refuses membership undo when peer Command reinsertions merge duplicate rows for one owned ID', async () => {
         const before = structuredClone(projectedNotes());
         setNotesForClip(

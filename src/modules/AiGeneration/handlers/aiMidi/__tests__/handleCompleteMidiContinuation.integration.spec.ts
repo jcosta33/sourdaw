@@ -1,9 +1,13 @@
+import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, markerStore, trackStore, type Clip } from '#/modules/Arrangement/stores';
 import { createTrack, setArrangementEventBus, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -19,6 +23,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -177,6 +182,114 @@ describe('forward MIDI completion extends the playable phrase (#3763)', () => {
         }
         return source;
     }
+
+    it('refuses malformed generated replay before a clip, note, document head, or history entry changes', async () => {
+        const source = await createSourceClip({ id: 'src', startBeat: 0, endBeat: 4 });
+        await executeAppAction({
+            type: 'addNotes',
+            payload: { clipId: source.id, notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+        });
+        flushAutomergeStorageWrites();
+        const sourceNotes = structuredClone(midiStore.value?.notesByClipId[source.id] ?? []);
+        const sourceClip = {
+            id: source.id,
+            trackId: source.trackId,
+            name: source.name,
+            startBeat: source.startBeat,
+            endBeat: source.endBeat,
+            type: 'midi' as const,
+        };
+        const doc = getCrdtDoc('root');
+        if (!doc) {
+            throw new Error('Expected authoritative project document');
+        }
+        const headsBefore = getHeads(doc);
+        const documentBefore = JSON.stringify(doc);
+        const projectionBefore = structuredClone({ tracks: trackStore.value, midi: midiStore.value });
+        const historyBefore = undoHistoryStore.value;
+
+        await expect(
+            executeAppAction({
+                type: 'replayGeneratedMidi',
+                payload: {
+                    operation: {
+                        kind: 'create-clip',
+                        source: { trackId: source.trackId, clip: sourceClip, notes: sourceNotes },
+                        targetTrackId: source.trackId,
+                        clip: { ...sourceClip, id: 'generated-clip', name: 'Generated' },
+                        notes: [
+                            {
+                                id: 'generated-note',
+                                pitch: 62,
+                                startBeat: 0,
+                                duration: 1,
+                                velocity: 90,
+                                expression: { slide: [{ offsetBeats: 1, value: 100 }] },
+                            },
+                        ],
+                    },
+                },
+            })
+        ).rejects.toThrow();
+        flushAutomergeStorageWrites();
+
+        const after = getCrdtDoc('root');
+        expect(after && getHeads(after)).toEqual(headsBefore);
+        expect(JSON.stringify(after)).toBe(documentBefore);
+        expect({ tracks: trackStore.value, midi: midiStore.value }).toEqual(projectionBefore);
+        expect(undoHistoryStore.value).toBe(historyBefore);
+    });
+
+    it('replays valid generated expression exactly and owns the admitted curve', async () => {
+        const source = await createSourceClip({ id: 'src', startBeat: 0, endBeat: 4 });
+        await executeAppAction({
+            type: 'addNotes',
+            payload: { clipId: source.id, notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+        });
+        const sourceNotes = structuredClone(midiStore.value?.notesByClipId[source.id] ?? []);
+        const sourceClip = {
+            id: source.id,
+            trackId: source.trackId,
+            name: source.name,
+            startBeat: source.startBeat,
+            endBeat: source.endBeat,
+            type: 'midi' as const,
+        };
+        const note = {
+            id: 'generated-note',
+            pitch: 62,
+            startBeat: 0,
+            duration: 1,
+            velocity: 90,
+            expression: { slide: [{ offsetBeats: 0.5, value: 100 }] },
+        };
+        const action: Extract<AppAction, { type: 'replayGeneratedMidi' }> = {
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-clip',
+                    source: { trackId: source.trackId, clip: sourceClip, notes: sourceNotes },
+                    targetTrackId: source.trackId,
+                    clip: { ...sourceClip, id: 'generated-clip', name: 'Generated' },
+                    notes: [note],
+                },
+            },
+        };
+        await executeAppAction(action);
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId['generated-clip']?.[0]?.expression?.slide).toEqual([
+            { offsetBeats: 0.5, value: 100 },
+        ]);
+        note.expression.slide[0]!.value = 0;
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId['generated-clip']?.[0]?.expression?.slide).toEqual([
+            { offsetBeats: 0.5, value: 100 },
+        ]);
+
+        expect(
+            trackStore.value?.tracks.flatMap((track) => track.clips).filter((clip) => clip.id === 'generated-clip')
+        ).toHaveLength(1);
+    });
 
     it('places the completion in an audible continuation clip and undoes and redoes notes and geometry', async () => {
         await createSourceClip({ id: 'src', startBeat: 0, endBeat: 4 });

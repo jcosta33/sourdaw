@@ -43,9 +43,12 @@ export function serializeProjectMidiNote(note: RuntimeNote): ProjectMidiNote {
         velocity: note.velocity,
         probability: note.probability ?? 100,
         pressure: note.pressure ?? 0,
-        slide: note.slide ?? 0,
         pitchBend: note.pitchBend ?? 0,
     };
+
+    if (note.slide !== undefined) {
+        serialized.slide = note.slide;
+    }
 
     // The bend range is what gives the stored `pitchBend` its meaning. Read back
     // absent, the engine substitutes the MPE default of 48 semitones, so a bend
