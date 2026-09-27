@@ -5,7 +5,9 @@
 
 use super::engines::{DrumEngineResources, DrumEngineType};
 use super::lofi::LofiProcessor;
-use super::pad::{pad_param_name_for_id, Pad, PadLockOverlay, EMPTY_PAD_LOCK_OVERLAY, PAD_LOCK_PARAM_COUNT};
+use super::pad::{
+    pad_param_name_for_id, Pad, PadLockOverlay, EMPTY_PAD_LOCK_OVERLAY, PAD_LOCK_PARAM_COUNT,
+};
 use super::transient::TransientShaper;
 use super::voice::{DrumVoice, PadLockOverrides};
 use crate::params::{MASTER_GAIN, THRESHOLD};
@@ -697,7 +699,9 @@ impl ToasterEngine {
                     // lock never re-persists into it.
                     if pad_idx < self.transient_shapers.len() {
                         let shaper = &mut self.transient_shapers[pad_idx];
-                        if overrides.transient_attack.is_some() || overrides.transient_sustain.is_some() {
+                        if overrides.transient_attack.is_some()
+                            || overrides.transient_sustain.is_some()
+                        {
                             let (attack, sustain) = shaper.gains();
                             shaper.set_attack(overrides.transient_attack.unwrap_or(attack));
                             shaper.set_sustain(overrides.transient_sustain.unwrap_or(sustain));
@@ -803,7 +807,6 @@ impl ToasterEngine {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -824,7 +827,10 @@ mod tests {
 
         engine.note_on(0, 100.0, 60);
 
-        assert_eq!(engine.pads[0].tune, 0.0, "the hit must not persist the lock");
+        assert_eq!(
+            engine.pads[0].tune, 0.0,
+            "the hit must not persist the lock"
+        );
         assert_eq!(engine.pads[0].pan, 0.0, "the hit must not persist the lock");
         assert!(
             engine.pad_lock_overlays[0].iter().all(Option::is_none),

@@ -54,7 +54,10 @@ impl PadLockOverrides {
         Self {
             pan_gains: staged[PAN].map(|_| {
                 let pan = overlaid.pan;
-                (((1.0_f32 - pan) * 0.5).sqrt(), ((1.0_f32 + pan) * 0.5).sqrt())
+                (
+                    ((1.0_f32 - pan) * 0.5).sqrt(),
+                    ((1.0_f32 + pan) * 0.5).sqrt(),
+                )
             }),
             bus_route: staged[BUS_ROUTE].map(|_| overlaid.bus_route),
             send_reverb: staged[SEND_REVERB].map(|_| overlaid.send_reverb),
