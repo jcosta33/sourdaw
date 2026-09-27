@@ -9,6 +9,7 @@ export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 // shells, hooks and new files fall through to the complete browser suite.
 // Keep these file lists explicit: a new UI or browser workflow needs a coverage decision.
 const PREFERENCES_SPECS = [
+    'tests/e2e/autoSaveInterval.spec.ts',
     'tests/e2e/preferencesDialogDeepTestId.spec.ts',
     'tests/e2e/shortcutBehavioralE2E.spec.ts',
     'tests/e2e/browserDisplayScale.spec.ts',

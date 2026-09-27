@@ -11,7 +11,10 @@ import { parseChangedPaths, selectedSpecArguments, selectValidationPlan, SMOKE_S
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'];
 const PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/AppearanceSection.tsx';
+const GENERAL_PREFERENCES = 'src/modules/Preferences/presentations/views/preferences/GeneralSection.tsx';
+const AUTO_SAVE_INTERVAL_SPEC = 'tests/e2e/autoSaveInterval.spec.ts';
 const PREFERENCE_SPECS = [
+    AUTO_SAVE_INTERVAL_SPEC,
     'tests/e2e/preferencesDialogDeepTestId.spec.ts',
     'tests/e2e/shortcutBehavioralE2E.spec.ts',
     'tests/e2e/browserDisplayScale.spec.ts',
@@ -81,6 +84,11 @@ describe('required affected verification', () => {
                 inventory.filter((spec) => spec !== SMOKE_SPEC).sort()
             );
         }
+    });
+
+    it('selects the auto-save interval persistence proof for General preferences', () => {
+        const inventory = [...INVENTORY, ...PREFERENCE_SPECS];
+        expect(allSelected(selectValidationPlan([GENERAL_PREFERENCES], inventory))).toContain(AUTO_SAVE_INTERVAL_SPEC);
     });
 
     it('selects existing mixer and transport workflows without hardware for known views', () => {
