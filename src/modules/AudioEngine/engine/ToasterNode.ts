@@ -92,8 +92,12 @@ type ScheduleToasterHitInput = {
  * `TOASTER_PAD_PARAM_IDS` entries — here, on the main thread, never in the
  * worklet: `scheduledHit` is dispatched inside `process()`, where the
  * string-keyed `set_pad_param` glue heap-allocates once per locked parameter
- * per hit (#4633). A name without an id only ever reached Rust's
- * `Pad::set_param` no-op arm, so dropping it keeps engine behavior identical.
+ * per hit (#4633). A name without an id is dropped. The old path forwarded it
+ * verbatim to Rust, where the snake_case spellings of these same 17 names and
+ * a handful of synth params (`snappy`, `base_freq`, …) would have applied —
+ * but no producer, current or historical, ever writes those keys into a
+ * step's `paramLocks` (only persisted, hand-edited pattern JSON could carry
+ * them), so dropping them narrows no reachable behavior (#4842 review).
  */
 function toScheduledPadParamIds(
     padParams: Array<{ name: string; value: number }>
