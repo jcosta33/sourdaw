@@ -13,7 +13,6 @@ import { releaseToasterNotes } from '../releaseToasterNotes';
 import { scheduleToasterHit } from '../scheduleToasterHit';
 import { startSequencer } from '../startSequencer';
 import { stopSequencer } from '../stopSequencer';
-import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     startFaustNote: vi.fn(),
@@ -155,7 +154,9 @@ describe('startSequencer', () => {
         expect(scheduled?.padIndex).toBe(0);
         expect(scheduled?.velocity).toBe(127);
         expect(scheduled?.padParams?.some((param) => param.name === 'engineType')).toBe(true);
-        expect(scheduled?.restoreEngineType).toBe(TOASTER_ENGINE_MAP['kick-808']);
+        // #4636: the engine swap rides the per-hit overlay — the pad's own
+        // engine returns for the next hit with no restore write.
+        expect(scheduled).not.toHaveProperty('restoreEngineType');
     });
 
     // Regression (Fix #4) — for a delayed (microtiming) sound-locked step the
@@ -173,7 +174,7 @@ describe('startSequencer', () => {
         expect(scheduled?.padIndex).toBe(0);
         expect(scheduled?.velocity).toBe(127);
         expect(scheduled?.padParams?.some((param) => param.name === 'engineType')).toBe(true);
-        expect(scheduled?.restoreEngineType).toBe(TOASTER_ENGINE_MAP['kick-808']);
+        expect(scheduled).not.toHaveProperty('restoreEngineType');
     });
 
     // Regression (Fix #2) — microtiming/retrigger fires scheduled by a tick must

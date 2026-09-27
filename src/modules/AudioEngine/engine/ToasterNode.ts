@@ -83,7 +83,6 @@ type ScheduleToasterHitInput = {
     midiNote?: number;
     sampleFrame: number;
     padParams: Array<{ name: string; value: number }>;
-    restoreEngineType?: number;
     fillCondition?: 'fill' | 'not-fill';
 };
 
@@ -279,7 +278,7 @@ export async function createToasterNode(
         noteOff(pad: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', pad, sampleFrame });
         },
-        scheduleHit({ pad, velocity, midiNote = 60, sampleFrame, padParams, restoreEngineType, fillCondition }) {
+        scheduleHit({ pad, velocity, midiNote = 60, sampleFrame, padParams, fillCondition }) {
             if (bypassed) {
                 return;
             }
@@ -290,7 +289,6 @@ export async function createToasterNode(
                 note: midiNote,
                 sampleFrame,
                 padParams: toScheduledPadParamIds(padParams),
-                restoreEngineType,
                 fillCondition,
             });
         },

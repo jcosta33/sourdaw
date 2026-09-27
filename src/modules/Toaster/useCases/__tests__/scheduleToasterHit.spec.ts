@@ -24,7 +24,6 @@ describe('scheduleToasterHit', () => {
             velocity: 101,
             targetTimeSeconds: 1.25,
             padParams: [{ name: 'tone', value: 0.7 }],
-            restoreEngineType: 0,
             fillCondition: undefined,
         });
 
@@ -33,7 +32,6 @@ describe('scheduleToasterHit', () => {
             velocity: 101,
             sampleFrame: 60_000,
             padParams: [{ name: 'tone', value: 0.7 }],
-            restoreEngineType: 0,
         });
     });
 
