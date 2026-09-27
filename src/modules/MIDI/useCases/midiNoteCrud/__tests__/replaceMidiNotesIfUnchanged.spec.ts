@@ -174,20 +174,21 @@ describe('targeted MIDI note history through Command and Automerge', () => {
             expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
         };
         appendRecordedMidiNote({ clipId, note: recorded });
+        recorded.expression.pressure[0]!.value = 12;
+        flushAutomergeStorageWrites();
+        expect(documentNotes().find((candidate) => candidate.id === 'recorded')?.expression).toEqual({
+            pressure: [{ offsetBeats: 0.5, value: 90 }],
+        });
 
         const supplied = {
             ...note('supplied', 0, 2),
             expression: { slide: [{ offsetBeats: 0.5, value: 80 }] },
         };
         setNotesForClip(clipId, [...projectedNotes(), supplied]);
-        recorded.expression.pressure[0]!.value = 12;
         supplied.expression.slide.push({ offsetBeats: 1, value: 20 });
         supplied.expression.slide = [{ offsetBeats: 0.25, value: 40 }];
         flushAutomergeStorageWrites();
 
-        expect(documentNotes().find((candidate) => candidate.id === 'recorded')?.expression).toEqual({
-            pressure: [{ offsetBeats: 0.5, value: 90 }],
-        });
         expect(documentNotes().find((candidate) => candidate.id === 'supplied')?.expression).toEqual({
             slide: [{ offsetBeats: 0.5, value: 80 }],
         });
