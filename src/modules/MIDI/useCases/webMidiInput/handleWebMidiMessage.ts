@@ -95,7 +95,7 @@ function dispatchNoteHandler(
         }
     } catch (error: unknown) {
         logHandlerFailure(error);
-        return;
+        return undefined;
     }
     const queued = started.catch(logHandlerFailure);
     midiInputTail = queued;
@@ -125,7 +125,7 @@ function dispatchExpressionHandler(channel: number, handler: () => void): Promis
         } catch (error: unknown) {
             logHandlerFailure(error);
         }
-        return;
+        return undefined;
     }
 
     // Something on this channel is still in flight. Queue behind it, and make
@@ -140,7 +140,7 @@ function dispatchExpressionHandler(channel: number, handler: () => void): Promis
 export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> | void {
     const message = parseWebMidiMessage(event);
     if (!message) {
-        return;
+        return undefined;
     }
 
     const timeStamp = message.timeStamp;
@@ -173,4 +173,5 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 handleWebMidiPitchBend(channel, message.lsb, message.msb, timeStamp)
             );
     }
+    return undefined;
 }
