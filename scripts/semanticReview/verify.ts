@@ -452,9 +452,7 @@ export type RunVerifyInput = {
     readonly runId: string;
 };
 
-export type RunVerifyResult = {
-    readonly report: SemanticVerifyReport;
-};
+export type RunVerifyResult = { readonly report: SemanticVerifyReport };
 
 type VerifyAccumulation = {
     assessments: FindingAssessment[];
@@ -597,20 +595,6 @@ async function assessFindings(input: {
     return accumulation;
 }
 
-/**
- * The profile the verify pass runs under: the base profile's attempt, retry, and timing controls with
- * the profile's verify byte budgets in their places, so the budget controller and the provider request
- * enforce exactly the budgets the finding's evidence was collected under.
- */
-function verifyBudgetProfile(profile: SemanticBudgetProfile): SemanticBudgetProfile {
-    return {
-        ...profile,
-        maxStatePlusQuestionBytes: profile.verify.maxStatePlusQuestionBytes,
-        maxRequestBytes: profile.verify.maxRequestBytes,
-        maxTotalSubmittedBytes: profile.verify.maxTotalSubmittedBytes,
-    };
-}
-
 export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult> {
     const startedAt = new Date(input.ports.clock.now()).toISOString();
     const rulesDigest = computeVerifyQuestionsDigest(input.findings);
@@ -625,7 +609,12 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
     // budgets, so a region the collector admits is one the request can carry and the run's stated
     // byte ceiling is the one actually enforced. The scan-sized request budgets would withhold a
     // finding's referenced regions and starve its questions into abstaining for want of evidence.
-    const profile = verifyBudgetProfile(input.profile);
+    const profile: SemanticBudgetProfile = {
+        ...input.profile,
+        maxStatePlusQuestionBytes: input.profile.verify.maxStatePlusQuestionBytes,
+        maxRequestBytes: input.profile.verify.maxRequestBytes,
+        maxTotalSubmittedBytes: input.profile.verify.maxTotalSubmittedBytes,
+    };
     const limits: SemanticEvidenceLimits = {
         maxRegionBytes: profile.verify.maxRegionBytes,
         maxTotalBytes: profile.verify.maxTotalSubmittedBytes,

@@ -38,9 +38,7 @@ export type ScanOutcome = (typeof SCAN_OUTCOMES)[number];
  * threshold is an ordinary no, not a third state. `insufficient_context` is reserved for evidence the
  * application knows it did not send, which is a fact rather than a probability.
  */
-export type RuleThresholds = {
-    readonly fire: number;
-};
+export type RuleThresholds = { readonly fire: number };
 
 export type RuleInvestigationCategory =
     'test-validity' | 'project-integrity' | 'realtime' | 'security-platform' | 'architecture-integration';
