@@ -1,0 +1,59 @@
+crates/daw-dsp/src/toaster/engine.rs
+  s_ed5aa36a3ba357::t_438b68bbc0d7b3 8-10,12,270-274,364,385-410,468-476,540-542,544-545,550-567,691-699,701-713,719-721,740,753-754,809-872
+crates/daw-dsp/src/toaster/mod.rs
+  s_ed5aa36a3ba357::t_baf8672e854f3f 86-94,230-376
+crates/daw-dsp/src/toaster/pad.rs
+  s_ed5aa36a3ba357::t_f7df697f03e612 7-49,52-58
+crates/daw-dsp/src/toaster/transient.rs
+  s_ed5aa36a3ba357::t_ff30a4e5d2a7bb 35-41
+crates/daw-dsp/src/toaster/voice.rs
+  s_ed5aa36a3ba357::t_a9214516b85142 11,15-70,172-175,192
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_cae1ed9501f552 1,921-928,955-1025,1027-1029,1048-1069,1167
+public/wasm/daw-dsp/daw_dsp.js
+  s_ed5aa36a3ba357::t_7536752b785007 2046-2058
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_929864d3df4d4f 1,5-75,77-79,98-119,217
+public/wasm/manifest.json
+  s_ed5aa36a3ba357::t_3b72b65a22f7c1 12,15-18,20-21
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_15515e1e7af2b1 1209-1210,1343,1349,1767
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ed5aa36a3ba357::t_e99542f88c49fb 281
+src/modules/AudioEngine/models/ToasterPadParamIds.ts
+  s_ed5aa36a3ba357::t_2b14922aa9f42c 8-13,17,22
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ed5aa36a3ba357::t_96be434e854db6 47,86-88,153,250-251,264,271,275-277,472,564,576-577,816-817,825
+src/modules/AudioEngine/services/__tests__/toasterProcessorParamLockScope.spec.ts
+  s_ed5aa36a3ba357::t_da4d723b4e2d4f 1-216
+src/modules/AudioEngine/services/__tests__/toasterProcessorShippedMalloc.spec.ts
+  s_ed5aa36a3ba357::t_dc4d204a3de53e 74-77,79-91,93-95,98-114
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ed5aa36a3ba357::t_135ecb87e09dc6 11,156-158,332-335,337
+src/modules/AudioEngine/wasm/__tests__/dawDspToasterPadParamIds.spec.ts
+  s_ed5aa36a3ba357::t_e1866906f6749d 48-66
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_0cda26c565e22f 1,921-928,955-1025,1027-1029,1048-1069,1167
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ed5aa36a3ba357::t_6d31c8d60aa564 2223-2235
+src/modules/Toaster/useCases/__tests__/sequencerPlayback.spec.ts
+  s_ed5aa36a3ba357::t_bfda0e4a284494 157-159,177
+src/modules/Toaster/useCases/sequencerPlayback.ts
+  s_ed5aa36a3ba357::t_ac2d3dc0a44807 90-92,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dd6f2148e986833f16fd5108d483d74661c64924",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
