@@ -268,6 +268,36 @@ describe('snapshotImportSpecifiers', () => {
     });
 
     /**
+     * A division `/` inside the header a backward walk crosses must not pair with an earlier slash.
+     * `a / g(b / c) / require(spec)` read itself as one literal from its second `/` back to the first,
+     * so the walk stepped over the call's `(` and hid a real load the merge base refused (#4828).
+     */
+    it('reads a division pair inside a crossed header as a division', () => {
+        expect(snapshotImportSpecifiers('if (x = a / g(b / c) / require(spec) / 2) {}')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('if (x = a / g(b / c) / require(spec) / 2) {}')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('if (ratio / compute(x / y) / import(spec) / 2 > 0) {}')).toEqual([
+            'import(...)',
+        ]);
+    });
+
+    /**
+     * `for await (…)` is a control header exactly as `for (…)` is, so its `)` ends a header and
+     * `/don't/` after it opens a regex whose apostrophe would otherwise swallow the load behind it.
+     * The two-word header has to be read before the member guard, which sees the `r` of `for` in
+     * front of `await` and rejects it as a member's name.
+     */
+    it('collects a load a for await header regex used to hide', () => {
+        expect(snapshotComputedDynamicSpecifiers("for await (const a of b) /don't/.test(l);\nrequire(spec);")).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotImportSpecifiers("for await (const a of b) /don't/.test(l);\nrequire('yaml');")).toEqual([
+            'yaml',
+        ]);
+    });
+
+    /**
      * A load reached through a wrapped or bound callee is the same load: `(require)(spec)`,
      * `(0, require)(spec)`, a name bound to `require` or to `createRequire(…)`, and an aliased
      * `createRequire` import (#4818). The boundary cases pin the limits: a parenthesis that continues
@@ -577,6 +607,19 @@ describe('snapshotImportSpecifiers', () => {
         // divided `/` is a real load and is collected, while the computed form is refused above.
         expect(snapshotImportSpecifiers("const r = {} / import('yaml') / 2;")).toEqual(['yaml']);
         expect(snapshotImportSpecifiers("const r = {} / require('yaml') / 2;")).toEqual(['yaml']);
+    });
+
+    /**
+     * The operand-position proof crosses the same backward walks, so a division pair inside the brace
+     * it matches has to read as a division there too. The `}` of `{ ({ a: 1 / 2 }) / c }` closes a
+     * statement block and the `/ require(spec) /` after it is a regex literal the file loads nothing
+     * through, as the merge base read it; pairing the slashes proved an object literal and refused it.
+     */
+    it('keeps a statement-position regex after a brace holding a division', () => {
+        expect(snapshotComputedDynamicSpecifiers('{ ({ a: 1 / 2 }) / c } / require(spec) /;')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('function f() { ({ a: b / c }) / d; } / require(spec) /;')).toEqual(
+            []
+        );
     });
 
     /**

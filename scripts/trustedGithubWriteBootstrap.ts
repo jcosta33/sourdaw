@@ -2589,22 +2589,24 @@ function closesControlHeader(source: string, closeParen: number): boolean {
     }
     const word = readWordBackward(source, before);
     const wordStart = before - word.length + 1;
+    // `for await (…)` spells its header keyword two words before the parenthesis, and the `r` of
+    // `for` in front of `await` is exactly what the member guard below reads as a member's name, so
+    // the pair is read first. `await (…)` alone is an expression, not a header.
+    if (word === 'await') {
+        const beforeAwait = previousSignificantCharacter(source, wordStart - 1);
+        if (beforeAwait === undefined) {
+            return false;
+        }
+        const headerWord = readWordBackward(source, beforeAwait);
+        return headerWord === 'for' && !isMemberNameAt(source, beforeAwait - headerWord.length + 1);
+    }
     // A `#` names a private member exactly as `.` names a public one, so the member guard is the
     // shared one: `this.#while(1) / require(spec) / 2` divides rather than opening a regex that
     // swallows the load.
     if (isMemberNameAt(source, wordStart)) {
         return false;
     }
-    if (CONTROL_HEADER_KEYWORDS.has(word)) {
-        return true;
-    }
-    // `for await (…)` spells its header keyword two words before the parenthesis; `await (…)` alone
-    // is an expression, not a header.
-    if (word !== 'await') {
-        return false;
-    }
-    const beforeAwait = previousSignificantCharacter(source, wordStart - 1);
-    return beforeAwait !== undefined && readWordBackward(source, beforeAwait) === 'for';
+    return CONTROL_HEADER_KEYWORDS.has(word);
 }
 
 /**
@@ -2726,7 +2728,11 @@ function matchingOpenDelimiterBackward(
         }
         if (character === '/') {
             const regexOpen = regexLiteralOpenBackward(source, cursor);
-            if (regexOpen !== undefined) {
+            // Only an opener that stands at a regex position starts a literal. Two division slashes
+            // otherwise pair — `a / g(b / c)` reads as a literal from the second `/` back to the
+            // first — and the walk then steps over the `(` or `{` between them, hiding a load the
+            // merge base refused.
+            if (regexOpen !== undefined && canStartRegexLiteral(source, regexOpen)) {
                 cursor = regexOpen - 1;
                 continue;
             }
