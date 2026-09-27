@@ -342,10 +342,11 @@ describe('snapshotImportSpecifiers', () => {
 
     /**
      * A file that declares `require` itself — as a parameter, a `const`/`let`/`var` name, a
-     * destructuring target, or a catch parameter — reads every bare `require` in it as that
-     * declaration, so no name is bound to the loader through one and the file keeps the merge base's
-     * reading. The four shapes load nothing, and reading them as loads refused sources that reach no
-     * module (#4828). The declaration is the file's, not the scope's: the file's own shadowing wins.
+     * destructuring target, or a catch parameter — forms no binding of any name to the loader, so the
+     * file keeps the merge base's reading. The four shapes load nothing, and reading them as loads
+     * refused sources that reach no module (#4828). The declaration is the file's, not the scope's: the
+     * file's own shadowing wins. It stops at the binding pass, which is what keeps the callee cases
+     * below loads.
      */
     it('drops the loader binding when the file declares require itself', () => {
         expect(snapshotComputedDynamicSpecifiers('function f(require) { const load = require; load(spec); }')).toEqual(
@@ -363,6 +364,83 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotImportSpecifiers("const require = fake;\nconst load = require;\nload('yaml');")).toEqual([]);
         // The binding a file that does not declare `require` still makes, which is the rule's other half.
         expect(snapshotComputedDynamicSpecifiers('const load = require;\nload(spec);')).toEqual(['require(...)']);
+    });
+
+    /**
+     * The declaration above stops the binding pass alone. A `require(…)` call is the loader whatever
+     * else the file declares, as the merge base read it, so an unrelated declaration never hides a real
+     * load: a literal specifier is collected, and a computed one is refused by `require(...)`. Only the
+     * binding through the name is dropped, which is what the four stand-down shapes above observe.
+     */
+    it('keeps a require callee a load when the file declares the name elsewhere', () => {
+        expect(snapshotImportSpecifiers("function f(require) {}\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("function f({ require }) {}\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("try {} catch (require) {}\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("const require = fake;\nconst y = require('yaml');")).toEqual(['yaml']);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\nrequire(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\nrequire.resolve(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('function f(require) { require(spec); }')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\n(0, require)(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const require = fake;\n(require)(spec);')).toEqual(['require(...)']);
+    });
+
+    /**
+     * A parameter list inside a type declares nothing at runtime, so it is no declaration of the name
+     * `require` and must not stand the binding pass down: `const load = require` still binds the loader
+     * and `load(spec)` is a computed load. Only the `=` of a `type` alias and the `:` of a declared
+     * name's annotation prove the type position; every other list keeps the stand-down above (#4828).
+     */
+    it('reads a parameter list inside a type as no declaration of require', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers('type L = (require: string) => void;\nconst load = require;\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'type L<T> = (require: string) => void;\nconst load = require;\nload(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'let loader: (require: string) => void;\nconst load = require;\nload(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(snapshotImportSpecifiers("type L = (require: string) => void;\nconst y = require('yaml');")).toEqual([
+            'yaml',
+        ]);
+    });
+
+    /**
+     * Only a value `import { createRequire as <name> } from '…'` binds a local name, so only it makes a
+     * call through that name a load. `export { … } from` re-exports without binding anything,
+     * `import type { … }` imports a type, and an inline `type` specifier names a type, so
+     * `cr(import.meta.url)('./hidden')` behind any of them reaches no local loader and the file reaches
+     * `node:module` alone. Reading the alias out of any `{ … } from` clause collected `./hidden`, which
+     * the merge base never did (#4828).
+     */
+    it.each([
+        {
+            label: 'an export clause re-exporting createRequire',
+            source: "export { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+        {
+            label: 'an export type clause re-exporting createRequire',
+            source: "export type { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+        {
+            label: 'a type-only import of createRequire',
+            source: "import type { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+        {
+            label: 'an inline type specifier of createRequire',
+            source: "import { type createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');",
+        },
+    ])('binds no local loader through $label', ({ source }) => {
+        expect(snapshotImportSpecifiers(source)).toEqual(['node:module']);
+        expect(snapshotComputedDynamicSpecifiers(source)).toEqual([]);
     });
 
     /**

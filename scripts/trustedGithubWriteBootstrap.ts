@@ -488,7 +488,8 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * this file gained rules for: a `/` after a control header's `)` or after a bare `else` opens a regex,
  * a `}` provably closing an operand-position object literal divides, a wrapped or bound callee
  * (`(0, require)(expr)`, `(require)(expr)`, `const load = createRequire(import.meta.url); load(expr)`,
- * and an aliased `createRequire` import) resolves, and a regex inside a binding pattern is skipped.
+ * and a value `import { createRequire as load } from 'node:module'` alias) resolves, and a regex inside
+ * a binding pattern is skipped.
  * Each of those rules is narrowed to the position it can prove, so a shape that only resembles one
  * keeps the merge base's reading instead of being decided wrongly: a `)` after a member named for a
  * control keyword (`this.#while(1)`, `obj.if(1)`, …) ends a call, a brace after a type's `=` or `&` or
@@ -595,9 +596,10 @@ type LoaderBindingKind = 'require' | 'createRequire';
 
 /**
  * What one file's text says about the module loader: the names it binds to a loader, and whether it
- * declares `require` itself. A file that declares the name reads every bare `require` identifier in it
- * as that declaration rather than as the loader, so neither a bound name nor the literal callee is
- * that loader there.
+ * declares `require` itself. A file that declares the name forms no loader binding through that
+ * identifier, so `const load = require` resolves nothing there. The declaration stops at the binding
+ * pass: the literal and computed `require(…)` callee detection is never gated on it, because a bare
+ * `require(…)` call is a load.
  */
 type LoaderRead = {
     readonly names: ReadonlyMap<string, LoaderBindingKind>;
@@ -613,7 +615,8 @@ const NO_LOADER_READ: LoaderRead = { names: new Map(), requireIsFileOwnName: fal
  * and each of those hid the load from the scan. The pass is single-file and one level deep: a name
  * bound to another bound name (`const b = a; b(spec)`), a `.resolve` or `.bind` member, and a
  * destructured binding keep the merge base's reading. A file that declares `require` itself binds
- * nothing through that identifier, which `declaresRequireName` reads.
+ * nothing through that identifier, which `declaresRequireName` reads; the declaration stops here and
+ * never suppresses a `require(…)` callee.
  */
 function collectLoaderBindings(source: string): LoaderRead {
     const bindings = new Map<string, LoaderBindingKind>();
@@ -659,15 +662,16 @@ function collectLoaderBindings(source: string): LoaderRead {
 /**
  * Whether the file declares the name `require` as anything but the module loader — a parameter, a
  * `const`/`let`/`var` name, a `function`/`class` name, a destructuring target, or a catch parameter.
- * The declaration makes every bare `require` identifier in the file that declaration, so no name may be
- * bound to the loader through one and no literal `require(...)` call is that loader:
+ * The declaration stops the binding pass: no name is bound to the loader through one, so
  * `function f(require) { const load = require; load(spec) }`, `const require = fake; const load =
- * require; load(spec)`, and `const { require } = box; (0, require)(spec)` all load nothing, and
- * reading them as loads refused sources that reach no module (#4828). Two declarations keep the
- * loader: an ambient `declare function require`, and a name bound to a created require
- * (`const require = createRequire(import.meta.url)`), because each declares the loader itself. The
- * reading is the file's, not the scope's, exactly as `isEveryUseACallLike` reads a redeclaration, and
- * it errs toward the file's own shadowing.
+ * require; load(spec)`, and `const { require } = box; const load = require; load(spec)` form no
+ * binding and the file keeps the merge base's reading (#4828). It never reaches the callee detection,
+ * where a `require(…)` call is a load whatever the file declares. Three declarations keep the loader:
+ * an ambient `declare function require`, a name bound to a created require (`const require =
+ * createRequire(import.meta.url)`), because each declares the loader itself, and a parameter list
+ * inside a type (`type L = (require: string) => void`), which declares nothing at runtime. The reading
+ * is the file's, not the scope's, exactly as `isEveryUseACallLike` reads a redeclaration, and it errs
+ * toward the file's own shadowing.
  */
 function declaresRequireName(source: string): boolean {
     let index = 0;
@@ -705,12 +709,12 @@ function declaresRequireName(source: string): boolean {
 
 /**
  * Whether the `require` at `index` declares the name rather than naming the loader. A declaration
- * keyword before it, a parameter list or catch parameter around it, or a destructuring pattern entry
- * makes it a declaration; an ambient `declare function require` and a name bound to a created require
- * declare the loader itself, so both keep it. The parameter test is the parenthesis the name sits in —
- * a list that closes before a body, a return type, or an arrow, or that opens a `catch` clause — which
- * is what keeps the comma-sequence and parenthesised callees (`(0, require)(spec)`, `(require)(spec)`)
- * reading as the loader.
+ * keyword before it, a runtime parameter list or catch parameter around it, or a destructuring pattern
+ * entry makes it a declaration; an ambient `declare function require` and a name bound to a created
+ * require declare the loader itself, so both keep it. The parameter test is the parenthesis the name
+ * sits in — a list that closes before a body, a return type, or an arrow, or that opens a `catch`
+ * clause, and is no type's list — which is what keeps the comma-sequence and parenthesised callees
+ * (`(0, require)(spec)`, `(require)(spec)`) reading as the loader.
  */
 function isRequireDeclarationAt(source: string, index: number): boolean {
     const keywordEnd = previousSignificantCharacter(source, index - 1);
@@ -785,12 +789,14 @@ function declarationKeywordBefore(source: string, index: number): string | undef
 /**
  * Whether the `require` name at `index` sits in a parameter list. The innermost parenthesis enclosing
  * it decides: a list that closes before a body, a return type, or an arrow is a declaration, and a
- * `catch` clause's list is one too. A list closed before a call is an argument list — `(0, require)`
- * and `(require)` are the wrapped callee — and a header keyword's parenthesis is an expression.
+ * `catch` clause's list is one too. A list the token before it proves to belong to a type is no
+ * declaration at all, which is what keeps `type L = (require: string) => void` out of the stand-down.
+ * A list closed before a call is an argument list — `(0, require)` and `(require)` are the wrapped
+ * callee — and a header keyword's parenthesis is an expression.
  */
 function isParameterListNameAt(source: string, index: number): boolean {
     const open = enclosingOpenerBefore(source, index, '(');
-    if (open === undefined) {
+    if (open === undefined || isTypeParameterListAt(source, open)) {
         return false;
     }
     const close = skipBalancedParens(source, open);
@@ -807,6 +813,51 @@ function isParameterListNameAt(source: string, index: number): boolean {
     const wordEnd = previousSignificantCharacter(source, open - 1);
     const word = wordEnd === undefined ? '' : readWordBackward(source, wordEnd);
     return word === 'catch' || !CONTROL_HEADER_KEYWORDS.has(word);
+}
+
+/**
+ * Whether the parameter list opened at `open` belongs to a type — the function type of a `type` alias
+ * or of a declaration's annotation — rather than to a runtime function. A type's parameter list
+ * declares nothing at runtime, so it must not stand the loader down: only the alias's `=` and a
+ * declaration keyword's annotation `:` prove it, and every other position keeps the stand-down
+ * (#4828).
+ */
+function isTypeParameterListAt(source: string, open: number): boolean {
+    const before = previousSignificantCharacter(source, open - 1);
+    if (before === undefined) {
+        return false;
+    }
+    return source.charAt(before) === '='
+        ? isTypeAliasNameBefore(source, before)
+        : source.charAt(before) === ':' && isDeclarationAnnotationBefore(source, before);
+}
+
+/** Whether the `=` at `equals` closes a `type <name><…> = …` clause. */
+function isTypeAliasNameBefore(source: string, equals: number): boolean {
+    let nameEnd = previousSignificantCharacter(source, equals - 1);
+    if (nameEnd !== undefined && source.charAt(nameEnd) === '>') {
+        const open = matchingOpenDelimiterBackward(source, nameEnd, '<', '>');
+        nameEnd = open === undefined ? undefined : previousSignificantCharacter(source, open - 1);
+    }
+    if (nameEnd === undefined || !isIdentifierContinue(source[nameEnd])) {
+        return false;
+    }
+    const name = readWordBackward(source, nameEnd);
+    const keywordEnd = previousSignificantCharacter(source, nameEnd - name.length);
+    return (
+        keywordEnd !== undefined &&
+        isIdentifierContinue(source[keywordEnd]) &&
+        readWordBackward(source, keywordEnd) === 'type'
+    );
+}
+
+/** Whether the `:` at `colon` annotates a declared name — a variable, function, or class one. */
+function isDeclarationAnnotationBefore(source: string, colon: number): boolean {
+    const nameEnd = previousSignificantCharacter(source, colon - 1);
+    if (nameEnd === undefined || !isIdentifierContinue(source[nameEnd])) {
+        return false;
+    }
+    return declarationKeywordBefore(source, nameEnd - readWordBackward(source, nameEnd).length + 1) !== undefined;
 }
 
 /**
@@ -1001,24 +1052,45 @@ function readLoaderDeclaration(
     return callEnd === undefined ? undefined : { name, kind: 'require', nameIndex: nameStart, end: callEnd };
 }
 
-/** The name an `import { createRequire as <name> } from '…'` clause at `index` binds, if any. */
+/**
+ * The name a value `import { createRequire as <name> } from '…'` clause at `index` binds, if any. Only
+ * a value import binds a local name: the keyword must be `import`, `export { … } from` re-exports
+ * without binding anything, `import type { … }` imports a type, and an inline `type` specifier names a
+ * type. Reading any of those as a value binding turned a call through a name no local binding reaches —
+ * `export { createRequire as cr } from 'node:module';\ncr(import.meta.url)('./hidden');` — into a load
+ * of `./hidden`, which the merge base never collected (#4828).
+ */
 function readCreateRequireImportAlias(source: string, index: number): LoaderBinding | undefined {
+    if (!isKeywordAt(source, index, 'import')) {
+        return undefined;
+    }
     const open = skipWhitespace(source, index + 6);
-    if (source[open] !== '{') {
+    if (source[open] !== '{' || isKeywordAt(source, open, 'type')) {
         return undefined;
     }
     const close = source.indexOf('}', open + 1);
     if (close === -1) {
         return undefined;
     }
-    const match = /\bcreateRequire\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/.exec(source.slice(open + 1, close));
-    const name = match?.[1];
-    if (name === undefined || !isKeywordAt(source, skipWhitespace(source, close + 1), 'from')) {
+    const clause = source.slice(open + 1, close);
+    // A specifier starts at the clause's start or after a separator, so a quoted name or another
+    // specifier's text cannot be read as this one; the `type` in front makes the specifier type-only.
+    const match = /(?:^|[,{\s])(type\s+)?createRequire\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/.exec(clause);
+    const name = match?.[2];
+    if (
+        match === null ||
+        match[1] !== undefined ||
+        name === undefined ||
+        !isKeywordAt(source, skipWhitespace(source, close + 1), 'from')
+    ) {
         return undefined;
     }
-    const clause = source.slice(open + 1, close);
-    const nameOffset = clause.lastIndexOf(name);
-    return { name, kind: 'createRequire', nameIndex: open + 1 + nameOffset, end: close + 1 };
+    return {
+        name,
+        kind: 'createRequire',
+        nameIndex: open + 1 + match.index + match[0].length - name.length,
+        end: close + 1,
+    };
 }
 
 type BoundCallee = {
@@ -1035,12 +1107,12 @@ type BoundCallee = {
  * list, so `pass(require)(spec)` is not this shape. `callOpen` is the parenthesis that holds the
  * specifier, the second call for a bound `createRequire` factory. The left identifier boundary keeps
  * a name merely ending in a bound name (`download(spec)`) out of the rule, and a member call
- * (`registry.load(spec)`) is not the binding. A file that declares `require` itself reads the bare
- * operand as that declaration, so the parenthesised form is no callee there either.
+ * (`registry.load(spec)`) is not the binding. The parenthesised operand is the loader whatever the
+ * file declares: the declaration stops the binding pass, never this callee.
  */
 function readBoundCallee(source: string, index: number, bindings: LoaderRead): BoundCallee | undefined {
     if (source[index] === '(') {
-        if (!startsCalleeExpression(source, index) || bindings.requireIsFileOwnName) {
+        if (!startsCalleeExpression(source, index)) {
             return undefined;
         }
         const close = skipBalancedParens(source, index);
@@ -1137,11 +1209,7 @@ function readComputedDynamicLoad(source: string, index: number, bindings: Loader
         }
         return undefined;
     }
-    if (
-        isKeywordAt(source, index, 'require') &&
-        !isPrecededByDotAccess(source, index) &&
-        !bindings.requireIsFileOwnName
-    ) {
+    if (isKeywordAt(source, index, 'require') && !isPrecededByDotAccess(source, index)) {
         let cursor = skipWhitespace(source, index + 7);
         if (source[cursor] === '.') {
             const afterDot = skipWhitespace(source, cursor + 1);
@@ -2071,7 +2139,7 @@ function scanImportSpecifiers(
             }
         }
         if (isKeywordAt(source, index, 'require')) {
-            if (!isPrecededByDotAccess(source, index) && !bindings.requireIsFileOwnName) {
+            if (!isPrecededByDotAccess(source, index)) {
                 let cursor = skipWhitespace(source, index + 7);
                 if (source[cursor] === '.') {
                     const afterDot = skipWhitespace(source, cursor + 1);
