@@ -29,7 +29,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         const state = mocks.warpStates.get(clipId) ?? {
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         };
         const opts = (options ?? {}) as { origin?: string; locked?: boolean };
@@ -47,7 +47,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         mocks.warpStates.get(clipId) ?? {
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         },
     setWarpState: (
@@ -163,7 +163,7 @@ describe('detectTransientsForClip', () => {
                 { id: 'user1', originalBeat: 1.7, warpedBeat: 1.7, origin: 'user' },
                 { id: 'auto1', originalBeat: 0.42, warpedBeat: 0.42, origin: 'transient-auto' },
             ],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 

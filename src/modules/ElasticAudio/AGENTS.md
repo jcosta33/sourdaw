@@ -4,7 +4,7 @@ Transient and warp marker orchestration: manages transient detection, warp marke
 
 ## Domain Ownership
 
-Owns transient marker detection, warp marker editing/quantization, warp algorithm selection (`beats`, `tones`, `texture`, `repitch`, `complex`), and elastic audio editor panel state. Does not own low-level DSP time-stretch rendering kernels (AudioEngine/WASM) or audio clip timeline arrangements (Arrangement).
+Owns transient marker detection, warp marker editing/quantization, warp algorithm selection (`repitch`, `phase-vocoder`, `wsola` — the canonical ADR 0024 surface over the three executors), and elastic audio editor panel state. Does not own low-level DSP time-stretch rendering kernels (AudioEngine/WASM) or audio clip timeline arrangements (Arrangement).
 
 ## Public Contract Surface
 

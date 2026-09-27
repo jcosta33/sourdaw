@@ -13,7 +13,9 @@ describe('hydrateClipWarpStates', () => {
         __resetWarpStatesForTest();
     });
 
-    it('loads markers from a project-file array and replaces prior in-memory state', () => {
+    it('loads markers from a project-file array, mapping a legacy stretch mode, and replaces prior in-memory state', () => {
+        // `beats` is a pre-ADR 0024 id an older project file still carries;
+        // the store must hold its mapped canonical mode, `wsola`.
         hydrateClipWarpStates([
             {
                 clipId: 'clip-a',
@@ -27,7 +29,7 @@ describe('hydrateClipWarpStates', () => {
         expect(getWarpState('clip-a')).toEqual({
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1.5, origin: 'user' }],
-            stretchMode: 'beats',
+            stretchMode: 'wsola',
             originalTempo: 100,
         });
         expect(hasNonDefaultWarpState('clip-a')).toBe(true);

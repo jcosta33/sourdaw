@@ -13,7 +13,11 @@ import {
     type TrackCollectionFieldsSnapshot,
 } from '#/utils/handlerContract';
 
-import { readClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import {
+    normalizeClipSatelliteEntry,
+    readClipSatelliteEntry,
+    writeClipSatelliteEntry,
+} from '../../stores/clipSatelliteState';
 import { type Clip, type Device, type Track, type TrackAlternative } from '../../stores/trackStore';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
@@ -462,12 +466,18 @@ function midiLanesMatch(
 }
 
 /**
- * Each captured satellite record against the live one for the same clip. Both sides
- * come out of `readClipSatelliteEntry`, which normalizes on read and drops absent
- * optional marker keys, so the two are structurally comparable by construction.
+ * Each captured satellite record against the live one for the same clip, both
+ * sides projected onto the shape `writeClipSatelliteEntry` stores: the live
+ * read is normalized on read, and the recorded side is normalized through
+ * {@link normalizeClipSatelliteEntry} — the same decode the write applies. A
+ * recorded envelope carrying a pre-ADR legacy stretch mode (which the widened
+ * wire union admits) therefore replays as written instead of conflicting on an
+ * id the write itself would have decoded away.
  */
 function clipSatellitesMatch(expected: readonly ClipSatelliteEntrySnapshot[]): boolean {
-    return expected.every((satellite) => structuralValueMatches(readClipSatelliteEntry(satellite.clipId), satellite));
+    return expected.every((satellite) =>
+        structuralValueMatches(readClipSatelliteEntry(satellite.clipId), normalizeClipSatelliteEntry(satellite))
+    );
 }
 
 /**

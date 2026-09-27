@@ -293,7 +293,7 @@ describe('handleSplitClip atomic integration', () => {
 
         setWarpState('clip-1', {
             enabled: true,
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
             markers: [
                 { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
@@ -340,7 +340,7 @@ describe('handleSplitClip atomic integration', () => {
             warpState: {
                 enabled: true,
                 markers: [{ id: 'w-right', originalBeat: 7, warpedBeat: 7.5 }],
-                stretchMode: 'complex',
+                stretchMode: 'phase-vocoder',
                 originalTempo: 120,
             },
         });

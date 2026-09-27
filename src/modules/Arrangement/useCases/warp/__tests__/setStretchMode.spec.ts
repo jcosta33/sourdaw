@@ -19,7 +19,7 @@ describe('setStretchMode', () => {
         warpStates.set('clip-1', {
             enabled: true,
             markers: [createWarpMarker(1, 2)],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: 120,
         });
 
@@ -36,12 +36,12 @@ describe('setStretchMode', () => {
         warpStates.set('clip-2', {
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
 
         setStretchMode('clip-1', 'repitch');
 
-        expect(getWarpState('clip-2').stretchMode).toBe('complex');
+        expect(getWarpState('clip-2').stretchMode).toBe('phase-vocoder');
     });
 });

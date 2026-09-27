@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
         {
             enabled: boolean;
             markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
             originalTempo: number | null;
         }
     >(),
@@ -23,7 +23,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         const state = mocks.warpStates.get(clipId) ?? {
             enabled: false,
             markers: [],
-            stretchMode: 'complex' as const,
+            stretchMode: 'phase-vocoder' as const,
             originalTempo: null,
         };
         const nextMarkers = [
@@ -43,7 +43,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         mocks.warpStates.get(clipId) ?? {
             enabled: false,
             markers: [],
-            stretchMode: 'complex',
+            stretchMode: 'phase-vocoder',
             originalTempo: null,
         },
     setWarpState: (
@@ -51,7 +51,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         state: {
             enabled: boolean;
             markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+            stretchMode: 'repitch' | 'phase-vocoder' | 'wsola';
             originalTempo: number | null;
         }
     ) => {

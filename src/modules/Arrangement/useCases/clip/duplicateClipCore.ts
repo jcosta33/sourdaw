@@ -9,6 +9,7 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
 
 import { addClip } from './addClip';
+import { isClipDropCompatible } from './isClipDropCompatible';
 
 type DuplicateClipCoreInput = {
     clipId: string;
@@ -63,11 +64,20 @@ export function duplicateClipCore(
         return false;
     }
 
+    // The destination track must be able to play the clip, not merely accept a
+    // write: bus/master/folder pass the eligibility flags but never render
+    // clip content (same rule the timeline drop enforces).
+    const effectiveDestinationTrackId = destinationTrackId ?? track.id;
+    const destinationTrack = state.tracks.find((candidate) => candidate.id === effectiveDestinationTrackId);
+    if (!destinationTrack || !isClipDropCompatible(clip.type, destinationTrack.kind)) {
+        return false;
+    }
+
     const duration = clip.endBeat - clip.startBeat;
     const startBeat = computeStartBeat(clip);
     const newClip = addClip({
         id: effectiveTargetClipId,
-        trackId: destinationTrackId ?? track.id,
+        trackId: effectiveDestinationTrackId,
         startBeat,
         endBeat: startBeat + duration,
         name: `${clip.name} (copy)`,

@@ -4,6 +4,10 @@ import { defaultWarpState } from '../../../models/WarpMarker';
 import { STRETCH_MODES, getStretchModeInfo } from '../getStretchModeInfo';
 
 describe('getStretchModeInfo', () => {
+    it('carries exactly the three canonical ADR 0024 executor ids', () => {
+        expect([...STRETCH_MODES]).toEqual(['repitch', 'phase-vocoder', 'wsola']);
+    });
+
     it('reports repitch as the only stretch mode with a live executor', () => {
         const available = STRETCH_MODES.filter((mode) => getStretchModeInfo(mode).available);
         expect(available).toEqual(['repitch']);

@@ -33,8 +33,10 @@ describe('handleRestoreClipMoves', () => {
             )
         );
 
-        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't1', 0);
-        expect(mocks.moveClip).toHaveBeenCalledWith('c2', 't2', 3);
+        // `historicalPlacement`: each target names a pre-gesture placement the
+        // document itself held, so the replay must not refuse it.
+        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't1', 0, undefined, true, { historicalPlacement: true });
+        expect(mocks.moveClip).toHaveBeenCalledWith('c2', 't2', 3, undefined, true, { historicalPlacement: true });
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 

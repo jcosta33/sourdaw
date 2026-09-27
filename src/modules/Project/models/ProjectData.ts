@@ -456,12 +456,15 @@ export type ProjectClipGainEnvelope = {
     enabled: boolean;
 };
 
-/** Local mirror of Arrangement's per-clip `WarpState`, keyed by `clipId`. */
+/** Local mirror of Arrangement's per-clip `WarpState`, keyed by `clipId`.
+ *  The wire format carries the canonical ADR 0024 ids plus the legacy
+ *  pre-ADR ids older project files still hold; the warp store maps those
+ *  onto the canonical set where the state is read (`decodeStretchMode`). */
 export type ProjectClipWarpState = {
     clipId: string;
     enabled: boolean;
     markers: ProjectWarpMarker[];
-    stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+    stretchMode: 'repitch' | 'phase-vocoder' | 'wsola' | 'complex' | 'texture' | 'beats';
     originalTempo: number | null;
 };
 

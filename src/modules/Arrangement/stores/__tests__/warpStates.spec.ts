@@ -22,7 +22,7 @@ describe('warpStates', () => {
     });
 
     it('setWarpState replaces the state for a clip', () => {
-        const state = { enabled: true, markers: [], stretchMode: 'beats' as const, originalTempo: 100 };
+        const state = { enabled: true, markers: [], stretchMode: 'wsola' as const, originalTempo: 100 };
         setWarpState('c1', state);
         expect(getWarpState('c1')).toEqual(state);
     });
@@ -100,7 +100,7 @@ describe('warpStates', () => {
         it.each([
             ['enabled true', { enabled: true }],
             ['a marker present', { markers: [createWarpMarker(1, 1.2)] }],
-            ['a non-default stretch mode', { stretchMode: 'complex' as const }],
+            ['a non-default stretch mode', { stretchMode: 'phase-vocoder' as const }],
             ['a non-null originalTempo', { originalTempo: 120 }],
         ])('is false when the state differs by %s', (_label, overrides) => {
             expect(isDefaultWarpState({ ...defaultWarpState, ...overrides })).toBe(false);
@@ -130,8 +130,50 @@ describe('warpStates', () => {
         });
 
         it('is true for a clip with a non-default stretch mode', () => {
-            setWarpState('c1', { enabled: false, markers: [], stretchMode: 'complex', originalTempo: null });
+            setWarpState('c1', { enabled: false, markers: [], stretchMode: 'phase-vocoder', originalTempo: null });
             expect(hasNonDefaultWarpState('c1')).toBe(true);
+        });
+    });
+
+    describe('legacy stretch-mode mapping (ADR 0024)', () => {
+        it.each([
+            ['beats', 'wsola'],
+            ['complex', 'phase-vocoder'],
+            ['texture', 'repitch'],
+        ])('maps persisted %s onto the canonical %s at the sanitize boundary', (legacy, canonical) => {
+            const states = sanitizeClipWarpStates([
+                {
+                    clipId: 'c1',
+                    enabled: true,
+                    markers: [{ id: 'm1', originalBeat: 0, warpedBeat: 1, origin: 'user' }],
+                    stretchMode: legacy,
+                    originalTempo: 100,
+                },
+            ]);
+
+            expect(states.c1?.stretchMode).toBe(canonical);
+        });
+
+        it('stores a legacy row as absent when its mode maps onto the default state', () => {
+            const states = sanitizeClipWarpStates([
+                { clipId: 'c1', enabled: false, markers: [], stretchMode: 'texture', originalTempo: null },
+            ]);
+
+            expect(states.c1).toBeUndefined();
+        });
+
+        it('rejects a row whose stretch mode never was a warp mode', () => {
+            const states = sanitizeClipWarpStates([
+                {
+                    clipId: 'c1',
+                    enabled: true,
+                    markers: [],
+                    stretchMode: 'granular',
+                    originalTempo: 100,
+                },
+            ]);
+
+            expect(states.c1).toBeUndefined();
         });
     });
 });

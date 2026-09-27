@@ -6,6 +6,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { clipboardStore } from '../../stores/clipboardStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { addClip } from '../clip/addClip';
+import { isClipDropCompatible } from '../clip/isClipDropCompatible';
 import { removeClip } from '../clip/removeClip';
 
 export function pasteClip(): boolean {
@@ -87,6 +88,12 @@ export function pasteClip(): boolean {
         const targetTrackId = trackState.selectedTrackId ?? entry.sourceTrackId;
         const targetTrack = trackState.tracks.find((time) => time.id === targetTrackId);
         if (!targetTrack) {
+            return false;
+        }
+        // The selected target must be able to play the clip, not merely accept
+        // a write: bus/master/folder pass the eligibility flags but never
+        // render clip content (same rule the timeline drop enforces).
+        if (!isClipDropCompatible(entry.clip.type, targetTrack.kind)) {
             return false;
         }
         const target = resolveEligibleClipWriteTarget({ trackId: targetTrackId });

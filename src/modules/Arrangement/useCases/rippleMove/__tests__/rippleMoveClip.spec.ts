@@ -28,6 +28,8 @@ vi.mock('#/modules/Automation/useCases', () => ({
 describe('rippleMoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // The move succeeds unless a test refuses it explicitly.
+        vi.mocked(moveClip).mockReturnValue(true);
     });
 
     it('shifts collateral clips automation by their net ripple delta (regression: ledger M-025)', () => {
@@ -117,6 +119,57 @@ describe('rippleMoveClip', () => {
                 ],
             })
         );
+    });
+
+    it('stops the whole plan when moveClip refuses the move', () => {
+        // A legacy clip whose cross-host target the compatibility rule rejects:
+        // the neighbor shifts belong to a move that never happened, so nothing
+        // may be written and the refusal must be observable to the caller.
+        vi.mocked(moveClip).mockReturnValue(false);
+
+        const moved = rippleMoveClip({
+            trackId: 't2',
+            clipId: 'c1',
+            newStartBeat: 30,
+            clipDuration: 4,
+            plan: {
+                gapClosedClips: [{ clipId: 'c2', origStartBeat: 10, origEndBeat: 12 }],
+                destinationOpenedClips: [],
+            },
+        });
+
+        expect(moved).toBe(false);
+        expect(setTrackState).not.toHaveBeenCalled();
+        expect(shiftClipAutomation).not.toHaveBeenCalled();
+    });
+
+    it('reports a completed plan so the caller can record it', () => {
+        const initialState = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 30, endBeat: 34 },
+                        { id: 'c2', startBeat: 10, endBeat: 12 },
+                    ],
+                },
+            ],
+        };
+        vi.mocked(getTrackStoreState).mockReturnValue(initialState as any);
+
+        const moved = rippleMoveClip({
+            trackId: 't1',
+            clipId: 'c1',
+            newStartBeat: 30,
+            clipDuration: 4,
+            plan: {
+                gapClosedClips: [{ clipId: 'c2', origStartBeat: 10, origEndBeat: 12 }],
+                destinationOpenedClips: [],
+            },
+        });
+
+        expect(moved).toBe(true);
+        expect(vi.mocked(setTrackState)).toHaveBeenCalledTimes(1);
     });
 
     it('returns after moveClip when the track store has not loaded', () => {
