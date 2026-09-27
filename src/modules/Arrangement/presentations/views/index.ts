@@ -4,6 +4,7 @@
 export { AdjustmentLayerStrip, getAdjustmentLayerStripHeight } from './AdjustmentLayerStrip';
 export { ArrangementBar, ARRANGEMENT_BAR_HEIGHT } from './ArrangementBar';
 export { BeatRulerBar, BEAT_RULER_HEIGHT } from './BeatRulerBar';
+export { ClipContextMenu } from './ClipContextMenu';
 export { MarkerLane, MARKER_LANE_HEIGHT } from './MarkerLane';
 export { TimelineChromeSurface } from './TimelineChromeSurface';
 export { TimelineMinimap } from './TimelineMinimap';

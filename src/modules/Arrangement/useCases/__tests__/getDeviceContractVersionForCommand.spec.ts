@@ -75,7 +75,9 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     bacteria: 'descriptor-v1:14838614',
     grinder: 'descriptor-v1:fe7c1d7a',
     proof: 'descriptor-v1:0f484ceb',
-    yeast: 'descriptor-v1:e58d800b',
+    // Yeast undeclares its four arpeggiator parameters (#4650): the rack's
+    // arpeggiator never read them, so they move to per-processor commands.
+    yeast: 'descriptor-v1:f319bc9b',
     crust: 'descriptor-v1:aa02b972',
     'builtin-crumbs': 'descriptor-v1:b99d022e',
     'grand-boule': 'descriptor-v1:93d1562a',

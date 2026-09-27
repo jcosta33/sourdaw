@@ -141,6 +141,8 @@ export const PianoRollContextMenu = ({
             </DawMenuButton>
             {/* Quantize */}
             <DawMenuSeparator className="border-border/50" />
+            {/* gridSize is beats while labels are note values in 4/4: the
+                1-beat grid is the 1/4 note, matching the clip menu (#4801). */}
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
                 Quantize
             </DawMenuSectionLabel>
@@ -163,7 +165,7 @@ export const PianoRollContextMenu = ({
                             }).catch(() => logger.warn('Could not quantize notes'));
                         })}
                     >
-                        {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
+                        {{ 1: '1/4', 0.5: '1/8', 0.25: '1/16', 0.125: '1/32' }[g]}
                     </Button>
                 ))}
             </Row>
@@ -189,7 +191,7 @@ export const PianoRollContextMenu = ({
                             }).catch(() => logger.warn('Could not quantize note lengths'));
                         })}
                     >
-                        {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
+                        {{ 1: '1/4', 0.5: '1/8', 0.25: '1/16', 0.125: '1/32' }[g]}
                     </Button>
                 ))}
             </Row>

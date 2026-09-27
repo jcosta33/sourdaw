@@ -5,7 +5,7 @@ import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatc
 import { getBacteriaState, loadBacteriaPatch } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
-import { encodePatchValue, NON_SCALAR_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS } from './helpers';
+import { encodePatchValue, NON_SCALAR_BAND_KEYS, NON_SCALAR_GLOBAL_KEYS, paramBatcher } from './helpers';
 
 import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
 
@@ -57,6 +57,10 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
             if (previousEncoded === encodedValue && (projectEncoded === undefined || projectEncoded === encodedValue)) {
                 continue;
             }
+            // Drop this device's queued drag frame for the key so it cannot fire
+            // after the push and overwrite the loaded value. Per-key cancel keeps
+            // drags pending on other devices and other keys still flushing.
+            paramBatcher.cancel(`${target.deviceId}:${key}`);
             pushParamImmediately(target, key, encodedValue);
         }
 
@@ -93,6 +97,7 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
                 ) {
                     continue;
                 }
+                paramBatcher.cancel(`${target.deviceId}:${prefixedKey}`);
                 pushParamImmediately(target, prefixedKey, encodedValue);
             }
         }

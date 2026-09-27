@@ -4,7 +4,7 @@ Generative MIDI processor rack and real-time transformation pipeline (arpeggiato
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `processRealtimeMidiInput`, `processYeastMidi`, `readYeastPreviewSnapshot`, `setYeastPreviewCaptureEnabled`, `yeastPanic`, `configureYeastRuntime`, `setYeastGrooveTemplate`, `hydrateYeastState`, `hydrateYeastCrdtProjection`, `sendYeastProcessorCommand`, `teardownYeastRuntime`, `getYeastSchedulingLookahead`, `createOfflineYeastMidiProcessor`, `subscribeYeastPreview`, `reorderYeastProcessor`.
+- **Use Cases** (`useCases/index.ts`): `processRealtimeMidiInput`, `processYeastMidi`, `readYeastPreviewSnapshot`, `setYeastPreviewCaptureEnabled`, `yeastPanic`, `configureYeastRuntime`, `setYeastGrooveTemplate`, `hydrateYeastState`, `hydrateYeastCrdtProjection`, `sendYeastProcessorCommand`, `teardownYeastRuntime`, `getYeastSchedulingLookahead`, `createOfflineYeastMidiProcessor`, `subscribeYeastPreview`, `reorderYeastProcessor`, `addYeastProcessor`, `setYeastProcessorParam`.
 - **Stores** (`stores/index.ts`): `getPinnedYeastDevice`, `readAllYeastRacks`, `readYeastRack`, `readYeastRackForTrack`, `setActiveYeastDevice`, `yeastDeviceIdsInProjectOrder`, `yeastStore`, `LEGACY_SHARED_RACK_DEVICE_ID`, `setYeastEventBus`, `YeastState`, `YeastProcessorInfo`, `YeastProcessorType`.
 - **Events** (`events/index.ts`): `YeastNoteOffIdentity`, `YeastNotesOffPayload`.
 - **Views** (`presentations/views/index.ts`): `YeastPanel`.

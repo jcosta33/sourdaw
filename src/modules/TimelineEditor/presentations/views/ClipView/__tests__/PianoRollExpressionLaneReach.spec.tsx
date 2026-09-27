@@ -43,6 +43,9 @@ type ProbeTrackState = {
         kind: 'midi';
         color: string;
         clips: Array<{ id: string; type: 'midi'; startBeat: number; endBeat: number }>;
+        // The roll reads this to derive the expression-lane selector's MPE
+        // lanes; the real Track model always carries it (Track.ts `devices`).
+        devices: Array<{ type: string }>;
     }>;
     selectedTrackId: string | null;
 };
@@ -205,6 +208,7 @@ describe('PianoRoll expression lane reachability (real NotePropertyLane)', () =>
                 kind: 'midi',
                 color: 'oklch(0.5 0.1 200)',
                 clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 256 }],
+                devices: [],
             },
         ];
         // Deterministic geometry for the property lane's own pointer math. The

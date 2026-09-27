@@ -1082,6 +1082,10 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
 
     // ─── Additive Synth ──────────────────────────────────────────────────
 
+    // The additive DSP hardcodes its envelope (en.adsr literals in
+    // additive-synth.dsp), so presets author only the compiled node's real
+    // controls — rolloff, gain, freq, gate. Envelope keys here never reached
+    // the audio (M-016).
     {
         id: 'factory-faust-additive-organ',
         name: 'Additive Organ',
@@ -1092,10 +1096,6 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         devices: [
             faust('faust-additive-synth', 'Additive Organ', {
                 rolloff: 1.0,
-                attack: 0.003,
-                decay: 0.1,
-                sustain: 0.9,
-                release: 0.1,
             }),
             eq('Warmth', { lf_gain: 2, lf_freq: 250, mf_gain: -1, mf_freq: 2000 }),
             chorus('Rotary', { 'chorus-rate': 5.0, 'chorus-depth': 3, 'chorus-mix': 0.2 }),
@@ -1114,10 +1114,6 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         devices: [
             faust('faust-additive-synth', 'Glass', {
                 rolloff: 3.5,
-                attack: 0.001,
-                decay: 1.5,
-                sustain: 0.1,
-                release: 0.5,
             }),
             eq('Shimmer', { hf_gain: 5, hf_freq: 10000, mf_gain: -3, mf_freq: 500 }),
             chorus('Stereo', { 'chorus-rate': 0.4, 'chorus-depth': 6, 'chorus-mix': 0.3 }),
@@ -1138,10 +1134,6 @@ export const FAUST_INSTRUMENT_PRESETS: SoundPreset[] = [
         devices: [
             faust('faust-additive-synth', 'Additive Saw', {
                 rolloff: 1.0,
-                attack: 0.01,
-                decay: 0.2,
-                sustain: 0.7,
-                release: 0.3,
             }),
             eq('Presence', { mf_gain: 3, mf_freq: 2500, mf_q: 1.5 }),
             comp('Glue', { threshold: -16, ratio: 3, attack: 0.008, release: 0.1 }),

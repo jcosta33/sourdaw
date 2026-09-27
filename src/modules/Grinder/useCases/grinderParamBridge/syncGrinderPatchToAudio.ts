@@ -21,6 +21,7 @@ import {
     ROUTING_MODES,
     TONE_STACK_TYPES,
     DEFAULT_GRINDER_PEDAL_PARAMS,
+    paramBatcher,
 } from './helpers';
 
 type SyncGrinderPatchToAudioInput = {
@@ -81,6 +82,11 @@ function sendNumericParamToDevice(
         return;
     }
 
+    // A patch load or snapshot recall is a wholesale write: drop this device's
+    // queued drag frame for the key so it cannot fire after the push and
+    // overwrite the loaded value. Per-key cancel keeps drags pending on other
+    // devices and other keys still flushing.
+    paramBatcher.cancel(`${input.ref.deviceId}:${key}`);
     input.update_device_param(input.ref.trackId, input.ref.deviceId, key, value);
     input.persist_device_param(input.ref.deviceId, key, value);
 }

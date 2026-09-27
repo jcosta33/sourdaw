@@ -41,11 +41,6 @@ export function loadCrustPatchWithAudio(deviceId: string, rawPatch: CrustPatch):
 
     loadCrustPatch(deviceId, patch);
 
-    // Drop any rAF flush still pending from a prior knob drag so it can't fire
-    // after these immediate pushes and overwrite a preset value with the stale
-    // drag value (last-write-wins would otherwise favour the queued frame).
-    paramBatcher.cancelAll();
-
     const params: Array<[CrustParamId, unknown]> = [
         [CRUST_PARAM_IDS.gain, patch.gain],
         [CRUST_PARAM_IDS.ceiling, patch.ceiling],
@@ -83,6 +78,10 @@ export function loadCrustPatchWithAudio(deviceId: string, rawPatch: CrustPatch):
         // The params list carries no store-only keys today, but guarding both
         // keeps the push type-safe if one is ever added.
         if (typeof encodedValue === 'number') {
+            // Drop this device's queued drag frame for the key so it cannot fire
+            // after the push and overwrite the loaded value. Per-key cancel keeps
+            // drags pending on other devices still flushing.
+            paramBatcher.cancel(`${deviceId}:${key}`);
             pushCrustParamImmediately(deviceId, key, encodedValue);
         }
     }

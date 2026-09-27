@@ -3,6 +3,7 @@ import { addMarkers } from '../templateHelpers/addMarkers';
 import { addSections } from '../templateHelpers/addSections';
 import { addSend } from '../templateHelpers/addSend';
 import { attachSidechainCompressor } from '../templateHelpers/attachSidechainCompressor';
+import { configureYeastArpeggiator } from '../templateHelpers/configureYeastArpeggiator';
 import { createBus } from '../templateHelpers/createBus';
 import { createFolder } from '../templateHelpers/createFolder';
 import { createInstrumentTrack } from '../templateHelpers/createInstrumentTrack';
@@ -250,7 +251,6 @@ export async function createEdmTemplate(): Promise<void> {
             {
                 type: 'yeast',
                 name: 'Arpeggiator',
-                params: { arp_mode: 2, arp_rate: 16, arp_gate: 0.7, arp_swing: 0.1 },
             },
         ],
     });
@@ -385,5 +385,17 @@ export async function createEdmTemplate(): Promise<void> {
             { trigger: edmKick, target: edmBass, deviceId: bassSidechainId },
             { trigger: edmKick, target: widePad, deviceId: padSidechainId },
         ],
+    });
+
+    // The Yeast rack is per device instance, so the arp settings go through
+    // the rack's own write path once the tracks are committed — device
+    // parameters would be inert stored state (#4650).
+    await configureYeastArpeggiator({
+        track: arp,
+        processorId: 'arpeggiator-edm-arp',
+        mode: 2,
+        rateDenominator: 16,
+        gate: 0.7,
+        swing: 0.1,
     });
 }
