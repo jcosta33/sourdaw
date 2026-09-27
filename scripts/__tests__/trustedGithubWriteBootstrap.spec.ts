@@ -440,10 +440,17 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { load = require; }\nfunction f() { let load = other; return load(spec); }'
             )
         ).toEqual([]);
-        // A static field is not on the instance, so `new H()` carries no loader to read back.
+        // A static field is not on the instance, so `new H()` carries no loader to read back. The
+        // instance's own field is what the read-back reaches, and the static field of the same name
+        // must not be written over it — this row's reading can only come from that exclusion.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { static loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; static loader = require; }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual([]);
         // The nested `class H` shadows the outer one where the read-back resolves, and its field is
@@ -703,6 +710,30 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { x = f(a / b); y = c / d; loader = require; }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A `/` after a control keyword's header or after `else` opens a regex rather than dividing, so
+        // the `}` it holds is the literal's character: the class body does not close early and the
+        // assignment inside the method is no member position. The same shapes without a loader field
+        // report nothing either way.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { do /}/; while (a); loader = require; }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { do /}/; while (a); }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { if (a) {} else /}/; loader = require; }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class D {\n  m() { if (a) {} else /}/; }\n}\nconst { loader } = new D();\nloader(spec);'
+            )
+        ).toEqual([]);
         // A parameter property is read, and its own modifier run is what decides it: the loader default
         // reaches the read-back, while the same declaration without modifiers binds a local instead.
         expect(

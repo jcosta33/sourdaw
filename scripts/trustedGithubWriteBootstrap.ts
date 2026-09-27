@@ -4591,6 +4591,13 @@ function skipComment(source: string, index: number): number | undefined {
     return undefined;
 }
 
+/**
+ * The keywords after which a `/` opens a regex literal rather than dividing: each introduces a
+ * statement, or continues one with an operand, so the next token starts an expression. Every control
+ * keyword whose body is a statement belongs here — `do /re/.test(x); while (a)` is the spelling that
+ * otherwise reads the regex's braces as code — while a word that can precede an expression end
+ * (`this`, `super`, a variable name) does not.
+ */
 const REGEX_PREFIX_KEYWORDS = new Set([
     'return',
     'throw',
@@ -4605,6 +4612,16 @@ const REGEX_PREFIX_KEYWORDS = new Set([
     'instanceof',
     'new',
     'extends',
+    'do',
+    'if',
+    'for',
+    'while',
+    'with',
+    'switch',
+    'catch',
+    'finally',
+    'try',
+    'default',
 ]);
 
 function skipRegexLiteral(source: string, index: number): number | undefined {
