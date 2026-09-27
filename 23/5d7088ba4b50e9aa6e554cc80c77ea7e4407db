@@ -1,0 +1,31 @@
+crates/daw-dsp/tests/crust_channel_link.rs
+  s_fe7d9519d0226e::t_6567a61b67d018 25-30,41-49,80-95,110-114,131,135-136,147-151,164-181,282-347
+crates/daw-dsp/tests/fermenter_karplus_allpass_decay.rs
+  s_ed5aa36a3ba357::t_5f8fb75ba6221a 39-41,44,47,92,102-166,223
+crates/proof-chamber/tests/non_finite_input_recovery.rs
+  s_ed5aa36a3ba357::t_c88d5a8543e6f3 4-12,20-47,57-64,66-68,70-91,94,103-107,111-118,120,125,127-148,153-154,160,163-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "235d7088ba4b50e9aa6e554cc80c77ea7e4407db",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
