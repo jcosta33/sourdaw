@@ -95,6 +95,14 @@ const MANIFEST_C: Manifest = {
     articulations: [{ type: 'sustain', id: 0, zones: [makeZone('c.wav', 0)] }],
 };
 
+const MANIFEST_SPARSE: Manifest = {
+    version: 1,
+    instrumentId: 'trumpet',
+    sampleRate: 44100,
+    micPositions: ['close', 'room'],
+    articulations: [{ type: 'sustain', id: 0, zones: [makeZone('room.wav', 1)] }],
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
@@ -210,7 +218,7 @@ function makeDeps(autoLoad: typeof autoLoadLevainSamples) {
         writeNativeBuiltinParameters: vi.fn(),
         sendNativeLiveMidiControl: vi.fn(() => Promise.resolve(true)),
         autoLoadLevainSamples: autoLoad,
-        setLoadedMicPositions: (id: string, positions: readonly MicPositionType[] | null) => {
+        setLoadedMicPositions: (id: string, positions: readonly (MicPositionType | null)[] | null) => {
             const instances = levainStore.value ?? {};
             const state = instances[id];
             if (!state) {
@@ -242,9 +250,31 @@ describe('loadSamplesForInstrument — real autoLoadLevainSamples + real loader,
                 if (url.includes('/oboe/')) {
                     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(MANIFEST_C) });
                 }
+                if (url.includes('/trumpet/')) {
+                    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(MANIFEST_SPARSE) });
+                }
                 return Promise.reject(new Error(`unexpected manifest url ${url}`));
             })
         );
+    });
+
+    it('commits only Room availability at engine mic 1 from a real sparse manifest', async () => {
+        const deviceId = 'device-1';
+        seedDevice(deviceId);
+        const { port } = makeSequencedPort(['auto']);
+        const bridge = createLevainBridge(makeDeps(autoLoadLevainSamples));
+        const device = { setParam: vi.fn(), handleCc: vi.fn() };
+        await bridge.registerLevainDevice(deviceId, device, port);
+
+        await expect(bridge.loadSamplesForInstrument(deviceId, 'trumpet')).resolves.toBe('ready');
+        expect(levainStore.value?.[deviceId]?.loadedMicPositions).toEqual([null, 'room']);
+        expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'addZone', micId: 1 }));
+        expect(port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'buildZoneMap', numMics: 2 }));
+
+        device.setParam.mockClear();
+        bridge.setMacroWithAudio(deviceId, 4, 0.6);
+        expect(device.setParam).toHaveBeenCalledWith('mic_1_volume', 0.6);
+        expect(device.setParam).not.toHaveBeenCalledWith('mic_0_volume', expect.any(Number));
     });
 
     afterEach(() => {

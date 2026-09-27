@@ -18,7 +18,7 @@ import { Row, Stack } from '#/components/layout';
 import { type MicPositionState } from '../../models/LevainPatch';
 
 type MicBlendSliderProps = {
-    micPositions: MicPositionState[];
+    micPositions: (MicPositionState | null)[];
     showFull?: boolean;
     /** Forward mic param changes to the audio engine. Provided by the parent view. */
     onSendMicParam: (micIndex: number, param: string, value: number) => void;
@@ -35,56 +35,59 @@ const FullMicMixer = ({
     <Stack gap={3} className="max-w-[400px]">
         <DawPluginSectionHeader title="Mic Positions" titleClassName="text-muted-foreground" />
         <Row align="end" gap={3}>
-            {micPositions.map((mic, i) => (
-                <Stack align="center" gap={1} key={i}>
-                    <DawPluginToggle
-                        pressed={mic.enabled}
-                        tone="amber"
-                        size="xs"
-                        onClick={() => {
-                            const enabled = !mic.enabled;
-                            onUpdateMicPosition(i, { enabled });
-                            onSendMicParam(i, 'enabled', enabled ? 1.0 : 0.0);
-                        }}
-                    >
-                        {mic.enabled ? 'ON' : 'OFF'}
-                    </DawPluginToggle>
-                    <Fader
-                        value={mic.enabled ? mic.volume * 76 - 70 : -70}
-                        onChange={(db) => {
-                            const volume = Math.max(0, Math.min(1, (db + 70) / 76));
-                            onUpdateMicPosition(i, { volume });
-                            onSendMicParam(i, 'volume', volume);
-                        }}
-                        min={-70}
-                        max={6}
-                        defaultValue={-6}
-                        height={100}
-                        unit="dB"
-                        // audit M-083: the visible mic name sits below the whole
-                        // column, so it names nothing to assistive tech — the
-                        // slider has to carry its own name and unit.
-                        aria-label={`${mic.name} level`}
-                    />
-                    <RotaryKnob
-                        value={mic.pan}
-                        onChange={(v) => {
-                            onUpdateMicPosition(i, { pan: v });
-                            onSendMicParam(i, 'pan', v);
-                        }}
-                        min={-1}
-                        max={1}
-                        step={0.01}
-                        defaultValue={0}
-                        bipolar
-                        size="sm"
-                        tone="amber"
-                    />
-                    <span className="text-nano text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
-                        {mic.name}
-                    </span>
-                </Stack>
-            ))}
+            {micPositions.map(
+                (mic, i) =>
+                    mic && (
+                        <Stack align="center" gap={1} key={i}>
+                            <DawPluginToggle
+                                pressed={mic.enabled}
+                                tone="amber"
+                                size="xs"
+                                onClick={() => {
+                                    const enabled = !mic.enabled;
+                                    onUpdateMicPosition(i, { enabled });
+                                    onSendMicParam(i, 'enabled', enabled ? 1.0 : 0.0);
+                                }}
+                            >
+                                {mic.enabled ? 'ON' : 'OFF'}
+                            </DawPluginToggle>
+                            <Fader
+                                value={mic.enabled ? mic.volume * 76 - 70 : -70}
+                                onChange={(db) => {
+                                    const volume = Math.max(0, Math.min(1, (db + 70) / 76));
+                                    onUpdateMicPosition(i, { volume });
+                                    onSendMicParam(i, 'volume', volume);
+                                }}
+                                min={-70}
+                                max={6}
+                                defaultValue={-6}
+                                height={100}
+                                unit="dB"
+                                // audit M-083: the visible mic name sits below the whole
+                                // column, so it names nothing to assistive tech — the
+                                // slider has to carry its own name and unit.
+                                aria-label={`${mic.name} level`}
+                            />
+                            <RotaryKnob
+                                value={mic.pan}
+                                onChange={(v) => {
+                                    onUpdateMicPosition(i, { pan: v });
+                                    onSendMicParam(i, 'pan', v);
+                                }}
+                                min={-1}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0}
+                                bipolar
+                                size="sm"
+                                tone="amber"
+                            />
+                            <span className="text-nano text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
+                                {mic.name}
+                            </span>
+                        </Stack>
+                    )
+            )}
         </Row>
     </Stack>
 );
@@ -110,14 +113,14 @@ export const MicBlendSlider = ({
     // which array position (if any) carries `room`; the Space macro resolves
     // the same way, so the two controls agree instead of fighting over a
     // different room mic.
-    const closeIndex = micPositions.findIndex((mic) => mic.type === 'close');
-    const roomIndex = micPositions.findIndex((mic) => mic.type === 'room');
-    if (roomIndex === -1) {
-        // No loaded room mic: there is nothing to blend toward, so the
-        // compact control has nothing meaningful to show.
+    const closeIndex = micPositions.findIndex((mic) => mic?.type === 'close');
+    const roomIndex = micPositions.findIndex((mic) => mic?.type === 'room');
+    if (closeIndex === -1 || roomIndex === -1) {
+        // A blend needs both endpoints; the full mixer still controls the
+        // available position directly.
         return <></>;
     }
-    const closeVol = closeIndex === -1 ? 0.8 : (micPositions[closeIndex]?.volume ?? 0.8);
+    const closeVol = micPositions[closeIndex]?.volume ?? 0.8;
     const roomVol = micPositions[roomIndex]?.volume ?? 0.3;
     const total = closeVol + roomVol;
     // Guard the zero case explicitly: when both mics are silent there is no
@@ -138,10 +141,8 @@ export const MicBlendSlider = ({
                         // Room rose, so reading `blend` back never matched `v`.
                         const newCloseVol = 1.0 - v;
                         const newRoomVol = v;
-                        if (closeIndex !== -1) {
-                            onUpdateMicPosition(closeIndex, { volume: newCloseVol });
-                            onSendMicParam(closeIndex, 'volume', newCloseVol);
-                        }
+                        onUpdateMicPosition(closeIndex, { volume: newCloseVol });
+                        onSendMicParam(closeIndex, 'volume', newCloseVol);
                         onUpdateMicPosition(roomIndex, { volume: newRoomVol, enabled: newRoomVol > 0.05 });
                         onSendMicParam(roomIndex, 'volume', newRoomVol);
                         onSendMicParam(roomIndex, 'enabled', newRoomVol > 0.05 ? 1.0 : 0.0);

@@ -37,13 +37,13 @@ export type LevainState = {
     peakR: number;
     currentArticulationDisplay: string;
     /**
-     * The loaded bank's mic position names, in engine-index order. Null means
-     * no bank is committed yet or committed to no mics — never "failed": a
-     * rejected replacement load restores the previously committed bank's
-     * names here, because the engine keeps sounding that bank rather than
-     * silencing it. The Stage card renders no mic rows only while null.
+     * The loaded bank's playable mic names, in engine-index order, with null
+     * at declared positions that have no retained note-on zone. A null array
+     * means no bank is committed yet. A rejected replacement load restores
+     * the previously committed bank's positions, because the engine keeps
+     * sounding that bank. The Stage card renders only non-null positions.
      */
-    loadedMicPositions: readonly MicPositionType[] | null;
+    loadedMicPositions: readonly (MicPositionType | null)[] | null;
 };
 
 export const defaultLevainState: LevainState = {
@@ -194,7 +194,7 @@ export function updateMicPosition(deviceId: string, index: number, updates: Part
  * keeps sounding whatever bank it last committed regardless of how the
  * replacement failed.
  */
-export function setLoadedMicPositions(deviceId: string, positions: readonly MicPositionType[] | null): void {
+export function setLoadedMicPositions(deviceId: string, positions: readonly (MicPositionType | null)[] | null): void {
     const instances = levainStore.value ?? {};
     const state = instances[deviceId];
     if (!state) {

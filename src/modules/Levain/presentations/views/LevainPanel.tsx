@@ -76,11 +76,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const sampleLoadError = state.sampleLoadError ?? null;
     const loadedMicPositions = state.loadedMicPositions;
 
-    // The Stage card only ever shows mics the loaded bank actually carries:
-    // truncate to the loaded count and relabel each row from the bank's own
-    // position order, rather than the default patch's Close/Decca Tree/Room
-    // assumption. With no bank committed yet (loading or failed), this is an
-    // empty list and the card renders no mic rows.
+    // Keep null slots so the visible controls retain the engine's original mic indices.
     function toVisibleMicPosition(type: MicPositionState['type'], index: number): MicPositionState | undefined {
         const mic = patch.micPositions[index];
         if (!mic) {
@@ -88,12 +84,13 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         }
         return { ...mic, type, name: MIC_POSITION_DISPLAY_NAMES[type] };
     }
-    let visibleMicPositions: MicPositionState[] = [];
+    let visibleMicPositions: (MicPositionState | null)[] = [];
     if (loadedMicPositions) {
-        visibleMicPositions = loadedMicPositions
-            .map((type, index) => toVisibleMicPosition(type, index))
-            .filter((mic): mic is MicPositionState => mic !== undefined);
+        visibleMicPositions = loadedMicPositions.map((type, index) =>
+            type ? (toVisibleMicPosition(type, index) ?? null) : null
+        );
     }
+    const visibleMicCount = visibleMicPositions.filter((mic) => mic !== null).length;
 
     // Load readout: a failure surfaces as an explicit error (not a synthetic
     // 100% then "Ready"); otherwise show the live percentage or idle "Ready".
@@ -383,11 +380,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             />
                             <DawReadoutRow
                                 label="Space"
-                                value={
-                                    loadedMicPositions
-                                        ? `${loadedMicPositions.length} mic${loadedMicPositions.length === 1 ? '' : 's'}`
-                                        : '0 mics'
-                                }
+                                value={`${visibleMicCount} mic${visibleMicCount === 1 ? '' : 's'}`}
                                 valueClassName="text-foreground/85"
                             />
                         </Stack>

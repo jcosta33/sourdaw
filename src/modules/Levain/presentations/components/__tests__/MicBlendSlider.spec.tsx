@@ -151,6 +151,21 @@ describe('MicBlendSlider — resolves close/room by loaded type, not fixed index
         );
         expect(container).toBeEmptyDOMElement();
     });
+
+    it('does not offer a two-mic blend for a sparse room-only bank', () => {
+        const onSend = vi.fn();
+        const onUpdate = vi.fn();
+        const { container } = render(
+            <MicBlendSlider
+                micPositions={[null, loadedMics(['room'])[0]!]}
+                onSendMicParam={onSend}
+                onUpdateMicPosition={onUpdate}
+            />
+        );
+        expect(container).toBeEmptyDOMElement();
+        expect(onSend).not.toHaveBeenCalled();
+        expect(onUpdate).not.toHaveBeenCalled();
+    });
 });
 
 describe('MicBlendSlider — full mixer mode', () => {

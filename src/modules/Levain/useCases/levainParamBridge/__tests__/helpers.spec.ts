@@ -61,7 +61,7 @@ function makeDevice(): MockedLevainDevice {
 // 2 unchanged; only the Space-macro tests below override this explicitly.
 function seedDevice(
     deviceId: string,
-    loadedMicPositions: readonly MicPositionType[] | null = ['close', 'decca-tree', 'room']
+    loadedMicPositions: readonly (MicPositionType | null)[] | null = ['close', 'decca-tree', 'room']
 ): void {
     levainStore.set({
         [deviceId]: { ...defaultLevainState, patch: createDefaultPatch('violin-1'), loadedMicPositions },
@@ -307,6 +307,20 @@ describe('createLevainBridge', () => {
             bridge.setMacroWithAudio('d1', 4, 0.6);
 
             expect(device.setParam).not.toHaveBeenCalledWith(expect.stringMatching(/^mic_/), expect.any(Number));
+        });
+
+        it('writes only engine mic 1 when Room is the sole playable mic', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1', [null, 'room']);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            device.setParam.mockClear();
+
+            bridge.setMacroWithAudio('d1', 4, 0.6);
+
+            expect(device.setParam).toHaveBeenCalledWith('mic_1_volume', 0.6);
+            expect(device.setParam).not.toHaveBeenCalledWith('mic_0_volume', expect.any(Number));
         });
     });
 

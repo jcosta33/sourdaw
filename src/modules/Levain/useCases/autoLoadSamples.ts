@@ -22,7 +22,7 @@ import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore
  * without changing the committed bank or claiming completion, so the
  * last-started load — not the last-finishing one — owns engine state and UI.
  *
- * Returns the committed bank's mic position names whenever
+ * Returns the committed bank's engine-indexed playable mic positions whenever
  * `loadInstrumentFromManifest` resolved a bank — including when `signal` has
  * since become aborted, because that resolution only happens after the
  * worklet's `sampleBankLoaded` handshake message, i.e. the engine already
@@ -42,7 +42,7 @@ export async function autoLoadLevainSamples(
     nodePort: MessagePort,
     instrumentId: string,
     signal?: AbortSignal
-): Promise<readonly MicPositionType[] | null> {
+): Promise<readonly (MicPositionType | null)[] | null> {
     // The repository owns the desktop IPC: on desktop it resolves the bundled
     // resource directory (massive sample banks straight from OS resources); on
     // web it returns the public `/samples/levain/<id>` path.

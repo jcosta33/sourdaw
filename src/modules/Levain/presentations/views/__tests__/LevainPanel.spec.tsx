@@ -352,6 +352,27 @@ describe('LevainPanel', () => {
             expect(sendMicParamToEngine).toHaveBeenCalledWith('test-device', 1, 'volume', expect.any(Number));
         });
 
+        it('shows only Room and writes engine mic 1 for a sparse room-only bank', () => {
+            panelState = { ...baseState(), loadedMicPositions: [null, 'room'] };
+            render(<LevainPanel deviceId="test-device" />);
+
+            const faders = screen.getAllByTestId('fader');
+            expect(faders).toHaveLength(1);
+            expect(faders[0]).toHaveAttribute('aria-label', 'Room level');
+            expect(screen.queryByText('Close')).not.toBeInTheDocument();
+            const spaceRow = screen.getAllByTestId('readout-row').find((row) => row.textContent?.includes('Space'));
+            expect(within(spaceRow as HTMLElement).getByText('1 mic', { exact: true })).toBeInTheDocument();
+
+            fireEvent.change(faders[0]!, { target: { value: '6' } });
+            expect(sendMicParamToEngine).toHaveBeenCalledWith('test-device', 1, 'volume', expect.any(Number));
+            expect(sendMicParamToEngine).not.toHaveBeenCalledWith(
+                'test-device',
+                0,
+                expect.anything(),
+                expect.anything()
+            );
+        });
+
         it('renders no mic rows while no bank is committed', () => {
             panelState = { ...baseState(), loadedMicPositions: null };
             render(<LevainPanel deviceId="test-device" />);

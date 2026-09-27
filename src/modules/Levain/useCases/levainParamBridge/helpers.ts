@@ -43,7 +43,7 @@ type SampleLoadOperation = {
 
 type CommittedBank = {
     sequence: number;
-    micPositions: readonly MicPositionType[];
+    micPositions: readonly (MicPositionType | null)[];
 };
 
 export type LevainBridgeDeps = {
@@ -119,7 +119,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // `sequence` is assigned once per call to `loadSamplesForInstrument`, in
     // start order, so the guard below is a last-committed-wins check on
     // start order rather than resolution order.
-    function recordCommittedBank(deviceId: string, sequence: number, micPositions: readonly MicPositionType[]): void {
+    function recordCommittedBank(
+        deviceId: string,
+        sequence: number,
+        micPositions: readonly (MicPositionType | null)[]
+    ): void {
         const existing = committedBanks.get(deviceId);
         if (existing && existing.sequence >= sequence) {
             return;
