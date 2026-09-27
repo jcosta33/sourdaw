@@ -97,12 +97,13 @@ export function classifyContractCarryingSides(
  * The changed paths whose rules declare a contract, decision or registration token. A file's own sides
  * are attempted ahead of the context documents its rules charge, so the order keeps the charge from
  * taking the reader's place — and that is what it keeps: the order decides which side the collector's
- * total withholds and which regions a unit is given, never what a request carries among them. Each
- * unit's own and context regions are attempted in that unit's own order — own regions by their side's
- * aggregate bytes, context regions with the charged contract documents first — so the same admitted set
- * fits the same regions whatever order admission attempted them in. When the total binds before the
- * context tier the contract document is withheld at admission, no contract-context region reaches the
- * request fitter at all, and the fitter's context reserve has nothing to hold.
+ * total withholds and the order in which each unit's own and context regions are attempted, because the
+ * request fitter walks them in the order admission handed them over and spends the unit's budget
+ * first-come. A priority change can therefore move which region fits at a byte boundary, and a unit
+ * sitting on that boundary carries a different set of regions without its admitted set changing; the
+ * carriage of a request is not independent of the order. When the total binds before the context tier
+ * the contract document is withheld at admission, no contract-context region reaches the request fitter
+ * at all, and the fitter's context reserve has nothing to hold.
  *
  * This is the rules-level question alone. Whether the file's unit will exist is `plannedUnitPaths`,
  * and the two consumers that act on a yes — the charge of the default contract documents and this

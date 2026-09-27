@@ -2939,32 +2939,7 @@ describe('unit planning', () => {
     });
 });
 
-describe('request carriage follows the unit, not the admission order', () => {
-    /**
-     * The request budget at which the planner stops refusing a path for the request's own overhead: the
-     * reserve it subtracts from `maxStatePlusQuestionBytes` before it offers any region. `planUnits`
-     * reports `unit-overhead-exceeds-request-budget` while `maxStatePlusQuestionBytes - reserve <= 0`,
-     * and that refusal reads neither the fit order nor a region's charge, so a case can sit exactly on a
-     * fit boundary without restating the reserve arithmetic the planner owns.
-     */
-    function requestReserve(files: readonly SemanticChangedFile[], set: SemanticEvidenceSet, path: string): number {
-        const refusesForOverhead = (budget: number): boolean =>
-            planUnits(files, set, budget).excluded.some(
-                (entry) => entry.path === path && entry.reason === 'unit-overhead-exceeds-request-budget'
-            );
-        let refused = 0;
-        let planned = SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes;
-        while (refused < planned) {
-            const middle = Math.ceil((refused + planned) / 2);
-            if (refusesForOverhead(middle)) {
-                refused = middle;
-            } else {
-                planned = middle - 1;
-            }
-        }
-        return refused;
-    }
-
+describe('request carriage follows the order admission handed the unit', () => {
     /** What the fitter charges one region: the planner's own measure, read from the production function. */
     function charge(set: SemanticEvidenceSet, reference: EvidenceReference): number {
         return regionCost(reference, set.contents.get(reference.evidenceId) ?? '');
@@ -2976,152 +2951,13 @@ describe('request carriage follows the unit, not the admission order', () => {
         );
     }
 
-    it('carries the same context region when the same admitted set is assembled in another order', () => {
-        // Witness B: the context candidates reached the fitter in the order the collector admitted them,
-        // so two runs whose admitted sets are identical carried different documents purely because the
-        // array was permuted — and a permuted array is what a changed admission tier produces, because
-        // the tiers decide where a document sits while nothing about the document decides that. The fit
-        // order reads the regions themselves, so the boundary carries the same document either way.
-        const path = 'src/modules/Project/undo.ts';
-        const files = [changedFile(path)];
-        const set = collectEvidence({
-            port: fakeSource({
-                files,
-                blobs: {
-                    [`${MERGE_BASE}:${path}`]: 'export const before = 1;\n',
-                    [`${HEAD}:${path}`]: 'export const after = 2;\n',
-                    [`${MERGE_BASE}:.agents/decisions/README.md`]: '# Decisions\n'.repeat(190),
-                    [`${MERGE_BASE}:AGENTS.md`]: '# AGENTS.md contract\n'.repeat(150),
-                },
-            }),
-            mergeBaseSha: MERGE_BASE,
-            headSha: HEAD,
-            contractSourceSha: MERGE_BASE,
-            limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
-            includeDefaultContractContext: true,
-        });
-        const documents = set.references.filter((reference) => reference.side === 'context');
-        const cheapest = documents.reduce((left, right) => (charge(set, right) < charge(set, left) ? right : left));
-        const fattest = documents.reduce((left, right) => (charge(set, right) > charge(set, left) ? right : left));
-        const reader = planUnits(files, set, SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes).units.find(
-            (candidate) => candidate.path === path
-        );
-        const own = reader?.evidence.own ?? [];
-        expect(documents).toHaveLength(2);
-        expect(own).toHaveLength(2);
-        // The budget at which the fattest document alone fits the share the reserve protects: the cheaper
-        // document fits it too, and the two together do not, so the order alone decides which is carried.
-        const budget =
-            requestReserve(files, set, path) +
-            own.reduce((sum, reference) => sum + charge(set, reference), 0) +
-            charge(set, fattest);
-        const carried = (candidate: SemanticEvidenceSet): string[] => {
-            const unit = planUnits(files, candidate, budget).units.find((entry) => entry.path === path);
-            return regionKeys(unit?.evidence.context ?? []);
-        };
-        expect(carried(set)).toEqual(regionKeys([cheapest]));
-        // The same admitted set — same references, same identifiers, same contents — assembled in the
-        // other order, at the same request budget.
-        const reversed: SemanticEvidenceSet = { ...set, references: [...set.references].reverse() };
-        expect(carried(reversed)).toEqual(regionKeys([cheapest]));
-    });
-
-    it("keeps a unit's before side when an unrelated earlier path moves its evidence ids", () => {
-        // Witness A: an unrelated path admitted first moved the unit's identifiers one ordinal past the
-        // digit boundary, and the fitter charged each region through the identifier it held, so at a
-        // budget boundary the same admitted unit cost a byte more per region and lost a side. The charge
-        // now reads the region, so the same budget carries the same sides whatever ordinals the
-        // collector assigned.
-        //
-        // The second arm holds the assembly order: the reverse of the collector's array offers an after
-        // hunk first, and at this boundary that hunk takes the room the before side needs. Reading the
-        // collector's array order reddens that arm; the byte-first order keeps the before side.
-        const unitPath = 'crates/daw-dsp/src/engine.rs';
-        const unrelatedPath = 'crates/daw-dsp/src/unrelated.rs';
-        const unitBefore = 'const beforeValue = 1;\n';
-        const unitAfter = 'const header = 0;\nconst afterValueOne = 2;\nconst afterValueTwo = 3;\n';
-        const unrelatedLines = ['a=1\n', 'b=2\n', 'c=3\n', 'd=4\n', 'e=5\n'];
-        const unitHunks: PathHunks = {
-            path: unitPath,
-            before: [{ startLine: 1, endLine: 1 }],
-            after: [
-                { startLine: 2, endLine: 2 },
-                { startLine: 3, endLine: 3 },
-            ],
-        };
-        const unrelatedHunks: PathHunks = {
-            path: unrelatedPath,
-            before: unrelatedLines.map((_line, index) => ({ startLine: index + 1, endLine: index + 1 })),
-            after: unrelatedLines.map((_line, index) => ({ startLine: index + 1, endLine: index + 1 })),
-        };
-        const collect = (files: readonly SemanticChangedFile[], hunks: ReadonlyMap<string, PathHunks>) =>
-            collectEvidence({
-                port: fakeSource({
-                    files,
-                    hunks,
-                    blobs: {
-                        [`${MERGE_BASE}:${unitPath}`]: unitBefore,
-                        [`${HEAD}:${unitPath}`]: unitAfter,
-                        [`${MERGE_BASE}:${unrelatedPath}`]: unrelatedLines.join(''),
-                        [`${HEAD}:${unrelatedPath}`]: unrelatedLines.join('').replaceAll('=', '+='),
-                    },
-                }),
-                mergeBaseSha: MERGE_BASE,
-                headSha: HEAD,
-                contractSourceSha: MERGE_BASE,
-                limits: { maxRegionBytes: 1_000_000, maxTotalBytes: 1_000_000 },
-            });
-        const aloneFiles = [changedFile(unitPath, { added: 2, deleted: 1 })];
-        const movedFiles = [changedFile(unrelatedPath, { added: 5, deleted: 5 }), ...aloneFiles];
-        const set = collect(aloneFiles, new Map([[unitPath, unitHunks]]));
-        const movedSet = collect(
-            movedFiles,
-            new Map([
-                [unitPath, unitHunks],
-                [unrelatedPath, unrelatedHunks],
-            ])
-        );
-        const referenceFor = (candidate: SemanticEvidenceSet, side: EvidenceSide): EvidenceReference => {
-            const found = candidate.references.find(
-                (reference) => reference.path === unitPath && reference.side === side
-            );
-            if (found === undefined) {
-                throw new Error(`the fixture minted no ${side}-side region for the unit`);
-            }
-            return found;
-        };
-        // The unrelated path's ten regions are admitted ahead of the unit's and move its ids a digit on.
-        expect(referenceFor(movedSet, 'before').evidenceId.length).toBeGreaterThan(
-            referenceFor(set, 'before').evidenceId.length
-        );
-        const carriesBefore = (
-            files: readonly SemanticChangedFile[],
-            candidate: SemanticEvidenceSet,
-            budget: number
-        ): boolean => {
-            const unit = planUnits(files, candidate, budget).units.find((entry) => entry.path === unitPath);
-            return (unit?.evidence.own ?? []).some((reference) => reference.side === 'before');
-        };
-        // The budget the before side alone fills carries it in the run whose ids moved.
-        const boundary = requestReserve(aloneFiles, set, unitPath) + charge(set, referenceFor(set, 'before'));
-        expect(carriesBefore(aloneFiles, set, boundary)).toBe(true);
-        expect(carriesBefore(movedFiles, movedSet, boundary)).toBe(true);
-        // One byte under a request holding a before and an after region: the assembly order alone decides
-        // which of the two survives, and the before side survives under either.
-        const ordered = boundary + charge(set, referenceFor(set, 'after')) - 1;
-        expect(carriesBefore(movedFiles, movedSet, ordered)).toBe(true);
-        const reversed: SemanticEvidenceSet = { ...movedSet, references: [...movedSet.references].reverse() };
-        expect(carriesBefore(movedFiles, reversed, ordered)).toBe(true);
-    });
-
     it('attempts a charged contract document before an implementation region supplied as context', () => {
-        // Witness C: a flat key over per-region bytes reached the smaller implementation region the
-        // planner supplied as context before the contract-context document the unit's rules charged, so
-        // the document was dropped and the request reported `migration or version contract` missing —
-        // a token admission had supplied — while nothing about the unit's own evidence had changed. The
-        // context order is provenance first, so the charged document is attempted ahead of the
-        // implementation exactly as admission's contract tier was; the key inside a provenance keeps the
-        // carriage stable when the collector assembles the same admitted set in another order.
+        // The fitter attempts a unit's regions in the order admission handed them over, and the collector
+        // admits the contract-context unit ahead of the implementation region it supplies as context for
+        // the same unit. So the charged document is attempted first, and a flat key over per-region bytes
+        // would reach the smaller implementation region first instead: the document is dropped and the
+        // request reports `migration or version contract` missing — a token admission had supplied — while
+        // nothing about the unit's own evidence changed.
         const specPath = 'src/modules/Project/__tests__/undo.spec.ts';
         const implPath = 'src/modules/Project/undo.ts';
         const document = '- Decision: a recorded contract line that names the undo path.\n'.repeat(24);
@@ -3205,18 +3041,14 @@ describe('request carriage follows the unit, not the admission order', () => {
                 fitted.context.droppedSides
             )
         ).toEqual([]);
-        // The same admitted set assembled in the other order carries the same document.
-        const reversed = fitUnitEvidence(set, own, [...context].reverse(), budget);
-        expect(regionKeys(reversed.context.references)).toEqual(regionKeys([contract, first]));
     });
 
-    it('keeps the own hunk the side admission reached first, not the three smaller ones', () => {
-        // Witness D: the merge base attempted a file's two sides as two units, ranked by each side's
-        // aggregate chargeable bytes and keeping hunk order inside a side, so the fat after hunk was
-        // attempted before the three smaller ones. A flat key over per-region bytes reached the smaller
-        // hunks first, and at a budget boundary the unit carried three smaller hunks instead of the fat
-        // one admission had already fitted — a different carriage of the same change for the same
-        // admitted set.
+    it('keeps the own hunk the collector admitted first, not the three smaller ones', () => {
+        // The collector ranks a file's two sides as two units by each side's aggregate chargeable bytes
+        // and keeps hunk order inside a side, and the fitter now attempts them in that order, so the fat
+        // after hunk is attempted before the three smaller ones. A flat key over per-region bytes reaches
+        // the smaller hunks first, and at a budget boundary the unit carries three smaller hunks instead
+        // of the fat one the collector had already fitted — a different carriage of the same change.
         const path = 'src/modules/Project/undo.ts';
         const content = Array.from(
             { length: 200 },
@@ -3276,9 +3108,6 @@ describe('request carriage follows the unit, not the admission order', () => {
         // and drop the fat one.
         const fitted = fitUnitEvidence(set, own, [], budget);
         expect(regionKeys(fitted.own.references)).toEqual(regionKeys([before, fat]));
-        // The same admitted set assembled in the other order fits the same two regions.
-        const reversed = fitUnitEvidence(set, [...own].reverse(), [], budget);
-        expect(regionKeys(reversed.own.references)).toEqual(regionKeys([before, fat]));
     });
 });
 
