@@ -1,0 +1,19 @@
+tests/e2e/pianoRollZoomTestId.spec.ts
+  s_fe7d9519d0226e::t_3544694524aeeb 45-48,55-57,59-61,64-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "30373c8859215e2ab97f1ccdacc0545940972faa",
+  "prompts": {},
+  "sessions": {
+    "s_fe7d9519d0226e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e293-4e06-7892-a621-452948a4804a",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
