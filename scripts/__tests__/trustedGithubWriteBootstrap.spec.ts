@@ -349,6 +349,112 @@ describe('snapshotImportSpecifiers', () => {
     });
 
     /**
+     * A loader's member is the same loader one indirection further out: `load.resolve` through a
+     * bound `load`, and `require.bind(null)` whose result is the loader it was bound from. Both
+     * initializers bound the name and both calls loaded a module the scan admitted (#4835). The
+     * boundary cases pin the limits: a member on a name that reaches no loader, an unmodelled member,
+     * and a `resolve` that is itself called are not the loader.
+     */
+    it('collects a load reached through a member of a bound loader', () => {
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load.resolve;\nr(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require.bind(null);\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const r = require.resolve;\nr(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const load = other;\nconst r = load.resolve;\nr(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require;\nconst r = load.foo;\nr(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers("const load = require.resolve('./yaml');")).toEqual([]);
+    });
+
+    /**
+     * A name a default or a class field binds is the loader exactly as a declarator's is: the parameter
+     * default, the destructuring default, and the shorthand entry that reads a class field's loader
+     * back each reached a computed load the scan admitted (#4835). The boundary cases pin the limits:
+     * an argument list's assignment binds nothing, a class field alone binds no local, and a shadowing
+     * declaration inside a nested function is that declaration.
+     */
+    it('collects a load a default or a class field binds the loader by', () => {
+        expect(snapshotComputedDynamicSpecifiers('function f(load = require) { load(spec); }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const { load = require } = opts;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('g(load = require);\nload(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class H { loader = require; }\nloader(spec);')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('class H { loader = other; }\nconst { loader } = new H();\nloader(spec);')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { load = require; }\nfunction f() { let load = other; return load(spec); }'
+            )
+        ).toEqual([]);
+    });
+
+    /**
+     * An erased assertion on the initializer changes nothing at run time, so the loader behind it is
+     * the loader: the angle-bracket assertion the binding pass never looked past bound the name and
+     * its call loaded a module the scan admitted (#4835). The `as`/`satisfies` casts and the trailing
+     * non-null assertion are the same erased wrappers; the control pins that an assertion on a name
+     * that reaches no loader binds nothing.
+     */
+    it('collects a load a loader bound through an erased assertion reaches', () => {
+        expect(snapshotComputedDynamicSpecifiers('const load = require!;\nload(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const load = <NodeRequire>require;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = require as NodeRequire;\nload(spec);')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('const load = <NodeRequire>other;\nload(spec);')).toEqual([]);
+    });
+
+    /**
+     * A `{` admits a member only where it opens a body that can hold one. A function body, a nested
+     * block, and a control header's body hold statements, so the `require(spec)` before the block is a
+     * call and its computed specifier is refused; the merge base read the brace as a method position
+     * and admitted the load (#4835). The controls pin the bodies that really do hold members — object
+     * literal, class, interface, and type literal — and the brace after a `:` or an `=>` that also
+     * stands in a type literal, which stays undecided.
+     */
+    it('collects a load whose parameter list opens on a block-opening brace', () => {
+        expect(snapshotComputedDynamicSpecifiers('function load() { require(spec)\n{ run(); } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('{ require(spec)\n{ run(); } }')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('if (ok) { require(spec)\n{ run(); } }')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const o = { require(spec) { run(); } };')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('class C { require(spec) { run(); } }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('interface I { require(spec: string): void; }')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('type T = { require(spec: string): void };')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('const o = { a: { require(spec) { run(); } } };')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('type F = () => { require(spec: string): void };')).toEqual([]);
+    });
+
+    /**
+     * Regrouping a wrapped callee changes nothing: `((require))(spec)` reaches the loader that
+     * `(require)(spec)` reaches, and the merge base's one paren of tolerance admitted the load (#4835).
+     * The controls pin that only whole groupings are stripped — `pass(require)(spec)` is an argument
+     * list and `(f(require))(spec)` wraps a call's result — so neither is the loader.
+     */
+    it('collects a load a double-parenthesised callee reaches', () => {
+        expect(snapshotComputedDynamicSpecifiers('((require))(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('(((require)))(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('((0, require))(spec);')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('pass(require)(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('(f(require))(spec);')).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('this.#m(require)(spec);')).toEqual([]);
+    });
+
+    /**
      * A name declared again in a nested function, class, or parameter list is that declaration, not the
      * loader bound outside it, so the binding is dropped and the nested call keeps the merge base's
      * reading (#4828). The bare bound name still resolves, which is what separates the two.
