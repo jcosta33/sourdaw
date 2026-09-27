@@ -1,0 +1,34 @@
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_1c08b47ac3792f::t_63f4442a12df33 41-55,58,60,64-66,70-73,106-107,112,114-116,138-139,141-142,146,149-159,292
+  s_1c08b47ac3792f::t_a2d4195f1fb5b7 270-271,282-284,290-291
+  s_1c08b47ac3792f::t_28e47e7bddbfcd 134
+  s_1c08b47ac3792f::t_fb87b0ede6384a 160
+  s_1c08b47ac3792f::t_bddf275184414e 74-83,85,104-105,108-111,113,117-118,122-123,126-129,133,135-137,140,143-145,147-148
+  s_1c08b47ac3792f::t_7388fd9d4ec9d9 130-132
+  s_1c08b47ac3792f::t_b7ebf1af52f541 281
+src/modules/Project/models/CanonicalTrackRole.ts
+  s_1c08b47ac3792f::t_3e36b8e2652247 33
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_1c08b47ac3792f::t_076a8e6848fab8 153-174
+  s_1c08b47ac3792f::t_b26a4cd2d30758 175-177
+  s_1c08b47ac3792f::t_8f9418c57a587d 178-185,191-192,195-201
+release/open-source-inventory.json
+  s_1c08b47ac3792f::t_c2dee3ae46e1a6 1540
+  s_1c08b47ac3792f::t_0e46121e6dbfcf 2618
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6f13cf91e953a59a1ea4d7fa9188b0e22a3f92b9",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
