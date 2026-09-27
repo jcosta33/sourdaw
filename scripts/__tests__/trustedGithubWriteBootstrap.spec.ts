@@ -578,6 +578,37 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nclass D extends H { declare loader: NodeRequire; }\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A constructor parameter property binds an own instance field, so it shadows a parent's field of
+        // that name and a read-back through the instance reaches the parameter's own value. A parameter
+        // property with no initializer is an own member with no value, a `private readonly` spelling is
+        // the same member, and a loader-valued parameter property is the loader the read-back binds.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(public loader: unknown) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(private readonly loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { constructor(public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A parameter with no modifier binds a local rather than a property, so it declares no instance
+        // field and the parent's loader-valued field is still the one the read-back reaches.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class Base { loader = require }\nclass H extends Base { constructor(loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
         // A class name inside a parameter's default or annotation names a value or a type, not the
         // parameter, so it does not shadow the class.
         expect(
@@ -1033,9 +1064,11 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nclass D extends H { [`${key}`] = console.log; }\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual([]);
+        // The parent carries the loader-valued field, so this read-back is refused by the bail alone
+        // rather than by the member walk declining a computed name it resolves to a static literal.
         expect(
             snapshotComputedDynamicSpecifiers(
-                "const key = 'loader';\nclass H { [key] = require; }\nconst { loader } = new H();\nloader(spec);"
+                "const key = 'loader';\nclass H { loader = require; }\nclass D extends H { [key] = require; }\nconst { loader } = new D();\nloader(spec);"
             )
         ).toEqual([]);
         // A member name written with a unicode escape is the character it names rather than the

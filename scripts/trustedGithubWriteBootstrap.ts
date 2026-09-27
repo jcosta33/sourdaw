@@ -513,6 +513,10 @@ const COMPUTED_CREATE_REQUIRE_SHAPE = 'createRequire(...)(...)';
  * field a direct construction would — resolved through the same scope chain, so a sibling rebinding or
  * a nested redeclaration or reassignment to anything else does not reach the loader.
  *
+ * The walk reads a constructor parameter property — `constructor(public loader = require) {}` — as the
+ * own instance field it binds: its name from the parameter, its value from the parameter's initializer
+ * when it has one, and no value when it has none. A parameter with no modifier binds a local instead.
+ *
  * A class the member walk cannot model whole keeps the merge base's reading on either side of the
  * read-back: a decorator on the class — written `@dec`, `@ns.dec(1)`, `@dec.x`, parenthesised `@(expr)`,
  * or any chain of those segments such as `@(dec)(arg)` — a computed member name that is not a static
@@ -1426,8 +1430,9 @@ type LoaderBinding = {
  * `extends <Name>` clause names, the loader-valued instance fields it declares, and the names of every
  * own instance member. Static fields never enter `fields` or `members`, and a same-named class in
  * another scope owns its own entry, so a read-back resolves to the class its constructor name reaches
- * there rather than to whichever class declared the name first. `members` carries fields, methods, and
- * accessors alike so any own declaration shadows the parent's field of the same name.
+ * there rather than to whichever class declared the name first. `members` carries fields, methods,
+ * accessors, and constructor parameter properties alike so any own declaration shadows the parent's
+ * field of the same name.
  */
 type ClassFieldsEntry = {
     name: string;
@@ -1669,6 +1674,12 @@ function readLoaderDefaultBindingAt(
     const ownerOpen = classFieldOwnerOpen(source, index);
     if (ownerOpen !== undefined) {
         return { ...binding, ownerOpen, static: isStaticClassField(source, index) };
+    }
+    // A constructor parameter property is an own instance field, so it is recorded against its class
+    // exactly as a field is; a plain parameter binds a local and reaches no instance.
+    const propertyOpen = classParameterPropertyOwnerOpen(source, index);
+    if (propertyOpen !== undefined) {
+        return { ...binding, ownerOpen: propertyOpen, static: false };
     }
     return isParameterListNameAt(source, index) || isBindingPatternEntryAt(source, index) ? binding : undefined;
 }
@@ -2420,8 +2431,97 @@ function recordClassMembers(source: string, classFields: Map<number, ClassFields
         if (!head.static && !head.isDeclare) {
             entry.members.add(head.name);
         }
+        if (head.name === 'constructor') {
+            recordConstructorParameterProperties(source, entry, head.afterName);
+        }
         cursor = head.next;
     }
+}
+
+/**
+ * Records the name of every parameter property a constructor's parameter list declares —
+ * `constructor(public loader = require) {}` binds an own instance field of that name — into the class's
+ * `members` set, so it shadows a parent's field of the same name. The parameter's value is read by the
+ * binding pass exactly as a field's is; a parameter property with no initializer is an own member with
+ * no value.
+ */
+function recordConstructorParameterProperties(source: string, entry: ClassFieldsEntry, afterName: number): void {
+    if (source[afterName] !== '(') {
+        return;
+    }
+    const close = skipBalancedParens(source, afterName);
+    if (close === undefined) {
+        return;
+    }
+    let cursor = afterName + 1;
+    while (cursor < close - 1) {
+        cursor = skipClassBodyTrivia(source, cursor, close - 1);
+        if (cursor >= close - 1) {
+            return;
+        }
+        const nameStart = parameterNameStartAfterModifiers(source, cursor);
+        if (nameStart !== undefined) {
+            const name = readWordForward(source, nameStart);
+            if (name !== undefined) {
+                entry.members.add(name);
+            }
+        }
+        cursor = skipBalancedParameter(source, cursor, close - 1);
+    }
+}
+
+/**
+ * The name after the run of parameter modifiers standing at `cursor` — `public`, `private`,
+ * `protected`, `readonly`, `override` — or `undefined` when no modifier stands there, so the caller
+ * knows the parameter is bare and declares no property.
+ */
+function parameterNameStartAfterModifiers(source: string, cursor: number): number | undefined {
+    let start = cursor;
+    let hasModifier = false;
+    while (true) {
+        const word = readWordForward(source, start);
+        if (word === undefined || !PARAMETER_MODIFIERS.has(word)) {
+            break;
+        }
+        hasModifier = true;
+        start = skipWhitespace(source, start + word.length);
+    }
+    return hasModifier ? start : undefined;
+}
+
+/**
+ * Skips one constructor parameter at `cursor` to the `,` that ends it or to `end`, crossing a
+ * parenthesised group, an array or object binding pattern, and a nested generic whole.
+ */
+function skipBalancedParameter(source: string, cursor: number, end: number): number {
+    let depth = 0;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        if (character === '(' || character === '[' || character === '{' || character === '<') {
+            depth += 1;
+        } else if (character === ')' || character === ']' || character === '}' || character === '>') {
+            if (depth > 0) {
+                depth -= 1;
+            }
+        } else if (character === ',' && depth === 0) {
+            return cursor + 1;
+        }
+        cursor += 1;
+    }
+    return end;
 }
 
 /**
@@ -2737,6 +2837,36 @@ function skipClassBodyRegion(source: string, cursor: number, end: number): numbe
         return name === undefined ? cursor + 1 : cursor + 1 + name.length;
     }
     return cursor + 1;
+}
+
+/**
+ * The index of the `{` that opens the class body of the constructor whose parameter property stands at
+ * `index`, or `undefined` when the name carries no parameter modifier, sits in a list that is not a
+ * constructor's, or belongs to something that is not a class. A parameter property binds an own
+ * instance field, so the read-back resolves it against that class exactly as a field is.
+ */
+function classParameterPropertyOwnerOpen(source: string, index: number): number | undefined {
+    if (parameterModifiersStartBefore(source, index) === undefined) {
+        return undefined;
+    }
+    const open = enclosingOpenerBefore(source, index, '(');
+    if (open === undefined) {
+        return undefined;
+    }
+    const nameEnd = previousSignificantCharacter(source, open - 1);
+    if (nameEnd === undefined) {
+        return undefined;
+    }
+    const name = readWordBackward(source, nameEnd);
+    if (name !== 'constructor' || isPrecededByDotAccess(source, nameEnd - name.length + 1)) {
+        return undefined;
+    }
+    const bodyOpen = enclosingBraceOpen(source, open);
+    if (bodyOpen === undefined) {
+        return undefined;
+    }
+    const header = classLikeBodyKeywordBefore(source, bodyOpen);
+    return header !== undefined && header.keyword === 'class' ? bodyOpen : undefined;
 }
 
 /**
