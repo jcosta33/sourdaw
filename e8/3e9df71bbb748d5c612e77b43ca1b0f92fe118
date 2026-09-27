@@ -1,0 +1,41 @@
+crates/daw-dsp/tests/levain_mic_mix_is_audible.rs
+  s_ed5aa36a3ba357::t_9ad6f28ccc9f3c 86-93,579-584,601,603-615,700-718,725-735
+  s_ed5aa36a3ba357::t_a7f7ac81d49b98 107-113,116-118,577-578,602,667-679,681-699
+  s_ed5aa36a3ba357::t_e8f3a45761bc10 114-115,630-649,654,663-666
+  s_ed5aa36a3ba357::t_3e9492a50e0011 94-106,585-600,616-628,650-653,655-662,719-724
+  s_ed5aa36a3ba357::t_adc5104b4853fa 680
+  s_ed5aa36a3ba357::t_3c45283be8920c 629
+  s_ed5aa36a3ba357::t_67336a0e080eaf 736
+crates/daw-dsp/src/levain/engine.rs
+  s_ed5aa36a3ba357::t_1dcb9a1c5758c1 291-294,635-637
+crates/daw-dsp/src/levain/voice.rs
+  s_ed5aa36a3ba357::t_1dcb9a1c5758c1 424,1015-1017,1026-1030,1041-1048,1056-1058
+  s_ed5aa36a3ba357::t_b10a0506403b24 1059-1060
+  s_ed5aa36a3ba357::t_ef0c4b86bc2fb3 2073
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_de982a13327c7d 1,960,1058-1112,1114-1115,1131-1153
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_76f69bdc600fcf 1,24,122-176,178-179,195-217
+public/wasm/manifest.json
+  s_ed5aa36a3ba357::t_32b9b4551644d8 12,16-18,21
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_f28d4bb35e7d2f 1343,1349,1767
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_ee34a645312590 1,960,1058-1112,1114-1115,1131-1153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e83e9df71bbb748d5c612e77b43ca1b0f92fe118",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
