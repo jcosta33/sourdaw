@@ -1749,7 +1749,10 @@ describe('package scripts and gitignore', () => {
      * callee wrapped rather than spelled; a name bound to a created require or to an aliased
      * `createRequire` reaches the same loader; an operand-position object literal's `}` divides
      * rather than opening a regex that swallows the call; and a regex holding `}` or `]` sitting in a
-     * binding pattern made the argument list look like a parameter list.
+     * binding pattern made the argument list look like a parameter list. Three boundary cases pin the
+     * two rules narrowed afterwards: a `{` after an arrow's `=>` or after a generic list is a block
+     * body, not an operand-position object literal, so its `}` keeps the statement-end reading, and
+     * `else` is the keyword only when no `.`, `#`, or identifier character precedes it.
      */
     it.each([
         {
@@ -1760,6 +1763,22 @@ describe('package scripts and gitignore', () => {
         {
             label: 'a statement-position regex after an else',
             poisoned: "if (x) run(); else /don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a statement-position regex after an arrow body',
+            poisoned: "const f = () => {}\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a statement-position regex after a generic class body',
+            poisoned: "class Registry<T> { value!: T }\n/don't/.test(line);\nrequire(specifier);",
+            shape: 'require(...)',
+        },
+        {
+            label: 'a division after a private else member',
+            poisoned:
+                'class Gauge {\n    #else = 2;\n    ratio() {\n        return this.#else / require(specifier) / 2;\n    }\n}',
             shape: 'require(...)',
         },
         {

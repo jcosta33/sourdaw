@@ -2004,9 +2004,9 @@ function canStartRegexLiteral(source: string, index: number): boolean {
             }
             const identifier = source.slice(start + 1, cursor + 1);
             // `else` is followed by a statement, so a `/` after it opens a regex; a member named
-            // `else` (`obj.else / 2`) is an expression end and stays a division.
+            // `else` (`obj.else / 2`, `this.#else / 2`) is an expression end and stays a division.
             if (identifier === 'else') {
-                return !isPrecededByDotAccess(source, start + 1);
+                return !isMemberNameAt(source, start + 1);
             }
             return REGEX_PREFIX_KEYWORDS.has(identifier);
         }
@@ -2059,13 +2059,15 @@ function closesControlHeader(source: string, closeParen: number): boolean {
 /**
  * Characters before a `{` that prove it opens an object literal in operand position: an assignment,
  * an argument or grouping parenthesis, an array element, a sequence or argument comma, a ternary
- * branch, a logical or unary or arithmetic operator, a comparison, or an arrow. `:` is deliberately
- * absent — a `:`-preceded `{` is an object property or a ternary branch, but it is also a labelled
- * or `case` block, and only the operand reading would divide — so that shape keeps the merge base's
+ * branch, or a logical, unary, arithmetic, or `<` comparison operator. `:` is deliberately absent —
+ * a `:`-preceded `{` is an object property or a ternary branch, but it is also a labelled or `case`
+ * block, and only the operand reading would divide — so that shape keeps the merge base's
  * statement-end reading. A `)` is absent for the same reason: `if (x) {}` opens a block, not an
- * object literal.
+ * object literal. A `>` is absent as well: it ends the two-character arrow token `=>`, whose `{`
+ * opens the arrow's block body, and it ends a generic list (`class Registry<T> {}`), whose `{` opens
+ * the type's body — neither proves an object literal, and reading either as one divides its `}`.
  */
-const OPERAND_POSITION_CHARACTERS = '=([,?&|!~+-*/%^<>';
+const OPERAND_POSITION_CHARACTERS = '=([,?&|!~+-*/%^';
 
 /**
  * Whether the `}` at `closeBrace` provably closes an object literal in operand position, so a `/`
@@ -2082,6 +2084,13 @@ function objectLiteralCloseBefore(source: string, closeBrace: number): boolean {
         return false;
     }
     const character = source.charAt(before);
+    // `>` alone proves no operand position: it ends the two-character arrow token `=>`, whose `{`
+    // opens the arrow's block body, and a generic list's `>`, whose `{` opens the type's body. The
+    // expression those braces end is a statement, so its `}` keeps the merge base's statement-end
+    // reading and a statement-position regex after it stays a regex (#4828).
+    if (character === '>') {
+        return false;
+    }
     if (OPERAND_POSITION_CHARACTERS.includes(character)) {
         return true;
     }
@@ -2400,6 +2409,24 @@ function isPrecededByDotAccess(source: string, index: number): boolean {
         return false;
     }
     return false;
+}
+
+/**
+ * Whether the name beginning at `index` is a member name rather than a keyword: a `.` (`obj.else`),
+ * a `#` (`this.#else`), or an identifier character before it means the name is read as a member. A
+ * `/` after a member ends an expression and divides; only the bare keyword is followed by a
+ * statement, so only the bare keyword can turn the `/` into a regex.
+ */
+function isMemberNameAt(source: string, index: number): boolean {
+    if (isPrecededByDotAccess(source, index)) {
+        return true;
+    }
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined) {
+        return false;
+    }
+    const character = source.charAt(before);
+    return character === '#' || isIdentifierContinue(character);
 }
 
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
