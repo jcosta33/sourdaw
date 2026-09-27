@@ -1,0 +1,21 @@
+crates/daw-dsp/tests/dsp_cost_reduction_goldens.rs
+  s_ed5aa36a3ba357::t_dc11eb3a31f78d 37-39,41-42,44-47,51-53,55-56,58-61
+evidence/agent-campaign/manifest.json
+  s_ed5aa36a3ba357::t_1ab3edd71479cd 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d0563c13bc57ce408caf7fa493877c9b12fe53de",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
