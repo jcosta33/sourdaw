@@ -750,13 +750,11 @@ start no additional test train.
 
 The deterministic selector in `scripts/prValidationScope.ts` reads the complete Git diff between
 immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`
-with the selected files and reasons. Product changes run the offline smoke set. Explicitly mapped
-presentation entry points in Tuner and Export add their complete dedicated browser families;
-changed E2E specs run directly. Preferences, Mixer, Transport, new presentation files, shared
-application code, test helpers, dependencies, deleted tests and unknown paths widen to the
-complete browser suite and hardware admission. Documentation and known review tooling avoid browser
-execution. Maps may be narrowed only with evidence of the presentation consumers and tests; an AI
-judgment cannot waive deterministic coverage. Missing selected files and malformed plans fail.
+with the selected files and reasons. Product changes run the offline smoke set and complete browser
+suite with hardware admission, including presentation files, shared application code, test helpers,
+dependencies, deleted tests and unknown paths. Changed E2E specs run directly. Documentation and
+known review tooling avoid browser execution. An AI judgment cannot waive deterministic coverage.
+Missing selected files and malformed plans fail.
 CodeQL runs for JavaScript/TypeScript and relevant workflow or security configuration changes;
 the PR secret scan and dependency review remain in required validation even when CodeQL is skipped.
 

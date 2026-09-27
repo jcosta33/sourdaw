@@ -543,9 +543,9 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
 
 No job outside `health-gates.yml` may be named `Gate`.
 
-`scripts/prValidationScope.ts` records the affected browser plan with reasons. Known presentation
-surfaces select smoke and their workflow specs; shared or unclassified dependencies widen to the
-complete browser suite. Deleted and renamed paths retain their old effects. Documentation and
+`scripts/prValidationScope.ts` records the affected browser plan with reasons. Product changes,
+including presentation surfaces, select smoke and the complete browser suite; direct browser spec
+changes select those specs. Deleted and renamed paths retain their old effects. Documentation and
 explicitly known review tooling avoid browser runs. Required selected jobs must succeed, and scope
 resolution or missing evidence fails closed. Nightly remains the unconditional full-load gate.
 The ruleset requires the single `Gate`; review must catch heads weakening their own workflow.

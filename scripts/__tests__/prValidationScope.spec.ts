@@ -116,27 +116,21 @@ describe('required affected verification', () => {
         ).toMatchObject({ browser: false, browserAi: false, codeql: true, matrix: { include: [] } });
     });
 
-    it('adds only the mapped tuner workflows beside required smoke', () => {
-        const plan = selectValidationPlan([TUNER], INVENTORY);
-        expect(plan.browser).toBe(true);
-        expect(plan.browserAi).toBe(false);
-        expect(allSelected(plan)).toEqual(TUNER_SPECS);
-        expect(plan.reasons.at(0)?.reason).toContain('mapped presentation');
-    });
-
-    it('keeps the two narrow maps complete for their existing dedicated browser families', () => {
+    it.each([TUNER, EXPORT])('widens product presentation %s to every browser proof', (path) => {
         const familySpecs = readdirSync('tests/e2e')
             .filter((name) => /^(?:tuner|export).*\.spec\.tsx?$/.test(name))
             .map((name) => `tests/e2e/${name}`);
-        const inventory = [SMOKE_SPEC, ...familySpecs, 'tests/e2e/undo.spec.ts'];
-        for (const { path, prefix } of [
-            { path: TUNER, prefix: 'tuner' },
-            { path: EXPORT, prefix: 'export' },
-        ]) {
-            const expected = familySpecs.filter((spec) => spec.startsWith(`tests/e2e/${prefix}`)).sort();
-            expect(expected.length).toBeGreaterThan(0);
-            expect(allSelected(selectValidationPlan([path], inventory))).toEqual(expected);
-        }
+        const inventory = [
+            SMOKE_SPEC,
+            ...familySpecs,
+            'tests/e2e/browserDisplayScale.spec.ts',
+            'tests/e2e/undo.spec.ts',
+        ];
+        const plan = selectValidationPlan([path], inventory);
+        expect(plan.browser).toBe(true);
+        expect(plan.browserAi).toBe(true);
+        expect(allSelected(plan)).toEqual(fullInventory(inventory));
+        expect(allSelected(plan)).toContain('tests/e2e/browserDisplayScale.spec.ts');
     });
 
     it.each([
@@ -261,8 +255,8 @@ describe('required affected verification', () => {
         );
     });
 
-    it('rejects missing mapped specs and missing smoke instead of reducing coverage', () => {
-        expect(() => selectValidationPlan([TUNER], [SMOKE_SPEC])).toThrow('Mapped E2E spec is missing');
+    it('rejects empty full coverage and missing smoke instead of reducing coverage', () => {
+        expect(() => selectValidationPlan([TUNER], [SMOKE_SPEC])).toThrow('Full browser coverage has no specs');
         expect(() => selectValidationPlan(['src/app/bootstrap.ts'], TUNER_SPECS)).toThrow(
             'Required smoke spec is missing'
         );

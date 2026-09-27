@@ -5,26 +5,6 @@ import { fileURLToPath } from 'node:url';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
-// Only complete dedicated presentation families have narrow maps. Other
-// presentation files and new browser workflows use the complete browser suite.
-const PRESENTATION_SPECS: Readonly<Record<string, readonly string[]>> = {
-    'src/modules/Tuner/presentations/views/TunerPanel.tsx': [
-        'tests/e2e/tuner.spec.ts',
-        'tests/e2e/tunerReferenceHomeEnd.spec.ts',
-    ],
-    'src/modules/AudioRendering/presentations/views/ExportDialog.tsx': [
-        'tests/e2e/export.spec.ts',
-        'tests/e2e/exportAudioEvidence.spec.ts',
-        'tests/e2e/exportRangeSelection.spec.ts',
-        'tests/e2e/exportStemsModeTestId.spec.ts',
-        'tests/e2e/exportTailInputTestId.spec.ts',
-        'tests/e2e/exportTestId.spec.ts',
-        'tests/e2e/exportFidelityTestId.spec.ts',
-        'tests/e2e/exportFormatsTestId.spec.ts',
-        'tests/e2e/exportRangeTailTestId.spec.ts',
-    ],
-};
-
 // Explicit operational entry points: adding a new script never silently opts out.
 const REVIEW_TOOLING = new Set([
     'acceptReview',
@@ -149,16 +129,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
             continue;
         }
         browser = true;
-        const mapped = PRESENTATION_SPECS[path];
-        if (mapped) {
-            for (const spec of mapped) {
-                if (!available.has(spec)) {
-                    throw new Error(`Mapped E2E spec is missing: ${spec}`);
-                }
-                selected.add(spec);
-            }
-            reasons.push({ path, reason: 'mapped presentation entry point and its browser workflows' });
-        } else if (isSpec(path) && available.has(path)) {
+        if (isSpec(path) && available.has(path)) {
             selected.add(path);
             // Hardware policy is shared by these browser proofs; keep both host branches.
             if (path.startsWith('tests/e2e/browserAi')) {
@@ -170,7 +141,7 @@ export function selectValidationPlan(paths: readonly string[], availableSpecs: r
             browserAi = true;
             reasons.push({
                 path,
-                reason: 'shared, deleted, renamed, or unclassified dependency; full browser coverage',
+                reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
             });
         }
     }
