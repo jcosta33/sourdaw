@@ -8,12 +8,15 @@
  *
  * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
  *    contract-carrying, or a bulk source a contract-carrying spec covers when that source's unit will be
- *    planned — so the budget stays on the change the contract lives in and no spec outranks the source
- *    it covers. A bulk covered source is ordered at the smaller of its own side figure and the covering
- *    spec's figure rather than at the front of the tier, so it keeps the room its own size earned, still
- *    precedes its own spec, and never outranks contract material unrelated to that spec. A source that is
- *    itself contract-carrying keeps its own position and class, so a contract-carrying non-spec path never
- *    outranks it on size alone;
+ *    planned — so the budget stays on the change the contract lives in and every source a spec covers is
+ *    attempted before that spec. A bulk covered source is ordered at the smaller of its own side figure and
+ *    the covering spec's figure rather than at the front of the tier, so it keeps the room its own size
+ *    earned, still precedes its own spec in the attempt order, and never outranks contract material
+ *    unrelated to that spec. A source that is itself contract-carrying keeps its own position and class, so
+ *    a contract-carrying non-spec path never outranks it on size alone. The attempt order is not a survival
+ *    promise: admission charges regions against a binding total, so a source whose regions exceed the
+ *    leftover can be withheld while its coverer's smaller regions still fit, and the plan then holds the
+ *    spec without the source it covers;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at
@@ -214,9 +217,9 @@ export function plannedUnitPaths(
 /**
  * The changed non-spec sources a changed collected spec covers, each mapped to the covering spec whose own
  * unit ranks first. A spec covers the files it imports and therefore tests, plus one transitive level: the
- * changed files those sources themselves re-export or import. A contract-carrying spec must not outrank the
- * source it covers, so the source is ordered at the covering spec's position when its unit will be planned;
- * a source no spec covers stays bulk whatever its own content imports.
+ * changed files those sources themselves re-export or import. A source a contract-carrying spec covers is
+ * attempted before that spec when its unit will be planned; a source no spec covers stays bulk whatever its
+ * own content imports.
  *
  * The covering spec is a carrier, not a rank: it is what lets a covered source be ordered *with* the spec
  * rather than at the front of the contract tier, so the source competes with unrelated material at the

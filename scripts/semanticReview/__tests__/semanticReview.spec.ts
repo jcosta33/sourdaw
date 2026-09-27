@@ -1443,10 +1443,11 @@ describe('contract-carrying admission', () => {
 
     it('does not cover a source from a spec renamed or copied out of collection', () => {
         // The destination path gates coverage, so a spec renamed or copied out of the test tree covers
-        // nothing even when its before content still imports the source; the source keeps its bulk rank.
+        // nothing even when either of its sides still imports the source; the source keeps its bulk rank.
         const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
         const sourcePath = 'scripts/semanticReview/coveredSource.ts';
         const beforeContent = `${workflowLine}import { s } from '../semanticReview/coveredSource.ts';\n`;
+        const afterContent = `${workflowLine}import { s } from '../scripts/semanticReview/coveredSource.ts';\n`;
         const bytesBySide = new Map<string, AdmissionSideBytes>([
             ['tools/renamed.ts', { before: 100, after: 100 }],
             ['tools/copied.ts', { before: 100, after: 100 }],
@@ -1465,7 +1466,7 @@ describe('contract-carrying admission', () => {
             { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
         ];
         const renamedContents = new Map<string, { before?: string; after?: string }>([
-            ['tools/renamed.ts', { before: beforeContent, after: 'export const renamed = 1;\n' }],
+            ['tools/renamed.ts', { before: beforeContent, after: afterContent }],
             [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
         ]);
         expect(specCoveredSources(renamed, renamedContents, bytesBySide).get(sourcePath)).toBeUndefined();
@@ -1483,10 +1484,77 @@ describe('contract-carrying admission', () => {
             { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
         ];
         const copiedContents = new Map<string, { before?: string; after?: string }>([
-            ['tools/copied.ts', { before: beforeContent, after: 'export const copied = 1;\n' }],
+            ['tools/copied.ts', { before: beforeContent, after: afterContent }],
             [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
         ]);
         expect(specCoveredSources(copied, copiedContents, bytesBySide).get(sourcePath)).toBeUndefined();
+    });
+
+    it('names the plan-level starvation a coverer can inflict on a source it covers', () => {
+        // The attempt order is per unit but the total is charged per region, so a carried source attempted
+        // ahead of its coverer can still be withheld when its larger regions do not fit the leftover while the
+        // coverer's smaller regions do. The plan then holds the spec without the source it covers — a limit the
+        // attempted-order guarantee discloses rather than promises away.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/starve.spec.ts';
+        const sourcePath = 'scripts/semanticReview/starvedSource.ts';
+        const specPaths = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'].map(
+            (name) => `scripts/semanticReview/__tests__/${name}.spec.ts`
+        );
+
+        const specSide = `${workflowLine}${sizedLine(10_047, 'spec')}`;
+        const coverAfter = `${workflowLine}import { s } from '../starvedSource.ts';\n${sizedLines(20, 1_003, 'cover')}`;
+        const sourceAfter = sizedLines(2, 9_990, 'source');
+        const files: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'added', binary: false, generated: false, added: 21, deleted: 0 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 2, deleted: 0 },
+            ...specPaths.map((path) => changedFile(path)),
+        ];
+        const blobs: Record<string, string> = {
+            [`${HEAD}:${coverPath}`]: coverAfter,
+            [`${HEAD}:${sourcePath}`]: sourceAfter,
+            ...Object.fromEntries(
+                specPaths.flatMap((path) => [
+                    [`${MERGE_BASE}:${path}`, specSide],
+                    [`${HEAD}:${path}`, specSide],
+                ])
+            ),
+        };
+        const hunks = new Map<string, PathHunks>([
+            [coverPath, { path: coverPath, before: [], after: oneLineHunks(3, 20) }],
+            [sourcePath, { path: sourcePath, before: [], after: oneLineHunks(1, 2) }],
+            ...specPaths.map((path): [string, PathHunks] => [
+                path,
+                { path, before: oneLineHunks(2, 1), after: oneLineHunks(2, 1) },
+            ]),
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs, hunks }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        // The source is attempted ahead of its coverer but its 9,990-byte hunks do not fit the leftover left
+        // by the six specs, while the coverer's 1,003-byte hunks do.
+        expect(
+            planned.excluded.some((entry) => entry.path === sourcePath && entry.reason === 'no-admissible-evidence')
+        ).toBe(true);
+        expect(planned.units.some((unit) => unit.path === coverPath)).toBe(true);
     });
 
     it('caps a covered source at a modified coverer whose after side is the smaller floor', () => {
