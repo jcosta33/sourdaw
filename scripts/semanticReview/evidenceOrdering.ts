@@ -7,11 +7,13 @@
  * region — in the order admission walks them, in four tiers:
  *
  * 1. the change's own contract-carrying sides — the changed-file before/after units whose side is
- *    contract-carrying, or a source a contract-carrying spec covers when that source's unit will be
+ *    contract-carrying, or a bulk source a contract-carrying spec covers when that source's unit will be
  *    planned — so the budget stays on the change the contract lives in and no spec outranks the source
- *    it covers. A covered source is ordered at the smaller of its own side figure and the covering spec's
- *    figure rather than at the front of the tier, so the source keeps the room its own size earned, still
- *    precedes its own spec, and never outranks contract material unrelated to that spec;
+ *    it covers. A bulk covered source is ordered at the smaller of its own side figure and the covering
+ *    spec's figure rather than at the front of the tier, so it keeps the room its own size earned, still
+ *    precedes its own spec, and never outranks contract material unrelated to that spec. A source that is
+ *    itself contract-carrying keeps its own position and class, so a contract-carrying non-spec path never
+ *    outranks it on size alone;
  * 2. a changed file whose unit the planner will plan and whose rules need contract evidence — its own
  *    sides, attempted before the context units those rules charge, while the side stays behind genuine
  *    contract material. The attempt order is what keeps the charge from taking its reader's place at
@@ -228,6 +230,9 @@ export function plannedUnitPaths(
  * `evidence.ts`'s re-exports, and resolving only the spec's own specifiers left those two modules bulk.
  * One level is the observed shape; the closure is not chased further so the walk stays deterministic
  * and cheap over already-read contents.
+ *
+ * A spec covers from each side's own path, so a rename or copy that left collection still covers what its
+ * before content imports, while its no-longer-collected destination covers nothing from the after side.
  */
 export function specCoveredSources(
     changed: readonly SemanticChangedFile[],
@@ -268,9 +273,6 @@ export function specCoveredSources(
         }
     };
     for (const file of changed) {
-        if (!isCollectedSpec(file.path)) {
-            continue;
-        }
         const entry = contents.get(file.path);
         const beforePath = file.previousPath ?? file.path;
         const before = entry?.before;
@@ -281,10 +283,13 @@ export function specCoveredSources(
         if (!contractByContent) {
             continue;
         }
-        if (before !== undefined) {
+        // A spec covers from the side's own path: a renamed or copied spec whose previous path was collected
+        // still covers what its before content imports, while a destination that is no longer collected
+        // covers nothing from its after side.
+        if (before !== undefined && isCollectedSpec(beforePath)) {
             collect(beforePath, before, file.path);
         }
-        if (after !== undefined) {
+        if (after !== undefined && isCollectedSpec(file.path)) {
             collect(file.path, after, file.path);
         }
     }
@@ -323,23 +328,25 @@ function coveringSpecRankBytes(kind: SemanticChangedFile['kind'], bytes: Admissi
 /**
  * The ordering position one admission unit takes inside its tier: the keys the tier's tie-breaks read.
  *
- * A source a contract-carrying spec covers takes the covering spec's position rather than its own, so the
- * pair sits together — the same collected-spec rank and the same contract-carrying classification — and the
- * pair competes with the rest of the tier by the keys the spec already had. The position's byte figure is
- * the smaller of the source's own side figure and the covering spec's own figure: a source smaller than its
- * spec keeps the room its own size earned, while a larger source is capped at the spec's figure, so the
+ * A bulk source a contract-carrying spec covers takes the covering spec's position rather than its own, so
+ * the pair sits together — the same collected-spec rank and the same contract-carrying classification — and
+ * the pair competes with the rest of the tier by the keys the spec already had. The position's byte figure
+ * is the smaller of the source's own side figure and the covering spec's own figure: a source smaller than
+ * its spec keeps the room its own size earned, while a larger source is capped at the spec's figure, so the
  * source never outranks unrelated material the spec itself does not outrank. `pairRank` is the one key the
  * pair does not share: inside a position nothing else separates a covered source from the spec that covers
- * it, so the covered source (0) orders immediately ahead of its spec (1), which is the one ordering the
- * promotion exists to give. The own figure is also kept beside the capped figure, so several sources capped
- * to one spec's figure keep their own size order rather than collapsing onto a single key.
+ * it, so the covered source (0) orders immediately ahead of its spec (1). The own figure is also kept beside
+ * the capped figure, so several sources capped to one spec's figure keep their own size order rather than
+ * collapsing onto a single key. A source that is itself contract-carrying keeps its own position and class —
+ * its own classification already earns tier 0, and demoting it into the spec bucket would let a
+ * contract-carrying non-spec path outrank it on size alone.
  */
 export type AdmissionOrderPosition = {
     /** The path the in-tier collected-spec tie-break and the path tie-break read. */
     readonly path: string;
     /** Whether the position ranks as a contract-carrying path, so a covered source never outranks genuine contract material. */
     readonly pathContractCarrying: boolean;
-    /** The position's byte figure — the smaller of the source's own side figure and the covering spec's figure for a covered source. */
+    /** The position's byte figure — the smaller of the source's own side figure and the covering spec's figure for a bulk covered source. */
     readonly admissionBytes: number;
     /** The source's own side figure, uncapped — the tie-break that keeps collapsed covered sources in their own size order. */
     readonly ownBytes: number;
@@ -432,11 +439,12 @@ function admissionTier(unit: AdmissionUnit): number {
  * tier, non-spec before collected spec, then a side of a contract-carrying path before a purely bulk
  * side, then ascending admission bytes — the order-independent lower bound a side's sole regions cost,
  * a tie-break rather than a promise of what the side pays — then path, then the pair rank, then the unit's
- * own path, then a path's before side before its own after side. A source a contract-carrying spec covers
- * is ordered at the smaller of its own side figure and the covering spec's figure once its unit will be
- * planned, so the source keeps the room its own size earned and the pair rank alone keeps it ahead of its
- * own spec; a file no spec covers keeps its own position, and a covered source the planner will not plan
- * keeps the rank its own classification gives it. The ascending-byte order is a lower-bound tie-break, not a
+ * own path, then a path's before side before its own after side. A bulk source a contract-carrying spec
+ * covers is ordered at the smaller of its own side figure and the covering spec's figure once its unit will
+ * be planned, so the source keeps the room its own size earned and the pair rank alone keeps it ahead of its
+ * own spec; a source that is itself contract-carrying keeps its own position and class, and a file no spec
+ * covers keeps its own position too. A covered source the planner will not plan keeps the rank its own
+ * classification gives it. The ascending-byte order is a lower-bound tie-break, not a
  * promise that a smaller side survives — a region shared with another change is charged to whichever side
  * admits it first, and a whole-file fallback can still starve a smaller edit when the total budget binds.
  */
@@ -512,7 +520,10 @@ export function admissionUnits(
         const needsContract = contractNeeding.has(file.path) && plannedPaths.has(file.path);
         const orderFor = (side: AdmissionSide): AdmissionOrderPosition => {
             const ownBytes = admissionBytesBySide.get(file.path)?.[side] ?? 0;
-            if (!covered || coveringSpec === undefined) {
+            // A source that is itself contract-carrying already earns tier 0 by its own classification, so it
+            // keeps its own non-spec position and class rather than being demoted into the covering spec's
+            // bucket; only a bulk source, promoted solely because a spec covers it, is carried by that spec.
+            if (pathContractCarrying || !covered || coveringSpec === undefined) {
                 return {
                     path: file.path,
                     pathContractCarrying,

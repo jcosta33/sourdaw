@@ -1398,6 +1398,135 @@ describe('contract-carrying admission', () => {
         expect(sourceOrder).toEqual(['c.ts', 'b.ts', 'a.ts']);
     });
 
+    it('keeps a contract-carrying covered source in its own bucket, not demoted behind a larger contract path', () => {
+        // F1: a closure member is contract-carrying by its own content, so it already earns tier 0. Taking
+        // the covering spec's path would demote it into the spec bucket and let a larger workflow file
+        // outrank it on the bucket alone; it must keep its own non-spec position and class.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const sourcePath = 'scripts/deliverPullRequest.ts';
+        const coverPath = 'scripts/__tests__/deliverPullRequest.spec.ts';
+        const workflowPath = '.github/workflows/validation.yml';
+        const changed: SemanticChangedFile[] = [
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: workflowPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const specSide = `${workflowLine}import { deliver } from '../deliverPullRequest.ts';\n`;
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [sourcePath, { before: 'export const deliver = 1;\n', after: 'export const deliver = 1;\n' }],
+            [workflowPath, { before: 'name: validation\n', after: 'name: validation\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [sourcePath, { before: 5_000, after: 5_000 }],
+            [coverPath, { before: 2_000, after: 2_000 }],
+            [workflowPath, { before: 97_000, after: 97_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [sourcePath, { before: true, after: true }],
+            [coverPath, { before: true, after: true }],
+            [workflowPath, { before: true, after: true }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path);
+        expect(index(sourcePath)).toBeLessThan(index(workflowPath));
+    });
+
+    it('covers a source from a renamed or copied spec whose previous path was collected', () => {
+        // F2: a collected spec renamed or copied out of collection still covers what its before content
+        // imports; only the side's own path decides collection, so the before side keeps its collected path.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const sourcePath = 'scripts/semanticReview/coveredSource.ts';
+        const beforeContent = `${workflowLine}import { s } from '../semanticReview/coveredSource.ts';\n`;
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            ['tools/renamed.ts', { before: 100, after: 100 }],
+            ['tools/copied.ts', { before: 100, after: 100 }],
+            [sourcePath, { before: 100, after: 100 }],
+        ]);
+        const renamed: SemanticChangedFile[] = [
+            {
+                path: 'tools/renamed.ts',
+                previousPath: 'scripts/__tests__/renamed.spec.ts',
+                kind: 'renamed',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 1,
+            },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const renamedContents = new Map<string, { before?: string; after?: string }>([
+            ['tools/renamed.ts', { before: beforeContent, after: 'export const renamed = 1;\n' }],
+            [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
+        ]);
+        expect(specCoveredSources(renamed, renamedContents, bytesBySide).get(sourcePath)).toBe('tools/renamed.ts');
+
+        const copied: SemanticChangedFile[] = [
+            {
+                path: 'tools/copied.ts',
+                previousPath: 'scripts/__tests__/copied.spec.ts',
+                kind: 'copied',
+                binary: false,
+                generated: false,
+                added: 1,
+                deleted: 1,
+            },
+            { path: sourcePath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+        ];
+        const copiedContents = new Map<string, { before?: string; after?: string }>([
+            ['tools/copied.ts', { before: beforeContent, after: 'export const copied = 1;\n' }],
+            [sourcePath, { before: 'export const s = 1;\n', after: 'export const s = 1;\n' }],
+        ]);
+        expect(specCoveredSources(copied, copiedContents, bytesBySide).get(sourcePath)).toBe('tools/copied.ts');
+    });
+
+    it('caps a covered source at a modified coverer whose after side is the smaller floor', () => {
+        // F3: the floor is the minimum of the coverer's two sides. Here the after side is the smaller one, so
+        // capping at the before side alone would leave the source's after unit behind the coverer's after.
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+        const coverPath = 'scripts/semanticReview/__tests__/afterFloor.spec.ts';
+        const sourcePath = 'scripts/semanticReview/afterFloorSource.ts';
+        const specSide = `${workflowLine}import { s } from '../afterFloorSource.ts';\n`;
+        const changed: SemanticChangedFile[] = [
+            { path: coverPath, kind: 'modified', binary: false, generated: false, added: 1, deleted: 1 },
+            { path: sourcePath, kind: 'added', binary: false, generated: false, added: 1, deleted: 0 },
+        ];
+        const contents = new Map<string, { before?: string; after?: string }>([
+            [coverPath, { before: specSide, after: specSide }],
+            [sourcePath, { after: 'export const s = 1;\n' }],
+        ]);
+        const bytesBySide = new Map<string, AdmissionSideBytes>([
+            [coverPath, { before: 10_000, after: 1_000 }],
+            [sourcePath, { before: 0, after: 5_000 }],
+        ]);
+        const sidesByPath = new Map<string, ContractCarryingSides>([
+            [coverPath, { before: true, after: true }],
+            [sourcePath, { before: false, after: false }],
+        ]);
+        const specCovered = specCoveredSources(changed, contents, bytesBySide);
+        const units = admissionUnits(
+            changed,
+            sidesByPath,
+            bytesBySide,
+            [],
+            specCovered,
+            new Set(changed.map((file) => file.path))
+        );
+        const index = (path: string, side: 'before' | 'after'): number =>
+            units.findIndex((unit) => unit.kind === 'changed' && unit.file.path === path && unit.side === side);
+        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'after'));
+        expect(index(sourcePath, 'after')).toBeLessThan(index(coverPath, 'before'));
+    });
+
     it('names a withheld region by its own content class rather than its admission tier', () => {
         // The qualifier is the region's own content class, never the admission tier. `vocabulary.ts` is a
         // source its contract-carrying spec covers, so it is ordered in that spec's tier, yet its withheld
