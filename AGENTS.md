@@ -153,11 +153,16 @@ should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <pat
 findings are collected and before `review.json` is written. Both are advisory and optional: their
 output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
 a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
-deterministic check, or publish anything. Their sidecars live outside the review bundle, in gitignored
+deterministic check, or publish anything. One duty survives the advisory status: a fired signal the
+bundle's `semantic-ci.json` records (a scan signal whose disposition is `recommend_investigation`)
+must be disposed of by name — its token `semantic-signal <ruleId> <path>` in a stance's `admittedBy`,
+a discarded finding, or a dossier limitation — before `review:publish` will make a fresh publication;
+the duty forces the round to name what fired, never to act on it. Their sidecars live outside the review bundle, in gitignored
 `.agents/semantic-review/`, so a blind reviewer is never handed a proposed verdict. They never
 substitute for the reproduction and baseline-probe duties below, and no semantic result may approve,
 request changes, resolve a thread, or merge
-([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
+([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md),
+[ADR 0050](./.agents/decisions/0050-fired-semantic-signals-carry-a-disposal-duty.md)).
 
 The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
 same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
