@@ -1,0 +1,296 @@
+scripts/__tests__/semanticReviewContext.spec.ts
+  h_beb54bf43b47b7 20,256-385,964-966,967-968,969-1003
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  h_beb54bf43b47b7 57-58,680-709,873-877,879-882,903-905,908-917,927-1000,1069-1104,1134,1139,1140,1141-1143,1144-1145,1152,1154-1155,1157-1158,1161-1164,1168-1208,1224-1299,1364-1410,1411-1446,1457-1488,1490-1493,1499-1508,1510-1512,1521,1523-1524,1526-1557,1599-1619,1766-1795,1781-1784,1796-1868,1893-1894,1906-1908,1911-1913,1916-1944,1947,1949-1951,1957,1960-1965,1966-1967,1975-1976,1985,1989-1993,1995-1996,2003,2004-2005,2665-2666,2684,2738,2838-2872,2873,2874-2888,2942,2954,2955-2960,2961-3043,3044-3051,3052-3110,3111,3788-3793,5018-5058,5495-5567,6608-6612,6616-6617,6632,6917,6942,6999,7028,7055,7095,7104-7255
+  s_ed5aa36a3ba357::t_ae43cc3511e8f0 1004,1007-1009,1022-1027,1033,1044-1046,1300-1363,1447-1456,1489,1494-1498,1509,1513-1520,1522,1525,1558-1600,1867-1905
+  s_ed5aa36a3ba357::t_66245c59385f72 33,2943-2953,2970-2972,2994,3000-3007,3012,3019,3061,3066-3067,3088-3089,3091-3093,3111-3113,3412
+scripts/semanticReview/contractCarrying.ts
+  h_beb54bf43b47b7 5-8,14-15,55,95,121-123,125-127,129-131,134-145,149,151
+scripts/semanticReview/evidence.ts
+  h_beb54bf43b47b7 14,17,32-39,41-42,64-65,66,68,73,314-332,350-372,378-381,384-385,389,398-407,427-441,450-452,458-460,462-467,532,535-538,622,650,718,719-720,729-732,733-735,736,737,738,739-740,765-766,796,797,807,808,809,810,811-817,822,832-839
+  s_ed5aa36a3ba357::t_3dd748b912a3c0 22-28
+scripts/semanticReview/evidenceOrdering.ts
+  h_beb54bf43b47b7 7,9,13-16,23,25,43,44,96-97,98,99,100-106,107-108,112-123,124,127-137,128,177-180,184-186,189-196,203-209,210-211,212-213,216-221,222-227,228,229,230-236,237-250,251-271,272-276,286,287,288,322-324,327-329,336-338,342,345-350,353,357,358-362,366-368,412,413-414,416,422,430,431,442,443,636-637,638-643,644-650,651-657,660-662,663-665,666-670,671,672-678
+  s_ed5aa36a3ba357::t_682d97715772d0 10-12,17-18,125-126,138-167,181-183,187-188,197-202,214-215,285,325-326,363-365,421,658-659
+scripts/semanticReview/run.ts
+  h_beb54bf43b47b7 612-613,622-626
+scripts/semanticReview/verify.ts
+  h_beb54bf43b47b7 29,33,34,354,371-374,383-384,390,413-416,421-425,608-611,618-623,628-629
+scripts/semanticReviewContext.ts
+  h_beb54bf43b47b7 18-32,40,49,74-126,145-146,211-217,222-226,538
+scripts/semanticReview/fit.ts
+  h_beb54bf43b47b7 16-17,36,38-40,43,88-90,113,114,115-117,129-131,149-152
+  s_ed5aa36a3ba357::t_80de7eebfe2a17 91-92,117,129
+scripts/semanticReview/rules.ts
+  s_ed5aa36a3ba357::t_d4ed518db04dcd 580-585
+  h_beb54bf43b47b7 676-696,711-716,729-734,747,758-766
+.agents/decisions/0049-single-approval-review-author-merge.md
+  h_beb54bf43b47b7 76-77,79-80
+.agents/decisions/0050-fired-semantic-signals-carry-a-disposal-duty.md
+  h_beb54bf43b47b7 1-80
+.agents/decisions/0050-freeze-pull-requests-at-five-review-rounds.md
+  h_beb54bf43b47b7 1-61
+.agents/decisions/README.md
+  h_beb54bf43b47b7 17-66
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 273-278
+AGENTS.md
+  h_beb54bf43b47b7 156-160,164-165,229-233,237-247
+crates/daw-dsp/src/levain/engine.rs
+  h_beb54bf43b47b7 6-10,21,27,40-42,93,109-114,131,161,169-170,193-195,287-288,291-294,379-381,476-478,498-499,509,511,514,535-543,546-547,578-586,589,635-637,639,652-660,675-677,858-862,900,905-955,995-997,1041,1043,1045,1050-1053,1056-1058,1060-1068,1070-1072,1074-1078,1080-1083,1085-1086,1099,1101-1103,1120,1130,1141-1162,1173,1178-1183,1187,1189,1207-1222,1228-1229,1235,1238-1239,1244-1248,1940-1943,1953-1956
+crates/daw-dsp/src/levain/mic.rs
+  h_beb54bf43b47b7 3-14,16,18-20,22-23,31-32,38-40,46-47,54-56,59-70
+crates/daw-dsp/src/levain/realism/mod.rs
+  h_beb54bf43b47b7 556,597-598,605-606,610,624-625,629-630,636,638,645,656,665,703,712,714,723-724,730-731,738,757,792,807,809,812,814
+crates/daw-dsp/src/levain/tone.rs
+  h_beb54bf43b47b7 87-94
+crates/daw-dsp/src/levain/types.rs
+  h_beb54bf43b47b7 408
+crates/daw-dsp/src/levain/voice.rs
+  h_beb54bf43b47b7 9,424,620-687,689-692,710-716,723-732,757,760-763,800-801,819-820,825-826,838-839,850,856-857,863,869,874-876,878-881,890-892,895,904-906,909-920,922,925-927,929,931,938,948-956,964-979,1017-1024,1027,1029-1033,1036,1042-1080,1086-1088,1092-1101,1110-1116,1123-1131,1138,1177,1179-1185,1209-1211,1216-1218,1222-1225,1227-1228,1230,1242,1251,1254-1258,1260-1268,1271-1273,1278-1280,1287-1293,1295,1301-1307,1311,1320-1321,1331,1333-1344,1347,1352-1359,1592-1614,1647,1651,1655,1676,1743,1751,1776,1783,1812,1819,1879,1884,1892,1895,1906,1972-1973,2015,2043,2047,2049,2074,2083,2085,2092,2094,2111-2112,2117,2119,2124,2127,2129,2134-2135,2137,2139,2300
+crates/daw-dsp/src/levain/zone.rs
+  h_beb54bf43b47b7 271-280,282-297,299-302,304,306-308
+crates/daw-dsp/tests/device_process_rt.rs
+  h_beb54bf43b47b7 1485-1534,1546,1548-1549,1554,1557-1558,1589-1594,1598-1604,1610,1614,1616-1617,1619,1632,1635-1637,1651-1656
+crates/daw-dsp/tests/levain_mic_mix_is_audible.rs
+  h_beb54bf43b47b7 1,3-10,16-17,20-56,58-69,74-78,80-111,113-117,119-123,125,128,132-133,136-138,149-242,244-245,248-250,252-285,289,292,294-338,340-341,346-366,370,372,377-378,383,385,387,391-901
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 3979-3981,4250-4253
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 967,1120-1160
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 25,178-218
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 24,210-241
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 13,71-76,5076-5078,5084-5092,5110-5111,5146-5154,5469-5630,6168-6215,6217
+scripts/__tests__/reviewDossierSemanticAssessment.spec.ts
+  h_beb54bf43b47b7 6,9,43-51,54-59,64,117,130,134-157,364-527
+scripts/__tests__/reviewRoundEscalation.spec.ts
+  h_beb54bf43b47b7 12,15,76-87,182-235
+scripts/prepareReview.ts
+  h_beb54bf43b47b7 26,217-226
+scripts/publishReview.ts
+  h_beb54bf43b47b7 62,231-241
+scripts/reviewDossierPublication.ts
+  h_beb54bf43b47b7 49,245-248,257,262-266,282-299
+scripts/reviewDossierSemanticAssessment.ts
+  h_beb54bf43b47b7 24-34,38,114-149,160,167-169,196,223-268,272-284,289-290,314
+scripts/reviewPublicationBinding.ts
+  h_beb54bf43b47b7 30,42,154-156,168-227,242-243,258-266,272-273,339-343,356-364
+scripts/reviewRoundEscalation.ts
+  h_beb54bf43b47b7 23-32,129-133,135-141,146-161,165-169,179,232-240
+src/modules/AiRuntime/models/ExecutableRuntimeAction.ts
+  h_beb54bf43b47b7 7
+src/modules/AiRuntime/models/ProjectContext.ts
+  h_beb54bf43b47b7 209-214
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/coreAutomationStrategy.spec.ts
+  h_beb54bf43b47b7 14-15,200-274
+src/modules/AiRuntime/transformers/llmActionStrategies/coreAutomationStrategy.ts
+  h_beb54bf43b47b7 7,152,155-156,158-161,167,173-175
+src/modules/AiRuntime/transformers/resolveAutomationLaneTarget.ts
+  h_beb54bf43b47b7 1-60
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  h_beb54bf43b47b7 1-917
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_beb54bf43b47b7 1297-1332
+src/modules/AiRuntime/useCases/agentReference/BatchLocalActionIdentity.ts
+  h_beb54bf43b47b7 27-31
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  h_beb54bf43b47b7 7599-7698
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  h_beb54bf43b47b7 2-5,12-18,68,78-79,132-133,308-334,360-362
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  h_beb54bf43b47b7 41,368-370,436,520-522,538-540,564-566,2967-3013,3018,3051-3053,3250,5155-5165
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  h_beb54bf43b47b7 15,18,32-34,131-133
+src/modules/AiRuntime/useCases/agentReference/projectBatchLocalCreation.ts
+  h_beb54bf43b47b7 1,5,36-44,49,53,143-171,187-189
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 847
+src/modules/AiRuntime/useCases/validateActions.ts
+  h_beb54bf43b47b7 15,45-72,79-80,82-86,94-98,137-142,186
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  h_beb54bf43b47b7 8,37-44,50-51,62-63,107-117,127,288-355
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.spec.ts
+  h_beb54bf43b47b7 120-125
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  h_beb54bf43b47b7 10-11,101-116
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 721,724,752-776,786-793
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  h_beb54bf43b47b7 2,63-66,76,86
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  h_beb54bf43b47b7 54,103-111,1221,1349
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  h_beb54bf43b47b7 43-54,103-106,200-203,226,265,507,517-520,523-545
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  h_beb54bf43b47b7 11,117-122
+src/modules/Arrangement/handlers/track/__tests__/flattenTrack.spec.ts
+  h_beb54bf43b47b7 3,10,23-26,109,178-228
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracks.spec.ts
+  h_beb54bf43b47b7 11,26-29,158,244-320
+src/modules/Arrangement/handlers/track/__tests__/handleConsolidateAllTracksTransaction.spec.ts
+  h_beb54bf43b47b7 14,159,239-294
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  h_beb54bf43b47b7 8-14,40,119-130,164,510-620
+src/modules/Arrangement/handlers/track/flattenTrack.ts
+  h_beb54bf43b47b7 4,7,46-53,55,70-74
+src/modules/Arrangement/handlers/track/handleConsolidateAllTracks.ts
+  h_beb54bf43b47b7 7,39-59,74,82,91-93,96-105,125-128
+src/modules/Arrangement/useCases/captureTrackClipStates.ts
+  h_beb54bf43b47b7 52-56,58-64,108-111
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  h_beb54bf43b47b7 8-9,11,156,163,1100-1229
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 11,98-122
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  h_beb54bf43b47b7 14-17,1061-1064,1134,1167,1371-1375,1391,1406-1415
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  h_beb54bf43b47b7 669-732
+src/modules/Arrangement/useCases/comping/insertTakeLane.ts
+  h_beb54bf43b47b7 20-22
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  h_beb54bf43b47b7 25-26
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTakeLanes.spec.ts
+  h_beb54bf43b47b7 1-313
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  h_beb54bf43b47b7 69-75,78,80,301,309,328-333,368,374,1063-1157
+src/modules/Arrangement/useCases/timeOperations/createTakeLaneTransitionPlan.ts
+  h_beb54bf43b47b7 1-22
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  h_beb54bf43b47b7 14-15,17,1400,1436,1595-1599,1618,1655-1660
+src/modules/Arrangement/useCases/timeOperations/prepareTakeLaneStateRestore.ts
+  h_beb54bf43b47b7 1-55
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  h_beb54bf43b47b7 8-10,13,42,76-79,198-199,236-241,250,688-692,725-727,895-898
+src/modules/Arrangement/useCases/timeOperations/reverseRestorePlan.ts
+  h_beb54bf43b47b7 1,3,46-62,71,79-84
+src/modules/Arrangement/useCases/timeOperations/reverseTakeLaneTransitionPlan.ts
+  h_beb54bf43b47b7 1-12
+src/modules/Arrangement/useCases/timeOperations/takeLaneTransitionPlan.ts
+  h_beb54bf43b47b7 1-26
+src/modules/Arrangement/useCases/timeOperations/validateTakeLaneTransitionPlan.ts
+  h_beb54bf43b47b7 1-67
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 967,1120-1160
+src/modules/Automation/handlers/automation/handleAddAutomationLane.ts
+  h_beb54bf43b47b7 1,3,6,13-17,44-133,143-145,147-149
+src/modules/Automation/handlers/automation/handleAddAutomationPoint.ts
+  h_beb54bf43b47b7 3,12,77-155,157-158,161-163,181-183
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  h_beb54bf43b47b7 2,4,6-43,50-56,60-69,71-74
+src/modules/Automation/handlers/automation/handleRemoveAutomationPoint.ts
+  h_beb54bf43b47b7 27,29-36
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  h_beb54bf43b47b7 106-112
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  h_beb54bf43b47b7 1273,1278-1285,1296-1300
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  h_beb54bf43b47b7 1-87
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  h_beb54bf43b47b7 2458-2459,2475-2482,2514-2518
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 19,454-459,909-910,913
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 1563
+src/modules/ControlSurface/AGENTS.md
+  h_beb54bf43b47b7 12
+src/modules/ControlSurface/stores/index.ts
+  h_beb54bf43b47b7 4
+src/modules/DawInterchange/useCases/__tests__/dawProjectContentOffsetAndRampRoundTrip.spec.ts
+  h_beb54bf43b47b7 1-196
+src/modules/DawInterchange/useCases/__tests__/dawProjectRoundTrip.spec.ts
+  h_beb54bf43b47b7 143
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  h_beb54bf43b47b7 434-435
+src/modules/DawInterchange/useCases/__tests__/mapToProjectDataMasterGainScale.spec.ts
+  h_beb54bf43b47b7 1-34
+src/modules/DawInterchange/useCases/__tests__/parseDawProject.spec.ts
+  h_beb54bf43b47b7 167-168
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 261,269-270,272,315-339,350
+src/modules/DawInterchange/useCases/__tests__/serializeProjectXml.spec.ts
+  h_beb54bf43b47b7 36
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  h_beb54bf43b47b7 35-37,43-45
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  h_beb54bf43b47b7 1,92,113-115,302
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 85-95,215-222,224,226-229,232,235,237,240-244,254-259,272,284,360
+src/modules/DawInterchange/useCases/serializeProjectXml.ts
+  h_beb54bf43b47b7 209-216,267-269,271
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  h_beb54bf43b47b7 81-83
+src/modules/MIDI/stores/midiStore.ts
+  h_beb54bf43b47b7 27-30,44,48,261-264,277-278,301-304,322-328
+src/modules/MIDI/useCases/__tests__/mergeImportedMidiClipNotes.spec.ts
+  h_beb54bf43b47b7 71
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/midiTimeStateCodec.spec.ts
+  h_beb54bf43b47b7 65-81,192-210
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/migrateAbsoluteMidiNotesReload.spec.ts
+  h_beb54bf43b47b7 1-155
+src/modules/MIDI/useCases/midiNoteCrud/midiTimeStateCodec.ts
+  h_beb54bf43b47b7 69-70
+src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts
+  h_beb54bf43b47b7 10-23,32-34,56,58-73,75-77,79-84,97-103,105,107
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 128-136,281-287,329-331,809-833
+src/modules/Project/stores/arrangementStore.ts
+  h_beb54bf43b47b7 333-334,379,693-697,710-713
+src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts
+  h_beb54bf43b47b7 130-146
+src/modules/Project/useCases/arrangement/__tests__/takeSnapshot.spec.ts
+  h_beb54bf43b47b7 3,57-60,99,127-167
+src/modules/Project/useCases/arrangement/loadSnapshot.ts
+  h_beb54bf43b47b7 11,15-21
+src/modules/Project/useCases/arrangement/takeSnapshot.ts
+  h_beb54bf43b47b7 20,25-30
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  h_beb54bf43b47b7 63
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  h_beb54bf43b47b7 47-49,53,125-130,649-696
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/midiLearnPersistence.roundTrip.spec.ts
+  h_beb54bf43b47b7 1-74
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/stampWriteSidePersistence.spec.ts
+  h_beb54bf43b47b7 1-97
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  h_beb54bf43b47b7 14,250-260,333,336-337,341-355
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  h_beb54bf43b47b7 89-92
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidi.ts
+  h_beb54bf43b47b7 46-49
+src/modules/Project/useCases/projectPersistence/helpers/hydrateArrangementStoreFromProjectData.ts
+  h_beb54bf43b47b7 73-77
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  h_beb54bf43b47b7 8,37-40
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 78-81,532
+src/utils/createHandler.ts
+  h_beb54bf43b47b7 23-27,89
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 1360-1369,2994-2995
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2cf8e5d00af80da269e41a6c2c33b8f9be1e0406",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
