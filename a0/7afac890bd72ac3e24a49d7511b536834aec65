@@ -1,0 +1,40 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  h_beb54bf43b47b7 274-314
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClips.spec.ts
+  h_beb54bf43b47b7 39,85-103
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClipsRipple.integration.spec.ts
+  h_beb54bf43b47b7 1-226
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 53-57
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStatesLegacySatellite.spec.ts
+  h_beb54bf43b47b7 1-168
+src/modules/Arrangement/handlers/clip/handleMoveClips.ts
+  h_beb54bf43b47b7 95-145,161-162
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 16-20,469-475,478-480
+src/modules/Arrangement/stores/__tests__/warpStatesRawProjectionLoss.spec.ts
+  h_beb54bf43b47b7 28-33,65-89
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  h_beb54bf43b47b7 152,157-164,180-181
+src/modules/Arrangement/stores/warpStates.ts
+  h_beb54bf43b47b7 394-401,414-425
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  h_beb54bf43b47b7 219-245
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  h_beb54bf43b47b7 68-75,78
+src/modules/Arrangement/useCases/rippleMove/__tests__/rippleMoveClip.spec.ts
+  h_beb54bf43b47b7 31-32,124-174
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  h_beb54bf43b47b7 22-25,27-35,39,89-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a07afac890bd72ac3e24a49d7511b536834aec65",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
