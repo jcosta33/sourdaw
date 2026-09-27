@@ -58,15 +58,14 @@ describe('handleWebMidiMessage', () => {
     it('should dispatch CC bytes to the CC use case', () => {
         handleWebMidiMessage(midi_event([0xb3, 7, 101]));
 
-        // The browser's receipt time rides along to every handler so the event
-        // can be placed when it was played, not when it was processed (MD-1).
-        expect(handle_cc).toHaveBeenCalledWith(3, 7, 101, EVENT_TIME_STAMP);
+        // The timestamp is resolved on admission, before a queued handler waits.
+        expect(handle_cc).toHaveBeenCalledWith(3, 7, 101, { audioTime: 2 });
     });
 
     it('should normalize raw note-off release velocity before dispatch', () => {
         handleWebMidiMessage(midi_event([0x81, 72, 96]));
 
-        expect(handle_note_off).toHaveBeenCalledWith(1, 72, 96 / 127, EVENT_TIME_STAMP);
+        expect(handle_note_off).toHaveBeenCalledWith(1, 72, 96 / 127, { audioTime: 2 });
     });
 
     it('should ignore short or empty browser MIDI events', () => {
@@ -95,7 +94,7 @@ describe('handleWebMidiMessage', () => {
 
         resolveNoteOn();
         await noteOnPending;
-        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, EVENT_TIME_STAMP));
+        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0, { audioTime: 2 }));
     });
 
     it('should hold a pitch bend behind a pending note-on so the opening bend is not dropped', async () => {
@@ -284,7 +283,7 @@ describe('handleWebMidiMessage', () => {
         handleWebMidiMessage(midi_event([0x81, 60, 0]));
         setTargetTrackId('new-target');
         finishNoteOn();
-        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(1, 60, 0, EVENT_TIME_STAMP));
+        await vi.waitFor(() => expect(handle_note_off).toHaveBeenCalledWith(1, 60, 0, { audioTime: 2 }));
     });
 
     it('should not delay expression past its arrival frame behind an unrelated note-on', async () => {
@@ -297,9 +296,11 @@ describe('handleWebMidiMessage', () => {
         // The bend records the frame it would voice at, resolved exactly the
         // way the real pitch-bend handler resolves it.
         let bendFrame: number | null = null;
-        handle_pitch_bend.mockImplementation((_channel: number, _lsb: number, _msb: number, timeStamp?: number) => {
-            bendFrame = resolveInputDispatchFrame({ eventTime: resolveInputEventTime({ timeStamp }) });
-        });
+        handle_pitch_bend.mockImplementation(
+            (_channel: number, _lsb: number, _msb: number, timeStamp?: number | { audioTime: number }) => {
+                bendFrame = resolveInputDispatchFrame({ eventTime: resolveInputEventTime({ timeStamp }) });
+            }
+        );
 
         const performance_now = vi.spyOn(performance, 'now');
 

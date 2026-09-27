@@ -10,6 +10,7 @@ import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
+import { resolveInputEventTime } from './resolveInputEventTime';
 
 /**
  * Serial tail for note events.
@@ -143,7 +144,7 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
         return undefined;
     }
 
-    const timeStamp = message.timeStamp;
+    const timeStamp = { audioTime: resolveInputEventTime({ timeStamp: message.timeStamp }) };
 
     const channel = message.channel;
 

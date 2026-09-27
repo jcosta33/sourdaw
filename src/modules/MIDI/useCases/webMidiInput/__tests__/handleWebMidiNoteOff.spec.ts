@@ -1276,9 +1276,13 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
             clock.mockReturnValue(2000);
             send([0x81, PITCH, 0], 2000);
             expect(recorded).toHaveLength(0);
+            at(3.1);
+            clock.mockReturnValue(3100);
             finishWorker();
             await vi.waitFor(() => expect(recorded).toHaveLength(1));
             expect(recorded[0]).toMatchObject({
+                startBeat: 0,
+                duration: 2,
                 expression: {
                     pressure: [{ offsetBeats: 0.5, value: 80 }],
                     slide: [{ offsetBeats: 0.5, value: 90 }],

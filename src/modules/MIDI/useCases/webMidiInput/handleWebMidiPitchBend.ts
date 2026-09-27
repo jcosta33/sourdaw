@@ -12,13 +12,18 @@ import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 
 const CENTS_PER_SEMITONE = 100;
 
 export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        function handleWebMidiPitchBend(channel: number, lsb: number, msb: number, timeStamp?: number): void {
+        function handleWebMidiPitchBend(
+            channel: number,
+            lsb: number,
+            msb: number,
+            timeStamp?: number | CapturedInputEventTime
+        ): void {
             // Expression now shares the note events' serial tail (audit MD-3),
             // so it can be voiced a turn or more after it arrived. Addressing
             // its own arrival frame keeps it landing where it was performed.

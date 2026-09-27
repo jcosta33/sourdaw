@@ -18,6 +18,8 @@ import {
 import { midiStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { legatoNotes } from '../../midiNoteTransforms/legatoNotes';
+import { appendMidiNotes } from '../appendMidiNotes';
+import { batchAddMidiNotes } from '../batchAddMidiNotes';
 import { replaceMidiNotesIfUnchanged } from '../replaceMidiNotesIfUnchanged';
 import { resizeMidiNote } from '../resizeMidiNote';
 
@@ -107,6 +109,58 @@ afterEach(() => {
 });
 
 describe('targeted MIDI note history through Command and Automerge', () => {
+    it('keeps admitted expression independent of batch input and returned notes through the document flush', () => {
+        const source = {
+            pitch: 60,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+        };
+        const [created] = batchAddMidiNotes(clipId, [source]);
+        if (!created?.expression?.pressure) {
+            throw new Error('Expected admitted pressure curve');
+        }
+        source.expression.pressure[0]!.value = 12;
+        source.expression.pressure.push({ offsetBeats: 1, value: 20 });
+        created.expression.pressure[0].value = 13;
+        created.expression.pressure.push({ offsetBeats: 1.5, value: 30 });
+        created.expression.pressure = [{ offsetBeats: 0.25, value: 40 }];
+        flushAutomergeStorageWrites();
+
+        const stored = documentNotes().find((candidate) => candidate.id === created.id);
+        expect(stored?.expression).toEqual({ pressure: [{ offsetBeats: 0.5, value: 90 }] });
+        expect(projectedNotes().find((candidate) => candidate.id === created.id)?.expression).toEqual(
+            stored?.expression
+        );
+    });
+
+    it('keeps appended and restored expression independent of caller mutation through the document flush', () => {
+        const pasted = {
+            pitch: 61,
+            startBeat: 0,
+            duration: 2,
+            velocity: 100,
+            expression: { slide: [{ offsetBeats: 0.5, value: 90 }] },
+        };
+        appendMidiNotes({ clipId, notes: [pasted] });
+        const appendedId = projectedNotes().at(-1)?.id;
+        pasted.expression.slide[0]!.value = 12;
+
+        const current = findNote('edited');
+        const replacement = structuredClone(current);
+        replacement.expression!.pressure![0]!.value = 80;
+        replaceMidiNotesIfUnchanged(clipId, [{ expected: current, replacement }]);
+        replacement.expression!.pressure![0]!.value = 12;
+        flushAutomergeStorageWrites();
+
+        expect(documentNotes().find((candidate) => candidate.id === appendedId)?.expression).toEqual({
+            slide: [{ offsetBeats: 0.5, value: 90 }],
+        });
+        expect(documentNotes().find((candidate) => candidate.id === 'edited')?.expression).toEqual({
+            pressure: [{ offsetBeats: 2.5, value: 80 }],
+        });
+    });
     it.each([
         ['left resize', () => resizeMidiNote(clipId, 'edited', 2, 2)],
         ['right resize', () => resizeMidiNote(clipId, 'edited', undefined, 1)],

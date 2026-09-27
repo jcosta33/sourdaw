@@ -5,6 +5,7 @@ import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
 import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
@@ -12,7 +13,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
 
 function secondsToBeats(seconds: number, tempo: number): number {
@@ -65,7 +66,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         channel: number,
         note: number,
         releaseVelocity: number = 0,
-        timeStamp?: number
+        timeStamp?: number | CapturedInputEventTime
     ): Promise<void> {
         // When the key was released, not when this handler got its turn. The
         // recorded note length is the difference between two of these, so both
@@ -94,36 +95,47 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         if (instrumentTrack && yeastDevice) {
             const context = audioEngine.context;
             const sampleTime = dispatchFrame;
-            const processedEvents = await deps.processRealtimeMidiInput({
-                context,
-                rackId: yeastDevice.id,
-                routeId: instrumentTrack.id,
-                trackId: instrumentTrack.id,
-                note,
-                velocity: 0,
-                channel,
-                isNoteOn: false,
-                sampleTime,
-                sampleRate: context.sampleRate,
-                noteInstanceId: noteData.noteInstanceId,
-            });
-            const strip = audioEngine.getTrackStrip(instrumentTrack.id);
-            function emitGrandBouleOff(deviceId: string, midiNote: number): void {
-                void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
-            }
-            const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
-            for (const event of processedEvents) {
-                if (event.kind.type !== 'noteOff') {
-                    continue;
+            const pendingRelease = pendingYeastRelease.begin(
+                `${instrumentTrackId}:${yeastDevice.id}`,
+                Array.from(noteData.yeastVoicedNotes ?? [])
+            );
+            try {
+                const processedEvents = await deps.processRealtimeMidiInput({
+                    context,
+                    rackId: yeastDevice.id,
+                    routeId: instrumentTrack.id,
+                    trackId: instrumentTrack.id,
+                    note,
+                    velocity: 0,
+                    channel,
+                    isNoteOn: false,
+                    sampleTime,
+                    sampleRate: context.sampleRate,
+                    noteInstanceId: noteData.noteInstanceId,
+                });
+                const strip = audioEngine.getTrackStrip(instrumentTrack.id);
+                function emitGrandBouleOff(deviceId: string, midiNote: number): void {
+                    void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
                 }
-                routeYeastNoteOffToInstrument(
-                    instrumentTrack,
-                    strip,
-                    event.kind.note,
-                    releaseVelocity,
-                    emitGrandBouleOff,
-                    Math.max(earliestDispatchFrame, Math.round(event.timeSamples))
-                );
+                const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
+                for (const event of processedEvents) {
+                    if (
+                        event.kind.type !== 'noteOff' ||
+                        pendingYeastRelease.wasRetired(pendingRelease, event.kind.note)
+                    ) {
+                        continue;
+                    }
+                    routeYeastNoteOffToInstrument(
+                        instrumentTrack,
+                        strip,
+                        event.kind.note,
+                        releaseVelocity,
+                        emitGrandBouleOff,
+                        Math.max(earliestDispatchFrame, Math.round(event.timeSamples))
+                    );
+                }
+            } finally {
+                pendingYeastRelease.finish(pendingRelease);
             }
         }
 

@@ -6,9 +6,13 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 
-export function handleWebMidiChannelPressure(channel: number, pressure: number, timeStamp?: number): void {
+export function handleWebMidiChannelPressure(
+    channel: number,
+    pressure: number,
+    timeStamp?: number | CapturedInputEventTime
+): void {
     if (!getMpeEnabled() || channel < 1) {
         return;
     }

@@ -219,7 +219,7 @@ describe('handleWebMidiNoteOn', () => {
         await noteOn(2, 60, 100);
 
         const noteInstanceId = activeNotes.get(createWebMidiNoteKey(2, 60))?.noteInstanceId;
-        expect(noteInstanceId).toBe('track-1:2:60:96000');
+        expect(noteInstanceId).toMatch(/^track-1:2:60:96000:\d+$/);
         expect(processRealtimeMidiInput).toHaveBeenNthCalledWith(
             1,
             expect.objectContaining({ isNoteOn: true, noteInstanceId })

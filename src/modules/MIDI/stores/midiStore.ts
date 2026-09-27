@@ -138,7 +138,7 @@ function normalizeMidiNoteExpression(value: unknown, duration: number): MidiNote
     for (const dimension of MIDI_EXPRESSION_DIMENSIONS) {
         const curve = value[dimension];
         if (isValidMidiExpressionCurve(dimension, curve, duration)) {
-            normalized[dimension] = curve;
+            normalized[dimension] = curve.map((point) => ({ offsetBeats: point.offsetBeats, value: point.value }));
             hasCurve = true;
         }
     }
@@ -146,6 +146,20 @@ function normalizeMidiNoteExpression(value: unknown, duration: number): MidiNote
         return undefined;
     }
     return normalized;
+}
+
+function cloneMidiNote(note: MidiNote): MidiNote {
+    if (!note.expression) {
+        return Object.assign({}, note);
+    }
+    const expression: MidiNoteExpression = {};
+    for (const dimension of MIDI_EXPRESSION_DIMENSIONS) {
+        const curve = note.expression[dimension];
+        if (curve) {
+            expression[dimension] = curve.map((point) => ({ offsetBeats: point.offsetBeats, value: point.value }));
+        }
+    }
+    return Object.assign({}, note, { expression });
 }
 
 function normalizeMidiNote(note: MidiNote): MidiNote {
@@ -331,7 +345,12 @@ export function sanitizeMidiStoreState(
         candidate = { ...value, probabilitySeed };
     }
     if (isExactMidiStoreState(candidate)) {
-        return candidate;
+        return {
+            ...candidate,
+            notesByClipId: Object.fromEntries(
+                Object.entries(candidate.notesByClipId).map(([clipId, notes]) => [clipId, notes.map(cloneMidiNote)])
+            ),
+        };
     }
 
     // A value degraded through normalization keeps its stamp only when the

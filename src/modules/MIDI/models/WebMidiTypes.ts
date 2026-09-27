@@ -86,6 +86,10 @@ export type ActiveNoteData = {
     instrumentTrackId: string;
     /** Stable runtime identity carried through the Yeast note-on/note-off pair. */
     noteInstanceId?: string;
+    /** Transformed pitches actually voiced by Yeast, for pending release ownership. */
+    yeastVoicedNotes?: Set<number>;
+    /** Device instance that received the transformed pitches. */
+    yeastInstrumentDeviceId?: string;
     pressure?: number;
     slide?: number;
     pitchBend?: number;

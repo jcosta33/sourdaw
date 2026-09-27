@@ -19,7 +19,7 @@ import { recordHeldNoteExpression } from './recordHeldNoteExpression';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 import { routePedalToBodies } from './routePedalToBodies';
 
 const CC_CHANNEL_VOLUME = 7;
@@ -28,7 +28,12 @@ const PAN_RANGE = 50;
 
 export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        function handleWebMidiCC(channel: number, cc: number, value: number, timeStamp?: number): void {
+        function handleWebMidiCC(
+            channel: number,
+            cc: number,
+            value: number,
+            timeStamp?: number | CapturedInputEventTime
+        ): void {
             const learnState = deps.getMidiLearnState();
             if (learnState?.isLearning && learnState.learningTarget) {
                 deps.completeMidiLearn(channel, cc);
