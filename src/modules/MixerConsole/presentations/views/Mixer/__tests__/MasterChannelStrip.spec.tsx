@@ -5,6 +5,21 @@ import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
+import type { AppAction } from '#/utils/handlerContract';
+
+/**
+ * The action entry the fake stacks push when a write "records": shaped like
+ * `ActionUndoEntry` where it matters, since production reads it through
+ * `isActionEntry` and compares its `action` against the dispatched object by
+ * reference — which is how `createUndoEntry` stores it.
+ */
+type RecordedActionEntry = { kind: 'action'; action: AppAction };
+
+const makeRecordedEntry = (action: AppAction): RecordedActionEntry => ({
+    kind: 'action',
+    action,
+});
+
 // Mock hooks
 const storeMocks = vi.hoisted(() => ({
     useStore: vi.fn<() => { masterGain: number }>(() => ({
@@ -37,7 +52,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 }));
 
 const commandMocks = vi.hoisted(() => ({
-    executeUserAppAction: vi.fn(() => Promise.resolve()),
+    executeUserAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -47,10 +62,12 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 
 const undoStoreMocks = vi.hoisted(() => ({
     // The undo stack top the strip's record gate reads. A stable sentinel is
-    // what makes "nothing recorded" observable: the gate compares stack-top
-    // identity across the dispatch, so the sentinel must hold its identity
-    // while the stack stands still and be replaced when a write records.
-    stackTop: undefined as { readonly marker: string } | undefined,
+    // what makes "nothing recorded" observable: the gate arms only when the top
+    // is the action entry THIS dispatch recorded — the same object the dispatch
+    // mock received — so the sentinel must hold its identity while the stack
+    // stands still, and a recording write must replace it with an action entry
+    // whose `action` is that object.
+    stackTop: undefined as { readonly marker: string } | RecordedActionEntry | undefined,
 }));
 
 vi.mock('#/modules/Command/stores', async (importOriginal) => ({
@@ -667,11 +684,13 @@ describe('MasterChannelStrip', () => {
 
         // The groove tap settle really changes the master gain, so its dispatch
         // records an undo entry. The dispatch mock is where the test models that
-        // recording — moving the stack top the record gate reads — because the
-        // transport store mock never moves. Without it the gate correctly stays
-        // cold and the reset below would not coalesce with anything.
-        commandMocks.executeUserAppAction.mockImplementationOnce(() => {
-            undoStoreMocks.stackTop = { marker: 'recorded-settle' };
+        // recording — pushing an action entry whose `action` IS the object this
+        // dispatch received, the way `createUndoEntry` stores it by reference —
+        // because the transport store mock never moves. Without it the gate
+        // correctly stays cold and the reset below would not coalesce with
+        // anything.
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
             return Promise.resolve();
         });
 
@@ -706,9 +725,16 @@ describe('MasterChannelStrip', () => {
         undoStoreMocks.stackTop = { marker: 'older-entry' };
         let resolveSettleDispatch = (): void => undefined;
         commandMocks.executeUserAppAction.mockImplementationOnce(
-            () =>
+            (action) =>
                 new Promise<void>((resolve) => {
-                    resolveSettleDispatch = resolve;
+                    // The write records as the dispatch resolves: the fake
+                    // stack top becomes an action entry whose `action` IS this
+                    // dispatch's object — what `createUndoEntry` stores by
+                    // reference in production.
+                    resolveSettleDispatch = () => {
+                        undoStoreMocks.stackTop = makeRecordedEntry(action);
+                        resolve();
+                    };
                 })
         );
 
@@ -726,10 +752,10 @@ describe('MasterChannelStrip', () => {
         });
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
 
-        // The settle's write lands and records: the undo stack's top moves.
+        // The settle's write lands and records: the undo stack's top moves to
+        // this settle's own entry.
         await act(async () => {
             resolveSettleDispatch();
-            undoStoreMocks.stackTop = { marker: 'recorded-settle' };
             await Promise.resolve();
             await Promise.resolve();
         });
@@ -785,6 +811,67 @@ describe('MasterChannelStrip', () => {
 
         // The double-click reset, inside the window: with nothing recorded the
         // gate must stay cold and the reset must be its own undo step.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '1' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 1, expectedPercent: 80 },
+        });
+    });
+
+    it('does not arm coalescing when a foreign setMasterGain records inside the held-open settle window', async () => {
+        // The demonstrated false arm: the settle's dispatch await is held open
+        // by the persistence barrier and the storage transaction, and a FOREIGN
+        // setMasterGain — an action-bridge set or an Auto-Fix Mix move — lands
+        // and records inside that window. The stack top moves, but it is not
+        // this settle's entry, so the reference check must leave the stamp
+        // cold: arming here would let one Cmd+Z revert the foreign edit
+        // together with the user's reset.
+        undoStoreMocks.stackTop = { marker: 'older-entry' };
+        let resolveSettleDispatch = (): void => undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSettleDispatch = resolve;
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        // Groove tap: transient opens the gesture, settle dispatches and is
+        // held open the way a persistence barrier holds the snapshot write.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // While the settle's dispatch is still open, a foreign setMasterGain
+        // lands and records: the top moves, to an entry that is not this
+        // settle's.
+        await act(async () => {
+            undoStoreMocks.stackTop = makeRecordedEntry({
+                type: 'setMasterGain',
+                payload: { gain: 0.25, expectedPercent: 80 },
+            });
+        });
+
+        // The settle resolves having recorded nothing — its value matched the
+        // store, so the zero-change handler swallowed it.
+        await act(async () => {
+            resolveSettleDispatch();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset inside the window must be its own undo step.
         await act(async () => {
             fireEvent.change(fader, { target: { value: '1' } });
             await Promise.resolve();

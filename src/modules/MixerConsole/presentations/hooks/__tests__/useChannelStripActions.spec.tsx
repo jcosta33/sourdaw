@@ -5,7 +5,21 @@ import { trackStore } from '#/modules/Arrangement/stores';
 
 import { useChannelStripActions } from '../useChannelStripActions';
 
+import type { AppAction } from '#/utils/handlerContract';
 import type { Track } from '../../../models/TrackViewTypes';
+
+/**
+ * The action entry the fake stack pushes when a write "records": shaped like
+ * `ActionUndoEntry` where it matters, since the hook reads it through
+ * `isActionEntry` and compares its `action` against the dispatched object by
+ * reference — which is how `createUndoEntry` stores it.
+ */
+type RecordedActionEntry = { kind: 'action'; action: AppAction };
+
+const makeRecordedEntry = (action: AppAction): RecordedActionEntry => ({
+    kind: 'action',
+    action,
+});
 
 const mocks = vi.hoisted(() => ({
     muteTrack: vi.fn(),
@@ -17,8 +31,8 @@ const mocks = vi.hoisted(() => ({
     setTrackGain: vi.fn(),
     setTrackPan: vi.fn(),
     setTrackColor: vi.fn(),
-    executeAppAction: vi.fn(),
-    executeUserAppAction: vi.fn(),
+    executeAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
+    executeUserAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     toggleVcaMembership: vi.fn(),
@@ -28,10 +42,12 @@ const mocks = vi.hoisted(() => ({
     confirmUser: vi.fn(),
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     // The undo stack top the strip's record gate reads. A stable sentinel is
-    // what makes "nothing recorded" observable: the gate compares stack-top
-    // identity across the dispatch, so the sentinel must hold its identity
-    // while the stack stands still and be replaced when a write records.
-    undoStackTop: undefined as { readonly marker: string } | undefined,
+    // what makes "nothing recorded" observable: the gate arms only when the top
+    // is the action entry THIS dispatch recorded — the same object the dispatch
+    // mock received — so the sentinel must hold its identity while the stack
+    // stands still, and a recording write must replace it with an action entry
+    // whose `action` is that object.
+    undoStackTop: undefined as { readonly marker: string } | RecordedActionEntry | undefined,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -385,21 +401,28 @@ describe('useChannelStripActions', () => {
 
     /**
      * The reset's coalescing is record-gated, and this is the recording
-     * direction: the settle's commit put a new entry on the undo stack —
-     * observed as a moved stack top, which is how the hook itself reads it —
-     * so the double-click reset that follows inside the window must dispatch
-     * with `coalesceWithPrevious` and become one undo step with the settle.
-     * The mocked dispatch is held open so the stack top moves exactly when the
-     * write lands; the commit-time decision, serialized behind the settle, must
-     * then already see the new top.
+     * direction: the settle's commit put the entry it recorded on top of the
+     * undo stack, so the double-click reset that follows inside the window
+     * must dispatch with `coalesceWithPrevious` and become one undo step with
+     * the settle. The fake stack records the way `createUndoEntry` does — the
+     * entry's `action` IS the object the dispatch received — and the mocked
+     * dispatch is held open so the top moves exactly when the write lands;
+     * the commit-time decision, serialized behind the settle, must then
+     * already see the settle's own entry.
      */
     it('arms coalescing for the next discrete commit when the settled gesture recorded an undo entry', async () => {
         mocks.undoStackTop = { marker: 'older-entry' };
         let resolveSettleCommit = (): void => undefined;
         mocks.executeAppAction.mockImplementationOnce(
-            () =>
+            (action) =>
                 new Promise<void>((resolve) => {
-                    resolveSettleCommit = resolve;
+                    // The write records as the commit resolves: the fake stack
+                    // top becomes an action entry whose `action` IS this
+                    // dispatch's object.
+                    resolveSettleCommit = () => {
+                        mocks.undoStackTop = makeRecordedEntry(action);
+                        resolve();
+                    };
                 })
         );
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
@@ -410,10 +433,10 @@ describe('useChannelStripActions', () => {
         });
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
 
-        // The settle's write lands and records: the undo stack's top moves.
+        // The settle's write lands and records: the undo stack's top moves to
+        // this settle's own entry.
         await act(async () => {
             resolveSettleCommit();
-            mocks.undoStackTop = { marker: 'recorded-settle' };
             await Promise.resolve();
             await Promise.resolve();
         });
@@ -473,6 +496,63 @@ describe('useChannelStripActions', () => {
         });
 
         // No second argument: the reset joins nothing.
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 1, expectedGain: 0.8 },
+        });
+    });
+
+    /**
+     * The demonstrated false arm: the settle's dispatch await is held open by
+     * the persistence barrier and the storage transaction, and a FOREIGN
+     * setTrackGain — same track, a different hand or automation pass — lands
+     * and records inside that window. The stack top moves, but it is not this
+     * settle's entry, so the reference check must leave the stamp cold: arming
+     * here would let one Cmd+Z revert the foreign edit together with the
+     * user's reset.
+     */
+    it('does not arm coalescing when a foreign same-track setTrackGain records inside the held-open settle window', async () => {
+        mocks.undoStackTop = { marker: 'older-entry' };
+        let resolveSettleCommit = (): void => undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSettleCommit = resolve;
+                })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.42, true);
+            result.current.setGain(0.31, false);
+        });
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+
+        // While the settle's commit is still open, a foreign same-track
+        // setTrackGain lands and records: the top moves, to an entry that is
+        // not this settle's.
+        await act(async () => {
+            mocks.undoStackTop = makeRecordedEntry({
+                type: 'setTrackGain',
+                payload: { trackId: 'track-1', gain: 0.25, expectedGain: 0.8 },
+            });
+        });
+
+        // The settle resolves having recorded nothing — its value matched the
+        // store, so the zero-change handler swallowed it.
+        await act(async () => {
+            resolveSettleCommit();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset inside the window must be its own undo step.
+        await act(async () => {
+            result.current.setGain(1, false);
+            await Promise.resolve();
+        });
+
+        // No second argument: the reset joins nothing, foreign or otherwise.
         expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
             type: 'setTrackGain',
             payload: { trackId: 'track-1', gain: 1, expectedGain: 0.8 },

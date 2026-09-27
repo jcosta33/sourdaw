@@ -13,8 +13,9 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
-import { undoHistoryStore } from '#/modules/Command/stores';
+import { isActionEntry, undoHistoryStore } from '#/modules/Command/stores';
 import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -236,10 +237,9 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
      * The coalescing decision runs at commit time, not at event time: the
      * pending-commit chain serializes it behind the settle it would merge
      * with, so that settle's stamp — if it recorded anything — is already
-     * visible here. The stamp itself is written only when the dispatch left a
-     * new entry on the undo stack, read as a changed stack top; a no-op or
-     * conflicted settle records nothing and must not arm the reset that
-     * follows (#4616).
+     * visible here. The stamp itself is written only when the dispatch left
+     * the entry it recorded on top of the undo stack; a no-op or conflicted
+     * settle records nothing and must not arm the reset that follows (#4616).
      */
     const commitGain = async (value: number, token: number, wasGestureSettle: boolean): Promise<void> => {
         let coalesceWithPrevious = false;
@@ -250,23 +250,23 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedGain = currentTrack?.gain ?? track.gain;
-            const stackTopBefore = undoHistoryStore.value?.past.at(-1);
+            const action: AppAction = {
+                type: 'setTrackGain',
+                payload: { trackId: track.id, gain: value, expectedGain },
+            };
             const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
             if (options) {
-                await executeAppAction(
-                    {
-                        type: 'setTrackGain',
-                        payload: { trackId: track.id, gain: value, expectedGain },
-                    },
-                    options
-                );
+                await executeAppAction(action, options);
             } else {
-                await executeAppAction({
-                    type: 'setTrackGain',
-                    payload: { trackId: track.id, gain: value, expectedGain },
-                });
+                await executeAppAction(action);
             }
-            if (undoHistoryStore.value?.past.at(-1) !== stackTopBefore) {
+            // Arm only when the stack top is the entry THIS dispatch recorded —
+            // the undo entry stores the dispatched action object by reference.
+            // A foreign recording landing inside the held-open await (the
+            // persistence barrier can hold it for real time) must not arm the
+            // reset, even when it targets the same track.
+            const stackTop = undoHistoryStore.value?.past.at(-1);
+            if (stackTop !== undefined && isActionEntry(stackTop) && stackTop.action === action) {
                 lastGainSettleTime.current = performance.now();
             }
         } catch (error) {
@@ -291,23 +291,21 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         try {
             const currentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
             const expectedPan = currentTrack?.pan ?? track.pan;
-            const stackTopBefore = undoHistoryStore.value?.past.at(-1);
+            const action: AppAction = {
+                type: 'setTrackPan',
+                payload: { trackId: track.id, pan: value, expectedPan },
+            };
             const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
             if (options) {
-                await executeAppAction(
-                    {
-                        type: 'setTrackPan',
-                        payload: { trackId: track.id, pan: value, expectedPan },
-                    },
-                    options
-                );
+                await executeAppAction(action, options);
             } else {
-                await executeAppAction({
-                    type: 'setTrackPan',
-                    payload: { trackId: track.id, pan: value, expectedPan },
-                });
+                await executeAppAction(action);
             }
-            if (undoHistoryStore.value?.past.at(-1) !== stackTopBefore) {
+            // Same rule as `commitGain`: arm only on the entry this dispatch
+            // recorded, never on a foreign recording that slipped in while the
+            // await was held open.
+            const stackTop = undoHistoryStore.value?.past.at(-1);
+            if (stackTop !== undefined && isActionEntry(stackTop) && stackTop.action === action) {
                 lastPanSettleTime.current = performance.now();
             }
         } catch (error) {

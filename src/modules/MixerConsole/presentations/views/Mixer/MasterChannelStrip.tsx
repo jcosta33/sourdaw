@@ -4,11 +4,12 @@ import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { undoHistoryStore } from '#/modules/Command/stores';
+import { isActionEntry, undoHistoryStore } from '#/modules/Command/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { type AppAction } from '#/utils/handlerContract';
 import { cn } from '#/utils/Styles/cn';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
@@ -25,25 +26,12 @@ function restoreEngineFromProjectTruth(): void {
     setMasterGain(storeMasterGain, true);
 }
 
-async function dispatchMasterGainAction(
-    value: number,
-    expectedPercent: number,
-    coalesceWithPrevious?: boolean
-): Promise<void> {
+async function dispatchMasterGainAction(action: AppAction, coalesceWithPrevious?: boolean): Promise<void> {
     const options = coalesceWithPrevious ? { coalesceWithPrevious: true } : undefined;
     if (options) {
-        await executeUserAppAction(
-            {
-                type: 'setMasterGain',
-                payload: { gain: value, expectedPercent },
-            },
-            options
-        );
+        await executeUserAppAction(action, options);
     } else {
-        await executeUserAppAction({
-            type: 'setMasterGain',
-            payload: { gain: value, expectedPercent },
-        });
+        await executeUserAppAction(action);
     }
 }
 
@@ -135,9 +123,15 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             if (expectedPercent === undefined) {
                 return;
             }
-            const stackTopBefore = undoHistoryStore.value?.past.at(-1);
-            await dispatchMasterGainAction(value, expectedPercent, coalesceWithPrevious);
-            if (undoHistoryStore.value?.past.at(-1) !== stackTopBefore) {
+            const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
+            await dispatchMasterGainAction(action, coalesceWithPrevious);
+            // Arm only when the stack top is the entry THIS dispatch recorded —
+            // for this action class the undo entry stores the dispatched action
+            // object by reference. A foreign recording landing inside the
+            // held-open await (the persistence barrier can hold it for real
+            // time) must not arm the reset.
+            const stackTop = undoHistoryStore.value?.past.at(-1);
+            if (stackTop !== undefined && isActionEntry(stackTop) && stackTop.action === action) {
                 lastGrooveSettleTime.current = performance.now();
             }
         } catch (error) {
