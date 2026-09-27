@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:9b0b1ba21e3141b7681337f502c9e593740b0bf0d6b0d5bfd7c7458fb2d8d1b9
+// @wasm-bindgen-dts crate-source: sha256:deb6c482d253a72e346aabf75df9e9aa09e0604c5396ac51a2bc35a54b53cc5c
 /* tslint:disable */
 /* eslint-disable */
 
@@ -913,6 +913,12 @@ export class ToasterInstance {
      */
     set_pad_param(pad: number, name: string, value: number): void;
     /**
+     * Set a per-pad parameter without string marshaling. The scheduled-hit
+     * path calls this from inside `process()`, where the string-keyed glue
+     * would heap-allocate per locked parameter per hit (#4633).
+     */
+    set_pad_param_by_id(pad: number, param_id: number, value: number): void;
+    /**
      * Set a global parameter (master_gain, reverb_*, delay_*).
      */
     set_param(name: string, value: number): void;
@@ -1076,10 +1082,10 @@ export interface InitOutput {
     readonly toasterinstance_reset_pad_dry_routing: (a: number) => void;
     readonly toasterinstance_set_pad_dry_routed: (a: number, b: number, c: number) => void;
     readonly toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly toasterinstance_set_pad_param_by_id: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
-    readonly init_panic_hook: () => void;
     readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
     readonly kneadinstance_get_f0: (a: number) => number;
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;
@@ -1094,6 +1100,7 @@ export interface InitOutput {
     readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
     readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
     readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly fermenterinstance_active_voices: (a: number) => number;

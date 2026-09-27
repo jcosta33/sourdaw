@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../../models/ToasterAutomationParams';
+import { TOASTER_PAD_PARAM_IDS } from '../../models/ToasterPadParamIds';
+
+/** The declared id for a pad parameter name; a missing entry fails the spec loudly. */
+function padParamId(name: string): number {
+    const id = TOASTER_PAD_PARAM_IDS[name];
+    if (id === undefined) {
+        throw new TypeError(`TOASTER_PAD_PARAM_IDS is missing ${name}`);
+    }
+    return id;
+}
 
 // --- Worklet global scope shims -------------------------------------------
 const registry = new Map<string, new (...args: unknown[]) => ToasterProcessorLike>();
@@ -33,6 +43,7 @@ vi.stubGlobal('currentFrame', 0);
 const noteOffCalls: number[] = [];
 const noteOnCalls: number[] = [];
 const padParamCalls: Array<[number, string, number]> = [];
+const padParamByIdCalls: Array<[number, number, number]> = [];
 const padDryRoutedCalls: Array<[number, boolean]> = [];
 const paramByIdCalls: Array<[number, number]> = [];
 const kitParamCalls: Array<[string, number]> = [];
@@ -67,6 +78,9 @@ class ToasterInstanceMock {
     }
     set_pad_param(pad: number, name: string, value: number): void {
         padParamCalls.push([pad, name, value]);
+    }
+    set_pad_param_by_id(pad: number, paramId: number, value: number): void {
+        padParamByIdCalls.push([pad, paramId, value]);
     }
     set_pad_dry_routed(pad: number, routed: boolean): void {
         padDryRoutedCalls.push([pad, routed]);
@@ -131,6 +145,7 @@ describe('ToasterProcessor allNotesOff', () => {
         noteOffCalls.length = 0;
         noteOnCalls.length = 0;
         padParamCalls.length = 0;
+        padParamByIdCalls.length = 0;
         padDryRoutedCalls.length = 0;
         paramByIdCalls.length = 0;
         padZeroDryRouted = false;
@@ -226,30 +241,32 @@ describe('ToasterProcessor allNotesOff', () => {
     it('dispatches a scheduled hit and its locks only when the audio frame arrives', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        // Locks arrive as numeric TOASTER_PAD_PARAM_IDS entries — the producer
+        // translated the names on the main thread (#4633).
         send(proc, {
             type: 'scheduledHit',
             pad: 3,
             velocity: 100,
             sampleFrame: 10_000,
             padParams: [
-                { name: 'tone', value: 0.7 },
-                { name: 'engineType', value: 2 },
+                { id: padParamId('tone'), value: 0.7 },
+                { id: padParamId('engineType'), value: 2 },
             ],
             restoreEngineType: 0,
         });
 
         expect(noteOnCalls).toEqual([]);
-        expect(padParamCalls).toEqual([]);
+        expect(padParamByIdCalls).toEqual([]);
 
         vi.stubGlobal('currentFrame', 9_900);
         const output = [new Float32Array(128), new Float32Array(128)];
         proc.process([[]], [output]);
 
         expect(noteOnCalls).toEqual([3]);
-        expect(padParamCalls).toEqual([
-            [3, 'tone', 0.7],
-            [3, 'engine_type', 2],
-            [3, 'engine_type', 0],
+        expect(padParamByIdCalls).toEqual([
+            [3, padParamId('tone'), 0.7],
+            [3, padParamId('engineType'), 2],
+            [3, padParamId('engineType'), 0],
         ]);
         vi.stubGlobal('currentFrame', 0);
     });
@@ -444,6 +461,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         noteOnCalls.length = 0;
         noteOffCalls.length = 0;
         padParamCalls.length = 0;
+        padParamByIdCalls.length = 0;
         padDryRoutedCalls.length = 0;
         padZeroDryRouted = false;
         toasterInitShouldThrow = null;
@@ -535,7 +553,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(noteOffCalls).toContain(4);
     });
 
-    it('scheduledHit with restoreEngineType omitted does not call set_pad_param a second time', async () => {
+    it('scheduledHit with restoreEngineType omitted does not write the pad engine a second time', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
@@ -544,11 +562,11 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
             pad: 1,
             velocity: 0.9,
             sampleFrame: 1000,
-            padParams: [{ name: 'volume', value: 0.5 }],
+            padParams: [{ id: padParamId('volume'), value: 0.5 }],
             // restoreEngineType deliberately omitted → undefined branch.
         });
         expect(noteOnCalls).toContain(1);
-        expect(padParamCalls).toContainEqual([1, 'volume', 0.5]);
+        expect(padParamByIdCalls).toEqual([[1, padParamId('volume'), 0.5]]);
     });
 
     it('resetPadDryRouting clears all per-pad dry routing', async () => {
@@ -779,21 +797,23 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
-    // ── scheduledHit unmapped padParam fallback (line 273) ───────────────────
+    // ── scheduledHit padParam id passthrough (line 273) ─────────────────────
 
-    it('forwards an unmapped padParam name as-is during a scheduled hit', async () => {
+    it('forwards a scheduled hit’s pad param ids verbatim, including undeclared ones', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
+        // Name-to-id translation — including dropping unknown names — is the
+        // main thread's job (#4633); the worklet passes ids through untouched
+        // and Rust's `set_pad_param_by_id` fall-through ignores undeclared ones.
         send(proc, {
             type: 'scheduledHit',
             pad: 3,
             velocity: 0.8,
             sampleFrame: 1000,
-            padParams: [{ name: 'unknownPad', value: 0.42 }],
+            padParams: [{ id: 999, value: 0.42 }],
         });
-        // PAD_PARAM_MAP has no 'unknownPad' ⇒ forwarded verbatim.
-        expect(padParamCalls).toContainEqual([3, 'unknownPad', 0.42]);
+        expect(padParamByIdCalls).toContainEqual([3, 999, 0.42]);
         vi.stubGlobal('currentFrame', 0);
     });
 

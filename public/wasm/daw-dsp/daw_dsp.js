@@ -2033,6 +2033,17 @@ export class ToasterInstance {
         wasm.toasterinstance_set_pad_param(this.__wbg_ptr, pad, ptr0, len0, value);
     }
     /**
+     * Set a per-pad parameter without string marshaling. The scheduled-hit
+     * path calls this from inside `process()`, where the string-keyed glue
+     * would heap-allocate per locked parameter per hit (#4633).
+     * @param {number} pad
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_pad_param_by_id(pad, param_id, value) {
+        wasm.toasterinstance_set_pad_param_by_id(this.__wbg_ptr, pad, param_id, value);
+    }
+    /**
      * Set a global parameter (master_gain, reverb_*, delay_*).
      * @param {string} name
      * @param {number} value
