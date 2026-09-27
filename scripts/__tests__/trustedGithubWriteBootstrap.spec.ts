@@ -803,13 +803,81 @@ describe('snapshotImportSpecifiers', () => {
                 'class H { loader = require; }\nclass C { constructor(readonly H) { const { loader } = new H(); loader(spec); } }'
             )
         ).toEqual([]);
-        // An expression-bodied arrow scopes its parameter to the arrow, so it does not shadow the class
-        // outside it.
+        // An expression-bodied arrow scopes its parameter to the arrow: a read-back inside its body sees
+        // the parameter, and one outside it reaches the class.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class H { loader = require; }\nconst f = (H) => H;\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => ({ loader } = new H());\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nconst f = (H) => (() => ({ loader } = new H()))();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A `var` in a `for` header hoists to its function, so a read-back before or after the loop
+        // reaches the loop variable rather than the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { for (var H of xs) {} const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { const { loader } = new H(); loader(spec); for (var H of xs) {} }'
+            )
+        ).toEqual([]);
+        // A binding pattern in a `for`/`for await` header takes the loop's scope, so a read-back after it
+        // reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const { H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const [H] of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const { x: H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor await (const { H } of xs) {}\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // An unbraced loop body still owns its binding, so a read-back after it reaches the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfor (const H of xs) log(H);\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A `using` declaration binds the class name to something other than the class.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = require; }\nfunction f() { using H = other; const { loader } = new H(); loader(spec); }'
+            )
+        ).toEqual([]);
+        // A decorated class declaration and a namespaced member decorator stay undecided: the decorator
+        // hides the class or field from the scan, so neither read-back reaches a loader.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                '@dec class H { loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { @ns.dec loader = require; }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
     });
 
     /**

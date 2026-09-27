@@ -1736,9 +1736,11 @@ function resolveNameToClass(
 }
 
 /**
- * The scope chain a `const`/`let`/`var` loop-header binding belongs to — the loop's own body — or
- * `undefined` when `keywordIndex` does not declare the variable of a `for`/`for await` header. A loop
- * variable binds only inside the loop, so it must not shadow the class in the enclosing block.
+ * The scope chain a `const`/`let` loop-header binding belongs to — the loop's own body — or `undefined`
+ * when `keywordIndex` does not declare the variable of a `for`/`for await` header. A loop variable binds
+ * only inside the loop, so it must not shadow the class in the enclosing block. A braced body scopes to
+ * its `{`; an unbraced body has none, so the header's own opening parenthesis stands in as a synthetic
+ * scope the enclosing chain never contains.
  */
 function loopBindingScopeChain(source: string, keywordIndex: number): number[] | undefined {
     const before = previousSignificantCharacter(source, keywordIndex - 1);
@@ -1765,7 +1767,10 @@ function loopBindingScopeChain(source: string, keywordIndex: number): number[] |
         return undefined;
     }
     const body = skipWhitespace(source, close);
-    return source[body] !== '{' ? undefined : enclosingScopeChain(source, body + 1);
+    if (source[body] === '{') {
+        return enclosingScopeChain(source, body + 1);
+    }
+    return [...enclosingScopeChain(source, keywordIndex), before];
 }
 
 /**
@@ -1781,7 +1786,7 @@ function readLocalBindingAt(
     classFields: ReadonlyMap<number, ClassFieldsEntry>,
     localBindings: ReadonlyMap<string, readonly LocalInstance[]>
 ): { name: string; classRef: number | undefined; scopeChain: number[]; end: number } | undefined {
-    const keyword = ['const', 'let', 'var'].find((candidate) => isKeywordAt(source, index, candidate));
+    const keyword = ['const', 'let', 'var', 'using'].find((candidate) => isKeywordAt(source, index, candidate));
     if (keyword === undefined) {
         return undefined;
     }
@@ -1829,7 +1834,12 @@ function readLocalBindingAt(
     if (!declaresClassName(classFields, name)) {
         return undefined;
     }
-    const chain = loopBindingScopeChain(source, index) ?? scopeChain();
+    // `const`/`let` loop-header bindings take the loop's scope; `var` hoists to its function and `using`
+    // binds in the block, so neither adopts the loop scope.
+    const chain =
+        keyword === 'const' || keyword === 'let'
+            ? (loopBindingScopeChain(source, index) ?? scopeChain())
+            : scopeChain();
     return { name, classRef: undefined, scopeChain: chain, end: nameStart + name.length };
 }
 
@@ -1952,6 +1962,16 @@ function destructuredBindingScopeChain(source: string, index: number): number[] 
     const character = source.charAt(beforeOpen);
     if (character === '(' || character === ',') {
         return functionBodyScopeChain(source, index);
+    }
+    // A declaration keyword (`const`/`let`/`var`/`using`) before the pattern may sit in a `for` header,
+    // where the pattern's entries bind to the loop's scope like a plain loop variable.
+    if (isIdentifierContinue(character)) {
+        const keyword = readWordBackward(source, beforeOpen);
+        const keywordStart = beforeOpen - keyword.length + 1;
+        const loop = loopBindingScopeChain(source, keywordStart);
+        if (loop !== undefined) {
+            return loop;
+        }
     }
     return enclosingScopeChain(source, open - 1);
 }
@@ -3204,21 +3224,114 @@ function classHeritageName(source: string, open: number): string | undefined {
 }
 
 /**
+ * The parameter-list opener of the innermost expression-bodied arrow whose body contains `index`, or
+ * `undefined` when `index` sits in no such body. The walk skips balanced delimiters, strings, templates,
+ * and comments and stops at a `;` or `,` at depth zero, so a position after the arrow's statement or
+ * expression does not read as inside its body. A parenthesised parameter list returns its `(`; a single
+ * identifier returns its start.
+ */
+function enclosingExpressionBodiedArrowOpen(source: string, index: number): number | undefined {
+    let cursor = index - 1;
+    let depth = 0;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            return undefined;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/') {
+            const commentOpen = cursor >= 1 && source[cursor - 1] === '*' ? source.lastIndexOf('/*', cursor - 1) : -1;
+            if (commentOpen !== -1) {
+                cursor = commentOpen - 1;
+                continue;
+            }
+            const lineComment = lineCommentOpenBefore(source, cursor);
+            if (lineComment !== undefined) {
+                cursor = lineComment - 1;
+                continue;
+            }
+            const regexOpen = regexLiteralOpenBackward(source, cursor);
+            if (regexOpen !== undefined) {
+                cursor = regexOpen - 1;
+                continue;
+            }
+        }
+        if (character === '"' || character === "'") {
+            const quoteOpen = skipQuotedBackward(source, cursor, character);
+            cursor = quoteOpen === undefined ? cursor - 1 : quoteOpen - 1;
+            continue;
+        }
+        if (character === '`') {
+            const templateOpen = skipTemplateBackward(source, cursor);
+            cursor = templateOpen === undefined ? cursor - 1 : templateOpen - 1;
+            continue;
+        }
+        if (character === ')' || character === '}' || character === ']') {
+            depth += 1;
+            cursor -= 1;
+            continue;
+        }
+        if (character === '(' || character === '{' || character === '[') {
+            if (depth === 0) {
+                cursor -= 1;
+                continue;
+            }
+            depth -= 1;
+            cursor -= 1;
+            continue;
+        }
+        if (depth === 0 && (character === ';' || character === ',')) {
+            return undefined;
+        }
+        if (character === '>' && source[cursor - 1] === '=') {
+            if (depth === 0) {
+                const equals = cursor - 1;
+                const before = previousSignificantCharacter(source, equals - 1);
+                if (before === undefined) {
+                    return undefined;
+                }
+                if (source.charAt(before) === ')') {
+                    return matchingOpenDelimiterBackward(source, before, '(', ')');
+                }
+                if (isIdentifierContinue(source.charAt(before))) {
+                    const name = readWordBackward(source, before);
+                    return before - name.length + 1;
+                }
+                return undefined;
+            }
+            cursor -= 1;
+            continue;
+        }
+        cursor -= 1;
+    }
+    return undefined;
+}
+
+/**
  * The statement scopes that enclose `index`, outermost first, as the indices of the enclosing braces
- * that are not class, interface, or type bodies. Class-like bodies are skipped because a class named
- * inside one is not reachable by bare name outside it. The chain is empty at top level, and a deeper
- * position extends an enclosing position's chain, so a name resolves to the declaration whose chain is
- * the longest prefix of the position's chain.
+ * that are not class, interface, or type bodies, with the parameter-list opener of each enclosing
+ * expression-bodied arrow interleaved so an arrow parameter binds inside its own body. Class-like bodies
+ * are skipped because a class named inside one is not reachable by bare name outside it. The chain is
+ * empty at top level, and a deeper position extends an enclosing position's chain, so a name resolves to
+ * the declaration whose chain is the longest prefix of the position's chain.
  */
 function enclosingScopeChain(source: string, index: number): number[] {
     const scopes: number[] = [];
     let cursor = index;
     while (cursor >= 0) {
-        const open = enclosingBraceOpen(source, cursor);
+        const braceOpen = enclosingBraceOpen(source, cursor);
+        const arrowOpen = enclosingExpressionBodiedArrowOpen(source, cursor);
+        let open: number | undefined = arrowOpen;
+        if (braceOpen !== undefined && (open === undefined || braceOpen > open)) {
+            open = braceOpen;
+        }
         if (open === undefined) {
             break;
         }
-        if (classLikeBodyOpenBefore(source, open)) {
+        if (open === braceOpen && classLikeBodyOpenBefore(source, open)) {
             cursor = open - 1;
             continue;
         }
