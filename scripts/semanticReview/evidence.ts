@@ -15,7 +15,9 @@
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), a collected spec whose content imports a closure member or names one of those workflow
- * files, or a source such a spec covers and whose unit will be planned — first, then a changed file
+ * files, or a source such a spec covers and whose unit will be planned — ordered at the larger of its
+ * own side figure and that spec's figure, so the pair sits at the larger member's size and stays ahead
+ * of its own spec without outranking material unrelated to it — first, then a changed file
  * whose unit the planner will plan and whose rules declare a contract, decision or registration token,
  * then each contract-context region the caller supplies, then bulk sides. The ranking admits the
  * change's own contract material ahead of the context documents, and attempts a planned
@@ -793,7 +795,7 @@ export function collectEvidence(input: {
         input.mergeBaseSha,
         input.headSha
     );
-    const specCovered = specCoveredSources(assessed, contents);
+    const specCovered = specCoveredSources(assessed, contents, bytesBySide);
     const credentialExcludedPaths = credentialShapedPaths(assessed, contents, hunksByPath);
     // The one predicate the charge and the order both read: the files whose own path the screen keeps,
     // whose rules admit them, and which carry a side admission mints a region for.

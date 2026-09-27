@@ -59,6 +59,36 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-09-27 — a covered-source promotion that outranked every unrelated collected spec (escaped via PR #4826; measured in review of that head; fix handed to #4846)
+
+PR #4826, the change that closed #4824, promoted a source a contract-carrying spec covers into the
+contract tier so the spec could not outrank the source it tests. It gave that source the
+non-spec-before-spec rank at the front of the tier, ahead of every collected spec. The order decides
+which regions the collector's total withholds, so on the production `local` profile a change whose
+collected specs and covered sources together exceed the total spent the room on the covered sources:
+on a 13-path fixture of added, deleted, renamed, copied, credentialed and over-ceiling paths the
+filer measured 4 planned units and 16 references against the merge base `96504259b9`'s 9 units and
+18, excluding a deleted file's own before side, an over-ceiling file's own before side and a
+collected spec's unit as `no-admissible-evidence`. Disabling only the `specCovered` arm of
+`admissionTier` restored the merge base's units, so the promotion was the cause. The blind draw
+measured the reallocation and the approved head disclosed it as a limitation instead of reopening the
+ordering, so the defect reached `main`; at `ci` (1 MiB total) the two revisions' sets are identical,
+which is why the assessed diff never showed it.
+
+Blind spot: the review's stances attacked the promotion's own direction — a spec outranking the
+source it covers — and pinned that pairwise order, but none asked what the new rank does to the
+_unrelated_ units the same total has to carry. A rank added to fix one pairwise inversion is itself
+an ordering change, and under a binding total an ordering change is a plan-state change.
+
+Probe that would have caught it: drive `collectEvidence` and `planUnits` over the production `local`
+and `ci` limits on a change set wide enough that the total binds — several collected specs plus the
+sources they cover, with a deleted, an over-ceiling and a credentialed path — and compare the planned
+units, their own and context regions, the reasons and their sides against the merge base. Compare
+fixture against fixture, never aggregate counts, and treat a reallocation the probe measures as the
+finding rather than as a disclosed limitation. `scripts/semanticReview/__tests__/semanticReview.spec.ts`
+now pins the case (`ranks a covered source with the spec that covers it...`), and disabling the
+`specCovered` arm still has to redden the two pairwise cases.
+
 ### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
 
 PR #4775 added the trusted-snapshot scanner's declaration recognition — class, interface and type
