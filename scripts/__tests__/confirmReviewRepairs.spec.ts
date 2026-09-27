@@ -665,15 +665,25 @@ describe('confirmReviewRepairs', () => {
     it('should fail closed on a record bound to another head', () => {
         const threads = cleanThreads();
         const staleRecord = recordFor({ head: MOVED_HEAD });
-        const { port, mutations } = fakePort(HEAD, [
-            subjectThread({
-                replies: [
-                    threads[0]!.replies[0]!,
-                    { id: 9_005, body: authorRecordReply(staleRecord), authorNodeId: AUTHOR_BOT_NODE_ID },
-                ],
-            }),
-            threads[1]!,
-        ]);
+        // The recorded head sits outside the live history — a rewritten or diverged push — so the
+        // mismatch refusal stands; an ancestor recorded head would stay confirmable (#4589).
+        const divergedHistory = (commit: string, target: string) =>
+            (target === HEAD && commit !== MOVED_HEAD) ||
+            (commit === REVIEWED_HEAD && target === COMMIT) ||
+            (commit === PREDECESSOR && target === REVIEWED_HEAD);
+        const { port, mutations } = fakePort(
+            HEAD,
+            [
+                subjectThread({
+                    replies: [
+                        threads[0]!.replies[0]!,
+                        { id: 9_005, body: authorRecordReply(staleRecord), authorNodeId: AUTHOR_BOT_NODE_ID },
+                    ],
+                }),
+                threads[1]!,
+            ],
+            divergedHistory
+        );
         expect(() => confirmReviewRepairs(PR, HEAD, port)).toThrow(REFUSED_MESSAGE);
         expect(mutations).toEqual([]);
     });

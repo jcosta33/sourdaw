@@ -7,7 +7,9 @@
  * resolves exactly those review threads whose recorded repair validates against the live head — the
  * finding must be the thread's own root comment, the repairing commit must lie inside the reviewed
  * range (an ancestor of that head and not of the pull request's base), and every record must pass the
- * contract's validation. A thread the selection refuses makes
+ * contract's validation. A record survives pushes that follow its recording: its recorded head may be
+ * an ancestor of the live head while the recorded commit stays contained in it, and a re-record on a
+ * descending head supersedes the earlier record (#4589). A thread the selection refuses makes
  * the transaction refuse whole: one ambiguous thread means nothing is resolved, and a re-run is what
  * retries. A failure mid-pass stops at once and leaves earlier resolutions standing, so a re-run
  * ignores the resolved threads and completes the remainder.
