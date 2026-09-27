@@ -1,0 +1,21 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_ed5aa36a3ba357::t_77ec41ae868d02 1815-1840
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_ed5aa36a3ba357::t_9d5242b2722a4c 7,245-246,261-267,273-277,297-366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f9bf124b03f686cdf1623215d559da1960326951",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
