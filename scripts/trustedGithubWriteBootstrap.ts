@@ -1628,8 +1628,12 @@ function readLoaderMember(source: string, start: number, baseKind: LoaderBinding
  * The class field names a property, not a local, so it is remembered against its declaring class
  * rather than bound; only a shorthand entry destructured from an instance of that class reads it back.
  * A `static` field lives on the constructor, so a read-back from `new …()` must not bind it, and only
- * an instance field does. Every other position keeps the merge base's reading instead of turning an
- * ordinary assignment into a load.
+ * an instance field does. A field's value is read only where the name stands at the class body's own
+ * member position, so a parameter list, a binding pattern, and a field initializer it nests inside
+ * declare no field however their defaults read. A constructor parameter property is the one field a
+ * parameter list declares, and it is read through its modifier run rather than through the field
+ * branch. Every other position keeps the merge base's reading instead of turning an ordinary
+ * assignment into a load.
  */
 function readLoaderDefaultBindingAt(
     source: string,
@@ -1672,16 +1676,43 @@ function readLoaderDefaultBindingAt(
     }
     const binding = { name, kind: loader.kind, nameIndex: index, end: loader.end };
     const ownerOpen = classFieldOwnerOpen(source, index);
-    if (ownerOpen !== undefined) {
+    if (ownerOpen !== undefined && isClassMemberPosition(source, index, ownerOpen)) {
         return { ...binding, ownerOpen, static: isStaticClassField(source, index) };
     }
-    // A constructor parameter property is an own instance field, so it is recorded against its class
-    // exactly as a field is; a plain parameter binds a local and reaches no instance.
+    // A constructor parameter property is an own instance field, and is decided here rather than by the
+    // field branch, which the parameter list keeps the name out of: a plain parameter binds a local and
+    // reaches no instance.
     const propertyOpen = classParameterPropertyOwnerOpen(source, index);
     if (propertyOpen !== undefined) {
         return { ...binding, ownerOpen: propertyOpen, static: false };
     }
     return isParameterListNameAt(source, index) || isBindingPatternEntryAt(source, index) ? binding : undefined;
+}
+
+/**
+ * Whether the name at `index` stands at a class body's member position rather than inside a parameter
+ * list, a binding pattern, or a field initializer. Only the innermost unclosed opener before the name
+ * answers it: the class body's own `{` at `bodyOpen` admits a member, and a `(`, `[`, or nested `{`
+ * between the two encloses the name instead.
+ */
+function isClassMemberPosition(source: string, index: number, bodyOpen: number): boolean {
+    let cursor = index - 1;
+    while (cursor > bodyOpen) {
+        const character = source[cursor];
+        if (character === '(' || character === '[' || character === '{') {
+            return false;
+        }
+        if (character !== ')' && character !== ']' && character !== '}') {
+            cursor -= 1;
+            continue;
+        }
+        const open = matchingOpenDelimiterBackward(source, cursor, matchingTypeDelimiter(character), character);
+        if (open === undefined) {
+            return false;
+        }
+        cursor = open - 1;
+    }
+    return true;
 }
 
 /**
@@ -2846,7 +2877,13 @@ function skipClassBodyRegion(source: string, cursor: number, end: number): numbe
  * instance field, so the read-back resolves it against that class exactly as a field is.
  */
 function classParameterPropertyOwnerOpen(source: string, index: number): number | undefined {
-    if (parameterModifiersStartBefore(source, index) === undefined) {
+    const name = readWordForward(source, index);
+    if (name === undefined) {
+        return undefined;
+    }
+    // The modifier run stands before the name, so the walk back from the name's own start reaches the
+    // run's first modifier; no modifier there leaves the parameter bare, and it binds no property.
+    if (parameterModifiersStartBefore(source, index - 1) === undefined) {
         return undefined;
     }
     const open = enclosingOpenerBefore(source, index, '(');
@@ -2857,8 +2894,8 @@ function classParameterPropertyOwnerOpen(source: string, index: number): number 
     if (nameEnd === undefined) {
         return undefined;
     }
-    const name = readWordBackward(source, nameEnd);
-    if (name !== 'constructor' || isPrecededByDotAccess(source, nameEnd - name.length + 1)) {
+    const constructorName = readWordBackward(source, nameEnd);
+    if (constructorName !== 'constructor' || isPrecededByDotAccess(source, nameEnd - constructorName.length + 1)) {
         return undefined;
     }
     const bodyOpen = enclosingBraceOpen(source, open);

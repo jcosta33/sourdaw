@@ -609,6 +609,49 @@ describe('snapshotImportSpecifiers', () => {
                 'class Base { loader = require }\nclass H extends Base { constructor(loader: unknown = null) { super(); } }\nconst { loader } = new H();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A field value is read only at the class body's own member position, so a parameter list, a
+        // binding pattern, and a field initializer declare no field however their defaults read: the
+        // instance carries nothing of the kind, and the merge base's reading stands.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = null; constructor(loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader() { return other; } run(loader = require) { return 1; } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { set loader(v) {} run(loader = require) { return 1; } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { get loader() { return other; } run(loader = require) { return 1; } }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { loader = other; x = (function (loader = require) { return 1; })(); }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual([]);
+        // A parameter property is read, and its own modifier run is what decides it: the loader default
+        // reaches the read-back, while the same declaration without modifiers binds a local instead.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class H { constructor(public loader = require) {} }\nconst { loader } = new H();\nloader(spec);'
+            )
+        ).toEqual(['require(...)']);
+        // A class-scoped parameter default binds its local exactly as the top-level form does, so the
+        // call through the parameter is the load the scan admits.
+        expect(snapshotComputedDynamicSpecifiers('class H { m(loader = require) { loader(spec); } }')).toEqual([
+            'require(...)',
+        ]);
+        expect(snapshotComputedDynamicSpecifiers('function f(loader = require) { loader(spec); }')).toEqual([
+            'require(...)',
+        ]);
         // A class name inside a parameter's default or annotation names a value or a type, not the
         // parameter, so it does not shadow the class.
         expect(
