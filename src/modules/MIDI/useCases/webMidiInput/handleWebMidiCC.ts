@@ -12,10 +12,7 @@ import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { ingestChannelControlChange } from '../../repositories/webMidi/ingestChannelControlChange';
 import { memberExpressionState, setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
-import {
-    hasPendingMemberAdmission,
-    recordPendingMemberExpression,
-} from '../../repositories/webMidi/pendingMemberAdmission';
+import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -55,7 +52,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             const heldNoteKey = channelToNote.get(channel);
             const heldNote = heldNoteKey === undefined ? undefined : activeNotes.get(heldNoteKey);
             let pendingBend: number | undefined;
-            if (hasPendingMemberAdmission(channel)) {
+            if (pendingMemberAdmission.has(channel)) {
                 pendingBend = memberExpressionState.get(channel)?.pitchBend;
             }
             let earlierBendRange: number | undefined;
@@ -82,7 +79,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         heldNote.pitchBendRangeSemitones = bendRangeSemitones;
                     }
                     if (pendingBend !== undefined) {
-                        recordPendingMemberExpression(channel, {
+                        pendingMemberAdmission.record(channel, {
                             dimension: 'pitchBend',
                             value: pendingBend,
                             eventTime,
@@ -110,7 +107,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             if (getMpeEnabled() && cc === MPE_SLIDE_CC && channel >= MPE_FIRST_MEMBER_CHANNEL) {
                 setMemberExpression(channel, { slide: value });
                 const eventTime = resolveInputEventTime({ timeStamp });
-                recordPendingMemberExpression(channel, { dimension: 'slide', value, eventTime });
+                pendingMemberAdmission.record(channel, { dimension: 'slide', value, eventTime });
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel !== undefined) {
                     const noteData = activeNotes.get(noteForChannel);

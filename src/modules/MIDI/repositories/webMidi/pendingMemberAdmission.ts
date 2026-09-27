@@ -7,14 +7,14 @@ type TimedMemberExpression = {
     bendRangeSemitones?: number;
 };
 
-export type PendingMemberAdmission = {
+type PendingMemberAdmission = {
     channel: number;
     changes: TimedMemberExpression[];
 };
 
 const pendingByChannel = new Map<number, Set<PendingMemberAdmission>>();
 
-export function beginPendingMemberAdmission(channel: number): PendingMemberAdmission {
+function beginPendingMemberAdmission(channel: number): PendingMemberAdmission {
     const admission: PendingMemberAdmission = { channel, changes: [] };
     const pending = pendingByChannel.get(channel) ?? new Set<PendingMemberAdmission>();
     pending.add(admission);
@@ -22,17 +22,17 @@ export function beginPendingMemberAdmission(channel: number): PendingMemberAdmis
     return admission;
 }
 
-export function hasPendingMemberAdmission(channel: number): boolean {
+function hasPendingMemberAdmission(channel: number): boolean {
     return (pendingByChannel.get(channel)?.size ?? 0) > 0;
 }
 
-export function recordPendingMemberExpression(channel: number, change: TimedMemberExpression): void {
+function recordPendingMemberExpression(channel: number, change: TimedMemberExpression): void {
     for (const admission of pendingByChannel.get(channel) ?? []) {
         admission.changes.push(change);
     }
 }
 
-export function takePendingMemberAdmission(admission: PendingMemberAdmission | undefined): TimedMemberExpression[] {
+function takePendingMemberAdmission(admission: PendingMemberAdmission | undefined): TimedMemberExpression[] {
     if (!admission) {
         return [];
     }
@@ -46,6 +46,14 @@ export function takePendingMemberAdmission(admission: PendingMemberAdmission | u
     return admission.changes;
 }
 
-export function clearPendingMemberAdmissions(): void {
+function clearPendingMemberAdmissions(): void {
     pendingByChannel.clear();
 }
+
+export const pendingMemberAdmission = {
+    begin: beginPendingMemberAdmission,
+    has: hasPendingMemberAdmission,
+    record: recordPendingMemberExpression,
+    take: takePendingMemberAdmission,
+    clear: clearPendingMemberAdmissions,
+};

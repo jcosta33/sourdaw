@@ -10,6 +10,7 @@ import { serializeProjectMidi } from '../serializeProjectMidi';
 describe('serializeProjectMidi', () => {
     it('keeps an absent recorded slide onset distinct from explicit minimum through save and join', () => {
         const recorded: MidiStoreState = {
+            probabilitySeed: 1,
             notesByClipId: {
                 'clip-1': [
                     { id: 'preceding', pitch: 60, startBeat: 0, duration: 1, velocity: 100, slide: 100 },

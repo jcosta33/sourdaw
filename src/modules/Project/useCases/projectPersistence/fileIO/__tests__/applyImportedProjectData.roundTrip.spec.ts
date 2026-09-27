@@ -943,13 +943,26 @@ describe('applyImportedProjectData round-trip hydration', () => {
                 velocity: 100,
                 probability: 100,
                 pressure: 0,
-                slide: 0,
                 pitchBend: 0,
             },
         ]);
         expect(arrangementStore.value?.arrangements.map(({ id, name }) => ({ id, name }))).toEqual([
             { id: 'ideas', name: 'Ideas' },
         ]);
+        const explicitMinimumProject = makeProject();
+        explicitMinimumProject.arrangements = [{ id: 'ideas', name: 'Ideas' }];
+        explicitMinimumProject.activeArrangementId = 'ideas';
+        Reflect.set(explicitMinimumProject.arrangement, 'tracks', [
+            {
+                ...sparseTrack,
+                clips: sparseTrack.clips.map((clip) => ({
+                    ...clip,
+                    notes: [{ ...clip.notes[0], slide: 0 }],
+                })),
+            },
+        ]);
+        await expect(applyImportedProjectData({ data: explicitMinimumProject })).resolves.toBe(true);
+        expect(arrangementStore.value?.arrangements[0]?.midi.notesByClipId['sparse-midi-clip']?.[0]?.slide).toBe(0);
     });
 
     it('normalizes missing version-1 automation fields before strict validation', async () => {

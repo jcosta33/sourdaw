@@ -151,10 +151,11 @@ describe('handleReplayGeneratedMidi', () => {
 
     it('validates replace-notes expected and replacement arrays before idempotency or mutation', async () => {
         mocks.hasDurableMidiGenerationResult.mockReturnValue(true);
-        for (const [expectedNotes, replacementNotes] of [
-            [[invalidCurves[0]!.note], generatedNotes],
-            [sourceNotes, [invalidCurves[1]!.note]],
-        ]) {
+        const cases: Array<{ expectedNotes: MidiClipNoteSnapshot[]; replacementNotes: MidiClipNoteSnapshot[] }> = [
+            { expectedNotes: [invalidCurves[0]!.note], replacementNotes: generatedNotes },
+            { expectedNotes: sourceNotes, replacementNotes: [invalidCurves[1]!.note] },
+        ];
+        for (const { expectedNotes, replacementNotes } of cases) {
             const result = await handleReplayGeneratedMidi.execute({
                 type: 'replayGeneratedMidi',
                 payload: {

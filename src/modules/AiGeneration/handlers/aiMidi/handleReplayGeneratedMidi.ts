@@ -63,6 +63,17 @@ function isExactClipResult(input: {
     });
 }
 
+function hasValidReplayNotes(operation: ReplayOperation): boolean {
+    if (operation.kind === 'replace-notes') {
+        return (
+            isValidMidiNoteSnapshot(operation.expectedNotes) &&
+            isValidMidiNoteSnapshot(operation.replacementNotes) &&
+            operation.clip.trackId === operation.trackId
+        );
+    }
+    return isValidMidiNoteSnapshot(operation.source.notes) && isValidMidiNoteSnapshot(operation.notes);
+}
+
 function hasClipIdCollision(clipId: string): boolean {
     return getTrackStoreState()?.tracks.some((track) => track.clips.some((clip) => clip.id === clipId)) ?? true;
 }
@@ -105,16 +116,11 @@ function isReplaySourceCurrent(operation: Extract<ReplayOperation, { kind: 'crea
 export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
     execute: (action) => {
         const operation = action.payload.operation;
+        if (!hasValidReplayNotes(operation)) {
+            return { status: 'conflict' };
+        }
+
         if (operation.kind === 'replace-notes') {
-            if (
-                !isValidMidiNoteSnapshot(operation.expectedNotes) ||
-                !isValidMidiNoteSnapshot(operation.replacementNotes)
-            ) {
-                return { status: 'conflict' };
-            }
-            if (operation.clip.trackId !== operation.trackId) {
-                return { status: 'conflict' };
-            }
             if (
                 isExactClipResult({
                     trackId: operation.trackId,
@@ -138,10 +144,6 @@ export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
                 operation.replacementNotes.map((note) => ({ ...note }))
             );
             return { status: 'written' };
-        }
-
-        if (!isValidMidiNoteSnapshot(operation.source.notes) || !isValidMidiNoteSnapshot(operation.notes)) {
-            return { status: 'conflict' };
         }
 
         if (!isReplaySourceCurrent(operation) || hasClipIdCollision(operation.clip.id)) {

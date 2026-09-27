@@ -2,7 +2,7 @@ import { applyNoteExpression } from '#/modules/AudioEngine/useCases';
 
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
-import { recordPendingMemberExpression } from '../../repositories/webMidi/pendingMemberAdmission';
+import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
@@ -20,7 +20,7 @@ export function handleWebMidiChannelPressure(
 
     setMemberExpression(channel, { pressure });
     const eventTime = resolveInputEventTime({ timeStamp });
-    recordPendingMemberExpression(channel, { dimension: 'pressure', value: pressure, eventTime });
+    pendingMemberAdmission.record(channel, { dimension: 'pressure', value: pressure, eventTime });
 
     const noteForChannel = channelToNote.get(channel);
     if (noteForChannel === undefined) {

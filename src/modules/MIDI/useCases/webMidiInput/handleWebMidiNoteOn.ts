@@ -10,10 +10,7 @@ import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { memberExpressionState } from '../../repositories/webMidi/memberExpressionState';
-import {
-    beginPendingMemberAdmission,
-    takePendingMemberAdmission,
-} from '../../repositories/webMidi/pendingMemberAdmission';
+import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
@@ -67,12 +64,12 @@ export const handleWebMidiNoteOn = inject({
             if (memberExpression?.pitchBend !== undefined) {
                 initialBendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
             }
-            const memberAdmission = mpeEnabled && channel >= 1 ? beginPendingMemberAdmission(channel) : undefined;
+            const memberAdmission = mpeEnabled && channel >= 1 ? pendingMemberAdmission.begin(channel) : undefined;
             const channelNoteKey = mpeEnabled && channel >= 1 ? channelToNote.get(channel) : undefined;
             const noteToRelease =
                 activeNotes.get(noteKey) ??
                 (channelNoteKey === undefined ? undefined : activeNotes.get(channelNoteKey));
-            let admittedChanges: ReturnType<typeof takePendingMemberAdmission>;
+            let admittedChanges: ReturnType<typeof pendingMemberAdmission.take>;
             try {
                 if (noteToRelease) {
                     await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
@@ -80,7 +77,7 @@ export const handleWebMidiNoteOn = inject({
                     channelToNote.delete(channel);
                 }
             } finally {
-                admittedChanges = takePendingMemberAdmission(memberAdmission);
+                admittedChanges = pendingMemberAdmission.take(memberAdmission);
             }
             if (generation !== memberExpressionGeneration.current) {
                 return;
