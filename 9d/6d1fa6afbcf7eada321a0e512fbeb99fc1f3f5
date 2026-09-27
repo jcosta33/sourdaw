@@ -1,0 +1,20 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  h_beb54bf43b47b7 395-424
+src/modules/AiRuntime/transformers/llmActionStrategies/clipPlacementStrategies.ts
+  h_beb54bf43b47b7 273-280,292-296
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareClipSatelliteStateRestore.spec.ts
+  h_beb54bf43b47b7 3-4,11,14-25,36,97-157
+src/modules/Arrangement/useCases/timeOperations/prepareClipSatelliteStateRestore.ts
+  h_beb54bf43b47b7 9,201,207-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9d6d1fa6afbcf7eada321a0e512fbeb99fc1f3f5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
