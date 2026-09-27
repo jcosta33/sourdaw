@@ -27,6 +27,11 @@ const mocks = vi.hoisted(() => ({
     releaseTouchAutomation: vi.fn(),
     confirmUser: vi.fn(),
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    // The undo stack top the strip's record gate reads. A stable sentinel is
+    // what makes "nothing recorded" observable: the gate compares stack-top
+    // identity across the dispatch, so the sentinel must hold its identity
+    // while the stack stands still and be replaced when a write records.
+    undoStackTop: undefined as { readonly marker: string } | undefined,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -51,6 +56,18 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     executeUserAppAction: mocks.executeUserAppAction,
+}));
+
+vi.mock('#/modules/Command/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/stores')>()),
+    undoHistoryStore: {
+        get value() {
+            return {
+                past: mocks.undoStackTop === undefined ? [] : [mocks.undoStackTop],
+                future: [],
+            };
+        },
+    },
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -111,6 +128,7 @@ const seedProjectTruth = (overrides: Partial<Track> = {}): void => {
 describe('useChannelStripActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.undoStackTop = undefined;
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
@@ -363,6 +381,102 @@ describe('useChannelStripActions', () => {
         const logged = mocks.logger.error.mock.calls[0]![0] as Error;
         expect(logged.message).toBe('Channel strip commit failed for action: setTrackGain');
         expect(logged.cause).toBe(cause);
+    });
+
+    /**
+     * The reset's coalescing is record-gated, and this is the recording
+     * direction: the settle's commit put a new entry on the undo stack —
+     * observed as a moved stack top, which is how the hook itself reads it —
+     * so the double-click reset that follows inside the window must dispatch
+     * with `coalesceWithPrevious` and become one undo step with the settle.
+     * The mocked dispatch is held open so the stack top moves exactly when the
+     * write lands; the commit-time decision, serialized behind the settle, must
+     * then already see the new top.
+     */
+    it('arms coalescing for the next discrete commit when the settled gesture recorded an undo entry', async () => {
+        mocks.undoStackTop = { marker: 'older-entry' };
+        let resolveSettleCommit = (): void => undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSettleCommit = resolve;
+                })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.42, true);
+            result.current.setGain(0.31, false);
+        });
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+
+        // The settle's write lands and records: the undo stack's top moves.
+        await act(async () => {
+            resolveSettleCommit();
+            mocks.undoStackTop = { marker: 'recorded-settle' };
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset: a discrete settle (no gesture open) inside
+        // the window, which may only join the settle because it recorded.
+        await act(async () => {
+            result.current.setGain(1, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith(
+            { type: 'setTrackGain', payload: { trackId: 'track-1', gain: 1, expectedGain: 0.8 } },
+            { coalesceWithPrevious: true }
+        );
+    });
+
+    /**
+     * The mirror image, and the case that pins #4616: a jittered first click
+     * settles at the unchanged gain, the handler swallows it as a no-op and
+     * nothing records — the stack top the commit captured is still standing
+     * after the dispatch. The stamp must stay cold, so the reset that follows
+     * dispatches WITHOUT `coalesceWithPrevious` and undo returns it as its own
+     * step instead of reverting the older entry with it.
+     */
+    it('does not arm coalescing when the settled gesture recorded nothing', async () => {
+        mocks.undoStackTop = { marker: 'older-entry' };
+        let resolveSettleCommit = (): void => undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSettleCommit = resolve;
+                })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        // The jittered first click: a transient and its settle at the
+        // unchanged gain — production's `handleSetTrackGain` swallows the
+        // zero-change payload, so the dispatch records nothing.
+        await act(async () => {
+            result.current.setGain(0.8, true);
+            result.current.setGain(0.8, false);
+        });
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+
+        // The dispatch lands and records nothing: the stack top stands.
+        await act(async () => {
+            resolveSettleCommit();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // The double-click reset, inside the window, must be its own undo step.
+        await act(async () => {
+            result.current.setGain(1, false);
+            await Promise.resolve();
+        });
+
+        // No second argument: the reset joins nothing.
+        expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 1, expectedGain: 0.8 },
+        });
     });
 
     it('setPan drives only the engine while the gesture is transient', () => {
