@@ -709,12 +709,13 @@ function declaresRequireName(source: string): boolean {
 
 /**
  * Whether the `require` at `index` declares the name rather than naming the loader. A declaration
- * keyword before it, a runtime parameter list or catch parameter around it, or a destructuring pattern
- * entry makes it a declaration; an ambient `declare function require` and a name bound to a created
- * require declare the loader itself, so both keep it. The parameter test is the parenthesis the name
- * sits in — a list that closes before a body, a return type, or an arrow, or that opens a `catch`
- * clause, and is no type's list — which is what keeps the comma-sequence and parenthesised callees
- * (`(0, require)(spec)`, `(require)(spec)`) reading as the loader.
+ * keyword before it, an `import` clause binding it, a runtime parameter list or catch parameter
+ * around it, a rest element, or a destructuring pattern entry makes it a declaration; an ambient
+ * `declare function require` and a name bound to a created require declare the loader itself, so both
+ * keep it. The parameter test is the parenthesis the name sits in — a list that closes before a body,
+ * a return type, or an arrow, or that opens a `catch` clause, and is no type's list — which is what
+ * keeps the comma-sequence and parenthesised callees (`(0, require)(spec)`, `(require)(spec)`) reading
+ * as the loader.
  */
 function isRequireDeclarationAt(source: string, index: number): boolean {
     const keywordEnd = previousSignificantCharacter(source, index - 1);
@@ -733,7 +734,15 @@ function isRequireDeclarationAt(source: string, index: number): boolean {
     if (before === undefined) {
         return false;
     }
+    if (isImportBindingNameAt(source, index)) {
+        return true;
+    }
     const character = source.charAt(before);
+    if (character === '.' && source.charAt(before - 1) === '.' && source.charAt(before - 2) === '.') {
+        // A `...` binds the name only where a rest target can stand: `f(...require)` spreads an
+        // expression and keeps the loader.
+        return isBindingPatternEntryAt(source, index) || isParameterListNameAt(source, index);
+    }
     if (character === '{' || character === '[' || character === ':') {
         return isBindingPatternEntryAt(source, index);
     }
@@ -741,6 +750,70 @@ function isRequireDeclarationAt(source: string, index: number): boolean {
         return isBindingPatternEntryAt(source, index) || isParameterListNameAt(source, index);
     }
     return character === '(' && isParameterListNameAt(source, index);
+}
+
+/**
+ * Whether the `require` name at `index` is bound by an `import` clause, and so declares the name in
+ * the file: the default binding's own name (`import require from …`), a named specifier inside the
+ * clause's braces (`import { require } from …`, `import { other, require } from …`), or an alias —
+ * `import { other as require } from …` and `import * as require from …` alike. A type-only clause or
+ * specifier (`import type require from …`, `import type { require } from …`, `import { type require }
+ * from …`) occupies the name no less, so it declares it too. Only an `import` clause binds here:
+ * `export { require } from …` re-exports without binding, a dynamic `import(…)` names nothing, and the
+ * `as` of a type assertion (`value as require`) is no clause's alias. A specifier the clause aliases
+ * away (`import { require as other } from …`) reads as a declaration too: the file's own shadowing is
+ * the direction this test errs toward.
+ */
+function isImportBindingNameAt(source: string, index: number): boolean {
+    const before = previousSignificantCharacter(source, index - 1);
+    if (before === undefined) {
+        return false;
+    }
+    const character = source.charAt(before);
+    if (character === '{' || character === ',') {
+        return importClauseEncloses(source, index);
+    }
+    if (!isIdentifierContinue(character)) {
+        return false;
+    }
+    const word = readWordBackward(source, before);
+    if (word === 'import') {
+        return true;
+    }
+    if (word === 'type') {
+        return importClauseEncloses(source, index) || importKeywordEndsAt(source, before - word.length);
+    }
+    if (word !== 'as') {
+        return false;
+    }
+    if (importClauseEncloses(source, index)) {
+        return true;
+    }
+    const star = previousSignificantCharacter(source, before - word.length);
+    return star !== undefined && source.charAt(star) === '*' && importKeywordEndsAt(source, star - 1);
+}
+
+/** Whether the braces of an `import { … }` clause — a type-only `import type { … }` included — enclose `index`. */
+function importClauseEncloses(source: string, index: number): boolean {
+    const open = enclosingOpenerBefore(source, index, '{');
+    if (open === undefined) {
+        return false;
+    }
+    const keywordEnd = previousSignificantCharacter(source, open - 1);
+    if (keywordEnd === undefined || !isIdentifierContinue(source[keywordEnd])) {
+        return false;
+    }
+    const word = readWordBackward(source, keywordEnd);
+    return word === 'import' || (word === 'type' && importKeywordEndsAt(source, keywordEnd - word.length));
+}
+
+/** Whether the word ending at or before `end` is the `import` keyword. */
+function importKeywordEndsAt(source: string, end: number): boolean {
+    const wordEnd = previousSignificantCharacter(source, end);
+    if (wordEnd === undefined || !isIdentifierContinue(source[wordEnd])) {
+        return false;
+    }
+    return readWordBackward(source, wordEnd) === 'import';
 }
 
 /**
@@ -803,7 +876,9 @@ function isParameterListNameAt(source: string, index: number): boolean {
     if (close === undefined) {
         return false;
     }
-    const after = skipWhitespace(source, close + 1);
+    // `skipBalancedParens` returns the position after the closing `)`, so the list's own end is where
+    // the return type, the arrow, or the body begins.
+    const after = skipWhitespace(source, close);
     if (source.startsWith('=>', after)) {
         return true;
     }
@@ -995,7 +1070,7 @@ function isShadowingDeclaration(source: string, index: number): boolean {
 }
 
 /** The declaration keywords that bind a name again, which drops a loader binding of that name. */
-const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(['function', 'class', 'let', 'const', 'var']);
+const DECLARATION_KEYWORDS: ReadonlySet<string> = new Set(['function', 'class', 'enum', 'let', 'const', 'var']);
 
 type LoaderBinding = { name: string; kind: LoaderBindingKind; nameIndex: number; end: number };
 

@@ -367,6 +367,62 @@ describe('snapshotImportSpecifiers', () => {
     });
 
     /**
+     * A declaration binds the name wherever its parameter list stands, whatever follows the list. The
+     * list closes on its own `)`, so a return type or a body brace abutting that `)` still proves the
+     * list a declaration; reading one character past the close missed every shape whose `)` is followed
+     * by a significant character, and each of them loads nothing through the parameter (#4828).
+     */
+    it('drops the loader binding for a parameter list closed before a return type or a body', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers('function f(require: string): void { const load = require; load(spec); }')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'const f = (require: string): void => { const load = require; load(spec); };'
+            )
+        ).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('(require)=>{const load=require; load(spec);}')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('function(require: string): void { const load = require; load(spec); }')
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                'class C { m(require: string): void { const load = require; load(spec); } }'
+            )
+        ).toEqual([]);
+    });
+
+    /**
+     * An `import` clause binds the name it introduces — the default binding, a named specifier, a
+     * namespace alias, and the type-only spellings of those clauses — and a rest parameter and an `enum`
+     * name bind it too. Each is a local declaration of `require`, so none of them forms a binding of a
+     * name to the loader and each file keeps the merge base's reading; without the branch, every one of
+     * them was refused (#4828). A specifier the clause aliases away reads as a declaration as well, which
+     * is the direction this test errs toward.
+     */
+    it('drops the loader binding for an import binding, a rest parameter, and an enum name', () => {
+        expect(
+            snapshotComputedDynamicSpecifiers("import require from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import { require } from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import * as require from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers('function f(...require) {}\nconst load = require;\nload(spec);')
+        ).toEqual([]);
+        expect(snapshotComputedDynamicSpecifiers('enum require { A }\nconst load = require;\nload(spec);')).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import type { require } from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+        expect(
+            snapshotComputedDynamicSpecifiers("import { type require } from 'x';\nconst load = require;\nload(spec);")
+        ).toEqual([]);
+    });
+
+    /**
      * The declaration above stops the binding pass alone. A `require(…)` call is the loader whatever
      * else the file declares, as the merge base read it, so an unrelated declaration never hides a real
      * load: a literal specifier is collected, and a computed one is refused by `require(...)`. Only the
