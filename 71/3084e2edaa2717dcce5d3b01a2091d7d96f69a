@@ -1,0 +1,156 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  h_beb54bf43b47b7 1429,1433,1591,1650,1653,1655,1657-1659,1666,1680
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipPlacementIncompatibleDestination.integration.spec.ts
+  h_beb54bf43b47b7 1-184
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/clipStrategy.spec.ts
+  h_beb54bf43b47b7 4,111-120,121-138,235-292,293-365,395-424
+src/modules/AiRuntime/transformers/llmActionStrategies/clipPlacementStrategies.ts
+  h_beb54bf43b47b7 1-2,25-44,100-107,108-109,136-140,141-143,227-232,233-238,273-280,292-296
+src/modules/AiRuntime/useCases/getPlanningProviderToolSchemas.ts
+  h_beb54bf43b47b7 12-15
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  h_beb54bf43b47b7 1280-1301
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  h_beb54bf43b47b7 132,178
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClip.integration.spec.ts
+  h_beb54bf43b47b7 7,77,219-273,274-314,315-380
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStates.spec.ts
+  h_beb54bf43b47b7 53-57,1420
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  h_beb54bf43b47b7 296,343
+src/modules/Arrangement/models/WarpMarker.ts
+  h_beb54bf43b47b7 19-21,44,45-46,47,48-53,54,55-65,66-74,75-96,97,98,99
+src/modules/Arrangement/stores/__tests__/clipSatelliteState.spec.ts
+  h_beb54bf43b47b7 24-38,129,150,169,179-208,209-225,226
+src/modules/Arrangement/stores/__tests__/warpStates.spec.ts
+  h_beb54bf43b47b7 25,103,133,137-178
+src/modules/Arrangement/stores/warpStates.ts
+  h_beb54bf43b47b7 15,146-153,199,209,224-230,240,262-279,282-284,296-298,300,339-341,343,356,359-360,363,368-393,394-401,402-413,414-425,426-434,437-447
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  h_beb54bf43b47b7 310
+src/modules/Arrangement/useCases/__tests__/restoreStripSilenceStateRollback.spec.ts
+  h_beb54bf43b47b7 97,125
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  h_beb54bf43b47b7 300
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  h_beb54bf43b47b7 66,108,163,168,183,205,237,275,354,379,401,446-447,460-494,516-517
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  h_beb54bf43b47b7 6-13,14,48,78,89,100,115,133,159,172-176,186-202,205-211,219-245
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  h_beb54bf43b47b7 12,67-75,80
+src/modules/Arrangement/useCases/clip/isClipDropCompatible.ts
+  h_beb54bf43b47b7 1-16,17-21,22-28
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  h_beb54bf43b47b7 8-9,10-21,27-28,64-65,66-67,68-72,73-76,77-78,79-80,81
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  h_beb54bf43b47b7 336,520,546,580
+src/modules/Arrangement/useCases/clipEditing/__tests__/restoreClipGlueStateRollback.spec.ts
+  h_beb54bf43b47b7 67-72,104
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeClipSatellites.spec.ts
+  h_beb54bf43b47b7 226,380
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  h_beb54bf43b47b7 313,338,412
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipSatellites.spec.ts
+  h_beb54bf43b47b7 144
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClip.spec.ts
+  h_beb54bf43b47b7 18,122,207-211,306,318-321,354-358,404,419,439-442,448,494,510,528,566,577-596,608
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  h_beb54bf43b47b7 9,93-98
+src/modules/Arrangement/useCases/createTrack.ts
+  h_beb54bf43b47b7 10
+src/modules/Arrangement/useCases/timeOperations/prepareClipSatelliteStateRestore.ts
+  h_beb54bf43b47b7 1,9,176-182,201,204,207-213
+src/modules/Arrangement/useCases/timelineInteractions/isClipDropCompatible.ts
+  h_beb54bf43b47b7 2-4,6
+src/modules/Arrangement/useCases/warp/__tests__/commitWarpMarkerBeatDrag.spec.ts
+  h_beb54bf43b47b7 28,59,89,107
+src/modules/Arrangement/useCases/warp/__tests__/getStretchModeInfo.spec.ts
+  h_beb54bf43b47b7 7-10
+src/modules/Arrangement/useCases/warp/__tests__/hydrateClipWarpStates.spec.ts
+  h_beb54bf43b47b7 16-18,32
+src/modules/Arrangement/useCases/warp/__tests__/moveWarpMarker.spec.ts
+  h_beb54bf43b47b7 18
+src/modules/Arrangement/useCases/warp/__tests__/setStretchMode.spec.ts
+  h_beb54bf43b47b7 22,39,45
+src/modules/Arrangement/useCases/warp/__tests__/updateWarpMarkerBeat.spec.ts
+  h_beb54bf43b47b7 15,33,57,71
+src/modules/Arrangement/useCases/warp/getStretchModeInfo.ts
+  h_beb54bf43b47b7 3-7,13-17,20-23,43-44,46,48-49
+src/modules/Command/useCases/__tests__/groupedUndoHeterogeneousReplay.integration.spec.ts
+  h_beb54bf43b47b7 109-111,119
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 401,405,408-420,430-431,437,444,451,459,476,491,506,529,534-535,549,554,559,571-572,580,589-591,598,604,611,627-630,632-634,671,686,697,717-718,725,738,741,749,757,760-763,792,797-800,806,809,827,841,849-850,859,867,874-879,897,1058,1075,1081,1095,1104-1105,1206-1207,1224,1251,1261,1273,1277,1297,1304,1312,1321-1322,1383,1391,1396,1412,1424,1428,1436-1437,1456,1479,1485,1504,1510,1528,1534,1542-1544,1553-1554,1556-1559,1569-1571,1598,1612,1630,1635,1641,1648-1649,1662-1664,1682,1687,1696-1697,1743,1747,1750,1754,1760,1772,1776,1793,1799,1802,1820,1827,1838,1869,1881,1889,1901,1917,1925,1931,1940-1941,1957,1968,2005,2010,2053,2058,2144,2167-2168,2191,2210,2218,2227,2238-2240,2254-2256,2287,2293,2302,2313,2321,2332-2333,2347-2348,2373-2374,2432,2440,2443-2444,2475,2501,2519,2525,2547,2573,2581-2583,2590,2599-2600,2605-2610,2645,2652,2668,2676-2678,2701,2731-2732,2736-2737,2810,2821,2861,2867,2890,2917,2932,2937,2955-2956,2963,2969,2976,2990-2991,3000,3002-3004,3014-3015,3023-3024,3037-3038,3050-3051,3093-3094,3170-3171,3251-3252,3360-3361,3386,3392-3393,3395-3397,3412,3419,3422,3431,3433,3514-3515,3542-3543,3565,3579,3588,3610,3624,3631,3638-3640,3681-3684,3706,3711,3723,3730,3735,3737,3743,3748,3750-3751,3770,3777,3785-3786,3792,3795,3811,3829,3839-3840,3849-3850,3913,3919-3920,3933-3934,3951,3956-3957,3983,3991,3998,4003-4004,4020,4025-4026,4033,4038,4048,4055,4061,4064,4066,4075-4082,4098,4103-4104,4130,4132,4141-4142,4150-4153,4162,4164-4165,4176-4177,4185-4186,4204-4205,4227,4275,4282,4288-4289,4296,4310,4317-4318,4325,4339,4344-4347,4376,4382,4396,4402,4447,4449-4451,4464-4465,4473-4474,4476-4477,4489-4490,4493-4494,4500,4505,4532,4537,4632,4639,4667,4675,4681,4689-4690,4730,4741,4749,4755,4762,4767,4775-4776,4987,5003,5020,5027-5028,5031,5062,5075-5078,5088-5089,5134,5140,5148,5153,5155,5203,5208,5226,5231,5263,5268,5335,5344,5356,5368,5377,5389,5401,5407,5413-5414,5439,5445-5446,5510,5516,5519,5526,5531,5533,5542,5544,5553,5572,5580-5584,5597-5941
+src/modules/ElasticAudio/AGENTS.md
+  h_beb54bf43b47b7 7
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 41,45-46
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 72,84,125,280-283
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/addManualMarker.spec.ts
+  h_beb54bf43b47b7 10,26,46,54
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 32,50,166
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/quantizeTransients.spec.ts
+  h_beb54bf43b47b7 15,34,41,83,102,135
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/removeMarker.spec.ts
+  h_beb54bf43b47b7 10,27,36,69,84
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/toggleMarkerLock.spec.ts
+  h_beb54bf43b47b7 10,27,36,69,83
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 459-462,467
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  h_beb54bf43b47b7 204
+src/modules/TimelineEditor/presentations/views/ClipView/WaveformEditor.tsx
+  h_beb54bf43b47b7 59,63-65,485,488
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  h_beb54bf43b47b7 160,322,337,360,491-495,553,591,609,651,675,1009,1025,1050,1065
+src/utils/isClipCompatibleWithTrackKind.ts
+  h_beb54bf43b47b7 1-17
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipMoves.spec.ts
+  h_beb54bf43b47b7 36-39
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipPlacement.spec.ts
+  h_beb54bf43b47b7 65-70
+src/modules/Arrangement/handlers/clip/handleRestoreClipMoves.ts
+  h_beb54bf43b47b7 16-20
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  h_beb54bf43b47b7 86-91,97-98
+src/modules/Arrangement/stores/__tests__/warpStatesRawProjectionLoss.spec.ts
+  h_beb54bf43b47b7 1-27,28-33,34-64,65-89,90-93
+src/modules/Arrangement/stores/clipSatelliteState.ts
+  h_beb54bf43b47b7 8-9,85-89,152,157-162,163-166,167-168,169,173,185-186
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareClipSatelliteStateRestore.spec.ts
+  h_beb54bf43b47b7 1-2,3-4,5-10,11,12-13,14-25,26-35,36,37-96,97-157,158-183
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  h_beb54bf43b47b7 4,88-110
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 219-227
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1210
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClips.spec.ts
+  h_beb54bf43b47b7 39,85-103
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClipsRipple.integration.spec.ts
+  h_beb54bf43b47b7 1-150,151-195,196-271
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreTrackClipStatesLegacySatellite.spec.ts
+  h_beb54bf43b47b7 1-110,111-127,128-166,167-188,189-207
+src/modules/Arrangement/handlers/clip/handleMoveClips.ts
+  h_beb54bf43b47b7 95-130,131-139,140-154,170-171
+src/modules/Arrangement/handlers/clip/handleRestoreTrackClipStates.ts
+  h_beb54bf43b47b7 16-20,469-475,478-480
+src/modules/Arrangement/useCases/rippleMove/__tests__/rippleMoveClip.spec.ts
+  h_beb54bf43b47b7 31-32,124-174
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  h_beb54bf43b47b7 22-25,27-35,39,89-90
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  h_beb54bf43b47b7 940-941,1037-1038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "713084e2edaa2717dcce5d3b01a2091d7d96f69a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
