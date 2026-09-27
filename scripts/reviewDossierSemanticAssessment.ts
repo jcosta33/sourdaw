@@ -21,9 +21,21 @@
  * refuses. The gate instead requires a limitation citing the record's own reason as the token
  * `semantic-ci <reason>` (for example `semantic-ci red-check`), whatever the impact. A bundle
  * carrying no `semantic-ci.json` file at all is unaffected and keeps no requirement.
+ *
+ * A delivered record may also carry `firedSignals`: the signals its scan flagged
+ * `recommend_investigation`, projected bounded and screened by `semanticReviewContext.ts`. Each
+ * carries its own disposal duty, independent of the impact and of the withheld/unresolved citation
+ * rule: a fresh publication is refused while any fired signal's citation token
+ * `semantic-signal <ruleId> <path>` appears in none of the three caller-authored documents — a
+ * stances.json stance's `admittedBy`, a discarded.json entry's `finding`, or a dossier
+ * `limitations` line. The refusal names the undisposed signal's rule and path. Declaring the whole
+ * assessment ignored is not a disposal: a fired signal is a specific thing the assessment asked the
+ * round to look at, and only naming it disposes of it (ADR 0050). A record written before the field
+ * existed parses as zero fired signals and keeps every legacy bundle working.
  */
 
 import { fail } from './prContract.ts';
+import { discardedDispositions } from './reviewDossierViews.ts';
 
 import type { ReviewDossier } from './reviewDossier.ts';
 
@@ -99,6 +111,42 @@ function readArtifactName(value: unknown): string {
     return readNonBlankString('semantic-ci record artifact.name', value.name);
 }
 
+function readProbability(label: string, value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+        fail(`${label} must be a finite probability in [0, 1], found ${describeValue(value)}`);
+    }
+    return value;
+}
+
+/**
+ * The record's fired signals, failing closed on any malformed entry. A record written before the
+ * field was projected carries none, so a missing field parses as zero rather than refusing — the
+ * same tolerance the dossier record's own late fields get.
+ */
+function readFiredSignals(value: unknown): readonly SemanticAssessmentFiredSignal[] {
+    if (value === undefined) {
+        return [];
+    }
+    return readArray('semantic-ci record firedSignals', value).map((entry, index) => {
+        const label = `semantic-ci record firedSignals[${index}]`;
+        if (!isRecord(entry)) {
+            fail(`${label} must be an object, found ${describeValue(entry)}`);
+        }
+        return {
+            ruleId: readNonBlankString(`${label}.ruleId`, entry.ruleId),
+            path: readNonBlankString(`${label}.path`, entry.path),
+            probability: readProbability(`${label}.probability`, entry.probability),
+        };
+    });
+}
+
+/** One fired signal the delivered scan flagged for investigation, as the record projects it. */
+export type SemanticAssessmentFiredSignal = {
+    readonly ruleId: string;
+    readonly path: string;
+    readonly probability: number;
+};
+
 /** The projection the acknowledgement gate consumes: delivered and how much it withheld, or not delivered. */
 export type SemanticAssessmentCoverage =
     | {
@@ -109,14 +157,16 @@ export type SemanticAssessmentCoverage =
           readonly unresolved: number;
           readonly artifactName: string;
           readonly withheldPaths: readonly string[];
+          readonly firedSignals: readonly SemanticAssessmentFiredSignal[];
       }
     | { readonly state: 'no-assessment'; readonly pr: number; readonly headSha: string; readonly reason: string };
 
 /**
  * Reads the `semantic-ci.json` record `review:prepare` wrote, failing closed on any malformed shape.
  * The gate consumes only `state`, the withheld/unresolved counts, the artifact identity, the
- * withheld paths and the binding identity, but the scope entries are validated so a partial or
- * tampered file is refused here rather than being misread as an assessment that withheld nothing.
+ * withheld paths, the fired signals and the binding identity, but the scope entries are validated
+ * so a partial or tampered file is refused here rather than being misread as an assessment that
+ * withheld nothing.
  */
 export function parseSemanticAssessmentCoverage(value: unknown): SemanticAssessmentCoverage {
     if (!isRecord(value)) {
@@ -143,6 +193,7 @@ export function parseSemanticAssessmentCoverage(value: unknown): SemanticAssessm
         unresolved: readNonNegativeInteger('semantic-ci record unresolvedQuestions', value.unresolvedQuestions),
         artifactName: readArtifactName(value.artifact),
         withheldPaths: scope.paths,
+        firedSignals: readFiredSignals(value.firedSignals),
     };
 }
 
@@ -169,21 +220,74 @@ function citesNoAssessment(
     return dossier.limitations.some((limitation) => limitation.includes(token));
 }
 
+/** The citation token a fired signal carries wherever one of the three documents disposes of it. */
+export function firedSignalCitationToken(signal: SemanticAssessmentFiredSignal): string {
+    return `semantic-signal ${signal.ruleId} ${signal.path}`;
+}
+
+/**
+ * Every caller-authored text a fired signal's disposal token may appear in: the dispatched stances'
+ * `admittedBy` lines (travelled in from the bundle's stances.json), the discarded findings' text,
+ * and the dossier's limitations. The dossier record carries the last two directly.
+ */
+function firedSignalDisposals(dossier: ReviewDossier, stanceAdmissions: readonly string[]): readonly string[] {
+    return [
+        ...stanceAdmissions,
+        ...discardedDispositions(dossier).map((entry) => entry.findingId),
+        ...dossier.limitations,
+    ];
+}
+
+/**
+ * A fired signal is disposed of only when its token appears in one of the three documents. The duty
+ * is independent of the impact and of the withheld/unresolved citation rule: `none` plus an
+ * `assessmentIgnoredReason` acknowledges the assessment as a whole, and never names the specific
+ * thing it fired at. The refusal names every undisposed signal's rule and path so the repair is
+ * writable from the message alone.
+ */
+function assertFiredSignalsDisposed(
+    dossier: ReviewDossier,
+    coverage: Extract<SemanticAssessmentCoverage, { state: 'assessed' }>,
+    stanceAdmissions: readonly string[]
+): void {
+    if (coverage.firedSignals.length === 0) {
+        return;
+    }
+    const disposals = firedSignalDisposals(dossier, stanceAdmissions);
+    const undisposed = coverage.firedSignals.filter(
+        (signal) => !disposals.some((text) => text.includes(firedSignalCitationToken(signal)))
+    );
+    if (undisposed.length === 0) {
+        return;
+    }
+    const listed = undisposed.map((signal) => `${signal.ruleId} at ${signal.path}`).join('; ');
+    fail(
+        `review dossier does not dispose of ${String(undisposed.length)} of the delivered assessment's ${String(coverage.firedSignals.length)} fired signal(s) (${listed}): name each as semantic-signal <ruleId> <path> in a stance admittedBy, a discarded finding, or a limitation`
+    );
+}
+
 /**
  * The publication gate: a delivered assessment with anything withheld or unresolved must be cited
  * (a limitation naming the assessment's artifact identity or a withheld path) or declared ignored
- * (`none` plus `assessmentIgnoredReason`). A `none` with no reason refuses, naming the field and the
- * figure it contradicts; a non-`none` impact that never cites refuses the same way. A `no-assessment`
- * record — CI ran and delivered nothing for the head — refuses `assessmentImpact: none` outright
- * (a reason does not rescue it, since there is no assessment to have had no effect on) and refuses
- * any dossier whose limitations never cite the record's reason as the token `semantic-ci <reason>`,
- * whatever its impact. A bundle with no `semantic-ci.json` passes with no requirement; a record
- * naming another publication is refused before either rule runs.
+ * (`none` plus `assessmentIgnoredReason`). Independently of that rule, every fired signal the
+ * record carries must be disposed of by name in a stance admission, a discarded finding, or a
+ * limitation — see `assertFiredSignalsDisposed`. A `none` with no reason refuses, naming the field
+ * and the figure it contradicts; a non-`none` impact that never cites refuses the same way. A
+ * `no-assessment` record — CI ran and delivered nothing for the head — refuses `assessmentImpact:
+ * none` outright (a reason does not rescue it, since there is no assessment to have had no effect
+ * on) and refuses any dossier whose limitations never cite the record's reason as the token
+ * `semantic-ci <reason>`, whatever its impact. A bundle with no `semantic-ci.json` passes with no
+ * requirement; a record naming another publication is refused before either rule runs.
+ *
+ * The stance admissions are the bundle's stances.json `admittedBy` lines; callers whose bundle
+ * carries no stances.json pass nothing, and the discarded findings and limitations remain
+ * available as disposal surfaces.
  */
 export function assertSemanticAssessmentAcknowledged(
     dossier: ReviewDossier,
     coverage: SemanticAssessmentCoverage | undefined,
-    expected: { pr: number; headSha: string }
+    expected: { pr: number; headSha: string },
+    stanceAdmissions: readonly string[] = []
 ): void {
     if (coverage === undefined) {
         return;
@@ -207,6 +311,7 @@ export function assertSemanticAssessmentAcknowledged(
         }
         return;
     }
+    assertFiredSignalsDisposed(dossier, coverage, stanceAdmissions);
     if (coverage.withheld === 0 && coverage.unresolved === 0) {
         return;
     }

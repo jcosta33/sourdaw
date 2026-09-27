@@ -33,7 +33,7 @@ function buildProjectFixture(): ProjectData {
             countInBars: 1,
             preRollEnabled: false,
             preRollBars: 1,
-            masterGain: 0.8,
+            masterGain: 80,
         },
         arrangement: {
             tracks: [

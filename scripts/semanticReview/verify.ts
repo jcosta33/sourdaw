@@ -410,10 +410,10 @@ function collectFindingEvidence(input: {
         };
         // A region is supplied whole or not at all, exactly as the scan path's admission does. Sending
         // it and then naming it truncated made `interpretFinding` read evidence it had been given as
-        // missing, while the region still left the machine past the per-region budget the scan path
-        // enforces. An oversized region is withheld and named with the scan path's own reason. The gate
-        // costs the serialized bytes the fitter uses, not the raw bytes: JSON escapes every newline, so
-        // a raw-byte estimate admitted a region the provider then refused, recording a run-wide
+        // missing, while the region still left the machine past the per-region budget. An oversized
+        // region is withheld and named with the shared withheld-region reason. The gate costs the
+        // serialized bytes the fitter uses, not the raw bytes: JSON escapes every newline, so a
+        // raw-byte estimate admitted a region the provider then refused, recording a run-wide
         // `budget_exhausted` failure instead of the per-region limitation.
         if (regionCost(evidenceReference, region) > input.limits.maxRegionBytes) {
             truncated.push({
@@ -448,7 +448,6 @@ export type RunVerifyInput = {
     readonly ports: SemanticPorts;
     readonly revision: SemanticRevisionBase;
     readonly profile: SemanticBudgetProfile;
-    readonly limits: SemanticEvidenceLimits;
     readonly findings: readonly CandidateFinding[];
     readonly runId: string;
 };
@@ -598,6 +597,20 @@ async function assessFindings(input: {
     return accumulation;
 }
 
+/**
+ * The profile the verify pass runs under: the base profile's attempt, retry, and timing controls with
+ * the profile's verify byte budgets in their places, so the budget controller and the provider request
+ * enforce exactly the budgets the finding's evidence was collected under.
+ */
+function verifyBudgetProfile(profile: SemanticBudgetProfile): SemanticBudgetProfile {
+    return {
+        ...profile,
+        maxStatePlusQuestionBytes: profile.verify.maxStatePlusQuestionBytes,
+        maxRequestBytes: profile.verify.maxRequestBytes,
+        maxTotalSubmittedBytes: profile.verify.maxTotalSubmittedBytes,
+    };
+}
+
 export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult> {
     const startedAt = new Date(input.ports.clock.now()).toISOString();
     const rulesDigest = computeVerifyQuestionsDigest(input.findings);
@@ -608,14 +621,23 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
         policyVersion: SEMANTIC_POLICY_VERSION,
     });
     assertFindingsBoundToHead(input.findings, context.headSha);
-    const budget = createBudgetController(input.profile);
-    const deadline = input.ports.clock.now() + input.profile.overallDeadlineMs;
+    // Collection, the provider request, and the budget controller all run under the profile's verify
+    // budgets, so a region the collector admits is one the request can carry and the run's stated
+    // byte ceiling is the one actually enforced. The scan-sized request budgets would withhold a
+    // finding's referenced regions and starve its questions into abstaining for want of evidence.
+    const profile = verifyBudgetProfile(input.profile);
+    const limits: SemanticEvidenceLimits = {
+        maxRegionBytes: profile.verify.maxRegionBytes,
+        maxTotalBytes: profile.verify.maxTotalSubmittedBytes,
+    };
+    const budget = createBudgetController(profile);
+    const deadline = input.ports.clock.now() + profile.overallDeadlineMs;
     const outcome = await assessFindings({
         ports: input.ports,
         findings: input.findings,
         context,
-        profile: input.profile,
-        limits: input.limits,
+        profile,
+        limits,
         budget,
         deadline,
     });

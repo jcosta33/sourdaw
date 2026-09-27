@@ -675,6 +675,27 @@ export type SemanticBudgetProfile = {
     readonly maxStatePlusQuestionBytes: number;
     readonly maxTotalSubmittedBytes: number;
     readonly contextExpansionPasses: number;
+    /**
+     * The byte budgets the verify pass runs under. The budgets above are sized for the scan pass's
+     * hunk-shaped regions; a candidate finding references whole regions of the files it is about, and
+     * collecting them under scan-sized budgets withheld exactly the evidence its questions needed.
+     */
+    readonly verify: SemanticVerifyBudget;
+};
+
+/**
+ * The verify pass's byte budgets, owned by the profile so the evidence the collector admits is
+ * measured against the same numbers the provider request and the budget controller enforce.
+ */
+export type SemanticVerifyBudget = {
+    /** Maximum serialized bytes of one supplied finding region; a longer region is withheld and named. */
+    readonly maxRegionBytes: number;
+    /** Maximum serialized bytes of one finding request's state plus its questions. */
+    readonly maxStatePlusQuestionBytes: number;
+    /** Maximum bytes of one whole verify request body. */
+    readonly maxRequestBytes: number;
+    /** Maximum submitted bytes across one verify run. */
+    readonly maxTotalSubmittedBytes: number;
 };
 
 export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, SemanticBudgetProfile>> = {
@@ -689,6 +710,12 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         maxStatePlusQuestionBytes: 24 * 1024,
         maxTotalSubmittedBytes: 1024 * 1024,
         contextExpansionPasses: 1,
+        verify: {
+            maxRegionBytes: 96 * 1024,
+            maxStatePlusQuestionBytes: 128 * 1024,
+            maxRequestBytes: 160 * 1024,
+            maxTotalSubmittedBytes: 2 * 1024 * 1024,
+        },
     },
     local: {
         name: 'local',
@@ -701,6 +728,12 @@ export const SEMANTIC_BUDGET_PROFILES: Readonly<Record<SemanticProfileName, Sema
         maxStatePlusQuestionBytes: 16 * 1024,
         maxTotalSubmittedBytes: 96 * 1024,
         contextExpansionPasses: 0,
+        verify: {
+            maxRegionBytes: 48 * 1024,
+            maxStatePlusQuestionBytes: 64 * 1024,
+            maxRequestBytes: 80 * 1024,
+            maxTotalSubmittedBytes: 384 * 1024,
+        },
     },
 };
 
@@ -713,6 +746,7 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
         profile.maxRequestBytes,
         profile.maxStatePlusQuestionBytes,
         profile.maxTotalSubmittedBytes,
+        ...Object.values(profile.verify),
     ];
     if (positive.some((value) => !Number.isSafeInteger(value) || value <= 0)) {
         throw new Error(`budget profile ${profile.name} has a non-positive limit`);
@@ -723,7 +757,14 @@ export function assertBudgetProfile(profile: SemanticBudgetProfile): void {
     if (!Number.isSafeInteger(profile.contextExpansionPasses) || profile.contextExpansionPasses < 0) {
         throw new Error(`budget profile ${profile.name} contextExpansionPasses must be zero or more`);
     }
-    if (profile.maxRequestBytes > profile.maxTotalSubmittedBytes) {
-        throw new Error(`budget profile ${profile.name} allows one request larger than its total budget`);
+    // A region the collector admits must fit one request's state budget, and one request the run's
+    // total, or the profile configures a collection that can never be sent.
+    if (
+        profile.maxRequestBytes > profile.maxTotalSubmittedBytes ||
+        profile.verify.maxRegionBytes > profile.verify.maxStatePlusQuestionBytes ||
+        profile.verify.maxStatePlusQuestionBytes > profile.verify.maxRequestBytes ||
+        profile.verify.maxRequestBytes > profile.verify.maxTotalSubmittedBytes
+    ) {
+        throw new Error(`budget profile ${profile.name} admits a request or region its own total cannot carry`);
     }
 }

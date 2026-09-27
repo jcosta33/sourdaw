@@ -17,6 +17,7 @@ import {
     type SemanticCheckRun,
     type SemanticCiRecord,
     type SemanticReviewContextPort,
+    UNRECOGNIZED_SIGNAL_VALUE,
 } from '../semanticReviewContext.ts';
 import { SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME } from '../semanticReviewWorkflowContract.ts';
 
@@ -250,6 +251,136 @@ describe('semantic review context', () => {
         expect(JSON.stringify(result)).not.toContain('disposition');
         expect(JSON.stringify(result)).not.toContain('probability');
         expect(JSON.stringify(result)).not.toContain('the model declined to flag this');
+    });
+
+    it('projects the fired signals a scan carries, bounded to their rule, path and probability', () => {
+        const fired = signal({
+            ruleId: 'admission_branch_completes_without_asserting',
+            path: 'src/modules/audio/take.test.ts',
+            outcome: 'signal',
+            probability: 0.82,
+            confidence: 0.82,
+            disposition: 'recommend_investigation',
+            reasoning: 'yes probability 0.820 is at or above 0.7',
+        });
+        const unfired = [
+            signal({ outcome: 'insufficient_context', disposition: 'unresolved', probability: 0.5 }),
+            signal({ outcome: 'no_signal', disposition: 'no_additional_recommendation', probability: 0.55 }),
+        ];
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired, ...unfired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toEqual([
+            {
+                ruleId: 'admission_branch_completes_without_asserting',
+                path: 'src/modules/audio/take.test.ts',
+                probability: 0.82,
+            },
+        ]);
+        // The fired signal carries only its rule, path, and probability: the reasoning, outcome band,
+        // and disposition the producer recorded stay in the artifact.
+        expect(JSON.stringify(result)).not.toContain('recommend_investigation');
+        expect(JSON.stringify(result)).not.toContain('at or above');
+    });
+
+    it('caps the fired signals it records at the summary bound, leaving overflow in the artifact', () => {
+        const fired = Array.from({ length: 7 }, (_unused, index) =>
+            signal({
+                ruleId: 'admission_branch_completes_without_asserting',
+                path: `src/module/file-${index}.test.ts`,
+                outcome: 'signal',
+                probability: 0.8,
+                confidence: 0.8,
+                disposition: 'recommend_investigation',
+            })
+        );
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: fired })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toHaveLength(5);
+    });
+
+    it('records zero fired signals for a scan whose signals never recommend investigation', () => {
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport()) }),
+        });
+        expect(asAssessed(resolveSemanticReviewContext(42, HEAD, port)).firedSignals).toEqual([]);
+    });
+
+    it('redacts a fired signal whose projected path carries a credential shape, keeping the record', () => {
+        const fired = signal({
+            ruleId: 'conditional_admission_added',
+            // Composed from parts so no single source literal matches the diff secret scan;
+            // at runtime it is still a full `ghp_` + 36-char token shape, which the screening refuses.
+            path: `src/ghp_${'0'.repeat(36)}/x.test.ts`,
+            outcome: 'signal',
+            probability: 0.9,
+            confidence: 0.9,
+            disposition: 'recommend_investigation',
+        });
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        // The refused value becomes the fixed marker; the signal's slot, the cap, and the rest of
+        // the assessed record survive, so `review:prepare` completes and the disposal duty at
+        // publication stays writable against the marker the record carries. The screen's refusal is
+        // no longer a throw — that aborted `review:prepare` before any bundle file was written,
+        // a harder stop than the advisory assessment's non-existent merge authority (ADR 0047).
+        expect(result.firedSignals).toEqual([
+            { ruleId: 'conditional_admission_added', path: UNRECOGNIZED_SIGNAL_VALUE, probability: 0.9 },
+        ]);
+        expect(result).toMatchObject({
+            state: 'assessed',
+            assessedHeadSha: HEAD,
+            scope: { discovered: 4, eligible: 3, assessed: 2 },
+            artifact: { name: 'semantic-review-42-456-1' },
+        });
+        // No unscreened projected byte reaches the record `semantic-ci.json` serialises.
+        expect(JSON.stringify(result)).not.toContain('ghp_');
+        expect(JSON.stringify(result)).not.toContain('0'.repeat(36));
+    });
+
+    it('redacts a fired signal whose projected ruleId carries a credential shape, keeping its slot', () => {
+        const fired = signal({
+            // Composed from parts so no single source literal matches the diff secret scan.
+            ruleId: `exposed_ghp_${'1'.repeat(36)}_rule`,
+            path: 'src/modules/audio/take.test.ts',
+            outcome: 'signal',
+            probability: 0.9,
+            confidence: 0.9,
+            disposition: 'recommend_investigation',
+        });
+        const { port } = makePort({
+            checkRuns: [GREEN_CHECK],
+            actionRuns: [RUN],
+            artifacts: [ARTIFACT],
+            archive: zipFiles({ 'scan.json': JSON.stringify(scanReport({ signals: [fired] })) }),
+        });
+
+        const result = asAssessed(resolveSemanticReviewContext(42, HEAD, port));
+        expect(result.firedSignals).toEqual([
+            { ruleId: UNRECOGNIZED_SIGNAL_VALUE, path: 'src/modules/audio/take.test.ts', probability: 0.9 },
+        ]);
+        expect(JSON.stringify(result)).not.toContain('ghp_');
+        expect(JSON.stringify(result)).not.toContain('1'.repeat(36));
     });
 
     it('finds the semantic check when it sits beyond the first page of check runs', () => {

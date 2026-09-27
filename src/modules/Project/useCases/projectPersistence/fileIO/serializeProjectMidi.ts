@@ -43,5 +43,9 @@ export function serializeProjectMidi(midi: SerializableMidiState): ProjectMidi {
         serialized.probabilitySeed = midi.probabilitySeed;
     }
 
+    if (midi.noteCoordinateFormat === 'clip-relative') {
+        serialized.noteCoordinateFormat = midi.noteCoordinateFormat;
+    }
+
     return serialized;
 }

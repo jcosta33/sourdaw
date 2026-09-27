@@ -1294,6 +1294,42 @@ describe('parsePromptToActions', () => {
         ]);
     });
 
+    it('refuses a planned decibel point on a device parameter lane the same plan creates before any proposal', async () => {
+        const laneId = 'automation-ai-00000000-0000-4000-8000-00000000d001';
+        const laneArguments = {
+            trackId: 'track-vocals',
+            parameterId: 'device-drive:dist-drive',
+            parameterName: 'Distortion → Drive',
+        };
+        const pointArguments = { laneId, beat: 0, valueDb: -6 };
+        vi.mocked(getProjectContext).mockReturnValue(createMixerContext());
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'addAutomationLane', arguments: laneArguments },
+                { name: 'addAutomationPoint', arguments: pointArguments },
+            ])
+        );
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
+            actions: [
+                { type: 'addAutomationLane', payload: laneArguments },
+                { type: 'addAutomationPoint', payload: pointArguments },
+            ],
+            rejections: [],
+            batchLocalActionIdentities: [{ actionOrdinal: 0, actionType: 'addAutomationLane', laneId }],
+        });
+
+        const result = await parsePromptToActions(
+            'Add automation lane for Distortion Drive on Vocals at -6 dB',
+            createMixerContext()
+        );
+
+        expect(result).toMatchObject({
+            actions: [],
+            requiresConfirmation: false,
+            rejectionReason: 'Provider action failed runtime validation: addAutomationPoint',
+        });
+    });
+
     it('carries the normalized provider proposal for an accepted stem-import workflow action', async () => {
         const expectedProviderProposal = {
             semantic: { classification: 'complex', uncertainty: [] },

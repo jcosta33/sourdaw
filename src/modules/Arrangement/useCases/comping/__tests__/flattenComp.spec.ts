@@ -666,6 +666,70 @@ describe('flattenComp', () => {
         ]);
     });
 
+    it('does not re-add a take whose clip is gone when the undo merges into a landed lane (#4559)', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-a',
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'buf-a',
+        });
+        seedTrack([clip]);
+        // The captured lane holds a live take and an orphan one — a take whose clip the
+        // project no longer holds — each with the comp region that selects it.
+        seedLane(
+            [
+                { id: 'take-live', clipId: 'clip-a', startBeat: 0, endBeat: 8 },
+                { id: 'take-orphan', clipId: 'clip-gone', startBeat: 4, endBeat: 6 },
+            ],
+            [
+                { startBeat: 2, endBeat: 4, takeId: 'take-live' },
+                { startBeat: 4, endBeat: 6, takeId: 'take-orphan' },
+            ]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+        expect(laneIds()).toEqual([]);
+
+        // A projection gives the track a lane before the undo, so the undo merges the
+        // captured lane into it — the merge branch, where the liveness rule runs
+        // through the ids the merge may re-add rather than the lane it places.
+        const projectedClip = ClipDummy.create({
+            id: 'clip-projected',
+            trackId: TRACK_ID,
+            startBeat: 8,
+            endBeat: 12,
+            audioBufferId: 'buf-projected',
+        });
+        const projectedTake = {
+            id: 'take-projected',
+            clipId: 'clip-projected',
+            name: 'Projected take',
+            startBeat: 8,
+            endBeat: 12,
+            selected: false,
+        };
+        trackStore.set({
+            tracks: [{ ...trackStore.value!.tracks[0]!, clips: [...liveClips(), projectedClip] }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane(TRACK_ID), takes: [projectedTake], activeCompRegions: [] }],
+        });
+        vi.clearAllMocks();
+
+        await undo();
+
+        // The merge may re-add only what is still live: the orphan take stays out, and
+        // its region with it — a region naming a take the lane does not hold still
+        // advances the resolver's gap cursor over its span, silencing the track's own
+        // material there in playback and in the render.
+        const lane = takeLaneStore.value!.lanes[0]!;
+        expect(lane.takes.map((take) => take.id)).toEqual(['take-live', 'take-projected']);
+        expect(lane.activeCompRegions).toEqual([{ startBeat: 2, endBeat: 4, takeId: 'take-live' }]);
+    });
+
     it('refused undo followed by redo leaves the lane retired and drops the entry', async () => {
         const clip = ClipDummy.create({
             id: 'clip-a',

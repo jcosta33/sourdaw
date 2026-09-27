@@ -17,11 +17,17 @@ function captureMidiSnapshot(): ArrangementSnapshot['midi'] {
         };
     }
 
-    return {
+    const snapshot: ArrangementSnapshot['midi'] = {
         notesByClipId: midi.notesByClipId,
         ccByClipId: midi.ccByClipId,
         pitchBendByClipId: midi.pitchBendByClipId,
     };
+    // Only a recognized format may be captured; an unknown stamp must not
+    // masquerade as one the restore path trusts.
+    if (midi.noteCoordinateFormat === 'clip-relative') {
+        snapshot.noteCoordinateFormat = midi.noteCoordinateFormat;
+    }
+    return snapshot;
 }
 
 export function takeSnapshot(id: string, name: string): ArrangementSnapshot {

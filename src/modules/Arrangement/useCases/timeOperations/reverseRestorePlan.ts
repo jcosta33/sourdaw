@@ -1,4 +1,6 @@
+import { reverseTakeLaneTransitionPlan } from './reverseTakeLaneTransitionPlan';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
+import { validateTakeLaneTransitionPlan } from './validateTakeLaneTransitionPlan';
 
 function assertRecord(value: unknown): asserts value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -42,6 +44,23 @@ function reverseTransition(value: unknown): unknown {
 }
 
 /**
+ * The take-lane slot has no expected/replacement pair to swap: applying a plan
+ * either restores the captured lanes or retires them, so reversing the plan
+ * flips that effect (#4520). Absent and null both stay as they are — they mean
+ * the operation retired no takes.
+ */
+function reverseTakeLanes(value: unknown): unknown {
+    if (value === null) {
+        return null;
+    }
+    const plan = validateTakeLaneTransitionPlan(value);
+    if (!plan) {
+        throw new TypeError('Global time operation produced an invalid inverse');
+    }
+    return reverseTakeLaneTransitionPlan(plan);
+}
+
+/**
  * Turns a restore plan into the plan that restores the state the original plan reverted
  * from. Redo for a global time operation replays this rather than the forward operation:
  * re-running `deleteTime` would delete a *second* range instead of reinstating the one the
@@ -49,7 +68,7 @@ function reverseTransition(value: unknown): unknown {
  */
 export function reverseRestorePlan(value: unknown): unknown {
     assertRecord(value);
-    return {
+    const reversed: Record<string, unknown> = {
         ...value,
         local: reverseTransition(value.local),
         automation: reverseTransition(value.automation),
@@ -57,4 +76,10 @@ export function reverseRestorePlan(value: unknown): unknown {
         timelineMap: reverseTransition(value.timelineMap),
         clipSatellites: reverseTransition(value.clipSatellites),
     };
+    // Optional key: plans written before take-lane retirement joined the
+    // operation do not carry it, and reversing must not add it to them.
+    if (Object.hasOwn(value, 'takeLanes')) {
+        reversed.takeLanes = reverseTakeLanes(value.takeLanes);
+    }
+    return reversed;
 }

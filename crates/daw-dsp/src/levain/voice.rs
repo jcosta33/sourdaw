@@ -6,6 +6,7 @@
 //! past audibility → lowest energy → oldest.
 
 use super::humanize::NoteHumanization;
+use super::mic::MAX_MIC_POSITIONS;
 use super::types::*;
 use super::zone::SamplePool;
 
@@ -420,7 +421,7 @@ impl SamplePlayback {
     ///
     /// Used by crossfade legato to start the incoming zone where the outgoing
     /// voice already is, rather than at the zone's first frame. `position` is
-    /// in frames of *this* stream, which is what makes it musically right:
+    /// in frames of *this* stream:
     /// wherever the held note had got to, the slurred note is at least that
     /// far past its own recorded onset, so the transition adds no second
     /// attack. Positions past the end fold back into the loop when there is
@@ -616,9 +617,79 @@ pub(super) fn crossfade_rate_for(crossfade_time_secs: f32, sample_rate: f32) -> 
     (1.0 / samples).max(f32::EPSILON)
 }
 
+/// One note's zone on every loaded mic position.
+///
+/// Mic positions are phase-locked recordings of the same performance, so a
+/// note plays every loaded position together. A position with no zone for the
+/// note contributes silence. The lead zone — the first loaded position that
+/// has one — supplies the note's envelope and identity. Construction refuses
+/// a note no loaded position covers, so a voice is only ever triggered with
+/// something to play.
+#[derive(Debug, Clone, Copy)]
+pub struct NoteZones {
+    zones: [Option<Zone>; MAX_MIC_POSITIONS],
+    mic_count: usize,
+    lead_mic: usize,
+    lead: Zone,
+}
+
+impl NoteZones {
+    /// `zones[mic]` is that position's zone for the note; positions at or past
+    /// `mic_count` are not loaded and are ignored. `None` when no loaded
+    /// position has a zone.
+    pub fn new(zones: [Option<Zone>; MAX_MIC_POSITIONS], mic_count: usize) -> Option<Self> {
+        let mic_count = mic_count.min(MAX_MIC_POSITIONS);
+        let (lead_mic, lead) = zones[..mic_count]
+            .iter()
+            .enumerate()
+            .find_map(|(mic, zone)| zone.map(|zone| (mic, zone)))?;
+        let mut loaded = [None; MAX_MIC_POSITIONS];
+        loaded[..mic_count].copy_from_slice(&zones[..mic_count]);
+        Some(Self {
+            zones: loaded,
+            mic_count,
+            lead_mic,
+            lead,
+        })
+    }
+
+    /// A one-position note: `zone` alone, on mic 0.
+    #[cfg(test)]
+    pub(crate) fn single(zone: Zone) -> Self {
+        let mut zones = [None; MAX_MIC_POSITIONS];
+        zones[0] = Some(zone);
+        Self {
+            zones,
+            mic_count: 1,
+            lead_mic: 0,
+            lead: zone,
+        }
+    }
+
+    /// Number of loaded mic positions.
+    #[inline]
+    pub fn mic_count(&self) -> usize {
+        self.mic_count
+    }
+
+    /// The zone position `mic` plays for this note, if it has one.
+    #[inline]
+    pub fn zone(&self, mic: usize) -> Option<&Zone> {
+        self.zones.get(mic).and_then(Option::as_ref)
+    }
+
+    /// The zone that supplies the note's envelope and identity.
+    #[inline]
+    pub fn lead(&self) -> &Zone {
+        &self.lead
+    }
+}
+
 /// A single levain voice that renders one active note.
-/// Heavier than a synth voice: may read from multiple mic streams,
-/// crossfade dynamic layers, and run per-voice envelopes.
+/// Heavier than a synth voice: reads one stream per loaded mic position,
+/// crossfades dynamic layers, and runs a per-voice envelope. Every mic
+/// position of a note shares that envelope, gain, pitch modulation and
+/// lifetime, so the positions start, bend, release and are stolen together.
 pub struct LevainVoice {
     pub active: bool,
     pub note: u8,
@@ -636,23 +707,29 @@ pub struct LevainVoice {
     pub energy: f32,
     pub energy_decay: f32,
 
-    /// Primary sample playback stream (current articulation).
-    pub playback: SamplePlayback,
-    /// Secondary stream for legato transitions (true-legato transition
-    /// sample) or a synthetic-glide target zone.
-    pub crossfade_playback: SamplePlayback,
+    /// Primary sample playback stream per mic position (current
+    /// articulation). Only the first `mic_count` are in use.
+    pub playback: [SamplePlayback; MAX_MIC_POSITIONS],
+    /// Secondary stream per mic position for legato transitions (true-legato
+    /// transition sample), a synthetic-glide outgoing zone, or a steal
+    /// de-click fade.
+    pub crossfade_playback: [SamplePlayback; MAX_MIC_POSITIONS],
     /// Crossfade progress (0.0 = fully primary, 1.0 = fully secondary).
     pub crossfade_amount: f32,
     pub crossfade_rate: f32,
     pub crossfading: bool,
     pub steal_crossfading: bool,
 
-    /// Third stream for the CC1 mod-wheel dynamic-layer crossfade, distinct
-    /// from `crossfade_playback` (owned by legato) so the two features never
-    /// fight over one stream slot. Active for the life of a note whenever its
-    /// trigger velocity landed near the boundary between two authored
-    /// dynamic layers.
-    pub layer_secondary: SamplePlayback,
+    /// Third stream per mic position for the CC1 mod-wheel dynamic-layer
+    /// crossfade, distinct from `crossfade_playback` (owned by legato) so the
+    /// two features never fight over one stream slot. Attached for the life
+    /// of a note whenever its trigger velocity landed near the boundary
+    /// between two authored dynamic layers.
+    pub layer_secondary: [SamplePlayback; MAX_MIC_POSITIONS],
+    /// Which positions have a dynamic layer attached. A position without one
+    /// keeps its primary stream at full weight.
+    layer_attached: [bool; MAX_MIC_POSITIONS],
+    /// Whether any position has a dynamic layer attached.
     pub layer_active: bool,
     layer_gain_primary: f32,
     layer_gain_secondary: f32,
@@ -677,11 +754,13 @@ pub struct LevainVoice {
     /// Articulation ID this voice was triggered with.
     pub articulation: ArticulationId,
 
-    /// Zone ID this voice is playing.
+    /// Zone ID of the lead mic position's zone.
     pub zone_id: ZoneId,
 
-    /// Mic ID this voice is playing.
-    pub mic: MicId,
+    /// Loaded mic positions this voice renders.
+    mic_count: usize,
+    /// The mic position whose zone supplied the envelope.
+    lead_mic: usize,
 
     /// Time since note-on (in samples) for legato detection.
     pub samples_since_on: u32,
@@ -718,8 +797,8 @@ pub struct LevainVoice {
     pub expr_slide: f32,
     /// Voice gain before pressure is applied, so pressure is re-derivable.
     base_gain: f32,
-    /// One-pole state of the timbre tilt filter (audit MD-2).
-    tilt_lp: f32,
+    /// One-pole state of the timbre tilt filter per mic position (audit MD-2).
+    tilt_lp: [f32; MAX_MIC_POSITIONS],
     /// Tilt one-pole coefficient for a ~1.2 kHz split, fixed at construction.
     tilt_coeff: f32,
     pub sample_rate: f32,
@@ -737,13 +816,14 @@ impl LevainVoice {
             age: 0,
             energy: 0.0,
             energy_decay,
-            playback: SamplePlayback::new(),
-            crossfade_playback: SamplePlayback::new(),
+            playback: std::array::from_fn(|_| SamplePlayback::new()),
+            crossfade_playback: std::array::from_fn(|_| SamplePlayback::new()),
             crossfade_amount: 0.0,
             crossfade_rate: 0.0,
             crossfading: false,
             steal_crossfading: false,
-            layer_secondary: SamplePlayback::new(),
+            layer_secondary: std::array::from_fn(|_| SamplePlayback::new()),
+            layer_attached: [false; MAX_MIC_POSITIONS],
             layer_active: false,
             layer_gain_primary: 1.0,
             layer_gain_secondary: 0.0,
@@ -755,7 +835,8 @@ impl LevainVoice {
             gain: OnePoleSmoother::new(1.0, 0.01, sample_rate),
             articulation: 0,
             zone_id: 0,
-            mic: 0,
+            mic_count: 0,
+            lead_mic: 0,
             samples_since_on: 0,
             vibrato_phase: 0.0,
             vibrato_rate_scale: 1.0,
@@ -766,34 +847,38 @@ impl LevainVoice {
             expr_pressure: 0.0,
             expr_slide: 0.0,
             base_gain: 1.0,
-            tilt_lp: 0.0,
+            tilt_lp: [0.0; MAX_MIC_POSITIONS],
             tilt_coeff: 1.0 - (-std::f32::consts::TAU * 1200.0 / sample_rate.max(1.0)).exp(),
             sample_rate,
         }
     }
 
-    /// Trigger this voice with a zone. Resolves end=0 to actual sample length.
+    /// Trigger this voice with a note's zone on every loaded mic position.
+    /// Resolves end=0 to actual sample length.
     pub fn trigger(
         &mut self,
         note: u8,
         channel: u8,
         velocity: u8,
-        zone: &Zone,
+        zones: &NoteZones,
         articulation: ArticulationId,
         gain: f32,
         pool: &SamplePool,
     ) {
         let was_sounding = self.active
-            && self.playback.active
+            && self.any_primary_active()
             && (self.amp_env.current_level() * self.gain.current > 1e-4);
 
         if was_sounding {
             // Declick fade when stealing a sounding voice:
-            // Move previous playback stream to crossfade slot with its effective gain,
-            // and fade it out over 1 ms so the transition does not click.
+            // Move previous playback streams to the crossfade slots with their
+            // effective gain, and fade them out over 1 ms so the transition
+            // does not click.
             let old_gain_factor = self.amp_env.current_level() * self.gain.current;
-            self.crossfade_playback = self.playback.clone();
-            self.crossfade_playback.gain = self.playback.gain * old_gain_factor;
+            for (outgoing, sounding) in self.crossfade_playback.iter_mut().zip(&self.playback) {
+                *outgoing = sounding.clone();
+                outgoing.gain = sounding.gain * old_gain_factor;
+            }
             self.crossfade_amount = 0.0;
             self.crossfade_rate = crossfade_rate_for(0.001, self.sample_rate);
             self.crossfading = true;
@@ -802,9 +887,12 @@ impl LevainVoice {
             self.crossfading = false;
             self.steal_crossfading = false;
             self.crossfade_amount = 0.0;
-            self.crossfade_playback.active = false;
+            for outgoing in self.crossfade_playback.iter_mut() {
+                outgoing.active = false;
+            }
         }
 
+        let lead = zones.lead();
         self.active = true;
         self.note = note;
         self.channel = channel;
@@ -813,32 +901,41 @@ impl LevainVoice {
         self.age = 0;
         self.energy = 0.0;
         self.articulation = articulation;
-        self.zone_id = zone.id;
-        self.mic = zone.mic;
+        self.zone_id = lead.id;
+        self.mic_count = zones.mic_count();
+        self.lead_mic = zones.lead_mic;
         self.samples_since_on = 0;
 
-        self.playback.configure_with_pool(
-            &zone.sample,
-            note,
-            db_to_linear(zone.gain_db),
-            pool,
-            self.sample_rate,
-        );
+        for (mic, playback) in self.playback.iter_mut().enumerate() {
+            match zones.zone(mic) {
+                Some(zone) => playback.configure_with_pool(
+                    &zone.sample,
+                    note,
+                    db_to_linear(zone.gain_db),
+                    pool,
+                    self.sample_rate,
+                ),
+                None => playback.active = false,
+            }
+        }
         self.layer_active = false;
+        self.layer_attached = [false; MAX_MIC_POSITIONS];
         self.layer_gain_primary = 1.0;
         self.layer_gain_secondary = 0.0;
-        self.layer_secondary.active = false;
+        for layer in self.layer_secondary.iter_mut() {
+            layer.active = false;
+        }
 
-        self.amp_env_patch = zone.amp_env;
+        self.amp_env_patch = lead.amp_env;
         self.amp_env
-            .configure(&self.envelope_scaling.apply(&zone.amp_env));
+            .configure(&self.envelope_scaling.apply(&lead.amp_env));
         self.amp_env.trigger();
         // A fresh note starts from neutral expression; the controller's opening
         // bend/pressure/timbre arrives as its own expression message.
         self.expr_bend_semitones = 0.0;
         self.expr_pressure = 0.0;
         self.expr_slide = 0.0;
-        self.tilt_lp = 0.0;
+        self.tilt_lp = [0.0; MAX_MIC_POSITIONS];
         self.base_gain = gain;
         self.gain.snap(gain);
     }
@@ -848,9 +945,15 @@ impl LevainVoice {
     /// the engine's gain/vibrato-phase sites: the timing offset holds the
     /// voice silent, the tuning offset rides the pitch-modulation slot, the
     /// vibrato depth scale narrows or widens this player's vibrato, and the
-    /// start offset skips a few frames into the recording so round-robin
-    /// repeats don't re-attack on the identical waveform frame.
-    pub fn apply_note_humanization(&mut self, humanize: &NoteHumanization, sample_rate: f32) {
+    /// start offset skips a few frames into the lead recording so round-robin
+    /// repeats don't re-attack on the identical waveform frame. Other mic
+    /// positions skip the same recorded time at their own decoded rates.
+    pub fn apply_note_humanization(
+        &mut self,
+        humanize: &NoteHumanization,
+        sample_rate: f32,
+        pool: &SamplePool,
+    ) {
         self.pending_samples = if humanize.timing_offset > 0.0 && sample_rate > 0.0 {
             (humanize.timing_offset * sample_rate).round() as u32
         } else {
@@ -858,9 +961,22 @@ impl LevainVoice {
         };
         self.humanize_tune_semitones = humanize.tuning_cents / 100.0;
         self.vibrato_depth_scale = humanize.vibrato_depth_scale;
-        // Bounded by construction (`generate` caps it at 64 frames); read past
-        // the recording's end simply ends the stream, same as any overrun.
-        self.playback.position += humanize.start_offset as f64;
+        // The generated offset is in lead-source frames, preserving the
+        // single-mic law. Convert that one elapsed time for each decoded mic
+        // rate; pitch modulation must not affect a recording-time offset.
+        let lead_rate = pool
+            .get(self.playback[self.lead_mic].sample_id)
+            .map_or(sample_rate, |sample| sample.sample_rate);
+        for playback in self.playback.iter_mut() {
+            if !playback.active {
+                continue;
+            }
+            let source_rate = pool
+                .get(playback.sample_id)
+                .map_or(sample_rate, |sample| sample.sample_rate);
+            playback.position +=
+                f64::from(humanize.start_offset) * f64::from(source_rate) / f64::from(lead_rate);
+        }
     }
 
     /// Point this voice at a new Attack/Release macro scaling. A sounding voice
@@ -898,52 +1014,91 @@ impl LevainVoice {
     pub fn release(&mut self) {
         self.held = false;
         self.amp_env.release();
-        self.playback.exit_loop();
-        self.crossfade_playback.exit_loop();
-        self.layer_secondary.exit_loop();
+        for stream in self
+            .playback
+            .iter_mut()
+            .chain(self.crossfade_playback.iter_mut())
+            .chain(self.layer_secondary.iter_mut())
+        {
+            stream.exit_loop();
+        }
     }
 
-    /// Begin a crossfade from this voice's current stream into `new_zone` —
+    /// Begin a crossfade from this voice's current streams into `new_zones` —
     /// the crossfade-legato fallback for a slur with no recorded interval
-    /// sample. `target_start_position` is where the incoming zone's playhead
-    /// starts, in that zone's own frames; the caller passes the outgoing
-    /// stream's position so the new zone enters past its recorded onset
-    /// instead of re-articulating it.
+    /// sample. Each mic position crosses from its own outgoing stream into
+    /// its own zone for the new note; a position with no zone for it fades
+    /// out. Each incoming stream starts at its outgoing stream's elapsed
+    /// sample time, converted to the incoming recording's frame rate. A mic
+    /// with no outgoing zone uses the outgoing lead stream's time.
     pub fn start_crossfade(
         &mut self,
-        new_zone: &Zone,
+        new_zones: &NoteZones,
         note: u8,
         crossfade_time_secs: f32,
         sample_rate: f32,
         pool: &SamplePool,
-        target_start_position: f64,
     ) {
-        // Move current playback to crossfade slot.
-        self.crossfade_playback = self.playback.clone();
-        self.playback.configure_with_pool(
-            &new_zone.sample,
-            note,
-            db_to_linear(new_zone.gain_db),
-            pool,
-            self.sample_rate,
-        );
-        self.playback.seek_to(target_start_position);
+        let lead = &self.playback[self.lead_mic];
+        let lead_rate = pool
+            .get(lead.sample_id)
+            .map_or(self.sample_rate, |sample| sample.sample_rate);
+        let lead_time = (lead.position - f64::from(lead.start)) / f64::from(lead_rate);
+        for (mic, (playback, outgoing)) in self
+            .playback
+            .iter_mut()
+            .zip(self.crossfade_playback.iter_mut())
+            .enumerate()
+        {
+            // Move current playback to crossfade slot.
+            *outgoing = playback.clone();
+            match new_zones.zone(mic) {
+                Some(zone) => {
+                    let elapsed = if outgoing.active {
+                        let outgoing_rate = pool
+                            .get(outgoing.sample_id)
+                            .map_or(self.sample_rate, |sample| sample.sample_rate);
+                        (outgoing.position - f64::from(outgoing.start)) / f64::from(outgoing_rate)
+                    } else {
+                        lead_time
+                    };
+                    playback.configure_with_pool(
+                        &zone.sample,
+                        note,
+                        db_to_linear(zone.gain_db),
+                        pool,
+                        self.sample_rate,
+                    );
+                    let incoming_rate = pool
+                        .get(playback.sample_id)
+                        .map_or(self.sample_rate, |sample| sample.sample_rate);
+                    playback
+                        .seek_to(f64::from(playback.start) + elapsed * f64::from(incoming_rate));
+                }
+                None => playback.active = false,
+            }
+        }
 
         self.crossfade_amount = 0.0;
         self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
         self.steal_crossfading = false;
-        self.zone_id = new_zone.id;
+        self.zone_id = new_zones.lead().id;
+        self.mic_count = new_zones.mic_count();
+        self.lead_mic = new_zones.lead_mic;
     }
 
     /// Begin a true-legato transition. `playback` already holds the freshly
-    /// triggered sustain zone (set by `trigger()` just before this call); the
-    /// looked-up transition sample goes into the secondary stream and starts
-    /// at full weight, so the note begins by sounding the transition and
-    /// eases into its own sustain — the mirror image of `start_crossfade`,
-    /// which fades a *new* primary in against whatever was already sounding.
-    /// Without this, a true-legato result had nothing to crossfade but the
-    /// sustain zone against itself.
+    /// triggered sustain zones (set by `trigger()` just before this call); the
+    /// looked-up transition sample goes into the secondary stream of every
+    /// mic position that has a sustain zone and starts at full weight, so the
+    /// note begins by sounding the transition and eases into its own sustain —
+    /// the mirror image of `start_crossfade`, which fades a *new* primary in
+    /// against whatever was already sounding. Without this, a true-legato
+    /// result had nothing to crossfade but the sustain zone against itself.
+    ///
+    /// A transition recording carries no mic position, so every position that
+    /// sounds the note crosses from that same recording into its own sustain.
     pub fn start_legato_transition(
         &mut self,
         transition_sample: &SampleRef,
@@ -952,30 +1107,35 @@ impl LevainVoice {
         sample_rate: f32,
         pool: &SamplePool,
     ) {
-        self.crossfade_playback.configure_with_pool(
-            transition_sample,
-            note,
-            1.0,
-            pool,
-            sample_rate,
-        );
+        for (playback, transition) in self.playback.iter().zip(self.crossfade_playback.iter_mut()) {
+            if playback.active {
+                transition.configure_with_pool(transition_sample, note, 1.0, pool, sample_rate);
+            } else {
+                transition.active = false;
+            }
+        }
         self.crossfade_amount = 0.0;
         self.crossfade_rate = crossfade_rate_for(crossfade_time_secs, sample_rate);
         self.crossfading = true;
         self.steal_crossfading = false;
     }
 
-    /// Attach a second, velocity-adjacent zone that CC1 can blend towards
-    /// (audit F6). Independent of `crossfade_playback`, which legato owns, so
-    /// the two features never contend for one stream slot.
-    pub fn set_dynamic_layer(&mut self, zone: &Zone, note: u8, pool: &SamplePool) {
-        self.layer_secondary.configure_with_pool(
+    /// Attach a second, velocity-adjacent zone on mic position `mic` that CC1
+    /// can blend towards (audit F6). Independent of `crossfade_playback`,
+    /// which legato owns, so the two features never contend for one stream
+    /// slot.
+    pub fn set_dynamic_layer(&mut self, mic: usize, zone: &Zone, note: u8, pool: &SamplePool) {
+        let Some(layer) = self.layer_secondary.get_mut(mic) else {
+            return;
+        };
+        layer.configure_with_pool(
             &zone.sample,
             note,
             db_to_linear(zone.gain_db),
             pool,
             self.sample_rate,
         );
+        self.layer_attached[mic] = true;
         self.layer_active = true;
     }
 
@@ -1014,9 +1174,15 @@ impl LevainVoice {
         // (audit MD-2), so a bent note still vibratos and a vibrato-less patch
         // still bends.
         let humanized_bend = self.expr_bend_semitones + self.humanize_tune_semitones;
+        let mics = self.mic_count;
         if depth_cents < 0.1 || base_rate_hz <= 0.0 {
-            self.playback.apply_pitch_mod(humanized_bend);
-            self.crossfade_playback.apply_pitch_mod(humanized_bend);
+            for (playback, outgoing) in self.playback[..mics]
+                .iter_mut()
+                .zip(self.crossfade_playback[..mics].iter_mut())
+            {
+                playback.apply_pitch_mod(humanized_bend);
+                outgoing.apply_pitch_mod(humanized_bend);
+            }
             return;
         }
 
@@ -1040,20 +1206,28 @@ impl LevainVoice {
         let effective_depth = depth_cents * self.vibrato_depth_scale;
         let semitones = (effective_depth / 100.0) * onset_gain * lfo + humanized_bend;
 
-        self.playback.apply_pitch_mod(semitones);
+        for playback in self.playback[..mics].iter_mut() {
+            playback.apply_pitch_mod(semitones);
+        }
         // The crossfade-in playback (active during legato transitions)
         // must follow the same vibrato so it lines up phase-coherently
         // with the primary stream.
         if self.crossfading {
-            self.crossfade_playback.apply_pitch_mod(semitones);
+            for outgoing in self.crossfade_playback[..mics].iter_mut() {
+                outgoing.apply_pitch_mod(semitones);
+            }
         }
     }
 
-    /// Process one sample, returns mono output.
+    /// Process one sample, returning one mono output per mic position (only
+    /// the first `mic_count` carry signal). Every position's streams advance
+    /// whether or not the mixer is sounding that position, so switching a
+    /// position on mid-note brings in the held note phase-aligned.
     #[inline]
-    pub fn tick(&mut self, pool: &SamplePool) -> f32 {
+    pub fn tick(&mut self, pool: &SamplePool) -> [f32; MAX_MIC_POSITIONS] {
+        let mut output = [0.0_f32; MAX_MIC_POSITIONS];
         if !self.active {
-            return 0.0;
+            return output;
         }
 
         // Humanized timing: hold the note's attack until its offset elapses.
@@ -1065,7 +1239,7 @@ impl LevainVoice {
             self.pending_samples -= 1;
             self.age = self.age.saturating_add(1);
             self.samples_since_on = self.samples_since_on.saturating_add(1);
-            return 0.0;
+            return output;
         }
 
         self.age = self.age.saturating_add(1);
@@ -1074,46 +1248,67 @@ impl LevainVoice {
         let env = self.amp_env.tick();
         if !self.amp_env.is_active() && !self.steal_crossfading {
             self.active = false;
-            return 0.0;
+            return output;
         }
 
-        let primary = self.playback.read_sample(pool);
+        let mics = self.mic_count;
+        let mut sample = [0.0_f32; MAX_MIC_POSITIONS];
+        for (mic_sample, playback) in sample[..mics].iter_mut().zip(self.playback.iter_mut()) {
+            *mic_sample = playback.read_sample(pool);
+        }
 
-        let (mut sample, steal_fade_sample) = if self.crossfading {
-            let secondary = self.crossfade_playback.read_sample(pool);
+        let mut steal_fade_sample = [0.0_f32; MAX_MIC_POSITIONS];
+        if self.crossfading {
+            let mut secondary = [0.0_f32; MAX_MIC_POSITIONS];
+            for (mic_secondary, outgoing) in secondary[..mics]
+                .iter_mut()
+                .zip(self.crossfade_playback.iter_mut())
+            {
+                *mic_secondary = outgoing.read_sample(pool);
+            }
             self.crossfade_amount += self.crossfade_rate;
 
-            let outgoing_finished = !self.crossfade_playback.active;
+            let outgoing_finished = self.crossfade_playback[..mics]
+                .iter()
+                .all(|outgoing| !outgoing.active);
             if self.crossfade_amount >= 1.0 || outgoing_finished {
                 self.crossfade_amount = 1.0;
                 self.crossfading = false;
                 self.steal_crossfading = false;
-                self.crossfade_playback.active = false;
+                for outgoing in self.crossfade_playback[..mics].iter_mut() {
+                    outgoing.active = false;
+                }
             }
 
             // Equal-power crossfade. Use sin_cos() for single call.
             let angle = self.crossfade_amount * std::f32::consts::FRAC_PI_2;
             let (gain_new, gain_old) = angle.sin_cos();
 
-            if self.steal_crossfading {
-                (primary * gain_new, secondary * gain_old)
-            } else {
-                (primary * gain_new + secondary * gain_old, 0.0)
+            for mic in 0..mics {
+                if self.steal_crossfading {
+                    steal_fade_sample[mic] = secondary[mic] * gain_old;
+                    sample[mic] *= gain_new;
+                } else {
+                    sample[mic] = sample[mic] * gain_new + secondary[mic] * gain_old;
+                }
             }
-        } else {
-            (primary, 0.0)
-        };
+        }
 
         // CC1 mod-wheel dynamic-layer crossfade (audit F6): blend in the
         // velocity-adjacent zone attached by `set_dynamic_layer`, weighted by
         // this block's equal-power layer gains.
         if self.layer_active {
-            let layer_sample = self.layer_secondary.read_sample(pool);
-            sample = sample * self.layer_gain_primary + layer_sample * self.layer_gain_secondary;
+            for mic in 0..mics {
+                if self.layer_attached[mic] {
+                    let layer_sample = self.layer_secondary[mic].read_sample(pool);
+                    sample[mic] = sample[mic] * self.layer_gain_primary
+                        + layer_sample * self.layer_gain_secondary;
+                }
+            }
         }
 
         // Check if sample playback is finished.
-        if !self.playback.active && !self.crossfading {
+        if !self.any_primary_active() && !self.crossfading {
             self.amp_env.release();
             // ...and once no stream has anything left to read, free the slot
             // rather than sit out the rest of the release envelope. Every
@@ -1122,7 +1317,8 @@ impl LevainVoice {
             // does not reach the `1e-5` that idles it until 11.5 time
             // constants have passed, which on a struck one-shot with a long
             // modelled release is tens of seconds of pool held by silence.
-            let layer_still_sounding = self.layer_active && self.layer_secondary.active;
+            let layer_still_sounding =
+                (0..mics).any(|mic| self.layer_attached[mic] && self.layer_secondary[mic].active);
             if !layer_still_sounding {
                 self.active = false;
             }
@@ -1132,22 +1328,33 @@ impl LevainVoice {
         // the residual is the high band, and adding a signed fraction of it
         // back tilts the voice bright (slide > 0) or dark (slide < 0). Neutral
         // slide skips the filter entirely, so the sample is untouched.
-        let shaped = if self.expr_slide.abs() > 0.001 {
-            self.tilt_lp += self.tilt_coeff * (sample - self.tilt_lp);
-            let high = sample - self.tilt_lp;
-            sample + self.expr_slide * high
-        } else {
-            sample
-        };
-
+        let tilted = self.expr_slide.abs() > 0.001;
         let gain = self.gain.tick();
-        let output = shaped * env * gain + steal_fade_sample;
+        let mut energy_input = 0.0_f32;
+        for mic in 0..mics {
+            let shaped = if tilted {
+                self.tilt_lp[mic] += self.tilt_coeff * (sample[mic] - self.tilt_lp[mic]);
+                let high = sample[mic] - self.tilt_lp[mic];
+                sample[mic] + self.expr_slide * high
+            } else {
+                sample[mic]
+            };
+            output[mic] = shaped * env * gain + steal_fade_sample[mic];
+            energy_input += output[mic].abs();
+        }
 
         // Track energy for voice monitoring (simple exponential RMS).
-        let abs_sample = output.abs();
-        self.energy = self.energy * self.energy_decay + abs_sample * (1.0 - self.energy_decay);
+        self.energy = self.energy * self.energy_decay + energy_input * (1.0 - self.energy_decay);
 
         output
+    }
+
+    /// Whether any loaded mic position's primary stream still has material.
+    #[inline]
+    fn any_primary_active(&self) -> bool {
+        self.playback[..self.mic_count]
+            .iter()
+            .any(|playback| playback.active)
     }
 
     /// How loud this voice is right now, as a linear amplitude.
@@ -1382,6 +1589,29 @@ mod tests {
         (pool, zone)
     }
 
+    #[test]
+    fn a_single_mic_keeps_its_humanized_source_frame_offset_at_each_output_rate() {
+        let (pool, mut zone) = silent_headed_sample(64, 256);
+        zone.sample.start = 17;
+        let humanize = NoteHumanization {
+            start_offset: 37,
+            timing_offset: 0.002,
+            ..NoteHumanization::default()
+        };
+        for output_rate in [44_100.0, 48_000.0, 96_000.0] {
+            let mut voice = LevainVoice::new(output_rate);
+            voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+            voice.apply_note_humanization(&humanize, output_rate, &pool);
+            assert_eq!(
+                voice.playback[0].position,
+                f64::from(zone.sample.start + 37)
+            );
+            assert_eq!(voice.pending_samples, (0.002 * output_rate).round() as u32);
+            assert_eq!(voice.humanize_tune_semitones, 0.0);
+            assert_eq!(voice.vibrato_depth_scale, 1.0);
+        }
+    }
+
     /// A release tail still at full envelope must be more protected than a spent one.
     #[test]
     fn a_release_tail_still_at_full_envelope_outranks_a_spent_one() {
@@ -1414,15 +1644,15 @@ mod tests {
 
         let (pool, zone) = silent_headed_sample(HEAD_FRAMES, BODY_FRAMES);
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
         let mut heard_while_held = 0.0_f32;
         for _ in 0..HELD_FRAMES {
-            heard_while_held = heard_while_held.max(voice.tick(&pool).abs());
+            heard_while_held = heard_while_held.max(voice.tick(&pool)[0].abs());
         }
         voice.release();
         for _ in 0..RELEASED_FRAMES {
-            heard_while_held = heard_while_held.max(voice.tick(&pool).abs());
+            heard_while_held = heard_while_held.max(voice.tick(&pool)[0].abs());
         }
 
         assert_eq!(
@@ -1443,7 +1673,7 @@ mod tests {
         // What stealing this slot would have thrown away.
         let mut discarded_peak = 0.0_f32;
         for _ in 0..(HEAD_FRAMES + BODY_FRAMES) as usize {
-            discarded_peak = discarded_peak.max(voice.tick(&pool).abs());
+            discarded_peak = discarded_peak.max(voice.tick(&pool)[0].abs());
         }
 
         assert!(
@@ -1510,7 +1740,7 @@ mod tests {
 
         // Voice 0: quiet sustaining note (velocity 20, sustain 1.0, rendered for 5000 samples)
         let mut quiet_sustaining = LevainVoice::new(SAMPLE_RATE);
-        quiet_sustaining.trigger(60, 0, 20, &zone, 0, 1.0, &pool);
+        quiet_sustaining.trigger(60, 0, 20, &NoteZones::single(zone), 0, 1.0, &pool);
         for _ in 0..5000 {
             quiet_sustaining.tick(&pool);
         }
@@ -1518,7 +1748,7 @@ mod tests {
         // Voice 1: loud newly-struck note (velocity 100, sustain 1.0, rendered for only 5 samples)
         // In the old energy-based score, its energy was 0.0 so it was chosen as victim.
         let mut loud_newly_struck = LevainVoice::new(SAMPLE_RATE);
-        loud_newly_struck.trigger(64, 0, 100, &zone, 0, 1.0, &pool);
+        loud_newly_struck.trigger(64, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         for _ in 0..5 {
             loud_newly_struck.tick(&pool);
         }
@@ -1543,14 +1773,14 @@ mod tests {
 
         // Voice 0: loud held sustaining note (velocity 100, sustain 1.0)
         let mut held_voice = LevainVoice::new(SAMPLE_RATE);
-        held_voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        held_voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         for _ in 0..1000 {
             held_voice.tick(&pool);
         }
 
         // Voice 1: loud releasing note (velocity 100, but released)
         let mut releasing_voice = LevainVoice::new(SAMPLE_RATE);
-        releasing_voice.trigger(64, 0, 100, &zone, 0, 1.0, &pool);
+        releasing_voice.trigger(64, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         for _ in 0..1000 {
             releasing_voice.tick(&pool);
         }
@@ -1579,14 +1809,14 @@ mod tests {
         // Both voices have identical velocity and envelope level (both sustaining at full level)
         // Voice 0 is older: age 30,000 samples (> 208 ms / 10,000 samples)
         let mut older_voice = LevainVoice::new(SAMPLE_RATE);
-        older_voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        older_voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         for _ in 0..30000 {
             older_voice.tick(&pool);
         }
 
         // Voice 1 is younger: age 15,000 samples (also > 10,000 samples)
         let mut younger_voice = LevainVoice::new(SAMPLE_RATE);
-        younger_voice.trigger(64, 0, 100, &zone, 0, 1.0, &pool);
+        younger_voice.trigger(64, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         for _ in 0..15000 {
             younger_voice.tick(&pool);
         }
@@ -1646,12 +1876,12 @@ mod tests {
         };
 
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 127, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 127, &NoteZones::single(zone), 0, 1.0, &pool);
 
         // Render until voice is stably outputting ~0.8
         let mut last_sample = 0.0;
         for _ in 0..500 {
-            last_sample = voice.tick(&pool);
+            last_sample = voice.tick(&pool)[0];
         }
         assert!(
             (last_sample - 0.8).abs() < 0.05,
@@ -1659,10 +1889,10 @@ mod tests {
         );
 
         // Now steal the sounding voice with another note (e.g. note 67)
-        voice.trigger(67, 0, 127, &zone, 0, 1.0, &pool);
+        voice.trigger(67, 0, 127, &NoteZones::single(zone), 0, 1.0, &pool);
 
         // Verify the very first sample rendered after the steal does NOT jump to 0.0 (no single-sample click)
-        let first_sample_after_steal = voice.tick(&pool);
+        let first_sample_after_steal = voice.tick(&pool)[0];
         let initial_step = (first_sample_after_steal - last_sample).abs();
         assert!(
             initial_step < 0.05,
@@ -1673,7 +1903,7 @@ mod tests {
         let fade_samples = (0.001 * SAMPLE_RATE).round() as usize; // ~44 samples
         let mut prev = first_sample_after_steal;
         for _ in 1..fade_samples {
-            let curr = voice.tick(&pool);
+            let curr = voice.tick(&pool)[0];
             let delta = (curr - prev).abs();
             assert!(
                 delta < 0.05,
@@ -1739,8 +1969,8 @@ mod tests {
         cap: usize,
     ) -> Vec<f32> {
         let mut out = Vec::with_capacity(cap);
-        while voice.playback.active {
-            out.push(voice.tick(pool));
+        while voice.playback[0].active {
+            out.push(voice.tick(pool)[0]);
             assert!(out.len() <= cap, "playback never ended within {cap} frames");
         }
         out
@@ -1782,7 +2012,7 @@ mod tests {
         ] {
             let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
             let mut voice = LevainVoice::new(output_rate);
-            voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+            voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
             let rendered = render_until_playback_spent(&mut voice, &pool, expected_frames * 2);
             // One frame of slack: the playhead crosses `end` mid-frame, and the
@@ -1810,13 +2040,13 @@ mod tests {
         let (pool, zone) = tonal_sample(44_100.0, 0.5, 440.0, 69);
         let output_rate = 48_000.0;
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(72, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(72, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
         let expected_speed = 2.0_f64.powf(3.0 / 12.0) * f64::from(44_100.0 / 48_000.0);
         assert!(
-            (voice.playback.base_speed - expected_speed).abs() < 1e-9,
+            (voice.playback[0].base_speed - expected_speed).abs() < 1e-9,
             "base speed {} must be the transposition times the rate ratio {expected_speed}",
-            voice.playback.base_speed
+            voice.playback[0].base_speed
         );
 
         let expected_frames = 22_050.0 / expected_speed;
@@ -1841,7 +2071,7 @@ mod tests {
         zone.sample.loop_end = 22_050;
         let output_rate = 48_000.0;
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
         let ratio = f64::from(44_100.0) / f64::from(48_000.0);
         // Halfway through one loop pass: 12,000 output frames have consumed
@@ -1850,18 +2080,18 @@ mod tests {
             voice.tick(&pool);
         }
         assert!(
-            (voice.playback.position - 11_025.0).abs() < 0.01,
+            (voice.playback[0].position - 11_025.0).abs() < 0.01,
             "after 12,000 output frames the playhead must sit at source frame 11,025, got {}",
-            voice.playback.position
+            voice.playback[0].position
         );
         // One full pass: 24,000 output frames wrap onto the loop start.
         for _ in 0..12_000 {
             voice.tick(&pool);
         }
         assert!(
-            voice.playback.position < ratio * 2.0,
+            voice.playback[0].position < ratio * 2.0,
             "after 24,000 output frames the loop must have wrapped, playhead at {}",
-            voice.playback.position
+            voice.playback[0].position
         );
     }
 
@@ -1878,35 +2108,35 @@ mod tests {
 
         // Crossfade legato: the incoming primary reconfigures against the pool.
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
-        voice.start_crossfade(&zone_alt, 71, 0.05, output_rate, &pool, 0.0);
+        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.start_crossfade(&NoteZones::single(zone_alt), 71, 0.05, output_rate, &pool);
         // zone_alt's root is 71 and the slur targets note 71: pitch-neutral, so
         // the ratio is the whole base speed.
         let expected = ratio;
         assert!(
-            (voice.playback.base_speed - expected).abs() < 1e-9,
+            (voice.playback[0].base_speed - expected).abs() < 1e-9,
             "crossfade-legato primary base speed {} missing the ratio",
-            voice.playback.base_speed
+            voice.playback[0].base_speed
         );
 
         // True-legato transition sample in the secondary stream.
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
         voice.start_legato_transition(&zone_alt.sample, 71, 0.05, output_rate, &pool);
         assert!(
-            (voice.crossfade_playback.base_speed - expected).abs() < 1e-9,
+            (voice.crossfade_playback[0].base_speed - expected).abs() < 1e-9,
             "true-legato transition base speed {} missing the ratio",
-            voice.crossfade_playback.base_speed
+            voice.crossfade_playback[0].base_speed
         );
 
         // CC1 dynamic layer stream.
         let mut voice = LevainVoice::new(output_rate);
-        voice.trigger(69, 0, 100, &zone, 0, 1.0, &pool);
-        voice.set_dynamic_layer(&zone_alt, 71, &pool);
+        voice.trigger(69, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
+        voice.set_dynamic_layer(0, &zone_alt, 71, &pool);
         assert!(
-            (voice.layer_secondary.base_speed - expected).abs() < 1e-9,
+            (voice.layer_secondary[0].base_speed - expected).abs() < 1e-9,
             "dynamic-layer base speed {} missing the ratio",
-            voice.layer_secondary.base_speed
+            voice.layer_secondary[0].base_speed
         );
     }
 
@@ -2067,7 +2297,7 @@ mod tests {
             release: 0.2,
         };
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 100, &NoteZones::single(zone), 0, 1.0, &pool);
 
         // Instant attack; drive the envelope alone into mid-Decay so the
         // reading is the envelope's own state, not the rendered gain.

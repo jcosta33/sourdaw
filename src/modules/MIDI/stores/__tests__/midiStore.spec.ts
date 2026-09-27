@@ -78,7 +78,9 @@ describe('midiStore', () => {
             midiStore.hydrate();
         }).not.toThrow();
 
-        expect(midiStore.value).toEqual(defaultMidiStoreState);
+        // Garbage cannot prove a coordinate format, so the sanitized store
+        // stays unstamped — the migration pass resolves and stamps it on load.
+        expect(midiStore.value).toEqual({ ...defaultMidiStoreState, noteCoordinateFormat: undefined });
     });
 
     it('exposes a concrete unsigned u32 seed after default and legacy hydration', () => {

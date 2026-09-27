@@ -54,6 +54,8 @@ import {
     isTestPath,
     semanticRule,
     SEMANTIC_RULES,
+    type SemanticBudgetProfile,
+    type SemanticVerifyBudget,
     VERIFICATION_ATTRIBUTION_THRESHOLD,
     VERIFICATION_KIND_THRESHOLD,
     VERIFICATION_SUPPORT_THRESHOLD,
@@ -2733,8 +2735,7 @@ describe('contract classification follows each side on both routes', () => {
                 log: () => undefined,
             },
             revision: BASE_REVISION,
-            profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits,
+            profile: profileWithVerifyBudget({ maxRegionBytes: 100 }),
             findings: [
                 {
                     findingId: 'f1',
@@ -2869,8 +2870,7 @@ describe('contract classification follows each side on both routes', () => {
                 log: () => undefined,
             },
             revision: BASE_REVISION,
-            profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits,
+            profile: profileWithVerifyBudget({ maxRegionBytes: 100 }),
             findings: [
                 {
                     findingId: 'f1',
@@ -3785,6 +3785,12 @@ describe('budget profiles', () => {
     it('ships profiles whose limits are internally consistent', () => {
         for (const profile of Object.values(SEMANTIC_BUDGET_PROFILES)) {
             expect(() => assertBudgetProfile(profile)).not.toThrow();
+            // The verify budgets bind in turn: a region the collector admits must fit one request's
+            // state budget, and one request the run's total, or the profile configures a collection
+            // that can never be sent.
+            expect(profile.verify.maxRegionBytes).toBeLessThanOrEqual(profile.verify.maxStatePlusQuestionBytes);
+            expect(profile.verify.maxStatePlusQuestionBytes).toBeLessThanOrEqual(profile.verify.maxRequestBytes);
+            expect(profile.verify.maxRequestBytes).toBeLessThanOrEqual(profile.verify.maxTotalSubmittedBytes);
         }
     });
 });
@@ -4716,7 +4722,6 @@ describe('verify incomplete attribution', () => {
             },
             revision: BASE_REVISION,
             profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
             findings: [
                 {
                     findingId: 'f1',
@@ -4803,7 +4808,6 @@ describe('verify summary wording', () => {
             },
             revision: BASE_REVISION,
             profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
             findings: [
                 {
                     findingId: 'f1',
@@ -5444,7 +5448,6 @@ describe('verify-path screening and identity', () => {
             },
             revision: BASE_REVISION,
             profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
             findings: [
                 {
                     findingId: 'f1',
@@ -5609,7 +5612,6 @@ describe('verify-path screening and identity', () => {
             },
             revision: BASE_REVISION,
             profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
             findings,
             runId: 'verify-identity',
         });
@@ -5668,7 +5670,6 @@ describe('verify mode', () => {
                 },
                 revision: BASE_REVISION,
                 profile: SEMANTIC_BUDGET_PROFILES.local,
-                limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
                 findings: [{ ...finding, headSha: 'f'.repeat(40) }],
                 runId: 'verify-test',
             })
@@ -5809,7 +5810,6 @@ describe('execution state and required evidence resolution', () => {
             },
             revision: BASE_REVISION,
             profile: SEMANTIC_BUDGET_PROFILES.local,
-            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
             findings: [
                 {
                     findingId: 'f1',
@@ -6605,10 +6605,16 @@ function reference(input: { evidenceId: string; path: string; side?: EvidenceSid
     };
 }
 
+/** A shipped profile with selected verify byte budgets replaced, so a spec can size the verify gate. */
+function profileWithVerifyBudget(overrides: Partial<SemanticVerifyBudget>): SemanticBudgetProfile {
+    return { ...SEMANTIC_BUDGET_PROFILES.local, verify: { ...SEMANTIC_BUDGET_PROFILES.local.verify, ...overrides } };
+}
+
 async function verifyWith(input: {
     provider: SemanticProviderPort;
     blobs?: Record<string, string>;
-    limits?: { maxRegionBytes: number; maxTotalBytes: number };
+    /** A profile whose verify byte budgets replace the shipped local ones, so a spec can size the gate. */
+    profile?: SemanticBudgetProfile;
     findings?: CandidateFinding[];
     runId?: string;
 }): Promise<{ report: SemanticVerifyReport }> {
@@ -6623,8 +6629,7 @@ async function verifyWith(input: {
             log: () => undefined,
         },
         revision: BASE_REVISION,
-        profile: SEMANTIC_BUDGET_PROFILES.local,
-        limits: input.limits ?? { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+        profile: input.profile ?? SEMANTIC_BUDGET_PROFILES.local,
         findings: input.findings ?? [
             {
                 findingId: 'f1',
@@ -6909,7 +6914,7 @@ describe('verify withholds a region over the per-region budget', () => {
         const { report } = await verifyWith({
             provider,
             blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'const oversized_value = 1;\n'.repeat(8) },
-            limits: { maxRegionBytes: 32, maxTotalBytes: 8_192 },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 32 }),
         });
         expect(providerCalls).toBe(0);
         expect(report.findingAssessments).toHaveLength(0);
@@ -6934,7 +6939,7 @@ describe('verify withholds a region over the per-region budget', () => {
         const { report } = await verifyWith({
             provider,
             blobs: { [`${HEAD}:scripts/reviewDossier.ts`]: 'const oversized = 1;\n'.repeat(8) },
-            limits: { maxRegionBytes: 32, maxTotalBytes: 8_192 },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 32 }),
             findings: [
                 {
                     findingId: 'f1',
@@ -6991,7 +6996,7 @@ describe('verify withholds a region over the per-region budget', () => {
         const { report } = await verifyWith({
             provider,
             blobs: { [`${HEAD}:${specPath}`]: specAfter },
-            limits: { maxRegionBytes: 32, maxTotalBytes: 8_192 },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 32 }),
             findings: [
                 {
                     findingId: 'f1',
@@ -7020,7 +7025,7 @@ describe('verify withholds a region over the per-region budget', () => {
                 strongestEvidence: { none: 1 },
             }),
             blobs: { [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n' },
-            limits: { maxRegionBytes: 4_096, maxTotalBytes: 8_192 },
+            profile: profileWithVerifyBudget({ maxRegionBytes: 4_096 }),
         });
         const assessment = report.findingAssessments[0];
         expect(assessment?.disposition).toBe('ready_for_orchestrator_validation');
@@ -7047,7 +7052,7 @@ describe('verify withholds a region over the per-region budget', () => {
         const { report } = await verifyWith({
             provider,
             blobs: { [`${HEAD}:src/modules/Project/a.ts`]: region },
-            limits: { maxRegionBytes: rawBytes, maxTotalBytes: 8_192 },
+            profile: profileWithVerifyBudget({ maxRegionBytes: rawBytes }),
         });
         expect(providerCalls).toBe(0);
         expect(report.findingAssessments).toHaveLength(0);
@@ -7087,12 +7092,164 @@ describe('verify withholds a region over the per-region budget', () => {
                 strongestEvidence: { none: 1 },
             }),
             blobs: { [`${HEAD}:src/modules/Project/a.ts`]: region },
-            limits: { maxRegionBytes: serializedBytes, maxTotalBytes: 8_192 },
+            profile: profileWithVerifyBudget({ maxRegionBytes: serializedBytes }),
         });
         const assessment = report.findingAssessments[0];
         expect(assessment?.disposition).toBe('ready_for_orchestrator_validation');
         expect(report.scope.truncated).toHaveLength(0);
         expect(report.failureCode).toBeUndefined();
+    });
+});
+
+describe('the verify pass runs on the profile-owned verify budgets', () => {
+    /** The serialized cost of one whole-file region, the same measure the verify gate charges. */
+    function wholeFileRegionCost(path: string, region: string): number {
+        return regionCost(
+            {
+                evidenceId: 'a1',
+                revisionSha: HEAD,
+                path,
+                side: 'after',
+                startLine: 1,
+                endLine: region.split('\n').length,
+                contentHash: semanticDigest({ region }),
+            },
+            region
+        );
+    }
+
+    it('assesses a finding whose referenced region exceeds the scan per-region budget but fits the verify budget', async () => {
+        // The verify pass collected findings under budgets sized for the scan pass, so a referenced
+        // region larger than one scan request was withheld and the questions abstained for want of
+        // sent evidence; PR #4777's verify round returned no decidable disposition on any of its
+        // seven findings. A region between the two budgets must now be supplied and judged.
+        const region = 'export const decided = 1;\n'.repeat(800);
+        const serialized = wholeFileRegionCost('src/modules/Project/a.ts', region);
+        const scanBudget = SEMANTIC_BUDGET_PROFILES.local.maxStatePlusQuestionBytes;
+        const verifyBudget = SEMANTIC_BUDGET_PROFILES.local.verify.maxRegionBytes;
+        // The fixture only distinguishes the two routes while it sits strictly between their budgets.
+        expect(serialized).toBeGreaterThan(scanBudget);
+        expect(serialized).toBeLessThanOrEqual(verifyBudget);
+
+        const { report } = await verifyWith({
+            provider: perQuestionProvider({
+                support: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                attribution: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                kind: { behavioral_or_contract_issue: 0.9, style_preference: 0.05, undetermined: 0.05 },
+                strongestEvidence: { none: 1 },
+            }),
+            blobs: { [`${HEAD}:src/modules/Project/a.ts`]: region },
+        });
+        expect(report.scope.truncated).toHaveLength(0);
+        expect(report.scope.unassessed).toHaveLength(0);
+        expect(report.failureCode).toBeUndefined();
+        const assessment = report.findingAssessments[0];
+        expect(assessment?.support.outcome).toBe('supported');
+        expect(assessment?.attribution.outcome).toBe('introduced_by_change');
+        expect(assessment?.kind.outcome).toBe('behavioral_or_contract_issue');
+        expect(assessment?.disposition).toBe('ready_for_orchestrator_validation');
+        expect(assessment?.reasoning).not.toContain('not supplied');
+    });
+
+    it('names a region over the shipped verify budget as truncated instead of sending it', async () => {
+        // The funded budget is still a budget: a region it cannot carry is withheld, named with the
+        // shared withheld-region reason, and the finding is recorded unassessed rather than judged
+        // over a fragment or sent silently.
+        const region = 'const large_line = 1;\n'.repeat(4_000);
+        const serialized = wholeFileRegionCost('src/modules/Project/a.ts', region);
+        expect(serialized).toBeGreaterThan(SEMANTIC_BUDGET_PROFILES.local.verify.maxRegionBytes);
+
+        let providerCalls = 0;
+        const provider: SemanticProviderPort = {
+            systemOne: async () => {
+                providerCalls += 1;
+                throw new Error('the provider must not receive a withheld region');
+            },
+        };
+        const { report } = await verifyWith({ provider, blobs: { [`${HEAD}:src/modules/Project/a.ts`]: region } });
+        expect(providerCalls).toBe(0);
+        expect(report.scope.truncated).toEqual([
+            { path: 'src/modules/Project/a.ts', reason: 'region-exceeds-per-region-budget (after)' },
+        ]);
+        expect(report.scope.unassessed).toEqual([{ path: 'f1', reason: 'no-admissible-evidence' }]);
+        expect(report.failureCode).toBeUndefined();
+    });
+
+    it('refuses a run whose submissions exceed the verify byte budget and records the spend', async () => {
+        // Funding the evidence must not soften the caps: the budget controller refuses admission once
+        // the run's stated submitted-byte budget is spent, the refused finding is recorded unassessed
+        // with that reason, and usage reports the bytes actually submitted.
+        const profile = profileWithVerifyBudget({
+            maxRegionBytes: 2_000,
+            maxStatePlusQuestionBytes: 4_000,
+            maxRequestBytes: 6_000,
+            maxTotalSubmittedBytes: 6_000,
+        });
+        const seenBodies: number[] = [];
+        const provider: SemanticProviderPort = {
+            systemOne: async ({ state, questions, model }) => {
+                seenBodies.push(Buffer.byteLength(JSON.stringify({ state, questions, model }), 'utf8'));
+                return {
+                    model: TYPESAFE_MODEL,
+                    answers: {
+                        support: {
+                            type: 'choice',
+                            probabilities: { supported: 0.9, contradicted: 0.05, insufficient_context: 0.05 },
+                            confidence: 0.9,
+                            choice: 'supported',
+                        },
+                        attribution: {
+                            type: 'choice',
+                            probabilities: { introduced_by_change: 0.9, pre_existing: 0.05, undetermined: 0.05 },
+                            confidence: 0.9,
+                            choice: 'introduced_by_change',
+                        },
+                        kind: {
+                            type: 'choice',
+                            probabilities: {
+                                behavioral_or_contract_issue: 0.9,
+                                style_preference: 0.05,
+                                undetermined: 0.05,
+                            },
+                            confidence: 0.9,
+                            choice: 'behavioral_or_contract_issue',
+                        },
+                        strongestEvidence: {
+                            type: 'choice',
+                            probabilities: { none: 1 },
+                            confidence: 0.9,
+                            choice: 'none',
+                        },
+                    },
+                    usage: { input_tokens: 5, output_tokens: 0 },
+                };
+            },
+        };
+        const finding = (findingId: string, path: string): CandidateFinding => ({
+            findingId,
+            headSha: HEAD,
+            claim: 'a claim',
+            expectedBehavior: 'expected',
+            evidenceReferences: [{ path, side: 'after', startLine: 1, endLine: Number.MAX_SAFE_INTEGER }],
+        });
+        const { report } = await verifyWith({
+            provider,
+            profile,
+            blobs: {
+                [`${HEAD}:src/modules/Project/a.ts`]: 'export const a = 1;\n'.repeat(60),
+                [`${HEAD}:src/modules/Project/b.ts`]: 'export const b = 2;\n'.repeat(60),
+            },
+            findings: [finding('f1', 'src/modules/Project/a.ts'), finding('f2', 'src/modules/Project/b.ts')],
+        });
+        // The first request consumed most of the small budget, so the second was refused before any
+        // provider call rather than oversubscribing the run.
+        expect(seenBodies).toHaveLength(1);
+        expect(report.scope.assessed).toBe(1);
+        expect(report.scope.unassessed).toEqual([{ path: 'f2', reason: 'budget_exhausted' }]);
+        expect(report.failureCode).toBe('budget_exhausted');
+        expect(report.execution).toBe('partial');
+        expect(report.usage.networkAttempts).toBe(1);
+        expect(report.usage.submittedBytes).toBe(seenBodies[0]);
     });
 });
 

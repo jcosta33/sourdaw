@@ -10,6 +10,7 @@ import { coordinateAcceptReview, runAcceptReviewCli } from '../acceptReview.ts';
 import { shellPort as deliverShellPort } from '../deliverPullRequest.ts';
 import { ORCHESTRATOR_USER_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import { composeReviewCommentBody } from '../prContract.ts';
+import { readReviewBundleContext } from '../prepareReview.ts';
 import {
     coordinatePublishReview,
     parseAcceptanceDocument,
@@ -67,8 +68,12 @@ import {
     inspectReviewPublicationRemote,
     type RemotePublishedReview,
 } from '../reviewPublicationRemoteInspection.ts';
-import { REASSESSMENT_FILE_NAME, REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
-import { SEMANTIC_CI_FORMAT } from '../semanticReviewContext.ts';
+import {
+    REASSESSMENT_FILE_NAME,
+    REVIEW_ROUND_ESCALATION_THRESHOLD,
+    REVIEW_ROUND_FREEZE_THRESHOLD,
+} from '../reviewRoundEscalation.ts';
+import { SEMANTIC_CI_FORMAT, UNRECOGNIZED_SIGNAL_VALUE } from '../semanticReviewContext.ts';
 
 import type { PublicReview, PublicReviewComment } from '../reconstructReviewRounds.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
@@ -5068,13 +5073,21 @@ describe('fresh reviewer dossier publication', () => {
      * The escalation refusal is the operator's diagnostic wherever it is reached, and the same text
      * serves every state that reaches it, so the cases that reach it pin its exact contract text: any
      * rewording that changes what it blames fails them. Phrase-level negatives could not hold that
-     * claim, because a synonym for the same field walked past them. In production this refusal is
-     * reachable for a request-changes publication: a fresh approval publication reads its approval
-     * context first and surfaces the raw manifest error there (#4754), so these cases pin the
-     * refusal's contract through the publication port rather than the approval path.
+     * claim, because a synonym for the same field walked past them. The publication takes the
+     * round-cap decision before its approval context, documents and files, so the refusal is reached
+     * by a fresh approval publication exactly as by a request-changes one (#4754).
      */
     function expectedEscalationRefusal(bundle: string, observedCount: number): string {
         return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}, but the bundle manifest at ${join(bundle, 'manifest.json')} does not supply a usable review bundle context — it is missing, unreadable, or does not carry a valid pr, baseRefName, baseSha, and headSha; repair the manifest in place so the reassessment at ${join(bundle, 'reassessment.json')} can bind`;
+    }
+
+    /**
+     * The escalation refusal the round-cap decision itself raises for a bundle that carries no
+     * reassessment, before any manifest, document or approval context is read. A plan-less bundle
+     * reaches the manifest-repair text above instead, and its own cases pin that.
+     */
+    function expectedMissingReassessmentRefusal(bundle: string, observedCount: number): string {
+        return `review round escalation: observed ${observedCount} reviewer request-changes rounds, at or above the threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}; the orchestrator must record a reassessment at ${join(bundle, 'reassessment.json')} for head ${head} with roundsObserved ${observedCount} and one action from split, respec, continue`;
     }
 
     function dossierFixture(
@@ -5094,6 +5107,8 @@ describe('fresh reviewer dossier publication', () => {
             publicReviewComments?: PublicReviewComment[];
             diff?: string;
             semanticCi?: unknown;
+            /** Makes the approval context read the bundle manifest, as the production port does. */
+            approvalContextReadsManifest?: boolean;
         } = {}
     ) {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-dossier-'));
@@ -5128,7 +5143,15 @@ describe('fresh reviewer dossier publication', () => {
         const posted: { review?: Parameters<PublishReviewPort['postReview']>[0] } = {};
         const port: PublishReviewPort = {
             primaryRoot: () => root,
-            assertApprovalContext: (publishedNumber, publishedHead) => approvalContext(publishedHead, publishedNumber),
+            assertApprovalContext: (publishedNumber, publishedHead) => {
+                calls.push('approvalContext');
+                // The production port reads the bundle manifest here, so a case that wants to observe
+                // what runs ahead of this read opts into that read instead of the fixed stub.
+                if (input.approvalContextReadsManifest === true) {
+                    readReviewBundleContext(bundle);
+                }
+                return approvalContext(publishedHead, publishedNumber);
+            },
             pullRequest: () => ({ state: 'OPEN', head, labels: input.labels }),
             readReviewJson: (path) => {
                 calls.push(`read:${path}`);
@@ -5437,6 +5460,168 @@ describe('fresh reviewer dossier publication', () => {
                     /review dossier assessmentImpact none with no assessmentIgnoredReason ignores the delivered semantic assessment, which withheld 2 scope entries and left 1 questions unresolved/u
                 );
                 expect(fixture.posted.review).toBeUndefined();
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+    });
+
+    describe('fired semantic signal disposal', () => {
+        /** The repository's own measured standing escape (#4441), as a fired scan signal projects it. */
+        const FIRED_SIGNAL = {
+            ruleId: 'admission_branch_completes_without_asserting',
+            path: 'src/modules/audio/take.test.ts',
+            probability: 0.82,
+        };
+        const FIRED_TOKEN = `semantic-signal ${FIRED_SIGNAL.ruleId} ${FIRED_SIGNAL.path}`;
+        /** The same signal as the record carries it when the publication screen refused its path. */
+        const MARKER_SIGNAL = { ...FIRED_SIGNAL, path: UNRECOGNIZED_SIGNAL_VALUE };
+        const MARKER_TOKEN = `semantic-signal ${MARKER_SIGNAL.ruleId} ${UNRECOGNIZED_SIGNAL_VALUE}`;
+
+        it('refuses a fresh publication with an undisposed marker-valued fired signal, naming the marker', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the assessment surfaced nothing actionable' }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [MARKER_SIGNAL] }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    `does not dispose of 1 of the delivered assessment's 1 fired signal(s) (${MARKER_SIGNAL.ruleId} at ${UNRECOGNIZED_SIGNAL_VALUE})`
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a limitation naming a marker-valued fired signal by the token its record carries', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: [
+                        'the assessment run semantic-review-42-1 withheld the audio module',
+                        `${MARKER_TOKEN}: the flagged path was screened out of the record, and the deliberate #4441 escape is pinned by its own spec`,
+                    ],
+                }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [MARKER_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses a fresh publication with an undisposed fired signal before any write, naming rule and path', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the assessment surfaced nothing actionable' }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /does not dispose of 1 of the delivered assessment's 1 fired signal\(s\) \(admission_branch_completes_without_asserting at src\/modules\/audio\/take\.test\.ts\)/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a limitation naming the fired signal token', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: [
+                        'the assessment run semantic-review-42-1 withheld the audio module',
+                        `${FIRED_TOKEN}: the conditional admission is the deliberate #4441 escape`,
+                    ],
+                }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a discarded finding naming the fired signal token', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is disposed below' }),
+                discarded: [
+                    {
+                        finding: FIRED_TOKEN,
+                        stance: 'correctness',
+                        reason: 'the conditional admission is deliberate and pinned by its own spec',
+                    },
+                ],
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+                const persisted = parseReviewDossier(fixture.readDossier());
+                expect(discardedDispositions(persisted).map((entry) => entry.findingId)).toEqual([FIRED_TOKEN]);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a stance admittedBy line naming the fired signal token', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                stances: {
+                    stances: [
+                        {
+                            stance: 'correctness',
+                            admittedBy: `${FIRED_TOKEN}: a reordered take insert drops a buffered frame`,
+                        },
+                        { stance: 'test-validity' },
+                    ],
+                },
+                dossier: dossierInput({ assessmentIgnoredReason: 'the fired rule is the stance this round attacked' }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('refuses an undisposed fired signal even when the withheld scope was cited, never posting', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({
+                    assessmentImpact: 'limitation-only',
+                    limitations: ['the assessment run semantic-review-42-1 withheld the audio module'],
+                }),
+                semanticCi: deliveredSemanticCi({ firedSignals: [FIRED_SIGNAL] }),
+            });
+            try {
+                expect(() => publishReview(number, fixture.port)).toThrow(
+                    /does not dispose of 1 of the delivered assessment's 1 fired signal/u
+                );
+                expect(fixture.posted.review).toBeUndefined();
+                expect(fixture.writes).toHaveLength(0);
+            } finally {
+                removeTemporaryDirectory(fixture.root);
+            }
+        });
+
+        it('publishes a legacy record without the firedSignals field unchanged', () => {
+            const fixture = dossierFixture({
+                plan: riskPlan(),
+                dossier: dossierInput({ assessmentIgnoredReason: 'the withheld paths are outside scope' }),
+                semanticCi: deliveredSemanticCi(),
+            });
+            try {
+                expect(publishReview(number, fixture.port)).toBe(99);
             } finally {
                 removeTemporaryDirectory(fixture.root);
             }
@@ -5980,8 +6165,56 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
+    it('freezes a head at the freeze threshold even when its manifest cannot supply the base', () => {
+        const fixture = dossierFixture({
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            publicReviews: Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            expect(() => publishReview(number, fixture.port)).toThrow(/review round freeze/);
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
+    it('refuses an escalated approval publication whose manifest cannot supply the base it needs', () => {
+        const fixture = dossierFixture({
+            plan: riskPlan(),
+            dossier: dossierInput(),
+            manifest: { pr: number, baseRefName: 'main', headSha: head },
+            approvalContextReadsManifest: true,
+            publicReviews: Array.from({ length: REVIEW_ROUND_ESCALATION_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: head,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            })),
+        });
+        try {
+            // This approval context reads the manifest the case leaves unusable, as the production
+            // port does, so the refusal below is the round-cap decision running ahead of it: without
+            // the early decision this run raises the reader's own manifest error (#4754).
+            const message = refusalMessage(() => publishReview(number, fixture.port));
+            expect(message).toBe(expectedMissingReassessmentRefusal(fixture.bundle, REVIEW_ROUND_ESCALATION_THRESHOLD));
+            expect(fixture.calls).not.toContain('approvalContext');
+            expect(fixture.posted.review).toBeUndefined();
+            expect(fixture.writes).toEqual([]);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
+
     it('names the round count it observed when the head has taken more rounds than the threshold', () => {
-        const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 4;
+        const observed = REVIEW_ROUND_ESCALATION_THRESHOLD + 1;
         const fixture = dossierFixture({
             manifest: { pr: number, baseRefName: 'main', headSha: head },
             publicReviews: Array.from({ length: observed }, (_, index) => ({

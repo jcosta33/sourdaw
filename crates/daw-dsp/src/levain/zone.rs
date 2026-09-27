@@ -268,40 +268,44 @@ impl ZoneMap {
         }
     }
 
-    /// Select a zone using round-robin for the given articulation and note.
-    pub fn select_rr(
-        &mut self,
-        articulation: ArticulationId,
-        note: u8,
-        candidates: &[ZoneId],
-    ) -> Option<ZoneId> {
-        if candidates.is_empty() {
-            return None;
-        }
-        if candidates.len() == 1 {
-            return Some(candidates[0]);
-        }
+    /// The round-robin ordinal the next note on (articulation, note) plays,
+    /// or `None` when the pair is outside the map. Read once per note and
+    /// shared by every mic position, so all positions of one note play the
+    /// same take.
+    #[inline]
+    pub fn round_robin_position(&self, articulation: ArticulationId, note: u8) -> Option<u8> {
+        self.rr_counters
+            .get(Self::rr_index(articulation, note))
+            .copied()
+    }
 
-        let rr_idx = (articulation as usize) * 128 + note as usize;
-        if rr_idx >= self.rr_counters.len() {
-            return Some(candidates[0]);
+    /// Choose among `candidates` for round-robin ordinal `position`: the zone
+    /// authored at that ordinal, else the candidate the ordinal indexes. A
+    /// single candidate, or a pair outside the map, plays the first.
+    pub fn pick_round_robin(&self, candidates: &[ZoneId], position: Option<u8>) -> Option<ZoneId> {
+        let first = *candidates.first()?;
+        let Some(rr_pos) = position.filter(|_| candidates.len() > 1) else {
+            return Some(first);
+        };
+
+        let authored = candidates.iter().copied().find(|&zone_id| {
+            self.zones
+                .get(zone_id as usize)
+                .is_some_and(|zone| zone.rr_pos == rr_pos % zone.rr_len.max(1))
+        });
+        Some(authored.unwrap_or(candidates[rr_pos as usize % candidates.len()]))
+    }
+
+    /// Move (articulation, note) on to its next round-robin ordinal.
+    pub fn advance_round_robin(&mut self, articulation: ArticulationId, note: u8) {
+        if let Some(counter) = self.rr_counters.get_mut(Self::rr_index(articulation, note)) {
+            *counter = counter.wrapping_add(1);
         }
+    }
 
-        let rr_pos = self.rr_counters[rr_idx];
-        let mut selected = candidates[rr_pos as usize % candidates.len()];
-
-        // Try to find exact rr_pos match among zones.
-        for &zone_id in candidates {
-            if let Some(zone) = self.zones.get(zone_id as usize) {
-                if zone.rr_pos == rr_pos % zone.rr_len.max(1) {
-                    selected = zone_id;
-                    break;
-                }
-            }
-        }
-
-        self.rr_counters[rr_idx] = rr_pos.wrapping_add(1);
-        Some(selected)
+    #[inline]
+    fn rr_index(articulation: ArticulationId, note: u8) -> usize {
+        (articulation as usize) * 128 + note as usize
     }
 
     /// Get a zone by ID.

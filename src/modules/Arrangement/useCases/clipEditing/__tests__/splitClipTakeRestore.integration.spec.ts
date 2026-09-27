@@ -8,6 +8,7 @@ import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -89,6 +90,31 @@ describe('splitClipWithUndo take restore', () => {
 
         // The right half's id is generated, so its order against the source's is not
         // a contract: compare both sides sorted rather than pinning one order.
+        expect([...(trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id)].sort()).toEqual(
+            [splitRightClipId, 'clip-1'].sort()
+        );
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+    });
+
+    it('retires a right-half take on split undo and reinstates it on redo, through the command handler (#4521)', async () => {
+        // Split through the command path so the restoreClipSplitState payloads are
+        // the real producer shape — rightClip null on the undo's replacement.
+        await executeAppAction({ type: 'splitClip', payload: { clipId: 'clip-1', beat: 4 } }, { source: 'manual' });
+        const splitRightClipId = rightClipId();
+
+        // A take lands on the right half after the split — no local undo entry
+        // names it, so only the undo's capture can carry it to the redo.
+        const take = createTake(splitRightClipId, 'Right take', 4, 8);
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [take] };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+
+        await undo();
+        expect((trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id)).toEqual(['clip-1']);
+        // The undo filtered the right clip out; its take lanes retire with it.
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+
+        await redo();
         expect([...(trackStore.value?.tracks[0]?.clips ?? []).map((clip) => clip.id)].sort()).toEqual(
             [splitRightClipId, 'clip-1'].sort()
         );

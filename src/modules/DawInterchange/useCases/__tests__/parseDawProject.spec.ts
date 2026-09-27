@@ -164,8 +164,8 @@ describe('parseDawProject', () => {
         expect(firstNote?.velocity).toBe(Math.round(0.8 * 127));
 
         expect(result.tempoChanges).toHaveLength(2);
-        expect(result.tempoChanges[0]).toEqual({ beat: 0, tempo: 128 });
-        expect(result.tempoChanges[1]).toEqual({ beat: 16, tempo: 140 });
+        expect(result.tempoChanges[0]).toEqual({ beat: 0, tempo: 128, curve: 'instant' });
+        expect(result.tempoChanges[1]).toEqual({ beat: 16, tempo: 140, curve: 'instant' });
 
         expect(result.markers).toEqual([{ beat: 8, name: 'Verse' }]);
 

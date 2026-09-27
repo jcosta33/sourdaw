@@ -75,6 +75,10 @@ export type HydratableProjectData = {
     warpStates?: unknown;
     modulation?: unknown;
     cvGate?: unknown;
+    /** Owner-decoded by ControlSurface's `sanitizeMidiLearnState`, for the same
+     * reason as the fields above: one unreadable mapping must degrade to an
+     * empty table, not reject the entire project file. */
+    midiLearn?: unknown;
     history?: unknown;
 };
 
@@ -525,6 +529,7 @@ function isMidi(value: unknown): value is ProjectMidi {
                 Number.isInteger(value.probabilitySeed) &&
                 value.probabilitySeed >= 0 &&
                 value.probabilitySeed <= 0xffff_ffff)) &&
+        hasOptionalEnum(value, 'noteCoordinateFormat', ['clip-relative']) &&
         isArrayRecordOf(value.notesByClipId, isMidiNote) &&
         isArrayRecordOf(value.ccByClipId, isMidiCc) &&
         isArrayRecordOf(value.pitchBendByClipId, isMidiPitchBend)
