@@ -4,7 +4,7 @@ import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { isActionEntry, undoHistoryStore } from '#/modules/Command/stores';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
@@ -81,10 +81,12 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     // is what lets a later commit's `expectedPercent` read the store only
     // after an earlier, barrier-held commit has actually landed.
     const pendingCommit = useRef<Promise<void>>(Promise.resolve());
-    // Recency stamp arming the double-click reset's coalescing, written only
-    // when a settle's commit actually recorded an undo entry: a jittered first
-    // click re-committing the unchanged gain records nothing, so the reset
-    // must be its own undo step rather than join the stack top (#4616).
+    // Recency stamp arming the double-click reset's coalescing. Only a
+    // gesture settle's own recording arms it, and only when its commit
+    // actually recorded an undo entry: a jittered first click re-committing
+    // the unchanged gain records nothing, so the reset must be its own undo
+    // step rather than join the stack top (#4616). A discrete commit never
+    // re-arms it — see `commitMasterGain`.
     const lastGrooveSettleTime = useRef(0);
 
     /**
@@ -125,13 +127,17 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             }
             const action: AppAction = { type: 'setMasterGain', payload: { gain: value, expectedPercent } };
             await dispatchMasterGainAction(action, coalesceWithPrevious);
-            // Arm only when the stack top is the entry THIS dispatch recorded —
-            // for this action class the undo entry stores the dispatched action
-            // object by reference. A foreign recording landing inside the
+            // Only a gesture settle's own recording arms the window; a
+            // discrete commit never re-arms. A keyboard nudge records too,
+            // but letting it re-arm would chain the next burst of nudges into
+            // one undo group and take away stepping back a single nudge. And
+            // the stack top must be the entry THIS dispatch recorded — for
+            // this action class the undo entry stores the dispatched action
+            // object by reference — so a foreign recording landing inside the
             // held-open await (the persistence barrier can hold it for real
             // time) must not arm the reset.
             const stackTop = undoHistoryStore.value?.past.at(-1);
-            if (stackTop !== undefined && isActionEntry(stackTop) && stackTop.action === action) {
+            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
                 lastGrooveSettleTime.current = performance.now();
             }
         } catch (error) {

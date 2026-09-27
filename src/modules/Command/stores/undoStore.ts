@@ -4,11 +4,6 @@ import { type UndoEntry } from '../models/UndoEntry';
 
 import { hydrateSessionMirror, type SessionActionContract, writeSessionMirror } from './undoSessionMirror';
 
-// Value re-export, not a bare type import: the kind test rides the stacks' own
-// store file so the contract barrel can expose it to read-only consumers (the
-// strips' record gate) without importing out of its folder.
-export { isActionEntry } from '../models/UndoEntry';
-
 export type UndoStoreState = {
     past: UndoEntry[];
     future: UndoEntry[];

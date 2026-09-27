@@ -10,9 +10,9 @@ import type { Track } from '../../../models/TrackViewTypes';
 
 /**
  * The action entry the fake stack pushes when a write "records": shaped like
- * `ActionUndoEntry` where it matters, since the hook reads it through
- * `isActionEntry` and compares its `action` against the dispatched object by
- * reference — which is how `createUndoEntry` stores it.
+ * `ActionUndoEntry` where it matters, since the hook reads it through the
+ * union's `kind` discriminant and compares its `action` against the dispatched
+ * object by reference — which is how `createUndoEntry` stores it.
  */
 type RecordedActionEntry = { kind: 'action'; action: AppAction };
 
@@ -556,6 +556,50 @@ describe('useChannelStripActions', () => {
         expect(mocks.executeAppAction).toHaveBeenLastCalledWith({
             type: 'setTrackGain',
             payload: { trackId: 'track-1', gain: 1, expectedGain: 0.8 },
+        });
+    });
+
+    /**
+     * A discrete commit records too — a keyboard nudge dispatches, and the
+     * entry it pushes is exactly as real as a gesture settle's — but it must
+     * not re-arm the coalescing window: only a gesture settle's own recording
+     * arms. Re-arming from a nudge would chain the next burst of nudges into
+     * one undo group, and a single nudge could no longer be stepped back
+     * alone.
+     */
+    it('does not arm coalescing when a discrete commit recorded, so the next nudge stays its own undo step', async () => {
+        mocks.undoStackTop = { marker: 'older-entry' };
+        // The first nudge — a discrete settle with no gesture open — records:
+        // the fake stack top becomes an action entry whose `action` IS this
+        // dispatch's object, the way `createUndoEntry` stores it.
+        mocks.executeAppAction.mockImplementationOnce((action) => {
+            mocks.undoStackTop = makeRecordedEntry(action);
+            return Promise.resolve();
+        });
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', gain: 0.8 })));
+
+        await act(async () => {
+            result.current.setGain(0.5, false);
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(1, {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.5, expectedGain: 0.8 },
+        });
+
+        // The second nudge, well inside the 500 ms window: the recording
+        // first nudge must not have armed the window, so this one joins
+        // nothing and undo steps back one nudge at a time.
+        await act(async () => {
+            result.current.setGain(0.4, false);
+            await Promise.resolve();
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.4, expectedGain: 0.8 },
         });
     });
 

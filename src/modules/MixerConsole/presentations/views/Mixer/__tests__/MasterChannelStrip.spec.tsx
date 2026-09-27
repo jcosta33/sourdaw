@@ -9,9 +9,9 @@ import type { AppAction } from '#/utils/handlerContract';
 
 /**
  * The action entry the fake stacks push when a write "records": shaped like
- * `ActionUndoEntry` where it matters, since production reads it through
- * `isActionEntry` and compares its `action` against the dispatched object by
- * reference — which is how `createUndoEntry` stores it.
+ * `ActionUndoEntry` where it matters, since production reads it through the
+ * union's `kind` discriminant and compares its `action` against the dispatched
+ * object by reference — which is how `createUndoEntry` stores it.
  */
 type RecordedActionEntry = { kind: 'action'; action: AppAction };
 
@@ -880,6 +880,50 @@ describe('MasterChannelStrip', () => {
         expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
             type: 'setMasterGain',
             payload: { gain: 1, expectedPercent: 80 },
+        });
+    });
+
+    /**
+     * A discrete keyboard settle records too — the entry it pushes is exactly
+     * as real as a gesture settle's — but it must not re-arm the coalescing
+     * window: only a gesture settle's own recording arms. Re-arming from a
+     * nudge would chain the next burst of nudges into one undo group, and a
+     * single nudge could no longer be stepped back alone.
+     */
+    it('does not arm coalescing when a discrete keyboard settle recorded, so the next nudge stays its own undo step', async () => {
+        undoStoreMocks.stackTop = { marker: 'older-entry' };
+        // The first nudge — a settle with no gesture open — records: the fake
+        // stack top becomes an action entry whose `action` IS this dispatch's
+        // object, the way `createUndoEntry` stores it.
+        commandMocks.executeUserAppAction.mockImplementationOnce((action) => {
+            undoStoreMocks.stackTop = makeRecordedEntry(action);
+            return Promise.resolve();
+        });
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.5' } });
+            await Promise.resolve();
+        });
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(1, {
+            type: 'setMasterGain',
+            payload: { gain: 0.5, expectedPercent: 80 },
+        });
+
+        // The second nudge, well inside the 500 ms window: the recording
+        // first nudge must not have armed the window, so this one joins
+        // nothing and undo steps back one nudge at a time.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'setMasterGain',
+            payload: { gain: 0.6, expectedPercent: 80 },
         });
     });
 });

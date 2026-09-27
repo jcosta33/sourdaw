@@ -13,7 +13,7 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
-import { isActionEntry, undoHistoryStore } from '#/modules/Command/stores';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { confirmUser } from '#/utils/Notification/confirmUser';
@@ -129,11 +129,13 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     const gainGestureOpen = useRef(false);
     const displayedGain = useRef<number | null>(null);
     const pendingGainCommit = useRef<Promise<void>>(Promise.resolve());
-    // Recency stamp arming the double-click reset's coalescing. A settle arms
-    // it only when its commit actually recorded an undo entry: a jittered
-    // first click re-committing the unchanged gain is swallowed as a no-op, so
-    // the reset that follows must be its own undo step rather than join
-    // whatever entry is on top of the stack (#4616).
+    // Recency stamp arming the double-click reset's coalescing. Only a
+    // gesture settle's own recording arms it, and only when its commit
+    // actually recorded an undo entry: a jittered first click re-committing
+    // the unchanged gain is swallowed as a no-op, so the reset that follows
+    // must be its own undo step rather than join whatever entry is on top of
+    // the stack (#4616). A discrete commit never re-arms it — see
+    // `commitGain`.
     const lastGainSettleTime = useRef(0);
 
     const panGestureToken = useRef(0);
@@ -260,13 +262,17 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             } else {
                 await executeAppAction(action);
             }
-            // Arm only when the stack top is the entry THIS dispatch recorded —
-            // the undo entry stores the dispatched action object by reference.
-            // A foreign recording landing inside the held-open await (the
+            // Only a gesture settle's own recording arms the window; a
+            // discrete commit never re-arms. A keyboard nudge records too,
+            // but letting it re-arm would chain the next burst of nudges into
+            // one undo group and take away stepping back a single nudge. And
+            // the stack top must be the entry THIS dispatch recorded — the
+            // undo entry stores the dispatched action object by reference —
+            // so a foreign recording landing inside the held-open await (the
             // persistence barrier can hold it for real time) must not arm the
             // reset, even when it targets the same track.
             const stackTop = undoHistoryStore.value?.past.at(-1);
-            if (stackTop !== undefined && isActionEntry(stackTop) && stackTop.action === action) {
+            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
                 lastGainSettleTime.current = performance.now();
             }
         } catch (error) {
@@ -301,11 +307,12 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             } else {
                 await executeAppAction(action);
             }
-            // Same rule as `commitGain`: arm only on the entry this dispatch
-            // recorded, never on a foreign recording that slipped in while the
-            // await was held open.
+            // Same rule as `commitGain`: only a gesture settle's own recording
+            // arms the window and a discrete commit never re-arms, and the
+            // stack top must be the entry this dispatch recorded, never a
+            // foreign recording that slipped in while the await was held open.
             const stackTop = undoHistoryStore.value?.past.at(-1);
-            if (stackTop !== undefined && isActionEntry(stackTop) && stackTop.action === action) {
+            if (wasGestureSettle && stackTop?.kind === 'action' && stackTop.action === action) {
                 lastPanSettleTime.current = performance.now();
             }
         } catch (error) {
