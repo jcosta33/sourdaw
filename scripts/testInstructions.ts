@@ -30,6 +30,8 @@ import {
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
     TEST_SUBCOMMAND_PREFIX_WORDS,
+    PNPM_PREFIX_BOOLEAN_OPTIONS,
+    PNPM_PREFIX_VALUE_OPTIONS,
 } from './testInstructionVocabulary.ts';
 
 /**
@@ -516,11 +518,11 @@ function spelledTokens(segment: string): string[] {
     const unwrapped = segment.replace(QUOTED_SPAN, (span, _capture: string, offset: number) => {
         const beforeQuote = segment.slice(0, offset);
         const precedingToken = beforeQuote.trimEnd().split(/\s+/).at(-1) ?? '';
-        if (precedingToken.endsWith('=') && TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(precedingToken.slice(0, -1))) {
+        if (precedingToken.endsWith('=') && isPrefixValueOption(precedingToken.slice(0, -1))) {
             // Shell quotes keep the value attached to an inline option.
             return '_';
         }
-        if (beforeQuote !== beforeQuote.trimEnd() && TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(precedingToken)) {
+        if (beforeQuote !== beforeQuote.trimEnd() && isPrefixValueOption(precedingToken)) {
             // A spaced quoted value is still one argument, even when its content has spaces or is empty.
             return ' _ ';
         }
@@ -800,7 +802,7 @@ function mentionsCheckCommand(segment: string): boolean {
         (token, index) =>
             CHECK_COMMANDS.has(token) ||
             isCheckFamilyScript(token) ||
-            (TEST_SUBCOMMAND_HEADS.has(token) && runsTestSubcommand(tokens, index + 1))
+            (TEST_SUBCOMMAND_HEADS.has(token) && runsTestSubcommand(token, tokens, index + 1))
     );
 }
 
@@ -808,16 +810,26 @@ function mentionsCheckCommand(segment: string): boolean {
  * Whether the tokens from `start` reach a `test` subcommand once the runner words and options a
  * head may carry before it are skipped, in any order and number: `pnpm --filter x -r run test`.
  */
-function runsTestSubcommand(tokens: readonly string[], start: number): boolean {
+function runsTestSubcommand(head: string, tokens: readonly string[], start: number): boolean {
     let index = start;
     while (index < tokens.length) {
         const token = tokens[index] ?? '';
         if (token === 'test') {
             return true;
         }
-        if (TEST_SUBCOMMAND_PREFIX_WORDS.has(token) || isInlineValueOption(token)) {
+        if (
+            TEST_SUBCOMMAND_PREFIX_WORDS.has(token) ||
+            isInlineValueOption(token, TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS) ||
+            (head === 'pnpm' &&
+                (PNPM_PREFIX_BOOLEAN_OPTIONS.has(token) ||
+                    token.startsWith('--color=') ||
+                    isInlineValueOption(token, PNPM_PREFIX_VALUE_OPTIONS)))
+        ) {
             index += 1;
-        } else if (TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(token)) {
+        } else if (
+            TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(token) ||
+            (head === 'pnpm' && PNPM_PREFIX_VALUE_OPTIONS.has(token))
+        ) {
             index += 2;
         } else {
             return false;
@@ -826,10 +838,14 @@ function runsTestSubcommand(tokens: readonly string[], start: number): boolean {
     return false;
 }
 
-/** Whether a token is a value option carrying its value behind `=`: `--filter=x`. */
-function isInlineValueOption(token: string): boolean {
+/** Whether a token is a known value option carrying its value behind `=`. */
+function isInlineValueOption(token: string, options: ReadonlySet<string>): boolean {
     const equals = token.indexOf('=');
-    return equals > 0 && TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(token.slice(0, equals));
+    return equals > 0 && options.has(token.slice(0, equals));
+}
+
+function isPrefixValueOption(token: string): boolean {
+    return TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS.has(token) || PNPM_PREFIX_VALUE_OPTIONS.has(token);
 }
 
 /** Whether a token is a colon script of a check family: `test:e2e`, `typecheck:scripts`, `cargo:fmt`. */

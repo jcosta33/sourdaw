@@ -388,6 +388,49 @@ export const TEST_SUBCOMMAND_PREFIX_WORDS = new Set(['run', '-r', '--recursive']
  */
 export const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS = new Set(['--filter', '-F']);
 
+/** pnpm global switches from `pnpm --help` that can precede a script command. */
+export const PNPM_PREFIX_BOOLEAN_OPTIONS = new Set([
+    '-y',
+    '--yes',
+    '--ignore-workspace',
+    '--no-progress',
+    '--stream',
+    '--aggregate-output',
+    '--use-stderr',
+    '-w',
+    '--workspace-root',
+    '--fail-if-no-match',
+    '--include-workspace-root',
+    '--no-include-workspace-root',
+    '--sort',
+    '--no-sort',
+    '--reverse',
+    '--parallel',
+    '--color',
+]);
+
+/** pnpm global options from `pnpm --help` whose next token or `=...` is a value. */
+export const PNPM_PREFIX_VALUE_OPTIONS = new Set([
+    '-C',
+    '--dir',
+    '--store-dir',
+    '--state-dir',
+    '--npmrc-auth-file',
+    '--userconfig',
+    '--workspace-packages',
+    '--registry',
+    '--config.registry',
+    '--https-proxy',
+    '--http-proxy',
+    '--no-proxy',
+    '--reporter',
+    '--loglevel',
+    '--filter-prod',
+    '--test-pattern',
+    '--changed-files-ignore-pattern',
+    '--workspace-concurrency',
+]);
+
 /**
  * The DAW nouns a singular `test` may modify: `an existing test project` is something a reviewer
  * opens, while `the existing test` with no such noun behind it names coverage. `file` stays out:

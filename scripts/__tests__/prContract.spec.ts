@@ -57,6 +57,8 @@ import {
     TEST_SUBCOMMAND_HEADS,
     TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS,
     TEST_SUBCOMMAND_PREFIX_WORDS,
+    PNPM_PREFIX_BOOLEAN_OPTIONS,
+    PNPM_PREFIX_VALUE_OPTIONS,
 } from '../testInstructionVocabulary.ts';
 
 const WHAT_HEADING = '### 🎯 What does this PR do?';
@@ -902,9 +904,85 @@ describe('product-scope test instructions', () => {
     const TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST = ['run', '-r', '--recursive'];
     const TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST = ['--filter', '-F'];
 
+    const PNPM_PREFIX_BOOLEAN_OPTIONS_UNDER_TEST = [
+        '-y',
+        '--yes',
+        '--ignore-workspace',
+        '--no-progress',
+        '--stream',
+        '--aggregate-output',
+        '--use-stderr',
+        '-w',
+        '--workspace-root',
+        '--fail-if-no-match',
+        '--include-workspace-root',
+        '--no-include-workspace-root',
+        '--sort',
+        '--no-sort',
+        '--reverse',
+        '--parallel',
+        '--color',
+    ];
+    const PNPM_PREFIX_VALUE_OPTIONS_UNDER_TEST = [
+        '-C',
+        '--dir',
+        '--store-dir',
+        '--state-dir',
+        '--npmrc-auth-file',
+        '--userconfig',
+        '--workspace-packages',
+        '--registry',
+        '--config.registry',
+        '--https-proxy',
+        '--http-proxy',
+        '--no-proxy',
+        '--reporter',
+        '--loglevel',
+        '--filter-prod',
+        '--test-pattern',
+        '--changed-files-ignore-pattern',
+        '--workspace-concurrency',
+    ];
+
     it('pins the runner words and options the narration gate skips before a test subcommand', () => {
         expect([...TEST_SUBCOMMAND_PREFIX_WORDS]).toEqual(TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST);
         expect([...TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS]).toEqual(TEST_SUBCOMMAND_PREFIX_VALUE_OPTIONS_UNDER_TEST);
+        expect([...PNPM_PREFIX_BOOLEAN_OPTIONS]).toEqual(PNPM_PREFIX_BOOLEAN_OPTIONS_UNDER_TEST);
+        expect([...PNPM_PREFIX_VALUE_OPTIONS]).toEqual(PNPM_PREFIX_VALUE_OPTIONS_UNDER_TEST);
+    });
+
+    it.each(PNPM_PREFIX_BOOLEAN_OPTIONS_UNDER_TEST)('refuses pnpm test behind boolean global %s', (option) => {
+        const instructions = `pnpm ${option} test and the mixer appears.`;
+        expect(testInstructionsNarrateChecks(instructions), option).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each(PNPM_PREFIX_VALUE_OPTIONS_UNDER_TEST)('refuses pnpm test behind value global %s', (option) => {
+        for (const spelled of [`${option} x`, `${option}=x`, `${option}="mixer view"`, `${option} "mixer view"`]) {
+            const instructions = `pnpm ${spelled} test and the mixer appears.`;
+            expect(testInstructionsNarrateChecks(instructions), instructions).toBe(true);
+            expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+        }
+    });
+
+    it.each([
+        'pnpm --reporter=silent test and the mixer appears.',
+        'pnpm --color=never --reporter silent -r run test and the mixer appears.',
+        'pnpm --filter x --reporter="silent mode" test and the mixer appears.',
+    ])('refuses a test command behind mixed pnpm prefixes: %s', (instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(true);
+        expect(refusal(() => assertObservableTestInstructions(instructions))).toMatch(REFUSAL_PREFIX);
+    });
+
+    it.each([
+        'pnpm --reporter=silent dev and confirm the fader moves.',
+        'pnpm --color=never dev and confirm the fader moves.',
+        'pnpm --reporter=silent the test tone and confirm the meter moves.',
+        'Select the "test" clip and confirm the waveform appears.',
+        'playwright open and confirm the page loads.',
+    ])('preserves a reviewer step outside a test command: %s', (instructions) => {
+        expect(testInstructionsNarrateChecks(instructions)).toBe(false);
+        expect(() => assertObservableTestInstructions(instructions)).not.toThrow();
     });
 
     it.each(TEST_SUBCOMMAND_PREFIX_WORDS_UNDER_TEST)('refuses a test subcommand behind the %s runner word', (word) => {
