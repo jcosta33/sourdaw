@@ -36,15 +36,15 @@ const RING_SECONDS: f32 = 2.0;
 /// well under the oscillation level and well above its f32 noise.
 const FLOOR: f32 = 1e-4;
 
-/// One sustained pluck. Damping 0 makes the feedback lowpass a passthrough
-/// (`coeff = 1`), so the linear-interpolation prediction below is the
-/// linear loop's entire damping, not an approximation of it. The engine's
+/// One sustained pluck at `damping`. Damping 0 makes the feedback lowpass a
+/// passthrough (`coeff = 1`), so the linear-interpolation prediction below is
+/// the linear loop's entire damping, not an approximation of it. The engine's
 /// xorshift excitation is seeded identically for every fresh instance, so
 /// renders are deterministic without an external seed.
-fn pluck(delay_samples: f32, seconds: f32) -> Vec<f32> {
+fn pluck(delay_samples: f32, damping: f32, seconds: f32) -> Vec<f32> {
     let freq = SAMPLE_RATE / delay_samples;
     let mut string = KarplusStrong::new(SAMPLE_RATE);
-    string.set_damping(0.0);
+    string.set_damping(damping);
     string.excite(freq, freq, SAMPLE_RATE, 0.9);
     let frames = (seconds * SAMPLE_RATE) as usize;
     let mut out = Vec::with_capacity(frames);
@@ -89,13 +89,78 @@ fn linear_predicted_decay(delay_samples: f32, samples: &[f32]) -> f32 {
 
 #[test]
 fn karplus_string_at_half_fraction_rings_longer_than_linear_interpolation_predicts() {
-    let samples = oscillation(&pluck(HALF_FRACTION_DELAY, RING_SECONDS));
+    let samples = oscillation(&pluck(HALF_FRACTION_DELAY, 0.0, RING_SECONDS));
     let measured = decay_time(&samples);
     let predicted = linear_predicted_decay(HALF_FRACTION_DELAY, &samples);
     assert!(
         measured > predicted * 2.0,
         "the allpass string must outlast the linear-interpolation prediction: \
          measured decay to {FLOOR} = {measured:.3} s, linear prediction = {predicted:.3} s"
+    );
+}
+
+/// The decay the feedback lowpass alone must produce at a nonzero damping,
+/// derived from the same loop-gain bookkeeping the module doc uses for the
+/// linear case. The engine's lowpass is
+///
+/// ```text
+/// filtered = coeff·x + (1 − coeff)·state   →   H(z) = coeff / (1 − a·z⁻¹),
+/// ```
+///
+/// with `coeff = 1 − damping/2` and `a = 1 − coeff`. It passes DC at unity
+/// (the doc's "feedback lowpass" exception above), so at the loop's
+/// fundamental, ω = 2π·f/fs, one pass around the loop multiplies the
+/// oscillation by exactly
+///
+/// ```text
+/// g = coeff / sqrt(1 + a² − 2a·cos ω)
+/// ```
+///
+/// (the allpass read is unity-magnitude at every frequency, so it contributes
+/// nothing). The loop turns f = fs/delay passes per second, so the envelope
+/// decays as g^(f·t) and reaches the measurement floor after
+///
+/// ```text
+/// t = ln(A₀/FLOOR) / (f·(−ln g)),
+/// ```
+///
+/// starting from A₀, the differenced pluck's first-cycle peak — the same
+/// assumption `linear_predicted_decay` makes. A tolerance of a factor two on
+/// each side absorbs what that assumption ignores (the excitation's energy in
+/// faster-decaying upper modes, and the few-sample phase lag the one-pole adds
+/// to the loop delay); the doubling-damping mutation of `coeff` moves the
+/// prediction by more than a factor four at this damping, well outside it.
+fn onepole_predicted_decay(delay_samples: f32, damping: f32, samples: &[f32]) -> f32 {
+    let freq = SAMPLE_RATE / delay_samples;
+    let omega = std::f32::consts::TAU * freq / SAMPLE_RATE;
+    let coeff = 1.0 - damping * 0.5;
+    let a = 1.0 - coeff;
+    let gain = coeff / (1.0 + a * a - 2.0 * a * omega.cos()).sqrt();
+    let initial = samples
+        .iter()
+        .take(delay_samples as usize + 1)
+        .map(|sample| sample.abs())
+        .fold(0.0f32, f32::max);
+    (initial / FLOOR).ln() / (freq * -(gain.ln()))
+}
+
+/// The pinned damping zero only exercises the passthrough extreme, where
+/// `coeff = 1 − damping/2` and `coeff = 1 − damping` agree — a wrong damping
+/// scale is invisible there. At a real damping the lowpass sets the decay, and
+/// the measured envelope must match the loop-gain prediction above: not decay
+/// faster (over-damped — the coefficient's distance from unity halved), not
+/// slower (under-damped), but the documented one-pole rate.
+#[test]
+fn karplus_decay_at_nonzero_damping_matches_the_one_pole_feedback_prediction() {
+    let damping = 0.5;
+    let samples = oscillation(&pluck(HALF_FRACTION_DELAY, damping, RING_SECONDS));
+    let measured = decay_time(&samples);
+    let predicted = onepole_predicted_decay(HALF_FRACTION_DELAY, damping, &samples);
+    assert!(
+        measured > predicted * 0.5 && measured < predicted * 2.0,
+        "at damping {damping} the string must decay at the feedback lowpass's rate: \
+         measured decay to {FLOOR} = {measured:.3} s, one-pole prediction = \
+         {predicted:.3} s"
     );
 }
 
@@ -155,7 +220,7 @@ fn sustained_pitch(samples: &[f32], expected: f32) -> f32 {
 /// shift of the loop delay would produce.
 #[test]
 fn karplus_pitch_holds_when_the_fraction_shifts_into_the_integer_part() {
-    let samples = oscillation(&pluck(SMALL_FRACTION_DELAY, 0.5));
+    let samples = oscillation(&pluck(SMALL_FRACTION_DELAY, 0.0, 0.5));
     let expected = SAMPLE_RATE / SMALL_FRACTION_DELAY;
     let measured = sustained_pitch(&samples[4_096..4_096 + 16_384], expected);
     assert!(

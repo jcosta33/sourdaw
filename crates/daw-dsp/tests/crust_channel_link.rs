@@ -22,9 +22,12 @@
 //!
 //! The stimulus throughout is the issue's: 48 kHz, a −1 dBTP ceiling, 2 ms
 //! look-ahead, and a 12-sample burst at 3.0 over a 0.1 sine bed, burst in the
-//! left channel only. A fast fixed release (20 ms, auto off) keeps the
-//! recovery observable inside a short render; nothing else about the envelope
-//! is negotiated.
+//! left channel only. The release-link case eases a sustained version of the
+//! same one-sided peak instead, because the release arm owns a channel only
+//! while the linked target sits above its ducked gain — something no burst
+//! render lasts long enough to show. A fast fixed release (20 ms, auto off)
+//! keeps the recovery observable inside a short render; nothing else about
+//! the envelope is negotiated.
 
 use daw_dsp::crust::limiter::TruePeakLimiter;
 
@@ -35,6 +38,15 @@ const BED_AMPLITUDE: f32 = 0.1;
 const BURST_LEVEL: f32 = 3.0;
 const BURST_AT: usize = 3_000;
 const BURST_LEN: usize = 12;
+/// The sustained one-sided hold rides the left channel at the burst level.
+const HOLD_LEVEL: f32 = 3.0;
+const HOLD_AT: usize = 3_000;
+/// Where the hold eases, to a level still over the ceiling: deep enough that
+/// the linked target stays below unity and keeps governing the quiet channel,
+/// shallow enough that the linked target rises above the quiet channel's
+/// settled duck and hands it to the release arm.
+const EASED_LEVEL: f32 = 1.2;
+const EASE_AT: usize = 6_000;
 const RENDER_LEN: usize = 12_000;
 
 /// Samples discarded from the tail when asserting recovery is complete — far
@@ -65,6 +77,22 @@ fn input(n: usize, side: Side) -> f32 {
     bed(n) + burst
 }
 
+/// The easing one-sided hold: the left channel sits over the ceiling from
+/// `HOLD_AT`, at [`HOLD_LEVEL`] until [`EASE_AT`] and at [`EASED_LEVEL`]
+/// afterwards; the right carries the bed alone throughout.
+fn eased_hold_input(n: usize, side: Side) -> f32 {
+    let hold = if side == Side::Left && n >= HOLD_AT {
+        if n < EASE_AT {
+            HOLD_LEVEL
+        } else {
+            EASED_LEVEL
+        }
+    } else {
+        0.0
+    };
+    bed(n) + hold
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Side {
     Left,
@@ -79,7 +107,11 @@ enum Side {
 /// no meter, no approximation. Unmeasurable samples (silence before the delay
 /// line fills, zero crossings) are `NaN` and every aggregation below skips
 /// them.
-fn render_link(link_transient: f32, link_release: f32) -> GainTrajectory {
+fn render_programme(
+    link_transient: f32,
+    link_release: f32,
+    programme: fn(usize, Side) -> f32,
+) -> GainTrajectory {
     let mut limiter = TruePeakLimiter::new(SAMPLE_RATE);
     limiter.set_true_peak(true);
     limiter.set_ceiling_db(CEILING_DB);
@@ -96,12 +128,12 @@ fn render_link(link_transient: f32, link_release: f32) -> GainTrajectory {
     };
     for n in 0..RENDER_LEN {
         let (out_left, out_right) =
-            limiter.process_sample(input(n, Side::Left), input(n, Side::Right));
+            limiter.process_sample(programme(n, Side::Left), programme(n, Side::Right));
         if n < latency {
             continue;
         }
-        let detected_left = input(n - latency, Side::Left);
-        let detected_right = input(n - latency, Side::Right);
+        let detected_left = programme(n - latency, Side::Left);
+        let detected_right = programme(n - latency, Side::Right);
         if detected_left.abs() > DIVISOR_FLOOR {
             trajectory.left[n] = out_left / detected_left;
         }
@@ -110,6 +142,11 @@ fn render_link(link_transient: f32, link_release: f32) -> GainTrajectory {
         }
     }
     trajectory
+}
+
+/// The issue's burst programme.
+fn render_link(link_transient: f32, link_release: f32) -> GainTrajectory {
+    render_programme(link_transient, link_release, input)
 }
 
 /// Deepest gain reduction the channel applied, 1.0 for none.
@@ -122,6 +159,24 @@ fn deepest(trajectory: &[f32]) -> f32 {
 /// means the channel never came back.
 fn unrecovered_depth(trajectory: &[f32]) -> f32 {
     deepest(&trajectory[RENDER_LEN - RECOVERY_TAIL..])
+}
+
+/// Mean applied gain over the measured entries of a trajectory slice.
+///
+/// Following a linked target that rides the bed, the recovered gain wobbles
+/// with the programme's phase, so a slice's level is its mean, not any single
+/// sample. Unmeasured entries (NaN) drop out.
+fn mean_gain(trajectory: &[f32]) -> f32 {
+    let (sum, count) = trajectory
+        .iter()
+        .fold((0.0_f32, 0_usize), |(sum, count), sample| {
+            if sample.is_finite() {
+                (sum + sample, count + 1)
+            } else {
+                (sum, count)
+            }
+        });
+    sum / count.max(1) as f32
 }
 
 #[test]
@@ -223,4 +278,70 @@ fn at_full_link_both_channels_catch_and_recover_on_one_trajectory() {
              untouched side {right:.6}"
         );
     }
+}
+
+#[test]
+fn the_release_link_decides_how_far_the_quiet_side_recovers_when_the_hold_eases() {
+    // The control's positive claim. The release blend owns a channel exactly
+    // while the linked target sits above that channel's gain, and a sustained
+    // hold never allows that: the catch holds the quiet side at or above the
+    // linked depth for as long as the burst side's requirement is the deeper
+    // one, and once the ceiling clears entirely the linked target is unity for
+    // both settings alike. So the hold eases part way instead — still over the
+    // ceiling, deep enough that the linked target keeps governing, shallow
+    // enough to rise above the quiet side's settled duck. From there the two
+    // settings must diverge in the linked direction: at 0 the quiet side
+    // recovers toward its own (unity) requirement; at 100 it recovers with
+    // the channel that owns the peak and stays at the linked depth. The
+    // transient link rides at half so the catch duck is a genuine blend — at
+    // full the catch target equals the release-100 target and no setting
+    // could tell the two arms apart.
+    let held = render_programme(0.5, 1.0, eased_hold_input);
+    let released = render_programme(0.5, 0.0, eased_hold_input);
+
+    // The quiet side really ducked at the catch in both renders, so what the
+    // midpoint below measures is the release arm's recovery, not a link that
+    // never engaged.
+    let released_catch = deepest(&released.right);
+    assert!(
+        released_catch < 0.7,
+        "at transient link 0.5 the untouched channel never ducked (deepest gain \
+         {released_catch:.3}) — the stimulus is not linking and this case proves \
+         nothing about recovery"
+    );
+
+    // Midway through the eased hold: the easing has settled through the
+    // look-ahead window and the recovery it hands to the release arm has run
+    // its course in both settings, so what remains is where each setting
+    // lets the quiet channel sit.
+    const HALF_WINDOW: usize = 400;
+    let midpoint = EASE_AT + 2_000;
+    let free = mean_gain(&released.right[midpoint - HALF_WINDOW..midpoint + HALF_WINDOW]);
+    let linked = mean_gain(&held.right[midpoint - HALF_WINDOW..midpoint + HALF_WINDOW]);
+    assert!(
+        free - linked > 0.05,
+        "the release link left no linked direction in the quiet channel's recovery: \
+         release 0 recovered to {free:.3} but release 100 to {linked:.3} — the gap \
+         between the channel's own requirement and the linked depth never opened"
+    );
+    assert!(
+        free > 0.78,
+        "at release link 0 the untouched channel was still held at a gain of \
+         {free:.3} midway through the eased hold — its own requirement is unity, \
+         so the recovery the release link governs never ran"
+    );
+    assert!(
+        linked < 0.78,
+        "at release link 100 the untouched channel recovered past the linked depth \
+         to {linked:.3} — it is not recovering with the channel that owns the peak"
+    );
+
+    // The hold side really limits, so the contrast above is between two linked
+    // recoveries and not a limiter that never engaged.
+    let hold_depth = deepest(&held.left);
+    assert!(
+        hold_depth < 0.5,
+        "the hold side only reached a gain of {hold_depth:.3} — the stimulus is not \
+         driving the limiter and this case cannot see the release link at all"
+    );
 }
