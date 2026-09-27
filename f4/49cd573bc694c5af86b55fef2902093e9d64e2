@@ -1,0 +1,43 @@
+crates/daw-dsp/src/toaster/pad.rs
+  s_ed5aa36a3ba357::t_4c4fd86302a3c1 7-49,52-58
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_0c8f0625ffe6b3 1,921-928,955-1025,1027-1029,1048-1069,1167
+public/wasm/daw-dsp/daw_dsp.js
+  s_ed5aa36a3ba357::t_e199230b73d4be 2046-2058
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ed5aa36a3ba357::t_48e877d498f5ce 1,5-75,77-79,98-119,217
+release/open-source-inventory.json
+  s_ed5aa36a3ba357::t_f64dd5062a1cc9 1343,1349,1767
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ed5aa36a3ba357::t_6cc54bbe29cfb0 281
+src/modules/AudioEngine/models/ToasterPadParamIds.ts
+  s_ed5aa36a3ba357::t_d54da00e0f4bf6 8-13,17,22
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ed5aa36a3ba357::t_c80d87c4143d97 47,86-88,153,250-251,264,271,275-277,472,564,576-577,816-817,825
+src/modules/AudioEngine/services/__tests__/toasterProcessorParamLockScope.spec.ts
+  s_ed5aa36a3ba357::t_ef04f75fa5e941 1-216
+src/modules/AudioEngine/services/__tests__/toasterProcessorShippedMalloc.spec.ts
+  s_ed5aa36a3ba357::t_b6cf31b84a8a5e 74-77,79-91,93-95,98-114
+src/modules/AudioEngine/wasm/__tests__/dawDspToasterPadParamIds.spec.ts
+  s_ed5aa36a3ba357::t_6ff1e4baa87181 48-66
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ed5aa36a3ba357::t_3c54e7b36d95fb 1,921-928,955-1025,1027-1029,1048-1069,1167
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ed5aa36a3ba357::t_d4600c0d89c07a 2223-2235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f449cd573bc694c5af86b55fef2902093e9d64e2",
+  "prompts": {},
+  "sessions": {
+    "s_ed5aa36a3ba357": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ba49-cd6a-75f1-899d-75ad8000c081",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
