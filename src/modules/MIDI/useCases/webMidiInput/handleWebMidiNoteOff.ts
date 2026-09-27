@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
@@ -7,7 +8,6 @@ import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { pendingYeastRelease } from '../../repositories/webMidi/pendingYeastRelease';
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
-import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -97,7 +97,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const sampleTime = dispatchFrame;
             const pendingRelease = pendingYeastRelease.begin(
                 `${instrumentTrackId}:${yeastDevice.id}`,
-                Array.from(noteData.yeastVoicedNotes ?? [])
+                noteData.yeastVoiceReleases ?? new Map()
             );
             try {
                 const processedEvents = await deps.processRealtimeMidiInput({
@@ -113,10 +113,6 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     sampleRate: context.sampleRate,
                     noteInstanceId: noteData.noteInstanceId,
                 });
-                const strip = audioEngine.getTrackStrip(instrumentTrack.id);
-                function emitGrandBouleOff(deviceId: string, midiNote: number): void {
-                    void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
-                }
                 const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
                 for (const event of processedEvents) {
                     if (
@@ -125,16 +121,17 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     ) {
                         continue;
                     }
-                    routeYeastNoteOffToInstrument(
-                        instrumentTrack,
-                        strip,
+                    pendingYeastRelease.release(
+                        pendingRelease,
                         event.kind.note,
-                        releaseVelocity,
-                        emitGrandBouleOff,
-                        Math.max(earliestDispatchFrame, Math.round(event.timeSamples))
+                        Math.max(earliestDispatchFrame, Math.round(event.timeSamples)),
+                        releaseVelocity
                     );
                 }
+            } catch (error: unknown) {
+                logger.warn('[MIDI] Yeast note release failed:', error);
             } finally {
+                pendingYeastRelease.releaseAll(pendingRelease);
                 pendingYeastRelease.finish(pendingRelease);
             }
         }

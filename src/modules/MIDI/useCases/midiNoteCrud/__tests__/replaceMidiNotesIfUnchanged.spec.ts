@@ -18,11 +18,13 @@ import {
 import { midiStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { appendRecordedMidiNote } from '../../appendRecordedMidiNote';
+import { getMidiClipNotesSnapshot } from '../../midiNoteTransforms/getMidiClipNotesSnapshot';
 import { legatoNotes } from '../../midiNoteTransforms/legatoNotes';
 import { appendMidiNotes } from '../appendMidiNotes';
 import { batchAddMidiNotes } from '../batchAddMidiNotes';
 import { replaceMidiNotesIfUnchanged } from '../replaceMidiNotesIfUnchanged';
 import { resizeMidiNote } from '../resizeMidiNote';
+import { restoreMidiNoteMembershipIfUnchanged } from '../restoreMidiNoteMembershipIfUnchanged';
 import { setNotesForClip } from '../setNotesForClip';
 
 const clipId = 'clip-1';
@@ -111,6 +113,119 @@ afterEach(() => {
 });
 
 describe('targeted MIDI note history through Command and Automerge', () => {
+    it('retains membership history when an owned note’s peer expression changes', async () => {
+        const before = structuredClone(projectedNotes());
+        const edited = before.find((candidate) => candidate.id === 'edited')!;
+        setNotesForClip(
+            clipId,
+            before.map((candidate) => (candidate.id === 'edited' ? { ...candidate, duration: 4 } : candidate))
+        );
+        const after = structuredClone(projectedNotes());
+        pushUndoEntry(
+            'Join MIDI notes',
+            () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: after, replacement: before }]),
+            () => restoreMidiNoteMembershipIfUnchanged([{ clipId, expected: before, replacement: after }])
+        );
+        flushAutomergeStorageWrites();
+        mutateCrdtDoc<{ midi?: MidiStoreState }>({
+            id: 'root',
+            changeFn: (draft) => {
+                draft.midi!.notesByClipId[clipId]!.find(
+                    (candidate) => candidate.id === edited.id
+                )!.expression!.pressure![0]!.value = 91;
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        const beforeRefusal = structuredClone(projectedNotes());
+        const pastCount = undoStore.value?.past.length;
+        await expect(undo()).rejects.toThrow('an edited note changed');
+        flushAutomergeStorageWrites();
+        expect(projectedNotes()).toEqual(beforeRefusal);
+        expect(documentNotes()).toEqual(beforeRefusal);
+        expect(undoStore.value?.past.length).toBe(pastCount);
+    });
+    it('undoes owned membership across clips while retaining a peer curve, and refuses a later clip conflict atomically', async () => {
+        const otherClipId = 'clip-2';
+        const second = { ...note('second', 3, 2), expression: { slide: [{ offsetBeats: 0.5, value: 20 }] } };
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: { ...midiStore.value!.notesByClipId, [otherClipId]: [second] },
+        });
+        flushAutomergeStorageWrites();
+        const beforeFirst = structuredClone(projectedNotes());
+        const beforeSecond = structuredClone(midiStore.value!.notesByClipId[otherClipId]!);
+        setNotesForClip(
+            clipId,
+            beforeFirst.filter((candidate) => candidate.id !== 'edited')
+        );
+        setNotesForClip(otherClipId, []);
+        const afterFirst = structuredClone(projectedNotes());
+        const afterSecond = structuredClone(midiStore.value!.notesByClipId[otherClipId]!);
+        const forward = [
+            { clipId, expected: beforeFirst, replacement: afterFirst },
+            { clipId: otherClipId, expected: beforeSecond, replacement: afterSecond },
+        ];
+        const backward = forward.map(({ clipId: id, expected, replacement }) => ({
+            clipId: id,
+            expected: replacement,
+            replacement: expected,
+        }));
+        pushUndoEntry(
+            'Delete two notes',
+            () => restoreMidiNoteMembershipIfUnchanged(backward),
+            () => restoreMidiNoteMembershipIfUnchanged(forward)
+        );
+        flushAutomergeStorageWrites();
+        mutateCrdtDoc<{ midi?: MidiStoreState }>({
+            id: 'root',
+            changeFn: (draft) => {
+                draft.midi!.notesByClipId[clipId]!.find((candidate) => candidate.id === 'peer')!.velocity = 91;
+                draft.midi!.notesByClipId[otherClipId]!.push({
+                    ...second,
+                    expression: { slide: [{ offsetBeats: 0.5, value: 91 }] },
+                });
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        const beforeRefusal = structuredClone(midiStore.value!.notesByClipId);
+        const pastCount = undoStore.value?.past.length;
+        await expect(undo()).rejects.toThrow('an edited note changed');
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.notesByClipId).toEqual(beforeRefusal);
+        expect(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi?.notesByClipId).toEqual(beforeRefusal);
+        expect(undoStore.value?.past.length).toBe(pastCount);
+
+        mutateCrdtDoc<{ midi?: MidiStoreState }>({
+            id: 'root',
+            changeFn: (draft) => {
+                const notes = draft.midi!.notesByClipId[otherClipId]!;
+                notes.splice(0, notes.length);
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        expect(await undo()).toEqual({ headConsumed: true });
+        flushAutomergeStorageWrites();
+        expect(projectedNotes().find((candidate) => candidate.id === 'peer')?.velocity).toBe(91);
+        expect(midiStore.value?.notesByClipId[otherClipId]).toEqual([second]);
+        expect(getCrdtDoc<{ midi?: MidiStoreState }>('root')?.midi?.notesByClipId[otherClipId]).toEqual([second]);
+    });
+    it('does not expose the pending document curve through a returned transform snapshot', () => {
+        setNotesForClip(clipId, [
+            ...projectedNotes(),
+            { ...note('new', 0, 2), expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] } },
+        ]);
+        const snapshot = getMidiClipNotesSnapshot(clipId);
+        const captured = snapshot?.find((candidate) => candidate.id === 'new');
+        if (!captured?.expression?.pressure) {
+            throw new Error('Expected captured pressure curve');
+        }
+        captured.expression.pressure[0]!.value = 12;
+        captured.expression.pressure.push({ offsetBeats: 1, value: 30 });
+        flushAutomergeStorageWrites();
+        expect(documentNotes().find((candidate) => candidate.id === 'new')?.expression?.pressure).toEqual([
+            { offsetBeats: 0.5, value: 90 },
+        ]);
+    });
     it('keeps admitted expression independent of batch input and returned notes through the document flush', () => {
         const source = {
             pitch: 60,

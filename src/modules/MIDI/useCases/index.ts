@@ -110,6 +110,7 @@ export { setNoteVelocity } from './midiNoteCrud/setNoteVelocity';
 export { setNoteVelocities } from './midiNoteCrud/setNoteVelocities';
 export { setNotesForClip } from './midiNoteCrud/setNotesForClip';
 export { replaceMidiNotesIfUnchanged } from './midiNoteCrud/replaceMidiNotesIfUnchanged';
+export { restoreMidiNoteMembershipIfUnchanged } from './midiNoteCrud/restoreMidiNoteMembershipIfUnchanged';
 export { shiftClipMidiNotes } from './midiNoteCrud/shiftClipMidiNotes';
 export { shiftMidiNotesAfterBeat } from './midiNoteCrud/shiftMidiNotesAfterBeat';
 export { splitMidiNotesAtBeat } from './midiNoteCrud/splitMidiNotesAtBeat';

@@ -1,6 +1,6 @@
 type PendingRelease = {
     readonly routeId: string;
-    readonly pitches: readonly number[];
+    readonly releases: ReadonlyMap<number, (sampleFrame?: number, releaseVelocity?: number) => void>;
     readonly retiredPitches: Set<number>;
 };
 
@@ -11,9 +11,12 @@ function voiceKey(routeId: string, pitch: number): string {
 }
 
 /** Keep a transformed old voice visible while its Note Off waits for Yeast. */
-function beginPendingYeastRelease(routeId: string, pitches: readonly number[]): PendingRelease {
-    const pending: PendingRelease = { routeId, pitches: [...new Set(pitches)], retiredPitches: new Set() };
-    for (const pitch of pending.pitches) {
+function beginPendingYeastRelease(
+    routeId: string,
+    releases: ReadonlyMap<number, (sampleFrame?: number, releaseVelocity?: number) => void>
+): PendingRelease {
+    const pending: PendingRelease = { routeId, releases: new Map(releases), retiredPitches: new Set() };
+    for (const pitch of pending.releases.keys()) {
         const key = voiceKey(routeId, pitch);
         const releases = pendingByVoice.get(key) ?? new Set<PendingRelease>();
         releases.add(pending);
@@ -23,7 +26,7 @@ function beginPendingYeastRelease(routeId: string, pitches: readonly number[]): 
 }
 
 /** A successor must retire the older pitch voice before starting its own. */
-function retirePendingYeastVoice(routeId: string, pitch: number, release: () => void): void {
+function retirePendingYeastVoice(routeId: string, pitch: number, sampleFrame?: number): void {
     const key = voiceKey(routeId, pitch);
     const releases = pendingByVoice.get(key);
     if (!releases) {
@@ -33,7 +36,7 @@ function retirePendingYeastVoice(routeId: string, pitch: number, release: () => 
         if (pending.retiredPitches.has(pitch)) {
             continue;
         }
-        release();
+        pending.releases.get(pitch)?.(sampleFrame, 0);
         pending.retiredPitches.add(pitch);
         releases.delete(pending);
     }
@@ -46,8 +49,30 @@ function wasPendingYeastVoiceRetired(pending: PendingRelease, pitch: number): bo
     return pending.retiredPitches.has(pitch);
 }
 
+function releasePendingYeastVoice(
+    pending: PendingRelease,
+    pitch: number,
+    sampleFrame?: number,
+    releaseVelocity?: number
+): void {
+    if (pending.retiredPitches.has(pitch)) {
+        return;
+    }
+    const release = pending.releases.get(pitch);
+    release?.(sampleFrame, releaseVelocity);
+    if (release) {
+        pending.retiredPitches.add(pitch);
+    }
+}
+
+function releaseAllPendingYeastVoices(pending: PendingRelease): void {
+    for (const pitch of pending.releases.keys()) {
+        releasePendingYeastVoice(pending, pitch);
+    }
+}
+
 function finishPendingYeastRelease(pending: PendingRelease): void {
-    for (const pitch of pending.pitches) {
+    for (const pitch of pending.releases.keys()) {
         const key = voiceKey(pending.routeId, pitch);
         const releases = pendingByVoice.get(key);
         releases?.delete(pending);
@@ -61,5 +86,7 @@ export const pendingYeastRelease = {
     begin: beginPendingYeastRelease,
     retire: retirePendingYeastVoice,
     wasRetired: wasPendingYeastVoiceRetired,
+    release: releasePendingYeastVoice,
+    releaseAll: releaseAllPendingYeastVoices,
     finish: finishPendingYeastRelease,
 };

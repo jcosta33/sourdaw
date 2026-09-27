@@ -15,13 +15,17 @@ type RuntimePitchBend = MidiStoreState['pitchBendByClipId'][string][number];
 type HydratedProjectMidi = Omit<MidiStoreState, 'probabilitySeed'> & { probabilitySeed?: number };
 
 function hydrateProjectMidiNote(note: ProjectMidiNote): RuntimeNote {
-    return {
+    const hydrated: RuntimeNote = {
         ...note,
         probability: note.probability ?? 100,
         pressure: note.pressure ?? 0,
         slide: note.slide ?? 0,
         pitchBend: note.pitchBend ?? 0,
     };
+    if (note.expression) {
+        hydrated.expression = structuredClone(note.expression);
+    }
+    return hydrated;
 }
 
 type HydrateProjectMidiCCInput = {

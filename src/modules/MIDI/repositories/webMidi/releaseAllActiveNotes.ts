@@ -31,26 +31,15 @@ function findDeviceNode(strip: WebMidiInstrumentStrip | undefined, deviceId: str
     return strip?.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
 }
 
-function releaseYeastVoices(noteData: ActiveNoteData, getTrackStrip: GetWebMidiTrackStrip): void {
-    if (!noteData.yeastInstrumentDeviceId || !noteData.yeastVoicedNotes?.size) {
-        return;
-    }
-    const strip = getTrackStrip(noteData.instrumentTrackId);
-    const deviceNode = findDeviceNode(strip, noteData.yeastInstrumentDeviceId);
-    for (const pitch of noteData.yeastVoicedNotes) {
-        if (deviceNode?.fermenterControls) {
-            deviceNode.fermenterControls.noteOff(pitch);
-        } else if (deviceNode?.grandBouleControls) {
-            deviceNode.grandBouleControls.noteOff(pitch);
-        } else if (deviceNode?.levainControls) {
-            deviceNode.levainControls.noteOff(pitch);
-        }
+function releaseYeastVoices(noteData: ActiveNoteData): void {
+    for (const release of noteData.yeastVoiceReleases?.values() ?? []) {
+        release();
     }
 }
 
 function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput): void {
     releaseActiveToasterNote(noteData, input.getTrackStrip);
-    releaseYeastVoices(noteData, input.getTrackStrip);
+    releaseYeastVoices(noteData);
 
     // Every device the note-on recorded gets its own release. Note-off is
     // channel-optional by design (audit MD-2): omitting the member channel

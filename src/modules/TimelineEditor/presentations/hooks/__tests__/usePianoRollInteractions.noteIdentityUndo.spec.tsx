@@ -1,8 +1,10 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { act, render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
@@ -77,6 +79,21 @@ const seedStore = (notesByClipId: Record<string, object[]>): void => {
         notesByClipId: notesByClipId as never,
         ccByClipId: {},
         pitchBendByClipId: {},
+    });
+};
+
+const changePeerCurve = (clipId: string, value: number): void => {
+    const current = midiStore.value!;
+    act(() => {
+        midiStore.set({
+            ...current,
+            notesByClipId: {
+                ...current.notesByClipId,
+                [clipId]: current.notesByClipId[clipId]!.map((note) =>
+                    note.id === 'peer' ? { ...note, expression: { pressure: [{ offsetBeats: 0.5, value }] } } : note
+                ),
+            },
+        });
     });
 };
 
@@ -179,7 +196,98 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
         seedStore({ 'clip-1': [expressiveNote] });
     });
 
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null });
+    });
+
+    it('undoes a join without reverting a peer expression edit', async () => {
+        const first = { id: 'n1', pitch: 60, startBeat: 2, duration: 1, velocity: 80, pressure: 90 };
+        const second = { id: 'n2', pitch: 60, startBeat: 3, duration: 1, velocity: 80, pressure: 20 };
+        const peer = {
+            id: 'peer',
+            pitch: 67,
+            startBeat: 5,
+            duration: 2,
+            velocity: 80,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 20 }] },
+        };
+        seedStore({ 'clip-1': [first, second, peer] });
+        const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1', 'n2']) });
+        fireEvent.keyDown(canvas, { key: 'j' });
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'n1')?.duration).toBe(2);
+        changePeerCurve('clip-1', 91);
+        await undoSync();
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'n2')).toEqual(second);
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(91);
+        await redoSync();
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'n2')).toBeUndefined();
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(91);
+    });
+
+    it('undoes a split without reverting a peer expression edit', async () => {
+        const peer = {
+            id: 'peer',
+            pitch: 67,
+            startBeat: 5,
+            duration: 2,
+            velocity: 80,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 20 }] },
+        };
+        seedStore({
+            'clip-1': [{ ...expressiveNote, expression: { pressure: [{ offsetBeats: 1, value: 90 }] } }, peer],
+        });
+        const track = createTrack({ id: 'track-1', name: 'MIDI', kind: 'midi' });
+        track.clips.push({
+            id: 'clip-1',
+            trackId: 'track-1',
+            name: 'Clip',
+            startBeat: 0,
+            endBeat: 8,
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#fff',
+            locked: false,
+            muted: false,
+        });
+        trackStore.set({ tracks: [track], selectedTrackId: 'track-1' });
+        const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
+        fireEvent.keyDown(canvas, { key: 'S', shiftKey: true });
+        expect(getNotesForClip('clip-1').filter((note) => note.pitch === 60)).toHaveLength(2);
+        changePeerCurve('clip-1', 91);
+        await undoSync();
+        expect(getNotesForClip('clip-1').filter((note) => note.pitch === 60)).toHaveLength(1);
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(91);
+        await redoSync();
+        expect(getNotesForClip('clip-1').filter((note) => note.pitch === 60)).toHaveLength(2);
+        expect(getNotesForClip('clip-1').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(91);
+    });
+
     describe('keyboard delete', () => {
+        it('keeps another clip’s peer curve when undoing a selected multi-clip delete', async () => {
+            const secondary = { ...expressiveNote, id: 'n2', pitch: 65 };
+            const peer = {
+                ...expressiveNote,
+                id: 'peer',
+                pitch: 67,
+                expression: { pressure: [{ offsetBeats: 0.5, value: 20 }] },
+            };
+            seedStore({ 'clip-1': [expressiveNote], 'clip-2': [secondary, peer] });
+            const { canvas } = renderRoll({
+                selectedNoteIds: new Set(['n1', 'n2']),
+                openedClipNotes: { 'clip-2': [secondary, peer] },
+            });
+            fireEvent.keyDown(canvas, { key: 'Backspace' });
+            changePeerCurve('clip-2', 91);
+            await undoSync();
+            expect(getNotesForClip('clip-1')).toEqual([expressiveNote]);
+            expect(getNotesForClip('clip-2').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(
+                91
+            );
+            await redoSync();
+            expect(getNotesForClip('clip-2').map((note) => note.id)).toEqual(['peer']);
+        });
         it('restores the exact note with every expression field on undo and removes it again on redo', async () => {
             const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
 
@@ -224,6 +332,23 @@ describe('piano-roll edit undo preserves note identity (issue #3664)', () => {
     });
 
     describe('double-click delete', () => {
+        it('restores the clicked note while preserving a peer curve edited afterward', async () => {
+            const peer = {
+                ...expressiveNote,
+                id: 'peer',
+                pitch: 67,
+                expression: { pressure: [{ offsetBeats: 0.5, value: 20 }] },
+            };
+            seedStore({ 'clip-1': [expressiveNote, peer] });
+            const { canvas } = renderRoll();
+            fireEvent.doubleClick(canvas, { clientX: 100, clientY: yForPitch(60) });
+            changePeerCurve('clip-1', 91);
+            await undoSync();
+            expect(getNotesForClip('clip-1').find((note) => note.id === 'n1')).toEqual(expressiveNote);
+            expect(getNotesForClip('clip-1').find((note) => note.id === 'peer')?.expression?.pressure?.[0]?.value).toBe(
+                91
+            );
+        });
         it('restores the exact note object through undo and redo', async () => {
             const { canvas } = renderRoll();
 

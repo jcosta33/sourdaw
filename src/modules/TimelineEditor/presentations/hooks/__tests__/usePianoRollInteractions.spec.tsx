@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
         moveMidiNote: vi.fn(),
         removeNotesByIds: vi.fn(),
         replaceMidiNotesIfUnchanged: vi.fn(),
+        restoreMidiNoteMembershipIfUnchanged: vi.fn(),
         resizeMidiNote: vi.fn(),
         setNoteVelocity: vi.fn(),
         setNotesForClip: vi.fn(),
@@ -85,6 +86,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     moveMidiNote: mocks.moveMidiNote,
     removeNotesByIds: mocks.removeNotesByIds,
     replaceMidiNotesIfUnchanged: mocks.replaceMidiNotesIfUnchanged,
+    restoreMidiNoteMembershipIfUnchanged: mocks.restoreMidiNoteMembershipIfUnchanged,
     resizeMidiNote: mocks.resizeMidiNote,
     setNoteVelocity: mocks.setNoteVelocity,
     setNotesForClip: mocks.setNotesForClip,
@@ -1003,9 +1005,15 @@ describe('usePianoRollInteractions', () => {
                 const redo = mocks.pushUndoEntry.mock.calls[0]?.[2];
                 expect(redo).toBeTypeOf('function');
                 redo?.();
-                expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('clip-1', [
-                    { id: 'n1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
-                    { id: 'n1-right', pitch: 60, startBeat: 2, duration: 2, velocity: 100 },
+                expect(mocks.restoreMidiNoteMembershipIfUnchanged).toHaveBeenLastCalledWith([
+                    {
+                        clipId: 'clip-1',
+                        expected: [makeNote('n1', 60, 1, 3)],
+                        replacement: [
+                            { id: 'n1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                            { id: 'n1-right', pitch: 60, startBeat: 2, duration: 2, velocity: 100 },
+                        ],
+                    },
                 ]);
                 expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
             });

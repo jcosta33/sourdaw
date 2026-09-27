@@ -20,6 +20,24 @@ const midi: MidiStoreState = {
 };
 
 describe('hydrateProjectMidi', () => {
+    it('owns expression points from the imported MIDI block', () => {
+        const source = {
+            notesByClipId: {
+                'clip-1': [
+                    {
+                        ...midi.notesByClipId['clip-1']![0]!,
+                        expression: { pressure: [{ offsetBeats: 0.5, value: 90 }] },
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const loaded = hydrateProjectMidi(source);
+        source.notesByClipId['clip-1'][0].expression.pressure[0].value = 10;
+        source.notesByClipId['clip-1'][0].expression.pressure.push({ offsetBeats: 0.75, value: 20 });
+        expect(loaded.notesByClipId['clip-1']?.[0]?.expression?.pressure).toEqual([{ offsetBeats: 0.5, value: 90 }]);
+    });
     it('preserves the unsigned u32 probability seed across serialization and hydration', () => {
         const roundTripped = hydrateProjectMidi(serializeProjectMidi(midi));
 

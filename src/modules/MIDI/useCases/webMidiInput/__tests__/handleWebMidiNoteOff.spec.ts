@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { playheadPositionRef } from '#/modules/Transport/stores';
+
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
@@ -174,6 +176,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
         await fn(0, 60);
@@ -216,6 +219,7 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
         await fn(0, 60);
@@ -259,12 +263,13 @@ describe('handleWebMidiNoteOff', () => {
             instrumentTrackId: 'track-a',
             startTime: 0,
             startBeat: 0,
+            yeastVoiceReleases: new Map([[67, (frame) => fermenter_note_off(67, frame)]]),
         });
 
         await fn(0, 60);
 
         expect(process_realtime_midi_input).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-a' }));
-        expect(get_track_strip).toHaveBeenCalledWith('track-a');
+        expect(get_track_strip).not.toHaveBeenCalled();
         expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_480);
     });
 
@@ -828,6 +833,8 @@ describe('handleWebMidiNoteOff', () => {
 
 describe('handleWebMidiNoteOff recording held MPE expression', () => {
     type RecordedNote = {
+        pitch?: number;
+        startBeat?: number;
         pressure?: number;
         slide?: number;
         pitchBend?: number;
@@ -1220,31 +1227,36 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         expect(curve.at(-1)).toEqual({ offsetBeats: beatsAt(changes / (changes + 1)), value: 20 });
     });
 
-    it('records queued member gestures through the production MIDI byte dispatcher before release', async () => {
+    it('records admission beat and queued member gestures through delayed same-member retrigger', async () => {
         let finishWorker!: () => void;
         const worker = new Promise<void>((resolve) => {
             finishWorker = resolve;
         });
         const deps = recordingDependencies({ isRecording: true }, true);
-        const release = noteOff;
-        const noteOn = handleWebMidiNoteOn._factory({
+        const routedTrackState = () => ({
+            tracks: [
+                {
+                    id: 'track-1',
+                    armed: true,
+                    devices: [{ id: 'yeast-1', type: 'yeast' }],
+                    clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        });
+        const release = handleWebMidiNoteOff._factory({
             ...deps,
-            handleWebMidiNoteOff: release,
-            getTrackStoreState: () => ({
-                tracks: [
-                    {
-                        id: 'track-1',
-                        armed: true,
-                        devices: [{ id: 'yeast-1', type: 'yeast' }],
-                        clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 }],
-                    },
-                ],
-                selectedTrackId: 'track-1',
-            }),
+            getTrackStoreState: routedTrackState,
             processRealtimeMidiInput: async () => {
                 await worker;
                 return [];
             },
+        });
+        const noteOn = handleWebMidiNoteOn._factory({
+            ...deps,
+            handleWebMidiNoteOff: release,
+            getTrackStoreState: routedTrackState,
+            processRealtimeMidiInput: async () => [],
             stepRecordNoteOn: () => {},
             scheduleNote: () => null,
             scheduleKitNote: () => null,
@@ -1264,7 +1276,19 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         };
 
         try {
+            const olderKey = createWebMidiNoteKey(MEMBER_CHANNEL, 65);
+            activeNotes.set(olderKey, {
+                channel: MEMBER_CHANNEL,
+                note: 65,
+                velocity: 90,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(MEMBER_CHANNEL, olderKey);
             at(1);
+            playheadPositionRef.current = 2;
             clock.mockReturnValue(1000);
             send([0x91, PITCH, 100], 1000);
             at(1.25);
@@ -1277,11 +1301,12 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
             send([0x81, PITCH, 0], 2000);
             expect(recorded).toHaveLength(0);
             at(3.1);
+            playheadPositionRef.current = 6;
             clock.mockReturnValue(3100);
             finishWorker();
-            await vi.waitFor(() => expect(recorded).toHaveLength(1));
-            expect(recorded[0]).toMatchObject({
-                startBeat: 0,
+            await vi.waitFor(() => expect(recorded).toHaveLength(2));
+            expect(recorded.find((note) => note.pitch === 60)).toMatchObject({
+                startBeat: 2,
                 duration: 2,
                 expression: {
                     pressure: [{ offsetBeats: 0.5, value: 80 }],
@@ -1292,6 +1317,7 @@ describe('handleWebMidiNoteOff recording held MPE expression', () => {
         } finally {
             finishWorker();
             clock.mockRestore();
+            playheadPositionRef.current = 0;
         }
     });
 });

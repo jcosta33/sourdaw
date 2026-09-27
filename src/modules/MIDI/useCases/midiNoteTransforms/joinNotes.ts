@@ -22,6 +22,27 @@ function scaleJoinedValue(
     return value;
 }
 
+function joinedOnsetEvent(
+    note: MidiNote,
+    first: MidiNote,
+    dimension: MidiExpressionDimension,
+    priorEvents: readonly MidiExpressionPoint[],
+    duration: number,
+    bendRange?: number
+): MidiExpressionPoint | undefined {
+    const offsetBeats = note.startBeat - first.startBeat;
+    if (offsetBeats <= 0 || offsetBeats >= duration) {
+        return undefined;
+    }
+    const value = scaleJoinedValue(note, dimension, note[dimension] ?? 0, bendRange);
+    const previousValue =
+        priorEvents.at(-1)?.value ?? scaleJoinedValue(first, dimension, first[dimension] ?? 0, bendRange);
+    if (note[dimension] === undefined && previousValue === value) {
+        return undefined;
+    }
+    return { offsetBeats, value };
+}
+
 function joinedDimensionCurve(
     notes: readonly MidiNote[],
     dimension: MidiExpressionDimension,
@@ -33,12 +54,9 @@ function joinedDimensionCurve(
     for (let index = 0; index < notes.length; index += 1) {
         const note = notes[index]!;
         const nextStart = notes[index + 1]?.startBeat ?? Infinity;
-        const baseOffset = note.startBeat - first.startBeat;
-        if (index > 0 && note[dimension] !== undefined && baseOffset > 0 && baseOffset < duration) {
-            events.push({
-                offsetBeats: baseOffset,
-                value: scaleJoinedValue(note, dimension, note[dimension], bendRange),
-            });
+        const onset = index > 0 ? joinedOnsetEvent(note, first, dimension, events, duration, bendRange) : undefined;
+        if (onset) {
+            events.push(onset);
         }
         for (const point of note.expression?.[dimension] ?? []) {
             const absoluteBeat = note.startBeat + point.offsetBeats;

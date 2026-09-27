@@ -14,7 +14,7 @@ type ResolveInputEventTimeInput = {
 };
 
 /** An audio-clock instant authenticated at message admission, before any worker wait. */
-export type CapturedInputEventTime = Readonly<{ audioTime: number }>;
+export type CapturedInputEventTime = Readonly<{ audioTime: number; recordingBeat?: number }>;
 
 /**
  * Instant, on the AudioContext clock, at which a live MIDI event arrived.

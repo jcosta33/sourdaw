@@ -6,5 +6,5 @@ export function getMidiClipNotesSnapshot(clipId: string): MidiNote[] | null {
     if (!notes) {
         return null;
     }
-    return notes.map((note) => ({ ...note }));
+    return notes.map((note) => structuredClone(note));
 }

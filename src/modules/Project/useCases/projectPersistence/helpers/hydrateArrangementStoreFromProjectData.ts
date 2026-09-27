@@ -21,13 +21,19 @@ type HydrateMidiWithInlineNotesInput = {
 type HydrateMidiWithInlineNotesOutput = ArrangementSnapshot['midi'];
 
 function hydrateInlineMidiNotes(notes: ProjectMidi['notesByClipId'][string]): ProjectMidi['notesByClipId'][string] {
-    return notes.map((note) => ({
-        ...note,
-        probability: note.probability ?? 100,
-        pressure: note.pressure ?? 0,
-        slide: note.slide ?? 0,
-        pitchBend: note.pitchBend ?? 0,
-    }));
+    return notes.map((note) => {
+        const hydrated = {
+            ...note,
+            probability: note.probability ?? 100,
+            pressure: note.pressure ?? 0,
+            slide: note.slide ?? 0,
+            pitchBend: note.pitchBend ?? 0,
+        };
+        if (note.expression) {
+            hydrated.expression = structuredClone(note.expression);
+        }
+        return hydrated;
+    });
 }
 
 function hydrateTempoMap(tempoMap: ProjectTempoMap | undefined): ArrangementSnapshot['tempoMap'] {
