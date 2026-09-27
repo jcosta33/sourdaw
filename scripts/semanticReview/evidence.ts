@@ -15,7 +15,9 @@
  * a contract document (`AGENTS.md`, `.agents/decisions/`, `.agents/skills/`), a workflow file under
  * `.github/workflows/` named in `HEALTH_GATE_WORKFLOW_FILES` (the repository's declared trust
  * boundary), a collected spec whose content imports a closure member or names one of those workflow
- * files, or a source such a spec covers and whose unit will be planned — first, then a changed file
+ * files, or a source such a spec covers and whose unit will be planned — ordered at that spec's own
+ * position, so the pair sits together and the source stays ahead of its own spec without outranking
+ * material unrelated to it — first, then a changed file
  * whose unit the planner will plan and whose rules declare a contract, decision or registration token,
  * then each contract-context region the caller supplies, then bulk sides. The ranking admits the
  * change's own contract material ahead of the context documents, and attempts a planned

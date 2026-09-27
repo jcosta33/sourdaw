@@ -998,6 +998,129 @@ describe('contract-carrying admission', () => {
         ).toBe(true);
     });
 
+    it('ranks a covered source with the spec that covers it, so it cannot spend a binding total ahead of unrelated units', () => {
+        // The promotion's own collateral (#4846): a covered source ranked at the front of the contract
+        // tier, ahead of every collected spec, so on the production `local` profile it took the room that
+        // unrelated planned units needed. Measured on this 13-path fixture — the covering spec, four
+        // unrelated collected specs, the source the spec imports, the source that source imports, a
+        // deleted path, an over-ceiling path, a credentialed path, a rename, a copy and an added file —
+        // the covered sources' hunks filled the 98,304-byte total down to 11 bytes, and the deleted path's
+        // own before side, the over-ceiling path's own before side and the covering spec's own unit were
+        // all excluded as `no-admissible-evidence`. Ordering a covered source at the covering spec's own
+        // position is what restores them: the pair now competes at the position the spec itself held, the
+        // four unrelated specs are admitted ahead of it, and the source still precedes its own spec.
+        const sizedLine = (bytes: number, tag: string): string => {
+            const prefix = `export const ${tag} = '`;
+            return `${prefix}${'y'.repeat(Math.max(1, bytes - prefix.length - 3))}';\n`;
+        };
+        const sizedLines = (count: number, bytes: number, tag: string): string =>
+            Array.from({ length: count }, (_unused, index) => sizedLine(bytes, `${tag}${String(index)}`)).join('');
+        const oneLineHunks = (first: number, count: number): readonly { startLine: number; endLine: number }[] =>
+            Array.from({ length: count }, (_unused, index) => ({ startLine: first + index, endLine: first + index }));
+
+        const specPath = 'scripts/semanticReview/__tests__/order.spec.ts';
+        const unrelatedSpecPaths = ['alpha', 'beta', 'gamma', 'delta'].map(
+            (name) => `scripts/semanticReview/__tests__/${name}.spec.ts`
+        );
+        const subjectPath = 'scripts/semanticReview/orderSubject.ts';
+        const dependencyPath = 'scripts/semanticReview/orderDependency.ts';
+        const deletedPath = 'src/modules/Project/legacy.ts';
+        const overCeilingPath = 'src/modules/Project/huge.ts';
+        const credentialedPath = 'src/modules/Project/keys.ts';
+        const movedFromPath = 'src/modules/Project/original.ts';
+        const movedPath = 'src/modules/Project/moved.ts';
+        const copiedFromPath = 'src/modules/Project/shared.ts';
+        const copiedPath = 'src/modules/Project/copied.ts';
+        const addedPath = 'src/modules/Project/added.ts';
+        const workflowLine = "const workflow = '.github/workflows/semantic-review.yml';\n";
+
+        // Forty-two hunks a side: a figure above the four unrelated specs' 13, so the pair ranks after
+        // them, and small enough regions that the spec's own unit still fits one request.
+        const specSide = `import { subject } from '../orderSubject.ts';\n${workflowLine}${sizedLines(42, 251, 'spec')}`;
+        const unrelatedSide = `${workflowLine}${sizedLines(13, 800, 'unrelated')}`;
+        // The covered sources: 98 kB of hunks between them, which is what took the local total.
+        const subjectBefore = `import { dependency } from './orderDependency.ts';\n${sizedLine(4_000, 'subjectA')}`;
+        const subjectAfter = `${subjectBefore}${sizedLines(22, 4_000, 'subjectB')}${sizedLine(1_520, 'subjectC')}`;
+        const dependencySide = sizedLine(1_600, 'dependency');
+        const dependencyAfter = sizedLines(2, 1_600, 'dependency');
+        const workflowShaped = secretFixture('AKIA', 'IOSFODNN7EXAM', 'PLE');
+        const files = [
+            changedFile(specPath, { added: 44, deleted: 0 }),
+            ...unrelatedSpecPaths.map((path) => changedFile(path, { added: 14, deleted: 0 })),
+            changedFile(subjectPath, { added: 24, deleted: 0 }),
+            changedFile(dependencyPath, { added: 3, deleted: 0 }),
+            changedFile(deletedPath, { kind: 'deleted', added: 0, deleted: 1 }),
+            changedFile(overCeilingPath, { added: 1, deleted: 0 }),
+            changedFile(credentialedPath, { added: 1, deleted: 0 }),
+            changedFile(movedPath, { kind: 'renamed', previousPath: movedFromPath, added: 1, deleted: 0 }),
+            changedFile(copiedPath, { kind: 'copied', previousPath: copiedFromPath, added: 1, deleted: 0 }),
+            changedFile(addedPath, { kind: 'added', added: 1, deleted: 0 }),
+        ];
+        const blobs: Record<string, string> = {
+            [`${MERGE_BASE}:${specPath}`]: specSide,
+            [`${HEAD}:${specPath}`]: specSide,
+            ...Object.fromEntries(
+                unrelatedSpecPaths.flatMap((path) => [
+                    [`${MERGE_BASE}:${path}`, unrelatedSide],
+                    [`${HEAD}:${path}`, unrelatedSide],
+                ])
+            ),
+            [`${MERGE_BASE}:${subjectPath}`]: subjectBefore,
+            [`${HEAD}:${subjectPath}`]: subjectAfter,
+            [`${MERGE_BASE}:${dependencyPath}`]: dependencySide,
+            [`${HEAD}:${dependencyPath}`]: dependencyAfter,
+            [`${MERGE_BASE}:${deletedPath}`]: sizedLine(60, 'legacy'),
+            [`${MERGE_BASE}:${overCeilingPath}`]: sizedLine(60, 'hugeBefore'),
+            [`${HEAD}:${overCeilingPath}`]: sizedLine(20_000, 'hugeAfter'),
+            [`${MERGE_BASE}:${credentialedPath}`]: sizedLine(1_000, 'keys'),
+            [`${HEAD}:${credentialedPath}`]: `export const key = '${workflowShaped}';\n`,
+            [`${MERGE_BASE}:${movedFromPath}`]: sizedLine(5_000, 'moved'),
+            [`${HEAD}:${movedPath}`]: sizedLine(5_000, 'moved'),
+            [`${MERGE_BASE}:${copiedFromPath}`]: sizedLine(5_000, 'copied'),
+            [`${HEAD}:${copiedPath}`]: sizedLine(5_000, 'copied'),
+            [`${HEAD}:${addedPath}`]: sizedLine(5_000, 'added'),
+            [`${MERGE_BASE}:AGENTS.md`]: sizedLine(3_000, 'agents'),
+            [`${MERGE_BASE}:.agents/decisions/README.md`]: sizedLine(3_000, 'decisions'),
+        };
+        const hunks = new Map<string, PathHunks>([
+            [specPath, { path: specPath, before: oneLineHunks(3, 42), after: oneLineHunks(3, 42) }],
+            ...unrelatedSpecPaths.map((path): [string, PathHunks] => [
+                path,
+                { path, before: oneLineHunks(2, 13), after: oneLineHunks(2, 13) },
+            ]),
+            [subjectPath, { path: subjectPath, before: oneLineHunks(2, 1), after: oneLineHunks(2, 24) }],
+            [dependencyPath, { path: dependencyPath, before: oneLineHunks(1, 1), after: oneLineHunks(1, 2) }],
+            [deletedPath, { path: deletedPath, before: oneLineHunks(1, 1), after: [] }],
+            [overCeilingPath, { path: overCeilingPath, before: oneLineHunks(1, 1), after: oneLineHunks(1, 1) }],
+        ]);
+        const profile = SEMANTIC_BUDGET_PROFILES.local;
+        const set = collectEvidence({
+            port: fakeSource({ files, blobs, hunks }),
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: {
+                maxRegionBytes: profile.maxStatePlusQuestionBytes,
+                maxTotalBytes: profile.maxTotalSubmittedBytes,
+            },
+            includeDefaultContractContext: true,
+        });
+        const planned = planUnits(files, set, profile.maxStatePlusQuestionBytes);
+        const ownSides = (path: string): readonly string[] =>
+            planned.units.find((unit) => unit.path === path)?.evidence.own.map((reference) => reference.side) ?? [];
+        // The three units the promotion starved are planned, each from its own side.
+        expect(ownSides(deletedPath)).toEqual(['before']);
+        expect(ownSides(overCeilingPath)).toEqual(['before']);
+        expect(ownSides(specPath)).toEqual(['before', 'before', 'before']);
+        // The four unrelated collected specs keep the room the covered sources used to take.
+        expect(unrelatedSpecPaths.every((path) => ownSides(path).length > 0)).toBe(true);
+        // And the pair is ordered at the covering spec's position: the unrelated specs admit ahead of the
+        // covered sources, and the sources still admit ahead of the spec that covers them.
+        const admittedPaths = set.references.map((reference) => reference.path);
+        expect(admittedPaths.indexOf(unrelatedSpecPaths[0] ?? '')).toBeLessThan(admittedPaths.indexOf(subjectPath));
+        expect(admittedPaths.indexOf(subjectPath)).toBeLessThan(admittedPaths.indexOf(specPath));
+    });
+
     it('names a withheld region by its own content class rather than its admission tier', () => {
         // The qualifier is the region's own content class, never the admission tier. `vocabulary.ts` is a
         // source its contract-carrying spec covers, so it is ordered in that spec's tier, yet its withheld
