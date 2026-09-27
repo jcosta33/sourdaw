@@ -1,0 +1,24 @@
+src/modules/Command/stores/index.ts
+  h_beb54bf43b47b7 13
+src/modules/Command/stores/undoStore.ts
+  h_beb54bf43b47b7 7-11
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  h_beb54bf43b47b7 8,11-23,34-35,45-50,404-411,417,419-425,436-437,502-558
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  h_beb54bf43b47b7 16,18,240-242,253-256,259,261,263-269,294-297,300,302,304-308
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  h_beb54bf43b47b7 7,12,29,32,34,126-134
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  h_beb54bf43b47b7 8-22,55,65-70,687-693,728,730-737,755-756,824-884
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2fa9b0bfbe5baddd7fb16ae24ae2e3ebdaff206b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
