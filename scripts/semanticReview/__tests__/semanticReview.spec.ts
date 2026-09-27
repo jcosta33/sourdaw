@@ -4530,6 +4530,88 @@ describe('the egress screen tells code from credentials', () => {
         }
     });
 
+    it('withholds a secret value across the key-to-operator gap the scanner reads, and admits ordinary code past it', () => {
+        // The scanner's gap between the keyword and the operator is `(?:[ \t\w.-]{0,20})[\s'"]{0,3}`:
+        // a bounded run that freely mixes word characters, dashes, dots, and spaces, then up to three
+        // mixed spaces or quotes. The screen read only word characters, at most one quote directly
+        // after the name, and whitespace, so a dash or dot riding the name (`token-helper`,
+        // `token.js`), a second quote (`token''`), a compound operator whose first half rides the
+        // gap while the scanner reads the second (`->`, `-=`, `.=`), and a quote-space mix before
+        // the operator each carried an assigned secret to the provider while the pinned binary
+        // flagged the line as generic-api-key (#4859). The 32-character value is composed at runtime
+        // for the same reason as the fixtures above, and every expectation in both lists was checked
+        // against the pinned binary: Gitleaks v8.30.1 with the repository's `.gitleaks.toml` flags
+        // each withheld line as generic-api-key and stays silent on each admitted one.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('token-helper = ', "'", value, "'"),
+            secretFixture('token.js = ', "'", value, "'"),
+            secretFixture("token'' = ", "'", value, "'"),
+            secretFixture('token -> ', "'", value, "'"),
+            secretFixture('token -= ', "'", value, "'"),
+            secretFixture('token .= ', "'", value, "'"),
+            secretFixture("token '= ", value),
+            secretFixture("token ' = ", value),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // The widened gap next to ordinary code stays admitted: a dotted or dashed continuation
+        // assigned a call, an awaited call, a short operand, or a member access is code, not key
+        // material.
+        for (const line of [
+            'token.refresh = () => refresh()',
+            'auth-token = await getToken()',
+            'token.js = cfg.token',
+            'token-count = count()',
+            'token.refresh = this.refresh.bind(this)',
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+        // The quote run before the operator stays bounded at the scanner's three: four quotes, or a
+        // quote-space mix of four, exceed the scanner's own budget, and the pinned binary stays
+        // silent on both — so the screen admits them too rather than widening past the scanner.
+        expect(sensitiveContentReason(secretFixture("token'''' = ", "'", value, "'"))).toBeUndefined();
+        expect(sensitiveContentReason(secretFixture("token ' ' = ", value))).toBeUndefined();
+    });
+
+    it('withholds a secret assigned to a bare auth, creds, or access name, and still admits references', () => {
+        // The scanner's keyword alternation carries the bare words `access`, `auth`, `credential`,
+        // `creds`, and `key` alongside the compounded names; the screen kept only `credential` and
+        // the compounds, so `auth = '<secret>'` — among the commonest secret-variable names — and
+        // `my_aws_access = '<secret>'` reached the provider while the pinned binary flagged them as
+        // generic-api-key (#4859). Bare `auth`, `creds`, and `access` are secret names now; bare
+        // `key` and `api` stay excluded for the reasons recorded above. The value heuristic, not
+        // the name, separates the secrets from the references below, and every expectation was
+        // checked against the pinned binary.
+        const value = secretFixture('Ab3dEf7h', 'Ij2lMn4p', 'Qr5tUv6x', 'Yz0Lm9Nq');
+        for (const line of [
+            secretFixture('creds = ', "'", value, "'"),
+            secretFixture('auth = ', "'", value, "'"),
+            secretFixture('my_aws_access = ', "'", value, "'"),
+            secretFixture('auth_header = ', "'", value, "'"),
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeDefined();
+        }
+        // A call, a reference, a short string, or a member access assigned to the same names is
+        // ordinary code and stays admitted; the pinned binary is silent on each.
+        for (const line of [
+            'auth = getAuth()',
+            'creds = credentials',
+            'creds = loadCredentials()',
+            secretFixture('auth_header = ', "'Authorization'"),
+            'my_aws_access = awsAccessReference',
+            'access.token = readAccessToken',
+        ]) {
+            expect(sensitiveContentReason(line), line).toBeUndefined();
+        }
+        // The accepted cost, the same shape as the `key` incident above: a long quoted single-word
+        // value on an identifier that merely contains one of these names is withheld even where the
+        // scanner's entropy gate stays silent, because the screen reads a quoted run as a value by
+        // construction and has no entropy test. Withholding a benign region costs one file's
+        // assessment; admitting a credential sends it to the provider.
+        expect(sensitiveContentReason("author = 'externalContributorName'")).toBeDefined();
+    });
+
     it('withholds a secret-named assignment whatever the naming convention, and still admits identifier values', () => {
         // No left boundary: `SOME_TOKEN`, `apiToken`, `dbPassword` and their like are the dominant
         // secret-naming vocabulary and must reach the value heuristic. The value heuristic, not a
