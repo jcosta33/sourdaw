@@ -798,12 +798,29 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotComputedDynamicSpecifiers('const r = 0x11.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = 0o17.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = 0b11.else / require(spec) / y;')).toEqual(['require(...)']);
-        // A signed exponent, an identifier-start tail, and the uppercase exponent and radix markers
-        // carry the same judgements, so each keeps the member dot.
+        // A signed exponent and an identifier-start tail carry the same judgements, so each keeps the
+        // member dot.
         expect(snapshotComputedDynamicSpecifiers('const r = 1e+3.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = 1e-3.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = _1.else / require(spec) / y;')).toEqual(['require(...)']);
         expect(snapshotComputedDynamicSpecifiers('const r = $1.else / require(spec) / y;')).toEqual(['require(...)']);
+        // A numeric separator keeps the run a plain decimal's integer part (`1_000.`, `1_0.`), and a
+        // `+` after an identifier ending in `e` is an operator rather than an exponent sign (`mode+3.`).
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 1_000.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = 1_0.\ntypeof /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        expect(
+            snapshotComputedDynamicSpecifiers('const q = mode+3.else /[\'"]/\nconst load = require\nload(spec);')
+        ).toEqual(['require(...)']);
+        // The uppercase exponent and radix markers are their letter case, so each keeps the member dot.
+        expect(snapshotComputedDynamicSpecifiers('const r = 1E+3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 1E3.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0X11.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0O17.else / require(spec) / y;')).toEqual(['require(...)']);
+        expect(snapshotComputedDynamicSpecifiers('const r = 0B11.else / require(spec) / y;')).toEqual(['require(...)']);
         // A block comment's close is a `/` the `*` before it opens, so a division slash after a comment
         // is no comment close: the regex after it keeps its region and the field below is a member.
         expect(
@@ -811,9 +828,9 @@ describe('snapshotImportSpecifiers', () => {
                 'class D {\n  m() { const ratio = total/* bytes *//typeof /}/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
-        // A regex whose body ends in `*` closes with a slash the walk reads as a comment close only
-        // where a `/*` opener stands; a `/ab*/` in a field or a method body has no opener, so the walk
-        // crosses it as a regex and the field below stays a member whose read-back reports the load.
+        // A regex whose body ends in `*` closes with a slash the plain backward walk reads as a comment
+        // close only where a `/*` opener stands; a `/ab*/` whose span holds no unclosed brace crosses
+        // correctly, so the field below stays a member whose read-back reports the load.
         expect(
             snapshotComputedDynamicSpecifiers(
                 'class D {\n  m() { const re = /ab*/; }\n  loader = require;\n}\nconst { loader } = new D();\nloader(spec);'
@@ -835,6 +852,14 @@ describe('snapshotImportSpecifiers', () => {
                 'class Base {\n  m() { /* c */ const re = /ab*/; }\n  loader = require;\n}\nclass D extends Base {}\nconst { loader } = new D();\nloader(spec);'
             )
         ).toEqual(['require(...)']);
+        // A `/ab*/` after a block comment whose span to the slash crosses a method body's unclosed `{`
+        // is the one the walk cannot place: the class is unmodelled and the read-back refuses, so a
+        // method-local `loader = require` never passes for the class's own `loader` method.
+        expect(
+            snapshotComputedDynamicSpecifiers(
+                "const spec = './x';\nclass D {\n  /* note */\n  loader(_spec?: unknown): void {}\n  m(): void {\n    const re = /ab*/;\n    void re;\n    let loader: (s: string) => void;\n    loader = require;\n    loader(spec);\n  }\n}\nconst { loader } = new D();\nloader(spec);"
+            )
+        ).toEqual([]);
         // A regex after `do`, `try`, or `finally` keeps its region, so the field after it is a member.
         expect(
             snapshotComputedDynamicSpecifiers(

@@ -707,10 +707,19 @@ function collectLoaderBindings(source: string): LoaderRead {
         if (declaredField !== undefined) {
             if (declaredField.ownerOpen !== undefined) {
                 if (declaredField.static !== true) {
-                    classEntryFromOpen(source, classFields, declaredField.ownerOpen).fields.set(
-                        declaredField.name,
-                        declaredField.kind
-                    );
+                    const entry = classEntryFromOpen(source, classFields, declaredField.ownerOpen);
+                    // A field whose read back crosses a regex ending in `*` after a block comment is
+                    // mis-placed: the backward walk reads the regex's closing slash as that comment's
+                    // close and jumps over an unclosed method body's `{`, taking a method-local
+                    // assignment for a class field. Mark the class unmodelled so the read-back keeps
+                    // the merge base's reading rather than resolving that assignment to the field.
+                    if (
+                        fieldRegionHasMisplacedRegexClose(source, declaredField.ownerOpen + 1, declaredField.nameIndex)
+                    ) {
+                        entry.unmodelled = true;
+                    } else {
+                        entry.fields.set(declaredField.name, declaredField.kind);
+                    }
                 }
             } else if (declaredField.pendingSource !== undefined) {
                 pendingReadBacks.push({
@@ -1750,6 +1759,92 @@ function isClassMemberPosition(source: string, index: number, bodyOpen: number):
         cursor -= 1;
     }
     return true;
+}
+
+/**
+ * Whether the region [start, end) holds the mis-placement the backward walk is vulnerable to: a regex
+ * whose body ends in a star, preceded by a block-comment opener whose span to the regex's closing
+ * slash holds an unclosed `{`. The walk reads that closing slash as the comment's close and jumps over
+ * the unclosed brace, so a read-back through the region cannot place the field. A star-ending regex
+ * with no earlier opener, or whose span crosses no brace, is crossed correctly and needs no bail.
+ */
+function fieldRegionHasMisplacedRegexClose(source: string, start: number, end: number): boolean {
+    let cursor = start;
+    while (cursor < end) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, end);
+            continue;
+        }
+        const quote = source[cursor];
+        if (quote === "'" || quote === '"') {
+            cursor = skipQuoted(source, cursor, quote);
+            continue;
+        }
+        if (quote === '`') {
+            cursor = scanTemplate(source, cursor, end, new Set());
+            continue;
+        }
+        if (source[cursor] === '/') {
+            const regexEnd = skipRegexLiteral(source, cursor);
+            if (regexEnd !== undefined && regexEnd <= end) {
+                let closeSlash = regexEnd - 1;
+                while (closeSlash > cursor && /[a-z]/i.test(source[closeSlash] ?? '')) {
+                    closeSlash -= 1;
+                }
+                if (source[closeSlash - 1] === '*') {
+                    const open = source.lastIndexOf('/*', closeSlash - 1);
+                    if (open !== -1 && spanHasUnclosedBrace(source, open, closeSlash)) {
+                        return true;
+                    }
+                }
+                cursor = regexEnd;
+                continue;
+            }
+        }
+        cursor += 1;
+    }
+    return false;
+}
+
+/**
+ * Whether the span [open, close] — a `/*` opener through a regex's closing slash — holds a `{` the slash
+ * closes no matching `}` for, so a backward walk that jumps the span skips a method body's brace. Braces
+ * inside comments, strings, templates, and the regex itself are the literal's content and are crossed.
+ */
+function spanHasUnclosedBrace(source: string, open: number, close: number): boolean {
+    let cursor = open;
+    let depth = 0;
+    while (cursor <= close) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = Math.min(commentEnd, close + 1);
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, close + 1, new Set());
+            continue;
+        }
+        if (character === '/') {
+            const regexEnd = skipRegexLiteral(source, cursor);
+            if (regexEnd !== undefined) {
+                cursor = Math.min(regexEnd, close + 1);
+                continue;
+            }
+        }
+        if (character === '{') {
+            depth += 1;
+        } else if (character === '}') {
+            depth -= 1;
+        }
+        cursor += 1;
+    }
+    return depth > 0;
 }
 
 /**
@@ -5252,10 +5347,10 @@ function isMemberNameAt(source: string, index: number): boolean {
 
 /**
  * Whether the `.` at `cursor` is a numeric literal's point: the run of digits and dots ending at
- * `cursor - 1` holds digits only, so `1.` is a point while the second dot of `1.1.` is member access.
- * The run must be a bare decimal's integer part: a run that continues an identifier (`x1.`, `item2.`,
- * `a1.`, `_1.`, `$1.`) or that is a number's exponent (`1e3.`, `1e+3.`) or radix digits (`0x11.`,
- * `0o17.`, `0b11.`) is not one, so its dot is member access.
+ * `cursor - 1` holds digits only, so `1.` and `1_000.` are points while the second dot of `1.1.` is
+ * member access. The run must be a bare decimal's integer part: a run that continues an identifier
+ * (`x1.`, `item2.`, `a1.`, `_1.`, `$1.`) or that is a number's exponent (`1e3.`, `1e+3.`, `1E+3.`) or
+ * radix digits (`0x11.`, `0o17.`, `0b11.`) is not one, so its dot is member access.
  */
 function isNumericLiteralPoint(source: string, cursor: number): boolean {
     if (!isDecimalDigit(source.charAt(cursor - 1))) {
@@ -5269,17 +5364,21 @@ function isNumericLiteralPoint(source: string, cursor: number): boolean {
         run -= 1;
     }
     const before = source[run];
+    // A `_` directly after a digit is a numeric separator (`1_000.`), not an identifier tail, so it
+    // keeps the run a plain decimal's integer part.
+    const separator = before === '_' && isDecimalDigit(source[run - 1]);
     // A letter, digit, underscore, or `$` before the run continues an identifier, so the run is its
     // tail. The same check catches an unsigned exponent and a radix prefix, whose marker (`e`/`E`,
     // `x`/`X`/`o`/`O`/`b`/`B`) is a letter.
-    if (isIdentifierContinue(before)) {
+    if (isIdentifierContinue(before) && !separator) {
         return false;
     }
-    // A `+`/`-` after an exponent marker is the exponent's sign (`1e+3.`, `1e-3.`); any other sign
-    // before the run is an operator (`a + 3.`), so the run stays a plain decimal.
+    // A `+`/`-` after a digit-adjacent exponent marker is the exponent's sign (`1e+3.`, `1E+3.`); a
+    // sign after an identifier ending in `e` (`mode+3.`) is an operator, so the run stays a plain
+    // decimal.
     if (before === '+' || before === '-') {
         const signBefore = run >= 1 ? source[run - 1] : undefined;
-        if (signBefore === 'e' || signBefore === 'E') {
+        if ((signBefore === 'e' || signBefore === 'E') && isDecimalDigit(source[run - 2])) {
             return false;
         }
     }
